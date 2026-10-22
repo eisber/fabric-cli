@@ -3,8 +3,10 @@
 # Extension and workflow boundaries
 
 **Status: conditional recommendation, not a selected plugin architecture.**
-The first intended plugin consumer is still an open product question. This
-document compares boundaries; it does not introduce a command namespace,
+The owner confirmed the Fabric CLI team adding first-party commands or resource
+support as the primary consumer on 2026-10-22. This selects the consumer priority,
+not an architecture, implementation slice, or approval of the proposed measures
+below. This document compares boundaries; it does not introduce a command namespace,
 extension contract, discovery mechanism, runtime, or working service workflow.
 
 Prefer first-party built-in modularity for product capabilities and workflow
@@ -13,6 +15,42 @@ executables only when a concrete consumer needs an independent release or
 language boundary that those two directions cannot satisfy. These directions
 can coexist, but an external loader must not become a prerequisite for the
 translation-first port.
+
+## Proposed lane charter
+
+The consumer priority is owner-confirmed; this charter and its measures remain
+proposed pending owner confirmation.
+
+**Outcome and user value:** help the Fabric CLI team add supported commands and
+resource behavior through clear first-party module/library boundaries, without
+requiring an external runtime or duplicating service and authentication logic.
+The proposed boundary is built-in capability below a thin CLI, independent
+executables only for demonstrated independent-consumer needs, and skills only
+for composition of stable CLI operations.
+
+**Non-goals:** implementing a command, resource, loader, protocol, namespace,
+authentication adapter, deployment bridge, or agent host; selecting a plugin
+architecture; changing production code or another lane's interfaces.
+
+| Proposed measure | Evidence method and completion criterion |
+| --- | --- |
+| Compare all three directions | The option matrix covers contracts, discovery, versioning, packaging, trust, credentials, capabilities, and failure/lifecycle behavior for each direction, with pinned source evidence and current limitations stated. |
+| Bound the next first-party step | State the required mapping for one future approved command/resource slice: Python source entry points, consumers, success/failure behavior, CLI projection, and reusable library ownership. Producing that source map follows specific slice approval; no implementation is included in this document's scope. |
+| Preserve translation and independence | Review the candidate against existing compatibility expectations: no new namespace/runtime prerequisite, no duplicated service/auth logic, and no CLI/identity dependency imposed on SDK consumers. Future implementation needs independent offline contract evidence, not only a compiling module. |
+| Keep the document within scope | Changes remain confined to this decision document and the skills README clarification; verify source references and relative-link targets without executing skill content or accessing services. |
+
+**Dependencies and risks:** the specific command/resource candidate and its
+contract still need scoped approval with the SDK/CLI and compatibility owners.
+The scaffold has no service CLI JSON contract; identity and deployment remain
+separate lanes. The unsupported extension placeholder does not supply a plugin
+API, and neither module boundaries nor a separate process prove isolation.
+
+**Proposed done gate:** the source-backed comparison and constraints are
+reviewable, the owner confirms the charter/measures, and the coordinator
+explicitly accepts the result. A specific candidate can remain open when this
+document is accepted; it needs approval before further implementation.
+Document submission and consumer confirmation alone do not satisfy those
+approvals or authorize implementation.
 
 ## Source evidence and limits
 
@@ -117,10 +155,12 @@ These constraints preserve options without implementing an extension mechanism:
 | Credential delegation or an operation broker | An approved cross-trust operation that existing trusted CLI/SDK composition cannot satisfy, with identity-team review of permissions, account/tenant/audience binding, and revocation. Never solve this by forwarding raw tokens. |
 | Skill catalog format, agent-host integration, and distribution channel | The chosen workflow consumer and its reviewed discovery/version needs; do not couple the native product to one host prematurely. |
 
-## Small future first slice, conditional on the consumer
+## Small future first slice and retained alternatives
 
-The document can be complete while the product question stays open. The next
-slice is chosen after that question is answered, not implemented here.
+The first-party row is the candidate direction matching the confirmed consumer.
+A particular command/resource slice still requires agreement with its owners;
+none is selected or implemented here. The other rows remain conditional
+alternatives, not parallel implementation commitments.
 
 | If the first need is... | Smallest useful next slice | Boundary and acceptance evidence |
 | --- | --- | --- |
@@ -132,9 +172,13 @@ No build, service call, credential acquisition, plugin execution, or runtime
 selection is needed to accept this decision document. A future implementation
 needs its own scoped approval and validation evidence.
 
-## Focused owner question
+## Owner consumer confirmation
 
-Who is the first intended plugin consumer: the Fabric CLI team extending
-first-party commands/resources, an independent partner or organization shipping
-its own executable, or an agent/automation author composing existing CLI
-operations?
+The focused question asked which consumer to prioritize: the Fabric CLI team
+extending first-party commands/resources, an independent executable publisher,
+or an agent/automation author composing CLI operations.
+
+On 2026-10-22, the owner selected **the Fabric CLI team adding first-party commands
+or resource support**. This resolves the consumer question only. The proposed
+charter, measures, specific first slice, and architecture remain unapproved; no
+external executable, loader, or workflow runtime is required by that answer.

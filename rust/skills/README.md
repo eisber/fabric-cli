@@ -20,5 +20,5 @@ Skills are not executable plugins and do not imply external command discovery or
 a runtime loader. Use a workflow only once its required CLI operations and
 machine-readable contracts exist; Python skill examples do not establish Rust
 capability. See [extension and workflow boundaries](../docs/extensions-and-skills.md)
-for the source-backed options and the open consumer question; no plugin
-architecture is selected there.
+for the source-backed options and confirmed first-party consumer priority; no
+plugin architecture is selected there.
