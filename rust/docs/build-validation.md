@@ -80,7 +80,128 @@ installation test proving their absence. Native linkers are still required.
 Future Rustls HTTP transport does not rule out separate certificate-authentication
 prerequisites such as OpenSSL.
 
-### Earlier run and bounded workflow changes
+## Owner-confirmed affected-crate goal
+
+The owner confirmed crate-level selection including transitive consumers, rather
+than attempting to infer individual relevant test functions from changed lines.
+The outcome is to avoid compiling and testing unrelated crates while preserving
+the contracts of affected consumers on all three native runners. This does not
+establish release/support parity or an absolute latency, memory, or throughput
+target. The measured baseline above is evidence, not a performance promise.
+
+The selector reads Cargo's workspace metadata rather than maintaining a second
+dependency graph in CI. It includes normal, build, development, optional, and
+target-specific workspace dependency edges conservatively. Renamed dependencies
+are matched by their package path, not their import alias. As consumers are
+added to the manifests, selection follows those edges automatically.
+
+| Changed input | Selected native validation |
+| --- | --- |
+| Identity source, with today's graph | `fabric-identity` only |
+| Identity source after the CLI declares an identity dependency | `fabric-identity` and `fabric-cli` |
+| Core source, with today's graph | `fabric-core`, `fabric-identity`, and `fabric-sdk` |
+| SDK source or its example, with today's graph | `fabric-sdk` only, including its offline example |
+| CLI source or its contracts, with today's graph | `fabric-cli` only, including help/version checks |
+| Several crates, including cross-crate moves | Union of changed crates and all their transitive consumers |
+| Any Rust Cargo manifest/lockfile, toolchain, rustfmt configuration, workflow, shared fixture, or unclassified Rust build input | All workspace members, including the workspace architecture contract |
+| Markdown under `rust/docs/` or `rust/skills/`, root Rust README/AGENTS, or the fixture README only | No native build; no Cargo invocation in selection |
+| Changes outside Rust and this workflow only | No Rust native build |
+
+Crate-local Markdown is deliberately treated as a crate input: it might be
+included in rustdoc or source. Rust source containing documentation remains a
+code change. Shared fixture contents are not exempted as documentation.
+An unknown or deleted crate directory selects the whole current workspace.
+Non-workspace path dependencies or workspace members outside `rust/` fail
+selection explicitly and require review; external source trees are not silently
+treated as unrelated.
+
+### Check scope and correctness gates
+
+For every selected crate, the existing formatting, all-target check, Clippy,
+offline tests, and documentation tests still run on Windows, Linux, and macOS.
+Package arguments are passed together in one Cargo invocation per check, not in
+separate overlapping crate jobs. For an identity-only change, the core commands
+are:
+
+```text
+cargo fmt --package fabric-identity -- --check
+cargo check --locked --package fabric-identity --all-targets
+cargo clippy --locked --package fabric-identity --all-targets -- -D warnings
+cargo test --offline --locked --package fabric-identity
+cargo test --offline --locked --package fabric-identity --doc
+```
+
+Larger selections repeat `--package <name>`. SDK/example/normal-closure checks
+run only when the SDK is selected, and CLI help/version only when the CLI is
+selected. Feature and duplicate dependency inspection is scoped to selected
+packages. Shared changes select all members and therefore retain the full
+workspace's checks, including the architecture test located in the CLI crate.
+No test source, expected output, warning threshold, or independent oracle is
+changed. Routine affected-crate CI does not waive any separately required full
+integration check; full manual validation remains available subject to its own
+execution authorization.
+
+Cargo must still compile a selected crate's required dependencies on a cold
+runner. Selecting identity does not imply avoiding compilation of its core
+dependency, but it does avoid unrelated SDK/CLI/deployment builds and unit
+tests. Registry restoration and metadata inspection are not package compilation;
+the existing locked fetch can restore dependencies beyond the selected crates.
+No cache system or persistence contract is introduced. Node is used only for
+Actions orchestration, not as a shipped product dependency.
+
+The lightweight selector runs for every PR and configured-branch push, including
+documentation/Python-only changes; only relevant changes start native jobs.
+There are no top-level path filters whose bounded provider diff could miss a
+Rust change in a large mixed change set. A full local Git diff is used instead:
+
+- PRs compare their event base SHA with the checked-out merge head, covering the
+  cumulative PR rather than just its latest commit.
+- Pushes compare the event's `before` commit with the checked-out head, including
+  every commit in that push. Rename detection is disabled so both old and new
+  paths participate, including deletions.
+- Manual runs always select all members. A new branch, invalid base, or base
+  unavailable after full-history checkout explicitly selects all members and
+  logs why. A failed diff, Cargo metadata command, or graph parse fails the
+  selector; it never returns a successful empty selection.
+
+The job summary records the actual checked-out head, diff base, selection
+reason, selected packages, and changed-path count. The `Rust validation` final
+gate fails if selection fails or required native checks fail, cancel, or skip.
+It passes without native execution only for an explicit successful empty
+selection. The integration owner should use this stable gate for required Rust
+validation; this lane does not modify repository branch protection.
+
+### Measurable acceptance and current evidence limit
+
+Local validation executes the actual inline selector with mocked Git/Cargo
+results, without a local Cargo build. Its 38 scenarios cover identity-only,
+core consumers, future/multi-hop consumers, a new workspace member, renamed
+optional/target/build dependencies, combined/deleted/moved paths, shared inputs,
+docs-only skipping without Cargo, manual/new-branch/force-push bases, and explicit
+diff/metadata/graph failures. The same selector also runs its pure selection
+regression assertions in CI. Eight final-gate outcome combinations, native Bash
+syntax, package argument expansion, YAML structure, action pins, and conditional
+SDK/CLI step wiring were checked locally. Native scripts were also executed
+against tool spies, checking exact command/argument sequences for identity-only,
+core-consumer, future CLI-consumer, and full-workspace selections without
+invoking the real Cargo/compiler tools.
+
+Acceptance requires the first authorized provider run at the integrated head
+to pass all selected checks on the three recorded native targets, with the
+actual selection/host/toolchain/result evidence retained. Shared/workflow changes
+must select all members; an identity-only change must exclude unrelated crates
+and still include any newly declared consumers. Documentation-only changes must
+skip native execution. Selector errors must fail the final gate. These are
+selection/output requirements, not assumed wall-clock savings.
+
+The successful provider runs above predate change-aware selection and the
+resource guards below. Neither the new selector nor the changed native commands
+have been executed by this lane on GitHub-hosted runners. Local selector tests
+are not provider execution or evidence that the hosted toolchain/metadata
+prerequisites have succeeded. No local Cargo compilation/test, installation,
+shared-host lease, workflow dispatch, or remote publication was performed.
+
+## Earlier runs and resource controls
 
 [Run 39843435944](https://github.com/eisber/fabric-cli/actions/runs/39843435944)
 also completed successfully at exact source
@@ -89,29 +210,27 @@ also completed successfully at exact source
 ran from `19:49:29Z` to `19:51:06Z`; the next run's Windows job started at
 `19:51:03Z`. This is concrete same-branch overlap, not evidence of a host failure.
 
-Two resource guards are added to the otherwise unchanged workflow:
+The first submitted change added same-ref cancellation and a 15-minute job
+timeout. Change-aware selection requires a narrower cancellation policy:
 
-- Concurrency group `${{ github.workflow }}-${{ github.ref }}` cancels superseded
-  runs of this workflow for the same ref, including all three matrix jobs.
-  Other refs and Python workflows are independent. A PR merge ref and its source
-  branch ref are different groups; this is not cross-event SHA deduplication.
-  A same-ref manual run can also supersede, or be superseded by, a push run.
+- Superseded PR runs can cancel because the replacement validates the cumulative
+  PR diff. Groups include workflow, event type, and PR number.
+- Push and manual runs use their unique run ID and do not cancel one another.
+  Otherwise a docs-only push could cancel a pending code-push validation and
+  then select no crates. This deliberately permits the same-branch push overlap
+  observed above rather than dropping required evidence. Cross-push
+  deduplication would need a separate validated-baseline protocol.
 - `timeout-minutes: 15` bounds each native job if dependency restore or a future
   test stalls. The longest observed job above was 105 seconds. Fifteen minutes
-  leaves substantial headroom but is a budget, not a performance guarantee;
-  revisit it with measured evidence as the port grows.
+  leaves substantial headroom but is an owner-confirmed resource budget, not a
+  performance guarantee; revisit it with measured evidence as the port grows.
+  The lightweight selection and final-gate jobs have the same upper bound.
 
-No matrix entry, check, test, dependency, lockfile, toolchain, cache, artifact
-format, action pin, or failure gate is changed. `fail-fast: false` remains so a
-failure on one host does not suppress evidence on the other hosts. Normal
-supersession can still cancel an obsolete run.
-
-The successful provider runs predate these two guards. The new workflow has
-not been executed by this lane; neither dispatch nor rerun is needed to inspect
-the existing evidence. The integration owner must verify the first authorized
-provider run of the integrated head, including unchanged native checks.
-No local Cargo compilation or test was run for this workflow/documentation-only
-change, and no shared-host build slot was acquired.
+The native matrix, dependencies, lockfile, toolchain, artifact formats, and pinned
+direct Actions remain unchanged; no cache or installer is added.
+`fail-fast: false` remains so one host's failure does not suppress the other
+hosts' evidence. There is no approved startup, memory, or throughput threshold,
+nor a measured cold/warm cache comparison.
 
 ## Proposed shared-host build lease
 
