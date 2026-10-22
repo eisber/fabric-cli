@@ -63,6 +63,24 @@ All PRs must follow this process:
 4. **Link PR to issue** — Start PR description with `- Resolves #issue-number`
 5. **Add changie entry** — Run `changie new` and select the appropriate change type
 
+### Experimental Rust Workspace
+
+The additive workspace under `rust/` does not replace the Python CLI. Read
+[`rust/AGENTS.md`](rust/AGENTS.md) and
+[`rust/docs/migration-guidance.md`](rust/docs/migration-guidance.md) before porting.
+Translate behavior first; propose improvements separately. Read
+[`rust/docs/architecture.md`](rust/docs/architecture.md) for crate ownership, allowed
+dependency directions, runtime rules, and the pinned Cargo validation commands.
+Read [`rust/docs/compatibility.md`](rust/docs/compatibility.md) before adding commands or
+porting behavior. Rust public APIs require documentation and must respect the
+workspace lints; the Python-specific standards below still apply to Python.
+
+Keep SDK credentials caller-injected, tests offline, and dependency features
+centralized in `rust/Cargo.toml`. Do not add production authentication, credential
+fallbacks, Python deployment bridges, or new command namespaces as scaffold
+shortcuts. The [identity backend decision](rust/docs/decisions/identity-backend.md)
+remains unresolved and authentication/core changes still require team review.
+
 ### Code Standards to Enforce
 
 When reviewing or generating code, ensure:

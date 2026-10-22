@@ -1,0 +1,63 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Rust scaffold
+
+on:
+  pull_request:
+    paths:
+      - 'rust/**'
+      - '.github/workflows/rust-ci.yml'
+  push:
+    branches: [main, feature/rust-workspace-scaffold]
+    paths:
+      - 'rust/**'
+      - '.github/workflows/rust-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Native checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: rust
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04, macos-15]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Use repository-pinned toolchain and record actual host
+        run: |
+          cargo --version
+          rustc --version --verbose
+          rustup show active-toolchain
+      - name: Restore locked dependencies
+        run: cargo fetch --locked
+      - name: Inspect workspace metadata
+        run: cargo metadata --locked --no-deps --format-version 1
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check all targets
+        run: cargo check --locked --workspace --all-targets
+      - name: Lint all targets
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Test offline contracts
+        run: cargo test --offline --locked --workspace
+      - name: Test documentation
+        run: cargo test --offline --locked --workspace --doc
+      - name: Run independent offline SDK example
+        run: cargo run --offline --locked -p fabric-sdk --example injected_credentials
+      - name: Check CLI help
+        run: cargo run --offline --locked -p fabric-cli -- --help
+      - name: Check CLI version
+        run: cargo run --offline --locked -p fabric-cli -- --version
+      - name: Inspect dependency features and duplicates
+        run: |
+          cargo tree --locked -p fabric-sdk --edges normal
+          cargo tree --locked --edges features
+          cargo tree --locked --duplicates
