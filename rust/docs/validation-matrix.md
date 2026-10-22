@@ -33,6 +33,27 @@ error helper renders `UnexpectedError` and exits 1 without a command field.
 JSON error output goes to stdout, not stderr. This records source quirks without
 changing them or asserting all possible errors have been covered.
 
+## Owner-confirmed completion gate
+
+The owner confirmed this reference-only gate directly in the lane session on
+2026-10-22. Agreement on criteria is not execution evidence or permission to
+run tests, restore dependencies, integrate commits, or claim Rust parity.
+
+| Measure | Required result | Evidence status |
+| --- | --- | --- |
+| Independent Python cases | All eight cases pass against the committed hand-authored expectations. | Not executed. |
+| Determinism | Each case passes twice in fresh workers with identical stdout, stderr, exit, data, request/scope sequence, exception, pagination metadata, and context results. | Not executed. |
+| Comparator failure detection | All ten independently mutated observation fields are rejected. | Not executed. |
+| Offline isolation | All five network, file-write, identity-import, subprocess, and sleep probes are blocked; reference runs perform no real network, credential discovery, or config writes. | Not executed. |
+| Provenance protection | Pinned source matches and a deliberate source-hash mismatch is rejected. | Execution pending; source commit and digest are recorded. |
+
+The eight cases remain exactly those in the matrix above. Rust parity, the
+adapter awaiting an agreed SDK interface, full CLI coverage, and live operations
+are excluded from this completion gate. Required execution evidence includes the
+exact commands, interpreter version, and captured pass/failure output. An
+existing isolated interpreter and a separate named parent validation grant are
+still required; no threshold has been waived.
+
 ## Evidence and limits
 
 Implementation is present; execution evidence is pending a named parent grant
