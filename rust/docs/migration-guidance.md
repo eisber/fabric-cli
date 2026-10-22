@@ -115,6 +115,37 @@ the integration owner, with revalidation after integration. A blocked lane can
 continue independent read-only analysis or authorized fixture work; it cannot
 reconstruct a missing shared scaffold.
 
+### Shared foundation and next handoffs
+
+The first shared foundation is published at
+[`407c595095ca326ee4a7d8355232346f219b6912`](https://github.com/eisber/fabric-cli/commit/407c595095ca326ee4a7d8355232346f219b6912)
+on `feature/rust-workspace-scaffold` in the owner's `eisber/fabric-cli` fork.
+Upstream `microsoft/fabric-cli` is not the push destination for lane work.
+The foundation leaves Python source/tests unchanged and stages all Rust-only
+files under `rust/`, with GitHub Actions at the repository root.
+
+Fetch this explicit existing fork and verify the agreed commit before integrating
+it into a clean lane branch. Preserve unrelated changes and active user requests.
+If a branch has diverged, coordinate an agreed integration rather than resetting,
+force-pushing, or taking a peer worktree. Run Cargo from `rust/`.
+
+| Lane | Next handoff after adopting the agreed checkpoint |
+| --- | --- |
+| SDK and CLI | Define the offline workspace-list request/response, transport-injection seam, pagination/error behavior, and Python source mapping with validation; begin translation only within the agreed slice |
+| Native deployment | Inspect the pinned `fabric-cicd` source from the compatibility baselines; define synthetic config/transform reference cases before native implementation; report unavailable source explicitly |
+| Compatibility and validation | Prepare the proposed eight-case Python workspace-list golden harness and preserve independent expected outputs; attach the Rust adapter only after its injection interface is agreed |
+| Build and distribution | Inspect the now-present native workflow running from `rust/`; address real CI gaps, report actual job outcomes/architectures, and coordinate heavy local work; defer installer/release choices |
+| Identity | Document platform/policy acceptance requirements and backend evidence without choosing or implementing a production backend; ask the owner which enterprise policy/platform must be proven first |
+| Plugins and skills | Obtain the owner's first concrete use case before selecting executable extensions, a protocol, or a loader; workflow skills and built-in modularity do not imply an external plugin runtime |
+| Unit-test coverage | Measure existing Python core/utils/parser unit suites, with line and branch coverage over all product source, exact test counts, exclusions and artifacts; do not modify tests or product code to inflate coverage |
+
+This branch makes code and written handoffs accessible. It does not itself wake
+another session, grant cross-session management capability, answer an outstanding
+interactive question, or prove that a recipient has read the handoff. Record
+actual delivery/continuation separately. If direct contact is refused, report
+the missing capability to the owner and use the existing authorized continuation
+path; do not change identities or bypass the session's approval gates.
+
 ## Keep the shared-host inner loop usable
 
 The initial shared-host budget is one heavy build/test job at a time, including
