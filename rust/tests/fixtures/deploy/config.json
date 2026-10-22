@@ -1,0 +1,38 @@
+{
+  "source": "microsoft/fabric-cicd@5ca096c00a9a878c646c59fe537b883eba951329",
+  "cases": [
+    {
+      "id": "environment-key-is-exact",
+      "operation": "config_value",
+      "section": {"workspace": {"DEV": "Synthetic"}},
+      "key": "workspace",
+      "expected": null
+    },
+    {
+      "id": "single-value-not-environment-mapped",
+      "operation": "config_value",
+      "section": {"workspace": "Synthetic"},
+      "key": "workspace",
+      "expected": "Synthetic"
+    },
+    {
+      "id": "workspace-settings-trims-environment-not-keys",
+      "operation": "workspace_settings",
+      "environment": " dev ",
+      "config": {"core": {"workspace_id": {"dev": "11111111-1111-1111-1111-111111111111"}, "repository_directory": "synthetic-repository", "parameter": {"dev": "parameter.yml"}, "item_types_in_scope": {"prod": ["Notebook"]}}},
+      "expected": {"workspace_id": "11111111-1111-1111-1111-111111111111", "repository_directory": "synthetic-repository", "parameter_file_path": "parameter.yml"}
+    },
+    {
+      "id": "all-environment-alias-only-key-case-insensitive",
+      "operation": "environment_key",
+      "input": {"_aLl_": "new"},
+      "expected": {"dev": "new"}
+    },
+    {
+      "id": "all-plus-specific-not-merged-at-leaf",
+      "operation": "environment_key",
+      "input": {"_ALL_": "all", "dev": "specific"},
+      "expected": {"_ALL_": "all", "dev": "specific"}
+    }
+  ]
+}
