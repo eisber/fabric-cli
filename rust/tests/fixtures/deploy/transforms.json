@@ -1,0 +1,137 @@
+{
+  "source": "microsoft/fabric-cicd@5ca096c00a9a878c646c59fe537b883eba951329",
+  "cases": [
+    {
+      "id": "regex-only-capture-one-all-occurrences-literal-replacement",
+      "operation": "parameters",
+      "input": "id=old; id=older;",
+      "parameters": {"find_replace": [{"find_value": "id=(\\w+);", "is_regex": true, "replace_value": {"dev": "\\1$1\\g<1>"}}]},
+      "expected": "id=\\1$1\\g<1>; id=\\1$1\\g<1>;"
+    },
+    {
+      "id": "python-lookbehind-and-named-capture",
+      "operation": "parameters",
+      "input": "id=old; skip=old;",
+      "parameters": {"find_replace": [{"find_value": "(?<=id=)(?P<value>\\w+)(?=;)", "is_regex": true, "replace_value": {"dev": "new"}}]},
+      "expected": "id=new; skip=old;"
+    },
+    {
+      "id": "literal-ignore-case-escapes-pattern-and-replacement",
+      "operation": "parameters",
+      "input": "A.B a.b axb",
+      "parameters": {"find_replace": [{"find_value": "a.b", "ignore_case": true, "replace_value": {"_aLl_": "\\1$new"}}]},
+      "expected": "\\1$new \\1$new axb"
+    },
+    {
+      "id": "regex-zero-captures-rejected-even-filtered-out",
+      "operation": "parameters",
+      "input": "unchanged",
+      "parameters": {"find_replace": [{"find_value": "missing", "is_regex": true, "item_type": "Report", "replace_value": {"dev": "new"}}]},
+      "error": {"type": "InputError", "contains": "must contain exactly one capturing group"}
+    },
+    {
+      "id": "regex-two-captures-rejected-without-match",
+      "operation": "parameters",
+      "input": "unchanged",
+      "parameters": {"find_replace": [{"find_value": "(a)(b)", "is_regex": true, "replace_value": {"dev": "new"}}]},
+      "error": {"type": "InputError", "contains": "must contain exactly one capturing group"}
+    },
+    {
+      "id": "regex-invalid-pattern-rejected",
+      "operation": "parameters",
+      "input": "unchanged",
+      "parameters": {"find_replace": [{"find_value": "(", "is_regex": true, "replace_value": {"dev": "new"}}]},
+      "error": {"type": "InputError", "contains": "Invalid regex '('"}
+    },
+    {
+      "id": "regex-first-empty-capture-rejected",
+      "operation": "parameters",
+      "input": "id=; id=old;",
+      "parameters": {"find_replace": [{"find_value": "id=(\\w*);", "is_regex": true, "replace_value": {"dev": "new"}}]},
+      "error": {"type": "InputError", "contains": "captured an empty value"}
+    },
+    {
+      "id": "regex-valid-no-match-preserves-bytes",
+      "operation": "parameters",
+      "input": "  original\r\n",
+      "parameters": {"find_replace": [{"find_value": "id=(\\w+);", "is_regex": true, "replace_value": {"dev": "new"}}]},
+      "expected": "  original\r\n"
+    },
+    {
+      "id": "find-replace-empty-value-is-no-op",
+      "operation": "parameters",
+      "input": "old",
+      "parameters": {"find_replace": [{"find_value": "old", "replace_value": {"dev": ""}}]},
+      "expected": "old"
+    },
+    {
+      "id": "jsonpath-extended-filter-mutates-only-matches",
+      "operation": "key_value",
+      "input": "{\"items\":[{\"name\":\"keep\",\"n\":1},{\"name\":\"change\",\"n\":2}]}",
+      "parameter": {"find_key": "$.items[?(@.n >= 2)].name", "replace_value": {"dev": "new"}},
+      "expected": "{\"items\": [{\"name\": \"keep\", \"n\": 1}, {\"name\": \"new\", \"n\": 2}]}"
+    },
+    {
+      "id": "jsonpath-wildcard-typed-object-and-json-emission",
+      "operation": "key_value",
+      "input": "{\"items\":[{\"value\":1},{\"value\":2}]}",
+      "parameter": {"find_key": "$.items[*].value", "replace_value": {"dev": {"enabled": false, "count": 2, "label": "caf\u00e9", "nothing": null}}},
+      "expected": "{\"items\": [{\"value\": {\"enabled\": false, \"count\": 2, \"label\": \"caf\\u00e9\", \"nothing\": null}}, {\"value\": {\"enabled\": false, \"count\": 2, \"label\": \"caf\\u00e9\", \"nothing\": null}}]}"
+    },
+    {
+      "id": "jsonpath-recursive-descent",
+      "operation": "key_value",
+      "input": "{\"id\":\"a\",\"child\":{\"id\":\"b\"}}",
+      "parameter": {"find_key": "$..id", "replace_value": {"dev": "new"}},
+      "expected": "{\"id\": \"new\", \"child\": {\"id\": \"new\"}}"
+    },
+    {
+      "id": "jsonpath-no-match-does-not-reformat",
+      "operation": "key_value",
+      "input": "{ \"a\": 1 }\r\n",
+      "parameter": {"find_key": "$.missing", "replace_value": {"dev": "new"}},
+      "expected": "{ \"a\": 1 }\r\n"
+    },
+    {
+      "id": "jsonpath-missing-environment-does-not-reformat",
+      "operation": "key_value",
+      "input": "{ \"a\": 1 }\n",
+      "parameter": {"find_key": "$.a", "replace_value": {"prod": "new"}},
+      "expected": "{ \"a\": 1 }\n"
+    },
+    {
+      "id": "yaml-emission-sorts-keys-drops-comments-quotes-strings",
+      "operation": "key_value",
+      "yaml": true,
+      "input": "# comment\nz: caf\u00e9\nenabled: false\na: 1\n",
+      "parameter": {"find_key": "$.enabled", "replace_value": {"dev": "on"}},
+      "expected": "a: 1\nenabled: 'on'\nz: caf\u00e9\n"
+    },
+    {
+      "id": "yaml-empty-content-preserved",
+      "operation": "key_value",
+      "yaml": true,
+      "input": "# empty\n",
+      "parameter": {"find_key": "$.a", "replace_value": {"dev": "new"}},
+      "expected": "# empty\n"
+    },
+    {
+      "id": "key-value-before-find-replace",
+      "operation": "parameters",
+      "input": "{\"value\":\"source\"}",
+      "parameters": {
+        "find_replace": [{"find_value": "middle", "replace_value": {"dev": "final"}}],
+        "key_value_replace": [{"find_key": "$.value", "replace_value": {"dev": "middle"}}]
+      },
+      "expected": "{\"value\": \"final\"}"
+    },
+    {
+      "id": "non-yaml-extension-not-parsed-as-yaml",
+      "operation": "parameters",
+      "file_name": "definition.txt",
+      "input": "value: source\n",
+      "parameters": {"key_value_replace": [{"find_key": "$.value", "replace_value": {"dev": "new"}}]},
+      "expected": "value: source\n"
+    }
+  ]
+}
