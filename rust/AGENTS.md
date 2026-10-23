@@ -42,6 +42,11 @@ Repository-wide contribution and team-review rules still apply.
   unresolved and requires team review.
 
 Run the pinned checks from this directory, not the repository root. The workspace
-contains exactly five crates; add no empty future modules or runtime loaders as
-scaffold shortcuts. `fab-rs` help/version/error contracts are temporary bootstrap
-contracts, not proof of parity with Python `fab`.
+contains five default crates plus the owner-approved optional
+`fabric-identity-windows` native boundary. Existing crates retain
+`unsafe_code = "forbid"`. Only the native crate's private interop module may allow
+documented unsafe blocks; its public API is safe Rust. Default consumers exclude
+that crate; opting in does not make a binary transitively unsafe-free. Add no
+empty future modules or runtime loaders as scaffold shortcuts. `fab-rs`
+help/version/error contracts are temporary bootstrap contracts, not proof of
+parity with Python `fab`.

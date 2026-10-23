@@ -13,18 +13,21 @@ It is not a full port, release contract, or replacement for the Python product.
 | Crate | Ownership | Allowed internal dependencies |
 | --- | --- | --- |
 | `fabric-core` | Credential interoperability, shared errors; future request context and HTTP policies | None |
-| `fabric-identity` | Explicit identity selection and optional future adapters | `fabric-core` |
+| `fabric-identity` | Explicit identity selection and optional future adapters | `fabric-core`, optional Windows-only `fabric-identity-windows` |
+| `fabric-identity-windows` | Isolated desktop WAM interop; safe public Rust API | None |
 | `fabric-sdk` | Typed service models and future operations and reusable workflows | `fabric-core` |
 | `fabric-deploy` | Future native configuration, transforms, planning, publish/unpublish | `fabric-sdk`, `fabric-core` where used |
 | `fabric-cli` | Arguments, login UX, streams, exit codes, future library composition | `fabric-identity`, `fabric-sdk`, `fabric-deploy` |
 
-Only exercised edges are declared today: `fabric-identity -> fabric-core` and
-`fabric-sdk -> fabric-core`. The deployment crate has no APIs or dependencies;
+The default exercised edges are `fabric-identity -> fabric-core` and
+`fabric-sdk -> fabric-core`. Enabling `fabric-identity/windows-broker` adds the
+native edge only on Windows. The deployment crate has no APIs or dependencies;
 the CLI has no service commands and does not need library-composition dependencies
 yet. Add those allowed edges when implementing their first real consumers.
-The offline workspace contract test checks the exact five members, allowed edges,
-publication settings, edition, and consistent declared Rust version. Cargo
-rejects dependency cycles.
+The offline workspace contract test checks six members, five default members,
+allowed edges, the optional/target-specific native edge, default dependency
+exclusion, unsafe lint policies, publication settings, edition, and consistent
+declared Rust version. Cargo rejects dependency cycles.
 
 The eventual call direction is:
 
@@ -64,6 +67,54 @@ success-shaped empty page.
 error. No backend, unattended adapter, credential chain, interactive login,
 cache, or plaintext persistence is implemented. See the
 [identity decision](decisions/identity-backend.md).
+
+### Optional native unsafe boundary
+
+On October 23, 2026, the owner approved isolating Windows unsafe interop in a
+separate crate. The five existing crates keep the workspace
+`unsafe_code = "forbid"` lint, including when they consume the native crate's
+safe Rust API. `fabric-identity-windows` uses `unsafe_code = "deny"`, with an
+exception only for its private `native` module, `unsafe_op_in_unsafe_fn = "deny"`
+and `clippy::undocumented_unsafe_blocks = "deny"`. No public unsafe API, raw HWND,
+or handwritten COM ABI is exposed.
+
+The native crate is excluded from `default-members` and from the identity
+crate's default dependency graph. Its Microsoft `windows` and `windows-future`
+dependencies are Windows-only. The SDK remains independent of identity.
+These distinctions apply equally to executable and library consumers:
+
+| Build | Unsafe-code boundary |
+| --- | --- |
+| Default SDK/CLI/identity | Excludes the optional broker crate and its Windows dependencies; existing crates forbid unsafe source |
+| Identity with `windows-broker` on Windows | Safe public calls, but the linked dependency closure includes reviewed native unsafe code |
+| Identity with `windows-broker` off Windows | No native edge or broker API; no fallback provider |
+
+This is not a claim that the standard library or every other transitive
+dependency is unsafe-free. A consumer's `forbid(unsafe_code)` applies to that
+consumer, not its dependencies. An ABI-exported C DLL and a Rust library are also
+different packaging contracts; no C ABI, dynamic loader or helper DLL is added.
+
+The native boundary accepts an explicitly configured `WebTokenRequest` and
+optional native account. It starts interactive desktop WAM only when called,
+on a dedicated STA thread with its own system-class parent window and message
+pump. The caller's async executor is not blocked or replaced. Dropping/cancelling
+the returned future requests native cancellation; the worker retains the window
+and apartment until native terminal completion, and suppresses late success.
+Cancellation is cooperative, not guaranteed rollback or immediate termination.
+Native-stage errors retain only numeric HRESULTs, not provider text or secrets.
+If completion notification itself fails, the caller receives an explicit
+`CompletionUnconfirmed` error while the worker cancels and retains its native
+resources until terminal status can be observed. Later cleanup cannot overwrite
+that failure with a successful result. This is not a bounded-cleanup guarantee
+when the operating system/provider stops responding.
+
+This is low-level interop, not the completed Fabric provider. The response is
+opaque, is not printed by Debug, and must be explicitly interpreted by a future
+adapter. Tenant/resource binding, authoritative token expiry, provider errors,
+silent refresh, local selection metadata and logout integration remain separate
+requirements. `interactive_credential` still returns `Unsupported`; no CLI login
+command invokes this boundary. Tests use synthetic completion/cancellation only,
+never real Windows accounts, tokens or broker UI.
 
 `fab-rs` supports only help and version. Other invocations fail with sanitized
 JSON and do not echo arguments. The subprocess tests clear inherited environment
@@ -121,6 +172,21 @@ cargo run --locked -p fabric-sdk --example injected_credentials
 cargo run --locked -p fabric-cli -- --help
 cargo run --locked -p fabric-cli -- --version
 ```
+
+The optional boundary and a `forbid(unsafe_code)` consumer can be checked without
+starting authentication:
+
+```text
+cargo test --offline --locked -p fabric-identity-windows -p fabric-identity
+cargo test --offline --locked -p fabric-cli --test workspace_contract
+cargo clippy --offline --locked -p fabric-identity --all-targets --features windows-broker -- -D warnings
+cargo run --offline --locked -p fabric-identity --example safe_consumer --no-default-features
+cargo run --offline --locked -p fabric-identity --example safe_consumer --features windows-broker
+```
+
+The example only checks the API signature when the feature is enabled; it never
+constructs a native request or opens the broker. The CI feature checks complement
+the default graph checks, not replace native policy acceptance.
 
 Dependency restoration needs registry access. After `cargo fetch --locked`,
 `--offline` can additionally prevent Cargo registry access during checks and

@@ -365,8 +365,9 @@ provider-specific compatibility, or support on macOS/Linux.
    `unsafe_code = "forbid"`. That policy cannot be satisfied by calling an unsafe
    function through an unreviewed wrapper, nor should it be lowered globally.
    A minimal Windows-only FFI boundary, its HWND/COM lifetime and threading
-   invariants, tests and a narrowly scoped lint-policy exception require team
-   and shared-core/manifest-owner agreement. No exception was made here.
+   invariants, tests and a narrowly scoped lint-policy exception require review.
+   The owner subsequently approved a separate native crate; see the isolation
+   update below. The global unsafe prohibition remains in place.
 2. **Supported Entra request and identity contract.** The general WAM article
    (R14) shows an Entra request with a resource property; WinGet (R19) provides
    native CLI precedent. Neither is proof of the exact mapping from Python's
@@ -404,6 +405,24 @@ archive was read in memory and its checksum verified against registry metadata;
 it was not installed, extracted into the workspace, or executed. The existing
 `interactive_credential` remains explicitly unsupported, rather than exposing an
 incomplete implementation as working MFA.
+
+### Owner-approved native crate isolation
+
+Later on October 23, the owner approved unsafe interop in a **separate crate**,
+with safe-only executable/library consumers. `fabric-identity-windows` now owns
+the desktop native call, its STA/window lifetime and cancellation/completion
+boundary. Existing crates still forbid unsafe code, and the identity crate's
+default graph excludes the optional Windows dependency. This advances the native
+safety-boundary item above; it does not resolve the provider expiry/tenant
+contract, app registration or real MFA/policy proof.
+
+An opt-in consumer uses a safe public Rust API, but its binary includes unsafe
+code in the native dependency. A consumer that must exclude that boundary builds
+without `windows-broker`; this is not a blanket audit of unsafe code in the
+standard library or other dependencies. The consumer example compiles under
+`forbid(unsafe_code)` with either feature configuration without calling the broker.
+See [architecture](architecture.md#optional-native-unsafe-boundary) for commands
+and the exact boundary. No dynamic DLL/C ABI or production login is implied.
 
 ## Public reference register
 
