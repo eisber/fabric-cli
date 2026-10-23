@@ -4,10 +4,11 @@
 //! Independent Fabric SDK scaffold with no identity implementation or CLI dependency.
 //!
 //! Construction does not request tokens or contact a service. Workspace listing
-//! uses caller-injected credentials, execution, and cancellation; no production
+//! and Notebook operations use caller-injected credentials, execution, and cancellation; no production
 //! transport, identity backend, retry policy, or runtime is installed.
 
 pub mod models;
+pub mod notebooks;
 pub mod workspaces;
 
 pub use fabric_core::{CredentialSelection, TokenCredential};

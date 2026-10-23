@@ -2,10 +2,10 @@
 
 # Deployment configuration and transform compatibility
 
-This first deployment slice inventories reference behavior and adds synthetic
-offline fixtures. It does **not** implement native deploy, publication,
-unpublication, a CLI command, a planner, or a Python runtime bridge. The
-`fabric-deploy` crate remains unchanged.
+The initial slice inventories reference behavior and adds synthetic offline
+fixtures. The owner subsequently approved a native single-Notebook implementation,
+described below. It is not the full `fab deploy` command, a planner, unpublication,
+or a Python runtime bridge.
 
 ## Source checkpoints and consumers
 
@@ -80,16 +80,18 @@ The 44 fixtures have source-derived fixed expectations. The development oracle
 executes actual pinned leaf definitions, not a rewritten replacement algorithm;
 its limitations are explicit in the fixture README. Integration validation
 passed all 44 cases with the pinned dependency versions; see
-[validation baselines](validation-baselines.md). No Rust candidate has
-been implemented, compared, or declared equivalent.
+[validation baselines](validation-baselines.md). The native slice now consumes
+five config and three logical/non-Reflex workspace-ID cases from that unchanged
+oracle; other categories are not declared equivalent.
 
 **Blocked parity, not waived:** full configuration validation/overrides and
 filesystem path resolution; full parameter schema/template validation; environment
 variable expansion; named/cross-workspace metadata resolution; bulk-mode caches;
 wildcard/file filters; all JSONPath operators and malformed-path diagnostics;
 Python regex Unicode/optional-capture edge cases beyond this sample; item-specific
-transforms; deployment planning/dependency ordering; publish/unpublish; operation
-polling; cleanup/retry/cancellation; and platform-specific emission/path behavior.
+transforms beyond the bounded Notebook path; deployment planning/dependency
+ordering; broad publish/unpublish; shared retry/throttling and rollback policies;
+and platform-specific emission/path behavior.
 The upstream Python 3.10/jsonpath-ng 1.7.0 dependency branch is also unexecuted.
 These are future gates, not claims of complete semantic coverage.
 
@@ -100,7 +102,7 @@ prompt, exit, initialize a global logger/runtime, or discover ambient credential
 These exceptions do not approve changes to the sampled transform semantics.
 No new behavioral waiver or YAML/regex/JSONPath crate equivalence is approved.
 
-## Proposed next native adapter slice
+## Initial adapter proposal (superseded milestone)
 
 Subject to coordinator agreement, implement a small pure config/transform adapter
 inside the existing `fabric-deploy` crate, consuming these immutable fixture
@@ -122,7 +124,83 @@ Request shared dependencies/interfaces from the integration owner:
 - Separate extended-JSONPath mutation and Python-regex compatibility adapters
   chosen against demonstrated cases, not library names or advertised features.
 
-No manifest, lockfile, toolchain, core, SDK, or source changes are made here.
-Real operations remain later work: **accepted is not completed; cancellation is
-not rollback**. Network actions, releases, publication, and unpublication need
-their own scope, lifecycle evidence, and authorization.
+This was the initial fixture-only proposal, not the current implementation goal.
+The owner selected native Notebook deployment and explicitly requested implementation
+in this session on October 23, 2026, followed by branch/session synchronization.
+That expands this lane's native slice, not live-operation or remote-publication
+authority. **Accepted is not completed; cancellation is not rollback.**
+
+## Implemented native Notebook slice
+
+The owner-selected milestone is implemented in `fabric-deploy` and the additive
+`fabric-sdk::notebooks` module. SDK handoff
+`c07228b5ed5266b899ff3d2b37c7a3778cb855b8` was fetched from the published owner
+branch and ancestry-aware merged, preserving the initial local fixture commit.
+The workspace-list implementation, its models/tests, core and identity were not
+rewritten. See the [native consumer guide](../crates/fabric-deploy/README.md).
+
+The path loads a stable local Notebook directory, parses `.platform`, orders
+definition files, normalizes universal newlines, applies ordered explicit
+logical/literal/default-workspace-ID transforms to non-platform content, and
+base64-encodes native request parts. Full bounded item discovery selects exact
+Notebook name/type; the SDK sends create or metadata-updating definition requests.
+Accepted operations must reach a known terminal state, and create retrieves the
+actual result item before returning a completed deployment.
+
+This extends the SDK's operation-local injected-executor pattern, not a second
+production HTTP pipeline. Credentials stay injected. Executors own deadlines,
+streaming byte limits, real transport and async poll waits; caller cancellation
+drops in-flight work. No mutating POST is automatically replayed. Errors preserve
+an observed operation ID and whether mutation may have occurred. Request/item/
+response/poll-delay bounds are explicit. Live Fabric, production HTTP/TLS,
+interactive identity, a CLI deploy command, general deployment YAML, JSONPath,
+Python-regex transforms, folder moves and unpublish are not implemented.
+
+The default operation paths and wire shapes were additionally checked against
+Microsoft Learn REST contracts on October 23, 2026:
+
+- [Create item](https://learn.microsoft.com/en-us/rest/api/fabric/core/items/create-item)
+  (documentation source commit `5df184c567fafea7284357607ebac79d6301a698`).
+- [Update item definition](https://learn.microsoft.com/en-us/rest/api/fabric/core/items/update-item-definition)
+  (documentation source commit `b4d803a1e7f495553fcb7ef509391016e676d91d`).
+- [Get operation state](https://learn.microsoft.com/en-us/rest/api/fabric/core/long-running-operations/get-operation-state)
+  and [result](https://learn.microsoft.com/en-us/rest/api/fabric/core/long-running-operations/get-operation-result)
+  (documentation source commit `9feaea0cb4ae5c7942ca78399640061545c3df95`).
+
+Native safety/subset differences are explicit: service IDs are validated UUIDs,
+operation/continuation links must match the expected HTTPS Fabric resource,
+ambiguous matching items fail, content is allocation-bounded, non-regular or
+unsupported files fail rather than disappearing, and supported Jupyter notebooks
+must be v4. These are not a claim of complete Python behavior or new implicit
+compatibility waivers; they are review gates before broad product rollout.
+
+Only existing dependency versions are reused: the new exercised deploy-to-SDK
+edge, existing serialization/test dependencies, and already-locked base64 0.22.1.
+The lock update changes workspace edges, not registry package versions. No
+toolchain, core, identity, CLI source, or independent oracle expectations change.
+
+Local offline validation and platform limits are recorded with the implementation
+handoff. The tests consume real temporary local definition files through native
+request serialization and scripted service responses. This proves native offline
+execution, not production transport or live tenant deployment.
+
+On October 23, 2026, the owner granted one serial ten-minute validation session.
+Checks completed and the slot was released at 17:00:20Z on Windows x64,
+Rust/Cargo 1.99.1 (`x86_64-pc-windows-msvc`):
+
+```text
+cargo test --offline --locked -p fabric-sdk -p fabric-deploy -- --test-threads=1
+cargo clippy --offline --locked -p fabric-sdk -p fabric-deploy --all-targets -- -D warnings
+cargo fmt -p fabric-sdk -p fabric-deploy -- --check
+```
+
+Result: 24 native deployment integration tests, 30 existing SDK unit tests,
+one existing credential-example test and two compiled doctests passed, with no
+skips or lint waivers. The new tests cover both notebook formats, create/update
+and metadata payloads, pagination, actual LRO create results, failed/unknown
+states, malformed results, identity failures, allocation/request/response bounds,
+unsafe links/paths, cancellation disposal/reuse, mutation uncertainty, and the
+unchanged reference cases. The complete command log is a session artifact
+(`native-notebook-validation.txt`); forum sync is recorded at `tk:post/12/4/30`.
+Full workspace integration, independent-lane acceptance, macOS/Linux execution
+and live Fabric remain unexecuted for this implementation.

@@ -15,6 +15,7 @@ layer = "sdk"
 
 [dependencies]
 azure_core.workspace = true
+base64.workspace = true
 fabric-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true

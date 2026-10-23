@@ -48,17 +48,19 @@ Credentials are not accepted through command-line options.
 | Installation | Authentication and deployment without installed Azure CLI, Azure Developer CLI, or Python |
 | Platforms | Native Windows/macOS/Linux execution and packaging evidence |
 
-The eventual deployment implementation is native Rust, not a permanent Python
-subprocess bridge. Configuration, transforms, planning, files, and Git modules
-remain documented responsibilities rather than empty module trees.
+The [bounded Notebook deployment implementation](../crates/fabric-deploy/README.md)
+is native Rust, not a permanent Python subprocess bridge. Broad configuration,
+transforms, planning and Git behavior remain compatibility gates; the single
+Notebook path is not a full deployment port.
 
 ## Validation boundaries
 
 The scaffold has offline credential interoperability, typed identity errors,
 single-page data serialization, subprocess CLI contracts, and workspace-edge
-checks. It does not test real authentication, service HTTP behavior, bounded page
-iteration, long-running operations, native deployment, enterprise trust/proxies,
-or broker policy.
+checks. Injected executors now exercise bounded workspace traversal and native
+Notebook file preparation, create/update, operation polling and cancellation.
+It does not test real authentication, production HTTP behavior, live deployment,
+enterprise trust/proxies, or broker policy.
 
 Native CI is configured for `windows-2025`, `ubuntu-24.04`, and `macos-15`.
 Actual runner architecture is recorded by `rustc --version --verbose`; do not
