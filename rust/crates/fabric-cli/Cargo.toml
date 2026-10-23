@@ -10,6 +10,9 @@ license.workspace = true
 publish.workspace = true
 description = "Experimental offline Fabric CLI scaffold"
 
+[package.metadata.fabric]
+layer = "cli"
+
 [[bin]]
 name = "fab-rs"
 path = "src/main.rs"

@@ -10,6 +10,9 @@ license.workspace = true
 publish.workspace = true
 description = "Shared credential boundary and errors for the Fabric Rust libraries"
 
+[package.metadata.fabric]
+layer = "core"
+
 [dependencies]
 azure_core.workspace = true
 thiserror.workspace = true

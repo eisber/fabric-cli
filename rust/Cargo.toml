@@ -2,13 +2,7 @@
 # Licensed under the MIT License.
 
 [workspace]
-members = [
-    "crates/fabric-core",
-    "crates/fabric-identity",
-    "crates/fabric-sdk",
-    "crates/fabric-deploy",
-    "crates/fabric-cli",
-]
+members = ["crates/*"]
 resolver = "3"
 
 [workspace.package]

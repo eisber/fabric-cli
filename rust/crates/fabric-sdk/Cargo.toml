@@ -10,6 +10,9 @@ license.workspace = true
 publish.workspace = true
 description = "Reusable Fabric SDK scaffold with caller-injected Azure credentials"
 
+[package.metadata.fabric]
+layer = "sdk"
+
 [dependencies]
 fabric-core.workspace = true
 serde.workspace = true

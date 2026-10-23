@@ -41,7 +41,11 @@ Repository-wide contribution and team-review rules still apply.
   add a Python/az/azd runtime requirement. The production identity backend remains
   unresolved and requires team review.
 
-Run the pinned checks from this directory, not the repository root. The workspace
-contains exactly five crates; add no empty future modules or runtime loaders as
-scaffold shortcuts. `fab-rs` help/version/error contracts are temporary bootstrap
-contracts, not proof of parity with Python `fab`.
+Run the pinned checks from this directory, not the repository root. There is no
+fixed crate count. Prefer focused crates that enable independent ownership,
+implementation, and testing, with explicit interfaces and acyclic dependencies.
+Crates under `crates/` are discovered automatically; declare each crate's
+`package.metadata.fabric.layer` as described in the architecture guide. Coordinate
+shared interfaces and cross-layer changes with integration; do not add empty
+future modules or runtime loaders as scaffold shortcuts. `fab-rs` help/version/error
+contracts are temporary bootstrap contracts, not proof of parity with Python `fab`.

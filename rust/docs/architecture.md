@@ -10,21 +10,61 @@ It is not a full port, release contract, or replacement for the Python product.
 
 ## Crate boundaries
 
-| Crate | Ownership | Allowed internal dependencies |
+| Layer (initial crate) | Ownership | Allowed dependency layers |
 | --- | --- | --- |
-| `fabric-core` | Credential interoperability, shared errors; future request context and HTTP policies | None |
-| `fabric-identity` | Explicit identity selection and optional future adapters | `fabric-core` |
-| `fabric-sdk` | Typed service models and future operations and reusable workflows | `fabric-core` |
-| `fabric-deploy` | Future native configuration, transforms, planning, publish/unpublish | `fabric-sdk`, `fabric-core` where used |
-| `fabric-cli` | Arguments, login UX, streams, exit codes, future library composition | `fabric-identity`, `fabric-sdk`, `fabric-deploy` |
+| `core` (`fabric-core`) | Credential interoperability, shared errors; future request context and HTTP policies | `core` |
+| `identity` (`fabric-identity`) | Explicit identity selection and optional future adapters | `identity`, `core` |
+| `sdk` (`fabric-sdk`) | Typed service models and future operations and reusable workflows | `sdk`, `core` |
+| `deploy` (`fabric-deploy`) | Future native configuration, transforms, planning, publish/unpublish | `deploy`, `sdk`, `core` |
+| `cli` (`fabric-cli`) | Arguments, login UX, streams, exit codes, future library composition | `cli`, `identity`, `sdk`, `deploy` |
 
 Only exercised edges are declared today: `fabric-identity -> fabric-core` and
 `fabric-sdk -> fabric-core`. The deployment crate has no APIs or dependencies;
 the CLI has no service commands and does not need library-composition dependencies
 yet. Add those allowed edges when implementing their first real consumers.
-The offline workspace contract test checks the exact five members, allowed edges,
-publication settings, edition, and consistent declared Rust version. Cargo
-rejects dependency cycles.
+The initial five crates are not a fixed count or a maximum. Workspace membership
+uses `crates/*`, so a new crate directory does not require editing a central
+member list. Each crate declares its architectural layer in its own manifest:
+
+```toml
+[package.metadata.fabric]
+layer = "sdk"
+```
+
+The offline workspace contract test validates every member's declared layer,
+internal dependency directions (including development and build dependencies),
+publication settings, edition, and consistent declared Rust version. Missing or
+unknown layers fail explicitly. Same-layer dependencies support extracting
+focused crates without changing the layer rules; Cargo rejects dependency cycles.
+SDK crates cannot depend on identity, deployment, or CLI implementations, even
+indirectly through another SDK/core crate. Changing a layer or introducing a new
+cross-layer direction requires architecture review, not relabeling a crate to
+bypass the checks.
+
+### Crate-first parallel development
+
+Prefer focused crates for independently owned porting areas rather than growing
+the initial crates into monoliths. Establish a small public interface, a bounded
+source-behavior contract, targeted tests, and an owner for each area. Service
+families, deployment configuration/transforms/planning, and identity adapters
+can become separate crates as their implementations are assigned. Do not require
+them to grow into large modules first, and do not create empty placeholder crates
+merely to increase the count.
+
+More crates enable parallel implementation, review, targeted tests, and Cargo
+compilation of independent dependency branches. They do not make tightly coupled
+work independent: frequent shared-interface changes, high-fan-in core crates, and
+long dependency chains still serialize work and increase integration/rebuild cost.
+Keep shared contracts small, assign non-overlapping ownership, and use facades
+where helpful to preserve consumer imports across extractions. Evaluate progress
+by independently deliverable behavior, not crate count.
+
+Adding a crate requires no change to the architecture test's crate-name list.
+Use the shared package settings/lints and centralized dependencies, declare the
+layer, document its responsibility and interface, and run its targeted checks plus
+the workspace architecture contract. Workspace-wide CI already includes new
+members. Shared-host build-slot rules still apply; additional crates are not a
+grant to start concurrent heavy builds.
 
 The eventual call direction is:
 
