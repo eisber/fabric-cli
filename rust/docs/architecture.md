@@ -113,8 +113,11 @@ opaque, is not printed by Debug, and must be explicitly interpreted by a future
 adapter. Tenant/resource binding, authoritative token expiry, provider errors,
 silent refresh, local selection metadata and logout integration remain separate
 requirements. `interactive_credential` still returns `Unsupported`; no CLI login
-command invokes this boundary. Tests use synthetic completion/cancellation only,
-never real Windows accounts, tokens or broker UI.
+command invokes this boundary. Completion/cancellation tests use synthetic
+results. Windows-only lifecycle tests initialize an STA and create/destroy a
+hidden system-class parent window, checking explicit close, repeated close and
+scope-exit cleanup. They never acquire a broker factory, enumerate Windows
+accounts, request tokens, access a credential store or display broker UI.
 
 `fab-rs` supports only help and version. Other invocations fail with sanitized
 JSON and do not echo arguments. The subprocess tests clear inherited environment
@@ -187,6 +190,31 @@ cargo run --offline --locked -p fabric-identity --example safe_consumer --featur
 The example only checks the API signature when the feature is enabled; it never
 constructs a native request or opens the broker. The CI feature checks complement
 the default graph checks, not replace native policy acceptance.
+
+### Native isolation validation on October 23, 2026
+
+The identity lane ran the following offline checks on
+`x86_64-pc-windows-msvc`, Rust 1.99.1 (`58cf8f9c3`), against the boundary from
+`5f3294e58e8e054c8ade0a4e3de7d6cc3c4685de` plus the native lifecycle tests:
+
+| Check | Observed result | Limit |
+| --- | --- | --- |
+| Formatting and targeted Clippy with `-D warnings` | Passed for native/identity/CLI targets with broker feature enabled | Not a full workspace or cross-platform build |
+| Core, identity, CLI and architecture tests | 10 passed: 3 core, 1 identity, 3 CLI and 3 architecture | CLI still intentionally rejects login; graph checks for Linux/macOS are not native execution on those OSes |
+| Native-boundary tests | 11 passed: 9 synthetic lifecycle/error tests and 2 real STA/hidden-window lifecycle tests | No broker/account/token/store operation or live MFA |
+| `forbid(unsafe_code)` executable example | Built and ran with broker disabled and enabled | Example does not invoke the broker; the opt-in dependency contains unsafe interop |
+| Identity library as Windows `cdylib` | Compiled/linked with broker disabled and enabled, retaining workspace unsafe prohibition in the consumer | Compile/link probe only; no exported C ABI, DLL-loading or broker invocation proof |
+
+The DLL compile/link probes, from `rust/`, were:
+
+```text
+cargo rustc --offline --locked -p fabric-identity --lib --crate-type cdylib --no-default-features
+cargo rustc --offline --locked -p fabric-identity --lib --crate-type cdylib --features windows-broker
+```
+
+A successful build cannot certify soundness of all native lifetimes or prove
+the provider's MFA, tenant, token-expiry or service-audience contract. Those
+remain explicit integration and live-acceptance gates.
 
 Dependency restoration needs registry access. After `cargo fetch --locked`,
 `--offline` can additionally prevent Cargo registry access during checks and

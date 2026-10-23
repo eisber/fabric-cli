@@ -282,3 +282,46 @@ fn run_operation(
     }
     result.map(BrokerResponse)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::Win32::UI::WindowsAndMessaging::{IsWindow, IsWindowVisible};
+
+    #[test]
+    fn native_parent_window_is_hidden_and_explicit_close_is_idempotent() {
+        thread::spawn(|| {
+            let _apartment = Apartment::new().unwrap();
+            let mut parent = ParentWindow::new().unwrap();
+            let handle = parent.handle();
+            // SAFETY: These queries accept an HWND value, including an invalid one;
+            // this worker currently owns the live window and never displays it.
+            unsafe {
+                assert!(IsWindow(Some(handle)).as_bool());
+                assert!(!IsWindowVisible(handle).as_bool());
+            }
+            parent.close().unwrap();
+            parent.close().unwrap();
+            assert!(parent.0.is_none());
+            // SAFETY: IsWindow accepts a handle to an already destroyed window.
+            assert!(!unsafe { IsWindow(Some(handle)) }.as_bool());
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[test]
+    fn native_parent_window_is_released_on_scope_exit() {
+        thread::spawn(|| {
+            let _apartment = Apartment::new().unwrap();
+            let handle = {
+                let parent = ParentWindow::new().unwrap();
+                parent.handle()
+            };
+            // SAFETY: IsWindow accepts a handle to an already destroyed window.
+            assert!(!unsafe { IsWindow(Some(handle)) }.as_bool());
+        })
+        .join()
+        .unwrap();
+    }
+}
