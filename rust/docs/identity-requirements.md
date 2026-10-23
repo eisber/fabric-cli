@@ -2,8 +2,10 @@
 
 # Identity requirements and evidence
 
-**Status: backend-neutral requirements, not an authentication implementation or
-backend selection. Evidence reviewed on October 22, 2026 (UTC).**
+**Status: requirements and direct Windows broker investigation, not an
+authentication implementation or production backend selection. Baseline evidence
+reviewed on October 22, 2026 (UTC); owner clarification and native Windows
+follow-up recorded on October 23, 2026 (UTC).**
 
 The [identity backend decision](decisions/identity-backend.md) remains unresolved.
 This document inventories the Python contract, approved Rust constraints,
@@ -290,7 +292,8 @@ proof that no private/native component exists. A crate name such as `msal` or
 | --- | --- | --- |
 | Caller-injected Azure `TokenCredential` | SDK interoperability and mock/service development independent of login UX | Accepted boundary, not a production backend selection or a guarantee about the injected provider's policy behavior |
 | Explicit native Azure unattended adapter | Service principal/assertion/managed identity, independently of desktop interactive login | Official released Rust Azure Identity references exist (R8/R10); prove chosen mode/version/features, authority/identity binding, renewal, native prerequisites and service permissions. Consider later as an explicit adapter, never a chain or interactive fallback. |
-| Packaged helper around an official platform library | Possible broker integration on platforms with supported official libraries | Unknown until supported interface/support ownership, IPC, redistribution/runtime, native packaging and tenant-policy proof are established. The official library's support does not automatically cover a custom wrapper. No Python production helper. |
+| Direct Windows broker through Microsoft Rust bindings | Windows-only native broker candidate; no MSAL or managed helper required by the API surface | Public desktop APIs and released Rust projections verified in the follow-up below; provider contract, safety boundary, app registration and Fabric/OneLake/ARM acceptance remain unproven. This is not an official Rust MSAL SDK or a cross-platform backend. |
+| Packaged helper around an official platform library | Possible broker integration on platforms with supported official libraries | Not the selected investigation direction: the owner requested entirely Rust authentication rather than an MSAL.NET helper. Earlier interface/support/redistribution/packaging concerns remain; no helper is implemented. |
 | Native protocol/browser OAuth | Possible browser user authentication without MSAL | Browser MFA can work, but broker/SSO/device-bound/CA parity is unknown; protocol correctness, supported app registration, refresh, secure cache and lifecycle still need proof. Not a substitute for mandatory broker policy; no selection made. |
 | Community MSAL Rust crate or assumed generic C binding | Possible experimentation only under a separate decision | Official support and complete platform/policy coverage not established. Do not market community crates as Microsoft-supported or assume a native ABI/redistribution contract. |
 | Copilot runtime Entra/EMU flow | Specialized GitHub EMU authentication in its own runtime | The existing identity decision records that this is not a verified general Fabric/OneLake/ARM provider. No independent integration proof is supplied here; runtime dependence and audience/support scope remain unresolved. It is not a backend shortcut. |
@@ -316,25 +319,118 @@ redistribution, exact platform/policy acceptance, client registration/authority,
 secure-cache/logout semantics and any unattended mode's secret/assertion input
 contract. No backend decision is needed to finish this evidence inventory.
 
-### One prioritized owner question
+### Owner clarification on October 23, 2026
 
-**Which single OS/version/architecture and concrete tenant-policy/resource
-combination should be the first identity acceptance target?**
+The owner requested staying close to Python's behavior and explicitly required
+MFA flows, then requested implementation. When asked about a packaged MSAL.NET
+helper versus entirely Rust authentication, the owner selected **"Keep
+authentication entirely Rust; investigate direct Windows broker integration."**
 
-For example, the owner could identify Windows 11 x64 with WAM/OS SSO, MFA and
-compliant-device Conditional Access for Fabric and OneLake, with ARM separately
-scoped. This example is not a chosen target or backend. If device-bound tokens
-or Token Protection are required, name the exact supported client/resource
-combination and expected allow/deny evidence rather than assuming those terms
-are equivalent. This answer guides later proof; it does not block document
-completion or authorize tenant operations.
+The behavioral target is session reuse, interactive MFA when necessary, Windows
+broker/SSO, and acquisition for **Fabric, OneLake and ARM**, matching the Python
+login sequence. R24 explicitly includes MFA among interactive MSAL outcomes.
+The earlier suggestion to omit ARM from the first scenario was not approved and
+is withdrawn. MFA is required, not an optional enhancement.
+The first-platform record is Windows 11 x64; asking the owner again to invent a
+new authentication-policy target is not a prerequisite for this investigation.
+
+This confirms the investigation direction, not an official Rust MSAL backend,
+a weakening of explicit-selection/secure-storage requirements, successful
+Conditional Access proof, or permission for live login/tenant/store operations.
+The existing application-identity, interface, safety and service-proof gates
+still apply. No Python, az/azd, .NET helper or browser-only substitute is added.
+
+## Direct Windows broker investigation, October 23, 2026
+
+**Result: a documented native desktop API and published Microsoft Rust
+projections exist. A working Fabric credential adapter has not been established.**
+This resolves the narrower question of whether direct WAM is only an assumed
+private MSAL ABI: it is not. It does not establish an official Rust MSAL SDK,
+provider-specific compatibility, or support on macOS/Linux.
+
+### Verified native surface and prior art
+
+| Requirement | Verified public evidence | Remaining implementation obligation |
+| --- | --- | --- |
+| Desktop interactive request | R15 documents `IWebAuthenticationCoreManagerInterop`, obtained from the `WebAuthenticationCoreManager` activation factory. Its account-specific `RequestTokenWithWebAccountForWindowAsync` accepts a parent `HWND`, request, selected account and async result IID. Documented minimum is Windows build 20348, not a blanket older-Windows claim. | Establish parent-window ownership/lifetime and WinRT initialization/threading for the CLI. Do not use a UWP-only UI method as an assumed unpackaged desktop solution. |
+| Silent request | R16 documents `GetTokenSilentlyAsync(request, account)`, which never prompts and may run on background threads. R17 distinguishes `UserInteractionRequired`, `UserCancel`, `AccountSwitch`, unavailable provider and provider error. | Use the explicitly selected account. Only the reviewed interaction-required transition may initiate UI, and only when the CLI caller allows it; cancellation and account switch must not trigger fallback. |
+| Microsoft Rust bindings | R18's published `windows` 0.62.2 source includes `GetTokenSilentlyWithWebAccountAsync`, `FindAccountAsync`, and `IWebAuthenticationCoreManagerInterop` desktop request methods. | Add a target-specific dependency only through the shared manifest owner. A generated Windows API projection is not an authentication library, tenant-policy certification, or safe application architecture. |
+| Native CLI precedent | R19's released WinGet implementation calls the desktop interop methods directly, sets a resource and optional login hint, and retrieves subsequent tokens through WAM's silent API. It states that WAM owns token/cache management. | This is useful official product prior art, not permission to use WinGet's client ID or a proof that its registration, request properties, account matching or errors meet Fabric's contract. Do not invoke WinGet or port its broader fallback/logging behavior. |
+| App-scoped sign-out | R20 documents `WebAccount.SignOutAsync(clientId)` as app-specific and single-device; it does not remove the Windows account or sign it out on other devices. | Define and prove the relationship to Python's local logout side effects and ensure late acquisition/refresh cannot restore local state. No sign-out or store operation was executed. |
+
+### Concrete gaps before a usable adapter
+
+1. **Reviewed native safety boundary.** The published Rust desktop interop
+   methods are `unsafe fn`. The workspace currently uses
+   `unsafe_code = "forbid"`. That policy cannot be satisfied by calling an unsafe
+   function through an unreviewed wrapper, nor should it be lowered globally.
+   A minimal Windows-only FFI boundary, its HWND/COM lifetime and threading
+   invariants, tests and a narrowly scoped lint-policy exception require review.
+   The owner subsequently approved a separate native crate; see the isolation
+   update below. The global unsafe prohibition remains in place.
+2. **Supported Entra request and identity contract.** The general WAM article
+   (R14) shows an Entra request with a resource property; WinGet (R19) provides
+   native CLI precedent. Neither is proof of the exact mapping from Python's
+   three `.default` scopes to the direct provider's resource/scope fields, an
+   explicit target tenant (including guest accounts), response identity, or
+   claims handling for this application's registration. Obtain that contract
+   rather than guess property names or infer identity from a display name.
+3. **Token expiry for Azure interoperability.** `WebTokenResponse` provides a
+   token/account and a string properties map; R21 explicitly says these
+   properties are provider-specific. The general surface does not establish an
+   Entra expiry key, units or availability. WinGet's inspected result path uses
+   a token without supplying the expiry needed by Azure `AccessToken`. Do not
+   invent a lifetime, use the current time as success-shaped metadata, or parse
+   a service access token to manufacture it. R22 requires clients to treat
+   access tokens as opaque and use token-response metadata.
+4. **Application registration and native packaging.** R14 is a UWP article
+   with Store-association steps; R15 separately documents desktop interop.
+   WinGet uses its own app registration. Their combination does not prove the
+   Fabric CLI registration supports an unpackaged Rust executable or establish
+   the required application identity, redirects or package configuration.
+   Registration owners must verify this; do not silently change consent or
+   copy another application's client ID.
+5. **Lifecycle and real acceptance.** A native `IAsyncOperation` supports a
+   cancellation request (R23), but that API alone does not prove cancellation
+   races, terminal completion, refresh/logout safety, metadata persistence,
+   account/tenant isolation or broker-unavailable behavior. Define the offline
+   mock cases in L1-L12, then separately authorize native broker/MFA and all
+   three service acceptance checks. No browser fallback, fabricated success,
+   raw-token provider or plaintext cache may bypass a failed gate.
+
+The first investigation is source-only: public Learn pages and released source
+were read; no Windows account enumeration, credential acquisition, broker UI,
+OS-store access, dependency installation or native build occurred. R18's source
+archive was read in memory and its checksum verified against registry metadata;
+it was not installed, extracted into the workspace, or executed. The existing
+`interactive_credential` remains explicitly unsupported, rather than exposing an
+incomplete implementation as working MFA.
+
+### Owner-approved native crate isolation
+
+Later on October 23, the owner approved unsafe interop in a **separate crate**,
+with safe-only executable/library consumers. `fabric-identity-windows` now owns
+the desktop native call, its STA/window lifetime and cancellation/completion
+boundary. Existing crates still forbid unsafe code, and the identity crate's
+default graph excludes the optional Windows dependency. This advances the native
+safety-boundary item above; it does not resolve the provider expiry/tenant
+contract, app registration or real MFA/policy proof.
+
+An opt-in consumer uses a safe public Rust API, but its binary includes unsafe
+code in the native dependency. A consumer that must exclude that boundary builds
+without `windows-broker`; this is not a blanket audit of unsafe code in the
+standard library or other dependencies. The consumer example compiles under
+`forbid(unsafe_code)` with either feature configuration without calling the broker.
+See [architecture](architecture.md#optional-native-unsafe-boundary) for commands
+and the exact boundary. No dynamic DLL/C ABI or production login is implied.
 
 ## Public reference register
 
-All references below were read on **October 22, 2026 (UTC)**. Learn revision
-identifiers are the page's returned source metadata, not assertions that a
-private documentation-source repository is publicly accessible. Public
-documentation is evidence of the named library, not of this Rust product.
+R1-R13 were initially read on **October 22, 2026 (UTC)**; R14-R24 were read on
+**October 23, 2026 (UTC)**. Learn revision identifiers are the page's returned
+source metadata, not assertions that a private documentation-source repository
+is publicly accessible. Public documentation is evidence of the named API or
+library, not of this Rust product.
 
 | ID | Public reference and exact version/revision inspected | Evidence used and limits |
 | --- | --- | --- |
@@ -351,3 +447,14 @@ documentation is evidence of the named library, not of this Rust product.
 | R11 | [Microsoft authentication extensions for Python README, tag 1.3.1](https://github.com/AzureAD/microsoft-authentication-extensions-for-python/blob/1.3.1/README.md) | DPAPI/macOS Keychain/LibSecret, encrypted persistence, file lock and reload; reference release, not a claim that P10 resolves to this version |
 | R12 | [Claims challenges and client capabilities](https://learn.microsoft.com/en-us/entra/identity-platform/claims-challenge), revision `a4be4ac419c4e857b1c4de7dee22c9f7e0c750f9`, updated June 15, 2026 | Challenge/claims/capability responsibilities; does not establish that Python bridge or Rust SDK implements them |
 | R13 | [MSAL Python ClientApplication reference](https://learn.microsoft.com/en-us/python/api/msal/msal.application.clientapplication?view=msal-py-latest), revision `1d96efd4dcab4166b898bf69981ce37e19afdb01`, updated March 6, 2026 | `http_client`, `verify`, `proxies`, `timeout` and client capabilities; generated latest reference, not a pinned Python dependency resolution |
+| R14 | [Windows Web Account Manager article](https://learn.microsoft.com/en-us/windows/uwp/security/web-account-manager), revision `df394f33e1dc471790bf9d8b99cc2eaea45c9827`, updated July 16, 2025 | UWP/Entra example, account reuse and lifecycle; its Store/UI sample is not proof of unpackaged desktop applicability |
+| R15 | [Desktop broker interop](https://learn.microsoft.com/en-us/windows/win32/api/webauthenticationcoremanagerinterop/nn-webauthenticationcoremanagerinterop-iwebauthenticationcoremanagerinterop) and [account-specific request](https://learn.microsoft.com/en-us/windows/win32/api/webauthenticationcoremanagerinterop/nf-webauthenticationcoremanagerinterop-iwebauthenticationcoremanagerinterop-requesttokenwithwebaccountforwindowasync), revision `9267262487657894a8af112d7165006fed5035a7`, updated February 22, 2024 | Public Win32/WinRT activation-factory interface, HWND and async result contract; build 20348 minimum |
+| R16 | [Silent broker requests](https://learn.microsoft.com/en-us/uwp/api/windows.security.authentication.web.core.webauthenticationcoremanager.gettokensilentlyasync?view=winrt-26100), revision `3abc0b4310789ed6b229efa2d8d50bf3c5c9b306`, updated November 21, 2025 | Account-specific silent operation, no UI, background-thread allowance |
+| R17 | [Broker request statuses](https://learn.microsoft.com/en-us/uwp/api/windows.security.authentication.web.core.webtokenrequeststatus?view=winrt-26100), revision `3abc0b4310789ed6b229efa2d8d50bf3c5c9b306`, updated November 21, 2025 | Distinct success/cancel/account-switch/interaction-required/provider statuses; provider-error details require the provider contract |
+| R18 | [Published Microsoft `windows` 0.62.2](https://crates.io/crates/windows/0.62.2), published October 6, 2025; archive SHA-256 `527fadee13e0c05939a6a05d5bd6eec6cd2e3dbd648b9f8e447c6518133d8580`; `.cargo_vcs_info.json` records commit `32c3144490c016fe496a0aed769bce60987a2e9d` | Verified archive source `src/Windows/Win32/System/WinRT/mod.rs` contains unsafe desktop request functions; `src/Windows/Security/Authentication/Web/Core/mod.rs` contains safe WinRT projections for silent/account methods. Reference inspection only, no dependency added |
+| R19 | [WinGet direct WAM implementation](https://github.com/microsoft/winget-cli/blob/000f6b55151cb0f1afd2933bb54c62a4724b9ca8/src/AppInstallerCommonCore/Authentication/WebAccountManagerAuthenticator.cpp), release `v1.29.380`, published September 21, 2026 | Official native CLI prior art for resource-based Entra requests and OS token/cache ownership; not Fabric registration, expiry, tenant or policy proof |
+| R20 | [WebAccount sign-out](https://learn.microsoft.com/en-us/uwp/api/windows.security.credentials.webaccount.signoutasync?view=winrt-26100), revision `3abc0b4310789ed6b229efa2d8d50bf3c5c9b306`, updated November 21, 2025 | Client-specific sign-out semantics, local device only, no removal of Windows account |
+| R21 | [Broker response properties](https://learn.microsoft.com/en-us/uwp/api/windows.security.authentication.web.core.webtokenresponse.properties?view=winrt-26100), revision `3abc0b4310789ed6b229efa2d8d50bf3c5c9b306`, updated November 21, 2025 | Explicitly provider-specific map; no generic Entra expiry/identity property contract supplied |
+| R22 | [Microsoft identity platform access tokens](https://learn.microsoft.com/en-us/entra/identity-platform/access-tokens), revision `5389cde10e56c2d65e380e7e047f702d2a940ee0`, updated July 17, 2026 | Clients must treat access tokens as opaque and use response metadata for expiry/scopes; no JWT-derived expiry shortcut |
+| R23 | [WinRT cancellation](https://learn.microsoft.com/en-us/uwp/api/windows.foundation.iasyncinfo.cancel?view=winrt-26100), revision `1a828f749c8ea13311d912420608e8d1e5b397de`, updated October 15, 2024 | Public cancellation method, not proof of complete cleanup or late-result race handling |
+| R24 | [MSAL authentication flows](https://learn.microsoft.com/en-us/entra/identity-platform/msal-authentication-flows), revision `a4be4ac419c4e857b1c4de7dee22c9f7e0c750f9`, updated June 15, 2026 | Interactive token acquisition includes MFA/consent; silent acquisition cannot prompt. Does not certify the proposed direct Rust WAM integration |

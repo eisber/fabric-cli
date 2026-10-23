@@ -45,7 +45,13 @@ Run the pinned checks from this directory, not the repository root. There is no
 fixed crate count. Prefer focused crates that enable independent ownership,
 implementation, and testing, with explicit interfaces and acyclic dependencies.
 Crates under `crates/` are discovered automatically; declare each crate's
-`package.metadata.fabric.layer` as described in the architecture guide. Coordinate
+`package.metadata.fabric.layer` and add safe crates to `default-members` as
+described in the architecture guide. The owner-approved optional
+`fabric-identity-windows` native boundary stays outside default members.
+Existing crates retain
+`unsafe_code = "forbid"`. Only the native crate's private interop module may allow
+documented unsafe blocks; its public API is safe Rust. Default consumers exclude
+that crate; opting in does not make a binary transitively unsafe-free. Coordinate
 shared interfaces and cross-layer changes with integration; do not add empty
 future modules or runtime loaders as scaffold shortcuts. `fab-rs` help/version/error
 contracts are temporary bootstrap contracts, not proof of parity with Python `fab`.

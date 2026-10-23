@@ -23,6 +23,13 @@ through caller-injected SDK executors. No production HTTP transport, authenticat
 backend, or CLI deployment command is installed. Azure CLI, Azure Developer CLI,
 and Python are not runtime requirements.
 
+Windows desktop interop is isolated in optional `fabric-identity-windows`,
+enabled through `fabric-identity/windows-broker`. The existing crates forbid
+unsafe code; default consumer graphs exclude the native crate. Enabling it
+provides safe Rust calls over reviewed unsafe interop, not a transitively
+unsafe-free binary or a completed login provider. See the
+[native boundary](docs/architecture.md#optional-native-unsafe-boundary).
+
 Read before contributing:
 
 - [Agent instructions](AGENTS.md)

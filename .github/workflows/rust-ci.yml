@@ -55,6 +55,11 @@ jobs:
         run: cargo test --offline --locked --workspace
       - name: Test documentation
         run: cargo test --offline --locked --workspace --doc
+      - name: Check optional broker and safe-code consumer without authenticating
+        run: |
+          cargo clippy --offline --locked -p fabric-identity --all-targets --features windows-broker -- -D warnings
+          cargo run --offline --locked -p fabric-identity --example safe_consumer --no-default-features
+          cargo run --offline --locked -p fabric-identity --example safe_consumer --features windows-broker
       - name: Run independent offline SDK example
         run: cargo run --offline --locked -p fabric-sdk --example injected_credentials
       - name: Check CLI help

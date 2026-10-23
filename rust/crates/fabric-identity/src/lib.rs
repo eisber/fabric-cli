@@ -6,6 +6,13 @@
 //! No interactive backend, credential chain, unattended adapter, persistence,
 //! browser launch, or external developer-tool invocation is implemented.
 
+/// Opt-in desktop WAM interop; not a configured Fabric credential provider.
+///
+/// The default build excludes this dependency. All native unsafe code lives in
+/// that separate crate, not in this crate or the service SDK.
+#[cfg(all(windows, feature = "windows-broker"))]
+pub use fabric_identity_windows as windows_broker;
+
 use fabric_core::{CredentialSelection, IdentityError, TokenCredential};
 use std::sync::Arc;
 

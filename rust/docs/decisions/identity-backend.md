@@ -67,3 +67,24 @@ adding `azure_identity` only when exercised. They must not use a developer-tool
 fallback chain, expose credentials in arguments/logs/snapshots, or silently
 persist credentials. Authentication implementation requires Fabric CLI team
 review.
+
+## Native isolation approved October 23, 2026
+
+The owner selected entirely Rust authentication investigation, retaining
+Python-like interactive MFA, Windows broker/SSO, session reuse, and all three
+Fabric/OneLake/ARM audiences. The owner subsequently approved unsafe interop
+**only in a separate crate**, so executable/library consumers can retain
+`forbid(unsafe_code)` and optionally exclude that native dependency.
+
+`fabric-identity-windows` now contains the desktop interop boundary behind
+`fabric-identity/windows-broker`. Existing crates retain the workspace unsafe
+prohibition. This approves isolation, not a production backend or an assumption
+that feature-enabled binaries are transitively unsafe-free. See
+[architecture](../architecture.md#optional-native-unsafe-boundary).
+
+The low-level request API has an owned STA/window lifetime and a safe public Rust
+surface. It does not supply a configured `TokenCredential`, parse token expiry,
+silently bind an account/tenant, implement local persistence/logout, or launch
+authentication from a test. The original public `interactive_credential`
+continues to return `Unsupported`. Provider-contract and live-policy proof gates
+remain open; no success-shaped login or browser fallback is introduced.
