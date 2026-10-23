@@ -18,8 +18,9 @@ It is not a full port, release contract, or replacement for the Python product.
 | `deploy` (`fabric-deploy`) | Future native configuration, transforms, planning, publish/unpublish | `deploy`, `sdk`, `core` |
 | `cli` (`fabric-cli`) | Arguments, login UX, streams, exit codes, future library composition | `cli`, `identity`, `sdk`, `deploy` |
 
-Only exercised edges are declared today: `fabric-identity -> fabric-core` and
-`fabric-sdk -> fabric-core`. The deployment crate has no APIs yet;
+The exercised SDK edges are `fabric-sdk -> fabric-sdk-workspaces`,
+`fabric-sdk -> fabric-core`, and `fabric-sdk-workspaces -> fabric-core`;
+identity also depends on core. The deployment crate has no APIs in this checkpoint;
 the CLI has no service commands and does not need library-composition dependencies
 yet. Add those allowed edges when implementing their first real consumers.
 The initial five crates are not a fixed count or a maximum. Workspace membership
@@ -75,6 +76,30 @@ Agents and skills -> CLI -> SDK -> Fabric / OneLake / required ARM
 Direct SDK consumer ---------+
 ```
 
+### Focused workspace SDK
+
+`fabric-sdk-workspaces` is the first extracted service crate in the `sdk` layer.
+It owns the implemented workspace-list operation, wire models, pagination,
+operation-specific executor and regression tests. Direct consumers use
+`fabric_sdk_workspaces::WorkspaceClient`; it depends on core and shared external
+types, never on the facade, identity implementation, CLI or deployment library.
+It creates no transport or runtime.
+
+`fabric-sdk` remains a facade. Its existing `Client` still owns its injected
+credential and selection, preserving a place for other service methods without
+making the workspace crate their owner. `Client::list_workspaces` delegates to a
+focused `WorkspaceClient` using cloned selection metadata and the same credential
+`Arc`; it does not reacquire or discover a provider during construction.
+`fabric_sdk::Page`, `fabric_sdk::models::{Workspace, FabricServiceError}` and the
+public `fabric_sdk::workspaces` types are reexports, not duplicate wire/error types.
+Downstream integration tests exercise both paths without `cfg(test)` helpers.
+
+This extraction moves behavior already implemented at
+`c07228b5ed5266b899ff3d2b37c7a3778cb855b8`; it does not add workspace lookup,
+item operations, Notebook publication, or a metadata-resolver contract. The
+deployment lane owns its separately scoped Notebook work and coordinates
+facade/shared-manifest changes through exact commit handoffs, not shared writers.
+
 Skills describe workflows using the CLI. They do not contain service logic.
 The SDK's normal dependency closure excludes the CLI and identity implementation.
 SDK consumers supply an `Arc<dyn azure_core::credentials::TokenCredential>`.
@@ -96,9 +121,12 @@ credential outside the identity crate. Its dummy token is expired, is never sent
 to a service, and is not a production static-token mechanism.
 
 `Page<T>` round-trips a single Fabric-style JSON page, including opaque
-continuation values. It does not follow URIs or provide a pagination loop.
-Missing or malformed `value` data fails deserialization rather than returning a
-success-shaped empty page.
+continuation values. It does not follow URIs itself. The workspace service's
+`list_workspaces` method separately implements bounded token-based traversal
+through injected execution, with explicit partial failures and cancellation.
+Missing or malformed `value` data fails rather than returning a success-shaped
+empty page. The SDK README records source mapping and intentional differences;
+production retry, timeout, transport, and LRO policy remain unimplemented.
 
 `fabric-identity::interactive_credential` always returns a typed `Unsupported`
 error. No backend, unattended adapter, credential chain, interactive login,
@@ -115,7 +143,7 @@ See [CLI contracts](compatibility.md#bootstrap-cli-contract).
 Libraries must not prompt, exit the process, initialize a global logger, create
 their own async runtime, or hold global mutable CLI context. Async work reuses
 the caller's runtime. Tokio's `macros` and single-thread `rt` features are used
-only by the SDK example and its test.
+only by SDK tests and the independent credential example, not library code.
 
 `azure_core` default features are disabled. The locked scaffold includes no
 Reqwest, Rustls, OpenSSL, or native-TLS dependency, so there is no HTTP transport

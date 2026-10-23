@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 use super::*;
+use crate::WorkspaceClient as Client;
 use async_trait::async_trait;
 use azure_core::{
     credentials::{TokenCredential, TokenRequestOptions},

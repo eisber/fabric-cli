@@ -7,6 +7,37 @@ This slice translates `microsoft/fabric-cli` at
 command, real HTTP transport, or identity backend. SDK callers supply an Azure
 `TokenCredential` independently of `fabric-identity` and the CLI.
 
+## Focused crate and facade compatibility
+
+The workspace implementation is extracted from SDK checkpoint
+`c07228b5ed5266b899ff3d2b37c7a3778cb855b8` into `fabric-sdk-workspaces`.
+Its `WorkspaceClient`, workspace models, page type, executor, typed failures,
+pagination/cancellation implementation and operation tests are owned there.
+It can be built and consumed independently of this facade.
+
+Existing consumers keep `fabric_sdk::Client::new`, credential/selection accessors,
+`Client::list_workspaces`, `fabric_sdk::Page`, `fabric_sdk::models`, and
+`fabric_sdk::workspaces`. Models/errors are reexports of the same types, not
+serialization adapters. Delegation preserves the caller's credential provider,
+selection, executor, bounds, cancellation, returned data and partial errors.
+The facade client remains owned here so other service methods do not require
+changing the workspace crate.
+
+No new service behavior, production policy, identity implementation, CLI command,
+or deployment implementation is introduced by extraction. Public API source
+compatibility is exercised through external consumer tests; concrete Rust type
+ownership for moved models/pages is now the focused crate, so diagnostic
+`type_name` output is not a promised compatibility surface.
+
+From `rust/`, under a named build slot:
+
+```text
+cargo test --offline --locked -p fabric-sdk-workspaces -p fabric-sdk --all-targets -- --test-threads=1
+cargo clippy --offline --locked -p fabric-sdk-workspaces -p fabric-sdk --all-targets -- -D warnings
+cargo test --offline --locked -p fabric-sdk-workspaces -p fabric-sdk --doc
+cargo test --offline --locked -p fabric-cli --test workspace_contract -- --test-threads=1
+```
+
 ## Python behavior and compatibility boundary
 
 | Source | Bounded behavior |
@@ -112,7 +143,7 @@ replace independent validation or integration approval.
 
 ## Independent reference adapter and remaining compatibility scope
 
-The SDK unit suite reads all eight existing cases from
+The focused workspace SDK unit suite reads all eight existing cases from
 `rust/tests/compatibility/workspaces/cases.json` without editing or regenerating
 them. It compares raw service-order IDs, unmodified workspace fields, request
 URLs, credential scopes/counts, and service error-code precedence. CLI name

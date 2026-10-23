@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Independent Fabric SDK scaffold with no identity implementation or CLI dependency.
+//! Fabric SDK facade with no identity implementation or CLI dependency.
 //!
 //! Construction does not request tokens or contact a service. Workspace listing
 //! uses caller-injected credentials, execution, and cancellation; no production
@@ -11,7 +11,7 @@ pub mod models;
 pub mod workspaces;
 
 pub use fabric_core::{CredentialSelection, TokenCredential};
-use serde::{Deserialize, Serialize};
+pub use fabric_sdk_workspaces::Page;
 use std::{fmt, sync::Arc};
 
 /// A service client boundary with explicitly injected credentials.
@@ -53,26 +53,10 @@ impl fmt::Debug for Client {
     }
 }
 
-/// A single Fabric-style JSON page, not an automatic page iterator.
-///
-/// Continuation values are opaque service data. In particular, a future transport
-/// must not follow a continuation URI without validating its origin and bounds.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Page<T> {
-    /// Items in this page.
-    pub value: Vec<T>,
-    /// Opaque service continuation token, when another page exists.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub continuation_token: Option<String>,
-    /// Service-provided next-page URI; this type never fetches it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub continuation_uri: Option<String>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
     #[serde(rename_all = "camelCase")]
