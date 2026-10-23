@@ -198,7 +198,13 @@ dependencies = [
 name = "fabric-deploy"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "azure_core",
+ "base64",
+ "fabric-core",
+ "fabric-sdk",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -214,6 +220,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "azure_core",
+ "base64",
  "fabric-core",
  "fabric-sdk-workspaces",
  "serde",

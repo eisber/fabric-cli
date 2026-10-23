@@ -17,9 +17,11 @@ cargo run --locked -p fabric-sdk --example injected_credentials
 
 Only help and version are implemented in the CLI. Other invocations fail
 explicitly. The example uses an expired test-only dummy credential and makes
-no service calls. Authentication, service operations, and deployment are not
-implemented. Azure CLI, Azure Developer CLI, and Python are not runtime
-requirements for this scaffold.
+no service calls. Native workspace listing and a bounded
+[single-Notebook deployment library](crates/fabric-deploy/README.md) now execute
+through caller-injected SDK executors. No production HTTP transport, authentication
+backend, or CLI deployment command is installed. Azure CLI, Azure Developer CLI,
+and Python are not runtime requirements.
 
 Read before contributing:
 

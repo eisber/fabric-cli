@@ -20,8 +20,8 @@ It is not a full port, release contract, or replacement for the Python product.
 
 The exercised SDK edges are `fabric-sdk -> fabric-sdk-workspaces`,
 `fabric-sdk -> fabric-core`, and `fabric-sdk-workspaces -> fabric-core`;
-identity also depends on core. The deployment crate has no APIs in this checkpoint;
-the CLI has no service commands and does not need library-composition dependencies
+identity also depends on core, and `fabric-deploy` depends on `fabric-sdk`.
+The CLI has no service commands and does not need library-composition dependencies
 yet. Add those allowed edges when implementing their first real consumers.
 The initial five crates are not a fixed count or a maximum. Workspace membership
 uses `crates/*`, so a new crate directory does not require editing a central
@@ -126,7 +126,14 @@ continuation values. It does not follow URIs itself. The workspace service's
 through injected execution, with explicit partial failures and cancellation.
 Missing or malformed `value` data fails rather than returning a success-shaped
 empty page. The SDK README records source mapping and intentional differences;
-production retry, timeout, transport, and LRO policy remain unimplemented.
+workspace retry, timeout, production transport, and LRO policy remain unimplemented.
+
+`fabric-deploy` implements a bounded local Notebook loader and supported transforms,
+using the additive `fabric-sdk::notebooks` APIs for item discovery, create/update
+and operation reconciliation. Both service modules use caller-injected credentials,
+execution and cancellation. There is no production HTTP stack or CLI deployment
+command. See [deployment compatibility](deployment-compatibility.md) for the
+exact source, supported subset, safety bounds and unported behavior.
 
 `fabric-identity::interactive_credential` always returns a typed `Unsupported`
 error. No backend, unattended adapter, credential chain, interactive login,
@@ -143,7 +150,7 @@ See [CLI contracts](compatibility.md#bootstrap-cli-contract).
 Libraries must not prompt, exit the process, initialize a global logger, create
 their own async runtime, or hold global mutable CLI context. Async work reuses
 the caller's runtime. Tokio's `macros` and single-thread `rt` features are used
-only by SDK tests and the independent credential example, not library code.
+only by offline tests and the independent credential example, not library code.
 
 `azure_core` default features are disabled. The locked scaffold includes no
 Reqwest, Rustls, OpenSSL, or native-TLS dependency, so there is no HTTP transport
@@ -201,21 +208,20 @@ Configuration is not proof of successful execution on those runners. Packaging,
 signing, notarization, Windows ARM64, Linux musl, and broker support are not
 covered by this scaffold.
 
-## Next bounded slice
+## Bounded implementation lanes
 
 Two implementation lanes may proceed independently:
 
 | Lane | Owned implementation | Boundary |
 | --- | --- | --- |
 | SDK and CLI porting | Offline workspace-list SDK operation, typed models/errors and targeted tests | Injected credential and operation executor only; no CLI service command or production HTTP transport yet |
-| Fabric content deployment | Pure configuration/environment selection and targeted fixture tests in `fabric-deploy` | No service client, authentication, filesystem deployment, YAML parser, transforms, or publish/unpublish workflow in this first slice |
+| Fabric content deployment | Parsed configuration helpers, local Notebook files, explicit logical/literal/workspace transforms, SDK create/update and bounded completion | Single Notebook; injected executor, no production HTTP/auth, broad deployment YAML/JSONPath/regex, folder moves, planner, unpublish or live operations |
 
 The SDK's existing `azure_core` and `serde_json` dependencies are available at
 runtime for token interoperation and response decoding. Deployment uses the
-workspace's existing `serde_json` for the parsed-configuration boundary. No new
-third-party versions or transport features are selected by this prerequisite.
-The manifest change makes implementation possible; it is not a claim that
-these operations are already implemented or validated.
+workspace's existing `serde_json` for parsed configuration and metadata. Notebook
+definition parts use already-locked base64 0.22.1. No new third-party versions or
+transport features are selected by the native Notebook slice.
 
 An SDK-local executor is an offline testing seam, not a second general HTTP
 pipeline. Shared retry, timeout and operation policies still need the core
@@ -227,8 +233,8 @@ this workspace change.
 
 Deployment consumes the existing immutable configuration fixtures and the pinned
 Python behavior. It does not implement another SDK or duplicate credential
-acquisition. Service-backed deployment will depend on the SDK when those
-operations exist. Both lanes reuse the caller's runtime and remain independent
+acquisition. The Notebook path consumes the SDK's operation-local service APIs.
+Both lanes reuse the caller's runtime and remain independent
 of production interactive authentication.
 
 Follow the [migration guidance](migration-guidance.md): translate first, improve
