@@ -49,7 +49,7 @@ impl TokenCredential for TestCredential {
             .unwrap()
             .push(scopes.iter().map(|s| (*s).to_owned()).collect());
         if self.fail {
-            return Err(azure_core::Error::message(
+            return Err(azure_core::Error::with_message(
                 ErrorKind::Other,
                 "sensitive provider diagnostic",
             ));
@@ -244,6 +244,105 @@ fn workspace_list_future_can_be_sent_to_a_caller_runtime() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn sdk_raw_boundary_uses_the_independent_python_cases_without_rewriting_them() {
+    let reference: Value = serde_json::from_str(include_str!(
+        "../../../../tests/compatibility/workspaces/cases.json"
+    ))
+    .unwrap();
+    let cases = reference["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 8);
+    for case in cases {
+        let id = case["id"].as_str().unwrap();
+        let scripted = case["responses"].as_array().unwrap();
+        let replies = scripted.iter().map(|script| {
+            let mut reply = response(
+                u16::try_from(script["status"].as_u64().unwrap()).unwrap(),
+                script["body"].clone(),
+            );
+            if let Some(headers) = script["headers"].as_object() {
+                reply.headers = headers
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+                    .collect();
+            }
+            reply
+        });
+        let credential = Arc::new(TestCredential::default());
+        let executor = TestExecutor::new(replies);
+        let result = client(credential.clone(), Audience::Fabric)
+            .list_workspaces(&executor, WorkspaceListLimits::default(), pending())
+            .await;
+        match id {
+            "token_pagination" => {
+                let error = result.unwrap_err();
+                assert_eq!(error.kind, WorkspaceListErrorKind::InvalidContinuation);
+                assert_eq!(error.partial.pages_received, 1);
+                assert_eq!(error.partial.value[0].id, "z");
+                assert_eq!(error.partial.next_token.as_deref(), Some("page+/= 2"));
+                assert_eq!(executor.calls(), 1);
+            }
+            "missing_value" => {
+                assert_eq!(
+                    result.unwrap_err().kind,
+                    WorkspaceListErrorKind::InvalidResponse
+                );
+            }
+            "forbidden_mapping" | "fabric_error" => {
+                let error = result.unwrap_err();
+                let WorkspaceListErrorKind::Http {
+                    status,
+                    code,
+                    service_error,
+                } = error.kind
+                else {
+                    panic!("expected typed HTTP failure for {id}");
+                };
+                assert_eq!(u64::from(status), scripted[0]["status"].as_u64().unwrap());
+                assert_eq!(
+                    code,
+                    case["expected"]["exception"]["code"].as_str().unwrap()
+                );
+                assert_eq!(
+                    serde_json::to_value(service_error.unwrap()).unwrap(),
+                    scripted[0]["body"],
+                );
+            }
+            _ => {
+                let result = result.unwrap();
+                let ids = result
+                    .value
+                    .iter()
+                    .map(|workspace| workspace.id.as_str())
+                    .collect::<Vec<_>>();
+                assert_eq!(json!(ids), case["expected"]["api_ids"], "{id}");
+                assert_eq!(
+                    serde_json::to_value(&result.value).unwrap(),
+                    scripted[0]["body"]["value"],
+                    "unfiltered service fields must remain unchanged for {id}",
+                );
+                assert_eq!(result.pages_received, 1);
+                assert_eq!(result.next_token, None);
+            }
+        }
+        let urls = executor.urls.lock().unwrap();
+        if id == "token_pagination" {
+            assert_eq!(urls.as_slice(), [WORKSPACES_URL]);
+        } else {
+            assert_eq!(json!(*urls), case["expected"]["requests"], "{id}");
+            assert!(executor.replies.lock().unwrap().is_empty(), "{id}");
+        }
+        let scopes = credential.scopes.lock().unwrap();
+        assert_eq!(scopes.len(), urls.len(), "{id}");
+        assert!(
+            scopes
+                .iter()
+                .all(|scope| scope == &[Audience::Fabric.scope()]),
+            "{id}"
+        );
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn fabric_audience_is_required_before_credential_or_execution() {
     for audience in [Audience::OneLake, Audience::Arm] {
         let credential = Arc::new(TestCredential::default());
@@ -389,6 +488,29 @@ async fn auth_error_header_fallback_matches_python() {
             panic!()
         };
         assert_eq!(code, "FallbackCode");
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn incomplete_error_details_do_not_discard_a_valid_service_error_code() {
+    for body in [
+        json!({"errorCode": "InvalidWorkspaceRequest"}),
+        json!({"errorCode": "InvalidWorkspaceRequest", "message": null}),
+        json!({"errorCode": "InvalidWorkspaceRequest", "message": 123}),
+    ] {
+        let executor = TestExecutor::new([response(400, body)]);
+        let error = client(Arc::default(), Audience::Fabric)
+            .list_workspaces(&executor, WorkspaceListLimits::default(), pending())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.kind,
+            WorkspaceListErrorKind::Http {
+                status: 400,
+                code: "InvalidWorkspaceRequest".to_owned(),
+                service_error: None,
+            }
+        );
     }
 }
 

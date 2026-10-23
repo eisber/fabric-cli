@@ -14,7 +14,7 @@ command, real HTTP transport, or identity backend. SDK callers supply an Azure
 | `src/fabric_cli/client/fab_api_workspace.py:list_workspaces` | Sets `args.uri = "workspaces"` and `args.method = "get"`, then calls `do_request`. |
 | `src/fabric_cli/client/fab_api_client.py:do_request` | Defaults to `https://api.fabric.microsoft.com/v1/workspaces`, Fabric `.default` scope, JSON content type, bearer authorization, and a 240-second request timeout. Supports ambient endpoint overrides, authentication/context globals, arbitrary query/header options, and private-link policy in the generic client. |
 | `_handle_successful_response` | A present `x-ms-continuation` header takes priority over body `continuationToken`, including when the header is empty. Repeats the original request with a truthy token encoded as a query parameter. Ignores `continuationUri`; false/empty/null token ends traversal. Recursion has no explicit bound or cycle detection. |
-| `src/fabric_cli/client/fab_api_types.py:ApiResponse.append_text` | Concatenates matching list-valued fields in page order, retaining duplicates. Removes both continuation properties after appending. Writes `total_pages = 2` at every recursive merge, even for more than two pages. Does not implement a reliable page count. |
+| `src/fabric_cli/client/fab_api_types.py:ApiResponse.append_text` | Concatenates matching list-valued fields in page order, retaining duplicates. Removes both continuation properties after appending. Called with the default `total_pages = 0`, so writes `total_pages = 1` at every recursive merge, even for more than two pages. Does not implement a reliable page count; the independent three-page oracle also observes 1. |
 | `do_request` failures | 401/403 use `x-ms-public-api-error-code`, then `x-ms-error-code`, then `Unauthorized`/`Forbidden`; 404 always uses `NotFound`. Other Fabric HTTP errors use body `errorCode`, `message`, details and request ID, with `UnknownError` fallback. Request failures become `UnexpectedError`; append JSON decoding failures become `InvalidJson`. |
 | Generic retry/polling | Requests' adapter retries 502/503/504 up to three times; the outer loop handles four 429 attempts, waiting on integer `Retry-After` or the default before `MaxRetriesExceeded`. Generic 202 handling enters an LRO poller; 201/204 are accepted by the generic client. These are not successful workspace-list payloads by themselves. |
 | `src/fabric_cli/utils/fab_mem_store.py:_get_workspaces_from_api` | Requires `id`, `displayName`, `type`; accepts 200/201. Recognizes Workspace/Personal case-insensitively and skips unknown workspace types in this hierarchy adapter, not in the service client. Optional tenant-keyed cache has 60-second TTL; name resolution can clear/retry it. |
@@ -44,9 +44,12 @@ to the validation lane and must not be rewritten to accommodate implementation.
 - Accurate traversal progress is SDK metadata, not Python's `total_pages` field.
 - Libraries do not prompt, exit, log globally, or create a runtime.
 
-Shared retry/timeout/transport policy needs an agreed core interface. This slice
-must not silently present an unimplemented policy or an LRO/empty response as a
-complete workspace listing.
+The integration owner approved the operation-specific executor as a temporary
+offline mock seam and provided runtime dependencies at checkpoint
+`4d740138ae738ffdca64415638ca491593da7c86`. Shared retry/timeout/transport policy
+still needs an agreed core interface before production transport or CLI exposure.
+This slice does not present an unimplemented policy or an LRO/empty response as
+a complete workspace listing.
 
 ## Confirmed slice contract and outstanding decisions
 
@@ -64,11 +67,12 @@ continuation token exists, validate any supplied URI before another credential
 request or HTTP execution; construct the next request from the fixed endpoint
 and opaque token rather than following the supplied URI.
 
-The proposed operation-specific executor owns retry and timeout policy; 202
+The temporary operation-specific executor owns retry and timeout policy; 202
 and 204 are explicitly unsupported, not completed workspace-list pages. This
-is not generic Python request/LRO parity. Shared interface approval and the
-`azure_core`/`serde_json` runtime-dependency promotions remain integration-owner
-decisions. No broader core policy or dependency change is authorized here.
+is not generic Python request/LRO parity. The `azure_core`/`serde_json`
+runtime-dependency promotions have been integrated from the exact checkpoint
+above. Production shared-policy design remains an integration-owner decision.
+No broader core policy or new dependency version/feature is introduced here.
 
 ## Review cycle
 
@@ -90,15 +94,51 @@ The initial independent design/Rust review identified a misplaced file-backed
 test-module declaration, missing exact item/byte boundary cases, missing `Send`
 evidence, and the terminal-page URI question. The declaration is now at module
 scope; boundary and compile-time `Send` assertions are added; terminal-page
-behavior follows the owner's decision above. These are source-level fixes,
-**not passing-test evidence**. Dependency/interface approval and a named build
-slot are still required; independent compatibility and final re-review remain
-completion gates.
+behavior follows the owner's decision above. These began as source-level fixes,
+not passing-test evidence. The dependency checkpoint and temporary executor
+approval have since been integrated, and the SDK checks below ran under a
+named serial build slot. Independent validation and integration approval remain
+separate gates.
 
 A separate focused follow-up review confirmed the source-level dispositions
-and found no concrete regression in those fixes. Test discovery, compilation,
-`Send`, boundary behavior and cancellation still require executed evidence;
-this review does not close the independent-oracle or integration gates.
+and found no concrete regression in those fixes. The first executed SDK run
+collected and passed 28 tests; adding the immutable-oracle adapter raised this
+to 29. Clippy also passed after boxing optional service-error details rather than
+suppressing the large-error lint. A subsequent whole-slice review found a valid
+service error code was lost if its message was missing/null; code extraction is
+now independent of typed detail decoding, with regression cases. Final
+exact-commit results are recorded separately at handoff; source review does not
+replace independent validation or integration approval.
+
+## Independent reference adapter and remaining compatibility scope
+
+The SDK unit suite reads all eight existing cases from
+`rust/tests/compatibility/workspaces/cases.json` without editing or regenerating
+them. It compares raw service-order IDs, unmodified workspace fields, request
+URLs, credential scopes/counts, and service error-code precedence. CLI name
+suffixes, unknown-type filtering, sorting, JMESPath, paths, streams and exit codes
+remain outside the SDK.
+
+Two observed differences are explicitly tested rather than hidden:
+
+- `token_pagination` supplies foreign continuation URIs. Python ignores them and
+  requests three pages. This SDK returns `InvalidContinuation` after the first
+  decoded page with explicit progress and makes no second credential/request.
+  Separate valid-origin tests check three-page ordering and opaque-token encoding.
+- `missing_value` raises a Python `KeyError` mapped by the CLI to `UnexpectedError`.
+  This SDK returns typed `InvalidResponse`, with no success-shaped empty list.
+
+For HTTP errors with valid error codes but incomplete messages, retain the code
+even when a fully typed `FabricServiceError` is unavailable. Error `Display` stays
+sanitized; the future CLI owns human-readable Python error-message projection.
+Accepted/LRO responses, transport retries and sleeping/timeouts are explicitly
+unimplemented SDK policies, not claimed parity.
+
+The adapter is an implementation-side consumer of independently authored
+expectations. It does not mean the validation lane independently ran the new Rust
+code, and it does not rerun or replace the Python oracle. Full-workspace checks,
+native macOS/Linux execution, production HTTP/auth, retry/LRO parity and CLI
+compatibility remain integration or later-slice gates.
 
 The item-bound subtraction relies on the invariant that accumulated items never
 exceed the bound: validate a whole page before extending progress. Preserve that

@@ -159,7 +159,7 @@ pub enum WorkspaceListErrorKind {
         /// Python-compatible service error code, or its defined fallback.
         code: String,
         /// Parsed service data, absent if the body was not a structured error.
-        service_error: Option<FabricServiceError>,
+        service_error: Option<Box<FabricServiceError>>,
     },
     /// A 202/LRO or 204/empty response is not a complete workspace-list page.
     UnsupportedStatus(u16),
@@ -234,6 +234,27 @@ impl Client {
     /// if cancellation is handled solely by dropping this operation's future.
     /// Cancellation takes priority when it and execution become ready together.
     /// In-flight credential/executor futures are dropped when cancelled.
+    ///
+    /// ```no_run
+    /// use fabric_sdk::{
+    ///     Client,
+    ///     workspaces::{WorkspaceExecutor, WorkspaceListError, WorkspaceListLimits},
+    /// };
+    ///
+    /// async fn list(
+    ///     client: &Client,
+    ///     executor: &dyn WorkspaceExecutor,
+    /// ) -> Result<usize, WorkspaceListError> {
+    ///     let workspaces = client
+    ///         .list_workspaces(
+    ///             executor,
+    ///             WorkspaceListLimits::default(),
+    ///             std::future::pending(),
+    ///         )
+    ///         .await?;
+    ///     Ok(workspaces.value.len())
+    /// }
+    /// ```
     ///
     /// # Errors
     ///
@@ -357,7 +378,7 @@ fn header<'a>(response: &'a WorkspaceResponse, name: &str) -> Option<&'a str> {
 }
 
 fn service_failure(response: &WorkspaceResponse) -> WorkspaceListErrorKind {
-    let service_error = serde_json::from_slice::<FabricServiceError>(&response.body).ok();
+    let body = serde_json::from_slice::<serde_json::Value>(&response.body).ok();
     let code = match response.status {
         401 | 403 => header(response, "x-ms-public-api-error-code")
             .filter(|code| !code.is_empty())
@@ -369,13 +390,17 @@ fn service_failure(response: &WorkspaceResponse) -> WorkspaceListErrorKind {
             })
             .to_owned(),
         404 => "NotFound".to_owned(),
-        _ => service_error
+        _ => body
             .as_ref()
-            .map(|error| error.error_code.as_str())
+            .and_then(|body| body.get("errorCode"))
+            .and_then(serde_json::Value::as_str)
             .filter(|code| !code.is_empty())
             .unwrap_or("UnknownError")
             .to_owned(),
     };
+    let service_error = body
+        .and_then(|body| serde_json::from_value::<FabricServiceError>(body).ok())
+        .map(Box::new);
     WorkspaceListErrorKind::Http {
         status: response.status,
         code,
