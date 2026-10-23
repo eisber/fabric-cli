@@ -3,8 +3,12 @@
 
 //! Independent Fabric SDK scaffold with no identity implementation or CLI dependency.
 //!
-//! Construction does not request tokens or contact a service. Service operations,
-//! HTTP policies, bounded paging, cancellation, and operation handles are future work.
+//! Construction does not request tokens or contact a service. Workspace listing
+//! uses caller-injected credentials, execution, and cancellation; no production
+//! transport, identity backend, retry policy, or runtime is installed.
+
+pub mod models;
+pub mod workspaces;
 
 pub use fabric_core::{CredentialSelection, TokenCredential};
 use serde::{Deserialize, Serialize};
@@ -13,7 +17,7 @@ use std::{fmt, sync::Arc};
 /// A service client boundary with explicitly injected credentials.
 ///
 /// The provider must be configured for the selected account and tenant.
-/// This scaffold neither validates token claims nor provides service methods.
+/// Selection metadata does not validate token claims or bind a provider to a tenant.
 #[derive(Clone)]
 pub struct Client {
     credential: Arc<dyn TokenCredential>,

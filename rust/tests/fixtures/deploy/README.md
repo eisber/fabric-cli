@@ -79,4 +79,7 @@ as a session artifact, not a regenerated compatibility baseline. A passing
 reference run proves the sampled Python leaf behavior only; a future independent
 native adapter must consume the same fixtures without changing their oracle.
 
-Initial execution status: awaiting the coordinator's named bounded grant.
+Integration validation executed all **44 cases successfully** against the pinned
+reference on Windows x64, Python 3.13.15, PyYAML 6.0.3, and jsonpath-ng 1.9.1.
+See [validation baselines](../../../docs/validation-baselines.md). This validates
+the selected Python leaf fixtures only, not a native adapter or other platforms.

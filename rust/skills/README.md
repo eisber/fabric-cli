@@ -15,3 +15,10 @@ Direct SDK consumers remain supported independently of skills and the CLI.
 Today `fab-rs` implements help and version only. Do not describe authentication,
 service operations, or deployment as available. New command namespaces and
 workflow skills require separate design and compatibility review.
+
+Skills are not executable plugins and do not imply external command discovery or
+a runtime loader. Use a workflow only once its required CLI operations and
+machine-readable contracts exist; Python skill examples do not establish Rust
+capability. See [extension and workflow boundaries](../docs/extensions-and-skills.md)
+for the source-backed options and confirmed first-party consumer priority; no
+plugin architecture is selected there.

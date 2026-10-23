@@ -215,9 +215,7 @@ def workspace(case: dict[str, Any], calls: list[str]) -> SimpleNamespace:
             }
         },
         workspace_items={
-            "Notebook": {
-                "Daily.Load": {"id": "22222222-2222-2222-2222-222222222222"}
-            }
+            "Notebook": {"Daily.Load": {"id": "22222222-2222-2222-2222-222222222222"}}
         },
         _refresh_deployed_items=refresh,
         _resolve_workspace_name=lambda: "Synthetic / Workspace",
@@ -285,7 +283,9 @@ def check_case(case: dict[str, Any], ref: dict[str, Any]) -> None:
             or type(error).__name__ != expected["type"]
             or expected["contains"] not in str(error)
         ):
-            raise AssertionError(f"{case['id']}: unexpected reference failure") from error
+            raise AssertionError(
+                f"{case['id']}: unexpected reference failure"
+            ) from error
     else:
         if "error" in case:
             raise AssertionError(f"{case['id']}: expected failure, got {actual!r}")
