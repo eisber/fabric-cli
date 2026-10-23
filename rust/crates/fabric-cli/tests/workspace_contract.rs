@@ -140,14 +140,21 @@ fn workspace_members_and_internal_edges_respect_library_boundaries() {
     );
     for package in packages {
         let name = package["name"].as_str().unwrap();
-        let manifest =
-            std::fs::read_to_string(package["manifest_path"].as_str().unwrap()).unwrap();
+        let manifest = std::fs::read_to_string(package["manifest_path"].as_str().unwrap()).unwrap();
         if name == "fabric-identity-windows" {
             assert!(!defaults.contains(package["id"].as_str().unwrap()));
             assert_eq!(package["metadata"]["fabric"]["layer"], "identity");
             assert!(manifest.contains("unsafe_code = \"deny\""));
             assert!(manifest.contains("unsafe_op_in_unsafe_fn = \"deny\""));
             assert!(manifest.contains("undocumented_unsafe_blocks = \"deny\""));
+            for dependency in package["dependencies"].as_array().unwrap() {
+                assert!(
+                    !packages
+                        .iter()
+                        .any(|candidate| candidate["name"] == dependency["name"]),
+                    "the isolated native boundary must not depend on another workspace crate"
+                );
+            }
         } else {
             assert!(defaults.contains(package["id"].as_str().unwrap()));
             assert!(

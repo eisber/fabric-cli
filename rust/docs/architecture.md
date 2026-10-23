@@ -48,7 +48,8 @@ bypass the checks.
 over isolated desktop WAM interop. Only `fabric-identity/windows-broker` selects
 that optional Windows-target dependency. Architecture checks also preserve its
 exclusion from default SDK/CLI/identity graphs and its narrowly scoped unsafe
-lint policy; all other workspace crates inherit `unsafe_code = "forbid"`.
+lint policy. The native boundary has no internal workspace dependencies; all
+other workspace crates inherit `unsafe_code = "forbid"`.
 
 ### Crate-first parallel development
 

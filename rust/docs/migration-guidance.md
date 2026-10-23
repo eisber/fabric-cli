@@ -95,7 +95,7 @@ counts or lines translated.
 
 The integration session owns shared layout, core interfaces, manifest/lockfile
 and toolchain policy, integration, and cutover. Lane branches use an exact
-committed checkpoint of `feature/rust-workspace-scaffold`; the branch is the
+committed checkpoint of `feature/rust`; the branch is the
 shared code handoff, not a substitute for delivered instructions or approval.
 Do not independently push competing lane changes to that shared branch.
 
@@ -115,11 +115,25 @@ the integration owner, with revalidation after integration. A blocked lane can
 continue independent read-only analysis or authorized fixture work; it cannot
 reconstruct a missing shared scaffold.
 
-### Shared foundation and next handoffs
+### Current integration and safe handoffs
 
-The first shared foundation is published at
+The owner standardized the integration branch as `feature/rust` in
+`eisber/fabric-cli` on October 23, 2026. Only the integration owner advances that
+branch. Lane owners continue on separate branches and merge the exact published,
+validated checkpoint into their own clean worktrees. Preserve divergent commits
+and unrelated edits; do not reset, force-push, commandeer peer worktrees, or
+silently chase a moving branch tip. See the
+[integration handoff](integration-handoff.md) for the captured heads and sync
+commands. Upstream remains read-only for this work.
+
+### Historical first foundation and initial handoffs
+
+The first shared foundation was published at
 [`407c595095ca326ee4a7d8355232346f219b6912`](https://github.com/eisber/fabric-cli/commit/407c595095ca326ee4a7d8355232346f219b6912)
 on `feature/rust-workspace-scaffold` in the owner's `eisber/fabric-cli` fork.
+That branch name records the historical foundation, not the current integration
+destination. The table below records the initial lane handoffs, not the current
+implementation status or a renewed work authorization.
 Upstream `microsoft/fabric-cli` is not the push destination for lane work.
 The foundation leaves Python source/tests unchanged and stages all Rust-only
 files under `rust/`, with GitHub Actions at the repository root.

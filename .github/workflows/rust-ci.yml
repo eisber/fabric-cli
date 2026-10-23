@@ -106,6 +106,25 @@ jobs:
               assert.deepEqual(select([file], fixture).names, allNames);
             }
             assert.deepEqual(select([], fixture, 'Manual full validation').names, allNames);
+            const integrated = [
+              {name: 'fabric-core', directory: 'rust/crates/fabric-core/', dependencies: []},
+              {name: 'fabric-identity-windows', directory: 'rust/crates/fabric-identity-windows/', dependencies: []},
+              {name: 'fabric-identity', directory: 'rust/crates/fabric-identity/',
+                dependencies: ['fabric-core', 'fabric-identity-windows']},
+              {name: 'fabric-sdk-workspaces', directory: 'rust/crates/fabric-sdk-workspaces/',
+                dependencies: ['fabric-core']},
+              {name: 'fabric-sdk', directory: 'rust/crates/fabric-sdk/',
+                dependencies: ['fabric-core', 'fabric-sdk-workspaces']},
+              {name: 'fabric-deploy', directory: 'rust/crates/fabric-deploy/', dependencies: ['fabric-sdk']},
+              {name: 'fabric-cli', directory: 'rust/crates/fabric-cli/', dependencies: []}
+            ];
+            assert.deepEqual(select(['rust/crates/fabric-identity-windows/src/native.rs'], integrated).names,
+              ['fabric-identity', 'fabric-identity-windows']);
+            assert.deepEqual(select(['rust/crates/fabric-sdk-workspaces/src/workspaces.rs'], integrated).names,
+              ['fabric-deploy', 'fabric-sdk', 'fabric-sdk-workspaces']);
+            assert.deepEqual(select(['rust/crates/fabric-core/src/lib.rs'], integrated).names,
+              ['fabric-core', 'fabric-deploy', 'fabric-identity', 'fabric-sdk', 'fabric-sdk-workspaces']);
+            assert.deepEqual(select([workflow], integrated).names, integrated.map(pkg => pkg.name).sort());
             core.info('Affected-crate selection assertions passed');
 
             const root = process.env.GITHUB_WORKSPACE;

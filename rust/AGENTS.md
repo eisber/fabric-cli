@@ -19,10 +19,12 @@ Repository-wide contribution and team-review rules still apply.
 - Work only in your assigned branch and file area. Do not copy unfinished peer
   worktrees, change another session's branch, or merge peer work unilaterally.
   Integrate only explicitly agreed commits through the integration owner.
-- The shared foundation branch is `feature/rust-workspace-scaffold`. Use the
+- The shared integration branch is `feature/rust`. Use the
   exact agreed checkpoint, not an assumed latest version. Lane sessions develop
   on their own branches; only the integration owner advances the shared branch.
   Pushes, PRs, releases, and live operations require their own authorization.
+  Follow the [safe synchronization handoff](docs/integration-handoff.md); never
+  reset, force-push, or switch a peer worktree to adopt a checkpoint.
 - On a shared host, coordinate one heavy build/test job at a time. Do not infer
   an active lease from this file. Get an explicit grant from the integration
   owner; if messaging is unavailable, ask the owner rather than polling or

@@ -81,6 +81,12 @@ fallbacks, Python deployment bridges, or new command namespaces as scaffold
 shortcuts. The [identity backend decision](rust/docs/decisions/identity-backend.md)
 remains unresolved and authentication/core changes still require team review.
 
+The shared Rust integration branch is `feature/rust` in the owner's existing
+`eisber/fabric-cli` fork, not upstream. Only the integration owner advances it.
+Lane work stays on separate branches and adopts an exact validated checkpoint
+without resetting or force-pushing. See the
+[integration handoff](rust/docs/integration-handoff.md) for safe synchronization.
+
 ### Code Standards to Enforce
 
 When reviewing or generating code, ensure:
