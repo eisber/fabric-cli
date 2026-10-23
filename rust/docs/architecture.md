@@ -10,21 +10,62 @@ It is not a full port, release contract, or replacement for the Python product.
 
 ## Crate boundaries
 
-| Crate | Ownership | Allowed internal dependencies |
+| Layer (initial crate) | Ownership | Allowed dependency layers |
 | --- | --- | --- |
-| `fabric-core` | Credential interoperability, shared errors; future request context and HTTP policies | None |
-| `fabric-identity` | Explicit identity selection and optional future adapters | `fabric-core` |
-| `fabric-sdk` | Typed service models and future operations and reusable workflows | `fabric-core` |
-| `fabric-deploy` | Future native configuration, transforms, planning, publish/unpublish | `fabric-sdk`, `fabric-core` where used |
-| `fabric-cli` | Arguments, login UX, streams, exit codes, future library composition | `fabric-identity`, `fabric-sdk`, `fabric-deploy` |
+| `core` (`fabric-core`) | Credential interoperability, shared errors; future request context and HTTP policies | `core` |
+| `identity` (`fabric-identity`) | Explicit identity selection and optional future adapters | `identity`, `core` |
+| `sdk` (`fabric-sdk`) | Typed service models and future operations and reusable workflows | `sdk`, `core` |
+| `deploy` (`fabric-deploy`) | Future native configuration, transforms, planning, publish/unpublish | `deploy`, `sdk`, `core` |
+| `cli` (`fabric-cli`) | Arguments, login UX, streams, exit codes, future library composition | `cli`, `identity`, `sdk`, `deploy` |
 
-Only exercised edges are declared today: `fabric-identity -> fabric-core` and
-`fabric-sdk -> fabric-core`. The deployment crate has no APIs yet;
-the CLI has no service commands and does not need library-composition dependencies
+The exercised SDK edges are `fabric-sdk -> fabric-sdk-workspaces`,
+`fabric-sdk -> fabric-core`, and `fabric-sdk-workspaces -> fabric-core`;
+identity also depends on core, and `fabric-deploy` depends on `fabric-sdk`.
+The CLI has no service commands and does not need library-composition dependencies
 yet. Add those allowed edges when implementing their first real consumers.
-The offline workspace contract test checks the exact five members, allowed edges,
-publication settings, edition, and consistent declared Rust version. Cargo
-rejects dependency cycles.
+The initial five crates are not a fixed count or a maximum. Workspace membership
+uses `crates/*`, so a new crate directory does not require editing a central
+member list. Each crate declares its architectural layer in its own manifest:
+
+```toml
+[package.metadata.fabric]
+layer = "sdk"
+```
+
+The offline workspace contract test validates every member's declared layer,
+internal dependency directions (including development and build dependencies),
+publication settings, edition, and consistent declared Rust version. Missing or
+unknown layers fail explicitly. Same-layer dependencies support extracting
+focused crates without changing the layer rules; Cargo rejects dependency cycles.
+SDK crates cannot depend on identity, deployment, or CLI implementations, even
+indirectly through another SDK/core crate. Changing a layer or introducing a new
+cross-layer direction requires architecture review, not relabeling a crate to
+bypass the checks.
+
+### Crate-first parallel development
+
+Prefer focused crates for independently owned porting areas rather than growing
+the initial crates into monoliths. Establish a small public interface, a bounded
+source-behavior contract, targeted tests, and an owner for each area. Service
+families, deployment configuration/transforms/planning, and identity adapters
+can become separate crates as their implementations are assigned. Do not require
+them to grow into large modules first, and do not create empty placeholder crates
+merely to increase the count.
+
+More crates enable parallel implementation, review, targeted tests, and Cargo
+compilation of independent dependency branches. They do not make tightly coupled
+work independent: frequent shared-interface changes, high-fan-in core crates, and
+long dependency chains still serialize work and increase integration/rebuild cost.
+Keep shared contracts small, assign non-overlapping ownership, and use facades
+where helpful to preserve consumer imports across extractions. Evaluate progress
+by independently deliverable behavior, not crate count.
+
+Adding a crate requires no change to the architecture test's crate-name list.
+Use the shared package settings/lints and centralized dependencies, declare the
+layer, document its responsibility and interface, and run its targeted checks plus
+the workspace architecture contract. Workspace-wide CI already includes new
+members. Shared-host build-slot rules still apply; additional crates are not a
+grant to start concurrent heavy builds.
 
 The eventual call direction is:
 
@@ -34,6 +75,30 @@ Agents and skills -> CLI -> SDK -> Fabric / OneLake / required ARM
                       +-> deployment library
 Direct SDK consumer ---------+
 ```
+
+### Focused workspace SDK
+
+`fabric-sdk-workspaces` is the first extracted service crate in the `sdk` layer.
+It owns the implemented workspace-list operation, wire models, pagination,
+operation-specific executor and regression tests. Direct consumers use
+`fabric_sdk_workspaces::WorkspaceClient`; it depends on core and shared external
+types, never on the facade, identity implementation, CLI or deployment library.
+It creates no transport or runtime.
+
+`fabric-sdk` remains a facade. Its existing `Client` still owns its injected
+credential and selection, preserving a place for other service methods without
+making the workspace crate their owner. `Client::list_workspaces` delegates to a
+focused `WorkspaceClient` using cloned selection metadata and the same credential
+`Arc`; it does not reacquire or discover a provider during construction.
+`fabric_sdk::Page`, `fabric_sdk::models::{Workspace, FabricServiceError}` and the
+public `fabric_sdk::workspaces` types are reexports, not duplicate wire/error types.
+Downstream integration tests exercise both paths without `cfg(test)` helpers.
+
+This extraction moves behavior already implemented at
+`c07228b5ed5266b899ff3d2b37c7a3778cb855b8`; it does not add workspace lookup,
+item operations, Notebook publication, or a metadata-resolver contract. The
+deployment lane owns its separately scoped Notebook work and coordinates
+facade/shared-manifest changes through exact commit handoffs, not shared writers.
 
 Skills describe workflows using the CLI. They do not contain service logic.
 The SDK's normal dependency closure excludes the CLI and identity implementation.
@@ -56,9 +121,19 @@ credential outside the identity crate. Its dummy token is expired, is never sent
 to a service, and is not a production static-token mechanism.
 
 `Page<T>` round-trips a single Fabric-style JSON page, including opaque
-continuation values. It does not follow URIs or provide a pagination loop.
-Missing or malformed `value` data fails deserialization rather than returning a
-success-shaped empty page.
+continuation values. It does not follow URIs itself. The workspace service's
+`list_workspaces` method separately implements bounded token-based traversal
+through injected execution, with explicit partial failures and cancellation.
+Missing or malformed `value` data fails rather than returning a success-shaped
+empty page. The SDK README records source mapping and intentional differences;
+workspace retry, timeout, production transport, and LRO policy remain unimplemented.
+
+`fabric-deploy` implements a bounded local Notebook loader and supported transforms,
+using the additive `fabric-sdk::notebooks` APIs for item discovery, create/update
+and operation reconciliation. Both service modules use caller-injected credentials,
+execution and cancellation. There is no production HTTP stack or CLI deployment
+command. See [deployment compatibility](deployment-compatibility.md) for the
+exact source, supported subset, safety bounds and unported behavior.
 
 `fabric-identity::interactive_credential` always returns a typed `Unsupported`
 error. No backend, unattended adapter, credential chain, interactive login,
@@ -75,7 +150,7 @@ See [CLI contracts](compatibility.md#bootstrap-cli-contract).
 Libraries must not prompt, exit the process, initialize a global logger, create
 their own async runtime, or hold global mutable CLI context. Async work reuses
 the caller's runtime. Tokio's `macros` and single-thread `rt` features are used
-only by the SDK example and its test.
+only by offline tests and the independent credential example, not library code.
 
 `azure_core` default features are disabled. The locked scaffold includes no
 Reqwest, Rustls, OpenSSL, or native-TLS dependency, so there is no HTTP transport
@@ -133,21 +208,20 @@ Configuration is not proof of successful execution on those runners. Packaging,
 signing, notarization, Windows ARM64, Linux musl, and broker support are not
 covered by this scaffold.
 
-## Next bounded slice
+## Bounded implementation lanes
 
 Two implementation lanes may proceed independently:
 
 | Lane | Owned implementation | Boundary |
 | --- | --- | --- |
 | SDK and CLI porting | Offline workspace-list SDK operation, typed models/errors and targeted tests | Injected credential and operation executor only; no CLI service command or production HTTP transport yet |
-| Fabric content deployment | Pure configuration/environment selection and targeted fixture tests in `fabric-deploy` | No service client, authentication, filesystem deployment, YAML parser, transforms, or publish/unpublish workflow in this first slice |
+| Fabric content deployment | Parsed configuration helpers, local Notebook files, explicit logical/literal/workspace transforms, SDK create/update and bounded completion | Single Notebook; injected executor, no production HTTP/auth, broad deployment YAML/JSONPath/regex, folder moves, planner, unpublish or live operations |
 
 The SDK's existing `azure_core` and `serde_json` dependencies are available at
 runtime for token interoperation and response decoding. Deployment uses the
-workspace's existing `serde_json` for the parsed-configuration boundary. No new
-third-party versions or transport features are selected by this prerequisite.
-The manifest change makes implementation possible; it is not a claim that
-these operations are already implemented or validated.
+workspace's existing `serde_json` for parsed configuration and metadata. Notebook
+definition parts use already-locked base64 0.22.1. No new third-party versions or
+transport features are selected by the native Notebook slice.
 
 An SDK-local executor is an offline testing seam, not a second general HTTP
 pipeline. Shared retry, timeout and operation policies still need the core
@@ -159,8 +233,8 @@ this workspace change.
 
 Deployment consumes the existing immutable configuration fixtures and the pinned
 Python behavior. It does not implement another SDK or duplicate credential
-acquisition. Service-backed deployment will depend on the SDK when those
-operations exist. Both lanes reuse the caller's runtime and remain independent
+acquisition. The Notebook path consumes the SDK's operation-local service APIs.
+Both lanes reuse the caller's runtime and remain independent
 of production interactive authentication.
 
 Follow the [migration guidance](migration-guidance.md): translate first, improve
