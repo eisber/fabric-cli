@@ -164,8 +164,15 @@ def offline_boundary() -> Iterator[tuple[Path, list[list[str]], list[str]]]:
                 stack.enter_context(patch.dict(sys.modules, {auth.__name__: auth}))
                 # urllib3 otherwise binds an IPv6 socket while importing.
                 stack.enter_context(patch.object(socket, "has_ipv6", False))
+                # platform.uname() consults this local hostname on Windows.
                 stack.enter_context(
-                    patch("time.sleep", side_effect=lambda _: deny("Sleeping is forbidden"))
+                    patch.object(socket, "gethostname", return_value="offline-host")
+                )
+                stack.enter_context(
+                    patch(
+                        "time.sleep",
+                        side_effect=lambda _: deny("Sleeping is forbidden"),
+                    )
                 )
                 yield home, scopes, violations
         finally:
@@ -193,6 +200,7 @@ def _prepare_imports(home: Path) -> None:
 def _observe(case: dict[str, Any]) -> dict[str, Any]:
     with offline_boundary() as (home, scopes, violations):
         _prepare_imports(home)
+        import questionary
         import requests
         from fabric_cli import main as python_main
         from fabric_cli.client import fab_api_client, fab_api_workspace
@@ -200,7 +208,10 @@ def _observe(case: dict[str, Any]) -> dict[str, Any]:
         from fabric_cli.core import fab_handle_context, fab_output
         from fabric_cli.core.fab_commands import Command
         from fabric_cli.core.fab_context import Context
-        from fabric_cli.core.fab_decorators import handle_exceptions, set_command_context
+        from fabric_cli.core.fab_decorators import (
+            handle_exceptions,
+            set_command_context,
+        )
         from fabric_cli.core.fab_exceptions import FabricCLIError
         from fabric_cli.core.hiearchy.fab_tenant import Tenant
         from fabric_cli.core.hiearchy.fab_workspace import Workspace
@@ -293,6 +304,13 @@ def _observe(case: dict[str, Any]) -> dict[str, Any]:
         )
         stdout, stderr = io.StringIO(), io.StringIO()
         with ExitStack() as stack:
+            headless_print = stack.enter_context(
+                patch.object(
+                    questionary,
+                    "print",
+                    side_effect=RuntimeError("Controlled headless reference output"),
+                )
+            )
             stack.enter_context(
                 patch.object(
                     fab_api_client, "_get_session", return_value=ScriptedSession()
@@ -308,7 +326,9 @@ def _observe(case: dict[str, Any]) -> dict[str, Any]:
             stack.enter_context(
                 patch.object(fab_api_workspace, "list_workspaces", capture_list)
             )
-            stack.enter_context(patch.object(fab_ui, "print_output_error", capture_error))
+            stack.enter_context(
+                patch.object(fab_ui, "print_output_error", capture_error)
+            )
             stack.enter_context(patch.object(fab_output, "datetime", FrozenDatetime))
             stack.enter_context(redirect_stdout(stdout))
             stack.enter_context(redirect_stderr(stderr))
@@ -321,6 +341,8 @@ def _observe(case: dict[str, Any]) -> dict[str, Any]:
                 except SystemExit as exit_error:
                     exit_code = exit_error.code
 
+        if headless_print.call_count != 1:
+            raise AssertionError("Expected exactly one headless JSON print")
         if response_index != len(case["responses"]):
             raise AssertionError("Not all scripted HTTP responses were consumed")
         if violations or any(path.is_file() for path in home.rglob("*")):

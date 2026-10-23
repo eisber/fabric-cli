@@ -78,8 +78,9 @@ parity. No JMESPath implementation or crate is added in this slice.
 
 The 44 fixtures have source-derived fixed expectations. The development oracle
 executes actual pinned leaf definitions, not a rewritten replacement algorithm;
-its limitations are explicit in the fixture README. Initial execution is
-pending the coordinator's named bounded validation grant. No Rust candidate has
+its limitations are explicit in the fixture README. Integration validation
+passed all 44 cases with the pinned dependency versions; see
+[validation baselines](validation-baselines.md). No Rust candidate has
 been implemented, compared, or declared equivalent.
 
 **Blocked parity, not waived:** full configuration validation/overrides and

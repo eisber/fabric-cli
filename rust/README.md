@@ -28,6 +28,12 @@ Read before contributing:
 - [Architecture and validation commands](docs/architecture.md)
 - [Compatibility backlog and research baselines](docs/compatibility.md)
 - [Unresolved identity backend](docs/decisions/identity-backend.md)
+- [Integration validation baselines](docs/validation-baselines.md)
+- [Native build evidence](docs/build-validation.md)
+- [Workspace-list validation matrix](docs/validation-matrix.md)
+- [Deployment compatibility](docs/deployment-compatibility.md)
+- [Identity requirements and evidence](docs/identity-requirements.md)
+- [Extension and workflow boundaries](docs/extensions-and-skills.md)
 
 The repository's Microsoft copyright, MIT license, and applicable attribution
 continue to apply. Moving this directory into a new product destination later

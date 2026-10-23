@@ -64,7 +64,9 @@ class WorkspaceReferenceTests(unittest.TestCase):
     def test_offline_guards(self) -> None:
         for probe in ("network", "write", "identity", "process", "sleep"):
             with self.subTest(probe=probe):
-                self.assertEqual(probe_boundary(probe), {"probe": probe, "blocked": True})
+                self.assertEqual(
+                    probe_boundary(probe), {"probe": probe, "blocked": True}
+                )
 
     def test_reference_is_deterministic(self) -> None:
         for case_id in self.cases:
@@ -81,6 +83,14 @@ class WorkspaceReferenceTests(unittest.TestCase):
         provenance["source_tree_sha256"] = "0" * 64
         with self.assertRaisesRegex(AssertionError, "Python source drift"):
             verify_source(provenance)
+
+    def test_terminal_line_ending_drift_is_rejected(self) -> None:
+        case = self.cases["empty"]
+        observed = observe_case(case["id"])
+        assert_observation(case, observed)
+        observed["stdout"] = observed["stdout"].replace("\n", "\r\n")
+        with self.assertRaisesRegex(AssertionError, "contract mismatch"):
+            assert_observation(case, observed)
 
     def test_comparator_rejects_contract_drift(self) -> None:
         case = self.cases["token_pagination"]

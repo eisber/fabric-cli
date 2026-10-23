@@ -35,12 +35,17 @@ changing them or asserting all possible errors have been covered.
 
 ## Evidence and limits
 
-Implementation is present; execution evidence is pending a named parent grant
-and an available isolated Python interpreter. No test, full build, restore,
-Rust adapter, live API, authentication, native-platform parity, or Rust result
-is claimed by this document.
+The integration checkpoint executes this reference on Windows x64 with Python
+3.13.15. See [validation baselines](validation-baselines.md) for the actual
+results and environment. No Rust adapter, live API, authentication, native-
+platform parity, or Rust comparison result is claimed.
 
-The reference checks exact deterministic stdout, stderr, exits, structured
+The reference deliberately selects the product's headless print fallback, not
+the successful terminal renderer. Normal renderer CRLF/console behavior needs
+separate expectations; the comparator rejects line-ending changes rather than
+normalizing them. No fixture or existing product-test expectation was changed.
+
+The reference checks exact deterministic headless stdout, stderr, exits, structured
 data, exception class/code/request ID, request order, credential scope sequence,
 and unchanged in-memory context. Five side-effect probes and ten observation
 mutations check that its safeguards/comparator actually reject failure. The

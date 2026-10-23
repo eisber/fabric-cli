@@ -35,7 +35,7 @@ workspace-only calls made by `commands/fs/fab_fs.py::ls_command`:
 2. Real `fab_handle_context.get_command_context` and command-support check.
 3. Real `fab_fs_ls_workspace.exec`, memory-store workspace construction, API
    `list_workspaces`, `do_request`, pagination, and `ApiResponse.append_text`.
-4. Real sorting, JMESPath, output models, and JSON printing.
+4. Real sorting, JMESPath, output models, and headless fallback JSON printing.
 5. For the missing-`value` `KeyError`, real
    `main._handle_unexpected_error` and its `SystemExit`.
 
@@ -48,11 +48,21 @@ Success `None` is converted to exit 0 exactly as `main` does. Text/table output,
 argument aliases, authentication, persisted context loading, capacities, and
 other command dispatch are not claimed.
 
-Only auth, transport, environment, import-time directory creation, and clock are
-injected. Real JSON serialization/printing remains in the path; questionary is
-required explicitly so its missing-dependency fallback cannot fake a pass.
+Auth, transport, environment, import-time directory creation, clock, and the
+terminal backend are controlled. `socket.gethostname` is fixed to a synthetic
+value so Windows platform detection does not trip the network guard during
+imports; actual DNS/network operations remain denied.
+
+Real JSON serialization and the product's `_safe_print`/`_print_fallback` remain
+in the path. Questionary is required explicitly, and its printer raises one
+controlled `RuntimeError` to select the real headless fallback on every host.
+The harness asserts exactly one call to that backend. This avoids depending on
+whether the host has a console or its renderer emits CRLF. It does **not** test
+the successful questionary/prompt-toolkit renderer or establish terminal-byte
+parity. That renderer needs separate expectations and native tests; its output
+must not be silently normalized to make this oracle pass.
 The output clock is fixed to `2026-01-01T00:00:00Z`, not deleted from comparisons.
-Exact stdout text (including indent/key order/newline), empty stderr, actual
+Exact headless stdout text (including indent/key order/LF), empty stderr, actual
 helper exit code, exception mapping, service-order IDs, pagination metadata,
 HTTP method/full URI sequence, credential scopes, and unchanged current context
 are checked. Structured data is checked as part of the exact JSON envelope.
