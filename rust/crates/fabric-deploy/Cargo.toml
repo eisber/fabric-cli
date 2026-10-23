@@ -8,7 +8,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Reserved native Fabric deployment library boundary; no deployment APIs yet"
+description = "Native Fabric deployment library boundary"
+
+[dependencies]
+serde_json.workspace = true
 
 [package.metadata.fabric]
 layer = "deploy"

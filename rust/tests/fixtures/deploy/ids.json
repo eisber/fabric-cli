@@ -1,0 +1,91 @@
+{
+  "source": "microsoft/fabric-cicd@5ca096c00a9a878c646c59fe537b883eba951329",
+  "cases": [
+    {
+      "id": "current-workspace-id",
+      "operation": "dynamic",
+      "input": "$workspace.$id",
+      "expected": "11111111-1111-1111-1111-111111111111"
+    },
+    {
+      "id": "legacy-current-workspace-id",
+      "operation": "dynamic",
+      "input": "$workspace.id",
+      "expected": "11111111-1111-1111-1111-111111111111"
+    },
+    {
+      "id": "current-workspace-name-url-encoded",
+      "operation": "dynamic",
+      "input": "$workspace.$name_encoded",
+      "expected": "Synthetic%20%2F%20Workspace"
+    },
+    {
+      "id": "item-dotted-name-and-case-insensitive-attribute",
+      "operation": "dynamic",
+      "input": "$items.Notebook.Daily.Load.$ID",
+      "expected": "22222222-2222-2222-2222-222222222222",
+      "calls": ["refresh_deployed_items"]
+    },
+    {
+      "id": "legacy-item-attribute-syntax",
+      "operation": "dynamic",
+      "input": "$items.Notebook.Daily.Load.id",
+      "expected": "22222222-2222-2222-2222-222222222222",
+      "calls": ["refresh_deployed_items"]
+    },
+    {
+      "id": "item-type-is-case-sensitive",
+      "operation": "dynamic",
+      "input": "$items.notebook.Daily.Load.$id",
+      "error": {"type": "ParsingError", "contains": "Item type 'notebook' is invalid or not supported"}
+    },
+    {
+      "id": "missing-deployed-item-fails",
+      "operation": "dynamic",
+      "input": "$items.Notebook.Missing.$id",
+      "error": {"type": "ParsingError", "contains": "Item 'Missing' not found as a deployed Notebook"}
+    },
+    {
+      "id": "named-workspace-parsing-with-dots",
+      "operation": "parse_dynamic",
+      "input": "$workspace.Other.Workspace.$id",
+      "expected": {"kind": "workspace", "attribute": "id", "workspace_name": "Other.Workspace", "item_type": null, "item_name": null}
+    },
+    {
+      "id": "cross-workspace-item-parse-with-dots",
+      "operation": "parse_dynamic",
+      "input": "$workspace.Other.Workspace.$items.Notebook.Daily.Load.$ID",
+      "expected": {"kind": "item", "attribute": "id", "workspace_name": "Other.Workspace", "item_type": "Notebook", "item_name": "Daily.Load"}
+    },
+    {
+      "id": "logical-ids-global-substring-case-sensitive-default-skipped",
+      "operation": "logical",
+      "input": "logical-a prefixlogical-a logical-A 00000000-0000-0000-0000-000000000000",
+      "items": [
+        {"logical_id": "logical-a", "guid": "deployed-a"},
+        {"logical_id": "00000000-0000-0000-0000-000000000000", "guid": "must-not-appear"}
+      ],
+      "expected": "deployed-a prefixdeployed-a logical-A 00000000-0000-0000-0000-000000000000"
+    },
+    {
+      "id": "logical-id-referenced-before-deployment-fails",
+      "operation": "logical",
+      "input": "logical-a",
+      "items": [{"logical_id": "logical-a", "guid": ""}],
+      "error": {"type": "ParsingError", "contains": "Cannot replace logical ID 'logical-a' as referenced item is not yet deployed"}
+    },
+    {
+      "id": "workspace-default-only-recognized-case-sensitive-keys",
+      "operation": "workspace",
+      "input": "\"workspaceId\": \"00000000-0000-0000-0000-000000000000\"; default_lakehouse_workspace_id = \"00000000-0000-0000-0000-000000000000\"; \"workspace\": \"other\"; \"WorkspaceId\":\"00000000-0000-0000-0000-000000000000\"; other=\"00000000-0000-0000-0000-000000000000\"",
+      "expected": "\"workspaceId\": \"11111111-1111-1111-1111-111111111111\"; default_lakehouse_workspace_id = \"11111111-1111-1111-1111-111111111111\"; \"workspace\": \"other\"; \"WorkspaceId\":\"00000000-0000-0000-0000-000000000000\"; other=\"00000000-0000-0000-0000-000000000000\""
+    },
+    {
+      "id": "reflex-escaped-workspace-reference",
+      "operation": "workspace",
+      "item_type": "Reflex",
+      "input": "\\\"name\\\":\\\"workspaceId\\\",\\\"type\\\":\\\"string\\\",\\\"value\\\":\\\"00000000-0000-0000-0000-000000000000\\\"",
+      "expected": "\\\"name\\\":\\\"workspaceId\\\",\\\"type\\\":\\\"string\\\",\\\"value\\\":\\\"11111111-1111-1111-1111-111111111111\\\""
+    }
+  ]
+}

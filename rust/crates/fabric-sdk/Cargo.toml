@@ -14,13 +14,13 @@ description = "Reusable Fabric SDK scaffold with caller-injected Azure credentia
 layer = "sdk"
 
 [dependencies]
+azure_core.workspace = true
 fabric-core.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true
-azure_core.workspace = true
-serde_json.workspace = true
 tokio.workspace = true
 
 [[example]]
