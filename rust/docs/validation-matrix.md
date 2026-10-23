@@ -33,12 +33,35 @@ error helper renders `UnexpectedError` and exits 1 without a command field.
 JSON error output goes to stdout, not stderr. This records source quirks without
 changing them or asserting all possible errors have been covered.
 
+## Owner-confirmed completion gate
+
+The owner confirmed this reference-only gate directly in the lane session on
+2026-10-22. Agreement on criteria is not execution evidence or permission to
+run tests, restore dependencies, integrate commits, or claim Rust parity.
+
+| Measure | Required result | Evidence status |
+| --- | --- | --- |
+| Independent Python cases | All eight cases pass against the committed hand-authored expectations. | Passed at integration checkpoint `3fc65f8`; see validation baselines. |
+| Determinism | Each case passes twice in fresh workers with identical stdout, stderr, exit, data, request/scope sequence, exception, pagination metadata, and context results. | Passed at `3fc65f8`. |
+| Comparator failure detection | All ten independently mutated observation fields are rejected. | Passed at `3fc65f8`. |
+| Offline isolation | All five network, file-write, identity-import, subprocess, and sleep probes are blocked; reference runs perform no real network, credential discovery, or config writes. | Passed at `3fc65f8`. |
+| Provenance protection | Pinned source matches and a deliberate source-hash mismatch is rejected. | Passed at `3fc65f8`; source commit and digest unchanged. |
+
+The eight cases remain exactly those in the matrix above. Rust parity, the
+adapter awaiting an agreed SDK interface, full CLI coverage, and live operations
+are excluded from this completion gate. Required execution evidence includes the
+exact commands, interpreter version, and captured pass/failure output. An
+existing isolated interpreter and a separate named parent validation grant are
+still required; no threshold has been waived.
+
 ## Evidence and limits
 
 The integration checkpoint executes this reference on Windows x64 with Python
 3.13.15. See [validation baselines](validation-baselines.md) for the actual
-results and environment. No Rust adapter, live API, authentication, native-
-platform parity, or Rust comparison result is claimed.
+results and environment. No full CLI Rust adapter, live API, authentication, or
+native-platform parity is claimed. The SDK's narrower raw-wire comparisons are
+documented in its [README](../crates/fabric-sdk/README.md); they do not replace
+this independent Python/CLI contract.
 
 The reference deliberately selects the product's headless print fallback, not
 the successful terminal renderer. Normal renderer CRLF/console behavior needs
