@@ -13,6 +13,7 @@ default-members = [
     "crates/fabric-deploy",
     "crates/fabric-cli",
     "crates/fabric-cli-output",
+    "crates/fabric-cli-context",
 ]
 resolver = "3"
 
@@ -24,6 +25,7 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+fabric-cli-context = { path = "crates/fabric-cli-context" }
 fabric-core = { path = "crates/fabric-core" }
 fabric-cli-output = { path = "crates/fabric-cli-output" }
 fabric-sdk = { path = "crates/fabric-sdk" }
