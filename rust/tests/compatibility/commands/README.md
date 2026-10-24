@@ -80,12 +80,12 @@ The bounded Rust command intentionally uses
 uses `format_mapping`, for example `notebooks`, `lakehouses`, or `reports`.
 Every GET case therefore contains separately hand-authored `python_requests`
 and native `expected.requests`, and requires `comparison: specialized-uri`.
-Each side must satisfy its own exact URI expectation. For the four HTTP-error
-GET cases, **only that request URI differs**; stdout bytes, stderr bytes, exit
-status, scope values/counts, and correlation ID must otherwise match. The two
-successful-service GET cases additionally have the explicit projection/schema
-boundaries below. Dropping a declared boundary or treating either side's URI
-as the other's fails the guards.
+Each side must satisfy its own exact URI expectation. For all six GET cases,
+**only that request URI now differs**; stdout bytes, stderr bytes, exit status,
+scope values/counts, and correlation ID must otherwise match. The two successful
+GETs previously had the historical projection/schema boundaries below, which
+remain protected evidence rather than current expectations. Dropping a declared
+boundary or treating either side's URI as the other's fails the guards.
 
 This deliberately does **not** execute `fab_fs_get_item.exec`, which ordinarily
 obtains definitions and augments the result with connections, schedules,
@@ -94,29 +94,37 @@ cover definition decoding/export, files, output directories, query expressions,
 deep traversal flags, or full get routing. None of the six helper comparisons
 is evidence of full Python `get` command parity.
 
-The historical native `NoQuery` projection seam returns explicit `NotSupported`
-for default GET path enumeration. **Every GET is sent to the actual native
-probe**, including successful service responses: without `--with-get-projection`,
-the two discovery cases must render the exact failure envelope, exit 1, make
-the expected generic metadata request, and acquire its expected scope.
-They are **UNSUPPORTED evidence**, not skipped cases or successful parity.
-The integrated `read_probe` now uses the real `PythonQuery` provider, so its
-validation must pass `--with-get-projection`. Explicit opt-out behavior remains
-covered by the `NoQuery` consumer tests; historical expectations stay intact.
-The four HTTP failures occur before projection and must retain exact source
-error mapping with the separately declared generic URI.
+**Every GET is sent to the actual native probe**, including successful service
+responses. The default `--get-mode metadata-preserving` requires both discovery
+outputs to match protected Python bytes/order. The actual read host calls
+`get_item_metadata`, retaining the complete validated ordered HTTP object,
+then uses real `PythonQuery`. Neither known fields nor extras are reconstructed
+through legacy `Item`; no expected-output callback is involved.
 
-`--with-get-projection` requires a genuine provider, never a fixture callback.
-It changes those two assertions from explicit `NotSupported` to separately
-hand-authored metadata **schema/order evidence**. The native SDK's typed `Item`
-serializes `id`, `displayName`, then flattened `BTreeMap` extras alphabetically.
-Nested JSON preserves its service order through `serde_json`'s `preserve_order`
-feature. Python traverses the unmodified response's insertion order instead.
-For example, native top-level `description, properties, type, workspaceId`
-does not match source `type, description, workspaceId, properties`.
-Both complete path lists are independently asserted, including depth, empty
-containers, and indices. The source path order is never sorted or rewritten to
-make Rust match. This is **not order parity** even with a real provider.
+Historical modes are explicit, never automatically selected for a failing probe:
+
+- `--get-mode historical-no-projection` requires the original exact
+  `NotSupported` envelope, exit 1, generic metadata request and scope. These are
+  unsupported evidence, not skipped cases or parity.
+- `--get-mode historical-typed-order` requires unchanged historical typed-schema
+  order from `native-boundaries.json`. Legacy `Item` still serializes `id`,
+  `displayName`, then alphabetical `BTreeMap` extras. That historical order
+  differs from the source and from the current preserving GET consumer.
+
+Both modes still assert all 25 outcomes when used with their corresponding
+historical probe. They deliberately reject a current successful/source-ordered
+probe. `--with-get-projection` remains a compatibility flag requiring an explicit
+probe; current metadata-preserving behavior is already the default. Use
+`--get-mode` to request historical evidence. `NoQuery` opt-out behavior also
+remains covered by public Rust consumers.
+
+Additional `metadata_reference.py` cases use hand-authored raw response strings
+and path expectations, not changes to `cases.json`: unknown-before-known keys,
+reordered fields, null/missing/non-string type, nested order/Unicode/numbers,
+and duplicate keys. They execute the original helper and `json.loads` parser.
+Duplicate keys retain the last value in the first position, matching the actual
+ordered `serde_json::Value` parser; this is parsed-data behavior, not an arbitrary
+new duplicate or lexical-body preservation contract.
 
 Generic metadata helper evidence is not source command-support evidence. In
 particular, the source full `get` command rejects Dashboard, PaginatedReport,
@@ -194,42 +202,45 @@ From the repository root, using the already-built example executable:
 
 ```powershell
 python rust\tests\compatibility\commands\reference.py
-python rust\tests\compatibility\commands\reference.py --rust-probe rust\target\debug\examples\read_probe.exe --with-get-projection
+python rust\tests\compatibility\commands\reference.py --rust-probe rust\target\debug\examples\read_probe.exe
+python rust\tests\compatibility\commands\metadata_reference.py --rust-probe rust\target\debug\examples\read_probe.exe
 python -m unittest discover -s rust\tests\compatibility\commands -p "test_*.py"
 ```
 
 Use the actual target directory/executable suffix on the host. `--case ID`
-selects one non-query case. The script always checks **25 protected source
-observations plus one source-only observation**. Both native modes execute and
-assert **all 25 actual native outcomes**:
+selects one non-query case. Without selection the script checks **25 protected
+source observations plus one source-only observation**. All three native modes
+execute and assert **all 25 actual native outcomes**:
 
-| Assertion category | Initial `NoQuery` probe | Real provider with flag |
-| --- | ---: | ---: |
-| Exact source LS bytes/requests | 16 | 16 |
-| Exact GET HTTP mapping with generic-URI difference | 4 | 4 |
-| Separate native safety failures | 3 | 3 |
-| Actual explicit `NotSupported` GET failures | 2 | 0 |
-| Separate successful metadata schema/order evidence | 0 | 2 |
+| Exclusive assertion category | Historical `NoQuery` | Historical typed order | Default preserving metadata |
+| --- | ---: | ---: | ---: |
+| Fully exact source bytes/requests | 16 | 16 | 16 |
+| Exact GET output with generic-URI difference | 4 | 4 | 6 |
+| Separate native safety failures | 3 | 3 | 3 |
+| Actual explicit `NotSupported` GET failures | 2 | 0 | 0 |
+| Separate successful metadata schema/order evidence | 0 | 2 | 0 |
 
-None of the last four categories is relabeled as complete source parity.
-The integrated real projection provider requires its separate schema/order
-assertions:
+The two metadata-order differences are eliminated, not relabeled or hidden.
+Counting outputs alone gives 18 exact LS/inventory cases and four exact
+service-error cases, but **not 18 fully source-exact cases**: the two successful
+GET cases also use Python `notebooks`/`lakehouses` versus native `items`.
+All six URI differences remain independently asserted. Matching output is not
+full GET parity; the three safety differences are not successes.
 
-```powershell
-python rust\tests\compatibility\commands\reference.py --rust-probe rust\target\debug\examples\read_probe.exe --with-get-projection
-```
-
-That invocation still requires all protected Python expectations unchanged.
+Every mode requires all protected Python expectations unchanged.
 An absent probe is reported as **not requested**, never as native parity or
 proof that an unsupported native failure was actually observed.
 
-The unittest suite has **49 tests**: 26 real source observations and 23 guards.
+The unittest suite has **56 tests**, retaining all original source/guard tests
+and adding current-versus-historical mode and synthetic raw-metadata controls.
 Guards reject source/pin identity drift, validator bypass, inventory erosion,
 expectation edits, stream/exit/request/scope drift, line-ending/format/timestamp/
 Unicode-escaping changes, undeclared URI differences, trivial fixtures,
 expected-payload replay, unused/unplanned responses, unsupported query/path/
 folder seams, side effects, nondeterminism, erased native-boundary inventories,
-false unsupported successes, metadata-order equivalence, and counting
-source-only/unsupported/safety evidence as native parity. None of these files
-was validated during its handoff: the parent owns gated execution and any
-actual result report.
+false unsupported successes, metadata-order equivalence, current-mode acceptance
+of historical ordering, and counting source-only/unsupported/safety evidence as
+native parity. Native shared-HTTP consumers additionally assert complete query
+output bytes and types for identity, keys and numeric-array projection, not only
+default inventory. Execution receipts belong in the task/integration handoff;
+local Windows evidence is not cross-platform or live-service evidence.

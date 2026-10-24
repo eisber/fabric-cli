@@ -10,7 +10,8 @@ deployment, CLI, Python runtime or HTTP/TLS backend dependency. Callers inject
 no I/O. The caller must bind its credential to the selected account and tenant.
 
 Use `ItemClient::list_items` and `ItemClient::get_item` directly, or the additive
-`fabric_sdk::Client::{list_items,get_item}` facade methods. The facade forwards
+`fabric_sdk::Client::{list_items,get_item}` facade methods. For ordered metadata,
+use `ItemClient::get_item_metadata` or the same additive facade method. The facade forwards
 the same credential and selection. Existing workspace imports and Notebook
 executor signatures are unchanged. `fabric-sdk-http::HttpExecutor` implements
 `ItemExecutor` in a separate module through its **private shared `execute`**
@@ -57,6 +58,29 @@ rewriting their existing workspace/Notebook implementations.
 `type`, future strings, non-string types, description, folder and nested fields.
 `item_type()` is only a convenience string accessor. Rows are not sorted,
 deduplicated, case-folded, Unicode-normalized, or locally type-filtered.
+
+`Item` retains its public fields, struct-literal construction and
+`BTreeMap<String, Value>` extras. Its serialization still emits `id`,
+`displayName`, then sorted extra keys. Existing `get_item` and `list_items`
+behavior is unchanged.
+
+The additive `ItemMetadata` instead retains the complete insertion-ordered
+parsed HTTP object, including known-field positions. It validates the same
+required string fields, offers `id()`, `display_name()`, `item_type()`,
+`as_value()` and consuming `into_value()`, and serializes without moving fields.
+Missing/null/non-string `type`, unknown fields, nested ordering, integer versus
+float values and Unicode are retained. Its `Debug` redacts all metadata.
+Both GET representations share the same private GET decoder and existing read
+machinery; there is no second credential/request/retry path.
+
+This is parsed-JSON fidelity, not byte-for-byte HTTP-body preservation:
+whitespace, escapes and numeric token spellings may differ when serialized.
+For duplicate JSON keys, the existing Python `json.loads` and ordered
+`serde_json::Value` parsers retain the last value at the first key position;
+additive synthetic cases exercise those actual parser semantics, including
+nested duplicates. No arbitrary duplicate-key or non-finite-number contract is
+introduced. Empty string IDs/names in response data remain valid strings just
+as for `Item`; request identifiers still use the existing route safety checks.
 
 Options carry ordered string query pairs. Duplicate names replace values in
 the original key position, matching a Python dictionary. A `type=Notebook`
@@ -124,6 +148,11 @@ safe multi-page traversal, malformed pages, paths, service errors, cancellation,
 limits at exact defaults and +1, and standalone/facade consumers. Shared-adapter
 tests execute GET retries, headers, byte limits, deadlines and exhaustion through
 the public facade; existing workspace/Notebook adapter tests remain intact.
+Standalone and facade consumers also exercise ordered metadata and old `Item`
+struct literals. The real CLI read host now consumes this boundary before
+native query/path discovery; unchanged source command expectations assert both
+previous metadata-order failures as matching output. Specialized URI differences
+remain separate. See the [command oracle](../../tests/compatibility/commands/README.md).
 
 Not implemented: specialized `item_uri`/`ext_uri`, definitions, create/update/delete,
 all item-specific service families, CLI projection/cache/folder resolution,

@@ -25,6 +25,7 @@ goldens, their source hashes and expectations are untouched.
 | Cancellation before auth, in-flight credential/request, between ready pages | Injected futures and drop guards | Cancellation priority, fair yield, no extra request, partial progress |
 | Shared HTTP execution | Existing HTTP source traces remain unchanged | Item adapter: GET retry/recovery, headers/query, byte bound, deadline and retry exhaustion |
 | Standalone and stable facade | Same downstream consumer scenario compiled twice | LIST and GET with same injected provider; no identity/deploy/CLI edge |
+| Ordered generic GET metadata | Additive `ItemMetadata` and `get_item_metadata`; original `Item` unchanged | Standalone/facade struct literals, raw order/number/null/duplicate parsing, shared HTTP and real CLI query/path discovery |
 | Broader CLI/types/definitions/live deployment | Inspected callers only | Not implemented or claimed |
 
 ## Measured local execution
@@ -65,3 +66,20 @@ readiness is established. The original independent Python cases retain quirks
 such as `total_pages: 1`, silently discarded followed 201 pages, raw unsafe path
 interpolation and generic GET object pagination. Rust safety/typed exceptions
 are explicit; neither side's expectations are rewritten to conceal them.
+
+## Additive metadata fidelity
+
+`ItemClient::get_item_metadata` and `Client::get_item_metadata` use the existing
+GET read/decode machinery and `ItemExecutor`; they do not add a transport.
+`ItemMetadata` validates required `id`/`displayName` strings while retaining the
+complete ordered `Value`. The old model, its `BTreeMap` extras, imports,
+struct-literal construction, `get_item` and `list_items` remain unchanged.
+Read-host generic GET consumes the new representation directly.
+
+The two protected successful GET inventories now match source output order
+without changing `commands/cases.json` or historical `native-boundaries.json`.
+Both still have independently asserted generic-versus-specialized request URI
+differences. Additional raw-body comparisons exercise unknown-before-known and
+reordered keys, missing/null/non-string types, nested Unicode/number values and
+the existing parsers' last-value/first-position duplicate-key behavior. This
+does not promise raw lexical JSON round-tripping or specialized GET parity.

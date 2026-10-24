@@ -912,3 +912,248 @@ async fn cancellation_before_credentials_inflight_and_between_ready_pages_drops_
     assert_eq!(error.partial.next_token.as_deref(), Some("next"));
     assert_eq!(exec.requests.lock().unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn metadata_and_legacy_get_share_status_payload_and_continuation_precedence() {
+    let sdk = client(Arc::default());
+    for (status, body, headers) in [
+        (200, "", vec![]),
+        (200, "{", vec![]),
+        (200, "null", vec![]),
+        (200, "[]", vec![]),
+        (200, "{}", vec![]),
+        (200, r#"{"id":null,"displayName":"N"}"#, vec![]),
+        (200, r#"{"id":"i","displayName":1}"#, vec![]),
+        (
+            200,
+            r#"{"id":"i","displayName":"N","continuationToken":true}"#,
+            vec![],
+        ),
+        (
+            200,
+            r#"{"id":"i","displayName":"N","continuationToken":"next"}"#,
+            vec![],
+        ),
+        (
+            200,
+            r#"{"id":"i","displayName":"N","continuationToken":true}"#,
+            vec![("X-MS-Continuation", "")],
+        ),
+        (201, r#"{"extra":null,"displayName":"N","id":"i"}"#, vec![]),
+        (202, "{}", vec![]),
+        (204, "", vec![]),
+        (401, "not JSON", vec![("X-MS-Error-Code", "Secondary")]),
+        (
+            403,
+            r#"{"errorCode":"Ignored","message":"private"}"#,
+            vec![
+                ("X-MS-Public-Api-Error-Code", "Primary"),
+                ("X-MS-Error-Code", "Secondary"),
+            ],
+        ),
+        (404, r#"{"errorCode":"Ignored"}"#, vec![]),
+        (
+            400,
+            r#"{"errorCode":"BodyCode","message":"private","requestId":"sensitive"}"#,
+            vec![],
+        ),
+    ] {
+        let reply = ItemResponse {
+            status,
+            body: body.as_bytes().to_vec(),
+            headers: headers
+                .into_iter()
+                .map(|(key, value)| (key.into(), value.into()))
+                .collect(),
+        };
+        let old = sdk
+            .get_item(
+                &Executor::new([reply.clone()]),
+                "ws",
+                "i",
+                ItemGetOptions::default(),
+                pending(),
+            )
+            .await
+            .map(|_| ())
+            .map_err(|error| error.kind);
+        let metadata = sdk
+            .get_item_metadata(
+                &Executor::new([reply]),
+                "ws",
+                "i",
+                ItemGetOptions::default(),
+                pending(),
+            )
+            .await
+            .map(|_| ())
+            .map_err(|error| error.kind);
+        assert_eq!(metadata, old, "{status}: {body}");
+    }
+}
+
+#[tokio::test]
+async fn metadata_get_keeps_query_identifier_identity_and_execution_policies() {
+    let credential = Arc::new(Credential::default());
+    let sdk = client(credential.clone());
+    let exec = Executor::new([response(json!({"extra":null,"displayName":"N","id":"i"}))]);
+    sdk.get_item_metadata(
+        &exec,
+        "ws",
+        "i",
+        ItemGetOptions {
+            query: vec![
+                ("q".into(), "old".into()),
+                ("x".into(), "*~ +".into()),
+                ("q".into(), "new".into()),
+            ],
+            ..Default::default()
+        },
+        pending(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        exec.requests.lock().unwrap()[0]["url"],
+        "https://api.fabric.microsoft.com/v1/workspaces/ws/items/i?q=new&x=%2A~+%2B"
+    );
+    for (workspace, item) in [("", "i"), ("ws", "a/b"), ("ws", "..")] {
+        assert_eq!(
+            sdk.get_item_metadata(&exec, workspace, item, ItemGetOptions::default(), pending())
+                .await
+                .unwrap_err()
+                .kind,
+            ItemErrorKind::InvalidIdentifier
+        );
+    }
+    let wrong = ItemClient::new(
+        credential.clone(),
+        CredentialSelection::new("a", "t", Audience::Arm).unwrap(),
+    );
+    assert_eq!(
+        wrong
+            .get_item_metadata(&exec, "ws", "i", ItemGetOptions::default(), pending())
+            .await
+            .unwrap_err()
+            .kind,
+        ItemErrorKind::InvalidAudience
+    );
+    assert_eq!(credential.calls.load(Ordering::SeqCst), 1);
+    let failing = client(Arc::new(Credential {
+        fail: true,
+        ..Default::default()
+    }));
+    let error = failing
+        .get_item_metadata(&exec, "ws", "i", ItemGetOptions::default(), pending())
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, ItemErrorKind::Credential);
+    assert!(!format!("{error:?}").contains("provider-secret"));
+    for failure in [
+        ItemExecutionError::Failed,
+        ItemExecutionError::TimedOut,
+        ItemExecutionError::Cancelled,
+        ItemExecutionError::RetriesExhausted,
+        ItemExecutionError::ResponseLimit,
+    ] {
+        let exec = Executor {
+            responses: Mutex::new([Err(failure)].into()),
+            ..Default::default()
+        };
+        let expected = if failure == ItemExecutionError::ResponseLimit {
+            ItemErrorKind::ResponseLimit
+        } else {
+            ItemErrorKind::Execution(failure)
+        };
+        assert_eq!(
+            sdk.get_item_metadata(&exec, "ws", "i", ItemGetOptions::default(), pending())
+                .await
+                .unwrap_err()
+                .kind,
+            expected
+        );
+    }
+}
+
+#[tokio::test]
+async fn metadata_get_measures_exact_response_limit_and_one_extra_byte() {
+    let sdk = client(Arc::default());
+    for cap in [64, ItemGetOptions::default().max_response_bytes.get()] {
+        for extra in [0, 1] {
+            let mut reply = response(json!({"before":null,"displayName":"N","id":"i"}));
+            reply.body.resize(cap + extra, b' ');
+            let result = sdk
+                .get_item_metadata(
+                    &Executor::new([reply]),
+                    "ws",
+                    "i",
+                    ItemGetOptions {
+                        max_response_bytes: NonZeroUsize::new(cap).unwrap(),
+                        ..Default::default()
+                    },
+                    pending(),
+                )
+                .await;
+            if extra == 0 {
+                assert_eq!(result.unwrap().id(), "i");
+            } else {
+                assert_eq!(result.unwrap_err().kind, ItemErrorKind::ResponseLimit);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn metadata_cancellation_wins_before_and_during_credentials_or_execution() {
+    let credential = Arc::new(Credential::default());
+    let sdk = client(credential.clone());
+    let exec = Executor::default();
+    assert_eq!(
+        sdk.get_item_metadata(
+            &exec,
+            "ws",
+            "i",
+            ItemGetOptions::default(),
+            std::future::ready(())
+        )
+        .await
+        .unwrap_err()
+        .kind,
+        ItemErrorKind::Cancelled
+    );
+    assert_eq!(credential.calls.load(Ordering::SeqCst), 0);
+    assert!(exec.requests.lock().unwrap().is_empty());
+    for during_auth in [true, false] {
+        let credential = Arc::new(Credential {
+            wait: during_auth,
+            ..Default::default()
+        });
+        let sdk = client(credential.clone());
+        let exec = Executor {
+            wait: !during_auth,
+            ..Default::default()
+        };
+        let stop = AtomicBool::new(false);
+        let cancelled = poll_fn(|_| {
+            if stop.load(Ordering::SeqCst) {
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        });
+        let mut future =
+            Box::pin(sdk.get_item_metadata(&exec, "ws", "i", ItemGetOptions::default(), cancelled));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(future.as_mut().poll(&mut cx).is_pending());
+        stop.store(true, Ordering::SeqCst);
+        assert_eq!(
+            future
+                .as_mut()
+                .poll(&mut cx)
+                .map(|result| result.unwrap_err().kind),
+            Poll::Ready(ItemErrorKind::Cancelled)
+        );
+        assert!(credential.dropped.load(Ordering::SeqCst));
+        assert_eq!(exec.dropped.load(Ordering::SeqCst), !during_auth);
+    }
+}

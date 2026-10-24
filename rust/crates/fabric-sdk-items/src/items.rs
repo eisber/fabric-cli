@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use crate::{FabricServiceError, Item, ItemClient, Page};
+use crate::{FabricServiceError, Item, ItemClient, ItemMetadata, Page};
 use azure_core::{credentials::AccessToken, http::Url};
 use fabric_core::Audience;
 use std::{
@@ -383,14 +383,36 @@ impl ItemClient {
             .map_err(|kind| ItemError { kind })
     }
 
-    async fn get_one(
+    /// Gets generic item metadata without changing the parsed HTTP field order.
+    ///
+    /// Uses the same request, credential, continuation, cancellation and response
+    /// policies as [`Self::get_item`]. Only the returned representation differs.
+    ///
+    /// # Errors
+    /// Returns the same typed failures as [`Self::get_item`], including invalid
+    /// JSON or missing/non-string required `id` and `displayName` fields.
+    pub async fn get_item_metadata(
+        &self,
+        executor: &dyn ItemExecutor,
+        workspace_id: &str,
+        item_id: &str,
+        options: ItemGetOptions,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<ItemMetadata, ItemError> {
+        let mut cancelled = pin!(cancelled);
+        self.get_one(executor, workspace_id, item_id, options, cancelled.as_mut())
+            .await
+            .map_err(|kind| ItemError { kind })
+    }
+
+    async fn get_one<T: serde::de::DeserializeOwned>(
         &self,
         executor: &dyn ItemExecutor,
         workspace_id: &str,
         item_id: &str,
         options: ItemGetOptions,
         mut cancelled: Pin<&mut (impl Future<Output = ()> + Send)>,
-    ) -> Result<Item, ItemErrorKind> {
+    ) -> Result<T, ItemErrorKind> {
         or_cancel(std::future::ready(()), cancelled.as_mut()).await?;
         self.validate_audience()?;
         let mut url = item_url(workspace_id, Some(item_id))?;

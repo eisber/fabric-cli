@@ -76,6 +76,11 @@ NATIVE_BOUNDARY_IDS = {
     "unsupported_projection": ("get_metadata_paths", "get_metadata_depth"),
     "metadata_order": ("get_metadata_paths", "get_metadata_depth"),
 }
+GET_MODES = (
+    "metadata-preserving",
+    "historical-typed-order",
+    "historical-no-projection",
+)
 
 
 def _reference(area: str) -> ModuleType:
@@ -761,6 +766,39 @@ def assert_native_boundary(
         raise AssertionError("An explicit native boundary must not be called source parity")
 
 
+def compare_native_case(
+    case: dict[str, Any],
+    python: dict[str, Any],
+    native: dict[str, Any],
+    boundaries: dict[str, dict[str, dict[str, Any]]],
+    get_mode: str = "metadata-preserving",
+) -> str:
+    """Default to source-order equality; historical outcomes require explicit modes."""
+    if get_mode not in GET_MODES:
+        raise ValueError("Unknown GET comparison mode")
+    case_id = case["id"]
+    if case_id in boundaries["safety_exceptions"]:
+        category, label = "safety_exceptions", "native-safety"
+    elif (
+        case_id in boundaries["metadata_order"]
+        and get_mode != "metadata-preserving"
+    ):
+        category, label = (
+            ("metadata_order", "metadata-schema-order")
+            if get_mode == "historical-typed-order"
+            else ("unsupported_projection", "unsupported-projection")
+        )
+    else:
+        compare_rust(case, python, native)
+        return (
+            "generic-get-uri"
+            if python["requests"] != native["requests"]
+            else "source-exact"
+        )
+    assert_native_boundary(case, python, native, boundaries[category][case_id])
+    return label
+
+
 def probe_boundary(name: str) -> None:
     """Attempt a forbidden action; the caller must observe OfflineViolation."""
     with offline_boundary():
@@ -785,17 +823,28 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rust-probe", type=Path)
     parser.add_argument(
+        "--get-mode",
+        choices=GET_MODES,
+        default="metadata-preserving",
+        help=(
+            "default: require original source metadata order; historical modes "
+            "assert old typed-order or disabled-provider evidence explicitly"
+        ),
+    )
+    parser.add_argument(
         "--with-get-projection",
         action="store_true",
         help=(
-            "require protected GET comparisons after the real projection provider "
-            "is integrated; never use an expected-output callback"
+            "compatibility flag: real projection is now required by default; "
+            "historical behavior requires --get-mode"
         ),
     )
     parser.add_argument("--case", help="select one exact non-query case")
     options = parser.parse_args()
     if options.with_get_projection and not options.rust_probe:
         parser.error("--with-get-projection requires --rust-probe")
+    if options.with_get_projection and options.get_mode == "historical-no-projection":
+        parser.error("--with-get-projection conflicts with historical-no-projection")
     manifest = load_cases()
     boundaries = load_native_boundaries()
     sources = load_sources()
@@ -821,7 +870,7 @@ def main() -> None:
     for case in source_only:
         assert_observation(case, observe(case["input"], sources), python=True)
     native_cases, unsupported = native_inventory(
-        cases, options.with_get_projection
+        cases, options.get_mode != "historical-no-projection"
     )
     native_inputs = [workspace_input(case) for case in old] + [
         case["input"] for case in native_cases
@@ -851,28 +900,13 @@ def main() -> None:
                 counts["source-exact"] += 1
         python_by_id = {actual["id"]: actual for actual in python}
         for case, actual in zip(native_cases, rust[len(old):]):
-            case_id = case["id"]
-            py = python_by_id[case_id]
-            if case_id in boundaries["safety_exceptions"]:
-                category, label = "safety_exceptions", "native-safety"
-            elif case_id in boundaries["unsupported_projection"]:
-                category, label = (
-                    ("metadata_order", "metadata-schema-order")
-                    if options.with_get_projection
-                    else ("unsupported_projection", "unsupported-projection")
-                )
-            else:
-                compare_rust(case, py, actual)
-                counts[
-                    "generic-get-uri"
-                    if case.get("comparison") == "specialized-uri"
-                    else "source-exact"
-                ] += 1
-                continue
-            assert_native_boundary(case, py, actual, boundaries[category][case_id])
+            label = compare_native_case(
+                case, python_by_id[case["id"]], actual, boundaries, options.get_mode
+            )
             counts[label] += 1
         print(
-            "Native assertions (separate evidence, not blanket parity): "
+            f"Native assertions (GET mode={options.get_mode}; "
+            "separate evidence, not blanket parity): "
             + ", ".join(f"{label}={count}" for label, count in counts.items())
         )
     else:
@@ -889,8 +923,8 @@ def main() -> None:
         f"Checked {len(source_inputs)} command references and "
         f"{len(source_only)} source-only case(s) against {SOURCE_COMMIT}; "
         f"native probe {native_status}; "
-        f"{len(unsupported)} GET path-discovery case(s) require explicit "
-        "NotSupported until provider integration. "
+        f"{len(unsupported)} historical GET path-discovery case(s) "
+        "require explicit NotSupported. "
         "This is not full GET parity."
     )
 

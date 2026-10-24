@@ -26,6 +26,14 @@ CLI layer; no SDK or deployment behavior changes.
 No source or old golden fixture is edited. The old workspace `query_projection`
 expectation is consumed unchanged as a public-API regression.
 
+The configured read host's generic GET now supplies additive SDK `ItemMetadata`
+directly to this evaluator, preserving the original parsed HTTP key order and
+number types rather than reserializing legacy `Item`. Both protected default
+GET path inventories match source order. Shared-HTTP consumers exercise actual
+identity, `keys(@)` and numeric-array queries; the query implementation and its
+numeric/runtime limits are unchanged. Specialized GET URI differences remain
+separate; see [read-command compatibility](read-command-compatibility.md).
+
 ## Bounded behavior matrix
 
 | Area | Evidence | Label |

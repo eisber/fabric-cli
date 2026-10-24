@@ -336,6 +336,60 @@ class CommandReferenceTests(unittest.TestCase):
                         case, actual, actual, boundary
                     )
 
+    def test_default_metadata_comparison_requires_source_order_and_keeps_uri_seam(self) -> None:
+        for case_id, historical in self.boundaries["metadata_order"].items():
+            with self.subTest(case=case_id):
+                case = self.cases[case_id]
+                python = self.observation(case_id)
+                current = REFERENCE._expected(case)
+                self.assertEqual(
+                    REFERENCE.compare_native_case(
+                        case, python, current, self.boundaries
+                    ),
+                    "generic-get-uri",
+                )
+                old = REFERENCE._expected(historical)
+                with self.assertRaisesRegex(AssertionError, "contract mismatch"):
+                    REFERENCE.compare_native_case(
+                        case, python, old, self.boundaries
+                    )
+                self.assertEqual(
+                    REFERENCE.compare_native_case(
+                        case, python, old, self.boundaries, "historical-typed-order"
+                    ),
+                    "metadata-schema-order",
+                )
+                with self.assertRaisesRegex(AssertionError, "contract mismatch"):
+                    REFERENCE.compare_native_case(
+                        case, python, current, self.boundaries,
+                        "historical-typed-order",
+                    )
+                for field, replacement in (
+                    ("exit_code", 1), ("stderr", "private"),
+                    ("scopes", []), ("requests", python["requests"]),
+                    ("stdout", current["stdout"].replace("\n", "\r\n")),
+                ):
+                    with self.subTest(field=field), self.assertRaises(AssertionError):
+                        REFERENCE.compare_native_case(
+                            case, python, {**current, field: replacement}, self.boundaries
+                        )
+
+    def test_historical_no_projection_mode_asserts_old_failures_not_current_success(self) -> None:
+        for case_id, boundary in self.boundaries["unsupported_projection"].items():
+            case = self.cases[case_id]
+            python = self.observation(case_id)
+            old = REFERENCE._expected(boundary)
+            self.assertEqual(
+                REFERENCE.compare_native_case(
+                    case, python, old, self.boundaries, "historical-no-projection"
+                ),
+                "unsupported-projection",
+            )
+            with self.assertRaises(AssertionError):
+                REFERENCE.compare_native_case(case, python, old, self.boundaries)
+        with self.assertRaisesRegex(ValueError, "Unknown GET"):
+            REFERENCE.compare_native_case(case, python, old, self.boundaries, "waived")
+
     def test_native_boundaries_cannot_be_erased_or_called_success(self) -> None:
         manifest = json.loads(
             (HERE / "native-boundaries.json").read_text(encoding="utf-8")

@@ -83,6 +83,32 @@ type-invalid and explicitly unsupported query errors through command envelopes.
 All 50 command oracle/guard tests pass on the merged tree. This proves bounded
 composition, not live-host, specialized GET or complete JMESPath parity.
 
+### Metadata-preserving follow-on
+
+Generic GET now uses additive `Client::get_item_metadata`/`ItemMetadata`.
+Required `id` and `displayName` remain validated strings; the complete parsed
+HTTP `Value` reaches real `PythonQuery` without typed reserialization. Unknown
+fields, known-field positions, null/missing types, nested key order and JSON
+number types are retained. Existing typed `Item` fields, imports, struct
+literals, LIST and `get_item` behavior are unchanged.
+
+All 25 protected command outcomes remain asserted. Both successful metadata
+inventories now match original Python output bytes and order; historical
+typed-order evidence remains unchanged and requires an explicit comparator
+mode. The honest exclusive categories are **16 fully source-exact, six
+generic-URI differences and three SDK safety differences**, with zero current
+metadata-order or unsupported-projection failures. This is 18 exact LS/inventory
+output cases plus four exact service-error output cases, but not 18 fully
+source-exact requests: both successful GETs also retain specialized Python URIs
+(`notebooks` and `lakehouses`) versus native `items`. No URI difference is
+waived or relabeled as full parity.
+
+Four additive original-source comparisons and shared-HTTP public consumers
+exercise unknown-before-known/reordered keys, null/missing/non-string types,
+nested objects, Unicode, integer/float distinctions and actual parser duplicate
+semantics. Existing GET cancellation, status/error precedence, response limits
+and sanitized diagnostics remain in force.
+
 ## Gaps and intentional boundaries
 
 Default no-query LS is executable without the query library. Generic GET
@@ -91,7 +117,6 @@ when the host selects `with_default_projection()`. Hosts may override that
 provider or explicitly opt out with `NoQuery`; neither choice configures
 production credentials, transport or context.
 
-The typed SDK reserialization cannot reconstruct source HTTP dictionary order.
 GET specialized URI, definitions, connections/schedules and specialized
 augmentation are outside this bounded generic metadata contract. Native generic
 GET tests prove the metadata helper boundary, not full command parity.

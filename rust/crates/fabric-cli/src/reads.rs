@@ -330,7 +330,7 @@ impl ReadHost<'_> {
                     .expect("item parentage is validated by context");
                 let item = self
                     .sdk
-                    .get_item(
+                    .get_item_metadata(
                         self.items,
                         required_id(&workspace)?,
                         required_id(&target)?,
@@ -339,7 +339,7 @@ impl ReadHost<'_> {
                     )
                     .await
                     .map_err(|error| errors::item(&error.kind))?;
-                let data = serde_json::to_value(item).map_err(|_| CommandError::invalid_json())?;
+                let data = item.into_value();
                 let data = self.projection.project(
                     data,
                     command.query.as_deref().filter(|query| !query.is_empty()),

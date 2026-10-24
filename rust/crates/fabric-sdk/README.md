@@ -22,12 +22,16 @@ This is read-only SDK metadata, not folder tree assembly, mutations or CLI parit
 
 ## Generic item LIST/GET
 
-The additive `items` module and `Client::{list_items,get_item}` delegate to
+The additive `items` module and `Client::{list_items,get_item,get_item_metadata}` delegate to
 `fabric-sdk-items` with the same injected credential and selection. Existing
 workspace imports remain unchanged. See the [item SDK](../fabric-sdk-items/README.md)
 for typed models, ordered query/token handling, partial failures, cancellation,
 safety exceptions and the exact pinned Python source. This is generic metadata
 LIST/GET, not specialized item definitions, mutations or CLI parity.
+`get_item_metadata` returns `items::ItemMetadata`, preserving the complete parsed
+HTTP object's order and values with required string-field validation. The
+original `Item` imports, public fields, accessors and typed LIST/GET behavior
+remain unchanged.
 
 ## Capacity listing
 

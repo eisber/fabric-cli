@@ -16,7 +16,7 @@ pub use items::{
     ItemError, ItemErrorKind, ItemExecutionError, ItemExecutor, ItemGetOptions, ItemList,
     ItemListError, ItemListLimits, ItemListOptions, ItemRequest, ItemResponse,
 };
-pub use models::Item;
+pub use models::{Item, ItemMetadata};
 use std::{fmt, sync::Arc};
 
 /// A generic item service client, independent of the facade and identity backend.

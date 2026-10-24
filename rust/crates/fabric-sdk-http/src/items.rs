@@ -147,4 +147,74 @@ pub(crate) mod tests {
         );
         assert!(raw.requests.lock().unwrap().is_empty());
     }
+
+    #[tokio::test]
+    async fn metadata_facade_preserves_http_body_order_through_shared_retry_and_bounds() {
+        let body = r#"{"future":{"z":null,"a":[1,1.0]},"displayName":"N","id":"i","type":null}"#;
+        let raw = ScriptedClient::new([response(503, "", &[]), response(200, body, &[])]);
+        let exec = executor(raw.clone(), Arc::new(TestTimer::default()));
+        let metadata = sdk()
+            .get_item_metadata(
+                &exec,
+                "ws",
+                "i",
+                ItemGetOptions {
+                    max_response_bytes: NonZeroUsize::new(body.len()).unwrap(),
+                    ..Default::default()
+                },
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(serde_json::to_string(&metadata).unwrap(), body);
+        assert_eq!(raw.requests.lock().unwrap().len(), 2);
+
+        let raw = ScriptedClient::new([response(200, &format!("{body} "), &[])]);
+        let exec = executor(raw, Arc::new(TestTimer::default()));
+        assert_eq!(
+            sdk()
+                .get_item_metadata(
+                    &exec,
+                    "ws",
+                    "i",
+                    ItemGetOptions {
+                        max_response_bytes: NonZeroUsize::new(body.len()).unwrap(),
+                        ..Default::default()
+                    },
+                    pending(),
+                )
+                .await
+                .unwrap_err()
+                .kind,
+            ItemErrorKind::ResponseLimit
+        );
+
+        let raw = ScriptedClient::new((0..4).map(|_| response(503, "", &[])));
+        let exec = executor(raw.clone(), Arc::new(TestTimer::default()));
+        assert_eq!(
+            sdk()
+                .get_item_metadata(&exec, "ws", "i", ItemGetOptions::default(), pending())
+                .await
+                .unwrap_err()
+                .kind,
+            ItemErrorKind::Execution(ItemExecutionError::RetriesExhausted)
+        );
+        assert_eq!(raw.requests.lock().unwrap().len(), 4);
+
+        let raw = ScriptedClient::new([]);
+        let timer = Arc::new(TestTimer::default());
+        timer
+            .expired
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let exec = executor(raw.clone(), timer);
+        assert_eq!(
+            sdk()
+                .get_item_metadata(&exec, "ws", "i", ItemGetOptions::default(), pending())
+                .await
+                .unwrap_err()
+                .kind,
+            ItemErrorKind::Execution(ItemExecutionError::TimedOut)
+        );
+        assert!(raw.requests.lock().unwrap().is_empty());
+    }
 }

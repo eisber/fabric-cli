@@ -6,7 +6,8 @@
 use crate::Client;
 pub use fabric_sdk_items::{
     Item, ItemClient, ItemError, ItemErrorKind, ItemExecutionError, ItemExecutor, ItemGetOptions,
-    ItemList, ItemListError, ItemListLimits, ItemListOptions, ItemRequest, ItemResponse,
+    ItemList, ItemListError, ItemListLimits, ItemListOptions, ItemMetadata, ItemRequest,
+    ItemResponse,
 };
 use std::future::Future;
 
@@ -42,6 +43,24 @@ impl Client {
     ) -> Result<Item, ItemError> {
         ItemClient::new(self.credential().clone(), self.selection().clone())
             .get_item(executor, workspace_id, item_id, options, cancelled)
+            .await
+    }
+
+    /// Gets validated generic metadata retaining the parsed HTTP object's order.
+    ///
+    /// # Errors
+    /// Preserves the focused SDK's existing GET failures and required-field
+    /// validation; this does not select specialized endpoints or definitions.
+    pub async fn get_item_metadata(
+        &self,
+        executor: &dyn ItemExecutor,
+        workspace_id: &str,
+        item_id: &str,
+        options: ItemGetOptions,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<ItemMetadata, ItemError> {
+        ItemClient::new(self.credential().clone(), self.selection().clone())
+            .get_item_metadata(executor, workspace_id, item_id, options, cancelled)
             .await
     }
 }

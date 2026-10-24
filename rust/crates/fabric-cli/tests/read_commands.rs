@@ -371,9 +371,9 @@ fn builtin_get_discovers_paths_or_executes_actual_query_with_sdk_metadata() {
             json!([
                 "id",
                 "displayName",
+                "type",
                 "properties.enabled",
                 "properties.rows[0].n",
-                "type"
             ]),
         ),
         (
@@ -886,6 +886,107 @@ mod shared_http {
                 assert!(!String::from_utf8(plan.payload).unwrap().contains("private"));
             }
             assert_eq!(http.requests.lock().unwrap().len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn metadata_http_order_reaches_real_python_query_and_command_streams() {
+        let wire = r#"{"future":{"z":null,"a":[1,1.0,-0.0,9007199254740993]},"displayName":"\u96ea","id":"old","type":null,"id":"n","tail":false}"#;
+        let root = Element::tenant("T", "t");
+        let ws = workspace(&root, "W", "w");
+        let item = Element::child(
+            "Native",
+            Some("n".into()),
+            NodeKind::Item(ItemType::parse("Notebook").unwrap()),
+            ws.clone(),
+        )
+        .unwrap();
+        let catalog = Catalog::new(vec![ws.clone(), item]);
+        for (query, expected) in [
+            (
+                None,
+                json!([
+                    "future.z",
+                    "future.a[0]",
+                    "future.a[1]",
+                    "future.a[2]",
+                    "future.a[3]",
+                    "displayName",
+                    "id",
+                    "type",
+                    "tail"
+                ]),
+            ),
+            (
+                Some("keys(@)"),
+                json!(["future", "displayName", "id", "type", "tail"]),
+            ),
+            (
+                Some("future.a"),
+                json!([1, 1.0, -0.0, 9007199254740993_u64]),
+            ),
+            (
+                Some("."),
+                json!([{
+                    "future":{"z":null,"a":[1,1.0,-0.0,9007199254740993_u64]},
+                    "displayName":"\u{96ea}","id":"n","type":null,"tail":false
+                }]),
+            ),
+        ] {
+            let http = http([response(200, wire)]);
+            let executor = HttpExecutor::new(
+                http.clone(),
+                Arc::new(Timer::default()),
+                ExecutionOptions::default(),
+            )
+            .unwrap();
+            let credential = Arc::new(Credential::default());
+            let client = sdk(credential.clone());
+            let host =
+                host(&client, &executor, &catalog, ws.clone(), &NoQuery).with_default_projection();
+            let mut args = vec!["get", "Native.Notebook", "--output_format", "json"];
+            if let Some(query) = query {
+                args.extend(["--query", query]);
+            }
+            let (mut stdout, mut stderr) = (vec![], vec![]);
+            let exit = host
+                .run(&parse(&args), pending(), &mut stdout, &mut stderr)
+                .await
+                .unwrap();
+            assert_eq!(exit, 0, "{query:?}");
+            assert!(stderr.is_empty());
+            let value: Value = serde_json::from_slice(&stdout).unwrap();
+            assert_eq!(value["result"]["data"], expected, "{query:?}");
+            let envelope = json!({
+                "timestamp":"2000-01-01T00:00:00Z","status":"Success","command":"get",
+                "result":{"data":expected}
+            });
+            let mut expected_bytes = vec![];
+            serde::Serialize::serialize(
+                &envelope,
+                &mut serde_json::Serializer::with_formatter(
+                    &mut expected_bytes,
+                    serde_json::ser::PrettyFormatter::with_indent(b"    "),
+                ),
+            )
+            .unwrap();
+            expected_bytes = String::from_utf8(expected_bytes)
+                .unwrap()
+                .replace('\u{96ea}', "\\u96ea")
+                .into_bytes();
+            expected_bytes.push(b'\n');
+            assert_eq!(stdout, expected_bytes, "{query:?}");
+            assert_eq!(
+                credential.scopes.lock().unwrap().as_slice(),
+                [vec!["https://api.fabric.microsoft.com/.default"]]
+            );
+            let requests = http.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(
+                requests[0].url().as_str(),
+                "https://api.fabric.microsoft.com/v1/workspaces/w/items/n"
+            );
+            assert!(Arc::ptr_eq(&host.current, &ws));
         }
     }
 }

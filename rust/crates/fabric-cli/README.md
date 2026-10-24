@@ -49,8 +49,9 @@ provider, or supply that provider directly. It uses the real
 `fabric-cli-query` library rather than a callback stub.
 
 Generic item `get` resolves a path using the supplied snapshot and actually
-calls the SDK generic `/items/{id}` operation. It passes raw typed metadata to
-the projection boundary. Python GET with no query discovers JSON property
+calls the SDK generic `/items/{id}` operation through `get_item_metadata`.
+It passes the validated, ordered parsed HTTP object directly to the projection
+boundary, without reserializing the legacy typed `Item`. Python GET with no query discovers JSON property
 paths; it does **not** return the object unchanged. The built-in provider maps
 absent GET expressions to native path discovery, preserves `"."` identity and
 Python scalar stringification, and maps query failures to source-shaped
@@ -88,9 +89,10 @@ folder parent loading/presentation belongs to the separate folder slice.
 SDK origin, pagination, malformed-response and identifier safety exceptions
 remain in force. In particular, foreign continuation URIs fail instead of
 being ignored, malformed pages return explicit typed failures, and no SDK
-partial progress is printed as a complete result. Typed GET metadata preserves
-values but serializes known fields followed by sorted additional fields; this
-does not recover the original HTTP object's insertion order.
+partial progress is printed as a complete result. Generic GET preserves source
+metadata field order, unknown/null values and JSON number types before native
+projection. Specialized endpoint routing remains a separate difference; matching
+metadata output does not establish full GET parity.
 
 See [command compatibility](../../docs/read-command-compatibility.md).
 `examples/read_probe.rs` is a test subprocess harness over real SDK calls and an
