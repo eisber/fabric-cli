@@ -59,8 +59,18 @@ The scaffold has offline credential interoperability, typed identity errors,
 single-page data serialization, subprocess CLI contracts, and workspace-edge
 checks. Injected executors now exercise bounded workspace traversal and native
 Notebook file preparation, create/update, operation polling and cancellation.
-It does not test real authentication, production HTTP behavior, live deployment,
-enterprise trust/proxies, or broker policy.
+The shared `fabric-sdk-http` adapter now executes workspace and Notebook
+requests through a caller-injected Azure HTTP client and timer. Its offline
+tests cover streaming bounds, deadlines, read retries, cancellation, and
+Notebook operation/result retrieval. Seven source-pinned Python HTTPS retry
+traces are checked independently by
+[`tests/compatibility/http/reference.py`](../tests/compatibility/http/README.md).
+This is a bounded SDK execution slice, not CLI parity. The adapter's
+[compatibility limits](../crates/fabric-sdk-http/README.md) explicitly retain
+the no-mutation-replay exception and enumerate unported HTTP behavior.
+
+These checks do not test real authentication, a selected production HTTP/TLS
+backend, live deployment, enterprise trust/proxies, or broker policy.
 
 Native CI is configured for `windows-2025`, `ubuntu-24.04`, and `macos-15`.
 Actual runner architecture is recorded by `rustc --version --verbose`; do not

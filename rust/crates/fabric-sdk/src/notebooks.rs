@@ -140,6 +140,10 @@ pub enum NotebookExecutionError {
     TimedOut,
     /// Request execution was cancelled locally.
     Cancelled,
+    /// Streaming execution stopped before exceeding the response byte bound.
+    ResponseLimit,
+    /// A read exhausted its finite retry budget. No mutation was replayed.
+    RetriesExhausted,
 }
 
 /// Operation-local seam following the workspace executor pattern.
@@ -433,10 +437,13 @@ impl NotebookSession<'_> {
         if method == "POST" {
             self.mutation_may_have_occurred = true;
         }
-        let response = self
-            .run(self.executor.execute(request))
-            .await?
-            .map_err(NotebookErrorKind::Execution)?;
+        let response =
+            self.run(self.executor.execute(request))
+                .await?
+                .map_err(|error| match error {
+                    NotebookExecutionError::ResponseLimit => NotebookErrorKind::Limit,
+                    error => NotebookErrorKind::Execution(error),
+                })?;
         if response.body.len() > self.limits.max_response_bytes.get() {
             return Err(NotebookErrorKind::Limit);
         }

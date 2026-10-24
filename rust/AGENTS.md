@@ -38,6 +38,10 @@ Repository-wide contribution and team-review rules still apply.
 - SDK consumers inject `azure_core::credentials::TokenCredential`. Libraries
   never prompt, exit, initialize a global logger/runtime, or use mutable CLI
   globals. Reuse the caller's async runtime.
+- Implement typed REST endpoints by hand over shared transport and behavioral
+  policies; do not duplicate HTTP, paging, or LRO machinery per endpoint or adopt
+  the generator PoCs. Keep Swagger as a contract/reference input. See the
+  [REST client decision](docs/decisions/rest-client-implementation.md).
 - Tests stay offline and secret-free. Do not discover ambient credentials,
   implement static-token production fallback, persist plaintext credentials, or
   add a Python/az/azd runtime requirement. The production identity backend remains

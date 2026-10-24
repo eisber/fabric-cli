@@ -8,6 +8,7 @@ default-members = [
     "crates/fabric-identity",
     "crates/fabric-sdk",
     "crates/fabric-sdk-workspaces",
+    "crates/fabric-sdk-http",
     "crates/fabric-deploy",
     "crates/fabric-cli",
 ]
@@ -24,10 +25,12 @@ publish = false
 fabric-core = { path = "crates/fabric-core" }
 fabric-sdk = { path = "crates/fabric-sdk" }
 fabric-sdk-workspaces = { path = "crates/fabric-sdk-workspaces" }
+fabric-sdk-http = { path = "crates/fabric-sdk-http" }
 fabric-identity-windows = { path = "crates/fabric-identity-windows" }
 azure_core = { version = "1.1.0", default-features = false }
 base64 = "0.22.1"
 async-trait = "0.1"
+futures-util = { version = "0.3.34", default-features = false, features = ["std", "async-await"] }
 clap = { version = "4.6.7", default-features = false, features = ["std", "help", "usage", "error-context"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

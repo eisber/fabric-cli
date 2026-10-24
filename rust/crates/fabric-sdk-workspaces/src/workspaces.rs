@@ -92,6 +92,8 @@ pub enum WorkspaceExecutionError {
     Cancelled,
     /// The agreed executor retry budget was exhausted.
     RetriesExhausted,
+    /// Streaming execution stopped before exceeding the response byte bound.
+    ResponseLimit,
 }
 
 /// Injection boundary for this operation, not a production transport implementation.
@@ -315,7 +317,10 @@ impl WorkspaceClient {
                 cancelled.as_mut(),
             )
             .await?
-            .map_err(WorkspaceListErrorKind::Execution)?;
+            .map_err(|error| match error {
+                WorkspaceExecutionError::ResponseLimit => WorkspaceListErrorKind::ResponseLimit,
+                error => WorkspaceListErrorKind::Execution(error),
+            })?;
             or_cancel(std::future::ready(()), cancelled.as_mut()).await?;
             if response.body.len() > limits.max_response_bytes.get() {
                 return Err(WorkspaceListErrorKind::ResponseLimit);

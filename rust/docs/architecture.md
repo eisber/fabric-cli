@@ -114,6 +114,17 @@ The SDK's normal dependency closure excludes the CLI and identity implementation
 SDK consumers supply an `Arc<dyn azure_core::credentials::TokenCredential>`.
 Neither `az`, `azd`, nor Python is required by the Rust workspace.
 
+## REST client implementation
+
+The owner selected handwritten typed endpoint methods over shared HTTP
+infrastructure and behavioral policies on October 24, 2026. Keep credentials,
+bounded reads, cancellation, errors, pagination, and LRO behavior reusable rather
+than duplicating them per endpoint. Do not adopt the isolated generator PoCs as
+production dependencies. Swagger remains a contract/reference input, not the
+production SDK generator. See the
+[REST client decision](decisions/rest-client-implementation.md) for rationale,
+evidence, and limits; production transport and identity decisions remain separate.
+
 ## Current offline slice
 
 `fabric-core` re-exports Azure's credential types and provides explicit, non-secret
@@ -135,7 +146,9 @@ continuation values. It does not follow URIs itself. The workspace service's
 through injected execution, with explicit partial failures and cancellation.
 Missing or malformed `value` data fails rather than returning a success-shaped
 empty page. The SDK README records source mapping and intentional differences;
-workspace retry, timeout, production transport, and LRO policy remain unimplemented.
+workspace production transport remains unselected. Retry/deadline behavior is
+available through the optional caller-composed `fabric-sdk-http` adapter;
+workspace listing does not acquire LRO semantics from that adapter.
 
 `fabric-deploy` implements a bounded local Notebook loader and supported transforms,
 using the additive `fabric-sdk::notebooks` APIs for item discovery, create/update
@@ -207,6 +220,14 @@ See [CLI contracts](compatibility.md#bootstrap-cli-contract).
 
 ## Runtime and transport policy
 
+`fabric-sdk-http` is the first reusable executor adapter for workspace and
+Notebook service requests. It accepts a caller-owned Azure `HttpClient` and
+asynchronous timer, with bounded streaming, deadlines, read-status retries and
+no mutation replay. It depends on the SDK facade, not the reverse, so focused
+SDK consumers remain free to inject other executors. See its
+[source mapping and compatibility limits](../crates/fabric-sdk-http/README.md).
+It does not install a production HTTP/TLS backend or create a runtime.
+
 Libraries must not prompt, exit the process, initialize a global logger, create
 their own async runtime, or hold global mutable CLI context. Async work reuses
 the caller's runtime. Tokio's `macros` and single-thread `rt` features are used
@@ -218,7 +239,7 @@ or duplicate HTTP implementation to configure yet. Azure's shared types still
 bring transitive URL, time, serialization, and diagnostic dependencies.
 Duplicate `syn` major versions are proc-macro dependencies, not HTTP transports.
 
-A future network slice must select one shared service pipeline, provisionally
+A future production transport slice must select one shared service pipeline, provisionally
 using Rustls, and validate enterprise proxy and certificate trust behavior.
 Rustls for HTTP does not rule out separate native prerequisites for certificate
 authentication, including OpenSSL. Resolve those prerequisites before adding an
