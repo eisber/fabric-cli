@@ -55,6 +55,12 @@ Notebook path is not a full deployment port.
 
 ## Validation boundaries
 
+The additive [folder LIST/GET slice](folder-compatibility.md) has focused,
+facade and shared HTTP consumers. It preserves raw folder/query semantics
+separately from explicit typed-response, origin/path, cancellation and traversal
+safety exceptions. It does not implement memstore tree assembly, folder CLI
+handlers, mutations or live parity.
+
 The bounded [generic item LIST/GET slice](item-compatibility.md) adds a focused
 SDK crate, additive facade delegation and a shared HTTP adapter. Its source-pinned
 offline oracle compares raw SDK request/row/error semantics separately from

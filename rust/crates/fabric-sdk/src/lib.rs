@@ -4,11 +4,12 @@
 //! Fabric SDK facade with no identity implementation or CLI dependency.
 //!
 //! Construction does not request tokens or contact a service. Workspace listing
-//! and Notebook operations use caller-injected credentials, execution, and
+//! and item, capacity, folder and Notebook operations use injected execution and
 //! cancellation; no production transport, identity backend, retry policy, or
 //! runtime is installed.
 
 pub mod capacities;
+pub mod folders;
 pub mod items;
 pub mod models;
 pub mod notebooks;

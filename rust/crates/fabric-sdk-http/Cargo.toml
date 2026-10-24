@@ -17,6 +17,7 @@ layer = "sdk"
 azure_core.workspace = true
 fabric-sdk.workspace = true
 fabric-sdk-items.workspace = true
+fabric-sdk-folders.workspace = true
 futures-util.workspace = true
 
 [dev-dependencies]

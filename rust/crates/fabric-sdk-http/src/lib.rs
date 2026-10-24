@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Shared HTTP execution for handwritten workspace and Notebook operations.
+//! Shared HTTP execution for handwritten Fabric SDK operations.
 //!
 //! The caller supplies an Azure HTTP client and asynchronous timer. This crate
 //! installs no transport, TLS backend, credential provider, or runtime. The HTTP
@@ -88,6 +88,7 @@ impl fmt::Display for ExecutionError {
 impl std::error::Error for ExecutionError {}
 
 mod capacities;
+mod folders;
 mod items;
 #[cfg(test)]
 mod tests;

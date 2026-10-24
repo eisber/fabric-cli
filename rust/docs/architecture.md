@@ -129,6 +129,13 @@ Neither `az`, `azd`, nor Python is required by the Rust workspace.
 
 ## REST client implementation
 
+The additive `fabric-sdk-folders` SDK-layer crate owns read-only folder LIST/GET.
+It preserves opaque folder/parent data and Python query merge semantics, with
+explicit safety bounds and cancellation. The facade delegates with the same
+credential/selection; `fabric-sdk-http` adds only a thin adapter over private
+shared execution. See [folder compatibility](folder-compatibility.md) for exact
+source, consumers, independent evidence and non-goals.
+
 The additive `fabric-sdk-items` service owns bounded generic item LIST/GET.
 Its exercised SDK-layer edges are `fabric-sdk -> fabric-sdk-items`,
 `fabric-sdk-http -> fabric-sdk-items`, and `fabric-sdk-items -> fabric-core`
