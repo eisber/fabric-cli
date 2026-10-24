@@ -116,6 +116,16 @@ Neither `az`, `azd`, nor Python is required by the Rust workspace.
 
 ## REST client implementation
 
+The additive `fabric-sdk-items` service owns bounded generic item LIST/GET.
+Its exercised SDK-layer edges are `fabric-sdk -> fabric-sdk-items`,
+`fabric-sdk-http -> fabric-sdk-items`, and `fabric-sdk-items -> fabric-core`
+and `fabric-sdk-workspaces` (existing `Page`/`FabricServiceError` wire types).
+It depends on neither the facade nor identity/deployment/CLI implementations.
+The workspace pager is private and remains unchanged; item-specific traversal
+reuses one local set of read/query/cancellation/error helpers. The stable facade
+delegates both new methods; the HTTP adapter uses its private shared execution
+engine. See [item compatibility](item-compatibility.md) for source and limits.
+
 The owner selected handwritten typed endpoint methods over shared HTTP
 infrastructure and behavioral policies on October 24, 2026. Keep credentials,
 bounded reads, cancellation, errors, pagination, and LRO behavior reusable rather

@@ -232,6 +232,7 @@ dependencies = [
  "azure_core",
  "base64",
  "fabric-core",
+ "fabric-sdk-items",
  "fabric-sdk-workspaces",
  "serde",
  "serde_json",
@@ -246,7 +247,21 @@ dependencies = [
  "azure_core",
  "fabric-core",
  "fabric-sdk",
+ "fabric-sdk-items",
  "futures-util",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-sdk-items"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "azure_core",
+ "fabric-core",
+ "fabric-sdk-workspaces",
+ "serde",
  "serde_json",
  "tokio",
 ]

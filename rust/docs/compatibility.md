@@ -55,6 +55,13 @@ Notebook path is not a full deployment port.
 
 ## Validation boundaries
 
+The bounded [generic item LIST/GET slice](item-compatibility.md) adds a focused
+SDK crate, additive facade delegation and a shared HTTP adapter. Its source-pinned
+offline oracle compares raw SDK request/row/error semantics separately from
+Python-only quirks and explicit origin/path/bound/typed-response exceptions.
+It does not replace the existing workspace goldens or implement CLI item
+projection, definitions, mutations, specialized collections or live execution.
+
 The scaffold has offline credential interoperability, typed identity errors,
 single-page data serialization, subprocess CLI contracts, and workspace-edge
 checks. Injected executors now exercise bounded workspace traversal and native

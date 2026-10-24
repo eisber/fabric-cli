@@ -7,6 +7,15 @@ This slice translates `microsoft/fabric-cli` at
 command, real HTTP transport, or identity backend. SDK callers supply an Azure
 `TokenCredential` independently of `fabric-identity` and the CLI.
 
+## Generic item LIST/GET
+
+The additive `items` module and `Client::{list_items,get_item}` delegate to
+`fabric-sdk-items` with the same injected credential and selection. Existing
+workspace imports remain unchanged. See the [item SDK](../fabric-sdk-items/README.md)
+for typed models, ordered query/token handling, partial failures, cancellation,
+safety exceptions and the exact pinned Python source. This is generic metadata
+LIST/GET, not specialized item definitions, mutations or CLI parity.
+
 ## Focused crate and facade compatibility
 
 The workspace implementation is extracted from SDK checkpoint

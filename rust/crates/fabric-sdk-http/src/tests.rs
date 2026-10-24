@@ -31,9 +31,9 @@ const OPERATION: &str = "22222222-2222-2222-2222-222222222222";
 const ITEM: &str = "33333333-3333-3333-3333-333333333333";
 
 #[derive(Default)]
-struct TestTimer {
+pub(super) struct TestTimer {
     waits: Mutex<Vec<Duration>>,
-    expired: AtomicBool,
+    pub(super) expired: AtomicBool,
 }
 
 impl ExecutionTimer for TestTimer {
@@ -50,13 +50,13 @@ impl ExecutionTimer for TestTimer {
 }
 
 #[derive(Debug)]
-struct ScriptedClient {
+pub(super) struct ScriptedClient {
     replies: Mutex<VecDeque<azure_core::Result<AsyncRawResponse>>>,
-    requests: Mutex<Vec<Request>>,
+    pub(super) requests: Mutex<Vec<Request>>,
 }
 
 impl ScriptedClient {
-    fn new(replies: impl IntoIterator<Item = AsyncRawResponse>) -> Arc<Self> {
+    pub(super) fn new(replies: impl IntoIterator<Item = AsyncRawResponse>) -> Arc<Self> {
         Arc::new(Self {
             replies: Mutex::new(replies.into_iter().map(Ok).collect()),
             requests: Mutex::new(Vec::new()),
@@ -98,14 +98,14 @@ fn token() -> AccessToken {
     }
 }
 
-fn sdk() -> Client {
+pub(super) fn sdk() -> Client {
     Client::new(
         Arc::new(TestCredential),
         CredentialSelection::new("offline", "tenant", fabric_core::Audience::Fabric).unwrap(),
     )
 }
 
-fn response(status: u16, body: &str, headers: &[(&str, &str)]) -> AsyncRawResponse {
+pub(super) fn response(status: u16, body: &str, headers: &[(&str, &str)]) -> AsyncRawResponse {
     let mut result = Headers::new();
     for &(name, value) in headers {
         result.insert(name.to_owned(), value.to_owned());
@@ -113,7 +113,7 @@ fn response(status: u16, body: &str, headers: &[(&str, &str)]) -> AsyncRawRespon
     AsyncRawResponse::from_bytes(StatusCode::from(status), result, body.as_bytes().to_vec())
 }
 
-fn executor(client: Arc<dyn HttpClient>, timer: Arc<TestTimer>) -> HttpExecutor {
+pub(super) fn executor(client: Arc<dyn HttpClient>, timer: Arc<TestTimer>) -> HttpExecutor {
     HttpExecutor::new(client, timer, ExecutionOptions::default()).unwrap()
 }
 

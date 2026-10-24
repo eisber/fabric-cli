@@ -3,7 +3,7 @@
 # Shared handwritten SDK HTTP execution
 
 `fabric-sdk-http` adapts one caller-owned `azure_core::http::HttpClient` and
-`ExecutionTimer` to the existing workspace and Notebook executor interfaces.
+`ExecutionTimer` to the workspace, Notebook and generic item executor interfaces.
 The SDK facade does not depend on this adapter; consumers can continue supplying
 their own executors. The crate belongs to the SDK layer and has no identity,
 deployment, CLI, transport implementation, or global runtime dependency.
@@ -70,3 +70,9 @@ This is **not full Python parity**. Explicit remaining differences/gates:
 
 No private specifications, generator output, runtime bridge, or production
 credential fallback is included.
+
+The additive item adapter lives in `src/items.rs` and calls the same private
+execution method; it does not copy headers, retries, streaming or deadline code.
+Its facade integration tests exercise item LIST pagination and GET recovery
+through shared GET retries, response limits and virtual deadlines. See the
+[item source/compatibility contract](../fabric-sdk-items/README.md).

@@ -23,6 +23,12 @@ through caller-injected SDK executors. No production HTTP transport, authenticat
 backend, or CLI deployment command is installed. Azure CLI, Azure Developer CLI,
 and Python are not runtime requirements.
 
+Generic workspace item LIST and single-item GET are available through the
+[focused item SDK](crates/fabric-sdk-items/README.md) and additive stable facade
+methods. The existing shared HTTP executor implements its injected item adapter.
+The [item compatibility matrix](docs/item-compatibility.md) distinguishes
+source-backed behavior, explicit safety exceptions and unported CLI features.
+
 Windows desktop interop is isolated in optional `fabric-identity-windows`,
 enabled through `fabric-identity/windows-broker`. The existing crates forbid
 unsafe code; default consumer graphs exclude the native crate. Enabling it
