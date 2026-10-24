@@ -187,9 +187,17 @@ dependencies = [
 name = "fabric-cli"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "azure_core",
  "clap",
+ "fabric-cli-context",
+ "fabric-cli-output",
+ "fabric-sdk",
+ "fabric-sdk-http",
  "serde",
  "serde_json",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]

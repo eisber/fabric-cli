@@ -9,25 +9,27 @@ continues to own the existing `fab` product contract.
 ## Bootstrap CLI contract
 
 The temporary executable name is `fab-rs`, version `0.1.0`. There is no REPL,
-embedded agent runtime, service command, authentication command, or deployment
-command.
+embedded agent runtime, authentication command, deployment command or production
+read host. Python-named `ls` (`dir`) and `get` are recognized; their public async
+library composition is described in [read-command compatibility](read-command-compatibility.md).
 
 | Invocation | Exit status | Standard output | Standard error |
 | --- | --- | --- | --- |
 | `--help`, `-h` | 0 | Human-readable help | Empty |
 | `--version`, `-V` | 0 | `fab-rs 0.1.0` plus newline | Empty |
+| `ls`, `dir`, valid `get` arguments | 1 | Empty | Sanitized `NotConfigured` JSON plus newline |
 | No arguments, unknown commands or flags, `auth login`, `deploy` | 2 | Empty | One JSON error object plus newline |
 | Output I/O failure | 1 | May be incomplete | Best-effort output-failure diagnostic |
 
 Invalid invocations use this exact data shape and never include supplied values:
 
 ```json
-{"error":{"code":"invalid_arguments","message":"Only --help and --version are available in this scaffold."}}
+{"error":{"code":"invalid_arguments","message":"Only --help, --version, ls, dir, and get are recognized in this preview."}}
 ```
 
 Agents may rely on exit status, stream separation, and that error shape in
 this bootstrap. Help text is for people, not a parsing interface. No successful
-service JSON schema or new resource/command namespace is established yet.
+live service host or new resource/command namespace is established yet.
 These temporary contracts do not replace Python's output and exit-code contracts.
 Credentials are not accepted through command-line options.
 

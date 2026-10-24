@@ -15,8 +15,12 @@ cargo run --locked -p fabric-cli -- --help
 cargo run --locked -p fabric-sdk --example injected_credentials
 ```
 
-Only help and version are implemented in the CLI. Other invocations fail
-explicitly. The example uses an expired test-only dummy credential and makes
+The CLI recognizes Python's `ls` (`dir`) and `get` names, but the binary returns
+typed `NotConfigured` until a production host is selected. Its
+[public async read-command library](crates/fabric-cli/README.md) composes real
+SDK reads, immutable context and JSON output using caller-injected dependencies.
+Default no-query LS works; GET/query output needs an injected projection provider.
+Other invocations fail explicitly. The example uses an expired test-only dummy credential and makes
 no service calls. Native workspace listing and a bounded
 [single-Notebook deployment library](crates/fabric-deploy/README.md) now execute
 through caller-injected SDK executors. No production HTTP transport, authentication
@@ -37,8 +41,9 @@ and explicit SDK safety differences.
 
 The pure CLI-layer [JSON output](crates/fabric-cli-output/README.md) and
 [path/context](crates/fabric-cli-context/README.md) libraries now translate
-bounded Python behavior with independent source comparisons. They are not yet
-wired into the `fab-rs` dispatcher: its help/version-only contract is unchanged.
+bounded Python behavior with independent source comparisons. The read-command
+library now consumes both; the binary still does not install a live read host.
+See [read-command compatibility](docs/read-command-compatibility.md).
 See their [output](docs/output-compatibility.md) and
 [context](docs/context-compatibility.md) matrices for unported behavior.
 

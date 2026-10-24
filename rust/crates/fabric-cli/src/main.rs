@@ -3,7 +3,10 @@
 
 //! Temporary offline CLI entry point, not a replacement for the Python `fab`.
 
-use clap::{Command, error::ErrorKind};
+use fabric_cli::{
+    HostError,
+    parser::{INVALID_ARGUMENTS, Invocation, parse_args},
+};
 use serde::Serialize;
 use std::{
     io::{self, Write},
@@ -18,40 +21,35 @@ struct ErrorEnvelope {
 #[derive(Serialize)]
 struct CommandError {
     code: &'static str,
-    message: &'static str,
+    message: String,
 }
 
 fn run() -> io::Result<ExitCode> {
-    let result = Command::new("fab-rs")
-        .bin_name("fab-rs")
-        .version(env!("CARGO_PKG_VERSION"))
-        .about("Experimental offline scaffold for Microsoft Fabric")
-        .after_help("Only help and version are implemented. No authentication, service, or deployment commands are available.")
-        .arg_required_else_help(true)
-        .try_get_matches();
-    match result {
-        Err(error)
-            if matches!(
-                error.kind(),
-                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
-            ) =>
-        {
-            write!(io::stdout().lock(), "{error}")?;
-            Ok(ExitCode::SUCCESS)
+    let (error, exit) = match parse_args(std::env::args_os()) {
+        Ok(Invocation::Display(text)) => {
+            write!(io::stdout().lock(), "{text}")?;
+            return Ok(ExitCode::SUCCESS);
         }
-        _ => {
-            let envelope = ErrorEnvelope {
-                error: CommandError {
-                    code: "invalid_arguments",
-                    message: "Only --help and --version are available in this scaffold.",
-                },
-            };
-            let mut stderr = io::stderr().lock();
-            serde_json::to_writer(&mut stderr, &envelope).map_err(io::Error::other)?;
-            writeln!(stderr)?;
-            Ok(ExitCode::from(2))
-        }
-    }
+        Ok(Invocation::Read(_)) => (
+            CommandError {
+                code: "NotConfigured",
+                message: HostError::NotConfigured.to_string(),
+            },
+            1,
+        ),
+        Err(_) => (
+            CommandError {
+                code: "invalid_arguments",
+                message: INVALID_ARGUMENTS.into(),
+            },
+            2,
+        ),
+    };
+    let envelope = ErrorEnvelope { error };
+    let mut stderr = io::stderr().lock();
+    serde_json::to_writer(&mut stderr, &envelope).map_err(io::Error::other)?;
+    writeln!(stderr)?;
+    Ok(ExitCode::from(exit))
 }
 
 fn main() -> ExitCode {

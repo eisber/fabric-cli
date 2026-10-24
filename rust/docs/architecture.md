@@ -21,8 +21,10 @@ It is not a full port, release contract, or replacement for the Python product.
 The exercised SDK edges are `fabric-sdk -> fabric-sdk-workspaces`,
 `fabric-sdk -> fabric-core`, and `fabric-sdk-workspaces -> fabric-core`;
 identity also depends on core, and `fabric-deploy` depends on `fabric-sdk`.
-The CLI has no service commands and does not need library-composition dependencies
-yet. Add those allowed edges when implementing their first real consumers.
+The CLI read-command library now consumes the SDK facade, CLI context and CLI
+output libraries. Its test-only shared HTTP consumer uses `fabric-sdk-http`.
+These are allowed CLI-to-SDK/CLI edges, not a dependency on core or identity
+implementation. The binary recognizes reads but has no production host.
 The initial five crates are not a fixed count or a maximum. Workspace membership
 uses `crates/*`, so a new crate directory does not require editing a central
 member list. Default members explicitly include safe crates and exclude the
@@ -255,7 +257,13 @@ hidden system-class parent window, checking explicit close, repeated close and
 scope-exit cleanup. They never acquire a broker factory, enumerate Windows
 accounts, request tokens, access a credential store or display broker UI.
 
-`fab-rs` supports only help and version. Other invocations fail with sanitized
+`fab-rs` recognizes Python LS/dir/GET and returns typed `NotConfigured` until a
+host explicitly supplies credentials, transport, context and time. The public
+`fabric_cli::ReadHost` runs real SDK reads on the caller's runtime, with pure
+lookup snapshots and caller-owned JSON writers. No-query LS works without query
+dependencies; generic metadata GET projects through the injected query boundary.
+See [read-command compatibility](read-command-compatibility.md) for gaps.
+Help/version remain available. Other invocations fail with sanitized
 JSON and do not echo arguments. The subprocess tests clear inherited environment
 variables except native Windows runtime and temporary-directory settings.
 See [CLI contracts](compatibility.md#bootstrap-cli-contract).

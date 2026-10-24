@@ -1,0 +1,88 @@
+<!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
+
+# Bounded read-command host
+
+`fabric-cli` composes the existing SDK facade, pure Fabric context resolver and
+JSON output library. It is not a production authentication or transport host.
+The `fab-rs` executable recognizes Python's `ls` (`dir`) and `get` names, paths,
+and flags, but returns sanitized `NotConfigured` errors for reads. Ordinary users
+cannot run live reads through this binary yet. Help/version need no host.
+
+## Public library boundary
+
+Call `parser::parse_args` with argv[0] included, then pass `Invocation::Read` to
+`ReadHost::dispatch` or `ReadHost::run`. The host explicitly supplies:
+
+- A real `fabric_sdk::Client` with caller-injected credentials and selection.
+- Workspace, item, and capacity executors. One caller-owned
+  `fabric_sdk_http::HttpExecutor` implements all three.
+- Immutable current/home context and an already-loaded `Lookup` snapshot.
+- Configuration, a validated output timestamp, query projection, and writers.
+
+No runtime, clock, mutable global state, token discovery, Python/az/azd bridge,
+HTTP/TLS backend, file export, or production fixture mode is installed.
+Cancellation is a caller future. Dropping the operation drops SDK futures;
+partial pages never become successful command data. Writers are caller-owned;
+partial write failures propagate without fallback, retry, flush or success.
+
+`dispatch` returns the existing `RenderPlan`. `run` writes that plan and returns
+its exit status. JSON success and command failure both use stdout; Unauthorized
+exits 4, other command failures 1. Cooperative SDK cancellation is a command
+failure, not the separate Python main keyboard-interrupt branch (exit 2).
+
+## Implemented composition
+
+Root `ls` lists real SDK workspaces, filters future workspace types at the CLI
+boundary, attaches canonical suffixes and stably sorts lowercase full names.
+Workspace `ls` lists real SDK items, filters future/non-string item types,
+attaches canonical suffixes, and sorts by Python's short-name/enum-name keys.
+`--long` adds item IDs; root `--long` uses the existing capacity SDK for
+capacity name/ID/region enrichment. Duplicate capacity/workspace IDs use the
+last detail row. Missing capacity values retain Python's defaults/nulls.
+`--all` and `ReadConfig::show_hidden` expose sorted virtual collection names.
+
+No-query LS works with `NoQuery`, using source column projection. A nonempty
+query instead sees sorted source rows before column projection, through
+`Projection::project(Value, Option<&str>, bool)`.
+
+Generic item `get` resolves a path using the supplied snapshot and actually
+calls the SDK generic `/items/{id}` operation. It passes raw typed metadata to
+the projection boundary. Python GET with no query discovers JSON property
+paths; it does **not** return the object unchanged. `NoQuery` explicitly rejects
+GET discovery and all queries with `NotSupported`. A host must inject the
+separately implemented query/path-discovery provider for GET output. The
+dispatcher does not implement a substitute query language. Tests use a clearly
+injected inspection callback to prove GET SDK-to-output composition, not to
+claim query parity.
+
+## Explicit limits
+
+The first slice is tenant/workspace LS and generic item metadata GET, not the
+whole Python `get` command. Python specialized item endpoints, definitions,
+sensitivity-label confirmation, connections, schedules, and environment/mirroring
+augmentation are not ported here. Generic metadata is not advertised as a full
+item export. Python's unsupported GET item types are rejected.
+
+`--output`, `--verbose`, `--force`, text output, folder-listing configuration,
+folder/OneLake/virtual collection commands, workspace GET, ambient home discovery,
+and local filesystem fallback fail explicitly. They are never silently ignored.
+Recognized binary read options still fail `NotConfigured` before host execution.
+
+Lookup is pure and caller-loaded; this slice does not recreate Python's TTL
+cache, cache-miss invalidation/retry or persistent/identity-bound context. Populate
+metadata with the SDK outside `Lookup`, then pass a consistent snapshot. Root
+LS uses the listing itself for long workspace details rather than making
+Python's second workspace-list request; enrichment is a single-list snapshot.
+Folder IDs do not affect flat workspace LS when folder listing is disabled;
+folder parent loading/presentation belongs to the separate folder slice.
+
+SDK origin, pagination, malformed-response and identifier safety exceptions
+remain in force. In particular, foreign continuation URIs fail instead of
+being ignored, malformed pages return explicit typed failures, and no SDK
+partial progress is printed as a complete result. Typed GET metadata preserves
+values but serializes known fields followed by sorted additional fields; this
+does not recover the original HTTP object's insertion order.
+
+See [command compatibility](../../docs/read-command-compatibility.md).
+`examples/read_probe.rs` is a test subprocess harness over real SDK calls and an
+offline fake executor, not an executable runtime mode, bridge, or live backend.
