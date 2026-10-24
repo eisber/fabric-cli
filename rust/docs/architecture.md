@@ -110,6 +110,19 @@ deployment lane owns its separately scoped Notebook work and coordinates
 facade/shared-manifest changes through exact commit handoffs, not shared writers.
 
 Skills describe workflows using the CLI. They do not contain service logic.
+
+### Focused capacity SDK
+
+`fabric-sdk-capacities` adds only bounded Fabric capacity listing in the SDK
+layer. Its direct consumer has no facade/identity/CLI/deployment dependency.
+It reuses the existing workspace-owned `Page`, `FabricServiceError`, response
+and execution-error types without modifying workspace behavior. The additive
+facade module delegates using the same provider and selection. The
+`fabric-sdk-http` capacity module calls private shared HTTP execution; there is
+no duplicate transport, retry, TLS, identity, or runtime implementation.
+See the [capacity matrix](capacity-compatibility.md) for its source mapping,
+failure/bounds/cancellation gates, and non-goals.
+
 The SDK's normal dependency closure excludes the CLI and identity implementation.
 SDK consumers supply an `Arc<dyn azure_core::credentials::TokenCredential>`.
 Neither `az`, `azd`, nor Python is required by the Rust workspace.

@@ -29,6 +29,19 @@ methods. The existing shared HTTP executor implements its injected item adapter.
 The [item compatibility matrix](docs/item-compatibility.md) distinguishes
 source-backed behavior, explicit safety exceptions and unported CLI features.
 
+The focused [capacity-list SDK](crates/fabric-sdk-capacities/README.md) adds bounded
+Fabric `/v1/capacities` reads through standalone, facade and shared HTTP executor
+interfaces. It does not add ARM capacity operations or CLI commands. See the
+[capacity compatibility matrix](docs/capacity-compatibility.md) for source quirks
+and explicit SDK safety differences.
+
+The pure CLI-layer [JSON output](crates/fabric-cli-output/README.md) and
+[path/context](crates/fabric-cli-context/README.md) libraries now translate
+bounded Python behavior with independent source comparisons. They are not yet
+wired into the `fab-rs` dispatcher: its help/version-only contract is unchanged.
+See their [output](docs/output-compatibility.md) and
+[context](docs/context-compatibility.md) matrices for unported behavior.
+
 Windows desktop interop is isolated in optional `fabric-identity-windows`,
 enabled through `fabric-identity/windows-broker`. The existing crates forbid
 unsafe code; default consumer graphs exclude the native crate. Enabling it

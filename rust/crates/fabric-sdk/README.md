@@ -16,6 +16,15 @@ for typed models, ordered query/token handling, partial failures, cancellation,
 safety exceptions and the exact pinned Python source. This is generic metadata
 LIST/GET, not specialized item definitions, mutations or CLI parity.
 
+## Capacity listing
+
+The additive `fabric_sdk::capacities` module reexports the focused
+[`fabric-sdk-capacities`](../fabric-sdk-capacities/README.md) API and
+`Client::list_capacities` delegates with the existing credential `Arc`, selection,
+executor, bounds, and cancellation. `models::Capacity` is a reexport, and page/
+service-error types remain shared. This implements only Fabric `/v1/capacities`,
+not ARM management or CLI capacity collection/output behavior.
+
 ## Focused crate and facade compatibility
 
 The workspace implementation is extracted from SDK checkpoint

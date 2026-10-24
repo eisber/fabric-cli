@@ -1,0 +1,647 @@
+{
+  "schema_version": 1,
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "name": "empty",
+      "rust_parity": true,
+      "responses": [{"status": 200, "body": {"value": []}, "headers": {}}],
+      "expected": {
+        "value": [],
+        "response_json": {"value": []},
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "raw_optional_fields_unknown_types_and_service_order",
+      "rust_parity": false,
+      "rust_exception": "Typed Rust rows require string id and displayName; this raw factory case deliberately preserves missing, null and numeric displayName.",
+      "responses": [{
+        "status": 200,
+        "body": {"value": [
+          {"id": "Z", "displayName": "zeta", "state": "Active", "region": "West US", "future": {"nested": [1, null]}},
+          {"id": "a", "displayName": "Alpha", "state": "active", "region": "WEST US"},
+          {"id": "only-id"},
+          {"id": "nulls", "displayName": null, "state": null, "region": null},
+          {"id": "future-types", "displayName": 17, "state": {"future": true}, "region": ["future"]},
+          {"id": "", "displayName": "", "state": "", "region": ""},
+          {"id": "雪", "displayName": "é/雪", "ID": "case-sensitive", "State": "not-state"}
+        ]},
+        "headers": {}
+      }],
+      "expected": {
+        "value": [
+          {"id": "Z", "displayName": "zeta", "state": "Active", "region": "West US", "future": {"nested": [1, null]}},
+          {"id": "a", "displayName": "Alpha", "state": "active", "region": "WEST US"},
+          {"id": "only-id"},
+          {"id": "nulls", "displayName": null, "state": null, "region": null},
+          {"id": "future-types", "displayName": 17, "state": {"future": true}, "region": ["future"]},
+          {"id": "", "displayName": "", "state": "", "region": ""},
+          {"id": "雪", "displayName": "é/雪", "ID": "case-sensitive", "State": "not-state"}
+        ],
+        "response_json": {"value": [
+          {"id": "Z", "displayName": "zeta", "state": "Active", "region": "West US", "future": {"nested": [1, null]}},
+          {"id": "a", "displayName": "Alpha", "state": "active", "region": "WEST US"},
+          {"id": "only-id"},
+          {"id": "nulls", "displayName": null, "state": null, "region": null},
+          {"id": "future-types", "displayName": 17, "state": {"future": true}, "region": ["future"]},
+          {"id": "", "displayName": "", "state": "", "region": ""},
+          {"id": "雪", "displayName": "é/雪", "ID": "case-sensitive", "State": "not-state"}
+        ]},
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "body_tokens_three_pages_empty_middle_opaque_encoding",
+      "rust_parity": false,
+      "rust_exception": "Typed Rust rejects these id-only rows because displayName is missing; the raw factory paging observation remains unchanged.",
+      "responses": [
+        {"status": 200, "body": {"value": [{"id": "b"}], "continuationToken": "a+/= ?&é", "continuationUri": "https://untrusted.invalid/ignored", "future": {"first": true}}, "headers": {}},
+        {"status": 200, "body": {"value": [], "continuationToken": "last", "future": {"second": true}}, "headers": {}},
+        {"status": 200, "body": {"value": [{"id": "a"}]}, "headers": {}}
+      ],
+      "expected": {
+        "value": [{"id": "b"}, {"id": "a"}],
+        "response_json": {"value": [{"id": "b"}, {"id": "a"}], "future": {"first": true}, "total_pages": 1},
+        "total_pages": 1,
+        "requests": [
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities?continuationToken=a%2B%2F%3D+%3F%26%C3%A9"},
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities?continuationToken=last"}
+        ],
+        "scopes": [["https://api.fabric.microsoft.com/.default"], ["https://api.fabric.microsoft.com/.default"], ["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "header_present_overrides_body_and_appends_all_first_page_lists",
+      "rust_parity": false,
+      "rust_exception": "Typed Rust rejects these id-only rows because displayName is missing; the raw factory paging observation remains unchanged.",
+      "responses": [
+        {"status": 200, "body": {"value": [{"id": "same"}], "tags": ["first"], "continuationToken": "body-ignored", "total_pages": 77}, "headers": {"X-MS-CoNtInUaTiOn": "header/+"}},
+        {"status": 200, "body": {"value": [{"id": "same"}], "tags": ["second"], "laterOnly": "discarded"}, "headers": {}}
+      ],
+      "expected": {
+        "value": [{"id": "same"}, {"id": "same"}],
+        "response_json": {"value": [{"id": "same"}, {"id": "same"}], "tags": ["first", "second"], "total_pages": 1},
+        "total_pages": 1,
+        "requests": [
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities?continuationToken=header%2F%2B"}
+        ],
+        "scopes": [["https://api.fabric.microsoft.com/.default"], ["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "empty_header_presence_suppresses_nonempty_body_token",
+      "rust_parity": false,
+      "rust_exception": "Typed Rust rejects this id-only row because displayName is missing; the raw factory header observation remains unchanged.",
+      "responses": [{"status": 200, "body": {"value": [{"id": "one"}], "continuationToken": "must-not-follow", "continuationUri": "https://untrusted.invalid/no"}, "headers": {"X-MS-Continuation": ""}}],
+      "expected": {
+        "value": [{"id": "one"}],
+        "response_json": {"value": [{"id": "one"}], "continuationToken": "must-not-follow", "continuationUri": "https://untrusted.invalid/no"},
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "empty_body_token_terminates_without_removing_metadata",
+      "rust_parity": true,
+      "responses": [{"status": 200, "body": {"value": [], "continuationToken": ""}, "headers": {}}],
+      "expected": {
+        "value": [],
+        "response_json": {"value": [], "continuationToken": ""},
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "null_body_token_terminates",
+      "rust_parity": true,
+      "responses": [{"status": 200, "body": {"value": [], "continuationToken": null}, "headers": {}}],
+      "expected": {
+        "value": [],
+        "response_json": {"value": [], "continuationToken": null},
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "continuation_uri_and_wrong_case_token_are_unused",
+      "rust_parity": true,
+      "responses": [{"status": 200, "body": {"value": [], "ContinuationToken": "wrong-case", "continuationUri": "https://untrusted.invalid/one", "continuationURI": "https://untrusted.invalid/two"}, "headers": {}}],
+      "expected": {
+        "value": [],
+        "response_json": {"value": [], "ContinuationToken": "wrong-case", "continuationUri": "https://untrusted.invalid/one", "continuationURI": "https://untrusted.invalid/two"},
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "empty_first_page_and_empty_last_page",
+      "rust_parity": false,
+      "rust_exception": "Typed Rust rejects this id-only row because displayName is missing; the raw factory empty-page observation remains unchanged.",
+      "responses": [
+        {"status": 200, "body": {"value": [], "continuationToken": "middle"}, "headers": {}},
+        {"status": 200, "body": {"value": [{"id": "middle"}], "continuationToken": "end"}, "headers": {}},
+        {"status": 200, "body": {"value": []}, "headers": {}}
+      ],
+      "expected": {
+        "value": [{"id": "middle"}],
+        "response_json": {"value": [{"id": "middle"}], "total_pages": 1},
+        "total_pages": 1,
+        "requests": [
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities?continuationToken=middle"},
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities?continuationToken=end"}
+        ],
+        "scopes": [["https://api.fabric.microsoft.com/.default"], ["https://api.fabric.microsoft.com/.default"], ["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "forbidden_default_ignores_body",
+      "rust_parity": true,
+      "responses": [{"status": 403, "body": {"errorCode": "IgnoredBody", "message": "Ignored message"}, "headers": {}}],
+      "expected": {
+        "error_code": "Forbidden",
+        "error_type": "FabricCLIError",
+        "error_message": "Access is forbidden. You do not have permission to access this resource",
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "forbidden_public_header_precedes_legacy_and_body",
+      "rust_parity": true,
+      "responses": [{"status": 403, "body": {"errorCode": "IgnoredBody", "message": "Ignored"}, "headers": {"X-MS-PUBLIC-API-ERROR-CODE": "PublicDenied", "x-ms-error-code": "LegacyDenied"}}],
+      "expected": {
+        "error_code": "PublicDenied",
+        "error_type": "FabricCLIError",
+        "error_message": "Access is forbidden. You do not have permission to access this resource",
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "forbidden_empty_public_header_falls_back_to_legacy",
+      "rust_parity": true,
+      "responses": [{"status": 403, "raw_body": "not JSON", "headers": {"x-ms-public-api-error-code": "", "X-MS-ERROR-CODE": "LegacyDenied"}}],
+      "expected": {
+        "error_code": "LegacyDenied",
+        "error_type": "FabricCLIError",
+        "error_message": "Access is forbidden. You do not have permission to access this resource",
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "not_found_ignores_both_error_headers_and_body",
+      "rust_parity": true,
+      "responses": [{"status": 404, "body": {"errorCode": "IgnoredBody", "message": "Ignored"}, "headers": {"x-ms-public-api-error-code": "IgnoredPublic", "x-ms-error-code": "IgnoredLegacy"}}],
+      "expected": {
+        "error_code": "NotFound",
+        "error_type": "FabricCLIError",
+        "error_message": "The requested resource could not be found",
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "generic_structured_fabric_error_body_precedes_headers",
+      "rust_parity": true,
+      "responses": [{"status": 400, "body": {"errorCode": "CapacityUnavailable", "message": "Synthetic failure.", "requestId": "synthetic-request", "moreDetails": [{"errorCode": "Detail", "message": "Synthetic detail"}]}, "headers": {"x-ms-public-api-error-code": "IgnoredPublic", "x-ms-error-code": "IgnoredLegacy"}}],
+      "expected": {
+        "error_code": "CapacityUnavailable",
+        "error_type": "FabricAPIError",
+        "error_message": "Synthetic failure",
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "generic_non_json_error_uses_source_default_not_http_status",
+      "rust_parity": true,
+      "responses": [{"status": 500, "raw_body": "synthetic upstream failure", "headers": {"x-ms-public-api-error-code": "IgnoredPublic"}}],
+      "expected": {
+        "error_code": "UnknownError",
+        "error_type": "FabricAPIError",
+        "error_message": "An error occurred while processing the operation",
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "unauthorized_public_header",
+      "rust_parity": true,
+      "responses": [{"status": 401, "raw_body": "", "headers": {"x-ms-public-api-error-code": "SyntheticUnauthorized"}}],
+      "expected": {
+        "error_code": "SyntheticUnauthorized",
+        "error_type": "FabricCLIError",
+        "error_message": "Access is unauthorized",
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "rate_limit_recovers_on_fourth_attempt_virtual_time",
+      "rust_parity": false,
+      "rust_exception": "Typed Rust rejects this id-only recovery row because displayName is missing; the raw factory retry observation remains unchanged.",
+      "responses": [
+        {"status": 429, "body": {"errorCode": "Ignored"}, "headers": {}},
+        {"status": 429, "raw_body": "", "headers": {"Retry-After": "not-an-integer"}},
+        {"status": 429, "raw_body": "ignored", "headers": {"rEtRy-AfTeR": "0"}},
+        {"status": 200, "body": {"value": [{"id": "recovered"}]}, "headers": {}}
+      ],
+      "expected": {
+        "value": [{"id": "recovered"}],
+        "response_json": {"value": [{"id": "recovered"}]},
+        "requests": [
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}
+        ],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": [10, 10, 0]
+      }
+    },
+    {
+      "name": "rate_limit_exhaustion_sleeps_even_after_fourth_response",
+      "rust_parity": true,
+      "responses": [
+        {"status": 429, "raw_body": "", "headers": {"Retry-After": "2"}},
+        {"status": 429, "raw_body": "", "headers": {"Retry-After": ""}},
+        {"status": 429, "raw_body": "", "headers": {"Retry-After": "3"}},
+        {"status": 429, "raw_body": "", "headers": {}}
+      ],
+      "expected": {
+        "error_code": "MaxRetriesExceeded",
+        "error_type": "FabricCLIError",
+        "error_message": "Maximum retries (3) exceeded. The operation could not be completed",
+        "requests": [
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}
+        ],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": [2, 10, 3, 10]
+      }
+    },
+    {
+      "name": "second_page_error_does_not_return_partial_success",
+      "rust_parity": false,
+      "rust_exception": "Typed Rust may reject the first id-only row before page two; the raw factory does not validate rows and reaches the recorded 403.",
+      "responses": [
+        {"status": 200, "body": {"value": [{"id": "partial"}], "continuationToken": "next"}, "headers": {}},
+        {"status": 403, "body": {"errorCode": "Ignored"}, "headers": {}}
+      ],
+      "expected": {
+        "error_code": "Forbidden",
+        "error_type": "FabricCLIError",
+        "error_message": "Access is forbidden. You do not have permission to access this resource",
+        "requests": [
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities?continuationToken=next"}
+        ],
+        "scopes": [["https://api.fabric.microsoft.com/.default"], ["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "page_two_retry_keeps_token_and_acquires_scope_per_page_not_attempt",
+      "rust_parity": false,
+      "rust_exception": "Typed Rust rejects these id-only rows because displayName is missing; the raw factory paging and retry observation remains unchanged.",
+      "responses": [
+        {"status": 200, "body": {"value": [{"id": "first"}], "continuationToken": "next"}, "headers": {}},
+        {"status": 429, "raw_body": "", "headers": {"Retry-After": "1"}},
+        {"status": 200, "body": {"value": [{"id": "second"}]}, "headers": {}}
+      ],
+      "expected": {
+        "value": [{"id": "first"}, {"id": "second"}],
+        "response_json": {"value": [{"id": "first"}, {"id": "second"}], "total_pages": 1},
+        "total_pages": 1,
+        "requests": [
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities?continuationToken=next"},
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities?continuationToken=next"}
+        ],
+        "scopes": [["https://api.fabric.microsoft.com/.default"], ["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": [1]
+      }
+    },
+    {
+      "name": "python_quirk_invalid_rows_are_not_validated",
+      "rust_parity": false,
+      "rust_exception": "Typed Rust rejects non-object rows and rows without string id and displayName; the raw Python factory preserves them.",
+      "responses": [{"status": 200, "body": {"value": [null, 7, false, "row", [], {}, {"id": null}, {"id": 7}, {"ID": "wrong-case"}]}, "headers": {}}],
+      "expected": {
+        "value": [null, 7, false, "row", [], {}, {"id": null}, {"id": 7}, {"ID": "wrong-case"}],
+        "response_json": {"value": [null, 7, false, "row", [], {}, {"id": null}, {"id": 7}, {"ID": "wrong-case"}]},
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "python_quirk_missing_value_is_not_validated",
+      "rust_parity": false,
+      "rust_exception": "Typed Rust requires a value array; the raw Python factory preserves this envelope without one.",
+      "responses": [{"status": 200, "body": {"future": "no-value"}, "headers": {}}],
+      "expected": {
+        "value": null,
+        "response_json": {"future": "no-value"},
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "python_quirk_null_value_is_not_validated",
+      "rust_parity": false,
+      "rust_exception": "Typed Rust requires a value array; the raw Python factory preserves value null.",
+      "responses": [{"status": 200, "body": {"value": null}, "headers": {}}],
+      "expected": {
+        "value": null,
+        "response_json": {"value": null},
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "python_quirk_raw_null_response",
+      "rust_parity": false,
+      "rust_exception": "Typed Rust requires a capacity-page object; the raw Python factory preserves a JSON null response.",
+      "responses": [{"status": 200, "raw_body": "null", "headers": {}}],
+      "expected": {
+        "value": null,
+        "response_json": null,
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+    {
+      "name": "python_quirk_raw_empty_response_json_decode_error",
+      "rust_parity": false,
+      "rust_exception": "Rust reports its typed decode failure rather than Python ApiResponse.json's JSONDecodeError.",
+      "responses": [{"status": 200, "raw_body": "", "headers": {}}],
+      "expected": {
+        "error_code": "JSONDecodeError",
+        "error_type": "JSONDecodeError",
+        "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    },
+      {
+        "name": "consumer_required_strings_raw_optional_fields_and_unknown_enums",
+        "rust_parity": true,
+        "responses": [{
+          "status": 200,
+          "body": {"value": [
+            {"id": "Z", "displayName": "zeta", "state": "FutureState", "region": "FUTURE-REGION", "sku": "FutureSku", "future": {"nested": [1, null]}},
+            {"id": "a", "displayName": "Alpha", "state": "active", "region": "West US"},
+            {"id": "only-required", "displayName": "Required only"},
+            {"id": "nulls", "displayName": "Null optionals", "state": null, "region": null, "sku": null},
+            {"id": "future-types", "displayName": "Future types", "state": {"future": true}, "region": ["future"], "sku": 17},
+            {"id": "boolean", "displayName": "Boolean and object optionals", "state": false, "region": 11, "sku": {"name": "FutureSku", "future": true}},
+            {"id": "", "displayName": "", "state": "", "region": "", "sku": ""},
+            {"id": "雪", "displayName": "é/雪", "ID": "case-sensitive", "State": "not-state"}
+          ]},
+          "headers": {}
+        }],
+        "expected": {
+          "value": [
+            {"id": "Z", "displayName": "zeta", "state": "FutureState", "region": "FUTURE-REGION", "sku": "FutureSku", "future": {"nested": [1, null]}},
+            {"id": "a", "displayName": "Alpha", "state": "active", "region": "West US"},
+            {"id": "only-required", "displayName": "Required only"},
+            {"id": "nulls", "displayName": "Null optionals", "state": null, "region": null, "sku": null},
+            {"id": "future-types", "displayName": "Future types", "state": {"future": true}, "region": ["future"], "sku": 17},
+            {"id": "boolean", "displayName": "Boolean and object optionals", "state": false, "region": 11, "sku": {"name": "FutureSku", "future": true}},
+            {"id": "", "displayName": "", "state": "", "region": "", "sku": ""},
+            {"id": "雪", "displayName": "é/雪", "ID": "case-sensitive", "State": "not-state"}
+          ],
+          "response_json": {"value": [
+            {"id": "Z", "displayName": "zeta", "state": "FutureState", "region": "FUTURE-REGION", "sku": "FutureSku", "future": {"nested": [1, null]}},
+            {"id": "a", "displayName": "Alpha", "state": "active", "region": "West US"},
+            {"id": "only-required", "displayName": "Required only"},
+            {"id": "nulls", "displayName": "Null optionals", "state": null, "region": null, "sku": null},
+            {"id": "future-types", "displayName": "Future types", "state": {"future": true}, "region": ["future"], "sku": 17},
+            {"id": "boolean", "displayName": "Boolean and object optionals", "state": false, "region": 11, "sku": {"name": "FutureSku", "future": true}},
+            {"id": "", "displayName": "", "state": "", "region": "", "sku": ""},
+            {"id": "雪", "displayName": "é/雪", "ID": "case-sensitive", "State": "not-state"}
+          ]},
+          "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+          "scopes": [["https://api.fabric.microsoft.com/.default"]],
+          "sleeps": []
+        }
+      },
+      {
+        "name": "consumer_body_tokens_three_pages_empty_middle_opaque_encoding",
+        "rust_parity": true,
+        "responses": [
+          {"status": 200, "body": {"value": [{"id": "b", "displayName": "Beta"}], "continuationToken": "a+/= ?&é", "continuationUri": "https://untrusted.invalid/ignored", "future": {"first": true}}, "headers": {}},
+          {"status": 200, "body": {"value": [], "continuationToken": "last", "future": {"second": true}}, "headers": {}},
+          {"status": 200, "body": {"value": [{"id": "a", "displayName": "Alpha"}]}, "headers": {}}
+        ],
+        "expected": {
+          "value": [{"id": "b", "displayName": "Beta"}, {"id": "a", "displayName": "Alpha"}],
+          "response_json": {"value": [{"id": "b", "displayName": "Beta"}, {"id": "a", "displayName": "Alpha"}], "future": {"first": true}, "total_pages": 1},
+          "total_pages": 1,
+          "requests": [
+            {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+            {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities?continuationToken=a%2B%2F%3D+%3F%26%C3%A9"},
+            {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities?continuationToken=last"}
+          ],
+          "scopes": [["https://api.fabric.microsoft.com/.default"], ["https://api.fabric.microsoft.com/.default"], ["https://api.fabric.microsoft.com/.default"]],
+          "sleeps": []
+        }
+      },
+      {
+        "name": "consumer_header_overrides_body_and_preserves_duplicate_rows",
+        "rust_parity": true,
+        "responses": [
+          {"status": 200, "body": {"value": [{"id": "same", "displayName": "Same"}], "tags": ["first"], "continuationToken": "body-ignored", "total_pages": 77}, "headers": {"X-MS-CoNtInUaTiOn": "header/+"}},
+          {"status": 200, "body": {"value": [{"id": "same", "displayName": "Same"}], "tags": ["second"], "laterOnly": "discarded"}, "headers": {}}
+        ],
+        "expected": {
+          "value": [{"id": "same", "displayName": "Same"}, {"id": "same", "displayName": "Same"}],
+          "response_json": {"value": [{"id": "same", "displayName": "Same"}, {"id": "same", "displayName": "Same"}], "tags": ["first", "second"], "total_pages": 1},
+          "total_pages": 1,
+          "requests": [
+            {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+            {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities?continuationToken=header%2F%2B"}
+          ],
+          "scopes": [["https://api.fabric.microsoft.com/.default"], ["https://api.fabric.microsoft.com/.default"]],
+          "sleeps": []
+        }
+      },
+      {
+        "name": "consumer_empty_header_suppresses_nonempty_body_token",
+        "rust_parity": true,
+        "responses": [{"status": 200, "body": {"value": [{"id": "one", "displayName": "One"}], "continuationToken": "must-not-follow", "continuationUri": "https://untrusted.invalid/no"}, "headers": {"X-MS-Continuation": ""}}],
+        "expected": {
+          "value": [{"id": "one", "displayName": "One"}],
+          "response_json": {"value": [{"id": "one", "displayName": "One"}], "continuationToken": "must-not-follow", "continuationUri": "https://untrusted.invalid/no"},
+          "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+          "scopes": [["https://api.fabric.microsoft.com/.default"]],
+          "sleeps": []
+        }
+      },
+      {
+        "name": "consumer_empty_first_page_and_empty_last_page",
+        "rust_parity": true,
+        "responses": [
+          {"status": 200, "body": {"value": [], "continuationToken": "middle"}, "headers": {}},
+          {"status": 200, "body": {"value": [{"id": "middle", "displayName": "Middle"}], "continuationToken": "end"}, "headers": {}},
+          {"status": 200, "body": {"value": []}, "headers": {}}
+        ],
+        "expected": {
+          "value": [{"id": "middle", "displayName": "Middle"}],
+          "response_json": {"value": [{"id": "middle", "displayName": "Middle"}], "total_pages": 1},
+          "total_pages": 1,
+          "requests": [
+            {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+            {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities?continuationToken=middle"},
+            {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities?continuationToken=end"}
+          ],
+          "scopes": [["https://api.fabric.microsoft.com/.default"], ["https://api.fabric.microsoft.com/.default"], ["https://api.fabric.microsoft.com/.default"]],
+          "sleeps": []
+        }
+      },
+      {
+        "name": "consumer_rate_limit_recovers_on_fourth_attempt",
+        "rust_parity": true,
+        "responses": [
+          {"status": 429, "body": {"errorCode": "Ignored"}, "headers": {}},
+          {"status": 429, "raw_body": "", "headers": {"Retry-After": "not-an-integer"}},
+          {"status": 429, "raw_body": "ignored", "headers": {"rEtRy-AfTeR": "0"}},
+          {"status": 200, "body": {"value": [{"id": "recovered", "displayName": "Recovered"}]}, "headers": {}}
+        ],
+        "expected": {
+          "value": [{"id": "recovered", "displayName": "Recovered"}],
+          "response_json": {"value": [{"id": "recovered", "displayName": "Recovered"}]},
+          "requests": [
+            {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+            {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+            {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+            {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}
+          ],
+          "scopes": [["https://api.fabric.microsoft.com/.default"]],
+          "sleeps": [10, 10, 0]
+        }
+      },
+      {
+        "name": "consumer_second_page_error_does_not_return_partial_success",
+        "rust_parity": true,
+        "responses": [
+          {"status": 200, "body": {"value": [{"id": "partial", "displayName": "Partial"}], "continuationToken": "next"}, "headers": {}},
+          {"status": 403, "body": {"errorCode": "Ignored"}, "headers": {}}
+        ],
+        "expected": {
+          "error_code": "Forbidden",
+          "error_type": "FabricCLIError",
+          "error_message": "Access is forbidden. You do not have permission to access this resource",
+          "requests": [
+            {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+            {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities?continuationToken=next"}
+          ],
+          "scopes": [["https://api.fabric.microsoft.com/.default"], ["https://api.fabric.microsoft.com/.default"]],
+          "sleeps": []
+        }
+      },
+      {
+        "name": "consumer_page_two_retry_keeps_token_and_per_page_scope",
+        "rust_parity": true,
+        "responses": [
+          {"status": 200, "body": {"value": [{"id": "first", "displayName": "First"}], "continuationToken": "next"}, "headers": {}},
+          {"status": 429, "raw_body": "", "headers": {"Retry-After": "1"}},
+          {"status": 200, "body": {"value": [{"id": "second", "displayName": "Second"}]}, "headers": {}}
+        ],
+        "expected": {
+          "value": [{"id": "first", "displayName": "First"}, {"id": "second", "displayName": "Second"}],
+          "response_json": {"value": [{"id": "first", "displayName": "First"}, {"id": "second", "displayName": "Second"}], "total_pages": 1},
+          "total_pages": 1,
+          "requests": [
+            {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+            {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities?continuationToken=next"},
+            {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities?continuationToken=next"}
+          ],
+          "scopes": [["https://api.fabric.microsoft.com/.default"], ["https://api.fabric.microsoft.com/.default"]],
+          "sleeps": [1]
+        }
+      },
+      {
+        "name": "python_quirk_display_name_missing_null_and_future_types",
+        "rust_parity": false,
+        "rust_exception": "Typed Rust requires a string displayName as well as string id; the raw Python factory accepts all of these invalid consumer rows.",
+        "responses": [{"status": 200, "body": {"value": [
+          {"id": "missing"},
+          {"id": "null", "displayName": null},
+          {"id": "number", "displayName": 7},
+          {"id": "boolean", "displayName": false},
+          {"id": "array", "displayName": []},
+          {"id": "object", "displayName": {}}
+        ]}, "headers": {}}],
+        "expected": {
+          "value": [
+            {"id": "missing"},
+            {"id": "null", "displayName": null},
+            {"id": "number", "displayName": 7},
+            {"id": "boolean", "displayName": false},
+            {"id": "array", "displayName": []},
+            {"id": "object", "displayName": {}}
+          ],
+          "response_json": {"value": [
+            {"id": "missing"},
+            {"id": "null", "displayName": null},
+            {"id": "number", "displayName": 7},
+            {"id": "boolean", "displayName": false},
+            {"id": "array", "displayName": []},
+            {"id": "object", "displayName": {}}
+          ]},
+          "requests": [{"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"}],
+          "scopes": [["https://api.fabric.microsoft.com/.default"]],
+          "sleeps": []
+        }
+      },
+    {
+      "name": "python_quirk_terminal_second_page_201_is_not_merged",
+      "rust_parity": false,
+      "rust_exception": "The Python helper merges a recursive response only when its status is 200, silently retaining only page one and its token after terminal page-two 201. Rust intentionally accumulates decoded 200/201 pages under the existing workspace SDK acceptance and no-silent-partial safety contract.",
+      "responses": [
+        {"status": 200, "body": {"value": [{"id": "first", "displayName": "First"}], "continuationToken": "next", "continuationUri": "https://untrusted.invalid/ignored"}, "headers": {}},
+        {"status": 201, "body": {"value": [{"id": "second", "displayName": "Second"}]}, "headers": {}}
+      ],
+      "expected": {
+        "value": [{"id": "first", "displayName": "First"}],
+        "response_json": {"value": [{"id": "first", "displayName": "First"}], "continuationToken": "next", "continuationUri": "https://untrusted.invalid/ignored"},
+        "requests": [
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities"},
+          {"method": "get", "url": "https://api.fabric.microsoft.com/v1/capacities?continuationToken=next"}
+        ],
+        "scopes": [["https://api.fabric.microsoft.com/.default"], ["https://api.fabric.microsoft.com/.default"]],
+        "sleeps": []
+      }
+    }
+  ]
+}

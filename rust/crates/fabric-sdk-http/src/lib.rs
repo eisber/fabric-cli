@@ -87,6 +87,7 @@ impl fmt::Display for ExecutionError {
 
 impl std::error::Error for ExecutionError {}
 
+mod capacities;
 mod items;
 #[cfg(test)]
 mod tests;

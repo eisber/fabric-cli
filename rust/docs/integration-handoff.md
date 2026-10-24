@@ -9,7 +9,53 @@ Lane owners continue on separate branches and adopt an exact validated checkpoin
 Upstream `microsoft/fabric-cli` is not the push destination. The former scaffold
 branch remains intact; references to it in dated evidence are historical.
 
-## Captured committed progress
+## October 24 parallel parity integration
+
+The next implementation wave combines these exact committed handoffs. Original
+lane commits remain in the integration ancestry; no unfinished peer worktree
+was copied.
+
+| Slice | Exact source commit | Implemented boundary |
+| --- | --- | --- |
+| Shared HTTP execution and handwritten REST decision | `4e822a3b760214f37e789d8a016e8cd7635f2f7f` | Caller-owned Azure HTTP client/timer, bounds, deadlines, read retries and no mutation replay |
+| Item SDK | `ceeafaaee1f12bebca5a01513603451035a0afc7` | Generic workspace item LIST/GET, facade and shared HTTP adapter |
+| JSON output | `fb325f6f298afa88f5af4ff9330f060cd0ad257c` | Pure CLI-layer envelopes, formatting, stream/exit plans and caller-owned writers |
+| Paths and context | `ef93be856edaab360825ad7220e91dae82116faf` | Pure CLI-layer tenant/workspace/folder/item resolution over injected metadata |
+| Capacity SDK | `bb96bc11abbf0706cfac1789f3b0bdb88327fc77` | Fabric capacity listing, facade and shared HTTP adapter; no ARM management |
+
+Integration resolves additive module, dependency, default-member and lockfile
+conflicts by preserving every slice. The central `serde_json` `preserve_order`
+and `float_roundtrip` features intentionally unify across the workspace for
+Python output fidelity. Existing item, workspace and Notebook contracts were
+rerun with those features, not inferred from the output lane's older base.
+
+The combined tree passed local Windows x64 MSVC validation on October 24 using
+Rust 1.99.1, one Cargo job and single-threaded tests:
+
+- Offline locked full-workspace tests: **159 non-documentation tests and five
+  doctests**, none failed, ignored or filtered out; strict all-target workspace
+  Clippy and formatting checks passed.
+- The real Python output reference compared **42 cases**, including exact
+  bytes from the merged Rust public-API probe, semantic values, streams and
+  exits; all five oracle guard tests passed.
+- The real Python context reference passed **81 exact cases and 14 guard
+  checks**. Six additional cases remain explicitly unsupported, not parity
+  successes.
+- The capacity reference passed **35 source observations and nine guard tests**;
+  the item reference passed **56 observations and seven guard tests**. Some
+  source observations are documented Python-only quirks, not Rust parity claims.
+- Seven source-pinned Python HTTPS retry traces passed. Existing Python
+  source/tests and earlier workspace, item, HTTP and deployment expectations
+  were unchanged.
+
+Full Python CLI parity, dispatcher composition, production authentication,
+transport/TLS configuration and the wider deployment surface remain open.
+The CLI executable still exposes only help/version. This wave does not grant
+live operations, select an identity backend or adopt generator experiments.
+The integration owner supplies the final published merge SHA and fresh native
+CI result separately; the local results above are not Linux/macOS evidence.
+
+## October 23 captured committed progress
 
 This consolidation starts at scaffold checkpoint
 `4d740138ae738ffdca64415638ca491593da7c86` and records these exact heads:
@@ -36,7 +82,7 @@ authentication parity. The identity backend decision remains unresolved.
 See [architecture](architecture.md), [deployment compatibility](deployment-compatibility.md)
 and [independent validation](validation-matrix.md) for their limits.
 
-## Local consolidation validation
+## October 23 local consolidation validation
 
 The merged graph was validated on Windows 11 x64, with actual compiler host
 `x86_64-pc-windows-msvc`, Rust 1.99.1 (`58cf8f9c3`), Cargo 1.99.1 and LLVM 23.1.1.

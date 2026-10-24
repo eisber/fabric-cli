@@ -76,3 +76,15 @@ execution method; it does not copy headers, retries, streaming or deadline code.
 Its facade integration tests exercise item LIST pagination and GET recovery
 through shared GET retries, response limits and virtual deadlines. See the
 [item source/compatibility contract](../fabric-sdk-items/README.md).
+
+## Capacity adapter
+
+`HttpExecutor` also implements the focused `CapacityExecutor` through the private
+shared execution method and existing error mapping. It installs no second HTTP,
+retry, deadline, TLS, timer, or credential path. The additive adapter preserves
+capacity continuation/header/error semantics in the service crate and retains
+explicit partial progress on HTTP failures. Public offline consumer tests cover
+encoded continuation, source error precedence, GET gateway/429 retries and
+exhaustion, exact/+1 byte bounds, and deadline mapping. See the
+[capacity SDK boundary](../fabric-sdk-capacities/README.md); no ARM or CLI
+capacity support is implied.
