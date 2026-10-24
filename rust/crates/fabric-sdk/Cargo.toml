@@ -20,6 +20,7 @@ fabric-core.workspace = true
 fabric-sdk-workspaces.workspace = true
 fabric-sdk-items.workspace = true
 fabric-sdk-capacities.workspace = true
+fabric-sdk-folders.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

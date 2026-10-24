@@ -8,6 +8,13 @@ The SDK facade does not depend on this adapter; consumers can continue supplying
 their own executors. The crate belongs to the SDK layer and has no identity,
 deployment, CLI, transport implementation, or global runtime dependency.
 
+The additive `FolderExecutor` adapter supports folder LIST and GET through that
+same private engine, without another retry/deadline/streaming implementation.
+See the [folder SDK](../fabric-sdk-folders/README.md) for query/model semantics,
+typed errors and explicit safety exceptions. External folder consumer tests
+cover both methods, shared retries/deadlines, partial errors, exact/+1 4 MiB
+streaming and cancellation/drop. This adds no CLI handler or production backend.
+
 `HttpExecutor::new` only stores explicitly injected implementations and validates
 finite options. Default options are a 240-second **overall HTTP execution**
 deadline and a 60-second maximum retry/poll delay. Every response is streamed

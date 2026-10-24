@@ -11,6 +11,15 @@ command, real HTTP transport, or identity backend. SDK callers supply an Azure
 facade. Consumers can construct an explicit selection without depending on the
 core implementation crate or changing the architecture's dependency directions.
 
+## Folder LIST/GET
+
+The additive `folders` module and `Client::{list_folders,get_folder}` delegate to
+[`fabric-sdk-folders`](../fabric-sdk-folders/README.md) with the same injected
+provider/selection. `models::Folder` is the focused wire type. Explicit options
+preserve Python's recursive/root attribute presence, query order and token
+replacement; bounds, typed partial failures and cancellation remain explicit.
+This is read-only SDK metadata, not folder tree assembly, mutations or CLI parity.
+
 ## Generic item LIST/GET
 
 The additive `items` module and `Client::{list_items,get_item}` delegate to

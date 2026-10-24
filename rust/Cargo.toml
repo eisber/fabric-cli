@@ -10,6 +10,7 @@ default-members = [
     "crates/fabric-sdk-workspaces",
     "crates/fabric-sdk-items",
     "crates/fabric-sdk-capacities",
+    "crates/fabric-sdk-folders",
     "crates/fabric-sdk-http",
     "crates/fabric-deploy",
     "crates/fabric-cli",
@@ -33,6 +34,7 @@ fabric-sdk = { path = "crates/fabric-sdk" }
 fabric-sdk-workspaces = { path = "crates/fabric-sdk-workspaces" }
 fabric-sdk-items = { path = "crates/fabric-sdk-items" }
 fabric-sdk-capacities = { path = "crates/fabric-sdk-capacities" }
+fabric-sdk-folders = { path = "crates/fabric-sdk-folders" }
 fabric-sdk-http = { path = "crates/fabric-sdk-http" }
 fabric-identity-windows = { path = "crates/fabric-identity-windows" }
 azure_core = { version = "1.1.0", default-features = false }

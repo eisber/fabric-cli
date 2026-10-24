@@ -255,6 +255,7 @@ dependencies = [
  "base64",
  "fabric-core",
  "fabric-sdk-capacities",
+ "fabric-sdk-folders",
  "fabric-sdk-items",
  "fabric-sdk-workspaces",
  "serde",
@@ -276,6 +277,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-sdk-folders"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "azure_core",
+ "fabric-core",
+ "fabric-sdk-items",
+ "fabric-sdk-workspaces",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "fabric-sdk-http"
 version = "0.1.0"
 dependencies = [
@@ -283,6 +298,7 @@ dependencies = [
  "azure_core",
  "fabric-core",
  "fabric-sdk",
+ "fabric-sdk-folders",
  "fabric-sdk-items",
  "futures-util",
  "serde_json",
