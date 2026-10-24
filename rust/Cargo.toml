@@ -11,6 +11,7 @@ default-members = [
     "crates/fabric-sdk-http",
     "crates/fabric-deploy",
     "crates/fabric-cli",
+    "crates/fabric-cli-output",
 ]
 resolver = "3"
 
@@ -23,6 +24,7 @@ publish = false
 
 [workspace.dependencies]
 fabric-core = { path = "crates/fabric-core" }
+fabric-cli-output = { path = "crates/fabric-cli-output" }
 fabric-sdk = { path = "crates/fabric-sdk" }
 fabric-sdk-workspaces = { path = "crates/fabric-sdk-workspaces" }
 fabric-sdk-http = { path = "crates/fabric-sdk-http" }
@@ -33,7 +35,9 @@ async-trait = "0.1"
 futures-util = { version = "0.3.34", default-features = false, features = ["std", "async-await"] }
 clap = { version = "4.6.7", default-features = false, features = ["std", "help", "usage", "error-context"] }
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.154"
+# CLI output preserves Python dictionary order and finite-float parsing fidelity.
+# These features intentionally unify across every workspace JSON consumer.
+serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip"] }
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", default-features = false, features = ["macros", "rt"] }
 windows = { version = "=0.62.2", default-features = false, features = ["std", "Security_Authentication_Web_Core", "Security_Credentials", "Win32_Foundation", "Win32_System_WinRT", "Win32_UI_WindowsAndMessaging"] }
