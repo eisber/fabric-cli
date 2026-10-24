@@ -10,6 +10,12 @@ Repository-wide contribution and team-review rules still apply.
 
 - Translate existing behavior first. Submit redesigns, optimizations, bug fixes,
   new command namespaces, and plugins as separate decisions and changes.
+- Record substantive implementation oddities in the shared Tachikoma forum as
+  discussion items and improvement ideas, with pinned source, a synthetic
+  reproduction, impact, current parity treatment, and a separate proposal.
+  Link existing discussions rather than duplicating them. A proposal is not
+  approval to change behavior or the oracle; nonblocking ideas do not stop the
+  port. See [discussion guidance](docs/migration-guidance.md#record-oddities-and-improvement-ideas).
 - Record the Python/upstream source commit and complete behavior covered by each
   slice. Do not declare a port complete while omitting I/O, orchestration, failure
   paths, or consumers that belong to that approved slice.

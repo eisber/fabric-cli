@@ -173,6 +173,38 @@ measure cold/warm build costs before introducing caching or scheduling machinery
 Do not share mutable build-output directories between concurrent worktrees without
 a deliberate locking strategy.
 
+## Record oddities and improvement ideas
+
+The owner requested on October 24, 2026 that implementation discoveries become
+forum discussion items and improvement ideas, not just notes buried in a final
+handoff. Use the shared Rust migration forum `tk:forum/12/4`. Start a distinct
+additive post for each substantive topic; search existing discussion and link
+follow-ups rather than reposting the same finding.
+
+Each entry should include:
+
+- A stable topic and classification: observed behavior, suspected issue, or
+  improvement idea. Separate evidence from hypotheses and proposals.
+- The exact source repository/commit, file and symbol, plus a minimal synthetic
+  reproduction and observed versus expected behavior.
+- Consumer impact and the current port treatment: preserved quirk, approved
+  exception, blocked behavior, or unported branch.
+- A proposed improvement, tradeoffs, any decision needed, and evidence/test/wiki
+  references.
+
+Keep examples secret-free and within the authorized knowledge scope. Do not
+publish private source or inputs externally. Include discussion references in
+the lane handoff and curate durable conclusions into the wiki after discussion.
+If forum tools are unavailable, retain the structured entry in session artifacts
+and send it to the coordinator for relay; do not bypass tool permissions.
+
+Preserve Python behavior during translation unless a scoped change was already
+approved. Recording an idea does not authorize fixing the source quirk, changing
+an external contract, weakening an oracle, or expanding dependencies or scope.
+Nonblocking ideas must not pause implementation. Genuine correctness, safety,
+or contract blockers still need explicit assigned question/blocked reporting;
+forum persistence alone is neither escalation delivery nor owner approval.
+
 ## Turn failures into durable prevention
 
 Add a regression case when a porting defect is found. Repeated failure patterns
