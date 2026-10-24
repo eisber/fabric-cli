@@ -16,6 +16,7 @@ default-members = [
     "crates/fabric-cli",
     "crates/fabric-cli-output",
     "crates/fabric-cli-context",
+    "crates/fabric-cli-query",
 ]
 resolver = "3"
 
@@ -30,6 +31,7 @@ publish = false
 fabric-cli-context = { path = "crates/fabric-cli-context" }
 fabric-core = { path = "crates/fabric-core" }
 fabric-cli-output = { path = "crates/fabric-cli-output" }
+fabric-cli-query = { path = "crates/fabric-cli-query" }
 fabric-sdk = { path = "crates/fabric-sdk" }
 fabric-sdk-workspaces = { path = "crates/fabric-sdk-workspaces" }
 fabric-sdk-items = { path = "crates/fabric-sdk-items" }
@@ -47,6 +49,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 # These features intentionally unify across every workspace JSON consumer.
 serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip"] }
 thiserror = "2.0.21"
+jpx-core = { version = "=0.3.1", default-features = false }
 tokio = { version = "1.54.1", default-features = false, features = ["macros", "rt"] }
 windows = { version = "=0.62.2", default-features = false, features = ["std", "Security_Authentication_Web_Core", "Security_Credentials", "Win32_Foundation", "Win32_System_WinRT", "Win32_UI_WindowsAndMessaging"] }
 windows-future = { version = "=0.3.2", default-features = false, features = ["std"] }

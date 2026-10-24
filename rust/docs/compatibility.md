@@ -41,7 +41,7 @@ Credentials are not accepted through command-line options.
 | Planning | Dependency ordering, bulk publication, provisioning waits, and orphan unpublication |
 | YAML | Case-insensitive duplicate detection and PyYAML typing, merge, and emission behavior behind a compatibility adapter |
 | Transforms | Extended JSONPath mutation and Python regex replacement semantics; use advanced regex only for demonstrated cases |
-| CLI projection | JMESPath as a separate language, not JSONPath |
+| CLI projection | [Bounded native JMESPath wrapper](query-compatibility.md), distinct from JSONPath; numeric/runtime limits remain explicit |
 | Pagination | Bounded traversal, validated continuation origins, and explicit incomplete results |
 | Operations | Real operation handles and safe retry/reconciliation; accepted is not completed and cancellation is not rollback |
 | Identity | Explicit account, tenant, audience, typed errors, and no silent fallback; enterprise policy evidence |

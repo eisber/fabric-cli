@@ -111,6 +111,18 @@ facade/shared-manifest changes through exact commit handoffs, not shared writers
 
 Skills describe workflows using the CLI. They do not contain service logic.
 
+### Focused CLI query projection
+
+`fabric-cli-query` is a CLI-layer leaf over `jpx-core` and ordered
+`serde_json::Value`. Its public `search(&Value, &str) -> Result<Value, QueryError>`
+translates Python's CLI JMESPath wrapper, not deployment JSONPath mutation.
+It performs no I/O, SDK calls, credential discovery, or global CLI initialization.
+Its public example composes projected values and typed errors with the existing
+`fabric-cli-output` envelope through a same-layer development dependency.
+Command dispatch remains separately owned. See
+[query compatibility](query-compatibility.md) for the source pin, adapters,
+independent oracle and explicit unsupported operations.
+
 ### Focused capacity SDK
 
 `fabric-sdk-capacities` adds only bounded Fabric capacity listing in the SDK
