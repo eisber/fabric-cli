@@ -339,6 +339,110 @@ fn queries_receive_source_rows_before_default_column_projection() {
 }
 
 #[test]
+fn builtin_query_projects_real_sdk_rows_before_default_columns() {
+    let backend = Backend::new([reply(json!({"value":[
+        {"id":"b","displayName":"Beta","type":"Workspace"},
+        {"id":"a","displayName":"Alpha","type":"Workspace"}
+    ]}))]);
+    let client = sdk(Arc::default());
+    let catalog = Catalog::new(vec![]);
+    let host = host(
+        &client,
+        &backend,
+        &catalog,
+        Element::tenant("T", "t"),
+        &NoQuery,
+    )
+    .with_default_projection();
+    let (value, exit) = output(&host, &["ls", "-q", "[?id == 'a'].{label:name,key:id}"]);
+    assert_eq!(exit, 0);
+    assert_eq!(
+        value["result"]["data"],
+        json!([{"label":"Alpha.Workspace","key":"a"}])
+    );
+    assert_eq!(backend.requests.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn builtin_get_discovers_paths_or_executes_actual_query_with_sdk_metadata() {
+    for (query, expected) in [
+        (
+            None,
+            json!([
+                "id",
+                "displayName",
+                "properties.enabled",
+                "properties.rows[0].n",
+                "type"
+            ]),
+        ),
+        (
+            Some("."),
+            json!([{"id":"i","displayName":"N","properties":{"enabled":false,"rows":[{"n":2}]},"type":"Notebook"}]),
+        ),
+        (Some("properties.enabled"), json!(["False"])),
+        (Some("properties.rows[?n > `1`].n"), json!([2])),
+    ] {
+        let root = Element::tenant("T", "t");
+        let ws = workspace(&root, "W", "w");
+        let item = Element::child(
+            "N",
+            Some("i".into()),
+            NodeKind::Item(ItemType::parse("Notebook").unwrap()),
+            ws.clone(),
+        )
+        .unwrap();
+        let catalog = Catalog::new(vec![ws, item.clone()]);
+        let backend = Backend::new([reply(json!({
+            "id":"i","displayName":"N","type":"Notebook",
+            "properties":{"enabled":false,"rows":[{"n":2}]}
+        }))]);
+        let client = sdk(Arc::default());
+        let host =
+            host(&client, &backend, &catalog, root.clone(), &NoQuery).with_default_projection();
+        let mut args = vec!["get", "/W.Workspace/N.Notebook"];
+        if let Some(query) = query {
+            args.extend(["-q", query]);
+        }
+        let (value, exit) = output(&host, &args);
+        assert_eq!(exit, 0, "{query:?}");
+        assert_eq!(value["result"]["data"], expected, "{query:?}");
+        assert_eq!(
+            *backend.requests.lock().unwrap(),
+            ["https://api.fabric.microsoft.com/v1/workspaces/w/items/i"]
+        );
+        assert!(Arc::ptr_eq(&host.current, &root));
+    }
+}
+
+#[test]
+fn builtin_query_failures_are_source_shaped_errors_not_empty_success() {
+    for query in ["[?", "length(`1`)", "sum(`[9007199254740993]`)"] {
+        let backend = Backend::new([reply(json!({"value":[]}))]);
+        let client = sdk(Arc::default());
+        let catalog = Catalog::new(vec![]);
+        let host = host(
+            &client,
+            &backend,
+            &catalog,
+            Element::tenant("T", "t"),
+            &NoQuery,
+        )
+        .with_default_projection();
+        let (value, exit) = output(&host, &["ls", "-q", query]);
+        assert_eq!(exit, 1, "{query}");
+        assert_eq!(
+            value["result"],
+            json!({
+                "error_code":"InvalidInput",
+                "message":"Invalid jmespath query (https://jmespath.org)"
+            })
+        );
+        assert!(value["result"].get("data").is_none());
+    }
+}
+
+#[test]
 fn service_errors_preserve_source_code_status_message_streams_and_exit() {
     for (status, body, headers, code, message, exit) in [
         (

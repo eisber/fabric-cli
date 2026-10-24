@@ -192,6 +192,7 @@ dependencies = [
  "clap",
  "fabric-cli-context",
  "fabric-cli-output",
+ "fabric-cli-query",
  "fabric-sdk",
  "fabric-sdk-http",
  "serde",

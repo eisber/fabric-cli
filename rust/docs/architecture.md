@@ -21,8 +21,10 @@ It is not a full port, release contract, or replacement for the Python product.
 The exercised SDK edges are `fabric-sdk -> fabric-sdk-workspaces`,
 `fabric-sdk -> fabric-core`, and `fabric-sdk-workspaces -> fabric-core`;
 identity also depends on core, and `fabric-deploy` depends on `fabric-sdk`.
-The CLI read-command library now consumes the SDK facade, CLI context and CLI
-output libraries. Its test-only shared HTTP consumer uses `fabric-sdk-http`.
+The CLI read-command library now consumes the SDK facade, CLI context, CLI
+output and CLI query libraries. `PythonQuery` connects native evaluation and GET
+path discovery to the actual read host; no-query LS preserves source columns.
+Its test-only shared HTTP consumer uses `fabric-sdk-http`.
 These are allowed CLI-to-SDK/CLI edges, not a dependency on core or identity
 implementation. The binary recognizes reads but has no production host.
 The initial five crates are not a fixed count or a maximum. Workspace membership

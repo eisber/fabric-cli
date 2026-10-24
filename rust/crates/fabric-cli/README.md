@@ -43,17 +43,26 @@ last detail row. Missing capacity values retain Python's defaults/nulls.
 
 No-query LS works with `NoQuery`, using source column projection. A nonempty
 query instead sees sorted source rows before column projection, through
-`Projection::project(Value, Option<&str>, bool)`.
+`Projection::project(Value, Option<&str>, bool)`. Call
+`ReadHost::with_default_projection()` to select the built-in `PythonQuery`
+provider, or supply that provider directly. It uses the real
+`fabric-cli-query` library rather than a callback stub.
 
 Generic item `get` resolves a path using the supplied snapshot and actually
 calls the SDK generic `/items/{id}` operation. It passes raw typed metadata to
 the projection boundary. Python GET with no query discovers JSON property
-paths; it does **not** return the object unchanged. `NoQuery` explicitly rejects
-GET discovery and all queries with `NotSupported`. A host must inject the
-separately implemented query/path-discovery provider for GET output. The
-dispatcher does not implement a substitute query language. Tests use a clearly
-injected inspection callback to prove GET SDK-to-output composition, not to
-claim query parity.
+paths; it does **not** return the object unchanged. The built-in provider maps
+absent GET expressions to native path discovery, preserves `"."` identity and
+Python scalar stringification, and maps query failures to source-shaped
+`InvalidInput` command errors. No-query LS still uses default columns rather
+than path discovery. The query library's documented unsupported numeric and
+grammar boundaries remain explicit errors. `NoQuery` remains an intentional
+host opt-out, rejecting GET discovery and queries instead of faking success.
+
+Integration tests and the offline read probe now use the built-in provider
+after real SDK reads; additional inspection-callback and `NoQuery` tests retain
+the injected/disabled-provider contracts. The binary still requires a configured
+production host, independently of this completed query composition.
 
 ## Explicit limits
 

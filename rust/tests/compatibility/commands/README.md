@@ -94,12 +94,15 @@ cover definition decoding/export, files, output directories, query expressions,
 deep traversal flags, or full get routing. None of the six helper comparisons
 is evidence of full Python `get` command parity.
 
-The initial native `NoQuery` projection seam returns explicit `NotSupported`
+The historical native `NoQuery` projection seam returns explicit `NotSupported`
 for default GET path enumeration. **Every GET is sent to the actual native
 probe**, including successful service responses: without `--with-get-projection`,
 the two discovery cases must render the exact failure envelope, exit 1, make
 the expected generic metadata request, and acquire its expected scope.
 They are **UNSUPPORTED evidence**, not skipped cases or successful parity.
+The integrated `read_probe` now uses the real `PythonQuery` provider, so its
+validation must pass `--with-get-projection`. Explicit opt-out behavior remains
+covered by the `NoQuery` consumer tests; historical expectations stay intact.
 The four HTTP failures occur before projection and must retain exact source
 error mapping with the separately declared generic URI.
 
@@ -191,7 +194,7 @@ From the repository root, using the already-built example executable:
 
 ```powershell
 python rust\tests\compatibility\commands\reference.py
-python rust\tests\compatibility\commands\reference.py --rust-probe rust\target\debug\examples\read_probe.exe
+python rust\tests\compatibility\commands\reference.py --rust-probe rust\target\debug\examples\read_probe.exe --with-get-projection
 python -m unittest discover -s rust\tests\compatibility\commands -p "test_*.py"
 ```
 
@@ -209,8 +212,8 @@ assert **all 25 actual native outcomes**:
 | Separate successful metadata schema/order evidence | 0 | 2 |
 
 None of the last four categories is relabeled as complete source parity.
-After the real projection provider is integrated, enable its separate
-schema/order assertions:
+The integrated real projection provider requires its separate schema/order
+assertions:
 
 ```powershell
 python rust\tests\compatibility\commands\reference.py --rust-probe rust\target\debug\examples\read_probe.exe --with-get-projection

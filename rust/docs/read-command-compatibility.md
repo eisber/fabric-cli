@@ -65,13 +65,31 @@ Existing dependency versions remain locked; only CLI dependency edges changed.
 These are local targeted results, not new full-workspace, native CI, Linux/macOS,
 query-provider, full GET, or live-service evidence.
 
+### Combined native-query integration
+
+Integration adds `PythonQuery` and `ReadHost::with_default_projection()` over
+the actual `fabric-cli-query` evaluator. The merged read probe uses this
+provider, not an expected-output callback. It asserts all 25 command outcomes:
+16 exact source comparisons, four generic GET URI differences, three existing
+SDK safety differences, and two successful GET path inventories with the
+already documented typed-metadata key-order difference. The two earlier
+disabled-provider failures are no longer gaps in the configured native-query
+host. Original source expectations and the explicit `NoQuery` regression
+contracts remain unchanged.
+
+Additional public-consumer tests execute SDK row filtering/multiselect,
+GET path discovery, `"."`, scalar false and numeric filtering, and malformed,
+type-invalid and explicitly unsupported query errors through command envelopes.
+All 50 command oracle/guard tests pass on the merged tree. This proves bounded
+composition, not live-host, specialized GET or complete JMESPath parity.
+
 ## Gaps and intentional boundaries
 
 Default no-query LS is executable without the query library. Generic GET
-executes its real SDK read but needs an injected projection provider even without
-`--query`, because Python defaults to JSON path inventory. `NoQuery` explicitly
-returns `NotSupported`; it never returns raw metadata as fake path-discovery
-success. Query integration is a separate handoff and is not a condition for LS.
+executes its real SDK read and uses built-in `PythonQuery` for path inventory
+when the host selects `with_default_projection()`. Hosts may override that
+provider or explicitly opt out with `NoQuery`; neither choice configures
+production credentials, transport or context.
 
 The typed SDK reserialization cannot reconstruct source HTTP dictionary order.
 GET specialized URI, definitions, connections/schedules and specialized

@@ -90,7 +90,8 @@ fn main() {
                     .unwrap_or(false),
             },
             projection: &NoQuery,
-        };
+        }
+        .with_default_projection();
         let args = std::iter::once("fab-rs").chain(
             case["command"]
                 .as_array()

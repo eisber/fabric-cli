@@ -9,7 +9,48 @@ Lane owners continue on separate branches and adopt an exact validated checkpoin
 Upstream `microsoft/fabric-cli` is not the push destination. The former scaffold
 branch remains intact; references to it in dated evidence are historical.
 
-## October 24 parallel parity integration
+## Read-command, query and folder integration
+
+The next wave combines folder SDK commit
+`83eb23611f0a21fb966437f2194481c8327e33a0`, native query commit
+`08839d778daaf3563977d3c9ba594c0c8e68d923`, and the read-command delta
+`9094bde9d2b8c654b0d12622f4e304707f068d68`. The command delta is applied without
+replaying its local cherry-pick of the already integrated SDK `Audience`
+prerequisite `fad81bf5f6b60835597b7627f97ac107d88966b2`.
+
+Integration also connects `PythonQuery` and
+`ReadHost::with_default_projection()` to real SDK-backed reads. This is not a
+fixture callback: no-query GET performs native path discovery, explicit queries
+run the native evaluator, and no-query LS retains source default columns.
+`NoQuery` remains an explicit opt-out with regression coverage. The binary
+recognizes `ls`/`dir`/`get` but still returns `NotConfigured` without a production
+credential/transport/context/clock host.
+
+The combined tree passed Windows x64 offline workspace validation: **215
+non-documentation tests and seven doctests**, strict all-target Clippy and
+formatting. Actual Python command comparisons asserted all 25 outcomes: 16
+source-exact, four generic GET URI differences, three existing SDK safety
+differences, and two successful GET path inventories with separately recorded
+typed-metadata ordering differences. All 50 command source/guard tests passed.
+Query comparison retained **108 exact out of 118** cases, with ten explicitly
+unsupported; all 15 query guard/caller controls passed. Folder comparison
+retained 26 comparable plus 13 Python-only observations, with all six guards
+passing. No source expectations or pinned Python source were rewritten.
+
+All validation used the shared execution gate with one job and private output.
+The initial reference runner incorrectly requested Python isolated mode for
+harnesses importing sibling modules; using their documented script/discovery
+import modes resolved those runner failures. Failed receipts remain available;
+the correction did not change product behavior, fixtures or guard assertions.
+
+These are bounded offline command/SDK results, not complete Python CLI parity.
+Specialized GET augmentation/export, folder CLI/tree assembly, query
+numeric/runtime gaps, text output, production authentication/transport and
+deployment breadth remain open. See the individual compatibility matrices and
+forum oddity discussions. The final published checkpoint and native CI result
+are supplied separately; local Windows results are not other-platform evidence.
+
+## October 24 earlier parallel parity integration
 
 The next implementation wave combines these exact committed handoffs. Original
 lane commits remain in the integration ancestry; no unfinished peer worktree

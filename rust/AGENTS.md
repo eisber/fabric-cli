@@ -65,5 +65,6 @@ Existing crates retain
 documented unsafe blocks; its public API is safe Rust. Default consumers exclude
 that crate; opting in does not make a binary transitively unsafe-free. Coordinate
 shared interfaces and cross-layer changes with integration; do not add empty
-future modules or runtime loaders as scaffold shortcuts. `fab-rs` help/version/error
-contracts are temporary bootstrap contracts, not proof of parity with Python `fab`.
+future modules or runtime loaders as scaffold shortcuts. `fab-rs` recognizes
+bounded read arguments but still requires a production host; its preview
+help/version/error contracts are not proof of parity with Python `fab`.

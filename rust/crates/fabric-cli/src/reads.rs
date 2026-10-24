@@ -90,6 +90,17 @@ pub struct ReadHost<'a> {
 }
 
 impl ReadHost<'_> {
+    /// Select the built-in native query provider, including default GET path discovery.
+    ///
+    /// This replaces only projection; credentials, executors, context, clock,
+    /// configuration, runtime and streams remain owned by the caller.
+    pub fn with_default_projection(self) -> Self {
+        Self {
+            projection: &crate::PythonQuery,
+            ..self
+        }
+    }
+
     /// Execute a read through the SDK and render a Python JSON envelope.
     ///
     /// Service/context/projection errors become ordinary failed command envelopes

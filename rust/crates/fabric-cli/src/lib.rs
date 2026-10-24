@@ -11,7 +11,7 @@ pub mod parser;
 mod projection;
 mod reads;
 
-pub use projection::{NoQuery, Projection};
+pub use projection::{NoQuery, Projection, PythonQuery};
 pub use reads::{ItemSort, ReadConfig, ReadHost, WriteError};
 
 /// Why the executable cannot run service reads without a configured host.
