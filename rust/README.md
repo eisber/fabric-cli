@@ -23,6 +23,12 @@ through caller-injected SDK executors. No production HTTP transport, authenticat
 backend, or CLI deployment command is installed. Azure CLI, Azure Developer CLI,
 and Python are not runtime requirements.
 
+The focused [capacity-list SDK](crates/fabric-sdk-capacities/README.md) adds bounded
+Fabric `/v1/capacities` reads through standalone, facade and shared HTTP executor
+interfaces. It does not add ARM capacity operations or CLI commands. See the
+[capacity compatibility matrix](docs/capacity-compatibility.md) for source quirks
+and explicit SDK safety differences.
+
 Windows desktop interop is isolated in optional `fabric-identity-windows`,
 enabled through `fabric-identity/windows-broker`. The existing crates forbid
 unsafe code; default consumer graphs exclude the native crate. Enabling it

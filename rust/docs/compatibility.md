@@ -72,6 +72,13 @@ the no-mutation-replay exception and enumerate unported HTTP behavior.
 These checks do not test real authentication, a selected production HTTP/TLS
 backend, live deployment, enterprise trust/proxies, or broker policy.
 
+The additive [capacity-list slice](capacity-compatibility.md) implements only
+Fabric `/v1/capacities` through a focused crate, facade and thin shared HTTP
+adapter. Its source-pinned offline oracle is separate from the unchanged
+workspace/item/HTTP expectations. Bounded traversal, typed malformed-row
+failures, cancellation and accurate progress are explicit SDK safety behavior,
+not claims of Python CLI collection/output, ARM, authentication or live parity.
+
 Native CI is configured for `windows-2025`, `ubuntu-24.04`, and `macos-15`.
 Actual runner architecture is recorded by `rustc --version --verbose`; do not
 infer execution or architecture from an OS label. Windows ARM64, Linux musl,

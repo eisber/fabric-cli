@@ -8,6 +8,7 @@
 //! cancellation; no production transport, identity backend, retry policy, or
 //! runtime is installed.
 
+pub mod capacities;
 pub mod models;
 pub mod notebooks;
 pub mod workspaces;

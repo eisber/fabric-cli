@@ -3,4 +3,5 @@
 
 //! Workspace wire-model imports preserved by the SDK facade.
 
+pub use fabric_sdk_capacities::Capacity;
 pub use fabric_sdk_workspaces::models::{FabricServiceError, Workspace};
