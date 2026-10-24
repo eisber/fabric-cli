@@ -11,6 +11,38 @@ branch remains intact; references to it in dated evidence are historical.
 
 ## Read-command, query and folder integration
 
+### Metadata fidelity follow-on
+
+The integration owner reviewed and fast-forwarded exact lane commit
+`db1c0c24a6db9e1ed91f09d42b4092d9cd164345` from the published
+`b9a69ab443040955056a113cd75fce8e9cd28d97` base. Additive `ItemMetadata` and
+`get_item_metadata` preserve parsed HTTP object order through the existing GET
+execution policies and actual `ReadHost` query/output consumer. Existing typed
+`Item` fields, struct literals, imports, LIST and `get_item` remain unchanged.
+No manifest, dependency feature, lockfile or protected expectation changed.
+
+The coordinator independently reran the integrated Windows x64 offline
+workspace: **223 non-documentation tests and seven doctests**, strict
+all-target Clippy and formatting passed. All 25 actual command outcomes and
+four additive raw-metadata comparisons passed against pinned Python. Both
+successful GET inventories now match source output bytes and order. The
+correct exclusive classification is **16 fully exact, six generic-URI
+differences, three SDK safety differences, zero metadata-order differences
+and zero unsupported-projection failures**. The two successful GETs also
+retain specialized Python request URIs; fixing their output does not make
+their requests exact. Original expectations and historical native boundaries
+remain intact, with historical comparator modes explicitly selected.
+
+All 56 command source/guard tests, 56 original item observations and seven
+item guards passed. Query evidence remains 108 exact out of 118 with ten
+explicitly unsupported and all 15 controls passing; this change does not close
+those query gaps. Worker validation separately covered seven original HTTP
+retry traces. The parent validation gate completed and released normally.
+The exact published checkpoint and its fresh native CI result are supplied
+separately; no production host, specialized GET or full CLI parity is implied.
+
+### Earlier combined read wave
+
 The next wave combines folder SDK commit
 `83eb23611f0a21fb966437f2194481c8327e33a0`, native query commit
 `08839d778daaf3563977d3c9ba594c0c8e68d923`, and the read-command delta
