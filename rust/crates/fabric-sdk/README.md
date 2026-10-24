@@ -7,6 +7,10 @@ This slice translates `microsoft/fabric-cli` at
 command, real HTTP transport, or identity backend. SDK callers supply an Azure
 `TokenCredential` independently of `fabric-identity` and the CLI.
 
+`Audience`, `CredentialSelection`, and `TokenCredential` are reexported by this
+facade. Consumers can construct an explicit selection without depending on the
+core implementation crate or changing the architecture's dependency directions.
+
 ## Generic item LIST/GET
 
 The additive `items` module and `Client::{list_items,get_item}` delegate to

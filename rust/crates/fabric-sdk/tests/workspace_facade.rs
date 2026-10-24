@@ -8,9 +8,8 @@ use azure_core::{
     credentials::{AccessToken, TokenRequestOptions},
     time::OffsetDateTime,
 };
-use fabric_core::Audience;
 use fabric_sdk::{
-    Client, CredentialSelection, Page, TokenCredential,
+    Audience, Client, CredentialSelection, Page, TokenCredential,
     models::{FabricServiceError, Workspace},
     workspaces::{
         WorkspaceExecutionError, WorkspaceExecutor, WorkspaceList, WorkspaceListError,

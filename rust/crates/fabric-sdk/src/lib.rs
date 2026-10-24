@@ -14,7 +14,7 @@ pub mod models;
 pub mod notebooks;
 pub mod workspaces;
 
-pub use fabric_core::{CredentialSelection, TokenCredential};
+pub use fabric_core::{Audience, CredentialSelection, TokenCredential};
 pub use fabric_sdk_workspaces::Page;
 use std::{fmt, sync::Arc};
 
