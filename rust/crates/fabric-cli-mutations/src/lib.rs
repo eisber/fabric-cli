@@ -7,6 +7,7 @@
 //! See the README for the exact source pin and the intentionally incomplete matrix.
 
 mod create;
+mod execution;
 mod set;
 
 use fabric_cli_context::{Element, NodeKind};
@@ -20,6 +21,7 @@ use serde_json::Value;
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
 pub use create::{CapacitySelection, CreateOptions};
+pub use execution::FabricMutationBackend;
 
 /// A caller-runtime asynchronous operation.
 pub type CommandFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;

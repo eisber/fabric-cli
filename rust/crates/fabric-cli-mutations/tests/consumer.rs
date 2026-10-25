@@ -486,6 +486,7 @@ async fn failure_retains_uncertain_mutation_and_renders_existing_error_envelope(
         code: "Cancelled".into(),
         message: "Resource operation cancelled".into(),
         status: None,
+        service_error: None,
         operation_id: Some("pending".into()),
         mutation_may_have_occurred: true,
     };

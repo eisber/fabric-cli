@@ -6,16 +6,19 @@
 use crate::{Client, Page, models::FabricServiceError};
 use azure_core::{credentials::AccessToken, http::Url};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use fabric_core::Audience;
+use fabric_sdk_operations::{
+    FabricOperation, OperationErrorKind, OperationExecutionError, OperationExecutor,
+    OperationLimits, OperationRequest, OperationResponse, OperationSession,
+};
+use fabric_sdk_workspaces::mutations::{CompletionPolicy, ResourceMethod};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
     collections::{BTreeMap, HashSet},
     fmt,
-    future::{Future, poll_fn},
+    future::Future,
     num::NonZeroUsize,
-    pin::{Pin, pin},
-    task::Poll,
+    pin::Pin,
     time::Duration,
 };
 
@@ -76,8 +79,8 @@ pub struct NotebookItem {
 /// One validated service request. Debug output never includes token or content.
 pub struct NotebookRequest<'a> {
     method: &'static str,
-    url: Url,
-    body: Vec<u8>,
+    url: &'a Url,
+    body: &'a [u8],
     token: &'a AccessToken,
     max_response_bytes: NonZeroUsize,
 }
@@ -89,11 +92,11 @@ impl NotebookRequest<'_> {
     }
     /// Returns the fixed-origin, validated Fabric URL.
     pub fn url(&self) -> &Url {
-        &self.url
+        self.url
     }
     /// Returns serialized JSON, empty for GET.
     pub fn body(&self) -> &[u8] {
-        &self.body
+        self.body
     }
     /// Returns the explicitly injected bearer token. Never log it.
     pub fn token(&self) -> &AccessToken {
@@ -253,14 +256,8 @@ impl std::error::Error for NotebookError {}
 
 /// Shared bounded state for a single caller-driven Notebook deployment.
 pub struct NotebookSession<'a> {
-    client: &'a Client,
-    executor: &'a dyn NotebookExecutor,
     limits: NotebookLimits,
-    cancelled: Pin<Box<dyn Future<Output = ()> + Send + 'a>>,
-    cancelled_observed: bool,
-    requests: usize,
-    operation_id: Option<String>,
-    mutation_may_have_occurred: bool,
+    operations: OperationSession<'a, NotebookOperationAdapter<'a>>,
 }
 
 impl Client {
@@ -275,14 +272,18 @@ impl Client {
         cancelled: impl Future<Output = ()> + Send + 'a,
     ) -> NotebookSession<'a> {
         NotebookSession {
-            client: self,
-            executor,
             limits,
-            cancelled: Box::pin(cancelled),
-            cancelled_observed: false,
-            requests: 0,
-            operation_id: None,
-            mutation_may_have_occurred: false,
+            operations: OperationSession::new(
+                self.credential().as_ref(),
+                self.selection(),
+                NotebookOperationAdapter(executor),
+                OperationLimits {
+                    max_requests: limits.max_requests,
+                    max_response_bytes: limits.max_response_bytes,
+                    max_poll_delay: limits.max_poll_delay,
+                },
+                cancelled,
+            ),
         }
     }
 }
@@ -399,10 +400,11 @@ impl NotebookSession<'_> {
     }
 
     fn error(&self, kind: NotebookErrorKind) -> NotebookError {
+        let evidence = self.operations.evidence(OperationErrorKind::InvalidInput);
         NotebookError {
             kind,
-            operation_id: self.operation_id.clone(),
-            mutation_may_have_occurred: self.mutation_may_have_occurred,
+            operation_id: evidence.operation_id,
+            mutation_may_have_occurred: evidence.mutation_may_have_occurred,
         }
     }
 
@@ -412,42 +414,26 @@ impl NotebookSession<'_> {
         url: Url,
         body: Vec<u8>,
     ) -> Result<NotebookResponse, NotebookErrorKind> {
-        self.run(std::future::ready(())).await?;
-        if self.client.selection().audience() != Audience::Fabric {
-            return Err(NotebookErrorKind::InvalidAudience);
-        }
-        if self.requests >= self.limits.max_requests.get() {
-            return Err(NotebookErrorKind::Limit);
-        }
-        let scopes = [Audience::Fabric.scope()];
-        let token = self
-            .run(self.client.credential().get_token(&scopes, None))
-            .await?
-            .map_err(|_| NotebookErrorKind::Credential)?;
-        self.requests += 1;
-        let request = NotebookRequest {
-            method,
-            url,
-            body,
-            token: &token,
-            max_response_bytes: self.limits.max_response_bytes,
+        let method = match method {
+            "GET" => ResourceMethod::Get,
+            "POST" => ResourceMethod::Post,
+            _ => return Err(NotebookErrorKind::InvalidInput),
         };
-        // Cancellation wins before the POST future is first polled.
-        self.run(std::future::ready(())).await?;
-        if method == "POST" {
-            self.mutation_may_have_occurred = true;
-        }
-        let response =
-            self.run(self.executor.execute(request))
-                .await?
-                .map_err(|error| match error {
-                    NotebookExecutionError::ResponseLimit => NotebookErrorKind::Limit,
-                    error => NotebookErrorKind::Execution(error),
-                })?;
-        if response.body.len() > self.limits.max_response_bytes.get() {
-            return Err(NotebookErrorKind::Limit);
-        }
-        Ok(response)
+        let operation = FabricOperation::new(
+            method,
+            &match url.query() {
+                Some(query) => format!("{}?{query}", url.path()),
+                None => url.path().to_owned(),
+            },
+            body,
+            CompletionPolicy::ReturnAccepted,
+        )
+        .map_err(operation_kind)?;
+        self.operations
+            .execute(operation)
+            .await
+            .map(notebook_response)
+            .map_err(|error| operation_kind(error.kind))
     }
 
     async fn mutate(
@@ -456,109 +442,135 @@ impl NotebookSession<'_> {
         body: serde_json::Value,
         create: bool,
     ) -> Result<NotebookResponse, NotebookErrorKind> {
-        if self.mutation_may_have_occurred {
-            return Err(NotebookErrorKind::InvalidInput);
-        }
-        let mut response = self
-            .request(
-                "POST",
-                url,
-                serde_json::to_vec(&body).map_err(|_| NotebookErrorKind::InvalidInput)?,
-            )
-            .await?;
-        if response.status != 202 {
-            ensure_status(&response, if create { &[201] } else { &[200] })?;
-            return Ok(response);
-        }
-        let id = if let Some(id) = header(&response, "x-ms-operation-id")? {
-            if !valid_id(id) {
-                return Err(NotebookErrorKind::InvalidResponse);
-            }
-            id.to_owned()
-        } else {
-            let uri = header(&response, "Location")?.ok_or(NotebookErrorKind::InvalidResponse)?;
-            let url = Url::parse(uri).map_err(|_| NotebookErrorKind::InvalidLink)?;
-            url.path()
-                .rsplit('/')
-                .next()
-                .filter(|id| valid_id(id))
-                .ok_or(NotebookErrorKind::InvalidLink)?
-                .to_owned()
+        let path = match url.query() {
+            Some(query) => format!("{}?{query}", url.path()),
+            None => url.path().to_owned(),
         };
-        let path = format!("/v1/operations/{id}");
-        self.operation_id = Some(id);
-        if let Some(uri) = header(&response, "Location")? {
-            validate_link(uri, &path)?;
-        }
-        loop {
-            if self.requests >= self.limits.max_requests.get() {
-                return Err(NotebookErrorKind::Limit);
-            }
-            let delay = match header(&response, "Retry-After")? {
-                Some(value) => Duration::from_secs(
-                    value
-                        .parse()
-                        .map_err(|_| NotebookErrorKind::InvalidResponse)?,
-                ),
-                None => Duration::from_secs(1),
+        let operation = FabricOperation::new(
+            ResourceMethod::Post,
+            &path,
+            serde_json::to_vec(&body).map_err(|_| NotebookErrorKind::InvalidInput)?,
+            if create {
+                CompletionPolicy::WaitForResult
+            } else {
+                CompletionPolicy::WaitForCompletion
+            },
+        )
+        .map_err(operation_kind)?;
+        let response = self
+            .operations
+            .execute(operation)
+            .await
+            .map(notebook_response)
+            .map_err(|error| operation_kind(error.kind))?;
+        ensure_status(
+            &response,
+            if create && self.operations.operation_id().is_none() {
+                &[201]
+            } else {
+                &[200]
+            },
+        )?;
+        Ok(response)
+    }
+}
+
+struct NotebookOperationAdapter<'a>(&'a dyn NotebookExecutor);
+
+impl OperationExecutor for NotebookOperationAdapter<'_> {
+    fn execute<'a>(
+        &'a self,
+        request: OperationRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<OperationResponse, OperationExecutionError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            let method = match request.method() {
+                ResourceMethod::Get => "GET",
+                ResourceMethod::Post => "POST",
+                ResourceMethod::Patch | ResourceMethod::Delete => {
+                    return Err(OperationExecutionError::Failed);
+                }
             };
-            if delay > self.limits.max_poll_delay {
-                return Err(NotebookErrorKind::Limit);
-            }
-            self.run(self.executor.wait(delay))
-                .await?
-                .map_err(NotebookErrorKind::Execution)?;
-            response = self.request("GET", service_url(&path)?, Vec::new()).await?;
-            ensure_status(&response, &[200])?;
-            let state: serde_json::Value = decode(&response.body)?;
-            match state.get("status").and_then(serde_json::Value::as_str) {
-                Some("NotStarted" | "Running") => {
-                    if let Some(uri) = header(&response, "Location")? {
-                        validate_link(uri, &path)?;
+            self.0
+                .execute(NotebookRequest {
+                    method,
+                    url: request.url(),
+                    body: request.body(),
+                    token: request.token(),
+                    max_response_bytes: request.max_response_bytes(),
+                })
+                .await
+                .map(|response| OperationResponse {
+                    status: response.status,
+                    body: response.body,
+                    headers: response.headers,
+                })
+                .map_err(|error| match error {
+                    NotebookExecutionError::Failed => OperationExecutionError::Failed,
+                    NotebookExecutionError::TimedOut => OperationExecutionError::TimedOut,
+                    NotebookExecutionError::Cancelled => OperationExecutionError::Cancelled,
+                    NotebookExecutionError::ResponseLimit => OperationExecutionError::ResponseLimit,
+                    NotebookExecutionError::RetriesExhausted => {
+                        OperationExecutionError::RetriesExhausted
                     }
-                }
-                Some("Succeeded") => {
-                    let result_path = format!("{path}/result");
-                    if let Some(uri) = header(&response, "Location")? {
-                        validate_link(uri, &result_path)?;
-                    }
-                    if create {
-                        let result = self
-                            .request("GET", service_url(&result_path)?, Vec::new())
-                            .await?;
-                        ensure_status(&result, &[200])?;
-                        return Ok(result);
-                    }
-                    return Ok(response);
-                }
-                Some(status @ ("Failed" | "Cancelled")) => {
-                    return Err(NotebookErrorKind::OperationFailed {
-                        status: status.to_owned(),
-                        error: state
-                            .get("error")
-                            .cloned()
-                            .and_then(|error| serde_json::from_value(error).ok())
-                            .map(Box::new),
-                    });
-                }
-                _ => return Err(NotebookErrorKind::InvalidResponse),
-            }
-        }
+                })
+        })
     }
 
-    async fn run<T>(&mut self, future: impl Future<Output = T>) -> Result<T, NotebookErrorKind> {
-        if self.cancelled_observed {
-            return Err(NotebookErrorKind::Cancelled);
-        }
-        let mut future = pin!(future);
-        poll_fn(|cx| {
-            if self.cancelled.as_mut().poll(cx).is_ready() {
-                self.cancelled_observed = true;
-                return Poll::Ready(Err(NotebookErrorKind::Cancelled));
-            }
-            future.as_mut().poll(cx).map(Ok)
+    fn wait(
+        &self,
+        delay: Duration,
+    ) -> Pin<Box<dyn Future<Output = Result<(), OperationExecutionError>> + Send + '_>> {
+        Box::pin(async move {
+            self.0.wait(delay).await.map_err(|error| match error {
+                NotebookExecutionError::Failed => OperationExecutionError::Failed,
+                NotebookExecutionError::TimedOut => OperationExecutionError::TimedOut,
+                NotebookExecutionError::Cancelled => OperationExecutionError::Cancelled,
+                NotebookExecutionError::ResponseLimit => OperationExecutionError::ResponseLimit,
+                NotebookExecutionError::RetriesExhausted => {
+                    OperationExecutionError::RetriesExhausted
+                }
+            })
         })
-        .await
+    }
+}
+
+fn notebook_response(response: OperationResponse) -> NotebookResponse {
+    NotebookResponse {
+        status: response.status,
+        body: response.body,
+        headers: response.headers,
+    }
+}
+
+fn operation_kind(kind: OperationErrorKind) -> NotebookErrorKind {
+    match kind {
+        OperationErrorKind::InvalidInput => NotebookErrorKind::InvalidInput,
+        OperationErrorKind::InvalidAudience => NotebookErrorKind::InvalidAudience,
+        OperationErrorKind::Credential => NotebookErrorKind::Credential,
+        OperationErrorKind::InvalidResponse => NotebookErrorKind::InvalidResponse,
+        OperationErrorKind::InvalidLink => NotebookErrorKind::InvalidLink,
+        OperationErrorKind::Limit => NotebookErrorKind::Limit,
+        OperationErrorKind::Cancelled => NotebookErrorKind::Cancelled,
+        OperationErrorKind::Http {
+            status,
+            code,
+            error,
+        } => NotebookErrorKind::Http {
+            status,
+            code,
+            error,
+        },
+        OperationErrorKind::OperationFailed { status, error } => {
+            NotebookErrorKind::OperationFailed { status, error }
+        }
+        OperationErrorKind::Execution(error) => NotebookErrorKind::Execution(match error {
+            OperationExecutionError::Failed => NotebookExecutionError::Failed,
+            OperationExecutionError::TimedOut => NotebookExecutionError::TimedOut,
+            OperationExecutionError::Cancelled => NotebookExecutionError::Cancelled,
+            OperationExecutionError::ResponseLimit => NotebookExecutionError::ResponseLimit,
+            OperationExecutionError::RetriesExhausted => NotebookExecutionError::RetriesExhausted,
+        }),
     }
 }
 

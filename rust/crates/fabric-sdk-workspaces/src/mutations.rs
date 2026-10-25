@@ -144,6 +144,8 @@ pub struct ResourceError {
     pub message: String,
     /// HTTP status when a service response was observed.
     pub status: Option<u16>,
+    /// Structured service diagnostics retained as data, never formatted implicitly.
+    pub service_error: Option<Box<crate::FabricServiceError>>,
     /// Accepted operation identifier, when known.
     pub operation_id: Option<String>,
     /// Whether a mutation may have reached the service; cancellation is not rollback.
@@ -157,6 +159,7 @@ impl ResourceError {
             code: "InvalidInput".into(),
             message: "Invalid Fabric resource operation".into(),
             status: None,
+            service_error: None,
             operation_id: None,
             mutation_may_have_occurred: false,
         }

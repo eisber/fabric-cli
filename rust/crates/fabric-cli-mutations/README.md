@@ -12,8 +12,12 @@ an injected `MutationUi` and the existing enriched metadata-read host through
 return existing `OutputInput` values and ordered `CacheEffect` values. The main
 CLI owner must apply those effects and refresh affected current contexts.
 Credentials, clocks, config, prompts, cache and output streams are not discovered
-or initialized globally. `ResourceOperations` is the shared-policy injection seam;
-it does not implement another HTTP/retry/LRO stack.
+or initialized globally. `ResourceOperations` is the shared-policy injection seam.
+`FabricMutationBackend` connects it to the reusable SDK `OperationSession` and the
+existing `HttpExecutor::execute_fabric`/`wait_for` adapter. Notebook deployment and
+generic mutations share one bounded request/poll/result implementation, not a
+second HTTP/retry/LRO stack. Direct SDK consumers can pass `OperationSession`
+without depending on this CLI crate.
 
 The original Python files are `commands/fs/fab_fs_exists.py`,
 `commands/fs/{mkdir,rm,set}/fab_fs_*_{workspace,item,folder}.py`,

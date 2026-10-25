@@ -400,11 +400,15 @@ dependencies = [
 name = "fabric-cli-mutations"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "azure_core",
  "base64 0.22.1",
  "fabric-cli-context",
  "fabric-cli-output",
  "fabric-sdk-folders",
+ "fabric-sdk-http",
  "fabric-sdk-items",
+ "fabric-sdk-operations",
  "fabric-sdk-workspaces",
  "jpx-core",
  "serde_json",
@@ -480,6 +484,7 @@ dependencies = [
  "fabric-sdk-capacities",
  "fabric-sdk-folders",
  "fabric-sdk-items",
+ "fabric-sdk-operations",
  "fabric-sdk-workspaces",
  "serde",
  "serde_json",
@@ -573,6 +578,18 @@ dependencies = [
  "async-trait",
  "azure_core",
  "fabric-core",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-sdk-operations"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "azure_core",
+ "fabric-core",
+ "fabric-sdk-workspaces",
  "serde_json",
  "tokio",
 ]

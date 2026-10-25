@@ -15,7 +15,7 @@ not central parser/front-door integration or live parity.
 | --- | --- | --- |
 | mkdir/create workspace | Parameter help, duplicate/capacity checks, lowercased payload, actual POST, output/cache effects | Central dispatch, live scope |
 | mkdir/create folder | Root/nested parent omission, optional description, POST, output/cache effects | Central dispatch |
-| mkdir/create item | Typed collection, generic metadata, folder ID, Lakehouse/Warehouse/Notebook/MountedDataFactory payloads, explicit KQL/DTB parent paths | Templates/dependencies, SQL modes, all options, LRO shared-policy adapter |
+| mkdir/create item | Typed collection, generic metadata, folder ID, Lakehouse/Warehouse/Notebook/MountedDataFactory payloads, explicit KQL/DTB parent paths, shared bounded operation/result waiting | Templates/dependencies, SQL modes, all options, central dispatch |
 | set workspace | Enriched-read ordering, blocklist/simple path, top-level projection, separate Spark PATCH | Main enriched read adapter, central dispatch |
 | set item/folder | Prompt ordering, metadata PATCH, renamed cache/context effect | Definition seam and friendly Notebook aliases |
 | rm/del item/folder | Confirmation/force/hard, exact route/query, accepted/completed messages, cache effects | Central context transition |
@@ -32,6 +32,15 @@ messages/cache eviction are preserved independently. `WaitForResult` may succeed
 only with a reconciled actual result. Missing/cancelled/failed/unsafe operations
 must retain explicit errors and mutation uncertainty; automatic replay is not
 allowed. SDKs depend only on SDK/core layers, never CLI, deployment or identity.
+
+`fabric-sdk-operations` extracts the existing Notebook request/poll/result policy.
+The Notebook facade preserves its public signatures, error classifications and
+final resource checks through a private compatibility adapter. Direct SDK users
+can inject `OperationSession` into focused mutation clients without a CLI
+dependency. `FabricMutationBackend` is a thin CLI consumer of that same session
+and the existing shared HTTP execution/timer. Synthetic Azure HTTP requests test
+the actual handler/SDK/operation/HTTP chain, asynchronous result retrieval,
+request bounds, lost PATCH/DELETE responses and explicit 202 versus 204.
 
 Offline fixtures use synthetic metadata and execution exclusively. Online work
 remains unexecuted and authorization-blocked pending explicit tenant/client,

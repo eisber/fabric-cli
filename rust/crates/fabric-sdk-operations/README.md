@@ -1,0 +1,37 @@
+<!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
+
+# Shared Fabric operation policy
+
+This SDK-layer prerequisite extracts the existing Notebook request/202 polling/
+result policy into one reusable implementation. It adds no transport, identity
+backend, runtime, TLS, proxy or HTTP retry stack.
+
+`OperationSession` owns finite request/response/poll-delay bounds, explicit Fabric
+selection and token acquisition, cancellation, uncertain mutation evidence,
+validated operation/result links and terminal-state reconciliation. Callers supply
+an Azure `TokenCredential`, `CredentialSelection`, `OperationExecutor`, limits and
+cancellation future. The request's token is never discovered or persisted.
+
+`FabricOperation` accepts only fixed public Fabric `/v1/` paths and finite methods.
+`CompletionPolicy::ReturnAccepted` preserves 202; `WaitForResult` retrieves the
+actual operation result; `WaitForCompletion` waits without fetching a resource.
+Acceptance never becomes completed work, and a dropped/cancelled/lost mutation
+response never authorizes replay. POST, PATCH and DELETE uncertainty is recorded
+before their request future can first be polled.
+
+The SDK facade's existing Notebook types and signatures remain unchanged.
+Its private adapter converts typed requests/results/errors, and its endpoint
+validation, definition preparation, listing and final Notebook validation remain
+in the facade. There is only one mutation/poll/result loop. Existing independent
+Notebook and HTTP/deployment contracts remain unchanged.
+
+The CLI mutation backend is a thin consumer over `HttpExecutor::execute_fabric`
+and `wait_for`; shared HTTP still owns deadlines, GET-only retries and body
+streaming limits. No extra method replay, ambient credential provider or alternate
+origin is installed. OneLake/storage and ARM require separately reviewed typed
+transport boundaries and are not enabled by this Fabric-only operation policy.
+
+The source policy was extracted from the Rust baseline
+`cc908ce08617f92601aa2dd68622797ccbcde9e7`, `fabric-sdk/src/notebooks.rs`.
+Generic resource endpoint/prompt/output semantics remain pinned to Python
+`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
