@@ -119,7 +119,7 @@ pub(super) fn executor(client: Arc<dyn HttpClient>, timer: Arc<TestTimer>) -> Ht
 
 async fn get(executor: &HttpExecutor, limit: usize) -> Result<WorkspaceResponse, ExecutionError> {
     executor
-        .execute(
+        .execute_fabric(
             Method::Get,
             &Url::parse("https://api.fabric.microsoft.com/v1/workspaces").unwrap(),
             &token(),
@@ -127,6 +127,140 @@ async fn get(executor: &HttpExecutor, limit: usize) -> Result<WorkspaceResponse,
             NonZeroUsize::new(limit).unwrap(),
         )
         .await
+}
+
+#[tokio::test]
+async fn public_fabric_seam_preserves_non_workspace_request_and_accepted_response() {
+    let client = ScriptedClient::new([response(
+        202,
+        "",
+        &[("Location", "/v1/operations/test"), ("Retry-After", "3")],
+    )]);
+    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
+    let url = Url::parse(
+        "https://api.fabric.microsoft.com/v1/workspaces/ws/lakehouses/lh/tables/table/load",
+    )
+    .unwrap();
+    let body = br#"{"relativePath":"Files/source.csv","pathType":"File"}"#;
+    let result = exec
+        .execute_fabric(
+            Method::Post,
+            &url,
+            &token(),
+            body,
+            NonZeroUsize::new(1).unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.status, 202);
+    assert!(result.body.is_empty());
+    assert_eq!(result.headers["location"], "/v1/operations/test");
+    assert_eq!(result.headers["retry-after"], "3");
+    let requests = client.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method(), Method::Post);
+    assert_eq!(requests[0].url(), &url);
+    assert_eq!(Bytes::from(requests[0].body()).as_ref(), body);
+}
+
+#[tokio::test]
+async fn public_fabric_seam_rejects_other_audiences_and_invalid_urls_before_io() {
+    let client = ScriptedClient::new([]);
+    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
+    for url in [
+        "https://onelake.dfs.fabric.microsoft.com/ws/item/Files/source.csv",
+        "https://management.azure.com/subscriptions/test",
+        "https://api.powerbi.com/v1.0/myorg/groups",
+        "https://api.fabric.microsoft.com.invalid/v1/workspaces",
+        "http://api.fabric.microsoft.com/v1/workspaces",
+        "https://api.fabric.microsoft.com:444/v1/workspaces",
+        "https://user@api.fabric.microsoft.com/v1/workspaces",
+        "https://api.fabric.microsoft.com/v1/workspaces#fragment",
+    ] {
+        assert_eq!(
+            exec.execute_fabric(
+                Method::Get,
+                &Url::parse(url).unwrap(),
+                &token(),
+                &[],
+                NonZeroUsize::new(1).unwrap(),
+            )
+            .await
+            .unwrap_err(),
+            ExecutionError::InvalidInput
+        );
+    }
+    assert!(client.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn public_fabric_seam_never_replays_non_get_methods() {
+    for method in [
+        Method::Head,
+        Method::Post,
+        Method::Put,
+        Method::Patch,
+        Method::Delete,
+    ] {
+        let client = ScriptedClient::new([response(429, "", &[("Retry-After", "1")])]);
+        let exec = executor(client.clone(), Arc::new(TestTimer::default()));
+        let response = exec
+            .execute_fabric(
+                method,
+                &Url::parse("https://api.fabric.microsoft.com/v1/workspaces/ws").unwrap(),
+                &token(),
+                &[],
+                NonZeroUsize::new(1).unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status, 429);
+        assert_eq!(client.requests.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn public_fabric_seam_retains_decoded_byte_limit() {
+    let client = ScriptedClient::new([response(200, "ab", &[])]);
+    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
+    assert_eq!(
+        exec.execute_fabric(
+            Method::Get,
+            &Url::parse("https://api.fabric.microsoft.com/v1/workspaces/ws/roles").unwrap(),
+            &token(),
+            &[],
+            NonZeroUsize::new(1).unwrap(),
+        )
+        .await
+        .unwrap_err(),
+        ExecutionError::ResponseLimit
+    );
+    assert_eq!(client.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn public_wait_retains_delay_bounds_and_executor_deadline() {
+    let client = ScriptedClient::new([]);
+    let timer = Arc::new(TestTimer::default());
+    let exec = executor(client.clone(), timer.clone());
+    exec.wait_for(Duration::ZERO).await.unwrap();
+    assert_eq!(*timer.waits.lock().unwrap(), [Duration::from_secs(240)]);
+    timer.waits.lock().unwrap().clear();
+    exec.wait_for(Duration::from_secs(60)).await.unwrap();
+    assert_eq!(
+        *timer.waits.lock().unwrap(),
+        [Duration::from_secs(240), Duration::from_secs(60)]
+    );
+    assert_eq!(
+        exec.wait_for(Duration::from_secs(61)).await.unwrap_err(),
+        ExecutionError::RetryDelay
+    );
+    timer.expired.store(true, Ordering::SeqCst);
+    assert_eq!(
+        exec.wait_for(Duration::from_secs(1)).await.unwrap_err(),
+        ExecutionError::TimedOut
+    );
+    assert!(client.requests.lock().unwrap().is_empty());
 }
 
 #[tokio::test]

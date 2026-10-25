@@ -126,6 +126,52 @@ impl HttpExecutor {
         })
     }
 
+    /// Executes one bounded request against the fixed public Fabric HTTPS origin.
+    ///
+    /// This is the shared adapter seam for additional handwritten service
+    /// families. The service client owns credential acquisition, endpoint
+    /// construction and service-specific response interpretation. This method
+    /// retains the existing decoded-byte cap, deadline and GET-only retry policy;
+    /// it never treats an accepted response as completed service work.
+    ///
+    /// The caller must supply a Fabric-scoped token from its explicitly bound
+    /// credential. Opaque tokens cannot be inspected here to verify their
+    /// audience. Storage, ARM, Power BI and arbitrary origins are rejected, not
+    /// inferred from the URL. Cancellation is supplied by dropping the future,
+    /// as with the existing operation-specific executor interfaces.
+    ///
+    /// The response reuses the established shared wire shape; no workspace
+    /// operation is performed implicitly. Additional request headers and
+    /// non-Fabric audiences require separately scoped adapters.
+    ///
+    /// # Errors
+    /// Returns sanitized [`ExecutionError`] values for an invalid origin or
+    /// token, transport failures, response bounds, deadlines and retry failures.
+    pub async fn execute_fabric(
+        &self,
+        method: Method,
+        url: &Url,
+        token: &AccessToken,
+        body: &[u8],
+        limit: NonZeroUsize,
+    ) -> Result<WorkspaceResponse, ExecutionError> {
+        self.execute(method, url, token, body, limit).await
+    }
+
+    /// Waits asynchronously using the caller's existing bounded execution timer.
+    ///
+    /// No sleep is started for a zero delay. Dropping this future cancels the
+    /// local wait. This method does not restart or replace a service operation's
+    /// overall deadline; its caller still owns that operation's lifecycle.
+    ///
+    /// # Errors
+    /// Returns [`ExecutionError::RetryDelay`] if the requested delay exceeds the
+    /// configured maximum, or [`ExecutionError::TimedOut`] if this wait exceeds
+    /// the configured execution deadline.
+    pub async fn wait_for(&self, delay: Duration) -> Result<(), ExecutionError> {
+        self.before_deadline(self.wait_bounded(delay)).await
+    }
+
     async fn execute(
         &self,
         method: Method,

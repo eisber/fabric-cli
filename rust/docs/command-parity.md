@@ -142,6 +142,35 @@ Only an exact reviewed commit plus executed consumer evidence changes a row's
 status. Shared parser/dispatcher/manifests/lock are coordinated; lanes never
 annex peer drafts or force-update `feature/rust`.
 
+### Shared service prerequisites
+
+`HttpExecutor::execute_fabric` exposes the existing fixed-origin Fabric request
+engine to additional handwritten adapters; `wait_for` exposes its existing
+bounded async timer without shadowing `NotebookExecutor::wait`. Neither adds a
+second HTTP/retry/polling implementation, custom headers, another audience, or
+permission to treat 202 as completed. Normal Fabric origin, no-replay, decoded
+byte and deadline guards still apply.
+
+Table schema owns interpretation of Delta commit logs, not a second OneLake
+filesystem client. The resource/OneLake lane supplies list/read/properties;
+the jobs lane supplies generic `TableMaintenance` run/status/cancel. Table-load
+202 is source-shaped acceptance, not a completed load. Generic resource LRO
+extraction must retain one policy implementation and preserve existing public
+Notebook APIs and independent contracts.
+
+Keep focused SDK executor traits independent of the facade-dependent HTTP
+adapter, avoiding a facade -> service -> HTTP -> facade cycle. Narrow composition
+adapters can bind the shared HTTP implementation after service interfaces are
+committed. Storage/ARM/Power BI and custom-header execution still need explicitly
+bound adapters; the Fabric-only method never infers token audience or expands
+its allowed hosts.
+
+Some worker launch branches preserve newer upstream `8ad4c70` ancestry. Its item
+type changes are not the pinned Python oracle. Preserve those commits and
+unrelated work, but derive source expectations from exact `cf67fd52` objects or
+a read-only pinned export. Integrate Rust-only lane deltas, not the unrelated
+upstream Python feature. Record source drift separately.
+
 ## Offline and online completion gates
 
 Every row needs independent Python-derived expected requests, outputs/streams,
