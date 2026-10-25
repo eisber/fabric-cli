@@ -1,7 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Temporary offline CLI entry point, not a replacement for the Python `fab`.
+//! Experimental CLI entry point, not a replacement for the Python `fab`.
+
+#[cfg(feature = "windows-broker")]
+mod auth;
 
 use fabric_cli::{
     HostError,
@@ -37,6 +40,8 @@ fn run() -> io::Result<ExitCode> {
             },
             1,
         ),
+        #[cfg(feature = "windows-broker")]
+        Ok(Invocation::Auth(command)) => return auth::run(&command),
         Err(_) => (
             CommandError {
                 code: "invalid_arguments",

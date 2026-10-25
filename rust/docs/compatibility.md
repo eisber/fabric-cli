@@ -14,7 +14,8 @@ SDK endpoints and passing read fixtures alone do not establish command parity.
 
 The temporary executable name is `fab-rs`, version `0.1.0`. There is no REPL,
 embedded agent runtime, authentication command, deployment command or production
-read host. Python-named `ls` (`dir`) and `get` are recognized; their public async
+read host in the default build. The separately opt-in Windows authentication
+slice is described below. Python-named `ls` (`dir`) and `get` are recognized; their public async
 library composition is described in [read-command compatibility](read-command-compatibility.md).
 
 | Invocation | Exit status | Standard output | Standard error |
@@ -36,6 +37,56 @@ this bootstrap. Help text is for people, not a parsing interface. No successful
 live service host or new resource/command namespace is established yet.
 These temporary contracts do not replace Python's output and exit-code contracts.
 Credentials are not accepted through command-line options.
+
+## Opt-in Windows authentication contract
+
+The owner requested native Windows login with Python-like session reuse/MFA,
+all three login audiences and a separate unsafe interop crate. Build
+`fabric-cli` with `--features windows-broker` to enable `auth login`, `auth status`
+and `auth logout`; default builds retain help/version and the existing
+`ls`/`dir`/`get` parser with unconfigured read-host diagnostics. This is an
+experimental implementation, not a proven production-policy replacement.
+
+Every command requires non-secret `--account <UPN>` and `--tenant <GUID>`.
+`--client-id` defaults to Python's registered public-client ID and can be
+explicitly overridden with a team-approved registration. Missing/invalid
+configuration and unknown arguments fail before any broker access; supplied
+invalid values and credentials are not echoed. Off Windows, commands return
+`unsupported` without invoking another provider.
+
+| Operation | Behavior and output |
+| --- | --- |
+| `auth login` | Silent selected-account attempt, interactive broker/MFA only on interaction-required or no matching cached account; acquire Fabric/OneLake/ARM sequentially. JSON success only after all metadata checks pass |
+| `auth login --no-interactive`, `auth status` | Silent only, including refresh. Interaction-required is a nonzero failure, never an automatic prompt |
+| `auth logout` | App/client-scoped broker sign-out on this device for the explicit account; no Windows-account deletion or global revocation |
+| Valid success | Exit 0, newline-terminated JSON on stdout, no token values |
+| Authentication/cancellation/timeout/native failure | Exit 1, sanitized JSON error on stderr, no success stdout |
+| Invalid arguments/configuration | Exit 2, sanitized JSON error on stderr; no broker access |
+| `--help` / subcommand help | Exit 0, help on stdout without authentication |
+
+Both feature configurations preserve the current read preview's static
+invalid-arguments message/schema above. Authentication registration is additive
+to the shared parser, not a replacement parser or an implicit read host.
+Read-only `--output_format` is rejected for auth rather than silently ignored.
+Errors retain numeric native
+or provider codes where available, not provider text or token values.
+
+Intentional constraints E1-E6 in [identity requirements](identity-requirements.md)
+still apply. Unlike Python, no automatic tenant discovery, first-account selection,
+raw-token/environment inputs, Azure CLI login, or plaintext cache fallback exists.
+No Rust local session/configuration file is persisted: subsequent invocations
+repeat the account/tenant/client selectors and reuse the broker's secure cache.
+Python logout's unrelated CLI setting/context resets are not ported by this slice.
+The SDK accepts an injected credential; refresh is silent and native-account pinned.
+
+MSAL can suppress refresh errors and start interactive acquisition where Python
+sees no token. This implementation starts UI only for a broker interaction-required
+status or an uncached explicitly selected identity, not cancellation, account
+switch, metadata errors or generic native/provider failure. The response authority
+must match the selected public-cloud tenant and expiry must come from broker
+metadata. Unknown aliases/guest combinations fail rather than weakening checks.
+Full cache migration, CAE/challenge handling, multi-platform and service validation
+are not complete. See [manual login instructions](../README.md#run-an-actual-windows-broker-login).
 
 ## Required compatibility work
 

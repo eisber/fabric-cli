@@ -30,7 +30,12 @@ fn help_succeeds_on_stdout_only() {
         assert!(stdout.contains("Usage: fab-rs"));
         assert!(stdout.contains("--help"));
         assert!(stdout.contains("--version"));
-        assert!(stdout.contains("no production authentication or HTTP transport"));
+        if cfg!(feature = "windows-broker") {
+            assert!(stdout.contains("Windows broker authentication is opt-in"));
+            assert!(stdout.contains("auth"));
+        } else {
+            assert!(stdout.contains("no production authentication or HTTP transport"));
+        }
         assert!(stdout.contains("Commands:"));
         assert!(stdout.contains("ls"));
         assert!(stdout.contains("get"));
@@ -74,6 +79,69 @@ fn invalid_commands_fail_with_sanitized_json_on_stderr() {
                     "message": fabric_cli::parser::INVALID_ARGUMENTS
                 }
             })
+        );
+    }
+}
+
+#[cfg(feature = "windows-broker")]
+#[test]
+fn auth_help_and_invalid_selectors_never_start_a_login() {
+    for action in ["login", "status", "logout"] {
+        let help = invoke(&["auth", action, "--help"]);
+        assert!(help.status.success());
+        let stdout = String::from_utf8(help.stdout).unwrap();
+        assert!(stdout.contains("--tenant"));
+        assert!(stdout.contains("--account"));
+        assert!(stdout.contains("--client-id"));
+        let output = invoke(&[
+            "auth",
+            action,
+            "--tenant",
+            "not-a-guid",
+            "--account",
+            "must-not-be-echoed",
+        ]);
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(!stderr.contains("must-not-be-echoed"));
+        let data: serde_json::Value = serde_json::from_str(&stderr).unwrap();
+        assert_eq!(
+            data["error"]["code"],
+            if cfg!(windows) {
+                "invalid_configuration"
+            } else {
+                "unsupported"
+            }
+        );
+    }
+}
+
+#[cfg(feature = "windows-broker")]
+#[test]
+fn authentication_rejects_raw_tokens_and_invalid_timeouts_before_native_calls() {
+    for extra in [
+        vec!["--token", "must-not-be-echoed"],
+        vec!["--password", "must-not-be-echoed"],
+        vec!["--timeout-seconds", "0"],
+        vec!["--timeout-seconds", "601"],
+    ] {
+        let mut args = vec![
+            "auth",
+            "login",
+            "--tenant",
+            "11111111-2222-3333-4444-555555555555",
+            "--account",
+            "user@example.test",
+        ];
+        args.extend(extra);
+        let output = invoke(&args);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        assert!(
+            !String::from_utf8(output.stderr)
+                .unwrap()
+                .contains("must-not-be-echoed")
         );
     }
 }

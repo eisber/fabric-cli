@@ -8,6 +8,15 @@ The `fab-rs` executable recognizes Python's `ls` (`dir`) and `get` names, paths,
 and flags, but returns sanitized `NotConfigured` errors for reads. Ordinary users
 cannot run live reads through this binary yet. Help/version need no host.
 
+The opt-in `windows-broker` feature adds experimental Windows authentication
+commands to the **same parser** without configuring read execution. It produces
+`Invocation::Auth(AuthCommand)` only for explicit authentication arguments;
+`ReadCommand`, LS/dir/GET lexical rules, `ReadHost` and `FolderReadHost` remain
+unchanged. Parsing never loads credentials or calls the broker. Read paths/query
+values spelled `auth` remain read inputs; auth values spelled `ls`, `dir` or `get`
+are not normalized as read argv. See the
+[authentication instructions](../../README.md#run-an-actual-windows-broker-login).
+
 ## Public library boundary
 
 Call `parser::parse_args` with argv[0] included, then pass `Invocation::Read` to

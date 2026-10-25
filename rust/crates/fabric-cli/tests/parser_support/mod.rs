@@ -33,6 +33,8 @@ pub fn observe(input: &Value) -> Option<Value> {
     let result = match parse_args(args) {
         Ok(Invocation::Read(command)) => json!({"read": meaning(&command)}),
         Ok(Invocation::Display(_)) => json!({"display": true}),
+        #[cfg(feature = "windows-broker")]
+        Ok(Invocation::Auth(_)) => json!({"error": true}),
         Err(_) => json!({"error": true}),
     };
     Some(json!({"id": input["id"], "parse": result}))

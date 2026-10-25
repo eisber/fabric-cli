@@ -3,8 +3,13 @@
 
 //! Optional identity implementations, independent of the service SDK.
 //!
-//! No interactive backend, credential chain, unattended adapter, persistence,
-//! browser launch, or external developer-tool invocation is implemented.
+//! Default builds do not discover credentials or launch UI. Windows broker login
+//! is explicitly opt-in; it uses no developer-tool fallback or plaintext cache.
+
+#[cfg(all(windows, feature = "windows-broker"))]
+mod windows;
+#[cfg(all(windows, feature = "windows-broker"))]
+pub use windows::{LoginOptions, TokenMetadata, WindowsCredential, sign_out};
 
 /// Opt-in desktop WAM interop; not a configured Fabric credential provider.
 ///

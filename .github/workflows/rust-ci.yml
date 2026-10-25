@@ -329,8 +329,10 @@ jobs:
           python -B tests/compatibility/output/reference.py --observed "$RUNNER_TEMP/output-json.json"
           python -B -m unittest discover -s tests/compatibility/output -p test_reference.py -v
       - name: Check optional broker and safe-code consumer without authenticating
-        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-identity')
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-identity') || contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
         run: |
+          cargo clippy --offline --locked -p fabric-cli --all-targets --features windows-broker -- -D warnings
+          cargo test --offline --locked -p fabric-cli -p fabric-identity --features fabric-cli/windows-broker
           cargo clippy --offline --locked -p fabric-identity --all-targets --features windows-broker -- -D warnings
           cargo run --offline --locked -p fabric-identity --example safe_consumer --no-default-features
           cargo run --offline --locked -p fabric-identity --example safe_consumer --features windows-broker
@@ -345,6 +347,20 @@ jobs:
         run: |
           python -B tests/compatibility/jobs/reference.py
           cargo run --offline --locked -p fabric-cli-jobs --example offline_job
+      - name: Preserve read and query source comparisons with broker feature enabled
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          cargo build --offline --locked -p fabric-cli -p fabric-cli-query --examples --features fabric-cli/windows-broker
+          suffix=""
+          if [[ "$RUNNER_OS" == Windows ]]; then suffix=".exe"; fi
+          python -B tests/compatibility/run_read_parity.py \
+            --read-probe "target/debug/examples/read_probe${suffix}" \
+            --query-probe "target/debug/examples/projection_output${suffix}" \
+            --folder-probe "target/debug/examples/folder_read_probe${suffix}" \
+            --artifacts "$RUNNER_TEMP/read-parity-windows-broker"
       - name: Run independent offline SDK example
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk')
         run: cargo run --offline --locked -p fabric-sdk --example injected_credentials

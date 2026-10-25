@@ -17,6 +17,10 @@ layer = "cli"
 name = "fab-rs"
 path = "src/main.rs"
 
+[features]
+default = []
+windows-broker = ["dep:fabric-identity", "dep:tokio", "fabric-identity/windows-broker"]
+
 [dependencies]
 clap.workspace = true
 fabric-cli-context.workspace = true
@@ -25,6 +29,8 @@ fabric-cli-query.workspace = true
 fabric-sdk.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+fabric-identity = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["signal"] }
 thiserror.workspace = true
 
 [dev-dependencies]

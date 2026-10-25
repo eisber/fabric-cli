@@ -39,6 +39,7 @@ publish = false
 fabric-cli-context = { path = "crates/fabric-cli-context" }
 fabric-core = { path = "crates/fabric-core" }
 fabric-core-json = { path = "crates/fabric-core-json" }
+fabric-identity = { path = "crates/fabric-identity" }
 fabric-cli-output = { path = "crates/fabric-cli-output" }
 fabric-cli-query = { path = "crates/fabric-cli-query" }
 fabric-cli-jobs = { path = "crates/fabric-cli-jobs" }
