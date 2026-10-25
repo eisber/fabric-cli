@@ -23,6 +23,26 @@ mutation uncertainty. Header names are normalized by Azure's header type.
 Status, headers, empty 202 responses, and exact request/response bytes remain
 available to the existing operation policies.
 
+`HttpExecutor::execute_fabric(method, url, token, body, limit)` is an additive
+public adapter seam for further handwritten Fabric service families. It calls
+the same engine as the existing typed adapters, including the decoded-byte cap,
+overall deadline, GET-only retries and mutation no-replay behavior. It retains
+raw status/headers/body: a table-load 202 is still only accepted, not completed.
+The response uses the existing shared `WorkspaceResponse` wire shape without
+performing a workspace operation.
+
+The service client acquires the explicitly selected Fabric token and interprets
+service-specific responses. This seam accepts only
+`https://api.fabric.microsoft.com:443`; storage, ARM, Power BI and arbitrary
+origins remain rejected before transport I/O. It does not add custom headers or
+infer a token audience. Dropping the future cancels local work; it is not rollback.
+Keep focused service executor traits independent of this facade-dependent
+adapter to avoid a facade -> service -> HTTP -> facade dependency cycle.
+Thin composition adapters must not reproduce its retry or deadline policies.
+`HttpExecutor::wait_for(delay)` exposes the same bounded asynchronous timer for
+those adapters, without shadowing `NotebookExecutor::wait` or replacing a
+whole-job deadline. Zero delays do not start a sleep; excessive delays fail.
+
 The HTTP client must provide decoded response chunks, disable redirects and
 its own automatic retries, and release local work when its future is dropped.
 The adapter does not inspect or override an opaque client's configuration.
