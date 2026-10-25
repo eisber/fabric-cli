@@ -149,6 +149,8 @@ pub struct ResourceError {
     pub status: Option<u16>,
     /// Structured service diagnostics retained as data, never formatted implicitly.
     pub service_error: Option<Box<crate::FabricServiceError>>,
+    /// Exact parsed service error data, including partial or future error shapes.
+    pub raw_service_error: Option<Box<Value>>,
     /// Accepted operation identifier, when known.
     pub operation_id: Option<String>,
     /// Whether a mutation may have reached the service; cancellation is not rollback.
@@ -163,6 +165,7 @@ impl ResourceError {
             message: "Invalid Fabric resource operation".into(),
             status: None,
             service_error: None,
+            raw_service_error: None,
             operation_id: None,
             mutation_may_have_occurred: false,
         }
@@ -171,7 +174,7 @@ impl ResourceError {
 
 impl fmt::Display for ResourceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.code, self.message)
+        f.write_str("Fabric resource operation failed or is incomplete; inspect its classification and reconciliation evidence")
     }
 }
 

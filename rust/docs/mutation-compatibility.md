@@ -41,6 +41,12 @@ dependency. `FabricMutationBackend` is a thin CLI consumer of that same session
 and the existing shared HTTP execution/timer. Synthetic Azure HTTP requests test
 the actual handler/SDK/operation/HTTP chain, asynchronous result retrieval,
 request bounds, lost PATCH/DELETE responses and explicit 202 versus 204.
+The error comparison additionally executes the original `do_request`, exception
+classes and `handle_exceptions` decorator. It compares HTTP header/body precedence,
+partial errors, period stripping, authorization exits and server operation-error
+dictionary/list/scalar messages. Exact parsed failures remain SDK data; the CLI
+explicitly renders them, and SDK Display remains sanitized. No live auth,
+credential cache or actual network is involved in that original-source probe.
 
 Offline fixtures use synthetic metadata and execution exclusively. Online work
 remains unexecuted and authorization-blocked pending explicit tenant/client,

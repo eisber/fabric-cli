@@ -7,6 +7,7 @@
 //! See the README for the exact source pin and the intentionally incomplete matrix.
 
 mod create;
+mod errors;
 mod execution;
 mod lifecycle;
 mod set;
@@ -115,9 +116,19 @@ pub struct MutationError {
 impl MutationError {
     /// Construct a local command validation failure.
     pub fn new(code: &str, message: impl Into<String>) -> Self {
+        let message = message.into();
         Self {
-            code: code.into(),
-            message: message.into(),
+            code: if code.is_empty() {
+                "UnknownError"
+            } else {
+                code
+            }
+            .into(),
+            message: if message.is_empty() {
+                "An error occurred while processing the operation".into()
+            } else {
+                message.trim_end_matches('.').to_owned()
+            },
             operation: None,
         }
     }
@@ -135,11 +146,12 @@ impl MutationError {
 
 impl From<ResourceError> for MutationError {
     fn from(error: ResourceError) -> Self {
-        Self {
-            code: error.code.clone(),
-            message: error.message.clone(),
-            operation: Some(Box::new(error)),
-        }
+        let mut result = match errors::source_message(&error) {
+            Ok(message) => Self::new(&error.code, message),
+            Err(()) => Self::new("InvalidJson", "Invalid JSON format"),
+        };
+        result.operation = Some(Box::new(error));
+        result
     }
 }
 

@@ -17,6 +17,7 @@ layer = "cli"
 azure_core.workspace = true
 fabric-cli-context.workspace = true
 fabric-cli-output.workspace = true
+fabric-cli-query.workspace = true
 fabric-sdk-workspaces.workspace = true
 fabric-sdk-items.workspace = true
 fabric-sdk-folders.workspace = true

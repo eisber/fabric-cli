@@ -71,6 +71,14 @@ metadata calls or ambient capacity discovery.
 The first SDK path boundary explicitly rejects URL/traversal/encoded identifiers.
 This is a safety boundary, not a claim of Python opaque-path equivalence.
 Structured service errors are data, never instructions or credentials.
+The CLI error adapter preserves Python's 401/403 header-code precedence,
+404 diagnostic, partial Fabric error bodies, trailing-period normalization and
+authorization exit selection. Server-side operation failures retain the exact
+parsed error value and use Python-compatible dictionary/list/scalar formatting;
+the SDK's Display implementation never automatically emits that untrusted data.
+The development-only error comparison executes the pinned `do_request`,
+exception classes and `handle_exceptions` decorator with synthetic auth, network
+and time. No real authentication module or ambient config is imported.
 The original-Python comparison executes pinned request/handler functions; its
 wait flag comes from the original `do_request` assignment, not from whether an
 individual handler explicitly assigned `args.wait`.

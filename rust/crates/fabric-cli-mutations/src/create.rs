@@ -209,6 +209,7 @@ fn incomplete_create(outcome: &ResourceOutcome, code: &str, message: &str) -> Mu
         message: message.into(),
         status,
         service_error: None,
+        raw_service_error: None,
         operation_id,
         mutation_may_have_occurred: true,
     }

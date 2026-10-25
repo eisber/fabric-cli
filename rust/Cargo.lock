@@ -405,6 +405,7 @@ dependencies = [
  "base64 0.22.1",
  "fabric-cli-context",
  "fabric-cli-output",
+ "fabric-cli-query",
  "fabric-sdk-folders",
  "fabric-sdk-http",
  "fabric-sdk-items",

@@ -11,6 +11,11 @@ selection and token acquisition, cancellation, uncertain mutation evidence,
 validated operation/result links and terminal-state reconciliation. Callers supply
 an Azure `TokenCredential`, `CredentialSelection`, `OperationExecutor`, limits and
 cancellation future. The request's token is never discovered or persisted.
+`OperationError` and the resource error adapter retain exact parsed failure data
+in `raw_service_error`, in addition to typed service fields and reconciliation
+evidence. Display remains sanitized; consumers explicitly choose whether to
+render service text. Python-mode HTTP error-code precedence is separate from
+the unchanged strict Notebook policy.
 
 `FabricOperation` accepts only fixed public Fabric `/v1/` paths and finite methods.
 `CompletionPolicy::ReturnAccepted` preserves 202; `WaitForResult` retrieves the

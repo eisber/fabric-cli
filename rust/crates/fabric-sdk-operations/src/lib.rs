@@ -248,6 +248,8 @@ pub struct OperationError {
     pub operation_id: Option<String>,
     /// True before a mutating request future can first be polled.
     pub mutation_may_have_occurred: bool,
+    /// Exact parsed failure data, never included in Display automatically.
+    pub raw_service_error: Option<Box<serde_json::Value>>,
 }
 
 impl fmt::Display for OperationError {
@@ -270,6 +272,7 @@ pub struct OperationSession<'a, E> {
     operation_id: Option<String>,
     mutation_may_have_occurred: bool,
     warnings: Vec<OperationWarning>,
+    raw_service_error: Option<Box<serde_json::Value>>,
 }
 
 /// Source debug-warning outcomes, exposed rather than silently discarding fallback.
@@ -299,15 +302,25 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             operation_id: None,
             mutation_may_have_occurred: false,
             warnings: Vec::new(),
+            raw_service_error: None,
         }
     }
 
     /// Inspect reconciliation evidence without interpreting acceptance as completion.
     pub fn evidence(&self, kind: OperationErrorKind) -> OperationError {
+        let raw = if matches!(
+            &kind,
+            OperationErrorKind::Http { .. } | OperationErrorKind::OperationFailed { .. }
+        ) {
+            self.raw_service_error.clone()
+        } else {
+            None
+        };
         OperationError {
             kind,
             operation_id: self.operation_id.clone(),
             mutation_may_have_occurred: self.mutation_may_have_occurred,
+            raw_service_error: raw,
         }
     }
 
@@ -354,7 +367,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
                 .await?
         };
         if response.status != 202 {
-            ensure_status(&response, &[200, 201, 204])?;
+            ensure_source_status(&response, &[200, 201, 204], python)?;
             return Ok(response);
         }
         if operation.completion == CompletionPolicy::ReturnAccepted {
@@ -414,7 +427,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             response = self
                 .request(ResourceMethod::Get, service_url(&path)?, Vec::new())
                 .await?;
-            ensure_status(&response, &[200])?;
+            ensure_source_status(&response, &[200], python)?;
             let state: serde_json::Value = serde_json::from_slice(&response.body)
                 .map_err(|_| OperationErrorKind::InvalidResponse)?;
             if !state.is_object() {
@@ -442,7 +455,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
                             Vec::new(),
                         )
                         .await?;
-                    match ensure_status(&result, &[200, 201, 202, 204]) {
+                    match ensure_source_status(&result, &[200, 201, 202, 204], true) {
                         Ok(()) => return Ok(result),
                         Err(OperationErrorKind::Http {
                             code: Some(code), ..
@@ -470,6 +483,12 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
                     return Ok(response);
                 }
                 Some(status @ ("Failed" | "Cancelled")) => {
+                    self.raw_service_error = Some(Box::new(
+                        state
+                            .get("error")
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null),
+                    ));
                     return Err(OperationErrorKind::OperationFailed {
                         status: status.to_owned(),
                         error: state
@@ -491,6 +510,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         url: Url,
         body: Vec<u8>,
     ) -> Result<OperationResponse, OperationErrorKind> {
+        self.raw_service_error = None;
         Self::run(
             &mut self.cancelled,
             &mut self.cancelled_observed,
@@ -540,6 +560,9 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         })?;
         if response.body.len() > self.limits.max_response_bytes.get() {
             return Err(OperationErrorKind::Limit);
+        }
+        if !(200..300).contains(&response.status) {
+            self.raw_service_error = serde_json::from_slice(&response.body).ok().map(Box::new);
         }
         Ok(response)
     }
@@ -601,6 +624,7 @@ fn resource_error(error: OperationError) -> ResourceError {
         message: error.to_string(),
         status: None,
         service_error: None,
+        raw_service_error: error.raw_service_error,
         operation_id: error.operation_id,
         mutation_may_have_occurred: error.mutation_may_have_occurred,
     };
@@ -752,6 +776,48 @@ fn header<'a>(
         return Err(OperationErrorKind::InvalidResponse);
     }
     Ok(value)
+}
+
+fn ensure_source_status(
+    response: &OperationResponse,
+    allowed: &[u16],
+    python: bool,
+) -> Result<(), OperationErrorKind> {
+    if !python || allowed.contains(&response.status) {
+        return ensure_status(response, allowed);
+    }
+    let kind = ensure_status(response, allowed);
+    let Err(OperationErrorKind::Http { status, error, .. }) = kind else {
+        return kind;
+    };
+    let code = match status {
+        401 | 403 => Some(
+            header(response, "x-ms-public-api-error-code")?
+                .filter(|code| !code.is_empty())
+                .or(header(response, "x-ms-error-code")?.filter(|code| !code.is_empty()))
+                .unwrap_or(if status == 401 {
+                    "Unauthorized"
+                } else {
+                    "Forbidden"
+                })
+                .to_owned(),
+        ),
+        404 => Some("NotFound".into()),
+        _ => serde_json::from_slice::<serde_json::Value>(&response.body)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("errorCode")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|code| !code.is_empty())
+                    .map(str::to_owned)
+            }),
+    };
+    Err(OperationErrorKind::Http {
+        status,
+        code,
+        error,
+    })
 }
 
 fn ensure_status(response: &OperationResponse, allowed: &[u16]) -> Result<(), OperationErrorKind> {
