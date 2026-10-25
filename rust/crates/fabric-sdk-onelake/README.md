@@ -30,9 +30,11 @@ Fabric API scope. Selection is checked before token acquisition; the injected
 provider must already be bound to the selected account and tenant.
 
 `OneLakeRequest` exposes only GET/HEAD, a validated DFS URL, the injected token
-and the streaming byte limit. The shared HTTP owner supplies its adapter; the
-Fabric-only origin guard must not be globally relaxed. Private-link/sovereign
-hosts are not selected implicitly.
+and the streaming byte limit. The implemented
+[`OneLakeHttpExecutor`](../fabric-sdk-onelake-http/README.md) composes the existing
+shared HTTP engine through its explicit `PublicOrigin::OneLake` boundary.
+The Fabric-only origin guard is unchanged. Private-link/sovereign hosts are not
+selected implicitly.
 
 Listing retains unknown row fields, validates path rows, bounds pages/paths/bytes,
 detects repeated continuation tokens, and never reports partial data as complete.
