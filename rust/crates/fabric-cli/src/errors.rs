@@ -17,7 +17,7 @@ pub(crate) fn unsupported(message: &str) -> CommandError {
     error("NotSupported", message)
 }
 
-fn http(status: u16, code: &str, service: Option<&FabricServiceError>) -> CommandError {
+pub(crate) fn http(status: u16, code: &str, service: Option<&FabricServiceError>) -> CommandError {
     let message = match status {
         401 => "Access is unauthorized",
         403 => "Access is forbidden. You do not have permission to access this resource",

@@ -367,7 +367,7 @@ impl ReadHost<'_> {
         })
     }
 
-    fn list_projection(
+    pub(crate) fn list_projection(
         &self,
         rows: Vec<Value>,
         columns: &[&str],
@@ -399,7 +399,7 @@ fn hidden(values: &[&str]) -> HiddenItems {
     HiddenItems::Strings(values.iter().map(|value| (*value).to_owned()).collect())
 }
 
-fn required_id(element: &Element) -> Result<&str, CommandError> {
+pub(crate) fn required_id(element: &Element) -> Result<&str, CommandError> {
     element
         .id()
         .filter(|id| !id.is_empty())
@@ -426,7 +426,7 @@ fn unsupported_get(kind: ItemType) -> bool {
 }
 
 // Python sorts on enum member names, not the mixed-case REST type strings.
-fn enum_name(kind: ItemType) -> &'static str {
+pub(crate) fn enum_name(kind: ItemType) -> &'static str {
     match kind.as_str() {
         "AISkill" => "AISKILL",
         "ApacheAirflowJob" => "APACHE_AIRFLOW_JOB",
