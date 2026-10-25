@@ -1,0 +1,170 @@
+<!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
+
+# Complete Python command inventory and Rust implementation gaps
+
+## Source and measurement
+
+Python source: `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
+Rust assessment: published `a23b4deda07011ea36bb3a635f75266b14b35c80`,
+October 25, 2026. Python source is unchanged at this checkpoint.
+
+The authority is `core/fab_parser_setup.py::create_parser_and_subparsers` and
+the registration functions it actually calls, not the help dictionary, command
+enum, Swagger, endpoint count or a remembered conversation.
+[`inventory.json`](../tests/compatibility/commands/inventory.json) records every
+canonical path, alias, source file/line, handler and explicit argument shape,
+including cardinality, choices, required flags and defaults.
+[`inventory.py`](../tests/compatibility/commands/inventory.py) extracts it using
+only the standard-library AST, without importing product code or credentials.
+
+There are **32 canonical root registrations: 26 leaves and six groups**.
+The groups contain **26 subcommand leaves**, giving **52 canonical leaves**.
+There are **11 alias paths**, not eleven additional implementations. The six
+group-only invocations display help and are separate behavior contracts.
+Automatic help, flags, batch and REPL modes are additional surfaces below.
+These counts are a command denominator, **not a full behavioral denominator**:
+each path has resource, option, mode, output and failure variations.
+
+## Complete command table
+
+Every leaf below remains unavailable as a successful live command in the
+published executable. `ls`/`dir` and `get` parse but return `NotConfigured`;
+other leaves are not registered there, including Python's `version` leaf.
+Rust `--help`/`--version` work but are preview contracts, not Python equivalence.
+
+`Partial` means reusable library behavior exists with bounded offline evidence,
+not that the command or every resource type is complete. `Missing` means there
+is no corresponding end-to-end command handler at the assessed checkpoint.
+Crates marked **new** are assigned implementation boundaries, not existing
+placeholder crates or claims of delivered code.
+
+| Python command | Alias | Existing Rust library / remaining gap | Crate ownership |
+| --- | --- | --- | --- |
+| `ls` | `dir` | Partial workspace/item/capacity/folder reads; missing other hidden collections, OneLake files/tables, live context and full text output | Existing `fabric-cli`, `fabric-sdk-{workspaces,items,capacities,folders}`; new OneLake/catalog SDKs |
+| `get` | - | Partial ordered item/specialized/workspace metadata and projection; missing other resources, complete enrichment and live host | Existing read host and focused SDKs |
+| `cd` | - | Partial immutable path/context resolver; missing command persistence and interactive state | Existing `fabric-cli-context`; new `fabric-cli-local` |
+| `pwd` | - | Partial context types; missing command/output/session integration | `fabric-cli-context`, new `fabric-cli-local` |
+| `exists` | - | Partial lookup primitives; missing command, resource/error truthiness and OneLake branches | Existing focused SDKs/context, new OneLake SDK |
+| `open` | - | Missing source URL selection and injected platform browser handler | New `fabric-cli-local`, existing context/SDK |
+| `mkdir` | `create` | Partial Notebook create in SDK; missing full workspace/item/folder/file/hidden-resource routing and command | Existing focused SDKs; new OneLake SDK and `fabric-cli-mutations` |
+| `rm` | `del` | Missing full resource deletion, selection/prompts, hard/recursive modes and cleanup | Same mutation owners |
+| `mv` | `move` | Missing cross-workspace/item/file move, recursive traversal, confirmations and reconciliation | Mutation owners plus deployment/definitions |
+| `cp` | `copy` | Missing item/file recursive copy, overwrite and path-collision behavior | Mutation owners plus deployment/definitions |
+| `set` | - | Missing property-specific mutations and dispatch; read metadata is not a setter | Existing focused SDKs and `fabric-cli-mutations` |
+| `ln` | `mklink` | Missing OneLake and external shortcut requests/types/overwrite behavior | New `fabric-sdk-onelake`, mutation CLI |
+| `start` | - | Missing capacity ARM and mirrored-resource lifecycle; distinct from `job start` | Existing capacity SDK, new resource lifecycle SDK |
+| `stop` | - | Missing capacity/mirrored-resource stop and completion handling | Same lifecycle owners |
+| `assign` | - | Missing capacity/domain workspace assignment and routing | Existing workspace/capacity SDKs; new catalog SDK |
+| `unassign` | - | Missing capacity/domain unassignment and routing | Same assignment owners |
+| `export` | - | Missing full item-definition retrieval, transforms and filesystem output | Existing `fabric-deploy`; new `fabric-cli-transfer` |
+| `bulk-export` | - | Missing recursive workspace/folder export, structure and binding preservation | Same transfer owners |
+| `import` | - | Partial Notebook preparation/create/update/LRO; missing complete CLI and item-type branches | Existing `fabric-deploy`/SDK; transfer CLI |
+| `deploy` | - | Partial native single-Notebook library; missing full Python command/config/planner/publication orchestration | Existing `fabric-deploy`; transfer CLI |
+| `clear` | `cls` | Missing terminal/platform command; not a Fabric API | New `fabric-cli-local` |
+| `find` | - | Missing OneLake catalog search/filter/paging and command output | New `fabric-sdk-catalog`, `fabric-cli-resources` |
+| `desc` | - | Missing support-matrix report, extension/path and `all` behavior | New `fabric-cli-local`, existing context |
+| `api` | - | Partial shared HTTP foundation only; missing raw request CLI and explicit audience/origin policy for Fabric/storage/ARM/Power BI | Existing `fabric-sdk-http`/transport; new `fabric-sdk-api`, resource CLI |
+| `extension` | - | Python itself emits unsupported warning; preserve it, do not invent a plugin loader | New `fabric-cli-local` |
+| `version` | - | Missing Python-named leaf; Rust version flag is not the same registration | Existing CLI dispatcher, local CLI |
+| `auth login` | - | Explicit unsupported factory on shared branch; experimental optional Windows broker forward-port `d8ae051` submitted separately | Existing `fabric-identity`, `fabric-identity-windows`, CLI auth |
+| `auth logout` | - | App-scoped logout in unintegrated experimental lane; missing integrated/default/other-backend parity | Same identity owner |
+| `auth status` | - | Silent status in unintegrated experimental lane; missing integrated complete backend coverage | Same identity owner |
+| `config set` | - | Missing typed config defaults/validation/persistence command | New `fabric-cli-local` |
+| `config get` | - | Missing config lookup and output command | Same local owner |
+| `config ls` | `config dir` | Missing ordered config listing/defaults and output | Same local owner |
+| `config clear-cache` | - | Missing scoped cache invalidation; must not delete broker credentials implicitly | Same local owner with identity boundary |
+| `acl ls` | `acl dir` | Missing resource-specific ACL enumeration, projection and paging | New `fabric-sdk-access`, resource CLI |
+| `acl get` | - | Missing principal/resource-specific ACL lookup | Same access owner |
+| `acl set` | - | Missing principal/role validation, prompts and mutations | Same access owner |
+| `acl rm` | `acl del` | Missing ACL removal, errors and confirmations | Same access owner |
+| `label set` | - | Missing local label lookup plus service application/permissions | Same access owner plus local config |
+| `label rm` | `label del` | Missing sensitivity-label removal | Same access owner |
+| `label list-local` | - | Missing local label definitions/output; registered even though easy to omit from summaries | Same access/local-config owners |
+| `job start` | - | Missing source asynchronous run consumer; Notebook definition LRO is not job execution | New `fabric-sdk-jobs`, `fabric-cli-jobs` |
+| `job run` | - | Missing synchronous execution, parameters, timeout and status polling | Same jobs owner |
+| `job run-list` | - | Missing runs versus schedules listing and pagination | Same jobs owner |
+| `job run-cancel` | - | Missing running/scheduled job cancellation and reconciliation | Same jobs owner |
+| `job run-sch` | - | Missing schedule creation and validation | Same jobs owner |
+| `job run-update` | - | Missing schedule update and validation | Same jobs owner |
+| `job run-rm` | - | Missing schedule deletion and confirmation | Same jobs owner |
+| `job run-status` | - | Missing run/schedule status and output | Same jobs owner |
+| `table schema` | - | Missing Lakehouse table schema/format contract | New `fabric-sdk-tables`, `fabric-cli-tables` |
+| `table load` | - | Missing source/file validation, load submission/completion and output | Same table owner plus OneLake boundary |
+| `table vacuum` | - | Missing retention/dry-run behavior, submission and completion | Same table owner |
+| `table optimize` | - | Missing optimize/V-Order/Z-order request and completion semantics | Same table owner |
+
+### Groups, modes and options are not optional extras
+
+- `auth`, `config`, `acl`, `label`, `job`, `table` with no subcommand have
+  source help behavior. Nested parser error/help handling also needs comparison.
+- No-command starts the Python REPL. Preserve prompt/context changes, history,
+  completion, `help`, `exit`/`quit`, cancellation, error recovery and shutdown.
+  The current Rust no-argument error is not parity.
+- Root `-c`/`--command` is repeatable batch execution; command splitting,
+  separators, summaries and exit-code propagation are observable.
+- Root `-v`/`--version`, automatic `-h`/`--help`, custom `-help`, per-parser
+  `--output_format {json,text}` and hidden `--skill` belong in acceptance.
+  Rust's preview `-V` spelling does not cover Python's `-v`.
+- Positional token cardinality and attached/separate/repeated options,
+  quoting, abbreviation and platform aliases must come from registration and
+  actual source dispatch, not an idealized Clap schema.
+- Auth login includes interactive, username/password service principal,
+  managed identity, certificate, federation and `--azure-cli`. The approved
+  no-az/Python dependency and explicit identity rules are intentional product
+  constraints; unavailable methods must be explicit gaps, not silent fallbacks.
+- Resource support in `core/fab_config/command_support.yaml`, individual
+  handler dispatch and hidden collections multiply the cases behind each row.
+  A generic item CRUD endpoint does not finish an entire filesystem verb.
+
+## Implementation waves and ownership
+
+Keep `fabric-cli` as the single front door and composition owner, not a service
+monolith. Reuse `fabric-cli-context/output/query`, existing focused SDKs,
+`fabric-sdk-http/transport`, identity and `fabric-deploy`.
+Extract new crates only with working behavior, documented public APIs and tests.
+They use existing `cli`, `sdk`, `deploy`, `identity`, `core` layer rules, not new
+cross-layer shortcuts; SDK never depends on CLI/identity/deployment.
+
+| Wave / lane | Complete assigned surface | First reviewable deliverable |
+| --- | --- | --- |
+| Identity (existing session) | Auth methods/lifecycle and optional integration | Review exact `d8ae051` forward-port, default/opt-in contracts; live proof separately scoped |
+| CLI host/local (existing SDK/CLI session) | Dispatcher, live read-host composition, config/navigation/help/version/clear/extension/desc, REPL/batch/text integration | Real explicit dependencies/runtime/context read host and local command library; coordinate parser with identity rather than competing writers |
+| Resource mutations / OneLake (new session) | `mkdir/rm/mv/cp/set/ln/start/stop/assign/unassign/exists` and OneLake branches of reads | Workspace/item/folder mutations with full failure/cleanup consumers, then OneLake and resource lifecycle; no duplicate SDK/retry stack |
+| Transfer/deployment (existing session) | `export/bulk-export/import/deploy` | Full Python command mapping and real definition export/import around existing Notebook pipeline, followed by breadth/planner/bulk semantics |
+| Jobs (new session) | All eight `job` leaves | Real run/list/status/cancel and schedules using shared execution/LRO policies, parameter and polling contracts |
+| Tables (new session) | All four `table` leaves | Schema and real load/maintenance submission/completion consumers |
+| Access/catalog/raw API (new session) | All ACL/label leaves, `find/api`, catalog/hidden resource support | ACL/label service and CLI consumers, then catalog/raw API with explicit origin/audience binding; no relaxing Fabric-only executor policy globally |
+| Independent validation (existing session) | Entire registry, modes, resource/option matrices; offline and opt-in online evidence | Source-derived per-family expectations and actual native command adapters; protect original oracles |
+| Coverage/live setup (existing session) | Current test evidence and supported account/test-environment handoff | Non-secret documented setup/scope for `marcozo@microsoft.com`, not copied credentials |
+
+This is a multi-wave port, not a promise that launching workers completes it.
+Only an exact reviewed commit plus executed consumer evidence changes a row's
+status. Shared parser/dispatcher/manifests/lock are coordinated; lanes never
+annex peer drafts or force-update `feature/rust`.
+
+## Offline and online completion gates
+
+Every row needs independent Python-derived expected requests, outputs/streams,
+exit codes, errors, side effects and cancellation/cleanup. Validate options,
+supported/unsupported resource branches, pagination and accepted-versus-complete
+operations. Additive source safety exceptions remain individually classified;
+do not waive or rewrite existing fixtures. All native runners must execute
+feature-enabled consumers where the default graph excludes the implementation.
+
+Online validation supplements these contracts. The owner approved
+`marcozo@microsoft.com` and requested the existing test session's setup.
+The coordinator requested its supported sign-in entry point, non-secret
+tenant/cloud/client registration and designated test resources. No credentials
+or cache files are requested or copied. The exact scope/setup handoff remains
+pending at this checkpoint.
+
+Keep offline CI secret-free and network-free at the test boundary. An opt-in
+online harness must bind the exact account, audience, tenant, registration and
+resource allowlist; reject missing settings before any service request. Start
+with read-only acceptance. Mutating commands need a dedicated disposable test
+workspace, permitted resource types, unique names, bounds and cleanup
+authorization; account approval does not authorize deleting or altering existing
+content. Do not execute both Python and Rust mutations against the same object
+as a shadow comparison, persist bearer tokens, bypass TLS/CA policy or discover
+the first available account. Report online outcomes as executed, blocked or
+unexecuted with exact reasons; offline green is not a substitute.

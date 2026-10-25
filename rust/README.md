@@ -59,6 +59,7 @@ unsafe-free binary or a completed login provider. See the
 
 Read before contributing:
 
+- [Complete Python command inventory, crate owners and gaps](docs/command-parity.md)
 - [Shared `feature/rust` integration and safe synchronization](docs/integration-handoff.md)
 - [Agent instructions](AGENTS.md)
 - [Translation-first migration guidance](docs/migration-guidance.md)

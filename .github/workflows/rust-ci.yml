@@ -298,6 +298,7 @@ jobs:
           suffix=""
           if [[ "$RUNNER_OS" == Windows ]]; then suffix=".exe"; fi
           python -B -m unittest discover -s tests/compatibility -p test_run_read_parity.py -v
+          python -B -m unittest discover -s tests/compatibility/commands -p test_inventory.py -v
           python -B tests/compatibility/run_read_parity.py \
             --read-probe "target/debug/examples/read_probe${suffix}" \
             --query-probe "target/debug/examples/projection_output${suffix}" \

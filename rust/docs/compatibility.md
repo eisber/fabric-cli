@@ -6,6 +6,10 @@ The Rust workspace is an offline scaffold. It does not provide Python CLI,
 MSAL, deployment, or complete cross-platform parity. The Python implementation
 continues to own the existing `fab` product contract.
 
+The [complete command inventory and crate ownership](command-parity.md) tracks
+all 52 registered Python leaves, six groups, aliases, modes and current gaps.
+SDK endpoints and passing read fixtures alone do not establish command parity.
+
 ## Bootstrap CLI contract
 
 The temporary executable name is `fab-rs`, version `0.1.0`. There is no REPL,
