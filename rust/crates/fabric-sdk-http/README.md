@@ -30,6 +30,12 @@ Use established HTTP libraries: this is not an HTTP/TLS implementation, default
 client factory, or approval of proxy/certificate settings. Only the existing
 public-cloud Fabric origin is accepted; no credentials are discovered.
 
+Consumers can explicitly select the separate
+[`fabric-sdk-transport`](../fabric-sdk-transport/README.md) crate's `hyper-rustls`
+feature for a reusable native client and `TokioTimer`. That optional backend
+enforces its own redirect/replay, trust/proxy and bounded decompression
+configuration; this executor and the SDK facade do not depend on it.
+
 The timer must use the consumer's asynchronous runtime, wake the future after
 the requested delay, and cancel the local wait when dropped. Do not implement
 it with blocking sleeps. Dropping a request future cancels local work, not a
@@ -69,9 +75,11 @@ This is **not full Python parity**. Explicit remaining differences/gates:
   requirements, not observed Python guarantees. An underlying transport can
   allocate a chunk before handing it to this adapter; its own buffering must
   also be bounded.
-- No production HTTP/TLS factory, proxy/trust/decompression validation, CLI
-  User-Agent/skill headers, sovereign clouds, private links, OneLake/ARM API
-  execution, or identity backend. There are no new CLI commands.
+- This crate supplies no production HTTP/TLS factory. The separately selected
+  transport has bounded offline proxy/trust/decompression evidence, not general
+  enterprise certification. CLI User-Agent/skill headers, sovereign clouds,
+  private links, OneLake/ARM API execution and identity backends remain outside
+  this slice. There are no new CLI commands.
 - The shared executor does not replace the existing SDK's operation-specific
   success-status, decoding, continuation, error, or LRO rules.
 

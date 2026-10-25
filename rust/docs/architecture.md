@@ -288,25 +288,29 @@ It does not install a production HTTP/TLS backend or create a runtime.
 
 Libraries must not prompt, exit the process, initialize a global logger, create
 their own async runtime, or hold global mutable CLI context. Async work reuses
-the caller's runtime. Tokio's `macros` and single-thread `rt` features are used
-only by offline tests and the independent credential example, not library code.
+the caller's runtime. The explicitly selected `fabric-sdk-transport` uses
+Tokio time and I/O; it never creates a runtime. Tokio's `macros` and
+single-thread `rt` support remains available for offline consumers and tests.
 
-`azure_core` default features are disabled. The locked scaffold includes no
-Reqwest, Rustls, OpenSSL, or native-TLS dependency, so there is no HTTP transport
-or duplicate HTTP implementation to configure yet. Azure's shared types still
-bring transitive URL, time, serialization, and diagnostic dependencies.
-Duplicate `syn` major versions are proc-macro dependencies, not HTTP transports.
+`azure_core` default features remain disabled. Direct SDK consumers still
+exclude HTTP/TLS implementations. The optional
+[`fabric-sdk-transport`](../crates/fabric-sdk-transport/README.md) SDK-layer crate
+has no default backend; its `hyper-rustls` feature selects one pooled Hyper
+client, Rustls with a per-client ring provider, explicit platform/additional
+trust, a direct/static-HTTP-proxy policy and bounded decoded streaming.
+It depends on the shared executor, not the reverse, and installs no new REST,
+retry, paging, authentication or overall-deadline engine.
 
-A future production transport slice must select one shared service pipeline, provisionally
-using Rustls, and validate enterprise proxy and certificate trust behavior.
-Rustls for HTTP does not rule out separate native prerequisites for certificate
-authentication, including OpenSSL. Resolve those prerequisites before adding an
-authentication adapter.
+The owner approved Hyper/Rustls instead of the provisional Reqwest direction
+because the adapter must disable Hyper's implicit pooled cancelled-request
+retry explicitly. Redirects and all backend retries remain disabled. Offline
+trust/static-proxy fixtures are not general enterprise certification.
+Rustls for HTTP does not rule out separate certificate-authentication native
+prerequisites, including OpenSSL; those remain an identity decision.
 
-The current graph needs only the standard Rust target's native linker: MSVC C++
-build tools and the Windows SDK on Windows, Xcode command-line tools on macOS,
-or a system C toolchain/linker on Linux. No additional OpenSSL installation or
-certificate-authentication native library is required by this offline slice.
+The optional ring backend needs a C build toolchain: MSVC C++ build tools and
+the Windows SDK on Windows, Xcode command-line tools on macOS, or a system
+C toolchain/linker on Linux. It adds no OpenSSL or native-TLS service backend.
 
 ## Build and contribution loop
 

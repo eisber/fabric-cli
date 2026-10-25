@@ -84,8 +84,12 @@ This is a bounded SDK execution slice, not CLI parity. The adapter's
 [compatibility limits](../crates/fabric-sdk-http/README.md) explicitly retain
 the no-mutation-replay exception and enumerate unported HTTP behavior.
 
-These checks do not test real authentication, a selected production HTTP/TLS
-backend, live deployment, enterprise trust/proxies, or broker policy.
+The separately selected [native transport](../crates/fabric-sdk-transport/README.md)
+now has offline Hyper/Rustls wire evidence with the actual SDK/shared executor,
+bounded decoding, explicit trust/static proxy settings, cancellation and no
+backend replay. The facade still has no default transport. These checks do not
+test real authentication, live deployment, general enterprise trust/proxies or
+broker policy.
 
 The additive [capacity-list slice](capacity-compatibility.md) implements only
 Fabric `/v1/capacities` through a focused crate, facade and thin shared HTTP
