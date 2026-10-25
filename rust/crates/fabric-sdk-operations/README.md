@@ -22,6 +22,9 @@ in `raw_service_error`, in addition to typed service fields and reconciliation
 evidence. Display remains sanitized; consumers explicitly choose whether to
 render service text. Python-mode HTTP error-code precedence is separate from
 the unchanged strict Notebook policy.
+The borrowed `OperationError::resource_error()` projection exposes the same
+existing resource mapping without consuming the original typed error; CLI layers
+can explicitly render that view while retaining reconciliation evidence.
 
 `FabricOperation` accepts only fixed public Fabric `/v1/` paths and finite methods.
 `CompletionPolicy::ReturnAccepted` preserves 202; `WaitForResult` retrieves the

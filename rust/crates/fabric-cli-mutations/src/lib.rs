@@ -26,6 +26,7 @@ use serde_json::Value;
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
 pub use create::{CapacitySelection, CreateOptions};
+pub use errors::operation_error_output;
 pub use execution::FabricMutationBackend;
 pub use onelake_read::{OneLakeReadError, OneLakeReadHost, OneLakeReadResult};
 pub use onelake_write::{

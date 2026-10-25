@@ -87,6 +87,14 @@ the SDK's Display implementation never automatically emits that untrusted data.
 The development-only error comparison executes the pinned `do_request`,
 exception classes and `handle_exceptions` decorator with synthetic auth, network
 and time. No real authentication module or ambient config is imported.
+The public pure `operation_error_output(&OperationError) -> OutputInput` seam
+lets other CLI-layer consumers reuse this existing policy without copying its
+Python representation formatter. `OperationError::resource_error()` uses the
+same existing SDK mapping and leaves the borrowed original error/evidence intact.
+SDK consumers must not depend on this CLI helper. It returns the already-normalized
+output input rather than constructing a second `CommandError`: double
+normalization would incorrectly replace Python's intentional empty message after
+stripping a source message consisting only of periods.
 
 ## OneLake read dependencies
 
