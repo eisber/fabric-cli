@@ -1,0 +1,25 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-sdk-paging"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Shared bounded transport-neutral Fabric continuation-token paging"
+
+[package.metadata.fabric]
+layer = "sdk"
+
+[dependencies]
+azure_core.workspace = true
+fabric-sdk-workspaces.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

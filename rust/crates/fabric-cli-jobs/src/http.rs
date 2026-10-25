@@ -1,0 +1,56 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+use fabric_sdk_http::{ExecutionError, HttpExecutor};
+use fabric_sdk_jobs::{JobExecutionError, JobExecutor, JobFuture, JobRequest, JobResponse};
+use std::time::Duration;
+
+/// Thin host adapter over the existing shared HTTP engine and caller-owned timer.
+///
+/// This is CLI composition, not a second retry, paging, deadline or transport stack.
+/// Direct SDK consumers inject [`JobExecutor`] without depending on the CLI.
+pub struct HttpJobExecutor {
+    http: HttpExecutor,
+}
+
+impl HttpJobExecutor {
+    /// Store caller-owned execution/time without I/O or runtime creation.
+    pub fn new(http: HttpExecutor) -> Self {
+        Self { http }
+    }
+}
+
+impl JobExecutor for HttpJobExecutor {
+    fn execute<'a>(
+        &'a self,
+        request: JobRequest<'a>,
+    ) -> JobFuture<'a, Result<JobResponse, JobExecutionError>> {
+        Box::pin(async move {
+            self.http
+                .execute_fabric(
+                    request.method(),
+                    request.url(),
+                    request.token(),
+                    request.body(),
+                    request.max_response_bytes(),
+                )
+                .await
+                .map_err(map_error)
+        })
+    }
+
+    fn wait(&self, delay: Duration) -> JobFuture<'_, Result<(), JobExecutionError>> {
+        Box::pin(async move { self.http.wait_for(delay).await.map_err(map_error) })
+    }
+}
+
+fn map_error(error: ExecutionError) -> JobExecutionError {
+    match error {
+        ExecutionError::TimedOut => JobExecutionError::TimedOut,
+        ExecutionError::ResponseLimit => JobExecutionError::ResponseLimit,
+        ExecutionError::RetriesExhausted => JobExecutionError::RetriesExhausted,
+        ExecutionError::InvalidInput | ExecutionError::Transport | ExecutionError::RetryDelay => {
+            JobExecutionError::Failed
+        }
+    }
+}
