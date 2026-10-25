@@ -88,6 +88,92 @@ fn output(host: &ReadHost<'_>, exec: &fabric_sdk_http::HttpExecutor, args: &[&st
 }
 
 #[test]
+fn scalar_query_builder_preserves_source_presence_and_legacy_empty_inventory() {
+    for (scalar, arguments, expected) in [
+        (true, vec!["ls"], json!([{"name":"F.Folder"}])),
+        (true, vec!["ls", "-q", ""], json!([{"name":"F.Folder"}])),
+        (true, vec!["ls", "-q", "'name'"], json!(["name"])),
+        (true, vec!["ls", "-q", "[].name"], json!(["F.Folder"])),
+        (false, vec!["ls", "-q", ""], json!(["[0].name"])),
+    ] {
+        let current = workspace();
+        let credential = Arc::new(folder_support::Credential::default());
+        let sdk = sdk(credential.clone());
+        let http = Arc::new(Http::new([
+            reply(json!({"value":[]})),
+            reply(json!({"value":[{"id":"f","displayName":"F"}]})),
+        ]));
+        let exec = executor(http.clone(), Arc::default());
+        let catalog = Catalog::new(vec![]);
+        let host = host(&sdk, &exec, &catalog, current.clone());
+        let wrapper = host.with_folders(&exec);
+        let wrapper = if scalar {
+            wrapper.with_scalar_query()
+        } else {
+            wrapper
+        };
+        let command = parse(&arguments);
+        let before = command.clone();
+        let (mut stdout, mut stderr) = (vec![], vec![]);
+        let exit = complete(wrapper.run(&command, pending(), &mut stdout, &mut stderr)).unwrap();
+        assert_eq!(exit, 0);
+        assert!(stderr.is_empty());
+        assert_eq!(
+            serde_json::from_slice::<Value>(&stdout).unwrap()["result"]["data"],
+            expected
+        );
+        assert_eq!(command, before);
+        assert!(Arc::ptr_eq(&host.current, &current));
+        assert_eq!(http.requests.lock().unwrap().len(), 2);
+        assert_eq!(credential.scopes.lock().unwrap().len(), 2);
+    }
+}
+
+#[test]
+fn scalar_empty_uses_columns_without_provider_and_folder_context_still_ignores_query() {
+    for (folder_context, query, expected) in [
+        (false, "", json!([{"name":"F.Folder"}])),
+        (true, "", json!([{"name":"Child.Folder"}])),
+        (true, "[broken", json!([{"name":"Child.Folder"}])),
+        (true, "'name'", json!([{"name":"Child.Folder"}])),
+    ] {
+        let ws = workspace();
+        let current = if folder_context {
+            folder("F", "f", ws)
+        } else {
+            ws
+        };
+        let sdk = sdk(Arc::default());
+        let http = Arc::new(Http::new([
+            reply(json!({"value":[]})),
+            reply(json!({"value":[
+                {"id":"f","displayName":"F"},
+                {"id":"c","displayName":"Child","parentFolderId":"f"}
+            ]})),
+        ]));
+        let exec = executor(http, Arc::default());
+        let catalog = Catalog::new(vec![]);
+        let mut host = host(&sdk, &exec, &catalog, current);
+        host.projection = &NoQuery;
+        let (mut stdout, mut stderr) = (vec![], vec![]);
+        let exit = complete(host.with_folders(&exec).with_scalar_query().run(
+            &parse(&["ls", "-a", "-q", query]),
+            pending(),
+            &mut stdout,
+            &mut stderr,
+        ))
+        .unwrap();
+        assert_eq!(exit, 0);
+        assert!(stderr.is_empty());
+        let result: Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(result["result"]["data"], expected);
+        if folder_context {
+            assert!(result["result"].get("hidden_data").is_none());
+        }
+    }
+}
+
+#[test]
 fn workspace_selects_direct_children_and_preserves_source_names_types_ids_and_hidden() {
     let current = workspace();
     let credential = Arc::new(folder_support::Credential::default());

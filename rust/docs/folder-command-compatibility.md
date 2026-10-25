@@ -48,8 +48,13 @@ intentionally ignored, even if invalid or no provider is configured, because
 the source folder handler prints sorted rows directly. Workspace queries still
 run through the real native provider after source column selection.
 An absent workspace query uses default columns; a present empty query invokes
-the source path inventory. This distinction is implemented only in the new
-folder-aware branch, without changing the original host's empty-query behavior.
+the source path inventory under the default handler-list contract. This
+distinction preserves the synthetic source `query=[""]` boundary. For actual
+scalar LS/dir arguments from `parse_args`, opt into
+`with_folders(&executor).with_scalar_query()`: both absent and scalar empty
+queries use ordinary columns, exactly like original registration plus the LS
+helper. The public command is never rewritten, and the original host/layout and
+legacy handler default remain unchanged.
 
 The graph uses compact interned contexts, not recursive parent equality or
 repeated full-list retries. A priority queue preserves the exact source pass
@@ -109,12 +114,15 @@ caller-owned output streams. It reports observations, never expected callbacks.
 Exact source outcomes and safety/unsupported/snapshot outcomes have distinct
 denominators; no overall parity percentage is meaningful.
 
-The probe's caller adapter joins Python `nargs+` query tokens using the existing
-native `join_query_args` before supplying the public `ReadCommand`. The original
-LS parser currently consumes one query argument; its multi-token gap remains
-outside this slice's ownership. These are real command-handler/read-host
-comparisons, not a claim that the existing executable parser supports every
-Python invocation. No parser or expected payload is replaced by a callback.
+The original 59 fixtures use a synthetic handler-list query protocol. Its
+explicit legacy probe adapter joins those tokens using `join_query_args`.
+Actual original LS/dir registration instead defines a scalar query, while GET
+defines `nargs+`; a handler-list fixture is not raw LS argv evidence.
+The [query-argument follow-on](query-argument-compatibility.md) adds a separate
+`raw_argv=true` probe path that passes tokens directly to public `parse_args`,
+without joining. The old protocol remains only to preserve the unchanged
+handler oracle. These are distinct evidence boundaries, not a new executable
+mode or expected-output callback.
 
 ### Executed local evidence
 

@@ -10,7 +10,7 @@ REST implementation, identity backend, query language or CLI namespace.
 
 | Source boundary | Native treatment |
 | --- | --- |
-| `parsers/fab_fs_parser.py` LS/dir/GET | Python command/flag spellings and multi-token path/query arguments; explicit unsupported options |
+| `parsers/fab_fs_parser.py` LS/dir/GET | Multi-token paths; scalar LS/dir query versus variadic GET query/output; explicit unsupported options |
 | `commands/fs/fab_fs.py` LS/GET routing | Immutable injected current/home/lookup through `fabric-cli-context`; no context mutation |
 | `fab_mem_store._get_workspaces_from_api` | Real SDK workspaces, source case-insensitive known-type filtering and canonical suffixes |
 | `ls/fab_fs_ls_workspace.exec` | Stable lowercase full-name sort, long enrichment, hidden root collections |
@@ -23,6 +23,10 @@ REST implementation, identity backend, query language or CLI namespace.
 | `fab_decorators.handle_exceptions` / `fab_ui` | Existing JSON envelope/streams/exits with fixed host time and explicit writer failures |
 
 ## Independent evidence
+
+The [query-argument follow-on](query-argument-compatibility.md) separately
+executes actual original registration and raw native `parse_args`. The original
+command/handler fixtures below are not a full argparse or executable-host claim.
 
 The new source-pinned
 [command oracle](../tests/compatibility/commands/README.md) calls actual Python

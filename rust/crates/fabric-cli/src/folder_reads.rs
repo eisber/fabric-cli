@@ -40,6 +40,7 @@ pub struct FolderReadHost<'a, 'host> {
     folders: &'a dyn FolderExecutor,
     item_limits: ItemListLimits,
     folder_limits: FolderListLimits,
+    scalar_query: bool,
 }
 
 impl<'host> ReadHost<'host> {
@@ -56,11 +57,23 @@ impl<'host> ReadHost<'host> {
             folders,
             item_limits: ItemListLimits::default(),
             folder_limits: FolderListLimits::default(),
+            scalar_query: false,
         }
     }
 }
 
 impl FolderReadHost<'_, '_> {
+    /// Select Python LS/dir scalar-query truthiness for [`crate::parser::parse_args`].
+    ///
+    /// An empty scalar uses ordinary columns, like an absent query. The default
+    /// retains the existing handler-list contract: a present joined empty query
+    /// invokes path inventory. Nonempty queries and folder-context query-ignore
+    /// behavior are unchanged; the command itself is never rewritten.
+    pub fn with_scalar_query(mut self) -> Self {
+        self.scalar_query = true;
+        self
+    }
+
     /// Apply explicit SDK traversal/body bounds without changing host configuration.
     pub fn with_limits(mut self, items: ItemListLimits, folders: FolderListLimits) -> Self {
         self.item_limits = items;
@@ -259,7 +272,7 @@ impl FolderReadHost<'_, '_> {
         // or emits workspace virtual collections, even under --all.
         let data = if folder_context {
             Value::Array(rows)
-        } else if command.query.as_deref() == Some("") {
+        } else if !self.scalar_query && command.query.as_deref() == Some("") {
             // A present Python nargs list is truthy even when its joined query is empty.
             self.base
                 .projection

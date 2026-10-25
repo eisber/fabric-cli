@@ -8,6 +8,10 @@ mod support {
     include!("../tests/support/mod.rs");
 }
 
+mod parser_support {
+    include!("../tests/parser_support/mod.rs");
+}
+
 use fabric_cli::{
     ItemSort, NoQuery, ReadConfig, ReadHost,
     parser::{Invocation, parse_args},
@@ -49,6 +53,10 @@ fn node(row: &Value, parent: &Arc<Element>, item: bool) -> Arc<Element> {
 fn main() {
     for line in io::stdin().lock().lines() {
         let case: Value = serde_json::from_str(&line.expect("stdin")).expect("case JSON");
+        if let Some(observation) = parser_support::observe(&case) {
+            println!("{observation}");
+            continue;
+        }
         let root = Element::tenant("Offline tenant", "offline-tenant");
         let mut current = root;
         let mut elements = vec![];

@@ -114,6 +114,10 @@ fn read_help_and_invalid_read_options_remain_distinct() {
         vec!["get", ".", "--all"],
         vec!["ls", "--output_format", "xml"],
         vec!["get", ".", "--client-secret", "must-not-be-echoed"],
+        vec!["ls", "must-not-be-echoed", "-q", "name", "extra"],
+        vec!["get", ".", "-q", "-must-not-be-echoed"],
+        vec!["get", ".", "--query=must-not-be-echoed", "extra"],
+        vec!["ls", "--query", "--must-not-be-echoed"],
     ] {
         let output = invoke(&args);
         assert_eq!(output.status.code(), Some(2));

@@ -19,6 +19,12 @@ Call `parser::parse_args` with argv[0] included, then pass `Invocation::Read` to
 - Immutable current/home context and an already-loaded `Lookup` snapshot.
 - Configuration, a validated output timestamp, query projection, and writers.
 
+LS/dir query arguments are scalar strings, preserving literal edge quotes.
+GET query/output arguments use the original variadic joining/quote-stripping
+policy. `None` and `Some("")` remain distinct parsed values. See the
+[argument matrix](../../docs/query-argument-compatibility.md) for option stops,
+precedence, path interaction and the independent source comparison.
+
 No runtime, clock, mutable global state, token discovery, Python/az/azd bridge,
 HTTP/TLS backend, file export, or production fixture mode is installed.
 Cancellation is a caller future. Dropping the operation drops SDK futures;
@@ -78,6 +84,14 @@ caller-owned SDK folder executor. Its `FolderReadHost` implements folder-aware
 workspace LS and folder-context LS without adding fields to `ReadHost` or
 changing existing struct-literal consumers. Other commands, including
 source-routed GET, delegate to the base host.
+
+For commands from `parser::parse_args`, select
+`host.with_folders(&folder_executor).with_scalar_query()`. This additive builder
+makes scalar LS `--query ""` use default columns, just like absence. The default
+wrapper deliberately retains its pre-existing handler-list contract, where a
+present joined empty list argument selects query path inventory. Neither mode
+rewrites `ReadCommand`; nonempty queries and folder-context query-ignore behavior
+are unchanged.
 
 The wrapper uses bounded SDK item/folder reads and a complete command-local
 folder snapshot, preserving source direct-child selection, structural parent

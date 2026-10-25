@@ -8,11 +8,15 @@ mod support {
     include!("../tests/folder_support/mod.rs");
 }
 
+mod parser_support {
+    include!("../tests/parser_support/mod.rs");
+}
+
 use fabric_cli::{
     ItemSort, NoQuery, ReadConfig, ReadHost,
     parser::{Invocation, parse_args},
 };
-use fabric_cli_context::{Catalog, Element, HomeContext, NodeKind, WorkspaceType};
+use fabric_cli_context::{Catalog, Element, HomeContext, ItemType, NodeKind, WorkspaceType};
 use fabric_cli_output::Timestamp;
 use fabric_sdk::{folders::FolderListLimits, items::ItemListLimits};
 use serde_json::{Value, json};
@@ -31,7 +35,7 @@ fn limit(input: &Value, key: &str, default: NonZeroUsize) -> NonZeroUsize {
     })
 }
 
-fn caller_arguments(input: &Value) -> Vec<String> {
+fn legacy_handler_arguments(input: &Value) -> Vec<String> {
     let mut tokens = input.as_array().unwrap().iter().peekable();
     let mut arguments = vec!["fab-rs".into()];
     while let Some(token) = tokens.next() {
@@ -54,6 +58,10 @@ fn caller_arguments(input: &Value) -> Vec<String> {
 fn main() {
     for line in io::stdin().lock().lines() {
         let input: Value = serde_json::from_str(&line.expect("stdin")).expect("case JSON");
+        if let Some(observation) = parser_support::observe(&input) {
+            println!("{observation}");
+            continue;
+        }
         let root = Element::tenant("Offline tenant", "offline-tenant");
         let mut current = root;
         let mut elements = vec![];
@@ -88,6 +96,16 @@ fn main() {
                 .unwrap();
                 elements.push(current.clone());
             }
+        }
+        if let Some(row) = input.get("current_item") {
+            current = Element::child(
+                row["displayName"].as_str().unwrap(),
+                Some(row["id"].as_str().unwrap().into()),
+                NodeKind::Item(ItemType::parse(row["type"].as_str().unwrap()).unwrap()),
+                current,
+            )
+            .unwrap();
+            elements.push(current.clone());
         }
         let catalog = Catalog::new(elements);
         let credential = Arc::new(support::Credential::default());
@@ -156,9 +174,25 @@ fn main() {
                 ),
             },
         );
-        let Invocation::Read(command) =
-            parse_args(caller_arguments(&input["command"])).expect("read arguments")
-        else {
+        let wrapper = if input["raw_argv"] == true {
+            wrapper.with_scalar_query()
+        } else {
+            wrapper
+        };
+        let arguments = if input["raw_argv"] == true {
+            std::iter::once("fab-rs".to_owned())
+                .chain(
+                    input["command"]
+                        .as_array()
+                        .expect("raw command argv")
+                        .iter()
+                        .map(|value| value.as_str().unwrap().to_owned()),
+                )
+                .collect()
+        } else {
+            legacy_handler_arguments(&input["command"])
+        };
+        let Invocation::Read(command) = parse_args(arguments).expect("read arguments") else {
             panic!("read required");
         };
         let (mut stdout, mut stderr) = (vec![], vec![]);
