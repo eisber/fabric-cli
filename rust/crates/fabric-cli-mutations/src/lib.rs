@@ -11,6 +11,7 @@ mod errors;
 mod execution;
 mod lifecycle;
 mod onelake_read;
+mod onelake_write;
 mod set;
 mod sql_database;
 
@@ -27,6 +28,10 @@ use std::{fmt, future::Future, pin::Pin, sync::Arc};
 pub use create::{CapacitySelection, CreateOptions};
 pub use execution::FabricMutationBackend;
 pub use onelake_read::{OneLakeReadError, OneLakeReadHost, OneLakeReadResult};
+pub use onelake_write::{
+    OneLakeResourceKind, OneLakeWriteError, OneLakeWriteHost, OneLakeWriteResult,
+    OneLakeWriteTarget,
+};
 
 /// A caller-runtime asynchronous operation.
 pub type CommandFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;

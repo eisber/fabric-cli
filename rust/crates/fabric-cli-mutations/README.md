@@ -51,8 +51,9 @@ The entire assigned generic-verb family remains backlog until actual front-door
 integration and independent request/output contracts cover all resources/options.
 This bounded slice does not include tenant/workspace bulk selection, definition
 SET, Report/SemanticModel/MirroredDatabase templates, automatic dependent-item
-creation, hidden administrative resource branches, OneLake CLI composition,
-copy/move, shortcuts, capacity ARM lifecycle or domain assignment commands.
+creation, hidden administrative resource branches, general OneLake GET/context
+composition, Fabric definition copy/move, shortcuts, capacity ARM lifecycle or
+domain assignment commands.
 Those branches must not be routed to successful-looking generic fallbacks.
 
 SQLDatabase creation includes New, Restore and RestoreDeletedDatabase modes,
@@ -104,9 +105,35 @@ Malformed/absent path lists explicitly follow the SDK safety boundary rather
 than Python's success-shaped fallback.
 
 General OneLake GET metadata, item-root enumeration, hidden-resource resolution,
-OneLake writes and shortcut metadata/target orchestration remain separate backlog
+and shortcut metadata/target orchestration remain separate backlog
 items. HTTP errors beyond the source's standard 401/403/404 diagnostics retain
 the SDK's sanitized message; full storage-body diagnostics are not claimed.
+
+## OneLake write composition
+
+`OneLakeWriteHost` consumes explicit `OneLakeWriteTarget` metadata rather than
+adding a second context resolver. Directory mkdir, file/directory rm, Lakehouse
+Files rename, a caller-read local-byte upload helper and nonrecursive
+OneLake-to-OneLake file copy execute through the same focused SDK/shared HTTP.
+The source writable-root matrix, params-only help, confirmation/force notices,
+query/header spelling, binary media types/byte positions, source-empty checks
+and output spelling/order are retained. The rename source header deliberately
+has no added leading slash, matching the original helper's ID-path extraction.
+
+File copy uses headers and bytes from the actual source GET, not an extra HEAD.
+Directory/shortcut destinations append the original file name; directory/table/
+shortcut sources reject recursive copy. The upload helper takes actual bytes
+from a caller-owned filesystem host: local filesystem discovery, reads/writes
+and path-error orchestration are not claimed as implemented by that helper.
+Shortcut removal remains an explicit separately routed Fabric handler gap, never
+a recursive DFS delete fallback.
+
+`OneLakeWriteResult` retains actual accepted/completed response or upload-stage
+evidence independently of source messages. In particular, Python's `Done` after
+successful append/flush requests is retained even if those responses are 202;
+their `Accepted` states are not rewritten as completed storage effects. Failed
+later stages preserve mutation uncertainty and previously received stages without
+printing Done, replaying a write or inventing rollback/cleanup.
 The original-Python comparison executes pinned request/handler functions; its
 wait flag comes from the original `do_request` assignment, not from whether an
 individual handler explicitly assigned `args.wait`.

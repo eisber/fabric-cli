@@ -20,6 +20,7 @@ The caller creates `OneLakeClient` from an `Arc<dyn TokenCredential>` and explic
 | `OneLakePath::new(workspace,item,relative)` | No I/O; validates item-relative path | Explicit resource; no arbitrary URL |
 | `client.list(executor,path,recursive,limits,cancelled)` | GET `https://onelake.dfs.fabric.microsoft.com/{workspace}/?recursive=false&resource=filesystem&directory={item}/{relative}&getShortcutMetadata=true` | Raw path rows in page order, actual page count |
 | `client.read(executor,path,limits,cancelled)` | GET `https://onelake.dfs.fabric.microsoft.com/{workspace}/{item}/{relative}` | Exact bytes; empty is a valid file |
+| `client.read_file(executor,path,limits,cancelled)` | Same single GET | Exact bytes and same-response headers for file copy |
 | `client.properties(executor,path,limits,cancelled)` | HEAD at the same file URL | Exact response headers |
 
 The encoded query preserves directory values; query spelling/order and source

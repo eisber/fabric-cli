@@ -390,17 +390,36 @@ impl OneLakeClient {
         limits: OneLakeLimits,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Vec<u8>, OneLakeError> {
-        let mut cancelled = pin!(cancelled);
         Ok(self
-            .request(
-                executor,
-                OneLakeMethod::Get,
-                path.url()?,
-                limits.max_response_bytes,
-                cancelled.as_mut(),
-            )
+            .read_file(executor, path, limits, cancelled)
             .await?
             .body)
+    }
+
+    /// Read file bytes and their original response headers in one GET.
+    ///
+    /// Copy consumers need the source media type/length from this same response,
+    /// not an additional HEAD or inferred metadata.
+    ///
+    /// # Errors
+    /// Retains the same identity, response, cancellation and byte-bound failures
+    /// as `read`; no empty/error fallback or alternate provider is installed.
+    pub async fn read_file(
+        &self,
+        executor: &dyn OneLakeExecutor,
+        path: &OneLakePath,
+        limits: OneLakeLimits,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<OneLakeResponse, OneLakeError> {
+        let mut cancelled = pin!(cancelled);
+        self.request(
+            executor,
+            OneLakeMethod::Get,
+            path.url()?,
+            limits.max_response_bytes,
+            cancelled.as_mut(),
+        )
+        .await
     }
 
     /// Read exact HEAD properties (content length/type/etag and other headers).

@@ -91,7 +91,7 @@ fn required(
     Ok(())
 }
 
-fn integer(value: &str) -> Option<serde_json::Number> {
+pub(crate) fn integer(value: &str) -> Option<serde_json::Number> {
     let value = value.trim();
     let digits = value
         .strip_prefix('+')

@@ -21,11 +21,11 @@ not central parser/front-door integration or live parity.
 | rm/del item/folder | Confirmation/force/hard, exact route/query, accepted/completed messages, cache effects | Central context transition |
 | rm/del workspace | Forced workspace DELETE only | Non-force item selection, bulk/tenant orchestration |
 | exists workspace/item/folder | Truthy context ID; string message, no extra request | Central dispatch |
-| cp/copy, mv/move | SDK folder move endpoint only | Actual command orchestration and definition seam |
+| cp/copy, mv/move | SDK folder move endpoint; OneLake Lakehouse Files rename, nonrecursive remote file copy, caller-read local-byte upload helper | Fabric definition seam/orchestration, local filesystem orchestration, bulk/folder consumers |
 | assign/unassign | Capacity SDK endpoints and CLI confirmation/linkage checks; primary metadata only | Domain branch, central dispatch |
 | start/stop | Mirrored-database POST status/action routes, state/force/prompt checks, source stop-substring quirk | Capacity ARM branch, central dispatch |
 | ln/mklink | Not implemented | Shortcut command/SDK operations |
-| OneLake dependent reads | Focused SDK list/read/HEAD plus concrete shared HTTP adapter; CLI `ls` projection/query/long and `exists` request/output consumers | General GET, item-root/hidden resolution, mutations, shortcuts, central dispatch |
+| OneLake | SDK reads and storage mutations over concrete shared HTTP; CLI `ls`/`exists`, directory create, DFS remove/rename/copy/upload helpers | General GET, item-root/hidden resolution, shortcuts, local filesystem and central dispatch |
 
 `ResourceOutcome::Accepted` is never completion evidence. Python's acceptance
 messages/cache eviction are preserved independently. `WaitForResult` may succeed
