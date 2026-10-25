@@ -7,9 +7,11 @@
 //! cancellation. No runtime, transport, identity backend or ambient state is
 //! installed. See the crate README for Python source mapping and safety exceptions.
 
+mod collections;
 mod items;
 pub mod models;
 
+pub use collections::ItemCollection;
 pub use fabric_core::{CredentialSelection, TokenCredential};
 pub use fabric_sdk_workspaces::{FabricServiceError, Page};
 pub use items::{

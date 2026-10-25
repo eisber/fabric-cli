@@ -1,13 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Additive generic item APIs delegated to the focused item SDK.
+//! Additive item APIs delegated to the focused item SDK.
 
 use crate::Client;
 pub use fabric_sdk_items::{
-    Item, ItemClient, ItemError, ItemErrorKind, ItemExecutionError, ItemExecutor, ItemGetOptions,
-    ItemList, ItemListError, ItemListLimits, ItemListOptions, ItemMetadata, ItemRequest,
-    ItemResponse,
+    Item, ItemClient, ItemCollection, ItemError, ItemErrorKind, ItemExecutionError, ItemExecutor,
+    ItemGetOptions, ItemList, ItemListError, ItemListLimits, ItemListOptions, ItemMetadata,
+    ItemRequest, ItemResponse,
 };
 use std::future::Future;
 
@@ -61,6 +61,33 @@ impl Client {
     ) -> Result<ItemMetadata, ItemError> {
         ItemClient::new(self.credential().clone(), self.selection().clone())
             .get_item_metadata(executor, workspace_id, item_id, options, cancelled)
+            .await
+    }
+
+    /// Gets source-routed ordered metadata using the same injected provider.
+    ///
+    /// Does not fetch definitions or apply CLI command-support policy.
+    ///
+    /// # Errors
+    /// Preserves the focused SDK's typed GET failures and required-field checks.
+    pub async fn get_item_metadata_from_collection(
+        &self,
+        executor: &dyn ItemExecutor,
+        workspace_id: &str,
+        collection: ItemCollection,
+        item_id: &str,
+        options: ItemGetOptions,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<ItemMetadata, ItemError> {
+        ItemClient::new(self.credential().clone(), self.selection().clone())
+            .get_item_metadata_from_collection(
+                executor,
+                workspace_id,
+                collection,
+                item_id,
+                options,
+                cancelled,
+            )
             .await
     }
 }

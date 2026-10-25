@@ -979,7 +979,7 @@ async fn metadata_and_legacy_get_share_status_payload_and_continuation_precedenc
             .map_err(|error| error.kind);
         let metadata = sdk
             .get_item_metadata(
-                &Executor::new([reply]),
+                &Executor::new([reply.clone()]),
                 "ws",
                 "i",
                 ItemGetOptions::default(),
@@ -989,6 +989,19 @@ async fn metadata_and_legacy_get_share_status_payload_and_continuation_precedenc
             .map(|_| ())
             .map_err(|error| error.kind);
         assert_eq!(metadata, old, "{status}: {body}");
+        let specialized = sdk
+            .get_item_metadata_from_collection(
+                &Executor::new([reply]),
+                "ws",
+                ItemCollection::GraphQuerySet,
+                "i",
+                ItemGetOptions::default(),
+                pending(),
+            )
+            .await
+            .map(|_| ())
+            .map_err(|error| error.kind);
+        assert_eq!(specialized, old, "{status}: {body}");
     }
 }
 
@@ -1099,6 +1112,122 @@ async fn metadata_get_measures_exact_response_limit_and_one_extra_byte() {
             } else {
                 assert_eq!(result.unwrap_err().kind, ItemErrorKind::ResponseLimit);
             }
+        }
+    }
+}
+
+#[tokio::test]
+async fn specialized_metadata_keeps_cancellation_identity_and_exact_byte_bounds() {
+    let credential = Arc::new(Credential::default());
+    let sdk = client(credential.clone());
+    let exec = Executor::default();
+    assert_eq!(
+        sdk.get_item_metadata_from_collection(
+            &exec,
+            "",
+            ItemCollection::Notebook,
+            "..",
+            ItemGetOptions::default(),
+            std::future::ready(()),
+        )
+        .await
+        .unwrap_err()
+        .kind,
+        ItemErrorKind::Cancelled,
+    );
+    let wrong = ItemClient::new(
+        credential.clone(),
+        CredentialSelection::new("a", "t", Audience::Arm).unwrap(),
+    );
+    assert_eq!(
+        wrong
+            .get_item_metadata_from_collection(
+                &exec,
+                "ws",
+                ItemCollection::Notebook,
+                "i",
+                ItemGetOptions::default(),
+                pending(),
+            )
+            .await
+            .unwrap_err()
+            .kind,
+        ItemErrorKind::InvalidAudience,
+    );
+    assert_eq!(credential.calls.load(Ordering::SeqCst), 0);
+    for during_auth in [true, false] {
+        let credential = Arc::new(Credential {
+            wait: during_auth,
+            ..Default::default()
+        });
+        let sdk = client(credential.clone());
+        let exec = Executor {
+            wait: !during_auth,
+            ..Default::default()
+        };
+        let stop = AtomicBool::new(false);
+        let cancelled = poll_fn(|_| {
+            if stop.load(Ordering::SeqCst) {
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        });
+        let mut future = Box::pin(sdk.get_item_metadata_from_collection(
+            &exec,
+            "ws",
+            ItemCollection::Notebook,
+            "i",
+            ItemGetOptions::default(),
+            cancelled,
+        ));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(future.as_mut().poll(&mut cx).is_pending());
+        stop.store(true, Ordering::SeqCst);
+        assert_eq!(
+            future
+                .as_mut()
+                .poll(&mut cx)
+                .map(|result| result.unwrap_err().kind),
+            Poll::Ready(ItemErrorKind::Cancelled),
+        );
+        assert!(credential.dropped.load(Ordering::SeqCst));
+        assert_eq!(exec.dropped.load(Ordering::SeqCst), !during_auth);
+        assert_eq!(
+            exec.requests.lock().unwrap().len(),
+            usize::from(!during_auth)
+        );
+    }
+    for extra in [0, 1] {
+        let mut reply = response(json!({"first":null,"displayName":"N","id":"i"}));
+        reply.body.resize(64 + extra, b' ');
+        let result = sdk
+            .get_item_metadata_from_collection(
+                &Executor::new([reply]),
+                "ws",
+                ItemCollection::VariableLibrary,
+                "i",
+                ItemGetOptions {
+                    max_response_bytes: NonZeroUsize::new(64).unwrap(),
+                    ..Default::default()
+                },
+                pending(),
+            )
+            .await;
+        if extra == 0 {
+            assert_eq!(
+                result
+                    .unwrap()
+                    .as_value()
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .next()
+                    .unwrap(),
+                "first"
+            );
+        } else {
+            assert_eq!(result.unwrap_err().kind, ItemErrorKind::ResponseLimit);
         }
     }
 }

@@ -306,9 +306,82 @@ fn get_path_runs_real_sdk_before_injected_projection_and_preserves_context() {
     assert_eq!(projection.seen.lock().unwrap().len(), 1);
     assert_eq!(
         *backend.requests.lock().unwrap(),
-        ["https://api.fabric.microsoft.com/v1/workspaces/w/items/i"]
+        ["https://api.fabric.microsoft.com/v1/workspaces/w/notebooks/i"]
     );
     assert!(Arc::ptr_eq(&host.current, &root));
+}
+
+#[test]
+fn every_source_collection_uses_context_route_and_keeps_get_command_boundaries() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/commands/specialized-routes.json"
+    ))
+    .unwrap();
+    let routes = fixture["routes"].as_array().unwrap();
+    assert_eq!(routes.len(), 44);
+    assert_eq!(routes.iter().filter(|route| route[2] == true).count(), 31);
+    let root = Element::tenant("T", "t");
+    let ws = workspace(&root, "W", "w");
+    let catalog = Catalog::new(vec![]);
+    for route in routes {
+        let kind = route[0].as_str().unwrap();
+        let current = Element::child(
+            "N",
+            Some("i".into()),
+            NodeKind::Item(ItemType::parse(kind).unwrap()),
+            ws.clone(),
+        )
+        .unwrap();
+        let credential = Arc::new(Credential::default());
+        let client = sdk(credential.clone());
+        let allowed = route[2].as_bool().unwrap();
+        let backend = Backend::new(if allowed {
+            vec![reply(
+                json!({"before":null,"displayName":"N","id":"i","type":"Future"}),
+            )]
+        } else {
+            vec![]
+        });
+        let host =
+            host(&client, &backend, &catalog, current.clone(), &NoQuery).with_default_projection();
+        let (value, exit) = output(&host, &["get", "."]);
+        if allowed {
+            assert_eq!(exit, 0, "{kind}");
+            assert_eq!(
+                value["result"]["data"],
+                json!(["before", "displayName", "id", "type"])
+            );
+            assert_eq!(
+                *backend.requests.lock().unwrap(),
+                [format!(
+                    "https://api.fabric.microsoft.com/v1/workspaces/w/{}/i",
+                    route[1].as_str().unwrap()
+                )]
+            );
+            assert_eq!(
+                *credential.scopes.lock().unwrap(),
+                [vec!["https://api.fabric.microsoft.com/.default"]]
+            );
+        } else {
+            assert_eq!(exit, 1, "{kind}");
+            assert_eq!(
+                value["result"],
+                json!({
+                    "error_code":"UnsupportedCommand","message":"not supported for command 'get'"
+                })
+            );
+            assert!(backend.requests.lock().unwrap().is_empty());
+            assert!(credential.scopes.lock().unwrap().is_empty());
+        }
+        assert!(Arc::ptr_eq(&host.current, &current));
+    }
+    let client = sdk(Arc::default());
+    let backend = Backend::new([]);
+    let host = host(&client, &backend, &catalog, ws, &NoQuery).with_default_projection();
+    let (value, exit) = output(&host, &["get", "Unknown.Future"]);
+    assert_eq!(exit, 1);
+    assert_eq!(value["result"]["error_code"], "InvalidPath");
+    assert!(backend.requests.lock().unwrap().is_empty());
 }
 
 #[test]
@@ -409,7 +482,7 @@ fn builtin_get_discovers_paths_or_executes_actual_query_with_sdk_metadata() {
         assert_eq!(value["result"]["data"], expected, "{query:?}");
         assert_eq!(
             *backend.requests.lock().unwrap(),
-            ["https://api.fabric.microsoft.com/v1/workspaces/w/items/i"]
+            ["https://api.fabric.microsoft.com/v1/workspaces/w/notebooks/i"]
         );
         assert!(Arc::ptr_eq(&host.current, &root));
     }
@@ -823,7 +896,7 @@ mod shared_http {
                 "https://api.fabric.microsoft.com/v1/workspaces/w/items",
                 "https://api.fabric.microsoft.com/v1/workspaces/w/items",
                 "https://api.fabric.microsoft.com/v1/workspaces/w/items?continuationToken=next%2B%2F%3D",
-                "https://api.fabric.microsoft.com/v1/workspaces/w/items/n",
+                "https://api.fabric.microsoft.com/v1/workspaces/w/notebooks/n",
             ]
         );
         for request in requests.iter() {
@@ -984,7 +1057,7 @@ mod shared_http {
             assert_eq!(requests.len(), 1);
             assert_eq!(
                 requests[0].url().as_str(),
-                "https://api.fabric.microsoft.com/v1/workspaces/w/items/n"
+                "https://api.fabric.microsoft.com/v1/workspaces/w/notebooks/n"
             );
             assert!(Arc::ptr_eq(&host.current, &ws));
         }

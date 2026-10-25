@@ -16,7 +16,7 @@ use fabric_cli_output::{
 use fabric_sdk::{
     Client,
     capacities::{CapacityExecutor, CapacityListLimits},
-    items::{ItemExecutor, ItemGetOptions, ItemListOptions},
+    items::{ItemCollection, ItemExecutor, ItemGetOptions, ItemListOptions},
     workspaces::{WorkspaceExecutor, WorkspaceListLimits},
 };
 use serde_json::{Value, json};
@@ -325,14 +325,19 @@ impl ReadHost<'_> {
                         "not supported for command 'get'",
                     ));
                 }
+                let collection =
+                    ItemCollection::from_item_type(kind.as_str()).ok_or_else(|| {
+                        errors::error("UnsupportedCommand", "not supported for command 'get'")
+                    })?;
                 let workspace = target
                     .workspace()
                     .expect("item parentage is validated by context");
                 let item = self
                     .sdk
-                    .get_item_metadata(
+                    .get_item_metadata_from_collection(
                         self.items,
                         required_id(&workspace)?,
+                        collection,
                         required_id(&target)?,
                         ItemGetOptions::default(),
                         cancelled.as_mut(),
