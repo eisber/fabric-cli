@@ -49,7 +49,7 @@ class ReadParityRunnerTests(unittest.TestCase):
         with patch.object(RUNNER.subprocess, "run", side_effect=process) as invoked:
             self.execute()
         calls = invoked.call_args_list
-        self.assertEqual(len(calls), 11)
+        self.assertEqual(len(calls), 16)
         self.assertEqual(
             calls[0].args[0],
             [
@@ -111,6 +111,25 @@ class ReadParityRunnerTests(unittest.TestCase):
                 "-v",
             ],
         )
+        self.assertEqual(
+            calls[11].args[0],
+            [sys.executable, "-B", str(RUNNER.HERE / "workspace_get" / "reference.py")],
+        )
+        self.assertEqual(calls[12].args[0][-3:], ["-p", "test_reference.py", "-v"])
+        for index, probe in ((13, self.read_probe), (14, self.folder_probe)):
+            self.assertEqual(
+                calls[index].args[0],
+                [
+                    sys.executable,
+                    "-B",
+                    str(RUNNER.HERE / "workspace_get" / "consumer_reference.py"),
+                    "--rust-probe",
+                    str(probe),
+                ],
+            )
+        self.assertEqual(
+            calls[15].args[0][-3:], ["-p", "test_consumer_reference.py", "-v"]
+        )
         for call in calls:
             self.assertTrue(call.kwargs["check"])
             self.assertEqual(call.kwargs["timeout"], RUNNER.TIMEOUT_SECONDS)
@@ -134,7 +153,7 @@ class ReadParityRunnerTests(unittest.TestCase):
         self.assertEqual(invoked.call_args_list[7].args[0][-1], str(self.folder_probe))
 
     def test_every_failed_stage_stops_without_a_fallback(self) -> None:
-        for failed_stage in range(11):
+        for failed_stage in range(16):
             with self.subTest(stage=failed_stage):
                 outcomes = [None] * failed_stage + [
                     subprocess.CalledProcessError(9, ["failed-stage"])

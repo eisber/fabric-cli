@@ -11,6 +11,45 @@ branch remains intact; references to it in dated evidence are historical.
 
 ## Read-command, query and folder integration
 
+### Enriched workspace metadata GET integration
+
+The integration owner reviewed and adopted exact lane commit
+`36e3a7596af614ab413fba337461355140f4a269` from the published `fad3ea7` base.
+Workspace GET now composes primary metadata, managed private endpoints, Spark
+settings and role assignments through shared SDK read/paging policies and the
+actual parser/context/query/output consumer. Optional source omissions have
+typed, redacted SDK outcomes; cancellation, credential, deadline, origin and
+limit failures are not converted into complete partial success. Source-empty
+workspace projections emit zero bytes rather than an empty success envelope.
+
+The coordinator independently validated the combined Windows x64 offline
+workspace: **278 non-documentation Rust tests and seven doctests**, strict
+all-target workspace Clippy and formatting passed. All original read, query,
+folder and raw-argument comparisons and guards passed unchanged.
+
+New workspace evidence has two deliberately separate denominators. All **70
+original source contracts and 20 controls** passed with their original content
+pins. Those original inputs are not a passing native-equivalence gate: the lane
+observed all 70 through both native probes, with **13 source-equal and 57
+different per probe**, mostly around typed metadata identity, status,
+continuation and shape boundaries. No blanket overlay or source expectation
+rewrite was approved.
+
+The additional **58 typed-domain consumer cases** were independently
+hand-authored and source-verified before native comparison. The parent asserted
+all 58 through both real probes: **44 exact, 12 explicit safety and two
+unsupported query outcomes per probe**, plus 14 controls. These are 116 native
+observations, not 116 distinct source cases. The native CI runner requires
+both source inventories, their guards and both consumer comparisons, with
+fail-closed checks covering all sixteen subprocess stages.
+
+Source pins, older fixtures, Python product code, Cargo manifests, lockfile and
+dependency features remain unchanged. Validation used the common OS mutex and
+private serial output; it completed and released normally. The exact published
+checkpoint and its fresh native CI result are supplied separately. This is
+bounded metadata composition, not production credential/transport support,
+unqualified workspace parity, export, or complete CLI migration.
+
 ### Raw query-argument integration
 
 The integration owner reviewed and fast-forwarded exact lane commit

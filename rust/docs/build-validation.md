@@ -100,6 +100,11 @@ It also requires the independent raw query-argument comparisons through both
 native probes, their real host/SDK/query/output consumers and oracle controls.
 Those raw-argument observations remain distinct from the legacy handler-input
 folder inventory; neither fixture set is rewritten to merge the boundaries.
+Workspace GET adds the original 70 source contracts and controls separately from
+its 58 typed-domain consumer cases and controls. Both native probes must assert
+all 58 consumer outcomes, retaining exact, safety and unsupported categories.
+The original 70-case native differences are documented evidence, not a passing
+native-parity denominator or a waived source expectation.
 The native checkout retains full Git history so the reviewed nine-ID folder
 evidence can verify its original Python and Rust baseline blobs.
 Both command comparators explicitly require
@@ -109,7 +114,7 @@ has a finite timeout; nonzero exits, timeouts, missing probes and observation
 write failures fail the native job and therefore the existing final gate.
 There is no historical-mode fallback, fixture update, waived comparison or
 success-shaped empty observation. Separate runner tests inject failures at
-every one of the eleven process stages. Each oracle retains its own
+every one of the sixteen process stages. Each oracle retains its own
 exact/different/unsupported accounting;
 passing CI does not convert explicit safety exceptions into source equivalence.
 

@@ -112,6 +112,29 @@ def run(
         "test_reference.py",
         "-v",
     )
+    python(HERE / "workspace_get" / "reference.py")
+    python(
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        HERE / "workspace_get",
+        "-p",
+        "test_reference.py",
+        "-v",
+    )
+    for probe in (read_probe, folder_probe):
+        python(HERE / "workspace_get" / "consumer_reference.py", "--rust-probe", probe)
+    python(
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        HERE / "workspace_get",
+        "-p",
+        "test_consumer_reference.py",
+        "-v",
+    )
 
 
 def main() -> None:
