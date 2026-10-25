@@ -15,7 +15,7 @@ not central parser/front-door integration or live parity.
 | --- | --- | --- |
 | mkdir/create workspace | Parameter help, duplicate/capacity checks, lowercased payload, actual POST, output/cache effects | Central dispatch, live scope |
 | mkdir/create folder | Root/nested parent omission, optional description, POST, output/cache effects | Central dispatch |
-| mkdir/create item | Typed collection, generic metadata, folder ID, Lakehouse/Warehouse/Notebook/MountedDataFactory payloads, SQLDatabase New/Restore/RestoreDeleted modes, explicit KQL/DTB parent paths, shared source-synchronous waiting | Templates/dependencies, remaining type-specific options, central dispatch |
+| mkdir/create item | Typed collection, generic metadata, folder ID, Lakehouse/Warehouse/Notebook payloads, MountedDataFactory ASCII identifier subset, SQLDatabase New/Restore/RestoreDeleted modes, explicit KQL/DTB parent paths, shared source-synchronous waiting | Templates/dependencies, Python-default definition JSON encoding, remaining type-specific options, central dispatch |
 | set workspace | Enriched-read ordering, blocklist/simple path, top-level projection, separate Spark PATCH | Main enriched read adapter, central dispatch |
 | set item/folder | Prompt ordering, metadata PATCH, renamed cache/context effect | Definition seam and friendly Notebook aliases |
 | rm/del item/folder | Confirmation/force/hard, exact route/query, accepted/completed messages, cache effects | Central context transition |

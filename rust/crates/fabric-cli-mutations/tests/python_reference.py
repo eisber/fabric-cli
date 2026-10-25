@@ -234,6 +234,9 @@ def main() -> None:
     for verb in ["assign", "unassign"]:
         cases.append(dict(kind="Notebook", command=verb, id="item", capacity_id="cap", capacity_name="Chosen.Capacity",
                           force=True, status=200, data={"capacityId":"cap"}))
+    cases.append(dict(kind="MountedDataFactory", command="create", status=201, data={"id":"new"}, params={
+        "subscriptionId":"11111111-1111-1111-1111-111111111111", "resourceGroup":"group", "factoryName":"factory",
+    }))
     expected = [reference(case) for case in cases]
     result = subprocess.run([args.probe], input="".join(json.dumps(case) + "\n" for case in cases),
                             text=True, encoding="utf-8", capture_output=True, check=True)

@@ -70,6 +70,13 @@ metadata calls or ambient capacity discovery.
 
 The first SDK path boundary explicitly rejects URL/traversal/encoded identifiers.
 This is a safety boundary, not a claim of Python opaque-path equivalence.
+SET uses the existing finite i64/u64 JSON boundary and rejects unsupported values
+before mutation rather than silently rounding wide integers to floats. Ordinary
+non-JSON input still follows Python's intentional string fallback.
+MountedDataFactory currently supports ASCII identifier strings that need no JSON
+escaping. Other definition-serialization values fail explicitly until the shared
+Python-default JSON encoder seam is available; they are not emitted with a
+different base64 payload while claiming source fidelity.
 Structured service errors are data, never instructions or credentials.
 The CLI error adapter preserves Python's 401/403 header-code precedence,
 404 diagnostic, partial Fabric error bodies, trailing-period normalization and

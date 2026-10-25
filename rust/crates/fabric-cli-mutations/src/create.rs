@@ -108,6 +108,7 @@ impl MutationHost<'_> {
             }
             NodeKind::Item(item_type) => {
                 check_create_support(item_type.as_str())?;
+                validate_required_params(item_type.as_str(), &params)?;
                 let folder_id = element
                     .parent()
                     .filter(|parent| parent.kind() == NodeKind::Folder)
@@ -120,6 +121,10 @@ impl MutationHost<'_> {
                 if let Some(description) = params.get("description").filter(|v| truthy(v)) {
                     payload["description"] = description.clone();
                 }
+                self.ui.notice(
+                    NoticeKind::Progress,
+                    &format!("Creating a new {}...", item_type.as_str()),
+                );
                 add_item_payload(
                     item_type.as_str(),
                     workspace_id(element)?,
@@ -130,10 +135,6 @@ impl MutationHost<'_> {
                     ItemCollection::from_item_type(item_type.as_str()).ok_or_else(|| {
                         MutationError::new("NotSupported", "Unmapped item collection")
                     })?;
-                self.ui.notice(
-                    NoticeKind::Progress,
-                    &format!("Creating a new {}...", item_type.as_str()),
-                );
                 ItemMutations::create(self.operations, workspace_id(element)?, collection, payload)
                     .await?
             }
@@ -248,6 +249,23 @@ fn check_create_support(item_type: &str) -> Result<(), MutationError> {
     Ok(())
 }
 
+fn validate_required_params(
+    item_type: &str,
+    params: &Map<String, Value>,
+) -> Result<(), MutationError> {
+    if item_type == "MountedDataFactory" {
+        for key in ["subscriptionid", "resourcegroup", "factoryname"] {
+            if !params.contains_key(key) || params[key].is_null() {
+                return Err(MutationError::new(
+                    "InvalidInput",
+                    "Missing mandatory params '['subscriptionId', 'resourceGroup', 'factoryName']'. Please provide using -P/--params",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn add_item_payload(
     item_type: &str,
     workspace: &str,
@@ -315,10 +333,16 @@ fn add_item_payload(
         }
         "MountedDataFactory" => {
             for key in ["subscriptionid", "resourcegroup", "factoryname"] {
-                if !params.contains_key(key) || params[key].is_null() {
-                    return Err(MutationError::new(
-                        "InvalidInput",
-                        "Missing mandatory params '['subscriptionId', 'resourceGroup', 'factoryName']'. Please provide using -P/--params",
+                let value = params
+                    .get(key)
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| unported("MountedDataFactory non-string creation parameters"))?;
+                if !value.is_ascii()
+                    || value.chars().any(char::is_control)
+                    || value.contains(['"', '\\'])
+                {
+                    return Err(unported(
+                        "MountedDataFactory Python-compatible definition serialization",
                     ));
                 }
             }

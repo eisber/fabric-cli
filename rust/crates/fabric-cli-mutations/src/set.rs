@@ -219,7 +219,7 @@ pub fn update_fabric_element(
             };
         }
     }
-    let input = serde_json::from_str(input).unwrap_or_else(|_| Value::String(input.into()));
+    let input = input_value(input)?;
     if let Some((key, position)) = key.split_once('[') {
         let position = position
             .strip_suffix(']')
@@ -248,6 +248,69 @@ pub fn update_fabric_element(
         }
         None => json!({}),
     })
+}
+
+fn input_value(input: &str) -> Result<Value, MutationError> {
+    match fabric_cli_output::parse_data(input) {
+        Ok(value) => Ok(value),
+        Err(_) => {
+            let parsed = serde_json::from_str::<Value>(input);
+            let outside_domain = parsed.is_ok()
+                || parsed.as_ref().err().is_some_and(|error| {
+                    let message = error.to_string();
+                    message.starts_with("number out of range")
+                        || message.starts_with("recursion limit exceeded")
+                })
+                || nonfinite_json(input);
+            if outside_domain {
+                return Err(MutationError::new("InvalidJson", "Invalid JSON format"));
+            }
+            Ok(Value::String(input.into()))
+        }
+    }
+}
+
+fn nonfinite_json(input: &str) -> bool {
+    let bytes = input.as_bytes();
+    let mut candidate = String::new();
+    let mut position = 0;
+    let mut replaced = false;
+    while position < bytes.len() {
+        let start = position;
+        if bytes[position] == b'"' {
+            position += 1;
+            while position < bytes.len() {
+                match bytes[position] {
+                    b'\\' => position = (position + 2).min(bytes.len()),
+                    b'"' => {
+                        position += 1;
+                        break;
+                    }
+                    _ => position += 1,
+                }
+            }
+            candidate.push_str(&input[start..position]);
+        } else if bytes[position].is_ascii_whitespace() || b"{}[],:".contains(&bytes[position]) {
+            candidate.push(char::from(bytes[position]));
+            position += 1;
+        } else {
+            position += 1;
+            while position < bytes.len()
+                && !bytes[position].is_ascii_whitespace()
+                && !b"{}[],:\"".contains(&bytes[position])
+            {
+                position += 1;
+            }
+            let token = &input[start..position];
+            if matches!(token, "NaN" | "Infinity" | "-Infinity") {
+                candidate.push('0');
+                replaced = true;
+            } else {
+                candidate.push_str(token);
+            }
+        }
+    }
+    replaced && serde_json::from_str::<Value>(&candidate).is_ok()
 }
 
 fn invalid_query() -> MutationError {

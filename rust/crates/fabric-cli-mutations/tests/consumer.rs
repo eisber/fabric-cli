@@ -595,3 +595,125 @@ async fn headerless_accepted_creation_is_not_invented_completion_or_a_synthetic_
         Some(ResourceOutcome::Accepted { operation_id: None })
     );
 }
+
+#[tokio::test]
+async fn set_rejects_outside_json_domain_without_rounding_or_dispatching_a_mutation() {
+    let mut operations = Operations::default();
+    let mut ui = Ui::default();
+    let mut metadata = Metadata {
+        data: json!({"description":"old"}),
+        ..Metadata::default()
+    };
+    let mut host = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    };
+    for input in [
+        "18446744073709551616",
+        "-9223372036854775809",
+        "1e309",
+        "NaN",
+        "Infinity",
+        "-Infinity",
+        r#"{"nested":[NaN]}"#,
+    ] {
+        let error = host
+            .set(&folder(Some("dir")), "description", input, true)
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "InvalidJson");
+    }
+    assert!(operations.requests.is_empty());
+}
+
+#[tokio::test]
+async fn set_preserves_uint64_boundary_and_intentional_non_json_string_fallback() {
+    let mut operations = Operations {
+        responses: VecDeque::from([completed(200, None), completed(200, None)]),
+        ..Operations::default()
+    };
+    let mut ui = Ui::default();
+    let mut metadata = Metadata {
+        data: json!({"description":"old"}),
+        ..Metadata::default()
+    };
+    let mut host = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    };
+    host.set(
+        &folder(Some("dir")),
+        "description",
+        "18446744073709551615",
+        true,
+    )
+    .await
+    .unwrap();
+    host.set(
+        &folder(Some("dir")),
+        "description",
+        "word NaN is not JSON",
+        true,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        operations.requests[0].2,
+        Some(json!({"description":u64::MAX}))
+    );
+    assert_eq!(
+        operations.requests[1].2,
+        Some(json!({"description":"word NaN is not JSON"}))
+    );
+}
+
+#[tokio::test]
+async fn payload_errors_keep_source_progress_order_and_required_params_precede_progress() {
+    let mut operations = Operations::default();
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(
+        &item("SQLDatabase", None),
+        &options(json!({"creationMode":"invalid"})),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        ui.notices,
+        [(NoticeKind::Progress, "Creating a new SQLDatabase...".into())]
+    );
+    ui.notices.clear();
+    MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(
+        &item("MountedDataFactory", None),
+        &options(json!({"run":"true"})),
+    )
+    .await
+    .unwrap_err();
+    assert!(ui.notices.is_empty());
+    assert!(operations.requests.is_empty());
+}
+
+#[tokio::test]
+async fn unported_definition_encoding_values_fail_explicitly_without_a_payload_request() {
+    let mut operations = Operations::default();
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let error = MutationHost { operations: &mut operations, ui: &mut ui, metadata: &mut metadata }
+        .create(&item("MountedDataFactory", None), &options(json!({
+            "subscriptionId":"subscription", "resourceGroup":"non-ascii-\u{65e5}", "factoryName":"factory",
+        }))).await.unwrap_err();
+    assert_eq!(error.code, "NotSupported");
+    assert!(operations.requests.is_empty());
+}
