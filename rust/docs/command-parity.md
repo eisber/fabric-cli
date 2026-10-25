@@ -153,8 +153,14 @@ byte and deadline guards still apply.
 
 Table schema owns interpretation of Delta commit logs, not a second OneLake
 filesystem client. The resource/OneLake lane supplies list/read/properties;
-the jobs lane supplies generic `TableMaintenance` run/status/cancel. Table-load
-202 is source-shaped acceptance, not a completed load. Generic resource LRO
+the jobs lane supplies generic `TableMaintenance` run/status/cancel. Table-load 202 cannot be interpreted from the command handler alone: Python's
+shared client defaults `wait=True` and polls Fabric operation responses before
+returning when operation headers exist, except for job-instance locations.
+Without operation headers it returns the original 202; `raw_response` bypasses
+this processing. The load handler's "operation started" branch applies only when
+202 reaches that handler. Preserve these complete client/handler branches rather
+than treating all 202 responses as immediate acceptance or always polling.
+Generic resource LRO
 extraction must retain one policy implementation and preserve existing public
 Notebook APIs and independent contracts.
 
