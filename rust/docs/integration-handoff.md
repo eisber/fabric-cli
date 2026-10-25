@@ -11,6 +11,45 @@ branch remains intact; references to it in dated evidence are historical.
 
 ## Read-command, query and folder integration
 
+### Raw query-argument integration
+
+The integration owner reviewed and fast-forwarded exact lane commit
+`7076815be5a1aa340d7bbdb943d10b99685c2291` from
+`d3d42eca672b387cabc0626901bb3719bab76f74`. The bounded lexical adapter preserves
+source scalar LS versus variadic GET query semantics, quoting, repeated-option
+precedence and demonstrated option/path boundaries over the existing Clap
+schema. Ordinary variadic GET already worked; this is not a new GET feature.
+Public `ReadCommand` and `ReadHost` fields/layout remain unchanged.
+
+`FolderReadHost::with_scalar_query()` explicitly selects the actual LS scalar
+truthiness boundary: an empty string uses default columns. The default wrapper
+retains the existing handler-list empty-query inventory contract. Raw consumers
+pass argv directly; the legacy folder handler protocol and frozen 59 cases
+remain separately identified and unchanged.
+
+The coordinator independently reran the integrated Windows x64 offline
+workspace: **257 non-documentation Rust tests and seven doctests**, strict
+all-target workspace Clippy and formatting passed. All **60 raw argument cases
+(42 accepted, 18 rejected)** matched original Python in both native probes.
+The **16 original-source consumer cases produced 23 exact native observations**
+because seven GET cases run in both probes. All 16 new oracle controls passed.
+These are distinct denominators, not 120 source argument cases or 23 distinct
+source consumers.
+
+The existing read, metadata, collection, query and folder comparisons and guards
+also passed unchanged through the integrated runner. Native CI now requires the
+new raw-argument reference and guards, with fail-closed controls for all eleven
+process stages. New argument/consumer fixture blobs `8ecdbf2` and `d4a3d20`,
+and the original folder case/evidence blobs `dab9f96` and `c2a058e`, remain
+unchanged. Source pins, old expectations, Python product code, dependencies and
+Cargo manifests/lockfile are preserved. The common validation mutex released
+normally; the exact published checkpoint and fresh provider result are supplied
+separately.
+
+This is bounded read-argument and metadata-helper fidelity, not full argparse,
+Unicode decimal-token, Python global-output-default, complete GET, or production
+host/authentication/transport parity.
+
 ### Folder-aware read-host integration
 
 The implementation delta `340cf49207007369ef3708eeee1e90a8bb93e8cb` is applied

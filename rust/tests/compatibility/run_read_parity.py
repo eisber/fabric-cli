@@ -95,6 +95,23 @@ def run(
         "test_reference.py",
         "-v",
     )
+    python(
+        HERE / "query_arguments" / "reference.py",
+        "--rust-probe",
+        read_probe,
+        "--folder-probe",
+        folder_probe,
+    )
+    python(
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        HERE / "query_arguments",
+        "-p",
+        "test_reference.py",
+        "-v",
+    )
 
 
 def main() -> None:

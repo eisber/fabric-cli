@@ -96,6 +96,10 @@ The affected-crate selector and Python product workflows are unchanged.
 current command comparisons, additive metadata cases, all specialized collection
 observations, command guards, actual native query observations, query comparisons, query guards, and the actual
 `folder_read_probe` with its independent folder-command comparisons and guards.
+It also requires the independent raw query-argument comparisons through both
+native probes, their real host/SDK/query/output consumers and oracle controls.
+Those raw-argument observations remain distinct from the legacy handler-input
+folder inventory; neither fixture set is rewritten to merge the boundaries.
 The native checkout retains full Git history so the reviewed nine-ID folder
 evidence can verify its original Python and Rust baseline blobs.
 Both command comparators explicitly require
@@ -105,7 +109,8 @@ has a finite timeout; nonzero exits, timeouts, missing probes and observation
 write failures fail the native job and therefore the existing final gate.
 There is no historical-mode fallback, fixture update, waived comparison or
 success-shaped empty observation. Separate runner tests inject failures at
-every stage. Each oracle retains its own exact/different/unsupported accounting;
+every one of the eleven process stages. Each oracle retains its own
+exact/different/unsupported accounting;
 passing CI does not convert explicit safety exceptions into source equivalence.
 
 From `rust/`, after building both examples and installing the pinned
