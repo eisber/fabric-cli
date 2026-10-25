@@ -13,6 +13,7 @@ mod lifecycle;
 mod onelake_read;
 mod onelake_write;
 mod set;
+mod shortcuts;
 mod sql_database;
 
 use fabric_cli_context::{Element, NodeKind};
@@ -33,6 +34,7 @@ pub use onelake_write::{
     OneLakeResourceKind, OneLakeWriteError, OneLakeWriteHost, OneLakeWriteResult,
     OneLakeWriteTarget,
 };
+pub use shortcuts::{OneLakeShortcutHost, ShortcutCreateDestination, ShortcutCreateOptions};
 
 /// A caller-runtime asynchronous operation.
 pub type CommandFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;

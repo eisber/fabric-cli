@@ -594,6 +594,7 @@ dependencies = [
  "async-trait",
  "azure_core",
  "fabric-core",
+ "fabric-sdk-workspaces",
  "serde_json",
  "tokio",
 ]

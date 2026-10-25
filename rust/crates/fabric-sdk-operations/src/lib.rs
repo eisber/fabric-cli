@@ -89,12 +89,17 @@ impl FabricOperation {
             .transpose()
             .map_err(|_| OperationErrorKind::InvalidInput)?
             .unwrap_or_default();
-        Self::new(
-            operation.method(),
-            operation.path(),
+        let url = Url::parse(&format!("{ROOT}{}", operation.path()))
+            .map_err(|_| OperationErrorKind::InvalidInput)?;
+        if !valid_origin(&url) || !url.path().starts_with("/v1/") {
+            return Err(OperationErrorKind::InvalidInput);
+        }
+        Ok(Self {
+            method: operation.method(),
+            url,
             body,
-            operation.completion(),
-        )
+            completion: operation.completion(),
+        })
     }
 }
 

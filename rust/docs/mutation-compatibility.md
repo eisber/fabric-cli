@@ -24,8 +24,8 @@ not central parser/front-door integration or live parity.
 | cp/copy, mv/move | SDK folder move endpoint; OneLake Lakehouse Files rename, nonrecursive remote file copy, caller-read local-byte upload helper | Fabric definition seam/orchestration, local filesystem orchestration, bulk/folder consumers |
 | assign/unassign | Capacity SDK endpoints and CLI confirmation/linkage checks; primary metadata only | Domain branch, central dispatch |
 | start/stop | Mirrored-database POST status/action routes, state/force/prompt checks, source stop-substring quirk | Capacity ARM branch, central dispatch |
-| ln/mklink | Not implemented | Shortcut command/SDK operations |
-| OneLake | SDK reads and storage mutations over concrete shared HTTP; CLI `ls`/`exists`, directory create, DFS remove/rename/copy/upload helpers | General GET, item-root/hidden resolution, shortcuts, local filesystem and central dispatch |
+| ln/mklink | Shortcut create/JSON/resolved-target and remove CLI consumers over Fabric SDK/shared operation policy; SDK metadata GET | Shortcut SET and GET/export command projection, context/front-door composition |
+| OneLake | SDK reads/storage mutations/shortcut metadata over concrete shared HTTP; CLI `ls`/`exists`, directory create, DFS remove/rename/copy/upload and shortcut helpers | General GET, item-root/hidden resolution, shortcut SET, local filesystem and central dispatch |
 
 `ResourceOutcome::Accepted` is never completion evidence. Python's acceptance
 messages/cache eviction are preserved independently. `WaitForResult` may succeed

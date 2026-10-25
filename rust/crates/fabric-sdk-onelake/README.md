@@ -47,7 +47,7 @@ local request/credential work without claiming any completed response.
 The synthetic consumer exercises `_delta_log` listing/JSON bytes as the public
 table dependency seam. Table schema parsing, Delta interpretation, load and
 maintenance orchestration remain with the table owner. The special item-root
-listing route, shortcut metadata/targets and table mutation semantics remain
+listing route and table mutation semantics remain
 unported. No live parity is established.
 
 ## Storage writes
@@ -73,3 +73,17 @@ creation. Empty bytes are allowed at the SDK level; the CLI copy branches own
 their source-empty checks. Paths selecting an item root and non-ASCII rename
 headers fail explicitly as safety boundaries. The shared transport owns actual
 HTTP framing/Content-Length; framing headers cannot be overridden by callers.
+
+## Shortcut metadata
+
+`shortcuts::{ShortcutPath, ShortcutMutations, ShortcutConflictPolicy}` uses
+`ResourceOperations` over the Fabric API/audience. It does not reuse a storage
+token or the DFS executor. Create/update uses the source conflict-policy query;
+GET/DELETE encode actual folder/name segments with spaces/Unicode safely.
+`ResourceOperation::encoded` is an additive display-name builder, while the
+existing strict identifier/raw string path guards remain unchanged.
+`ResourceOperation::with_query` safely encodes query values, not arbitrary origins.
+The generic operation engine accepts the private validated descriptor, retains
+Python's synchronous policy and does not install a shortcut-specific poller.
+CLI ln/remove orchestration is in `fabric-cli-mutations`; shortcut SET and generic
+GET/export command composition remain separate backlog.

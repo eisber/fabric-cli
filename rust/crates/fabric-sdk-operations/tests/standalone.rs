@@ -50,6 +50,7 @@ impl TokenCredential for Credential {
 struct Executor {
     responses: Arc<Mutex<VecDeque<OperationResponse>>>,
     methods: Arc<Mutex<Vec<ResourceMethod>>>,
+    urls: Arc<Mutex<Vec<String>>>,
 }
 impl OperationExecutor for Executor {
     fn execute<'a>(
@@ -58,6 +59,7 @@ impl OperationExecutor for Executor {
     ) -> Pin<Box<dyn Future<Output = Result<OperationResponse, OperationExecutionError>> + Send + 'a>>
     {
         self.methods.lock().unwrap().push(request.method());
+        self.urls.lock().unwrap().push(request.url().to_string());
         let response = self
             .responses
             .lock()
@@ -177,6 +179,95 @@ async fn cancellation_before_credentials_prevents_any_request_and_marks_no_side_
     assert!(!error.mutation_may_have_occurred);
     assert_eq!(credential.0.load(Ordering::SeqCst), 0);
     assert!(executor.methods.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn validated_encoded_resource_names_do_not_reopen_the_raw_string_path_boundary() {
+    let operation = ResourceOperation::encoded(
+        ResourceMethod::Get,
+        &[
+            "workspaces",
+            "ws",
+            "items",
+            "item",
+            "shortcuts",
+            "Files",
+            "a b#\u{65e5}%literal",
+        ],
+        None,
+        CompletionPolicy::PythonSynchronous,
+    )
+    .unwrap()
+    .with_query(&[("name", "a&b=+")])
+    .unwrap();
+    assert_eq!(
+        operation.path(),
+        "/v1/workspaces/ws/items/item/shortcuts/Files/a%20b%23%E6%97%A5%25literal?name=a%26b%3D%2B"
+    );
+    assert!(
+        FabricOperation::new(
+            ResourceMethod::Get,
+            operation.path(),
+            Vec::new(),
+            CompletionPolicy::PythonSynchronous
+        )
+        .is_err()
+    );
+    let credential = Credential::default();
+    let selection = selection();
+    let executor = Executor::default();
+    executor
+        .responses
+        .lock()
+        .unwrap()
+        .push_back(response(200, "{}"));
+    let mut session = OperationSession::new(
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits::default(),
+        pending(),
+    );
+    ResourceOperations::execute(&mut session, operation)
+        .await
+        .unwrap();
+    assert_eq!(
+        executor.urls.lock().unwrap()[0],
+        "https://api.fabric.microsoft.com/v1/workspaces/ws/items/item/shortcuts/Files/a%20b%23%E6%97%A5%25literal?name=a%26b%3D%2B"
+    );
+}
+
+#[test]
+fn encoded_constructor_rejects_separators_dot_segments_controls_and_get_payloads() {
+    for name in ["", "..", ".", "a/b", "a\\b", "name\r\nheader: value"] {
+        assert!(
+            ResourceOperation::encoded(
+                ResourceMethod::Get,
+                &["shortcuts", name],
+                None,
+                CompletionPolicy::PythonSynchronous
+            )
+            .is_err()
+        );
+    }
+    assert!(
+        ResourceOperation::encoded(
+            ResourceMethod::Get,
+            &["shortcuts", "name"],
+            Some(json!({})),
+            CompletionPolicy::PythonSynchronous
+        )
+        .is_err()
+    );
+    assert!(
+        ResourceOperation::new(
+            ResourceMethod::Get,
+            &["shortcuts", "a b"],
+            None,
+            CompletionPolicy::PythonSynchronous
+        )
+        .is_err()
+    );
 }
 
 #[test]

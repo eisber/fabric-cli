@@ -142,6 +142,22 @@ successful append/flush requests is retained even if those responses are 202;
 their `Accepted` states are not rewritten as completed storage effects. Failed
 later stages preserve mutation uncertainty and previously received stages without
 printing Done, replaying a write or inventing rollback/cleanup.
+
+## Shortcut commands
+
+`OneLakeShortcutHost` uses the Fabric operation policy for shortcut create/remove;
+it never routes metadata through DFS or a storage token. The existing context
+host supplies `ShortcutCreateDestination` and either a resolved OneLake target
+or argparse-style JSON tokens. LN preserves prompt-before-validation, source
+Lakehouse/root/suffix/name checks, extension stripping, exclusive input/type
+rules, quote normalization and `GenerateUniqueName` only when forced.
+Shortcut removal preserves force/verbose behavior and actual acceptance.
+
+The original-source consumer executes the pinned ln/API/name/JSON/delete helper
+bodies and compares actual CLI/SDK/shared-HTTP request payloads, encoded routes,
+notices, prompts, output and validation errors. General shortcut SET, context
+resolution and metadata GET/export command projection remain separate backlog;
+the SDK metadata GET itself is implemented and exercised.
 The original-Python comparison executes pinned request/handler functions; its
 wait flag comes from the original `do_request` assignment, not from whether an
 individual handler explicitly assigned `args.wait`.

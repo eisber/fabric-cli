@@ -6,6 +6,7 @@
 //! Endpoint clients describe operations; the executor owns credentials, bounded
 //! transport, cancellation and reconciliation. It must never replay a mutation.
 
+use azure_core::http::Url;
 use serde_json::{Value, json};
 use std::{fmt, future::Future, pin::Pin};
 
@@ -75,6 +76,71 @@ impl ResourceOperation {
             body,
             completion,
         })
+    }
+
+    /// Encode validated display-name path segments without changing their route.
+    ///
+    /// This additive path is for source endpoints such as shortcut names that
+    /// contain spaces/Unicode. The existing strict identifier constructor remains
+    /// unchanged. Origin, separators, dot-segment traversal and controls are never
+    /// accepted as resource-name syntax.
+    ///
+    /// # Errors
+    /// Rejects empty/traversing/control/separator segments and invalid JSON bodies.
+    pub fn encoded(
+        method: ResourceMethod,
+        segments: &[&str],
+        body: Option<Value>,
+        completion: CompletionPolicy,
+    ) -> Result<Self, ResourceError> {
+        if segments.is_empty()
+            || segments.iter().any(|segment| {
+                segment.is_empty()
+                    || matches!(*segment, "." | "..")
+                    || segment.contains(['/', '\\'])
+                    || segment.chars().any(char::is_control)
+            })
+            || body.as_ref().is_some_and(|body| !body.is_object())
+            || (method == ResourceMethod::Get && body.is_some())
+        {
+            return Err(ResourceError::input());
+        }
+        let mut url = Url::parse("https://api.fabric.microsoft.com/v1")
+            .map_err(|_| ResourceError::input())?;
+        url.path_segments_mut()
+            .map_err(|_| ResourceError::input())?
+            .extend(segments);
+        Ok(Self {
+            method,
+            path: url.path().to_owned(),
+            body,
+            completion,
+        })
+    }
+
+    /// Add safely encoded query values to this already-validated relative route.
+    ///
+    /// # Errors
+    /// Rejects empty/control-bearing keys and control-bearing values.
+    pub fn with_query(mut self, query: &[(&str, &str)]) -> Result<Self, ResourceError> {
+        if query.iter().any(|(key, value)| {
+            key.is_empty()
+                || key.chars().any(char::is_control)
+                || value.chars().any(char::is_control)
+        }) {
+            return Err(ResourceError::input());
+        }
+        let mut url = Url::parse(&format!("https://api.fabric.microsoft.com{}", self.path))
+            .map_err(|_| ResourceError::input())?;
+        url.query_pairs_mut().extend_pairs(query.iter().copied());
+        self.path = format!(
+            "{}{}",
+            url.path(),
+            url.query()
+                .map(|query| format!("?{query}"))
+                .unwrap_or_default()
+        );
+        Ok(self)
     }
 
     /// HTTP method.

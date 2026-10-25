@@ -7,6 +7,7 @@
 //! transport, retries, identity backend, runtime or table interpretation.
 
 mod mutations;
+pub mod shortcuts;
 use azure_core::{credentials::AccessToken, http::Url};
 use fabric_core::{Audience, CredentialSelection, TokenCredential};
 pub use mutations::{
