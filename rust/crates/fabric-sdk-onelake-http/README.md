@@ -14,7 +14,7 @@ Only the fixed public DFS host is used; the required scope is
 `https://storage.azure.com/.default`. The adapter installs no authentication
 backend, runtime, HTTP/TLS/proxy stack, paging, retries or operation poller.
 
-The focused SDK's GET list/read and HEAD properties requests retain their exact
+The focused SDK's finite GET/HEAD/PUT/PATCH/DELETE requests retain their exact
 URL, byte limit, body/headers and token. Errors map explicitly to the focused
 SDK's execution categories. Caller cancellation drops the shared exchange, and
 the shared timer continues to own deadline/read-retry policy. HEAD remains
@@ -27,6 +27,10 @@ focused SDK, this adapter and the real shared HTTP engine. It does not implement
 table schema/Delta interpretation: those remain with the table owner.
 Additional cases exercise exact streaming caps, GET retries, HEAD behavior,
 credential selection/failure, deadlines, service errors and cancellation/drop.
+Write consumers additionally cover exact create/delete/rename headers and
+queries, binary append/flush byte positions, partial-stage failure, 202 versus
+completion, no write replay, preflight allocation/media-type bounds and
+uncertain-side-effect evidence when an in-flight write is cancelled.
 
 Source behavior is pinned to Python
 `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`,
@@ -35,5 +39,5 @@ The shared execution prerequisite is exact
 `ef17b8096fae51ca94d701cdec11f101902868a1`.
 Its explicit origin/header/body bounds and no ambient credentials/no mutation
 replay policy are preserved, not bypassed. Private links, sovereign hosts,
-OneLake mutation verbs, CLI front-door integration and live proof are not
+CLI front-door integration, shortcut/table mutation orchestration and live proof are not
 established by this read adapter.

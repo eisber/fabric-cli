@@ -15,6 +15,7 @@ use fabric_core::{Audience, CredentialSelection};
 use fabric_sdk_http::{ExecutionFuture, ExecutionOptions, ExecutionTimer, HttpExecutor};
 use fabric_sdk_onelake::{
     OneLakeClient, OneLakeError, OneLakeExecutionError, OneLakeLimits, OneLakePath,
+    OneLakeWriteLimits, OneLakeWriteOutcome, OneLakeWriteStep,
 };
 use fabric_sdk_onelake_http::OneLakeHttpExecutor;
 use futures_util::stream;
@@ -508,4 +509,436 @@ fn cancellation_drops_the_inflight_shared_exchange_and_never_commits_a_response(
         Poll::Ready(Err(OneLakeError::Cancelled))
     );
     assert!(network.dropped.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn directory_create_delete_and_rename_use_exact_source_methods_queries_and_headers() {
+    let (client, adapter, network, credential, _) = setup(vec![
+        response(201, b"", &[]),
+        response(202, b"", &[]),
+        response(200, b"", &[]),
+    ]);
+    assert_eq!(
+        client
+            .create_directory(
+                &adapter,
+                &path("Files/new folder"),
+                OneLakeWriteLimits::default(),
+                pending()
+            )
+            .await
+            .unwrap(),
+        OneLakeWriteOutcome::Completed { status: 201 }
+    );
+    assert_eq!(
+        client
+            .delete_path(
+                &adapter,
+                &path("Files/new folder"),
+                OneLakeWriteLimits::default(),
+                pending()
+            )
+            .await
+            .unwrap(),
+        OneLakeWriteOutcome::Accepted
+    );
+    assert_eq!(
+        client
+            .rename_path(
+                &adapter,
+                &path("Files/source"),
+                &path("Files/target"),
+                OneLakeWriteLimits::default(),
+                pending()
+            )
+            .await
+            .unwrap(),
+        OneLakeWriteOutcome::Completed { status: 200 }
+    );
+    let requests = network.requests.lock().unwrap();
+    assert_eq!(
+        requests.iter().map(Request::method).collect::<Vec<_>>(),
+        [Method::Put, Method::Delete, Method::Put]
+    );
+    assert_eq!(
+        requests[0].url().as_str(),
+        "https://onelake.dfs.fabric.microsoft.com/workspace/item/Files/new%20folder/?resource=directory"
+    );
+    assert_eq!(
+        requests[0]
+            .headers()
+            .get_str(&"if-none-match".into())
+            .unwrap(),
+        "*"
+    );
+    assert_eq!(
+        requests[1].url().as_str(),
+        "https://onelake.dfs.fabric.microsoft.com/workspace/item/Files/new%20folder/?recursive=true"
+    );
+    assert_eq!(requests[2].url().path(), "/workspace/item/Files/target");
+    assert_eq!(
+        requests[2]
+            .headers()
+            .get_str(&"x-ms-rename-source".into())
+            .unwrap(),
+        "workspace/item/Files/source"
+    );
+    assert_eq!(credential.calls.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
+async fn upload_uses_exact_binary_bytes_media_type_and_byte_positions() {
+    let (client, adapter, network, _, _) = setup(vec![
+        response(201, b"", &[]),
+        response(202, b"", &[]),
+        response(200, b"", &[]),
+    ]);
+    let bytes = b"\x00\xff\xc3\xa9\n";
+    let upload = client
+        .upload_file(
+            &adapter,
+            &path("Files/data.bin"),
+            bytes,
+            "application/octet-stream",
+            OneLakeWriteLimits::default(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(upload.create.status(), 201);
+    assert_eq!(upload.append, Some(OneLakeWriteOutcome::Accepted));
+    assert_eq!(
+        upload.flush,
+        Some(OneLakeWriteOutcome::Completed { status: 200 })
+    );
+    let requests = network.requests.lock().unwrap();
+    assert_eq!(
+        requests.iter().map(Request::method).collect::<Vec<_>>(),
+        [Method::Put, Method::Patch, Method::Patch]
+    );
+    assert_eq!(requests[0].url().query(), Some("resource=file"));
+    assert!(requests[0].url().path().ends_with("/data.bin/"));
+    assert_eq!(requests[1].url().query(), Some("action=append&position=0"));
+    assert_eq!(Bytes::from(requests[1].body()).as_ref(), bytes);
+    assert_eq!(
+        requests[1]
+            .headers()
+            .get_str(&"content-type".into())
+            .unwrap(),
+        "application/octet-stream"
+    );
+    assert_eq!(
+        requests[1]
+            .headers()
+            .get_str(&"x-ms-content-type".into())
+            .unwrap(),
+        "application/octet-stream"
+    );
+    assert_eq!(requests[2].url().query(), Some("action=flush&position=5"));
+    assert!(Bytes::from(requests[2].body()).is_empty());
+    assert_eq!(
+        requests[2]
+            .headers()
+            .get_str(&"content-type".into())
+            .unwrap(),
+        "application/json"
+    );
+}
+
+#[tokio::test]
+async fn file_create_other_than_201_does_not_append_flush_or_invent_upload_completion() {
+    for status in [200, 202, 204] {
+        let (client, adapter, network, _, _) = setup(vec![response(status, b"", &[])]);
+        let result = client
+            .upload_file(
+                &adapter,
+                &path("Files/data.txt"),
+                b"text",
+                "text/plain",
+                OneLakeWriteLimits::default(),
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.create.status(), status);
+        assert_eq!(result.append, None);
+        assert_eq!(result.flush, None);
+        assert_eq!(network.requests.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn failed_upload_stages_retain_response_progress_and_possible_side_effects_without_replay() {
+    for (replies, stage) in [
+        (
+            vec![response(201, b"", &[]), response(403, b"", &[])],
+            vec![OneLakeWriteStep::CreateFile],
+        ),
+        (
+            vec![
+                response(201, b"", &[]),
+                response(202, b"", &[]),
+                response(403, b"", &[]),
+            ],
+            vec![OneLakeWriteStep::CreateFile, OneLakeWriteStep::Append],
+        ),
+    ] {
+        let count = replies.len();
+        let (client, adapter, network, _, _) = setup(replies);
+        let error = client
+            .upload_file(
+                &adapter,
+                &path("Files/data"),
+                b"data",
+                "text/plain",
+                OneLakeWriteLimits::default(),
+                pending(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.kind,
+            OneLakeError::Http {
+                status: 403,
+                code: None
+            }
+        );
+        assert!(error.mutation_may_have_occurred);
+        assert_eq!(error.completed_steps, stage);
+        assert_eq!(network.requests.lock().unwrap().len(), count);
+    }
+}
+
+#[tokio::test]
+async fn lost_put_patch_and_delete_responses_are_not_replayed_by_either_sdk_or_shared_http() {
+    for operation in ["create", "delete", "upload"] {
+        let (client, adapter, network, _, _) = setup(if operation == "upload" {
+            vec![response(201, b"", &[])]
+        } else {
+            Vec::new()
+        });
+        network
+            .replies
+            .lock()
+            .unwrap()
+            .push_back(Err(azure_core::Error::with_message(
+                ErrorKind::Other,
+                "synthetic uncertain write",
+            )));
+        let error = match operation {
+            "create" => client
+                .create_directory(
+                    &adapter,
+                    &path("Files/new"),
+                    OneLakeWriteLimits::default(),
+                    pending(),
+                )
+                .await
+                .unwrap_err(),
+            "delete" => client
+                .delete_path(
+                    &adapter,
+                    &path("Files/new"),
+                    OneLakeWriteLimits::default(),
+                    pending(),
+                )
+                .await
+                .unwrap_err(),
+            _ => client
+                .upload_file(
+                    &adapter,
+                    &path("Files/data"),
+                    b"data",
+                    "text/plain",
+                    OneLakeWriteLimits::default(),
+                    pending(),
+                )
+                .await
+                .unwrap_err(),
+        };
+        assert_eq!(
+            error.kind,
+            OneLakeError::Execution(OneLakeExecutionError::Failed)
+        );
+        assert!(error.mutation_may_have_occurred);
+        assert_eq!(
+            network.requests.lock().unwrap().len(),
+            if operation == "upload" { 2 } else { 1 }
+        );
+    }
+}
+
+#[tokio::test]
+async fn unsafe_root_and_media_type_and_exact_file_bound_fail_before_any_storage_request() {
+    let (client, adapter, network, credential, _) = setup(Vec::new());
+    let error = client
+        .delete_path(
+            &adapter,
+            &path(""),
+            OneLakeWriteLimits::default(),
+            pending(),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, OneLakeError::InvalidInput);
+    assert!(!error.mutation_may_have_occurred);
+    for content_type in ["text/plain\r\nx:bad", "text/\u{65e5}", ""] {
+        let error = client
+            .upload_file(
+                &adapter,
+                &path("Files/file"),
+                b"data",
+                content_type,
+                OneLakeWriteLimits::default(),
+                pending(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, OneLakeError::InvalidInput);
+        assert!(!error.mutation_may_have_occurred);
+    }
+    let error = client
+        .upload_file(
+            &adapter,
+            &path("Files/file"),
+            b"12345",
+            "text/plain",
+            OneLakeWriteLimits {
+                max_request_bytes: NonZeroUsize::new(4).unwrap(),
+                ..OneLakeWriteLimits::default()
+            },
+            pending(),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, OneLakeError::Limit);
+    assert!(!error.mutation_may_have_occurred);
+    assert_eq!(credential.calls.load(Ordering::SeqCst), 0);
+    assert!(network.requests.lock().unwrap().is_empty());
+    let (client, adapter, network, _, _) = setup(vec![
+        response(201, b"", &[]),
+        response(202, b"", &[]),
+        response(200, b"", &[]),
+    ]);
+    client
+        .upload_file(
+            &adapter,
+            &path("Files/file"),
+            b"1234",
+            "text/plain",
+            OneLakeWriteLimits {
+                max_request_bytes: NonZeroUsize::new(4).unwrap(),
+                ..OneLakeWriteLimits::default()
+            },
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(network.requests.lock().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn cancellation_before_write_credentials_reports_no_dispatched_mutation() {
+    let (client, adapter, network, credential, _) = setup(Vec::new());
+    let error = client
+        .create_directory(
+            &adapter,
+            &path("Files/new"),
+            OneLakeWriteLimits::default(),
+            std::future::ready(()),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, OneLakeError::Cancelled);
+    assert!(!error.mutation_may_have_occurred);
+    assert_eq!(credential.calls.load(Ordering::SeqCst), 0);
+    assert!(network.requests.lock().unwrap().is_empty());
+}
+
+#[test]
+fn cancellation_of_an_inflight_write_drops_http_but_retains_possible_storage_effects() {
+    let client = OneLakeClient::new(
+        Arc::new(Credential::default()),
+        CredentialSelection::new("offline", "tenant", Audience::OneLake).unwrap(),
+    );
+    let network = Arc::new(Network {
+        pending: true,
+        ..Network::default()
+    });
+    let adapter = OneLakeHttpExecutor::new(Arc::new(
+        HttpExecutor::new(
+            network.clone(),
+            Arc::new(Timer::default()),
+            ExecutionOptions::default(),
+        )
+        .unwrap(),
+    ));
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let signal = Arc::clone(&cancelled);
+    let resource = path("Files/new");
+    let future = client.create_directory(
+        &adapter,
+        &resource,
+        OneLakeWriteLimits::default(),
+        poll_fn(move |_| {
+            if signal.load(Ordering::SeqCst) {
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        }),
+    );
+    let mut future = pin!(future);
+    let mut context = Context::from_waker(Waker::noop());
+    assert!(future.as_mut().poll(&mut context).is_pending());
+    cancelled.store(true, Ordering::SeqCst);
+    let Poll::Ready(Err(error)) = future.as_mut().poll(&mut context) else {
+        panic!("cancelled write did not fail");
+    };
+    assert_eq!(error.kind, OneLakeError::Cancelled);
+    assert!(error.mutation_may_have_occurred);
+    assert!(network.dropped.load(Ordering::SeqCst));
+    assert_eq!(network.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn four_mib_default_upload_bound_and_one_extra_byte_are_real_preflight_limits() {
+    let exact = vec![b'x'; 4 * 1024 * 1024];
+    let (client, adapter, network, credential, _) = setup(vec![
+        response(201, b"", &[]),
+        response(202, b"", &[]),
+        response(200, b"", &[]),
+    ]);
+    client
+        .upload_file(
+            &adapter,
+            &path("Files/exact"),
+            &exact,
+            "application/octet-stream",
+            OneLakeWriteLimits::default(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        Bytes::from(network.requests.lock().unwrap()[1].body()).len(),
+        4 * 1024 * 1024
+    );
+    let count = credential.calls.load(Ordering::SeqCst);
+    let extra = vec![b'x'; 4 * 1024 * 1024 + 1];
+    let error = client
+        .upload_file(
+            &adapter,
+            &path("Files/extra"),
+            &extra,
+            "application/octet-stream",
+            OneLakeWriteLimits::default(),
+            pending(),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, OneLakeError::Limit);
+    assert!(!error.mutation_may_have_occurred);
+    assert_eq!(credential.calls.load(Ordering::SeqCst), count);
+    assert_eq!(network.requests.lock().unwrap().len(), 3);
 }

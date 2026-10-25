@@ -1,9 +1,10 @@
 <!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
 
-# OneLake DFS read operations
+# OneLake DFS operations
 
 This SDK-layer crate implements bounded directory listing, exact file-byte reads
-and HEAD properties. It has no CLI, identity-backend, deployment or SDK-facade
+and HEAD properties, directory create/delete/rename and bounded file upload.
+It has no CLI, identity-backend, deployment or SDK-facade
 dependency. It installs no runtime, transport or retry/LRO policy.
 
 Source: Python `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`,
@@ -29,8 +30,8 @@ The storage token scope is `https://storage.azure.com/.default`, never the
 Fabric API scope. Selection is checked before token acquisition; the injected
 provider must already be bound to the selected account and tenant.
 
-`OneLakeRequest` exposes only GET/HEAD, a validated DFS URL, the injected token
-and the streaming byte limit. The implemented
+`OneLakeRequest` exposes finite GET/HEAD/PUT/PATCH/DELETE methods, validated DFS URL,
+exact body/safe headers, injected token and streaming byte limit. The implemented
 [`OneLakeHttpExecutor`](../fabric-sdk-onelake-http/README.md) composes the existing
 shared HTTP engine through its explicit `PublicOrigin::OneLake` boundary.
 The Fabric-only origin guard is unchanged. Private-link/sovereign hosts are not
@@ -44,6 +45,30 @@ local request/credential work without claiming any completed response.
 
 The synthetic consumer exercises `_delta_log` listing/JSON bytes as the public
 table dependency seam. Table schema parsing, Delta interpretation, load and
-maintenance orchestration remain with the table owner. These read APIs do not
-implement OneLake CLI projection, the special item-root listing route, shortcuts,
-uploads, copies, moves or resource mutations, and establish no live parity.
+maintenance orchestration remain with the table owner. The special item-root
+listing route, shortcut metadata/targets and table mutation semantics remain
+unported. No live parity is established.
+
+## Storage writes
+
+`create_directory`, `delete_path`, `rename_path` and `upload_file` reuse the same
+credential/cancellation/executor path as reads. PUT/PATCH/DELETE are single-attempt
+through the shared HTTP adapter. No retry, cleanup, rollback or LRO stack is added.
+`OneLakeWriteOutcome` retains actual status, separating 202 acceptance from
+completed responses. `OneLakeMutationError` retains the underlying typed failure,
+possible side effects and previously received upload-stage responses.
+
+Directory create preserves trailing slash, `resource=directory` and
+`If-None-Match: *`; delete preserves `recursive=true`; rename preserves the
+source helper's `workspace/item/path` header without adding a leading slash.
+Upload follows Python's exact create-file (201 only) -> append at byte zero ->
+flush at content byte length sequence. Other create statuses do not trigger
+append/flush, and accepted intermediate responses remain explicitly recorded.
+
+File bodies default to a measured 4 MiB cap, checked before target creation; the
+shared transport's 4 MiB maximum remains authoritative even if a caller requests
+a larger SDK bound. Media types/header allocation are validated before file
+creation. Empty bytes are allowed at the SDK level; the CLI copy branches own
+their source-empty checks. Paths selecting an item root and non-ASCII rename
+headers fail explicitly as safety boundaries. The shared transport owns actual
+HTTP framing/Content-Length; framing headers cannot be overridden by callers.

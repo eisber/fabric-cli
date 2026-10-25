@@ -40,6 +40,9 @@ impl OneLakeExecutor for OneLakeHttpExecutor {
             let method = match request.method() {
                 OneLakeMethod::Get => Method::Get,
                 OneLakeMethod::Head => Method::Head,
+                OneLakeMethod::Put => Method::Put,
+                OneLakeMethod::Patch => Method::Patch,
+                OneLakeMethod::Delete => Method::Delete,
             };
             self.http
                 .execute_bound(
@@ -47,8 +50,8 @@ impl OneLakeExecutor for OneLakeHttpExecutor {
                     method,
                     request.url(),
                     request.token(),
-                    &[],
-                    &[],
+                    request.body(),
+                    request.headers(),
                     request.max_response_bytes(),
                 )
                 .await

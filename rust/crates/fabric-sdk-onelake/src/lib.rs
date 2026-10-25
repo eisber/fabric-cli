@@ -6,8 +6,12 @@
 //! The executor adapts the existing shared HTTP policy. This crate installs no
 //! transport, retries, identity backend, runtime or table interpretation.
 
+mod mutations;
 use azure_core::{credentials::AccessToken, http::Url};
 use fabric_core::{Audience, CredentialSelection, TokenCredential};
+pub use mutations::{
+    OneLakeMutationError, OneLakeUpload, OneLakeWriteLimits, OneLakeWriteOutcome, OneLakeWriteStep,
+};
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashSet},
@@ -98,6 +102,12 @@ pub enum OneLakeMethod {
     Get,
     /// Read path properties without a response body.
     Head,
+    /// Create a directory/file or rename a path.
+    Put,
+    /// Append/flush file content.
+    Patch,
+    /// Delete a directory/file path recursively.
+    Delete,
 }
 
 /// A validated DFS request. Debug output excludes resource names and token.
@@ -106,6 +116,8 @@ pub struct OneLakeRequest<'a> {
     url: Url,
     token: &'a AccessToken,
     max_response_bytes: NonZeroUsize,
+    body: Vec<u8>,
+    headers: Vec<(String, String)>,
 }
 
 impl OneLakeRequest<'_> {
@@ -127,6 +139,16 @@ impl OneLakeRequest<'_> {
     /// Streaming byte limit the executor must enforce.
     pub const fn max_response_bytes(&self) -> NonZeroUsize {
         self.max_response_bytes
+    }
+
+    /// Exact bytes, empty for reads and bodyless operations.
+    pub fn body(&self) -> &[u8] {
+        &self.body
+    }
+
+    /// Source-specific safe headers; credentials/framing are executor-owned.
+    pub fn headers(&self) -> &[(String, String)] {
+        &self.headers
     }
 }
 
@@ -411,7 +433,35 @@ impl OneLakeClient {
         method: OneLakeMethod,
         url: Url,
         limit: NonZeroUsize,
+        cancelled: Pin<&mut (impl Future<Output = ()> + Send)>,
+    ) -> Result<OneLakeResponse, OneLakeError> {
+        let response = self
+            .exchange(
+                executor,
+                Exchange {
+                    method,
+                    url,
+                    body: Vec::new(),
+                    headers: Vec::new(),
+                    limit,
+                },
+                cancelled,
+                &mut false,
+            )
+            .await?;
+        if matches!(response.status, 200 | 201) {
+            Ok(response)
+        } else {
+            Err(OneLakeError::InvalidResponse)
+        }
+    }
+
+    async fn exchange(
+        &self,
+        executor: &dyn OneLakeExecutor,
+        exchange: Exchange,
         mut cancelled: Pin<&mut (impl Future<Output = ()> + Send)>,
+        dispatched: &mut bool,
     ) -> Result<OneLakeResponse, OneLakeError> {
         or_cancel(std::future::ready(()), cancelled.as_mut()).await?;
         if self.selection.audience() != Audience::OneLake {
@@ -424,23 +474,32 @@ impl OneLakeClient {
         )
         .await?
         .map_err(|_| OneLakeError::Credential)?;
+        or_cancel(std::future::ready(()), cancelled.as_mut()).await?;
+        if matches!(
+            exchange.method,
+            OneLakeMethod::Put | OneLakeMethod::Patch | OneLakeMethod::Delete
+        ) {
+            *dispatched = true;
+        }
         let response = or_cancel(
             executor.execute(OneLakeRequest {
-                method,
-                url,
+                method: exchange.method,
+                url: exchange.url,
                 token: &token,
-                max_response_bytes: limit,
+                max_response_bytes: exchange.limit,
+                body: exchange.body,
+                headers: exchange.headers,
             }),
             cancelled.as_mut(),
         )
         .await?
         .map_err(OneLakeError::Execution)?;
         or_cancel(std::future::ready(()), cancelled.as_mut()).await?;
-        if response.body.len() > limit.get() {
+        if response.body.len() > exchange.limit.get() {
             return Err(OneLakeError::Limit);
         }
         match response.status {
-            200 | 201 => Ok(response),
+            200 | 201 | 202 | 204 => Ok(response),
             202..=299 => Err(OneLakeError::InvalidResponse),
             status => Err(OneLakeError::Http {
                 status,
@@ -458,6 +517,14 @@ impl OneLakeClient {
             }),
         }
     }
+}
+
+struct Exchange {
+    method: OneLakeMethod,
+    url: Url,
+    body: Vec<u8>,
+    headers: Vec<(String, String)>,
+    limit: NonZeroUsize,
 }
 
 async fn or_cancel<T>(
