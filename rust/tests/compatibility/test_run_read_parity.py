@@ -29,7 +29,7 @@ class ReadParityRunnerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        self.root = Path(self.directory.name)
+        self.root = Path(self.directory.name).resolve()
         self.read_probe = self.root / "read probe.exe"
         self.query_probe = self.root / "query probe.exe"
         self.read_probe.touch()
@@ -72,6 +72,16 @@ class ReadParityRunnerTests(unittest.TestCase):
         self.assertEqual(
             (self.artifacts / "query-observations.json").read_bytes(), b"[]"
         )
+
+    def test_probe_paths_are_canonicalized_before_process_execution(self) -> None:
+        aliases = self.root / "aliases"
+        aliases.mkdir()
+        read_alias = aliases / ".." / self.read_probe.name
+        query_alias = aliases / ".." / self.query_probe.name
+        with patch.object(RUNNER.subprocess, "run") as invoked:
+            RUNNER.run(read_alias, query_alias, self.artifacts)
+        self.assertEqual(invoked.call_args_list[0].args[0][-1], str(self.read_probe))
+        self.assertEqual(invoked.call_args_list[3].args[0], [str(self.query_probe)])
 
     def test_every_failed_stage_stops_without_a_fallback(self) -> None:
         for failed_stage in range(6):
