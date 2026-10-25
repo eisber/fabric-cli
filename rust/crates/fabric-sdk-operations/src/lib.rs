@@ -348,12 +348,56 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             .map_err(|kind| self.evidence(kind))
     }
 
+    /// Reconcile a caller's already-received 202 without replaying its request.
+    ///
+    /// Use a fresh session. The external initial request counts against the
+    /// request budget and is conservatively marked as possibly mutating.
+    /// Only the shared bounded GET polling/result policy runs here.
+    ///
+    /// # Errors
+    /// Rejects non-202 input or a previously used session, enforces the response
+    /// byte bound, and preserves known operation ID even on immediate cancellation.
+    pub async fn reconcile_accepted(
+        &mut self,
+        response: OperationResponse,
+        completion: CompletionPolicy,
+    ) -> Result<OperationResponse, OperationError> {
+        let result = async {
+            if response.status != 202 || self.requests != 0 || self.mutation_may_have_occurred {
+                return Err(OperationErrorKind::InvalidInput);
+            }
+            self.requests = 1;
+            self.mutation_may_have_occurred = true;
+            self.operation_id = header(&response, "x-ms-operation-id")?
+                .filter(|id| valid_id(id))
+                .map(str::to_owned);
+            if self.operation_id.is_none() && completion != CompletionPolicy::PythonSynchronous {
+                self.operation_id = accepted_id(&response)?;
+            }
+            Self::run(
+                &mut self.cancelled,
+                &mut self.cancelled_observed,
+                std::future::ready(()),
+            )
+            .await?;
+            if self.selection.audience() != Audience::Fabric {
+                return Err(OperationErrorKind::InvalidAudience);
+            }
+            if response.body.len() > self.limits.max_response_bytes.get() {
+                return Err(OperationErrorKind::Limit);
+            }
+            self.resolve_accepted(response, completion).await
+        }
+        .await;
+        result.map_err(|kind| self.evidence(kind))
+    }
+
     async fn execute_inner(
         &mut self,
         operation: FabricOperation,
     ) -> Result<OperationResponse, OperationErrorKind> {
         let python = operation.completion == CompletionPolicy::PythonSynchronous;
-        let mut response = if operation.method == ResourceMethod::Get && !python {
+        let response = if operation.method == ResourceMethod::Get && !python {
             let response = self
                 .request(operation.method, operation.url, operation.body)
                 .await?;
@@ -370,7 +414,16 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             ensure_source_status(&response, &[200, 201, 204], python)?;
             return Ok(response);
         }
-        if operation.completion == CompletionPolicy::ReturnAccepted {
+        self.resolve_accepted(response, operation.completion).await
+    }
+
+    async fn resolve_accepted(
+        &mut self,
+        mut response: OperationResponse,
+        completion: CompletionPolicy,
+    ) -> Result<OperationResponse, OperationErrorKind> {
+        let python = completion == CompletionPolicy::PythonSynchronous;
+        if completion == CompletionPolicy::ReturnAccepted {
             if let Some(id) = accepted_id(&response)? {
                 self.operation_id = Some(id.clone());
                 if let Some(uri) = header(&response, "Location")? {
@@ -473,7 +526,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
                     if let Some(uri) = header(&response, "Location")? {
                         validate_link(uri, &result_path)?;
                     }
-                    if operation.completion == CompletionPolicy::WaitForResult {
+                    if completion == CompletionPolicy::WaitForResult {
                         let result = self
                             .request(ResourceMethod::Get, service_url(&result_path)?, Vec::new())
                             .await?;

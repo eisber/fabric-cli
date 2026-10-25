@@ -10,10 +10,10 @@ use azure_core::{
 };
 use fabric_core::{Audience, CredentialSelection, TokenCredential};
 use fabric_sdk_operations::{
-    FabricOperation, OperationErrorKind, OperationExecutionError, OperationExecutor,
-    OperationLimits, OperationRequest, OperationResponse, OperationSession,
+    OperationErrorKind, OperationExecutionError, OperationExecutor, OperationLimits,
+    OperationRequest, OperationResponse, OperationSession,
 };
-use fabric_sdk_workspaces::mutations::{CompletionPolicy, ResourceMethod};
+use fabric_sdk_workspaces::mutations::CompletionPolicy;
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -74,7 +74,7 @@ impl OperationExecutor for Executor {
 }
 
 async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
-    let replies = input["replies"]
+    let mut replies = input["replies"]
         .as_array()
         .ok_or("missing replies")?
         .iter()
@@ -104,6 +104,9 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
             })
         })
         .collect::<Result<VecDeque<_>, Box<dyn std::error::Error>>>()?;
+    let initial = replies
+        .pop_front()
+        .ok_or("missing initial accepted response")?;
     let executor = Executor {
         replies: Arc::new(Mutex::new(replies)),
         requests: Arc::new(Mutex::new(Vec::new())),
@@ -118,14 +121,9 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
         OperationLimits::default(),
         pending(),
     );
-    let operation = FabricOperation::new(
-        ResourceMethod::Post,
-        "/v1/workspaces/ws/items",
-        b"{}".to_vec(),
-        CompletionPolicy::PythonSynchronous,
-    )
-    .map_err(|_| "invalid operation")?;
-    let result = session.execute(operation).await;
+    let result = session
+        .reconcile_accepted(initial, CompletionPolicy::PythonSynchronous)
+        .await;
     let (status, data, error) = match result {
         Ok(response) => (
             Some(response.status),
@@ -151,7 +149,7 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
     };
     Ok(json!({
         "status": status, "data": data, "error": error,
-        "requests": executor.requests.lock().unwrap().iter().skip(1).cloned().collect::<Vec<_>>(),
+        "requests": executor.requests.lock().unwrap().iter().cloned().collect::<Vec<_>>(),
         "waits": *executor.waits.lock().unwrap(),
         "fallbacks": session.warnings().len(),
     }))

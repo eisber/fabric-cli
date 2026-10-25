@@ -248,3 +248,140 @@ async fn malformed_source_poll_body_fails_without_inventing_a_running_state() {
     assert!(error.mutation_may_have_occurred);
     assert_eq!(executor.methods.lock().unwrap().len(), 2);
 }
+
+fn accepted() -> OperationResponse {
+    let mut accepted = response(202, "{}");
+    accepted.headers.insert(
+        "x-ms-operation-id".into(),
+        "22222222-2222-2222-2222-222222222222".into(),
+    );
+    accepted
+}
+
+#[tokio::test]
+async fn external_acceptance_reconciliation_only_issues_gets_and_never_replays_the_mutation() {
+    let credential = Credential::default();
+    let selection = selection();
+    let executor = Executor::default();
+    executor.responses.lock().unwrap().extend([
+        response(200, r#"{"status":"Succeeded"}"#),
+        response(200, r#"{"id":"actual-result"}"#),
+    ]);
+    let mut session = OperationSession::new(
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits::default(),
+        pending(),
+    );
+    let result = session
+        .reconcile_accepted(accepted(), CompletionPolicy::WaitForResult)
+        .await
+        .unwrap();
+    assert_eq!(result.body, br#"{"id":"actual-result"}"#);
+    assert_eq!(
+        *executor.methods.lock().unwrap(),
+        [ResourceMethod::Get, ResourceMethod::Get]
+    );
+    assert_eq!(credential.0.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn external_acceptance_retains_operation_id_when_cancelled_before_any_poll() {
+    let credential = Credential::default();
+    let selection = selection();
+    let executor = Executor::default();
+    let mut session = OperationSession::new(
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits::default(),
+        std::future::ready(()),
+    );
+    let error = session
+        .reconcile_accepted(accepted(), CompletionPolicy::PythonSynchronous)
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, OperationErrorKind::Cancelled);
+    assert_eq!(
+        error.operation_id.as_deref(),
+        Some("22222222-2222-2222-2222-222222222222")
+    );
+    assert!(error.mutation_may_have_occurred);
+    assert_eq!(credential.0.load(Ordering::SeqCst), 0);
+    assert!(executor.methods.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn external_initial_request_and_response_bytes_count_against_the_real_bounds() {
+    let credential = Credential::default();
+    let selection = selection();
+    for limits in [
+        OperationLimits {
+            max_requests: std::num::NonZeroUsize::new(1).unwrap(),
+            ..OperationLimits::default()
+        },
+        OperationLimits {
+            max_response_bytes: std::num::NonZeroUsize::new(1).unwrap(),
+            ..OperationLimits::default()
+        },
+    ] {
+        let executor = Executor::default();
+        let mut session =
+            OperationSession::new(&credential, &selection, executor.clone(), limits, pending());
+        let error = session
+            .reconcile_accepted(accepted(), CompletionPolicy::WaitForResult)
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, OperationErrorKind::Limit);
+        assert!(error.mutation_may_have_occurred);
+        assert!(executor.methods.lock().unwrap().is_empty());
+    }
+    assert_eq!(credential.0.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn external_acceptance_cannot_silently_reset_a_used_session_or_follow_foreign_links() {
+    let credential = Credential::default();
+    let selection = selection();
+    let executor = Executor::default();
+    let mut session = OperationSession::new(
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits::default(),
+        pending(),
+    );
+    session
+        .reconcile_accepted(accepted(), CompletionPolicy::ReturnAccepted)
+        .await
+        .unwrap();
+    assert_eq!(
+        session
+            .reconcile_accepted(accepted(), CompletionPolicy::ReturnAccepted)
+            .await
+            .unwrap_err()
+            .kind,
+        OperationErrorKind::InvalidInput
+    );
+    let mut foreign = accepted();
+    foreign.headers.insert(
+        "Location".into(),
+        "https://outside.invalid/v1/operations/22222222-2222-2222-2222-222222222222".into(),
+    );
+    let mut fresh = OperationSession::new(
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits::default(),
+        pending(),
+    );
+    let error = fresh
+        .reconcile_accepted(foreign, CompletionPolicy::PythonSynchronous)
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, OperationErrorKind::InvalidLink);
+    assert!(error.mutation_may_have_occurred);
+    assert_eq!(credential.0.load(Ordering::SeqCst), 0);
+    assert!(executor.methods.lock().unwrap().is_empty());
+}

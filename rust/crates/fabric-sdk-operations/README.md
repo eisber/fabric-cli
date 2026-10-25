@@ -11,6 +11,12 @@ selection and token acquisition, cancellation, uncertain mutation evidence,
 validated operation/result links and terminal-state reconciliation. Callers supply
 an Azure `TokenCredential`, `CredentialSelection`, `OperationExecutor`, limits and
 cancellation future. The request's token is never discovered or persisted.
+For SDKs that have already dispatched a request, a fresh session's
+`reconcile_accepted(response, completion)` accepts that actual 202 and runs the
+same bounded GET polling/result policy without issuing another mutation. The
+external initial request counts against the request budget. Known operation ID
+and possible-mutation evidence survive immediate cancellation; initial response
+bytes are bounded, and a used session cannot silently reset its budget.
 `OperationError` and the resource error adapter retain exact parsed failure data
 in `raw_service_error`, in addition to typed service fields and reconciliation
 evidence. Display remains sanitized; consumers explicitly choose whether to
