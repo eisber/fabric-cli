@@ -7,10 +7,12 @@
 //! configuration, time and streams. The executable does not configure these.
 
 mod errors;
+mod folder_reads;
 pub mod parser;
 mod projection;
 mod reads;
 
+pub use folder_reads::FolderReadHost;
 pub use projection::{NoQuery, Projection, PythonQuery};
 pub use reads::{ItemSort, ReadConfig, ReadHost, WriteError};
 
