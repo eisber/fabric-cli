@@ -120,6 +120,10 @@ parameters are explicitly unsupported. Python's arbitrary-size integers,
 non-finite JSON and Unicode decimal-number syntax are not certified by this
 slice. Rust parser/conversion diagnostics can differ from Python exception
 details; translated command codes and the source's semantic errors are retained.
+The JSON convenience runner uses a full leaf command for handler errors;
+Python main omits that field for uncaught non-`FabricCLIError` conversion
+exceptions. Exact main-level unexpected-exception normalization remains a
+front-door compatibility gap, not a claim of byte-for-byte error parity.
 
 Text terminal width/color/layout, root/group custom help, `-help`, batch/REPL,
 global option/configuration propagation and a production identity/context host
