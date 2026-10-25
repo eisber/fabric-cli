@@ -23,9 +23,12 @@ Default no-query LS works; GET/query output needs an injected projection provide
 Other invocations fail explicitly. The example uses an expired test-only dummy credential and makes
 no service calls. Native workspace listing and a bounded
 [single-Notebook deployment library](crates/fabric-deploy/README.md) now execute
-through caller-injected SDK executors. No production HTTP transport, authentication
-backend, or CLI deployment command is installed. Azure CLI, Azure Developer CLI,
-and Python are not runtime requirements.
+through caller-injected SDK executors. The optional
+[native transport](crates/fabric-sdk-transport/README.md) supplies an Azure
+`HttpClient` and caller-runtime `TokioTimer`; its `hyper-rustls` backend must be
+selected explicitly. The SDK facade has no default HTTP/TLS backend, and no
+production credential/read host or CLI deployment command is installed.
+Azure CLI, Azure Developer CLI, and Python are not runtime requirements.
 
 Generic workspace item LIST and single-item GET are available through the
 [focused item SDK](crates/fabric-sdk-items/README.md) and additive stable facade

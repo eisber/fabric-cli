@@ -257,6 +257,37 @@ jobs:
         run: |
           read -r -a packages <<< "$CARGO_PACKAGE_ARGS"
           cargo test --offline --locked "${packages[@]}" --doc
+      - name: Validate the explicitly selected native transport
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-transport')
+        run: |
+          cargo check --offline --locked -p fabric-sdk-transport --no-default-features --lib
+          cargo clippy --offline --locked -p fabric-sdk-transport --features hyper-rustls --all-targets -- -D warnings
+          cargo test --offline --locked -p fabric-sdk-transport --features hyper-rustls
+          cargo run --offline --locked -p fabric-sdk-transport --features hyper-rustls --example sdk_consumer
+      - name: Require isolated default and opt-in transport dependency graphs
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-transport')
+        run: |
+          forbidden='^(hyper|hyper-util|hyper-rustls|rustls|rustls-platform-verifier|reqwest|native-tls|openssl|fabric-identity|fabric-identity-windows|fabric-cli|fabric-deploy) v'
+          for package in fabric-sdk fabric-sdk-transport; do
+            graph="$(cargo tree --offline --locked -p "$package" --no-default-features --edges normal --prefix none --format '{p}')"
+            printf '%s\n' "$graph"
+            if grep -Eq "$forbidden" <<< "$graph"; then
+              echo "::error::Default $package graph selected a backend or higher layer."
+              exit 1
+            fi
+          done
+          graph="$(cargo tree --offline --locked -p fabric-sdk-transport --features hyper-rustls --edges normal --prefix none --format '{p}')"
+          printf '%s\n' "$graph"
+          for package in hyper hyper-util hyper-rustls rustls; do
+            if ! grep -Eq "^${package} v" <<< "$graph"; then
+              echo "::error::Opt-in transport graph is missing $package."
+              exit 1
+            fi
+          done
+          if grep -Eq '^(reqwest|native-tls|openssl|fabric-identity|fabric-identity-windows|fabric-cli|fabric-deploy) v' <<< "$graph"; then
+            echo "::error::Opt-in transport selected an unrelated backend or higher layer."
+            exit 1
+          fi
       - name: Compare executable read and query behavior against pinned Python
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
         env:

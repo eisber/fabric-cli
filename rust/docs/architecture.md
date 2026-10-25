@@ -198,15 +198,16 @@ continuation values. It does not follow URIs itself. The workspace service's
 through injected execution, with explicit partial failures and cancellation.
 Missing or malformed `value` data fails rather than returning a success-shaped
 empty page. The SDK README records source mapping and intentional differences;
-workspace production transport remains unselected. Retry/deadline behavior is
+the facade has no default production transport. Retry/deadline behavior is
 available through the optional caller-composed `fabric-sdk-http` adapter;
 workspace listing does not acquire LRO semantics from that adapter.
 
 `fabric-deploy` implements a bounded local Notebook loader and supported transforms,
 using the additive `fabric-sdk::notebooks` APIs for item discovery, create/update
 and operation reconciliation. Both service modules use caller-injected credentials,
-execution and cancellation. There is no production HTTP stack or CLI deployment
-command. See [deployment compatibility](deployment-compatibility.md) for the
+execution and cancellation. A caller can explicitly compose the optional native
+transport; no production credential host or CLI deployment command is installed.
+See [deployment compatibility](deployment-compatibility.md) for the
 exact source, supported subset, safety bounds and unported behavior.
 
 `fabric-identity::interactive_credential` always returns a typed `Unsupported`
@@ -397,8 +398,8 @@ Two implementation lanes may proceed independently:
 
 | Lane | Owned implementation | Boundary |
 | --- | --- | --- |
-| SDK and CLI porting | Offline workspace-list SDK operation, typed models/errors and targeted tests | Injected credential and operation executor only; no CLI service command or production HTTP transport yet |
-| Fabric content deployment | Parsed configuration helpers, local Notebook files, explicit logical/literal/workspace transforms, SDK create/update and bounded completion | Single Notebook; injected executor, no production HTTP/auth, broad deployment YAML/JSONPath/regex, folder moves, planner, unpublish or live operations |
+| SDK and CLI porting | Offline workspace-list SDK operation, typed models/errors and targeted tests | Injected credential and operation executor; native transport is opt-in, and the binary still lacks a production read host |
+| Fabric content deployment | Parsed configuration helpers, local Notebook files, explicit logical/literal/workspace transforms, SDK create/update and bounded completion | Single Notebook; caller-composed executor/optional transport, no production credential host, broad deployment YAML/JSONPath/regex, folder moves, planner, unpublish or live operations |
 
 The SDK's existing `azure_core` and `serde_json` dependencies are available at
 runtime for token interoperation and response decoding. Deployment uses the

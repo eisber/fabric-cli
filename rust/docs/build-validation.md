@@ -82,6 +82,27 @@ prerequisites such as OpenSSL.
 
 ## Owner-confirmed affected-crate goal
 
+### Optional native transport gate
+
+Selecting `fabric-sdk-transport` runs its no-default-feature library check and
+explicit `hyper-rustls` all-target Clippy, wire-contract tests and offline public
+SDK consumer on every native runner. Default features are intentionally empty;
+ordinary workspace tests alone would not validate this backend. The consumer
+cancels before credential acquisition or network execution; wire tests use only
+synthetic local TLS/proxy peers and never a live Fabric account.
+
+Separate normal dependency-graph assertions reject HTTP/TLS backends and higher
+layers in default SDK/default transport consumers. The opt-in graph must contain
+Hyper/Rustls and must still exclude identity, CLI, deployment and other backends.
+Existing affected-crate selection includes the transport's actual SDK dependencies;
+manifest/lockfile changes still select all workspace members. These steps feed
+the existing fail-closed native/final gates and do not waive source parity checks.
+
+The feature enables explicit platform/additional trust and unauthenticated static
+HTTP proxy support, not general enterprise proxy, broker, live-service or
+installation certification. See the
+[native transport contract](../crates/fabric-sdk-transport/README.md).
+
 ### Executable source-parity gate
 
 When `fabric-cli` is selected, native CI also compares the built `read_probe`

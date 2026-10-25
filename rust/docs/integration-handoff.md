@@ -11,6 +11,47 @@ branch remains intact; references to it in dated evidence are historical.
 
 ## Read-command, query and folder integration
 
+### Explicit native transport integration
+
+The coordinator reviewed and merged exact lane commit
+`274f9975ff5cbac3f67f375da615dc45fa586ed3` onto the enriched workspace-GET
+checkpoint `b57ed2a0a98cf8e34d1c26770408b7098c6bcc4b`.
+`fabric-sdk-transport` is a separate SDK-layer crate with empty defaults and an
+explicit `hyper-rustls` backend. Its client and asynchronous `TokioTimer`
+compose with the existing `HttpExecutor`; they do not replace its retry,
+deadline, paging, LRO, credential or decoded-byte policies. The facade and
+focused service SDKs do not acquire a transport dependency.
+
+Independent combined Windows x64 validation passed **298 non-documentation Rust
+tests and seven doctests**, all-target strict workspace Clippy, formatting, the
+public offline SDK consumer and all sixteen existing source-comparison stages.
+All 125 pre-existing registry package/version/source/checksum entries were
+preserved; 91 registry entries were added. Default SDK/default transport normal
+graphs exclude HTTP/TLS backends and higher layers; the opt-in graph selects
+Hyper/Rustls without an identity/CLI/deployment dependency.
+
+Nineteen native wire contracts and the independent consumer are included in
+that total, not additional tests to add again. Wire fixtures exercise the actual
+SDK/shared executor against synthetic TLS peers, including public CONNECT proxy
+composition, no backend replay/redirects, exact/+1 decoded 4 MiB gzip limits,
+pull-driven 8 KiB chunks, cancellation/drop/deadline, trust and hostname
+rejection, pooling, repeated headers and Latin-1 values. The public consumer
+cancels before credentials or network execution; it is not live-service proof.
+
+Native CI explicitly checks, lints and tests the opt-in backend and asserts the
+normal dependency graphs on all three runners. Default-feature checks alone
+would not exercise this implementation. The exact published checkpoint and
+fresh provider result are supplied separately. The common local validation
+mutex released normally; Python product code and protected source fixtures
+remain unchanged.
+
+This is not a production credential/CLI-host integration or general enterprise
+certification. PAC/system/authenticated proxies, client certificates,
+enterprise revocation certification, HTTP/2/3, additional codecs and live Fabric
+proof remain outside this slice. Unsupported encoding chains, raw deflate and
+response trailers fail explicitly. See the
+[complete transport contract](../crates/fabric-sdk-transport/README.md).
+
 ### Enriched workspace metadata GET integration
 
 The integration owner reviewed and adopted exact lane commit
