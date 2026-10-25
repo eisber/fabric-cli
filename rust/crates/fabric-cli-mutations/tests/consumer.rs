@@ -156,7 +156,7 @@ async fn create_workspace_preserves_lowercase_unknown_params_and_none_capacity_o
                 ResourceMethod::Post,
                 "/v1/workspaces".into(),
                 Some(expected),
-                CompletionPolicy::ReturnAccepted
+                CompletionPolicy::PythonSynchronous
             )]
         );
         assert_eq!(
@@ -241,7 +241,7 @@ async fn create_items_use_typed_collection_but_delete_uses_generic_collection() 
                 ResourceMethod::Post,
                 format!("/v1/workspaces/ws/{collection}"),
                 Some(expected),
-                CompletionPolicy::WaitForResult
+                CompletionPolicy::PythonSynchronous
             )
         );
         assert_eq!(operations.requests[1].1, "/v1/workspaces/ws/items/id");
@@ -542,11 +542,8 @@ fn exists_uses_truthy_context_id_and_renders_string_message_not_boolean_data() {
 }
 
 #[tokio::test]
-async fn item_creation_acceptance_and_malformed_resource_are_explicit_uncertain_failures() {
+async fn malformed_created_resource_is_an_explicit_uncertain_failure() {
     for response in [
-        ResourceOutcome::Accepted {
-            operation_id: Some("pending".into()),
-        },
         ResourceOutcome::Completed {
             status: 201,
             data: None,
@@ -572,4 +569,28 @@ async fn item_creation_acceptance_and_malformed_resource_are_explicit_uncertain_
         .unwrap_err();
         assert!(error.operation.unwrap().mutation_may_have_occurred);
     }
+}
+
+#[tokio::test]
+async fn headerless_accepted_creation_is_not_invented_completion_or_a_synthetic_error() {
+    let mut operations = Operations {
+        responses: VecDeque::from([Ok(ResourceOutcome::Accepted { operation_id: None })]),
+        ..Operations::default()
+    };
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let result = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(&item("Lakehouse", None), &options(json!({"run": "true"})))
+    .await
+    .unwrap();
+    assert!(result.outputs.is_empty());
+    assert!(result.effects.is_empty());
+    assert_eq!(
+        result.outcome,
+        Some(ResourceOutcome::Accepted { operation_id: None })
+    );
 }

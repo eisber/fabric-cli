@@ -213,7 +213,7 @@ async fn actual_create_handler_waits_running_succeeded_and_result_through_shared
     assert_eq!(requests[3].url().as_str(), result_location);
     assert_eq!(
         *timer.0.lock().unwrap(),
-        [Duration::from_secs(1), Duration::from_secs(1)]
+        [Duration::from_secs(1), Duration::from_secs(10)]
     );
 }
 

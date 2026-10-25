@@ -6,7 +6,7 @@ use azure_core::{credentials::TokenCredential, http::Method};
 use fabric_sdk_http::{ExecutionError, HttpExecutor};
 use fabric_sdk_operations::{
     OperationExecutionError, OperationExecutor, OperationLimits, OperationRequest,
-    OperationResponse, OperationSession,
+    OperationResponse, OperationSession, OperationWarning,
 };
 use fabric_sdk_workspaces::{
     CredentialSelection,
@@ -63,6 +63,7 @@ pub struct FabricMutationBackend<'a> {
     executor: &'a HttpExecutor,
     limits: OperationLimits,
     cancelled: Pin<Box<dyn Future<Output = ()> + Send + 'a>>,
+    warnings: Vec<OperationWarning>,
 }
 
 impl<'a> FabricMutationBackend<'a> {
@@ -80,7 +81,13 @@ impl<'a> FabricMutationBackend<'a> {
             executor,
             limits,
             cancelled: Box::pin(cancelled),
+            warnings: Vec::new(),
         }
+    }
+
+    /// Source-compatible polling fallbacks, for the caller's existing debug logger.
+    pub fn warnings(&self) -> &[OperationWarning] {
+        &self.warnings
     }
 }
 
@@ -97,7 +104,11 @@ impl ResourceOperations for FabricMutationBackend<'_> {
                 self.limits,
                 self.cancelled.as_mut(),
             );
-            ResourceOperations::execute(&mut session, operation).await
+            let result = ResourceOperations::execute(&mut session, operation).await;
+            let warnings = session.warnings().to_vec();
+            drop(session);
+            self.warnings.extend(warnings);
+            result
         })
     }
 }

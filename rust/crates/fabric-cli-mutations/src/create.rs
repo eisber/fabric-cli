@@ -139,15 +139,6 @@ impl MutationHost<'_> {
             }
             NodeKind::Tenant => unreachable!("validated above"),
         };
-        if matches!(element.kind(), NodeKind::Item(_))
-            && matches!(outcome, ResourceOutcome::Accepted { .. })
-        {
-            return Err(incomplete_create(
-                &outcome,
-                "OperationIncomplete",
-                "Item creation was accepted but has not completed",
-            ));
-        }
         if let ResourceOutcome::Completed {
             status: 200 | 201,
             data,

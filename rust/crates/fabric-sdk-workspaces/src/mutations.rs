@@ -25,6 +25,9 @@ pub enum ResourceMethod {
 /// How an accepted operation is returned to its consumer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CompletionPolicy {
+    /// Python's default synchronous policy: poll when operation headers exist,
+    /// retrieve a result only when advertised, otherwise retain the original body.
+    PythonSynchronous,
     /// Preserve acceptance, without claiming completion.
     ReturnAccepted,
     /// Reconcile the operation and retrieve its result.
@@ -204,7 +207,7 @@ impl WorkspaceMutations {
                 ResourceMethod::Post,
                 &["workspaces"],
                 Some(payload),
-                CompletionPolicy::ReturnAccepted,
+                CompletionPolicy::PythonSynchronous,
             )?)
             .await
     }
@@ -228,7 +231,7 @@ impl WorkspaceMutations {
                 ResourceMethod::Patch,
                 &segments,
                 Some(payload),
-                CompletionPolicy::ReturnAccepted,
+                CompletionPolicy::PythonSynchronous,
             )?)
             .await
     }
@@ -246,7 +249,7 @@ impl WorkspaceMutations {
                 ResourceMethod::Delete,
                 &["workspaces", workspace],
                 None,
-                CompletionPolicy::ReturnAccepted,
+                CompletionPolicy::PythonSynchronous,
             )?)
             .await
     }
@@ -265,7 +268,7 @@ impl WorkspaceMutations {
                 ResourceMethod::Post,
                 &["workspaces", workspace, "assignToCapacity"],
                 Some(json!({"capacityId": capacity})),
-                CompletionPolicy::ReturnAccepted,
+                CompletionPolicy::PythonSynchronous,
             )?)
             .await
     }
@@ -283,7 +286,7 @@ impl WorkspaceMutations {
                 ResourceMethod::Post,
                 &["workspaces", workspace, "unassignFromCapacity"],
                 None,
-                CompletionPolicy::ReturnAccepted,
+                CompletionPolicy::PythonSynchronous,
             )?)
             .await
     }

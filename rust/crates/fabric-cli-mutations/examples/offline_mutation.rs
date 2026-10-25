@@ -36,7 +36,7 @@ impl ResourceOperations for Operations {
             },
             "uri": operation.path().trim_start_matches("/v1/"),
             "payload": operation.body(),
-            "wait": operation.completion() == CompletionPolicy::WaitForResult,
+            "wait": operation.completion() != CompletionPolicy::ReturnAccepted,
         }));
         Box::pin(std::future::ready(Ok(self.response.clone())))
     }

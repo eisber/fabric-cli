@@ -29,7 +29,7 @@ impl ItemMutations {
                 ResourceMethod::Post,
                 &["workspaces", workspace, collection.as_str()],
                 Some(payload),
-                CompletionPolicy::WaitForResult,
+                CompletionPolicy::PythonSynchronous,
             )?)
             .await
     }
@@ -50,7 +50,7 @@ impl ItemMutations {
                 ResourceMethod::Patch,
                 &["workspaces", workspace, collection.as_str(), item],
                 Some(payload),
-                CompletionPolicy::ReturnAccepted,
+                CompletionPolicy::PythonSynchronous,
             )?)
             .await
     }
@@ -69,7 +69,7 @@ impl ItemMutations {
             ResourceMethod::Delete,
             &["workspaces", workspace, "items", item],
             None,
-            CompletionPolicy::ReturnAccepted,
+            CompletionPolicy::PythonSynchronous,
         )?;
         executor
             .execute(if hard {

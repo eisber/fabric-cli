@@ -27,7 +27,7 @@ impl FolderMutations {
                 ResourceMethod::Post,
                 &["workspaces", workspace, "folders"],
                 Some(payload),
-                CompletionPolicy::ReturnAccepted,
+                CompletionPolicy::PythonSynchronous,
             )?)
             .await
     }
@@ -47,7 +47,7 @@ impl FolderMutations {
                 ResourceMethod::Patch,
                 &["workspaces", workspace, "folders", folder],
                 Some(payload),
-                CompletionPolicy::ReturnAccepted,
+                CompletionPolicy::PythonSynchronous,
             )?)
             .await
     }
@@ -66,7 +66,7 @@ impl FolderMutations {
                 ResourceMethod::Delete,
                 &["workspaces", workspace, "folders", folder],
                 None,
-                CompletionPolicy::ReturnAccepted,
+                CompletionPolicy::PythonSynchronous,
             )?)
             .await
     }
@@ -86,7 +86,7 @@ impl FolderMutations {
                 ResourceMethod::Post,
                 &["workspaces", workspace, "folders", folder, "move"],
                 Some(parent.map_or_else(|| json!({}), |id| json!({"targetFolderId": id}))),
-                CompletionPolicy::ReturnAccepted,
+                CompletionPolicy::PythonSynchronous,
             )?)
             .await
     }

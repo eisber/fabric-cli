@@ -32,7 +32,8 @@ The original Python files are `commands/fs/fab_fs_exists.py`,
 - Workspace `capacityName=none` means omission, not JSON null; configured capacity
   selection is injected by the host. Missing defaults fail before dispatch.
 - Item creation uses the source type collection, includes null `folderId` at the
-  root, and requires actual operation-result completion. Item deletion uses the
+  root, and uses Python's default synchronous operation policy. A headerless 202
+  remains explicit acceptance without a fabricated created item. Item deletion uses the
   generic `/items/{id}` route. `--hard` has its own prompt, warning and query.
 - Workspace SET reads enriched metadata before confirmation; folder/item SET read
   after confirmation. SET patches only the changed top-level property. Workspace
@@ -57,5 +58,8 @@ Those branches must not be routed to successful-looking generic fallbacks.
 The first SDK path boundary explicitly rejects URL/traversal/encoded identifiers.
 This is a safety boundary, not a claim of Python opaque-path equivalence.
 Structured service errors are data, never instructions or credentials.
+The original-Python comparison executes pinned request/handler functions; its
+wait flag comes from the original `do_request` assignment, not from whether an
+individual handler explicitly assigned `args.wait`.
 No live sign-in, cache extraction, service mutation or online parity is authorized
 by this library or its tests.

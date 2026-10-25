@@ -46,6 +46,15 @@ def load(relative: str, namespace: dict[str, Any]) -> SimpleNamespace:
     exec(compile(tree, path, "exec"), namespace)
     return SimpleNamespace(**namespace)
 
+def source_wait(args: argparse.Namespace) -> bool:
+    """Execute the original client's wait-default assignment, not an inferred flag."""
+    tree = ast.parse(source("client/fab_api_client.py"))
+    function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "do_request")
+    assignment = next(node for node in function.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "wait" for target in node.targets))
+    namespace = {"args": args}
+    exec(compile(ast.Module(body=[assignment], type_ignores=[]), "original-wait-default", "exec"), namespace)
+    return namespace["wait"]
+
 
 class CLIError(Exception):
     def __init__(self, message: str, status_code: str) -> None:
@@ -113,7 +122,7 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
             uri += "?" + urlencode(args.request_params)
         requests.append({"method": args.method, "uri": uri,
                          "payload": json.loads(data) if data else None,
-                         "wait": getattr(args, "wait", False)})
+                         "wait": source_wait(args)})
         return SimpleNamespace(status_code=case.get("status", 200), text=json.dumps(case.get("data")))
 
     api = SimpleNamespace(do_request=request)

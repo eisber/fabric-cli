@@ -269,6 +269,14 @@ pub struct OperationSession<'a, E> {
     requests: usize,
     operation_id: Option<String>,
     mutation_may_have_occurred: bool,
+    warnings: Vec<OperationWarning>,
+}
+
+/// Source debug-warning outcomes, exposed rather than silently discarding fallback.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OperationWarning {
+    /// Python falls back to ten seconds when Retry-After is not an integer.
+    InvalidRetryAfter,
 }
 
 impl<'a, E: OperationExecutor> OperationSession<'a, E> {
@@ -290,6 +298,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             requests: 0,
             operation_id: None,
             mutation_may_have_occurred: false,
+            warnings: Vec::new(),
         }
     }
 
@@ -305,6 +314,11 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
     /// Accepted operation identifier, if reconciliation has observed one.
     pub fn operation_id(&self) -> Option<&str> {
         self.operation_id.as_deref()
+    }
+
+    /// Source polling fallbacks observed in this session.
+    pub fn warnings(&self) -> &[OperationWarning] {
+        &self.warnings
     }
 
     /// Execute a validated operation and optionally reconcile its accepted state.
@@ -325,14 +339,15 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         &mut self,
         operation: FabricOperation,
     ) -> Result<OperationResponse, OperationErrorKind> {
-        let mut response = if operation.method == ResourceMethod::Get {
+        let python = operation.completion == CompletionPolicy::PythonSynchronous;
+        let mut response = if operation.method == ResourceMethod::Get && !python {
             let response = self
                 .request(operation.method, operation.url, operation.body)
                 .await?;
             ensure_status(&response, &[200, 201, 204])?;
             return Ok(response);
         } else {
-            if self.mutation_may_have_occurred {
+            if operation.method != ResourceMethod::Get && self.mutation_may_have_occurred {
                 return Err(OperationErrorKind::InvalidInput);
             }
             self.request(operation.method, operation.url, operation.body)
@@ -351,10 +366,26 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             }
             return Ok(response);
         }
-        let id = accepted_id(&response)?.ok_or(OperationErrorKind::InvalidResponse)?;
+        let mut original = python.then(|| response.clone());
+        let id = if python {
+            let location = header(&response, "Location")?.unwrap_or("");
+            let id = header(&response, "x-ms-operation-id")?.unwrap_or("");
+            if location.contains("/jobs/instances/") || (location.is_empty() && id.is_empty()) {
+                return Ok(response);
+            }
+            if !location.is_empty() {
+                validate_source_origin(location)?;
+            }
+            if !id.is_empty() && !valid_id(id) {
+                return Err(OperationErrorKind::InvalidResponse);
+            }
+            id.to_owned()
+        } else {
+            accepted_id(&response)?.ok_or(OperationErrorKind::InvalidResponse)?
+        };
         let path = format!("/v1/operations/{id}");
-        self.operation_id = Some(id);
-        if let Some(uri) = header(&response, "Location")? {
+        self.operation_id = (!id.is_empty()).then_some(id);
+        if !python && let Some(uri) = header(&response, "Location")? {
             validate_link(uri, &path)?;
         }
         loop {
@@ -362,12 +393,13 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
                 return Err(OperationErrorKind::Limit);
             }
             let delay = match header(&response, "Retry-After")? {
+                Some(value) if python => source_poll_delay(value, &mut self.warnings)?,
                 Some(value) => Duration::from_secs(
                     value
                         .parse()
                         .map_err(|_| OperationErrorKind::InvalidResponse)?,
                 ),
-                None => Duration::from_secs(1),
+                None => Duration::from_secs(if python { 10 } else { 1 }),
             };
             if delay > self.limits.max_poll_delay {
                 return Err(OperationErrorKind::Limit);
@@ -385,10 +417,42 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             ensure_status(&response, &[200])?;
             let state: serde_json::Value = serde_json::from_slice(&response.body)
                 .map_err(|_| OperationErrorKind::InvalidResponse)?;
+            if !state.is_object() {
+                return Err(OperationErrorKind::InvalidResponse);
+            }
             match state.get("status").and_then(serde_json::Value::as_str) {
-                Some("NotStarted" | "Running") => {
+                Some("NotStarted" | "Running") if !python => {
                     if let Some(uri) = header(&response, "Location")? {
                         validate_link(uri, &path)?;
+                    }
+                }
+                Some("Succeeded") | Some("Completed") if python => {
+                    let Some(uri) = header(&response, "Location")?.filter(|uri| !uri.is_empty())
+                    else {
+                        let mut original =
+                            original.take().ok_or(OperationErrorKind::InvalidResponse)?;
+                        original.status = 200;
+                        return Ok(original);
+                    };
+                    validate_source_origin(uri)?;
+                    let result = self
+                        .request(
+                            ResourceMethod::Get,
+                            service_url(&format!("{path}/result"))?,
+                            Vec::new(),
+                        )
+                        .await?;
+                    match ensure_status(&result, &[200, 201, 202, 204]) {
+                        Ok(()) => return Ok(result),
+                        Err(OperationErrorKind::Http {
+                            code: Some(code), ..
+                        }) if code == "OperationHasNoResult" => {
+                            let mut original =
+                                original.take().ok_or(OperationErrorKind::InvalidResponse)?;
+                            original.status = 200;
+                            return Ok(original);
+                        }
+                        Err(error) => return Err(error),
                     }
                 }
                 Some("Succeeded") => {
@@ -415,6 +479,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
                             .map(Box::new),
                     });
                 }
+                _ if python => {}
                 _ => return Err(OperationErrorKind::InvalidResponse),
             }
         }
@@ -580,6 +645,17 @@ fn resource_error(error: OperationError) -> ResourceError {
     result
 }
 
+fn validate_source_origin(uri: &str) -> Result<(), OperationErrorKind> {
+    let url = Url::parse(ROOT)
+        .map_err(|_| OperationErrorKind::InvalidLink)?
+        .join(uri)
+        .map_err(|_| OperationErrorKind::InvalidLink)?;
+    if !valid_origin(&url) {
+        return Err(OperationErrorKind::InvalidLink);
+    }
+    Ok(())
+}
+
 fn valid_origin(url: &Url) -> bool {
     url.scheme() == "https"
         && url.host_str() == Some("api.fabric.microsoft.com")
@@ -587,6 +663,37 @@ fn valid_origin(url: &Url) -> bool {
         && url.username().is_empty()
         && url.password().is_none()
         && url.fragment().is_none()
+}
+
+fn source_poll_delay(
+    value: &str,
+    warnings: &mut Vec<OperationWarning>,
+) -> Result<Duration, OperationErrorKind> {
+    let value = value.trim();
+    let negative = value.starts_with('-');
+    let digits = value
+        .strip_prefix('+')
+        .or_else(|| value.strip_prefix('-'))
+        .unwrap_or(value);
+    if !digits.is_empty()
+        && digits.as_bytes()[0].is_ascii_digit()
+        && digits.as_bytes()[digits.len() - 1].is_ascii_digit()
+        && !digits.contains("__")
+        && digits
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'_')
+    {
+        let seconds = digits
+            .replace('_', "")
+            .parse::<u64>()
+            .map_err(|_| OperationErrorKind::Limit)?;
+        if negative && seconds != 0 {
+            return Err(OperationErrorKind::InvalidResponse);
+        }
+        return Ok(Duration::from_secs(seconds));
+    }
+    warnings.push(OperationWarning::InvalidRetryAfter);
+    Ok(Duration::from_secs(10))
 }
 
 fn accepted_id(response: &OperationResponse) -> Result<Option<String>, OperationErrorKind> {

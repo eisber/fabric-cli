@@ -209,3 +209,42 @@ fn generic_boundary_rejects_other_origins_traversal_and_get_bodies() {
         .is_err()
     );
 }
+
+#[tokio::test]
+async fn malformed_source_poll_body_fails_without_inventing_a_running_state() {
+    let credential = Credential::default();
+    let selection = selection();
+    let executor = Executor::default();
+    let mut accepted = response(202, "{}");
+    accepted.headers.insert(
+        "x-ms-operation-id".into(),
+        "22222222-2222-2222-2222-222222222222".into(),
+    );
+    executor
+        .responses
+        .lock()
+        .unwrap()
+        .extend([accepted, response(200, "[]")]);
+    let mut session = OperationSession::new(
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits::default(),
+        pending(),
+    );
+    let error = session
+        .execute(
+            FabricOperation::new(
+                ResourceMethod::Post,
+                "/v1/workspaces/ws/items",
+                b"{}".to_vec(),
+                CompletionPolicy::PythonSynchronous,
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, OperationErrorKind::InvalidResponse);
+    assert!(error.mutation_may_have_occurred);
+    assert_eq!(executor.methods.lock().unwrap().len(), 2);
+}

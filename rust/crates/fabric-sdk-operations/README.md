@@ -15,6 +15,16 @@ cancellation future. The request's token is never discovered or persisted.
 `FabricOperation` accepts only fixed public Fabric `/v1/` paths and finite methods.
 `CompletionPolicy::ReturnAccepted` preserves 202; `WaitForResult` retrieves the
 actual operation result; `WaitForCompletion` waits without fetching a resource.
+`PythonSynchronous` implements the pinned Python client's default `wait=True`:
+headerless 202 stays accepted, operation headers trigger polling, `Completed` and
+`Succeeded` are terminal, other statuses keep polling within the caller's bound,
+and an advertised result is fetched. Without a result Location, or on
+`OperationHasNoResult`, the original response body is retained with status 200.
+An initial Location without an operation-ID header preserves the source's empty
+`operations/` identifier rather than silently extracting a different ID.
+Default polling is ten seconds for Python mode, one second for the unchanged
+Notebook policy. Invalid integer Retry-After values preserve Python's ten-second
+fallback and are surfaced through `warnings()` for the caller's debug logger.
 Acceptance never becomes completed work, and a dropped/cancelled/lost mutation
 response never authorizes replay. POST, PATCH and DELETE uncertainty is recorded
 before their request future can first be polled.
@@ -35,3 +45,7 @@ The source policy was extracted from the Rust baseline
 `cc908ce08617f92601aa2dd68622797ccbcde9e7`, `fabric-sdk/src/notebooks.rs`.
 Generic resource endpoint/prompt/output semantics remain pinned to Python
 `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
+The development-only `python_operation` example compares actual original
+`_handle_fab_long_running_op`, `_poll_operation`, `_fetch_operation_result` and
+`get_polling_interval` bodies, using synthetic network/time only. It neither
+rewrites the existing Notebook oracles nor requires Python in production.
