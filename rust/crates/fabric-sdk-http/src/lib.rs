@@ -87,7 +87,9 @@ impl fmt::Display for ExecutionError {
 
 impl std::error::Error for ExecutionError {}
 
+mod bound;
 mod capacities;
+pub use bound::PublicOrigin;
 mod folders;
 mod items;
 #[cfg(test)]
@@ -158,6 +160,47 @@ impl HttpExecutor {
         self.execute(method, url, token, body, limit).await
     }
 
+    /// Executes an explicitly bound public-origin request with non-auth headers.
+    ///
+    /// The service adapter must bind credential acquisition to
+    /// [`PublicOrigin::audience`] before supplying its token; this method never
+    /// discovers credentials or infers token scope from a URL. It validates the
+    /// selected origin and bounded URL/body/headers before any transport I/O.
+    /// Authentication, cookies, Host, proxy and hop-by-hop header overrides are
+    /// rejected. Repeated non-auth headers use the last supplied value.
+    ///
+    /// This opt-in seam uses the existing execution engine, including GET-only
+    /// retries, response streaming bounds, deadline and mutation no-replay.
+    /// [`Self::execute_fabric`] and existing typed adapters remain Fabric-only.
+    /// Dropping the future cancels local work, not a remote mutation.
+    ///
+    /// # Errors
+    /// Returns sanitized [`ExecutionError`] values for invalid input, mismatched
+    /// origins, transport/stream failures, deadlines, response bounds or retries.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Keeps the explicit adapter request fields together without a second request builder."
+    )]
+    pub async fn execute_bound(
+        &self,
+        origin: PublicOrigin,
+        method: Method,
+        url: &Url,
+        token: &AccessToken,
+        body: &[u8],
+        headers: &[(String, String)],
+        limit: NonZeroUsize,
+    ) -> Result<WorkspaceResponse, ExecutionError> {
+        origin.validate_url(url)?;
+        bound::validate_request(method, url, body, headers)?;
+        Self::validate_token(token)?;
+        let mut request = Self::authenticated_request(method, url, token, body);
+        for (name, value) in headers {
+            request.insert_header(name.to_ascii_lowercase(), value.clone());
+        }
+        self.execute_request(request, limit).await
+    }
+
     /// Waits asynchronously using the caller's existing bounded execution timer.
     ///
     /// No sleep is started for a zero delay. Dropping this future cancels the
@@ -186,21 +229,25 @@ impl HttpExecutor {
             || !url.username().is_empty()
             || url.password().is_some()
             || url.fragment().is_some()
-            || token.token.secret().is_empty()
-            || token.token.secret().chars().any(char::is_control)
         {
             return Err(ExecutionError::InvalidInput);
         }
-        let mut request = Request::new(url.clone(), method);
-        request.insert_header("authorization", format!("Bearer {}", token.token.secret()));
-        request.insert_header("content-type", "application/json");
-        request.set_body(body.to_vec());
+        Self::validate_token(token)?;
+        self.execute_request(Self::authenticated_request(method, url, token, body), limit)
+            .await
+    }
+
+    async fn execute_request(
+        &self,
+        request: Request,
+        limit: NonZeroUsize,
+    ) -> Result<WorkspaceResponse, ExecutionError> {
         self.before_deadline(async {
             // Python's outer 429 loop has four iterations. Its HTTPS adapter
             // independently allows three status retries on each iteration.
             for _ in 0..4 {
                 let response = self.read_with_retries(&request, limit).await?;
-                if method != Method::Get || response.status != 429 {
+                if request.method() != Method::Get || response.status != 429 {
                     return Ok(response);
                 }
                 let delay = retry_after(&response.headers)?.unwrap_or(Duration::from_secs(10));
@@ -209,6 +256,26 @@ impl HttpExecutor {
             Err(ExecutionError::RetriesExhausted)
         })
         .await
+    }
+
+    fn validate_token(token: &AccessToken) -> Result<(), ExecutionError> {
+        if token.token.secret().is_empty() || token.token.secret().chars().any(char::is_control) {
+            return Err(ExecutionError::InvalidInput);
+        }
+        Ok(())
+    }
+
+    fn authenticated_request(
+        method: Method,
+        url: &Url,
+        token: &AccessToken,
+        body: &[u8],
+    ) -> Request {
+        let mut request = Request::new(url.clone(), method);
+        request.insert_header("authorization", format!("Bearer {}", token.token.secret()));
+        request.insert_header("content-type", "application/json");
+        request.set_body(body.to_vec());
+        request
     }
 
     async fn read_with_retries(

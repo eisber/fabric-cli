@@ -169,9 +169,19 @@ Notebook APIs and independent contracts.
 Keep focused SDK executor traits independent of the facade-dependent HTTP
 adapter, avoiding a facade -> service -> HTTP -> facade cycle. Narrow composition
 adapters can bind the shared HTTP implementation after service interfaces are
-committed. Storage/ARM/Power BI and custom-header execution still need explicitly
-bound adapters; the Fabric-only method never infers token audience or expands
-its allowed hosts.
+committed. `HttpExecutor::execute_bound` separately supplies fixed public
+Fabric/OneLake/ARM/Power BI origins and validated bounded non-auth headers through
+that same engine. The caller must bind credential selection/acquisition to the
+explicit origin's audience; Power BI preserves the pinned Python Fabric scope.
+Authentication, cookies, Host, proxy and framing/hop-by-hop overrides are rejected.
+The existing Fabric-only method never infers token audience or expands its
+allowed hosts. Typed raw-command and OneLake service adapters still need wiring
+and consumer evidence; the shared primitive alone is not command completion.
+
+`TokenPager::with_collection_field` selects source root arrays such as
+`accessDetails` or `domains` without reserializing their responses into `value`.
+Byte limits apply to original decoded response bytes before parsing; token
+precedence, ordering, cancellation, partial errors and bounds are unchanged.
 
 Some worker launch branches preserve newer upstream `8ad4c70` ancestry. Its item
 type changes are not the pinned Python oracle. Preserve those commits and

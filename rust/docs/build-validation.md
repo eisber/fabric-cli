@@ -82,6 +82,18 @@ prerequisites such as OpenSSL.
 
 ## Owner-confirmed affected-crate goal
 
+### Existing Windows linker environment
+
+If a resumed lane reports `link.exe` missing, first check its process environment,
+not a new global installation. On the ananke host the existing x64 setup was
+verified at
+`C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat`;
+it resolves the installed MSVC `14.51.36231` linker/compiler. Run that setup and
+Cargo (or the gated validation PowerShell process) in the **same `cmd.exe`
+process**. Calling the batch file in one tool invocation does not preserve its
+PATH/LIB/INCLUDE for a later invocation. The shared build mutex is still required.
+This observed host path is not a requirement for other developers or CI runners.
+
 ### Job and shared paging gate
 
 Changes selecting `fabric-sdk-paging`, `fabric-sdk-jobs` or `fabric-cli-jobs`

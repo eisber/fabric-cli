@@ -8,6 +8,12 @@ prerequisite for the job family. Its first production consumer is
 unchanged. Other service families can inject their own async fetch callback.
 
 The collector reuses the existing `Page<Value>` and response wire types.
+`with_collection_field("accessDetails")` (or `"domains"`) selects a literal
+root array key; `new` still defaults to `"value"`. The original response bytes
+are checked before JSON decoding and are never reserialized into a synthetic
+`value` page. Missing/non-array selected fields fail explicitly rather than
+falling back to another field. Continuation metadata, committed partial pages,
+ordering, duplicate rows and all traversal bounds keep the same semantics.
 It owns no HTTP client, credential provider, retry, LRO or runtime. The fetcher
 receives a validated `PageRequest` and must enforce the response bound while
 streaming. Services remain responsible for initial endpoint authorization.

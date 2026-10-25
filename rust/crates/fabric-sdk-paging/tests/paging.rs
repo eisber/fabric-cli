@@ -16,6 +16,121 @@ use std::{
 
 const ROUTE: &str = "https://api.fabric.microsoft.com/v1/workspaces/ws/items/item/jobs/instances";
 
+#[tokio::test]
+async fn selected_root_fields_preserve_original_bytes_and_exact_limit() {
+    for field in ["accessDetails", "domains"] {
+        let bytes = format!(
+            "{{\"{field}\":[{{\"name\":\"\\u0061\",\"number\":1e0}}],\"value\":[\"not-selected\"]}}"
+        )
+        .into_bytes();
+        for fits in [true, false] {
+            let bound = bytes.len() - usize::from(!fits);
+            let collector = pager(PagingLimits {
+                max_response_bytes: NonZeroUsize::new(bound).unwrap(),
+                ..PagingLimits::default()
+            })
+            .with_collection_field(field);
+            let result = collector
+                .collect(
+                    |request| {
+                        assert_eq!(request.max_response_bytes().get(), bound);
+                        let bytes = bytes.clone();
+                        async move {
+                            Ok::<_, ()>(PageResponse {
+                                status: 200,
+                                body: bytes,
+                                headers: BTreeMap::new(),
+                            })
+                        }
+                    },
+                    pending(),
+                )
+                .await;
+            if fits {
+                assert_eq!(
+                    result.unwrap().value,
+                    vec![json!({"name":"a","number":1.0})]
+                );
+            } else {
+                let error = result.unwrap_err();
+                assert!(matches!(error.kind, PagingErrorKind::ResponseLimit));
+                assert_eq!(error.partial.pages_received, 0);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn selected_fields_keep_continuation_precedence_order_and_partial_errors() {
+    let collector = pager(PagingLimits::default()).with_collection_field("accessDetails");
+    let mut calls = 0;
+    let error = collector
+        .collect(
+            |request| {
+                calls += 1;
+                let response = if calls == 1 {
+                    assert_eq!(request.url().query(), None);
+                    Ok(page(
+                        json!({"accessDetails":[{"id":1}],"continuationToken":"next"}),
+                    ))
+                } else {
+                    assert_eq!(request.url().query(), Some("continuationToken=next"));
+                    Err("later page failed")
+                };
+                async { response }
+            },
+            pending(),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error.kind,
+        PagingErrorKind::Fetch("later page failed")
+    ));
+    assert_eq!(error.partial.value, vec![json!({"id":1})]);
+    assert_eq!(error.partial.next_token.as_deref(), Some("next"));
+    let result = collector
+        .collect(
+            |_| async {
+                let mut response = page(json!({
+                    "accessDetails":[{"id":2},{"id":1},{"id":2}],
+                    "continuationToken":"must-not-follow",
+                    "continuationUri":"invalid-but-unused"
+                }));
+                response
+                    .headers
+                    .insert("X-MS-Continuation".into(), String::new());
+                Ok::<_, ()>(response)
+            },
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.pages_received, 1);
+    assert_eq!(
+        result.value,
+        vec![json!({"id":2}), json!({"id":1}), json!({"id":2})]
+    );
+}
+
+#[tokio::test]
+async fn selected_field_must_be_present_array_without_value_fallback() {
+    for body in [
+        json!({"value":[1]}),
+        json!({"accessDetails":null}),
+        json!({"accessDetails":{}}),
+        json!({"accessDetails":"not an array"}),
+    ] {
+        let error = pager(PagingLimits::default())
+            .with_collection_field("accessDetails")
+            .collect(|_| async { Ok::<_, ()>(page(body.clone())) }, pending())
+            .await
+            .unwrap_err();
+        assert!(matches!(error.kind, PagingErrorKind::InvalidResponse));
+        assert!(error.partial.value.is_empty());
+    }
+}
+
 fn pager(limits: PagingLimits) -> TokenPager {
     TokenPager::new(Url::parse(ROUTE).unwrap(), limits).unwrap()
 }

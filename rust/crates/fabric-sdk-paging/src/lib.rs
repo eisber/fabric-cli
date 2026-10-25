@@ -161,6 +161,7 @@ impl<E: fmt::Debug> std::error::Error for PagingError<E> {}
 pub struct TokenPager {
     base: Url,
     limits: PagingLimits,
+    collection_field: String,
 }
 
 impl fmt::Debug for TokenPager {
@@ -185,7 +186,22 @@ impl TokenPager {
         {
             return Err(InvalidPagingUrl);
         }
-        Ok(Self { base, limits })
+        Ok(Self {
+            base,
+            limits,
+            collection_field: "value".into(),
+        })
+    }
+
+    /// Selects the exact root JSON array field, without rewriting response bytes.
+    ///
+    /// The default is `value`. Service adapters can select `accessDetails`,
+    /// `domains` or another source-defined root key. This is a literal key, not
+    /// a query/path expression. A missing or non-array field fails explicitly.
+    /// Original response byte bounds and continuation semantics are unchanged.
+    pub fn with_collection_field(mut self, field: impl Into<String>) -> Self {
+        self.collection_field = field.into();
+        self
     }
 
     /// Collect through a caller-injected async fetcher, retaining precise partial errors.
@@ -268,7 +284,9 @@ impl TokenPager {
                 Value::Object(object) => object,
                 _ => return Err(PagingErrorKind::InvalidResponse),
             };
-            let rows = match object.remove("value") {
+            let continuation_token = object.get("continuationToken").cloned();
+            let continuation_uri = object.get("continuationUri").cloned();
+            let rows = match object.remove(&self.collection_field) {
                 Some(Value::Array(rows)) => rows,
                 _ => return Err(PagingErrorKind::InvalidResponse),
             };
@@ -279,7 +297,7 @@ impl TokenPager {
             let token = if let Some((_, token)) = header_token {
                 Some(token.clone()).filter(|token| !token.is_empty())
             } else {
-                match object.get("continuationToken") {
+                match continuation_token.as_ref() {
                     Some(Value::String(token)) if !token.is_empty() => Some(token.clone()),
                     None | Some(Value::Null | Value::Bool(false)) => None,
                     Some(Value::String(value)) if value.is_empty() => None,
@@ -303,7 +321,7 @@ impl TokenPager {
             let Some(next) = &progress.next_token else {
                 return Ok(());
             };
-            if let Some(uri) = object.get("continuationUri").filter(|uri| !uri.is_null()) {
+            if let Some(uri) = continuation_uri.as_ref().filter(|uri| !uri.is_null()) {
                 let uri = uri.as_str().ok_or(PagingErrorKind::InvalidContinuation)?;
                 if !valid_continuation(uri, &self.base) {
                     return Err(PagingErrorKind::InvalidContinuation);
