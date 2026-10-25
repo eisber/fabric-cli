@@ -18,6 +18,9 @@ default-members = [
     "crates/fabric-cli-output",
     "crates/fabric-cli-context",
     "crates/fabric-cli-query",
+    "crates/fabric-sdk-jobs",
+    "crates/fabric-cli-jobs",
+    "crates/fabric-sdk-paging",
 ]
 resolver = "3"
 
@@ -33,6 +36,9 @@ fabric-cli-context = { path = "crates/fabric-cli-context" }
 fabric-core = { path = "crates/fabric-core" }
 fabric-cli-output = { path = "crates/fabric-cli-output" }
 fabric-cli-query = { path = "crates/fabric-cli-query" }
+fabric-cli-jobs = { path = "crates/fabric-cli-jobs" }
+fabric-sdk-jobs = { path = "crates/fabric-sdk-jobs" }
+fabric-sdk-paging = { path = "crates/fabric-sdk-paging" }
 fabric-sdk = { path = "crates/fabric-sdk" }
 fabric-sdk-workspaces = { path = "crates/fabric-sdk-workspaces" }
 fabric-sdk-items = { path = "crates/fabric-sdk-items" }
