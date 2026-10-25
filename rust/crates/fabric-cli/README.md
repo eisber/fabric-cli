@@ -71,14 +71,36 @@ production host, independently of this completed query composition.
 
 ## Explicit limits
 
+### Additive folder presentation
+
+`ReadHost::with_folders(&folder_executor)` borrows the existing host and a
+caller-owned SDK folder executor. Its `FolderReadHost` implements folder-aware
+workspace LS and folder-context LS without adding fields to `ReadHost` or
+changing existing struct-literal consumers. Other commands, including
+source-routed GET, delegate to the base host.
+
+The wrapper uses bounded SDK item/folder reads and a complete command-local
+folder snapshot, preserving source direct-child selection, structural parent
+equality, stable sorting and JSON output. Workspace LS uses the native query
+provider; folder-context LS preserves Python's separate branch that ignores
+query/hidden flags even when folder listing is disabled in configuration.
+Malformed or unresolved graphs fail explicitly instead of hanging, dropping
+rows or silently reparenting them. These safety outcomes and the snapshot/request
+differences are not exact source parity. See the
+[folder-command matrix](../../docs/folder-command-compatibility.md) and its
+independent 59-case evidence. The binary does not automatically configure this
+wrapper or a production host.
+
+### Remaining command boundaries
+
 The first slice is tenant/workspace LS and source-routed item metadata GET, not
 the whole Python `get` command. Definitions,
 sensitivity-label confirmation, connections, schedules, and environment/mirroring
 augmentation are not ported here. Generic metadata is not advertised as a full
 item export. Python's unsupported GET item types are rejected.
 
-`--output`, `--verbose`, `--force`, text output, folder-listing configuration,
-folder/OneLake/virtual collection commands, workspace GET, ambient home discovery,
+`--output`, `--verbose`, `--force`, text output,
+OneLake/virtual collection commands, workspace GET, ambient home discovery,
 and local filesystem fallback fail explicitly. They are never silently ignored.
 Recognized binary read options still fail `NotConfigured` before host execution.
 
@@ -87,8 +109,9 @@ cache, cache-miss invalidation/retry or persistent/identity-bound context. Popul
 metadata with the SDK outside `Lookup`, then pass a consistent snapshot. Root
 LS uses the listing itself for long workspace details rather than making
 Python's second workspace-list request; enrichment is a single-list snapshot.
-Folder IDs do not affect flat workspace LS when folder listing is disabled;
-folder parent loading/presentation belongs to the separate folder slice.
+Folder IDs do not affect flat workspace LS when folder listing is disabled.
+Folder presentation requires the explicit wrapper above; the base host alone
+still rejects folder-listing configuration and folder-context LS.
 
 SDK origin, pagination, malformed-response and identifier safety exceptions
 remain in force. In particular, foreign continuation URIs fail instead of

@@ -2,3 +2,4 @@
 # Licensed under the MIT License.
 # Development oracle only; never a dependency of the shipped Rust product.
 jmespath==1.0.1
+cachetools==5.5.2

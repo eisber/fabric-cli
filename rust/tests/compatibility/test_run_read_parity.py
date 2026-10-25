@@ -32,12 +32,14 @@ class ReadParityRunnerTests(unittest.TestCase):
         self.root = Path(self.directory.name).resolve()
         self.read_probe = self.root / "read probe.exe"
         self.query_probe = self.root / "query probe.exe"
+        self.folder_probe = self.root / "folder probe.exe"
         self.read_probe.touch()
         self.query_probe.touch()
+        self.folder_probe.touch()
         self.artifacts = self.root / "observations"
 
     def execute(self) -> None:
-        RUNNER.run(self.read_probe, self.query_probe, self.artifacts)
+        RUNNER.run(self.read_probe, self.query_probe, self.folder_probe, self.artifacts)
 
     def test_all_current_comparisons_and_guards_are_required(self) -> None:
         def process(arguments: list[str], **options: Any) -> None:
@@ -47,7 +49,7 @@ class ReadParityRunnerTests(unittest.TestCase):
         with patch.object(RUNNER.subprocess, "run", side_effect=process) as invoked:
             self.execute()
         calls = invoked.call_args_list
-        self.assertEqual(len(calls), 7)
+        self.assertEqual(len(calls), 9)
         self.assertEqual(
             calls[0].args[0],
             [
@@ -67,6 +69,26 @@ class ReadParityRunnerTests(unittest.TestCase):
         self.assertEqual(calls[4].args[0], [str(self.query_probe)])
         self.assertIn("reference.py", calls[5].args[0][2])
         self.assertEqual(calls[6].args[0][-3:], ["-p", "test_reference.py", "-v"])
+        self.assertEqual(
+            calls[7].args[0],
+            [
+                sys.executable,
+                "-B",
+                str(RUNNER.HERE / "folder_commands" / "reference.py"),
+                "--rust-probe",
+                str(self.folder_probe),
+            ],
+        )
+        self.assertEqual(
+            calls[8].args[0][-5:],
+            [
+                "-s",
+                str(RUNNER.HERE / "folder_commands"),
+                "-p",
+                "test_reference.py",
+                "-v",
+            ],
+        )
         for call in calls:
             self.assertTrue(call.kwargs["check"])
             self.assertEqual(call.kwargs["timeout"], RUNNER.TIMEOUT_SECONDS)
@@ -82,13 +104,15 @@ class ReadParityRunnerTests(unittest.TestCase):
         aliases.mkdir()
         read_alias = aliases / ".." / self.read_probe.name
         query_alias = aliases / ".." / self.query_probe.name
+        folder_alias = aliases / ".." / self.folder_probe.name
         with patch.object(RUNNER.subprocess, "run") as invoked:
-            RUNNER.run(read_alias, query_alias, self.artifacts)
+            RUNNER.run(read_alias, query_alias, folder_alias, self.artifacts)
         self.assertEqual(invoked.call_args_list[0].args[0][-1], str(self.read_probe))
         self.assertEqual(invoked.call_args_list[4].args[0], [str(self.query_probe)])
+        self.assertEqual(invoked.call_args_list[7].args[0][-1], str(self.folder_probe))
 
     def test_every_failed_stage_stops_without_a_fallback(self) -> None:
-        for failed_stage in range(7):
+        for failed_stage in range(9):
             with self.subTest(stage=failed_stage):
                 outcomes = [None] * failed_stage + [
                     subprocess.CalledProcessError(9, ["failed-stage"])
@@ -112,11 +136,14 @@ class ReadParityRunnerTests(unittest.TestCase):
         self.assertEqual(invoked.call_count, 1)
 
     def test_missing_probe_is_rejected_before_running_comparisons(self) -> None:
-        self.read_probe.unlink()
-        with patch.object(RUNNER.subprocess, "run") as invoked:
-            with self.assertRaises(FileNotFoundError):
-                self.execute()
-        invoked.assert_not_called()
+        for probe in (self.read_probe, self.query_probe, self.folder_probe):
+            with self.subTest(probe=probe):
+                probe.unlink()
+                with patch.object(RUNNER.subprocess, "run") as invoked:
+                    with self.assertRaises(FileNotFoundError):
+                        self.execute()
+                invoked.assert_not_called()
+                probe.touch()
 
     def test_artifact_write_failure_does_not_allow_query_comparison(self) -> None:
         with patch.object(RUNNER.subprocess, "run") as invoked:

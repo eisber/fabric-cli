@@ -11,6 +11,48 @@ branch remains intact; references to it in dated evidence are historical.
 
 ## Read-command, query and folder integration
 
+### Folder-aware read-host integration
+
+The implementation delta `340cf49207007369ef3708eeee1e90a8bb93e8cb` is applied
+as `137e798` without replaying its local helper cherry-pick `443cb0a`. The
+integration branch already contains the equivalent parent prerequisite
+`cc74d0244919d2aee4fa037ce7a0e5bf63c43141`. Source-routed GET and the original
+`ReadHost` layout remain intact; `with_folders` is an explicit borrowed wrapper,
+not a production binary host or a second SDK.
+
+The coordinator independently reran the combined Windows x64 offline workspace:
+**248 non-documentation Rust tests and seven doctests**, strict all-target
+Clippy and formatting passed. The real public folder consumer asserted all
+**59 outcomes: 32 source-exact, 21 safety, three snapshot differences and three
+unsupported-query outcomes**. The original Python reference executed 54
+terminating observations and separately proved five nonprogress cases without
+running their infinite source loop. All 36 folder oracle guards passed.
+The original folder-command case blob and reviewed nine-ID native-evidence
+overlay remain unchanged, including their original Python expectations.
+
+The earlier source-routed read evidence remains 22 exact plus three safety
+outcomes out of 25; four raw-metadata cases, 176 Python helper observations,
+124 supported native observations and 60 command guards passed. Query evidence
+remains 108 exact out of 118 with ten explicit unsupported cases and 15 controls.
+The raw folder SDK reference retained 26 comparable plus 13 Python-only
+observations and six guards.
+
+Native CI now requires the actual `folder_read_probe`, folder comparisons and
+guards in addition to the existing read/query checks. Full checkout history
+permits verification of the pinned historical source and Rust evidence blobs.
+`cachetools==5.5.2` joins `jmespath==1.0.1` only as a development-oracle dependency;
+neither becomes a Rust product dependency. Fail-closed orchestration tests cover
+all nine process stages, including missing folder probes. Validation used the
+shared OS mutex, private outputs and serial jobs, with normal release.
+The exact published checkpoint and fresh provider result are supplied separately.
+
+The command-local folder snapshot and unchanged flat-workspace request gap are
+not full cache parity. Folder paths still require caller-loaded context;
+multi-token query arguments are joined by the offline adapter, not yet by the
+production parser. Null/orphan/cyclic graphs fail explicitly without silently
+dropping or reparenting rows. These boundaries remain distinct from source-exact
+cases, and the standalone executable still lacks production host/auth/transport.
+
 ### Source-routed GET integration
 
 Exact lane commit `93b67dee3c1e8ecce9f11bd14bb2b9db470ad645` is merged without

@@ -218,6 +218,8 @@ jobs:
         os: [windows-2025, ubuntu-24.04, macos-15]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - name: Set up the development-only Python oracle
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -268,6 +270,7 @@ jobs:
           python -B tests/compatibility/run_read_parity.py \
             --read-probe "target/debug/examples/read_probe${suffix}" \
             --query-probe "target/debug/examples/projection_output${suffix}" \
+            --folder-probe "target/debug/examples/folder_read_probe${suffix}" \
             --artifacts "$RUNNER_TEMP/read-parity"
       - name: Check optional broker and safe-code consumer without authenticating
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-identity')

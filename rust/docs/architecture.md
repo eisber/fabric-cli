@@ -25,6 +25,12 @@ The CLI read-command library now consumes the SDK facade, CLI context, CLI
 output and CLI query libraries. `PythonQuery` connects native evaluation and GET
 path discovery to the actual read host; no-query LS preserves source columns.
 Its test-only shared HTTP consumer uses `fabric-sdk-http`.
+An additive borrowed `FolderReadHost`, selected with `ReadHost::with_folders`,
+composes the same SDK, context, query and output layers for folder-aware LS.
+It preserves existing host struct literals and delegates other reads, including
+source-routed GET, rather than duplicating their orchestration. Its bounded
+folder graph and command-local snapshot boundaries are documented in the
+[folder-command matrix](folder-command-compatibility.md).
 These are allowed CLI-to-SDK/CLI edges, not a dependency on core or identity
 implementation. The binary recognizes reads but has no production host.
 The initial five crates are not a fixed count or a maximum. Workspace membership

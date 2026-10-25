@@ -88,13 +88,17 @@ When `fabric-cli` is selected, native CI also compares the built `read_probe`
 and `projection_output` consumers against the independent pinned Python
 references. This runs on each selected Windows, Linux and macOS runner, after
 the existing Rust checks. Python 3.13 and development-only `jmespath==1.0.1`
+and `cachetools==5.5.2`
 are installed for that comparison; neither becomes a Rust product dependency.
 The affected-crate selector and Python product workflows are unchanged.
 
 [`run_read_parity.py`](../tests/compatibility/run_read_parity.py) requires all
 current command comparisons, additive metadata cases, all specialized collection
-observations, command guards, actual native query observations, query comparisons
-and query guards. Both command comparators explicitly require
+observations, command guards, actual native query observations, query comparisons, query guards, and the actual
+`folder_read_probe` with its independent folder-command comparisons and guards.
+The native checkout retains full Git history so the reviewed nine-ID folder
+evidence can verify its original Python and Rust baseline blobs.
+Both command comparators explicitly require
 `--request-mode source-routed`; the historical generic-route mode is not a
 fallback for a failing current probe. Every subprocess
 has a finite timeout; nonzero exits, timeouts, missing probes and observation
@@ -110,7 +114,7 @@ development requirement in an isolated environment:
 ```powershell
 cargo build --offline --locked -p fabric-cli -p fabric-cli-query --examples
 python -B -m unittest discover -s tests\compatibility -p test_run_read_parity.py -v
-python -B tests\compatibility\run_read_parity.py --read-probe target\debug\examples\read_probe.exe --query-probe target\debug\examples\projection_output.exe --artifacts $artifactDirectory
+python -B tests\compatibility\run_read_parity.py --read-probe target\debug\examples\read_probe.exe --query-probe target\debug\examples\projection_output.exe --folder-probe target\debug\examples\folder_read_probe.exe --artifacts $artifactDirectory
 ```
 
 Use the actual private target and native executable suffix. The shared-host

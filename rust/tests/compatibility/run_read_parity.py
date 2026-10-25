@@ -16,7 +16,9 @@ WORKSPACE = HERE.parents[1]
 TIMEOUT_SECONDS = 300
 
 
-def run(read_probe: Path, query_probe: Path, artifacts: Path) -> None:
+def run(
+    read_probe: Path, query_probe: Path, folder_probe: Path, artifacts: Path
+) -> None:
     """Execute every comparison, stopping on any failed or timed-out process.
 
     Probes must already be built. This runner neither installs dependencies nor
@@ -25,6 +27,7 @@ def run(read_probe: Path, query_probe: Path, artifacts: Path) -> None:
     """
     read_probe = read_probe.resolve(strict=True)
     query_probe = query_probe.resolve(strict=True)
+    folder_probe = folder_probe.resolve(strict=True)
     artifacts.mkdir(parents=True, exist_ok=True)
     observations = artifacts.resolve() / "query-observations.json"
     environment = {
@@ -81,6 +84,17 @@ def run(read_probe: Path, query_probe: Path, artifacts: Path) -> None:
         "test_reference.py",
         "-v",
     )
+    python(HERE / "folder_commands" / "reference.py", "--rust-probe", folder_probe)
+    python(
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        HERE / "folder_commands",
+        "-p",
+        "test_reference.py",
+        "-v",
+    )
 
 
 def main() -> None:
@@ -88,12 +102,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--read-probe", type=Path, required=True)
     parser.add_argument("--query-probe", type=Path, required=True)
+    parser.add_argument("--folder-probe", type=Path, required=True)
     parser.add_argument("--artifacts", type=Path, required=True)
     arguments = parser.parse_args()
-    for probe in (arguments.read_probe, arguments.query_probe):
+    for probe in (arguments.read_probe, arguments.query_probe, arguments.folder_probe):
         if not probe.is_file():
             parser.error(f"Native probe does not exist: {probe}")
-    run(arguments.read_probe, arguments.query_probe, arguments.artifacts)
+    run(
+        arguments.read_probe,
+        arguments.query_probe,
+        arguments.folder_probe,
+        arguments.artifacts,
+    )
 
 
 if __name__ == "__main__":
