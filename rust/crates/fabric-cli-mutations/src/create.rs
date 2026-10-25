@@ -333,12 +333,11 @@ fn add_item_payload(
                 "payloadType": "InlineBase64",
             }]});
         }
-        "SQLDatabase"
-            if params
-                .keys()
-                .any(|key| key != "description" && key != "run") =>
-        {
-            return Err(unported("SQLDatabase creation options"));
+        "SQLDatabase" => {
+            let creation = crate::sql_database::creation_payload(params)?;
+            if creation.as_object().is_some_and(|value| !value.is_empty()) {
+                payload["creationPayload"] = creation;
+            }
         }
         _ => {}
     }
@@ -367,7 +366,7 @@ pub(crate) fn lowercase_map(params: &Map<String, Value>) -> Map<String, Value> {
         .collect()
 }
 
-fn truthy(value: &Value) -> bool {
+pub(crate) fn truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(value) => *value,

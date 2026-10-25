@@ -15,15 +15,15 @@ not central parser/front-door integration or live parity.
 | --- | --- | --- |
 | mkdir/create workspace | Parameter help, duplicate/capacity checks, lowercased payload, actual POST, output/cache effects | Central dispatch, live scope |
 | mkdir/create folder | Root/nested parent omission, optional description, POST, output/cache effects | Central dispatch |
-| mkdir/create item | Typed collection, generic metadata, folder ID, Lakehouse/Warehouse/Notebook/MountedDataFactory payloads, explicit KQL/DTB parent paths, shared bounded operation/result waiting | Templates/dependencies, SQL modes, all options, central dispatch |
+| mkdir/create item | Typed collection, generic metadata, folder ID, Lakehouse/Warehouse/Notebook/MountedDataFactory payloads, SQLDatabase New/Restore/RestoreDeleted modes, explicit KQL/DTB parent paths, shared source-synchronous waiting | Templates/dependencies, remaining type-specific options, central dispatch |
 | set workspace | Enriched-read ordering, blocklist/simple path, top-level projection, separate Spark PATCH | Main enriched read adapter, central dispatch |
 | set item/folder | Prompt ordering, metadata PATCH, renamed cache/context effect | Definition seam and friendly Notebook aliases |
 | rm/del item/folder | Confirmation/force/hard, exact route/query, accepted/completed messages, cache effects | Central context transition |
 | rm/del workspace | Forced workspace DELETE only | Non-force item selection, bulk/tenant orchestration |
 | exists workspace/item/folder | Truthy context ID; string message, no extra request | Central dispatch |
 | cp/copy, mv/move | SDK folder move endpoint only | Actual command orchestration and definition seam |
-| assign/unassign | SDK capacity assignment endpoints only | CLI validation/orchestration |
-| start/stop | Not implemented | Capacity ARM and mirrored-database state machine |
+| assign/unassign | Capacity SDK endpoints and CLI confirmation/linkage checks; primary metadata only | Domain branch, central dispatch |
+| start/stop | Mirrored-database POST status/action routes, state/force/prompt checks, source stop-substring quirk | Capacity ARM branch, central dispatch |
 | ln/mklink | Not implemented | Shortcut command/SDK operations |
 | OneLake/hidden resource branches | Not part of first mutation slice | Dedicated focused SDK, context and CLI consumers |
 

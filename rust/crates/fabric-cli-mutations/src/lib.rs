@@ -8,7 +8,9 @@
 
 mod create;
 mod execution;
+mod lifecycle;
 mod set;
+mod sql_database;
 
 use fabric_cli_context::{Element, NodeKind};
 use fabric_cli_output::{OutputInput, OutputStatus};

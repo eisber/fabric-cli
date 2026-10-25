@@ -77,6 +77,18 @@ class Resource:
         return self._id
 
 
+class WorkspaceResource(Resource):
+    pass
+
+
+class ItemResource(Resource):
+    pass
+
+
+class FolderResource(Resource):
+    pass
+
+
 def reference(case: dict[str, Any]) -> dict[str, Any]:
     """Run original handlers/client/helpers using only synthetic collaborators."""
     requests: list[dict[str, Any]] = []
@@ -85,6 +97,9 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
         ERROR_ALREADY_EXISTS="AlreadyExists", ERROR_INVALID_INPUT="InvalidInput",
         ERROR_NOT_SUPPORTED="NotSupported", FAB_DEFAULT_CAPACITY_ID="default",
         FAB_CAPACITY_NAME_NONE="none", INFO_EXISTS_TRUE="true", INFO_EXISTS_FALSE="false",
+        ERROR_ALREADY_RUNNING="AlreadyRunning", ERROR_NOT_RUNNING="NotRunning",
+        SQL_DATABASE_CREATION_MODE_NEW="New", SQL_DATABASE_CREATION_MODE_RESTORE="Restore",
+        SQL_DATABASE_CREATION_MODE_RESTORE_DELETED="RestoreDeletedDatabase",
     )
     ui = SimpleNamespace(
         print_grey=lambda *_: None, print_warning=lambda *_: None, print=lambda *_: None,
@@ -103,8 +118,8 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
                   ErrorMessages=SimpleNamespace(Mkdir=errors.MkdirErrors))
     types = load("core/fab_types.py", dict(common, Enum=enum.Enum, auto=enum.auto, List=list))
     kind = case["kind"]
-    ws = Resource("Team", "Workspace", case.get("id") if kind == "Workspace" else "ws")
-    element = ws if kind == "Workspace" else Resource("Thing", kind, case.get("id"))
+    ws = WorkspaceResource("Team", "Workspace", case.get("id") if kind == "Workspace" else "ws")
+    element = ws if kind == "Workspace" else (FolderResource if kind == "Folder" else ItemResource)("Thing", kind, case.get("id"))
     element.workspace = ws
     element.parent = ws
     if kind not in ("Workspace", "Folder"):
@@ -117,9 +132,10 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
 
     def request(args: argparse.Namespace, data: str | None = None, **_: Any) -> SimpleNamespace:
         uri = args.uri
-        if args.request_params:
+        request_params = getattr(args, "request_params", {})
+        if request_params:
             from urllib.parse import urlencode
-            uri += "?" + urlencode(args.request_params)
+            uri += "?" + urlencode(request_params)
         requests.append({"method": args.method, "uri": uri,
                          "payload": json.loads(data) if data else None,
                          "wait": source_wait(args)})
@@ -130,11 +146,12 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
     ws_api = load("client/fab_api_workspace.py", dict(common, fabric_api=api, api_utils=api_utils))
     item_api = load("client/fab_api_item.py", dict(common, fabric_api=api, api_utils=api_utils))
     folder_api = load("client/fab_api_folders.py", dict(common, fabric_api=api, api_utils=api_utils))
+    mirroring_api = load("client/fab_api_mirroring.py", dict(common, fabric_api=api, api_utils=api_utils))
     utils = SimpleNamespace(remove_keys_from_dict=lambda value, keys: [value.pop(key, None) for key in keys])
     mkdir_utils = load("utils/fab_cmd_mkdir_utils.py", dict(
         common, ItemType=types.ItemType, fab_logger=SimpleNamespace(log_warning=lambda *_: None)
     ))
-    env = dict(common, Workspace=Resource, Folder=Resource, Item=Resource, FabricElement=Resource,
+    env = dict(common, Workspace=WorkspaceResource, Folder=FolderResource, Item=ItemResource, FabricElement=Resource,
                workspace_api=ws_api, item_api=item_api, folder_api=folder_api, utils=utils,
                format_mapping=types.format_mapping, mkdir_utils=mkdir_utils,
                fab_state_config=SimpleNamespace(get_config=lambda *_: "capacity"))
@@ -155,6 +172,16 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
                     load("commands/fs/rm/fab_fs_rm_item.py", dict(env, rm_utils=rm_utils)).exec(element, args, case.get("force", False))
             case "exists":
                 load("commands/fs/fab_fs_exists.py", env)._check_if_element_exists(element, args)
+            case "start" | "stop":
+                verb = case["command"]
+                load(f"commands/fs/{verb}/fab_fs_{verb}_item.py", dict(
+                    env, mirroring_api=mirroring_api, ItemType=types.ItemType
+                )).exec(element, args, case.get("force", False))
+            case "assign" | "unassign":
+                verb = case["command"]
+                capacity = Resource("Chosen", "Capacity", case["capacity_id"])
+                capacity.name = case["capacity_name"]
+                load(f"commands/fs/{verb}/fab_fs_{verb}_capacity.py", env).exec(capacity, element, args, case.get("force", False))
             case _:
                 raise ValueError("unsupported reference case")
     except CLIError as failure:
@@ -176,6 +203,37 @@ def main() -> None:
                 cases.append(dict(kind=kind, command="remove", id="id", force=force, confirm=confirm, status=status))
     cases.append(dict(kind="Workspace", command="create", params={"run": "true"}, unassigned=True, status=201, data={"id": "new"}))
     cases.append(dict(kind="Notebook", command="remove", id="id", hard=True, force=True, status=200))
+    for params in [
+        {"run": "true"},
+        {"creationMode": "New"},
+        {"creationMode": "nEw", "backupRetentionDays": " +007 ", "collation": ""},
+        {"creationMode": "New", "backupRetentionDays": "1_0"},
+        {"creationMode": "New", "backupRetentionDays": "1__0"},
+        {"creationMode": "New", "backupRetentionDays": "-1"},
+        {"creationMode": "New", "backupRetentionDays": "18446744073709551615"},
+        {"creationMode": "Restore", "restorePointInTime": "2000-01-01T00:00:00Z", "itemId": "source", "workspaceId": "source-ws"},
+        {"creationMode": "Restore", "restorePointInTime": "2000-01-01T00:00:00Z", "itemId": "source", "workspaceId": "source-ws", "referenceType": "ById"},
+        {"creationMode": "RestoreDeletedDatabase", "restorableDeletedDatabaseName": "Deleted", "restorePointInTime": "2000-01-01T00:00:00Z"},
+        {"backupRetentionDays": "ignored-without-mode"},
+        {"creationMode": "Unsupported"},
+        {"creationMode": "New", "backupRetentionDays": "not-an-integer"},
+        {"creationMode": "Restore"},
+        {"creationMode": "RestoreDeletedDatabase", "restorableDeletedDatabaseName": ""},
+    ]:
+        cases.append(dict(kind="SQLDatabase", command="create", params=params, status=201, data={"id": "new"}))
+    for verb, states in [("start", ["Stopped", "Initialized", "Running"]), ("stop", ["Running", "Run", "", "Stopped"])]:
+        for state in states:
+            for force, confirm in [(True, True), (False, False)]:
+                cases.append(dict(kind="MirroredDatabase", command=verb, id="id", force=force, confirm=confirm, status=200, data={"status": state}))
+    for verb in ["assign", "unassign"]:
+        for force, confirm in [(True, True), (False, False), (False, True)]:
+            cases.append(dict(kind="Workspace", command=verb, id="ws", capacity_id="cap", capacity_name="Chosen.Capacity",
+                              force=force, confirm=confirm, status=200, data={"capacityId":"cap"}))
+    cases.append(dict(kind="Workspace", command="unassign", id="ws", capacity_id="other", capacity_name="Other.Capacity",
+                      force=True, status=200, data={"capacityId":"cap"}))
+    for verb in ["assign", "unassign"]:
+        cases.append(dict(kind="Notebook", command=verb, id="item", capacity_id="cap", capacity_name="Chosen.Capacity",
+                          force=True, status=200, data={"capacityId":"cap"}))
     expected = [reference(case) for case in cases]
     result = subprocess.run([args.probe], input="".join(json.dumps(case) + "\n" for case in cases),
                             text=True, encoding="utf-8", capture_output=True, check=True)

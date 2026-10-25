@@ -14,7 +14,43 @@ use serde_json::Value;
 pub struct ItemMutations;
 
 impl ItemMutations {
-    /// Create through the type-specific collection and wait for actual item data.
+    /// Read mirroring status using the source's POST action, not an invented GET.
+    ///
+    /// # Errors
+    /// Rejects unsafe IDs and preserves typed execution/service failures.
+    pub async fn mirroring_status(
+        executor: &mut dyn ResourceOperations,
+        workspace: &str,
+        item: &str,
+    ) -> Result<ResourceOutcome, ResourceError> {
+        Self::mirroring_action(executor, workspace, item, "getMirroringStatus").await
+    }
+
+    /// Start mirroring after the CLI has applied its state/prompt policy.
+    ///
+    /// # Errors
+    /// Rejects unsafe IDs and preserves operation failure/uncertainty.
+    pub async fn start_mirroring(
+        executor: &mut dyn ResourceOperations,
+        workspace: &str,
+        item: &str,
+    ) -> Result<ResourceOutcome, ResourceError> {
+        Self::mirroring_action(executor, workspace, item, "startMirroring").await
+    }
+
+    /// Stop mirroring after the CLI has applied its state/prompt policy.
+    ///
+    /// # Errors
+    /// Rejects unsafe IDs and preserves operation failure/uncertainty.
+    pub async fn stop_mirroring(
+        executor: &mut dyn ResourceOperations,
+        workspace: &str,
+        item: &str,
+    ) -> Result<ResourceOutcome, ResourceError> {
+        Self::mirroring_action(executor, workspace, item, "stopMirroring").await
+    }
+
+    /// Create through the type-specific collection with Python's synchronous policy.
     ///
     /// # Errors
     /// Rejects unsafe IDs/payloads and preserves incomplete or failed operations.
@@ -29,6 +65,22 @@ impl ItemMutations {
                 ResourceMethod::Post,
                 &["workspaces", workspace, collection.as_str()],
                 Some(payload),
+                CompletionPolicy::PythonSynchronous,
+            )?)
+            .await
+    }
+
+    async fn mirroring_action(
+        executor: &mut dyn ResourceOperations,
+        workspace: &str,
+        item: &str,
+        action: &str,
+    ) -> Result<ResourceOutcome, ResourceError> {
+        executor
+            .execute(ResourceOperation::new(
+                ResourceMethod::Post,
+                &["workspaces", workspace, "mirroredDatabases", item, action],
+                None,
                 CompletionPolicy::PythonSynchronous,
             )?)
             .await

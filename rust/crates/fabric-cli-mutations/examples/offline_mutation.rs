@@ -143,6 +143,36 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
             .await
         }
         "exists" => MutationHost::exists(&element),
+        "start" => {
+            host.start(&element, input["force"].as_bool().unwrap_or(false))
+                .await
+        }
+        "stop" => {
+            host.stop(&element, input["force"].as_bool().unwrap_or(false))
+                .await
+        }
+        "assign" => {
+            host.assign_capacity(
+                &element,
+                input["capacity_id"].as_str().ok_or("missing capacity")?,
+                input["capacity_name"]
+                    .as_str()
+                    .ok_or("missing capacity name")?,
+                input["force"].as_bool().unwrap_or(false),
+            )
+            .await
+        }
+        "unassign" => {
+            host.unassign_capacity(
+                &element,
+                input["capacity_id"].as_str().ok_or("missing capacity")?,
+                input["capacity_name"]
+                    .as_str()
+                    .ok_or("missing capacity name")?,
+                input["force"].as_bool().unwrap_or(false),
+            )
+            .await
+        }
         _ => return Err("unsupported probe command".into()),
     };
     Ok(match result {

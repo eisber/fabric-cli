@@ -194,6 +194,24 @@ pub trait ResourceOperations: Send {
 pub struct WorkspaceMutations;
 
 impl WorkspaceMutations {
+    /// Read primary workspace metadata without optional enrichment requests.
+    ///
+    /// # Errors
+    /// Rejects unsafe IDs and preserves source-synchronous service failures.
+    pub async fn metadata(
+        executor: &mut dyn ResourceOperations,
+        workspace: &str,
+    ) -> Result<ResourceOutcome, ResourceError> {
+        executor
+            .execute(ResourceOperation::new(
+                ResourceMethod::Get,
+                &["workspaces", workspace],
+                None,
+                CompletionPolicy::PythonSynchronous,
+            )?)
+            .await
+    }
+
     /// Create a workspace from an exact source-shaped JSON payload.
     ///
     /// # Errors

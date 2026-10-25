@@ -51,9 +51,22 @@ The entire assigned generic-verb family remains backlog until actual front-door
 integration and independent request/output contracts cover all resources/options.
 This bounded slice does not include tenant/workspace bulk selection, definition
 SET, Report/SemanticModel/MirroredDatabase templates, automatic dependent-item
-creation, all SQLDatabase modes, hidden administrative resource branches,
-OneLake CLI composition, copy/move, shortcuts, lifecycle or assignment commands.
+creation, hidden administrative resource branches, OneLake CLI composition,
+copy/move, shortcuts, capacity ARM lifecycle or domain assignment commands.
 Those branches must not be routed to successful-looking generic fallbacks.
+
+SQLDatabase creation includes New, Restore and RestoreDeletedDatabase modes,
+source required-parameter failures, default `ById`, optional collation and signed/
+underscored integer retention values. Integer payloads retain the existing
+i64/u64 JSON boundary; arbitrary Python big integers are not silently rounded.
+Supplying SQL options without a creation mode preserves the source's omission.
+
+Mirrored-database `start`/`stop` read status through POST before confirmation;
+force never skips the state check. The source stop substring-membership quirk
+is preserved rather than silently fixed. Capacity assignment uses only an
+explicitly selected capacity ID/full name. Unassignment reads primary workspace
+metadata and validates the actual linkage before confirmation, without enriched
+metadata calls or ambient capacity discovery.
 
 The first SDK path boundary explicitly rejects URL/traversal/encoded identifiers.
 This is a safety boundary, not a claim of Python opaque-path equivalence.
