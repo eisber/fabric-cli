@@ -25,7 +25,7 @@ not central parser/front-door integration or live parity.
 | assign/unassign | Capacity SDK endpoints and CLI confirmation/linkage checks; primary metadata only | Domain branch, central dispatch |
 | start/stop | Mirrored-database POST status/action routes, state/force/prompt checks, source stop-substring quirk | Capacity ARM branch, central dispatch |
 | ln/mklink | Not implemented | Shortcut command/SDK operations |
-| OneLake/hidden resource branches | Not part of first mutation slice | Dedicated focused SDK, context and CLI consumers |
+| OneLake dependent reads | Focused SDK list/read/HEAD plus concrete shared HTTP adapter; CLI `ls` projection/query/long and `exists` request/output consumers | General GET, item-root/hidden resolution, mutations, shortcuts, central dispatch |
 
 `ResourceOutcome::Accepted` is never completion evidence. Python's acceptance
 messages/cache eviction are preserved independently. `WaitForResult` may succeed

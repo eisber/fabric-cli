@@ -86,6 +86,27 @@ the SDK's Display implementation never automatically emits that untrusted data.
 The development-only error comparison executes the pinned `do_request`,
 exception classes and `handle_exceptions` decorator with synthetic auth, network
 and time. No real authentication module or ambient config is imported.
+
+## OneLake read dependencies
+
+`OneLakeReadHost` composes `OneLakeClient` and an injected `OneLakeExecutor` for
+the OneLake `ls` and `exists` branches, using the real shared HTTP adapter in its
+offline executable consumer. It returns existing `OutputInput` and the source's
+`show_headers` flag; it does not edit the separately owned front door.
+LS mutates names/types before applying the existing query evaluator, or projects
+the source columns in order for short/long output. Page/service row order and
+duplicates are preserved. `.Shortcut` and `.shortcut` are removed from all local
+path occurrences exactly as pinned Python does; string `"false"` remains truthy.
+EXISTS sends the source directory-list request: a complete empty listing is
+`"true"`, a real 404 is `"false"`, and permissions, malformed/incomplete data,
+credentials, cancellation and other execution failures remain typed errors.
+Malformed/absent path lists explicitly follow the SDK safety boundary rather
+than Python's success-shaped fallback.
+
+General OneLake GET metadata, item-root enumeration, hidden-resource resolution,
+OneLake writes and shortcut metadata/target orchestration remain separate backlog
+items. HTTP errors beyond the source's standard 401/403/404 diagnostics retain
+the SDK's sanitized message; full storage-body diagnostics are not claimed.
 The original-Python comparison executes pinned request/handler functions; its
 wait flag comes from the original `do_request` assignment, not from whether an
 individual handler explicitly assigned `args.wait`.

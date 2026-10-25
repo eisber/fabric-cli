@@ -421,6 +421,8 @@ dependencies = [
  "fabric-sdk-folders",
  "fabric-sdk-http",
  "fabric-sdk-items",
+ "fabric-sdk-onelake",
+ "fabric-sdk-onelake-http",
  "fabric-sdk-operations",
  "fabric-sdk-workspaces",
  "jpx-core",

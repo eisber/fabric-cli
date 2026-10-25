@@ -444,7 +444,17 @@ impl OneLakeClient {
             202..=299 => Err(OneLakeError::InvalidResponse),
             status => Err(OneLakeError::Http {
                 status,
-                code: header(&response.headers, "x-ms-error-code").map(str::to_owned),
+                code: if matches!(status, 401 | 403) {
+                    header(&response.headers, "x-ms-public-api-error-code")
+                        .filter(|code| !code.is_empty())
+                        .or_else(|| {
+                            header(&response.headers, "x-ms-error-code")
+                                .filter(|code| !code.is_empty())
+                        })
+                        .map(str::to_owned)
+                } else {
+                    header(&response.headers, "x-ms-error-code").map(str::to_owned)
+                },
             }),
         }
     }
