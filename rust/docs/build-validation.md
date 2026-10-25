@@ -92,8 +92,11 @@ are installed for that comparison; neither becomes a Rust product dependency.
 The affected-crate selector and Python product workflows are unchanged.
 
 [`run_read_parity.py`](../tests/compatibility/run_read_parity.py) requires all
-current command comparisons, additive metadata cases, command guards, actual
-native query observations, query comparisons and query guards. Every subprocess
+current command comparisons, additive metadata cases, all specialized collection
+observations, command guards, actual native query observations, query comparisons
+and query guards. Both command comparators explicitly require
+`--request-mode source-routed`; the historical generic-route mode is not a
+fallback for a failing current probe. Every subprocess
 has a finite timeout; nonzero exits, timeouts, missing probes and observation
 write failures fail the native job and therefore the existing final gate.
 There is no historical-mode fallback, fixture update, waived comparison or

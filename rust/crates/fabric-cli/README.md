@@ -48,8 +48,12 @@ query instead sees sorted source rows before column projection, through
 provider, or supply that provider directly. It uses the real
 `fabric-cli-query` library rather than a callback stub.
 
-Generic item `get` resolves a path using the supplied snapshot and actually
-calls the SDK generic `/items/{id}` operation through `get_item_metadata`.
+Item metadata `get` resolves a path using the supplied snapshot and actually
+calls the source-specific SDK collection through
+`get_item_metadata_from_collection`. Its finite `ItemCollection` maps the
+source's exact collection spelling; the CLI preserves its separate 13 rejected
+item types before authentication. Existing generic SDK methods remain available
+without changing their `/items/{id}` routes.
 It passes the validated, ordered parsed HTTP object directly to the projection
 boundary, without reserializing the legacy typed `Item`. Python GET with no query discovers JSON property
 paths; it does **not** return the object unchanged. The built-in provider maps
@@ -67,8 +71,8 @@ production host, independently of this completed query composition.
 
 ## Explicit limits
 
-The first slice is tenant/workspace LS and generic item metadata GET, not the
-whole Python `get` command. Python specialized item endpoints, definitions,
+The first slice is tenant/workspace LS and source-routed item metadata GET, not
+the whole Python `get` command. Definitions,
 sensitivity-label confirmation, connections, schedules, and environment/mirroring
 augmentation are not ported here. Generic metadata is not advertised as a full
 item export. Python's unsupported GET item types are rejected.
@@ -89,10 +93,11 @@ folder parent loading/presentation belongs to the separate folder slice.
 SDK origin, pagination, malformed-response and identifier safety exceptions
 remain in force. In particular, foreign continuation URIs fail instead of
 being ignored, malformed pages return explicit typed failures, and no SDK
-partial progress is printed as a complete result. Generic GET preserves source
+partial progress is printed as a complete result. Metadata GET preserves source
 metadata field order, unknown/null values and JSON number types before native
-projection. Specialized endpoint routing remains a separate difference; matching
-metadata output does not establish full GET parity.
+projection. The six former metadata request-URI differences are closed; matching
+the helper's requests and output does not establish full GET parity. See the
+[source-routing matrix](../../docs/specialized-get-compatibility.md).
 
 See [command compatibility](../../docs/read-command-compatibility.md).
 `examples/read_probe.rs` is a test subprocess harness over real SDK calls and an

@@ -117,9 +117,18 @@ when the host selects `with_default_projection()`. Hosts may override that
 provider or explicitly opt out with `NoQuery`; neither choice configures
 production credentials, transport or context.
 
-GET specialized URI, definitions, connections/schedules and specialized
-augmentation are outside this bounded generic metadata contract. Native generic
-GET tests prove the metadata helper boundary, not full command parity.
+The [source-routed metadata follow-on](specialized-get-compatibility.md) now
+selects the exact pinned collection URI for all 31 command-supported types and
+preserves the 13 source command rejections. Both command comparators explicitly
+use `--request-mode source-routed`; historical generic-route and metadata-order
+evidence remains unchanged. The original 25 observations now have 22 fully
+exact outcomes and three unchanged SDK safety differences, with no URI-only,
+metadata-order or unsupported-projection differences. The earlier counts above
+record their respective historical checkpoints, not current routing.
+
+Definitions, connections/schedules and specialized augmentation remain outside
+this bounded metadata contract. Source-exact metadata-helper requests and output
+are not full `fab_fs_get_item.exec` parity.
 
 Root long enrichment reuses its original workspace listing rather than
 repeating Python's workspace request. It therefore uses an explicit coherent

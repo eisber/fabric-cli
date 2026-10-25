@@ -42,8 +42,15 @@ def run(read_probe: Path, query_probe: Path, artifacts: Path) -> None:
             timeout=TIMEOUT_SECONDS,
         )
 
-    python(HERE / "commands" / "reference.py", "--rust-probe", read_probe)
-    python(HERE / "commands" / "metadata_reference.py", "--rust-probe", read_probe)
+    for reference in ("reference.py", "metadata_reference.py"):
+        python(
+            HERE / "commands" / reference,
+            "--request-mode",
+            "source-routed",
+            "--rust-probe",
+            read_probe,
+        )
+    python(HERE / "commands" / "specialized_reference.py", "--rust-probe", read_probe)
     python(
         "-m",
         "unittest",

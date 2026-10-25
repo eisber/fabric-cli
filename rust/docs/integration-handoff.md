@@ -11,6 +11,35 @@ branch remains intact; references to it in dated evidence are historical.
 
 ## Read-command, query and folder integration
 
+### Source-routed GET integration
+
+Exact lane commit `93b67dee3c1e8ecce9f11bd14bb2b9db470ad645` is merged without
+replaying or removing the four crate-local helper visibility declarations from
+`cc74d0244919d2aee4fa037ce7a0e5bf63c43141`. The finite SDK collection mapping
+reuses the existing GET policies and preserves generic SDK methods. The actual
+CLI selects source-specific metadata routes while retaining all 13 original
+command rejections. Definitions, augmentation and export remain out of scope.
+
+The coordinator independently validated the merged Windows x64 offline tree:
+**229 non-documentation Rust tests and seven doctests**, strict all-target
+workspace Clippy and formatting passed. All 25 actual command observations now
+have **22 fully source-exact outcomes and three unchanged SDK safety
+differences**, with no URI-only, metadata-order or projection-provider gaps.
+Four additional raw-metadata outcomes match including their requests. All 176
+Python collection/status observations and 124 supported native command outcomes
+passed, along with 60 command source/guard tests. Original item evidence remains
+56 observations plus seven guards; query evidence remains 108 exact of 118 with
+ten explicit unsupported cases and all 15 controls passing.
+
+The native CI runner explicitly selects `--request-mode source-routed` for both
+command comparators and executes the additional collection reference. Historical
+generic-route and typed/no-projection evidence remains unchanged and is never a
+fallback for the current probe. Runner controls cover every one of its seven
+process stages. Original protected expectations, source pins, Python product
+code, Cargo manifests and lockfile are unchanged. The shared validation mutex
+was released normally; the exact published checkpoint and fresh native CI
+receipt are supplied separately.
+
 ### Metadata fidelity follow-on
 
 The integration owner reviewed and fast-forwarded exact lane commit
