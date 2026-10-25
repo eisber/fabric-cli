@@ -21,6 +21,17 @@ page/item/response work, and returns typed incomplete errors with partial
 progress. Retry, timeout and long-running-operation policy are not implemented
 by this offline executor seam. It is not a full deployment API or Python CLI port.
 
+## Ordered workspace metadata GET
+
+The additive `WorkspaceClient::get_workspace_metadata` reads primary metadata,
+managed private endpoints, Spark settings and role assignments through the same
+executor, read policies and bounded pager. `WorkspaceMetadataResult` retains the
+ordered object and typed per-step omission outcomes; it never reports a safety
+failure as complete partial metadata. The legacy LIST models and public struct
+literals remain unchanged. See the
+[source/consumer matrix](../../docs/workspace-get-compatibility.md) for API shape,
+source quirks, exact-versus-safety boundaries and independent offline evidence.
+
 ## Ownership and dependencies
 
 The crate belongs to the `sdk` layer. Its production dependencies are

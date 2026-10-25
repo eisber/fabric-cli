@@ -149,7 +149,14 @@ removed by the output library. Request IDs/headers/provider diagnostic text are
 not printed. Caller cancellation remains an ordinary command failure (exit 1),
 not a keyboard interrupt (exit 2).
 
-Text output, `get --output/--verbose/--force`, workspace/folder/OneLake/virtual
+The additive [workspace metadata GET](workspace-get-compatibility.md) now reads
+the primary workspace and independently enriches managed private endpoints,
+Spark settings and role assignments before the existing query/output boundary.
+Optional source omissions have typed SDK observations; identity, cancellation,
+execution and safety-bound failures remain explicit command failures.
+The folder wrapper delegates workspace GET to the same implementation.
+
+Text output, `get --output/--verbose/--force`, folder/OneLake/virtual
 collection GET/LS and folder-listing configuration fail explicitly. No live
 Fabric calls, selected production HTTP/TLS/runtime, credentials, installation,
 release, or cross-platform parity is claimed.

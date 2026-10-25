@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Offline workspace-list execution with caller-owned HTTP policy and runtime.
+//! Workspace listing and shared bounded read/paging policies.
 
 use crate::{
     Page, WorkspaceClient,
@@ -115,7 +115,7 @@ pub trait WorkspaceExecutor: Send + Sync {
 pub struct WorkspaceListLimits {
     /// Maximum successfully decoded pages.
     pub max_pages: NonZeroUsize,
-    /// Maximum accumulated workspace items, including duplicates.
+    /// Maximum accumulated items per collection, including duplicates.
     pub max_items: NonZeroUsize,
     /// Maximum bytes per response, also passed to the executor.
     pub max_response_bytes: NonZeroUsize,
@@ -268,11 +268,16 @@ impl WorkspaceClient {
         limits: WorkspaceListLimits,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<WorkspaceList, WorkspaceListError> {
-        let mut progress = WorkspaceList::default();
+        let mut progress = PageProgress::default();
         let mut cancelled = pin!(cancelled);
         let result = self
             .collect_workspaces(executor, limits, &mut progress, cancelled.as_mut())
             .await;
+        let progress = WorkspaceList {
+            value: progress.value,
+            pages_received: progress.pages_received,
+            next_token: progress.next_token,
+        };
         match result {
             Ok(()) => Ok(progress),
             Err(kind) => Err(WorkspaceListError {
@@ -286,14 +291,13 @@ impl WorkspaceClient {
         &self,
         executor: &dyn WorkspaceExecutor,
         limits: WorkspaceListLimits,
-        progress: &mut WorkspaceList,
+        progress: &mut PageProgress<Workspace>,
         mut cancelled: Pin<&mut (impl Future<Output = ()> + Send)>,
     ) -> Result<(), WorkspaceListErrorKind> {
         or_cancel(std::future::ready(()), cancelled.as_mut()).await?;
         if self.selection().audience() != Audience::Fabric {
             return Err(WorkspaceListErrorKind::InvalidAudience);
         }
-        let mut seen = HashSet::new();
         loop {
             let mut url = Url::parse(WORKSPACES_URL)
                 .map_err(|_| WorkspaceListErrorKind::InvalidContinuation)?;
@@ -301,65 +305,110 @@ impl WorkspaceClient {
                 url.query_pairs_mut()
                     .append_pair("continuationToken", token);
             }
-            let scopes = [Audience::Fabric.scope()];
-            let token = or_cancel(
-                self.credential().get_token(&scopes, None),
-                cancelled.as_mut(),
-            )
-            .await?
-            .map_err(|_| WorkspaceListErrorKind::Credential)?;
-            let response = or_cancel(
-                executor.execute(WorkspaceRequest {
-                    url,
-                    token: &token,
-                    max_response_bytes: limits.max_response_bytes,
-                }),
-                cancelled.as_mut(),
-            )
-            .await?
-            .map_err(|error| match error {
-                WorkspaceExecutionError::ResponseLimit => WorkspaceListErrorKind::ResponseLimit,
-                error => WorkspaceListErrorKind::Execution(error),
-            })?;
-            or_cancel(std::future::ready(()), cancelled.as_mut()).await?;
-            if response.body.len() > limits.max_response_bytes.get() {
-                return Err(WorkspaceListErrorKind::ResponseLimit);
-            }
-            match response.status {
-                200 | 201 => {}
-                202 | 204 => {
-                    return Err(WorkspaceListErrorKind::UnsupportedStatus(response.status));
-                }
-                _ => return Err(service_failure(&response)),
-            }
+            let response = self
+                .read_workspace(executor, url, limits.max_response_bytes, cancelled.as_mut())
+                .await?;
             let page: Page<Workspace> = serde_json::from_slice(&response.body)
                 .map_err(|_| WorkspaceListErrorKind::InvalidResponse)?;
-            if page.value.len() > limits.max_items.get() - progress.value.len() {
-                return Err(WorkspaceListErrorKind::ItemLimit);
-            }
-            progress.value.extend(page.value);
-            progress.pages_received += 1;
-            progress.next_token = header(&response, "x-ms-continuation")
-                .map(str::to_owned)
-                .or(page.continuation_token)
-                .filter(|token| !token.is_empty());
-            let Some(next) = &progress.next_token else {
+            if !progress.append(page, &response, limits, "/v1/workspaces")? {
                 return Ok(());
-            };
-            if let Some(uri) = page.continuation_uri {
-                validate_continuation(&uri)?;
-            }
-            if !seen.insert(next.clone()) {
-                return Err(WorkspaceListErrorKind::RepeatedContinuation);
-            }
-            if progress.pages_received >= limits.max_pages.get() {
-                return Err(WorkspaceListErrorKind::PageLimit);
             }
         }
     }
 }
 
-async fn or_cancel<T>(
+pub(crate) struct PageProgress<T> {
+    pub(crate) value: Vec<T>,
+    pub(crate) pages_received: usize,
+    pub(crate) next_token: Option<String>,
+    seen: HashSet<String>,
+}
+
+impl<T> Default for PageProgress<T> {
+    fn default() -> Self {
+        Self {
+            value: Vec::new(),
+            pages_received: 0,
+            next_token: None,
+            seen: HashSet::new(),
+        }
+    }
+}
+
+impl<T> PageProgress<T> {
+    pub(crate) fn append(
+        &mut self,
+        page: Page<T>,
+        response: &WorkspaceResponse,
+        limits: WorkspaceListLimits,
+        path: &str,
+    ) -> Result<bool, WorkspaceListErrorKind> {
+        if page.value.len() > limits.max_items.get() - self.value.len() {
+            return Err(WorkspaceListErrorKind::ItemLimit);
+        }
+        self.value.extend(page.value);
+        self.pages_received += 1;
+        self.next_token = header(response, "x-ms-continuation")
+            .map(str::to_owned)
+            .or(page.continuation_token)
+            .filter(|token| !token.is_empty());
+        let Some(next) = &self.next_token else {
+            return Ok(false);
+        };
+        if let Some(uri) = page.continuation_uri {
+            validate_continuation_path(&uri, path)?;
+        }
+        if !self.seen.insert(next.clone()) {
+            return Err(WorkspaceListErrorKind::RepeatedContinuation);
+        }
+        if self.pages_received >= limits.max_pages.get() {
+            return Err(WorkspaceListErrorKind::PageLimit);
+        }
+        Ok(true)
+    }
+}
+
+impl WorkspaceClient {
+    pub(crate) async fn read_workspace(
+        &self,
+        executor: &dyn WorkspaceExecutor,
+        url: Url,
+        limit: NonZeroUsize,
+        mut cancelled: Pin<&mut (impl Future<Output = ()> + Send)>,
+    ) -> Result<WorkspaceResponse, WorkspaceListErrorKind> {
+        let token = or_cancel(
+            self.credential()
+                .get_token(&[Audience::Fabric.scope()], None),
+            cancelled.as_mut(),
+        )
+        .await?
+        .map_err(|_| WorkspaceListErrorKind::Credential)?;
+        let response = or_cancel(
+            executor.execute(WorkspaceRequest {
+                url,
+                token: &token,
+                max_response_bytes: limit,
+            }),
+            cancelled.as_mut(),
+        )
+        .await?
+        .map_err(|error| match error {
+            WorkspaceExecutionError::ResponseLimit => WorkspaceListErrorKind::ResponseLimit,
+            error => WorkspaceListErrorKind::Execution(error),
+        })?;
+        or_cancel(std::future::ready(()), cancelled.as_mut()).await?;
+        if response.body.len() > limit.get() {
+            return Err(WorkspaceListErrorKind::ResponseLimit);
+        }
+        match response.status {
+            200 | 201 => Ok(response),
+            202 | 204 => Err(WorkspaceListErrorKind::UnsupportedStatus(response.status)),
+            _ => Err(service_failure(&response)),
+        }
+    }
+}
+
+pub(crate) async fn or_cancel<T>(
     operation: impl Future<Output = T>,
     mut cancelled: Pin<&mut (impl Future<Output = ()> + Send)>,
 ) -> Result<T, WorkspaceListErrorKind> {
@@ -373,7 +422,7 @@ async fn or_cancel<T>(
     .await
 }
 
-fn header<'a>(response: &'a WorkspaceResponse, name: &str) -> Option<&'a str> {
+pub(crate) fn header<'a>(response: &'a WorkspaceResponse, name: &str) -> Option<&'a str> {
     response
         .headers
         .iter()
@@ -412,7 +461,10 @@ fn service_failure(response: &WorkspaceResponse) -> WorkspaceListErrorKind {
     }
 }
 
-fn validate_continuation(uri: &str) -> Result<(), WorkspaceListErrorKind> {
+pub(crate) fn validate_continuation_path(
+    uri: &str,
+    path: &str,
+) -> Result<(), WorkspaceListErrorKind> {
     let url = Url::parse(uri).map_err(|_| WorkspaceListErrorKind::InvalidContinuation)?;
     if url.scheme() != "https"
         || url.host_str() != Some("api.fabric.microsoft.com")
@@ -420,7 +472,7 @@ fn validate_continuation(uri: &str) -> Result<(), WorkspaceListErrorKind> {
         || !url.username().is_empty()
         || url.password().is_some()
         || url.fragment().is_some()
-        || url.path() != "/v1/workspaces"
+        || url.path() != path
     {
         return Err(WorkspaceListErrorKind::InvalidContinuation);
     }

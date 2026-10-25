@@ -1,0 +1,130 @@
+{
+  "_copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "schema_version": 1,
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "integration_commit": "fad3ea7fee3a3e4e66205ffcf34d6b943bb416d7",
+  "attribution": "Independent hand-authored additive status cases. Original cases.json bytes and original source expectations remain unchanged. Authored before Python execution or native comparison. Native primary status failures are explicit required safety contracts, not observed implementation snapshots.",
+  "case_count": 6,
+  "workspace": {"displayName": "Offline", "id": "w", "type": "Workspace"},
+  "requests": {
+    "primary": ["https://api.fabric.microsoft.com/v1/workspaces/w"],
+    "all": [
+      "https://api.fabric.microsoft.com/v1/workspaces/w",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/spark/settings",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/roleAssignments"
+    ],
+    "primary_paged": [
+      "https://api.fabric.microsoft.com/v1/workspaces/w",
+      "https://api.fabric.microsoft.com/v1/workspaces/w?continuationToken=p",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/spark/settings",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/roleAssignments"
+    ],
+    "mpe_paged": [
+      "https://api.fabric.microsoft.com/v1/workspaces/w",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints?continuationToken=m",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/spark/settings",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/roleAssignments"
+    ]
+  },
+  "scripts": {},
+  "cases": [
+    {
+      "id": "status_primary_201", "category": "native-safety",
+      "purpose": "A valid complete workspace returned as plain primary 201 is ignored by source exec: empty dict return, no optional calls, zero output bytes.",
+      "boundary": "Native deliberately requires primary status 200 and fails explicitly instead of source's silent zero-byte exit-zero result. The required failure message is independently authored, not copied from Rust.",
+      "input": {"responses": [
+        {"status": 201, "body": {"id": "w", "displayName": "Offline"}}
+      ]},
+      "expected": {"request_set": "primary", "output": null, "returned": {}},
+      "native_expected": {"request_set": "primary", "exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {
+        "error_code": "NotSupported", "message": "Workspace metadata GET requires HTTP 200"
+      }}}
+    },
+    {
+      "id": "status_primary_204", "category": "native-safety",
+      "purpose": "Primary 204 does not parse the empty body or invoke enrichments; actual source returns dict{} and emits nothing.",
+      "boundary": "Native's primary-200-only status boundary is explicitly not equivalent to source's successful empty result.",
+      "input": {"responses": [{"status": 204, "body": ""}]},
+      "expected": {"request_set": "primary", "output": null, "returned": {}},
+      "native_expected": {"request_set": "primary", "exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {
+        "error_code": "NotSupported", "message": "Workspace metadata GET requires HTTP 200"
+      }}}
+    },
+    {
+      "id": "status_optional_201", "category": "exact",
+      "purpose": "All optional responses use status 201; both engines must omit each enrichment but still attempt all three against a valid complete primary object.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+        {"status": 201, "body": {"value": [{"id": "ignored-m"}]}},
+        {"status": 201, "body": {"ignored": true}},
+        {"status": 201, "body": {"value": [{"id": "ignored-r"}]}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [
+        {"id": "w", "displayName": "Offline"}
+      ]}}}
+    },
+    {
+      "id": "status_optional_200_then_201", "category": "native-safety",
+      "purpose": "Source requests the MPE continuation but does not merge its 201 body. It renders the truncated original 200 collection and still obtains Spark and ACL.",
+      "boundary": "Native rejects unsupported status 201 on any collection page and omits the entire optional collection, never emitting the source's truncated first-page success. All five requests/scopes remain required on both sides.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+        {"status": 200, "body": {"value": [{"id": "first"}], "continuationToken": "m"}},
+        {"status": 201, "body": {"value": [{"id": "not-merged"}]}},
+        {"status": 200, "body": {}},
+        {"status": 200, "body": {"value": []}}
+      ]},
+      "expected": {"request_set": "mpe_paged", "output": {"status": "Success", "command": "get", "result": {"data": [
+        {"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "first"}], "sparkSettings": {}, "roleAssignments": []}
+      ]}}},
+      "native_expected": {"request_set": "mpe_paged", "output": {"status": "Success", "command": "get", "result": {"data": [
+        {"id": "w", "displayName": "Offline", "sparkSettings": {}, "roleAssignments": []}
+      ]}}}
+    },
+    {
+      "id": "status_primary_201_then_200", "category": "native-safety",
+      "purpose": "Actual source generic paging promotes primary 201 to 200 after a 200 continuation, merges only first-page list fields, and then enriches and renders.",
+      "boundary": "Native rejects primary 201 before following continuation. Native's one-request explicit status failure is separate from source's five-request successful metadata body. This is not full workspace GET parity.",
+      "input": {"responses": [
+        {"status": 201, "body": {"id": "w", "displayName": "Offline", "tags": ["first"], "continuationToken": "p"}},
+        {"status": 200, "body": {"id": "ignored", "displayName": "Ignored", "tags": ["last"], "laterOnly": true}},
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {}},
+        {"status": 200, "body": {"value": []}}
+      ]},
+      "expected": {"request_set": "primary_paged", "output": {"status": "Success", "command": "get", "result": {"data": [
+        {"id": "w", "displayName": "Offline", "tags": ["first", "last"], "total_pages": 1, "managedPrivateEndpoints": [], "sparkSettings": {}, "roleAssignments": []}
+      ]}}},
+      "native_expected": {"request_set": "primary", "exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {
+        "error_code": "NotSupported", "message": "Workspace metadata GET requires HTTP 200"
+      }}}
+    },
+    {
+      "id": "status_optional_201_then_200", "category": "native-safety",
+      "purpose": "Actual source generic pager promotes optional first-page 201 after its continuation returns 200, and includes the merged collection.",
+      "boundary": "Native omits first-page optional 201 without following continuation and still reads Spark/ACL. Its separately frozen response script removes only the never-requested continuation reply, so FIFO test replies cannot masquerade as later endpoint responses. Both scripts use the same primary/optional service data and neither sends expected values to Rust.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+        {"status": 201, "body": {"value": [{"id": "first"}], "continuationToken": "m"}},
+        {"status": 200, "body": {"value": [{"id": "last"}]}},
+        {"status": 200, "body": {}},
+        {"status": 200, "body": {"value": []}}
+      ]},
+      "native_input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+        {"status": 201, "body": {"value": [{"id": "first"}], "continuationToken": "m"}},
+        {"status": 200, "body": {}},
+        {"status": 200, "body": {"value": []}}
+      ]},
+      "expected": {"request_set": "mpe_paged", "output": {"status": "Success", "command": "get", "result": {"data": [
+        {"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "first"}, {"id": "last"}], "sparkSettings": {}, "roleAssignments": []}
+      ]}}},
+      "native_expected": {"output": {"status": "Success", "command": "get", "result": {"data": [
+        {"id": "w", "displayName": "Offline", "sparkSettings": {}, "roleAssignments": []}
+      ]}}}
+    }
+  ]
+}

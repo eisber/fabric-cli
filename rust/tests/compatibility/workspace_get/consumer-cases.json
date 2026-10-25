@@ -1,0 +1,652 @@
+{
+  "_copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "schema_version": 1,
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "integration_commit": "fad3ea7fee3a3e4e66205ffcf34d6b943bb416d7",
+  "base_reference_blob": "2c2166f14b793e91b86bafe389fb3ce40a60cb50",
+  "attribution": "Manually authored and frozen before native comparison. All nominal successful primaries have string id/displayName. Actual complete source dispatch is reused read-only. Native safety contracts derive only from the explicit task policy, not Rust output. No overlay, edits or reclassification of the previous 70 cases.",
+  "policy": {
+    "source_receipt": "source-receipt-1 verified the immutable previous 70 cases and 20 guards, not this new suite",
+    "primary_invalid_shape": {"error_code": "InvalidResponse", "message": "Fabric returned invalid workspace metadata"},
+    "primary_unsupported_status_or_fatal_paging_origin_bounds": {"error_code": "ReadFailed", "message": "Workspace metadata operation did not complete"},
+    "optional_invalid_shape": "Omit malformed non-list/null collections or non-object Spark, retain prior metadata keys, and attempt later endpoints. SDK diagnostics do not produce extra CLI bytes.",
+    "trailing_201_204": "Fatal native paging safety at the trailing response; no later endpoint requests. Python instead keeps the original 200 page and continues.",
+    "optional_201_then_200": "Exact source-compatible merge; plain optional 201 without continuation is omitted.",
+    "primary_or_spark_continuation": "Fatal native noncollection-continuation safety; Python generic paging is observed independently.",
+    "empty_projection": "Exact zero-byte whole-command output for empty list/object/string projection; never fabricate an empty envelope."
+  },
+  "case_count": 58,
+  "workspace": {"id": "w", "displayName": "Offline", "type": "Workspace"},
+  "requests": {
+    "primary": ["https://api.fabric.microsoft.com/v1/workspaces/w"],
+    "all": [
+      "https://api.fabric.microsoft.com/v1/workspaces/w",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/spark/settings",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/roleAssignments"
+    ],
+    "mpe_first": [
+      "https://api.fabric.microsoft.com/v1/workspaces/w",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints"
+    ],
+    "spark_first": [
+      "https://api.fabric.microsoft.com/v1/workspaces/w",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/spark/settings"
+    ],
+    "mpe_trailing": [
+      "https://api.fabric.microsoft.com/v1/workspaces/w",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints?continuationToken=m"
+    ],
+    "mpe_paged": [
+      "https://api.fabric.microsoft.com/v1/workspaces/w",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints?continuationToken=m",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/spark/settings",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/roleAssignments"
+    ],
+    "acl_paged": [
+      "https://api.fabric.microsoft.com/v1/workspaces/w",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/spark/settings",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/roleAssignments",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/roleAssignments?continuationToken=r"
+    ],
+    "collections_paged": [
+      "https://api.fabric.microsoft.com/v1/workspaces/w",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints?continuationToken=a%2Bb+%2F%3D",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/spark/settings",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/roleAssignments",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/roleAssignments?continuationToken=r1",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/roleAssignments?continuationToken=r2"
+    ],
+    "both_201_paged": [
+      "https://api.fabric.microsoft.com/v1/workspaces/w",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints?continuationToken=m",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/spark/settings",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/roleAssignments",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/roleAssignments?continuationToken=r"
+    ],
+    "primary_paged": [
+      "https://api.fabric.microsoft.com/v1/workspaces/w",
+      "https://api.fabric.microsoft.com/v1/workspaces/w?continuationToken=p",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/spark/settings",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/roleAssignments"
+    ],
+    "spark_paged": [
+      "https://api.fabric.microsoft.com/v1/workspaces/w",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/spark/settings",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/spark/settings?continuationToken=s",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/roleAssignments"
+    ]
+  },
+  "scripts": {
+    "empty": [
+      {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+      {"status": 200, "body": {"value": []}},
+      {"status": 200, "body": {}},
+      {"status": 200, "body": {"value": []}}
+    ],
+    "single": [
+      {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+      {"status": 200, "body": {"value": [{"id": "m"}]}},
+      {"status": 200, "body": {"x": 1}},
+      {"status": 200, "body": {"value": [{"id": "r"}]}}
+    ],
+    "query": [
+      {"status": 200, "body": {"id": "w", "displayName": "Offline", "flag": false, "n": 1.0, "zero": 0, "a.b": "雪", "empty": "", "obj": {}, "rows": []}},
+      {"status": 200, "body": {"value": []}},
+      {"status": 200, "body": {}},
+      {"status": 200, "body": {"value": []}}
+    ]
+  },
+  "cases": [
+    {
+      "id": "consumer_ordered_unknown", "category": "exact",
+      "purpose": "Valid primary identity fields do not justify dropping, sorting or retyping unknown ordered Unicode metadata.",
+      "input": {"responses": [
+        {"status": 200, "body": {"z": 0, "id": "w", "displayName": "Offline", "custom": {"雪": false, "a": null}}},
+        {"status": 200, "body": {"value": []}}, {"status": 200, "body": {}}, {"status": 200, "body": {"value": []}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [
+        {"z": 0, "id": "w", "displayName": "Offline", "custom": {"雪": false, "a": null}, "managedPrivateEndpoints": [], "sparkSettings": {}, "roleAssignments": []}
+      ]}}}
+    },
+    {
+      "id": "consumer_enrichment_slots", "category": "exact",
+      "purpose": "Successful assignments replace preexisting enrichment values without moving their original slots among valid primary identity/unknown fields.",
+      "input": {"responses": [
+        {"status": 200, "body": {"roleAssignments": ["old-r"], "z": 0, "sparkSettings": "old-s", "displayName": "Offline", "managedPrivateEndpoints": "old-m", "id": "w", "a": 1}},
+        {"status": 200, "body": {"value": [{"z": 2, "id": "m", "a": 1}]}},
+        {"status": 200, "body": {"z": 3, "a": false}},
+        {"status": 200, "body": {"value": [{"z": "雪", "id": "r", "a": null}]}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [
+        {"roleAssignments": [{"z": "雪", "id": "r", "a": null}], "z": 0, "sparkSettings": {"z": 3, "a": false}, "displayName": "Offline", "managedPrivateEndpoints": [{"z": 2, "id": "m", "a": 1}], "id": "w", "a": 1}
+      ]}}}
+    },
+    {
+      "id": "consumer_failed_slots", "category": "exact",
+      "purpose": "A failed optional assignment leaves its preexisting metadata value and position intact; omission is not deletion.",
+      "input": {"responses": [
+        {"status": 200, "body": {"roleAssignments": ["old-r"], "displayName": "Offline", "managedPrivateEndpoints": ["old-m"], "id": "w", "sparkSettings": {"old": true}}},
+        {"status": 403, "body": {}}, {"status": 200, "body": "not-json"}, {"status": 404, "body": {}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [
+        {"roleAssignments": ["old-r"], "displayName": "Offline", "managedPrivateEndpoints": ["old-m"], "id": "w", "sparkSettings": {"old": true}}
+      ]}}}
+    },
+    {
+      "id": "consumer_empty", "category": "exact", "script": "empty",
+      "purpose": "All successful empty enrichments are included in valid metadata.",
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [
+        {"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [], "sparkSettings": {}, "roleAssignments": []}
+      ]}}}
+    },
+    {
+      "id": "consumer_single", "category": "exact", "script": "single",
+      "purpose": "Valid primary metadata executes and includes all three single-response enrichments.",
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [
+        {"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "m"}], "sparkSettings": {"x": 1}, "roleAssignments": [{"id": "r"}]}
+      ]}}}
+    },
+    {
+      "id": "consumer_collections_paged", "category": "exact",
+      "purpose": "Two-page MPE and three-page ACL retain duplicates, order, unknown fields and token encoding through actual generic source paging.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+        {"status": 200, "body": {"value": [{"id": "z", "unknown": false}], "continuationToken": "a+b /="}},
+        {"status": 200, "body": {"value": [{"id": "a"}, {"id": "z", "unknown": true}]}},
+        {"status": 200, "body": {"x": 1}},
+        {"status": 200, "body": {"value": [{"id": "r3"}], "continuationToken": "r1"}},
+        {"status": 200, "body": {"value": [], "continuationToken": "r2"}},
+        {"status": 200, "body": {"value": [{"id": "r1"}]}}
+      ]},
+      "expected": {"request_set": "collections_paged", "output": {"status": "Success", "command": "get", "result": {"data": [
+        {"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "z", "unknown": false}, {"id": "a"}, {"id": "z", "unknown": true}], "sparkSettings": {"x": 1}, "roleAssignments": [{"id": "r3"}, {"id": "r1"}]}
+      ]}}}
+    },
+    {
+      "id": "consumer_mpe_401", "category": "exact",
+      "purpose": "MPE service unauthorized is omitted and later Spark/ACL still run.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 401, "body": {}},
+        {"status": 200, "body": {"x": 1}}, {"status": 200, "body": {"value": [{"id": "r"}]}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "sparkSettings": {"x": 1}, "roleAssignments": [{"id": "r"}]}]}}}
+    },
+    {
+      "id": "consumer_mpe_403", "category": "exact",
+      "purpose": "MPE forbidden is not a whole-command failure.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 403, "body": {}},
+        {"status": 200, "body": {"x": 1}}, {"status": 200, "body": {"value": [{"id": "r"}]}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "sparkSettings": {"x": 1}, "roleAssignments": [{"id": "r"}]}]}}}
+    },
+    {
+      "id": "consumer_mpe_404", "category": "exact",
+      "purpose": "MPE not-found is omitted while both later requests remain mandatory.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 404, "body": {}},
+        {"status": 200, "body": {"x": 1}}, {"status": 200, "body": {"value": [{"id": "r"}]}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "sparkSettings": {"x": 1}, "roleAssignments": [{"id": "r"}]}]}}}
+    },
+    {
+      "id": "consumer_spark_401", "category": "exact",
+      "purpose": "Spark service unauthorized retains MPE and still attempts ACL.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 200, "body": {"value": [{"id": "m"}]}},
+        {"status": 401, "body": {}}, {"status": 200, "body": {"value": [{"id": "r"}]}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "m"}], "roleAssignments": [{"id": "r"}]}]}}}
+    },
+    {
+      "id": "consumer_spark_403", "category": "exact",
+      "purpose": "Spark forbidden does not prevent ACL collection.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 200, "body": {"value": [{"id": "m"}]}},
+        {"status": 403, "body": {}}, {"status": 200, "body": {"value": [{"id": "r"}]}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "m"}], "roleAssignments": [{"id": "r"}]}]}}}
+    },
+    {
+      "id": "consumer_spark_404", "category": "exact",
+      "purpose": "Spark not-found omits only its own assignment.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 200, "body": {"value": [{"id": "m"}]}},
+        {"status": 404, "body": {}}, {"status": 200, "body": {"value": [{"id": "r"}]}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "m"}], "roleAssignments": [{"id": "r"}]}]}}}
+    },
+    {
+      "id": "consumer_acl_401", "category": "exact",
+      "purpose": "ACL unauthorized preserves successful earlier enrichments.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 200, "body": {"value": [{"id": "m"}]}},
+        {"status": 200, "body": {"x": 1}}, {"status": 401, "body": {}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "m"}], "sparkSettings": {"x": 1}}]}}}
+    },
+    {
+      "id": "consumer_acl_403", "category": "exact",
+      "purpose": "ACL forbidden is optional, with no CLI diagnostic bytes.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 200, "body": {"value": [{"id": "m"}]}},
+        {"status": 200, "body": {"x": 1}}, {"status": 403, "body": {}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "m"}], "sparkSettings": {"x": 1}}]}}}
+    },
+    {
+      "id": "consumer_acl_404", "category": "exact",
+      "purpose": "ACL not-found retains MPE and Spark values and order.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 200, "body": {"value": [{"id": "m"}]}},
+        {"status": 200, "body": {"x": 1}}, {"status": 404, "body": {}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "m"}], "sparkSettings": {"x": 1}}]}}}
+    },
+    {
+      "id": "consumer_mpe_malformed", "category": "exact",
+      "purpose": "MPE JSON decode failure is caught; later Spark/ACL still run.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 200, "body": "not-json"},
+        {"status": 200, "body": {"x": 1}}, {"status": 200, "body": {"value": [{"id": "r"}]}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "sparkSettings": {"x": 1}, "roleAssignments": [{"id": "r"}]}]}}}
+    },
+    {
+      "id": "consumer_mpe_missing_value", "category": "exact",
+      "purpose": "Missing MPE value causes omission, not an invented empty collection.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 200, "body": {}},
+        {"status": 200, "body": {"x": 1}}, {"status": 200, "body": {"value": [{"id": "r"}]}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "sparkSettings": {"x": 1}, "roleAssignments": [{"id": "r"}]}]}}}
+    },
+    {
+      "id": "consumer_spark_malformed", "category": "exact",
+      "purpose": "Spark malformed JSON is omitted and ACL is still attempted.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 200, "body": {"value": [{"id": "m"}]}},
+        {"status": 200, "body": "not-json"}, {"status": 200, "body": {"value": [{"id": "r"}]}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "m"}], "roleAssignments": [{"id": "r"}]}]}}}
+    },
+    {
+      "id": "consumer_spark_without_value", "category": "exact",
+      "purpose": "Spark is an arbitrary object, not a collection envelope; missing value is valid and the whole object is assigned.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"z": 1}}, {"status": 200, "body": {"value": []}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [], "sparkSettings": {"z": 1}, "roleAssignments": []}]}}}
+    },
+    {
+      "id": "consumer_acl_malformed", "category": "exact",
+      "purpose": "ACL malformed JSON is optional and cannot destroy prior successful data.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 200, "body": {"value": [{"id": "m"}]}},
+        {"status": 200, "body": {"x": 1}}, {"status": 200, "body": "not-json"}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "m"}], "sparkSettings": {"x": 1}}]}}}
+    },
+    {
+      "id": "consumer_acl_missing_value", "category": "exact",
+      "purpose": "Missing ACL value causes omission after MPE/Spark succeeded.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 200, "body": {"value": [{"id": "m"}]}},
+        {"status": 200, "body": {"x": 1}}, {"status": 200, "body": {}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "m"}], "sparkSettings": {"x": 1}}]}}}
+    },
+    {
+      "id": "consumer_mpe_partial_403", "category": "exact",
+      "purpose": "Service failure after one MPE page omits the entire partial collection but still runs Spark and ACL.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+        {"status": 200, "body": {"value": [{"id": "partial"}], "continuationToken": "m"}},
+        {"status": 403, "body": {}},
+        {"status": 200, "body": {"x": 1}}, {"status": 200, "body": {"value": [{"id": "r"}]}}
+      ]},
+      "expected": {"request_set": "mpe_paged", "output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "sparkSettings": {"x": 1}, "roleAssignments": [{"id": "r"}]}]}}}
+    },
+    {
+      "id": "consumer_acl_partial_404", "category": "exact",
+      "purpose": "Service failure after one ACL page omits all ACL partial data while retaining MPE/Spark.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+        {"status": 200, "body": {"value": [{"id": "m"}]}}, {"status": 200, "body": {"x": 1}},
+        {"status": 200, "body": {"value": [{"id": "partial"}], "continuationToken": "r"}},
+        {"status": 404, "body": {}}
+      ]},
+      "expected": {"request_set": "acl_paged", "output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "m"}], "sparkSettings": {"x": 1}}]}}}
+    },
+    {
+      "id": "consumer_primary_401", "category": "exact",
+      "purpose": "Primary unauthorized aborts before all optional reads with source exit four.",
+      "input": {"responses": [{"status": 401, "body": {}}]},
+      "expected": {"request_set": "primary", "exit_code": 4, "output": {"status": "Failure", "command": "get", "result": {"error_code": "Unauthorized", "message": "Access is unauthorized"}}}
+    },
+    {
+      "id": "consumer_primary_403", "category": "exact",
+      "purpose": "Primary forbidden is fatal and command-scoped.",
+      "input": {"responses": [{"status": 403, "body": {}}]},
+      "expected": {"request_set": "primary", "exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {"error_code": "Forbidden", "message": "Access is forbidden. You do not have permission to access this resource"}}}
+    },
+    {
+      "id": "consumer_primary_404", "category": "exact",
+      "purpose": "Primary not-found stops after its one real HTTP request.",
+      "input": {"responses": [{"status": 404, "body": {}}]},
+      "expected": {"request_set": "primary", "exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {"error_code": "NotFound", "message": "The requested resource could not be found"}}}
+    },
+    {
+      "id": "consumer_primary_400", "category": "exact",
+      "purpose": "Actual FabricAPIError preserves service code/message but source JSON output strips final periods and omits request details.",
+      "input": {"responses": [{"status": 400, "body": {"errorCode": "BadWorkspace", "message": "Bad workspace.", "requestId": "synthetic-rid", "moreDetails": [{"errorCode": "Detail", "message": "not printed"}]}}]},
+      "expected": {"request_set": "primary", "exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {"error_code": "BadWorkspace", "message": "Bad workspace"}}}
+    },
+    {
+      "id": "consumer_primary_400_malformed", "category": "exact",
+      "purpose": "Malformed error JSON exercises the actual FabricAPIError default parser, not successful primary-shape validation.",
+      "input": {"responses": [{"status": 400, "body": "not-json"}]},
+      "expected": {"request_set": "primary", "exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {"error_code": "UnknownError", "message": "An error occurred while processing the operation"}}}
+    },
+    {
+      "id": "consumer_primary_malformed", "category": "native-safety",
+      "purpose": "The explicitly negative malformed primary success fails before optional reads through actual main unexpected-error handling.",
+      "boundary": "Task policy requires sanitized command-scoped InvalidResponse for malformed primary metadata instead of source's unscoped JSONDecodeError. This is the sole nominal-status-200 primary that intentionally is not a metadata object.",
+      "input": {"responses": [{"status": 200, "body": "not-json"}]},
+      "expected": {"request_set": "primary", "exit_code": 1, "output": {"status": "Failure", "result": {"error_code": "UnexpectedError", "message": "Expecting value: line 1 column 1 (char 0)"}}},
+      "native_expected": {"request_set": "primary", "exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {"error_code": "InvalidResponse", "message": "Fabric returned invalid workspace metadata"}}}
+    },
+    {
+      "id": "consumer_primary_201", "category": "native-safety",
+      "purpose": "Actual source returns dict{} and no output for a plain primary 201 with valid metadata.",
+      "boundary": "Explicit task policy: unsupported primary status uses ReadFailed / Workspace metadata operation did not complete, not a newly proposed message or source-success-shaped empty envelope.",
+      "input": {"responses": [{"status": 201, "body": {"id": "w", "displayName": "Offline"}}]},
+      "expected": {"request_set": "primary", "output": null, "returned": {}},
+      "native_expected": {"request_set": "primary", "exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {"error_code": "ReadFailed", "message": "Workspace metadata operation did not complete"}}}
+    },
+    {
+      "id": "consumer_primary_204", "category": "native-safety",
+      "purpose": "Primary 204 source returns dict{} and emits zero bytes without optional requests.",
+      "boundary": "Explicit task policy classifies unsupported primary status as ReadFailed; the source no-output exit-zero outcome remains independently frozen.",
+      "input": {"responses": [{"status": 204, "body": ""}]},
+      "expected": {"request_set": "primary", "output": null, "returned": {}},
+      "native_expected": {"request_set": "primary", "exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {"error_code": "ReadFailed", "message": "Workspace metadata operation did not complete"}}}
+    },
+    {
+      "id": "consumer_query_none", "category": "exact", "script": "query", "query": null,
+      "purpose": "Absent query uses actual source path inventory; empty object children including Spark produce no leaf path.",
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": ["id", "displayName", "flag", "n", "zero", "a.b", "empty", "rows", "managedPrivateEndpoints", "roleAssignments"]}}}
+    },
+    {
+      "id": "consumer_query_empty", "category": "exact", "script": "query", "query": "",
+      "purpose": "A present empty query has the same source path inventory as None.",
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": ["id", "displayName", "flag", "n", "zero", "a.b", "empty", "rows", "managedPrivateEndpoints", "roleAssignments"]}}}
+    },
+    {
+      "id": "consumer_query_dot", "category": "exact", "script": "query", "query": ".",
+      "purpose": "Dot keeps the entire valid ordered raw metadata and empty enrichments.",
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [
+        {"id": "w", "displayName": "Offline", "flag": false, "n": 1.0, "zero": 0, "a.b": "雪", "empty": "", "obj": {}, "rows": [], "managedPrivateEndpoints": [], "sparkSettings": {}, "roleAssignments": []}
+      ]}}}
+    },
+    {
+      "id": "consumer_query_quoted", "category": "exact", "script": "query", "query": "(\"a.b\")",
+      "purpose": "Parenthesized quoted field access survives actual source process_nargs and selects a literal dotted key.",
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": ["雪"]}}}
+    },
+    {
+      "id": "consumer_query_false", "category": "exact", "script": "query", "query": "flag",
+      "purpose": "False becomes the nonempty source string False and prints one final envelope.",
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": ["False"]}}}
+    },
+    {
+      "id": "consumer_query_float", "category": "exact", "script": "query", "query": "n",
+      "purpose": "Integral floating point query output preserves Python scalar spelling 1.0.",
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": ["1.0"]}}}
+    },
+    {
+      "id": "consumer_query_zero", "category": "exact", "script": "query", "query": "zero",
+      "purpose": "Numeric zero is stringified and therefore not suppressed by output truthiness.",
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": ["0"]}}}
+    },
+    {
+      "id": "consumer_query_numeric", "category": "exact", "script": "query", "query": "length(roleAssignments)",
+      "purpose": "A real JMESPath numeric function over an actual enrichment returns source string 0.",
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": ["0"]}}}
+    },
+    {
+      "id": "consumer_query_syntax_error", "category": "exact", "script": "query", "query": "[",
+      "purpose": "Query syntax failure is rendered only after all enrichment requests completed.",
+      "expected": {"exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {"error_code": "InvalidInput", "message": "Invalid jmespath query (https://jmespath.org)"}}}
+    },
+    {
+      "id": "consumer_query_type_error", "category": "exact", "script": "query", "query": "length(n)",
+      "purpose": "Query runtime numeric type error uses the original source InvalidInput contract.",
+      "expected": {"exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {"error_code": "InvalidInput", "message": "Invalid jmespath query (https://jmespath.org)"}}}
+    },
+    {
+      "id": "consumer_query_empty_list", "category": "exact", "script": "query", "query": "roleAssignments",
+      "purpose": "Whole actual source dispatch emits no envelope for an empty collection enrichment projection.",
+      "expected": {"output": null}
+    },
+    {
+      "id": "consumer_query_empty_object", "category": "exact", "script": "query", "query": "sparkSettings",
+      "purpose": "Whole actual source dispatch emits no envelope for an empty Spark object projection.",
+      "expected": {"output": null}
+    },
+    {
+      "id": "consumer_query_empty_string", "category": "exact", "script": "query", "query": "empty",
+      "purpose": "Empty scalar string likewise means zero stdout/stderr bytes, exit zero, and four completed requests.",
+      "expected": {"output": null}
+    },
+    {
+      "id": "consumer_personal_unicode_opaque", "category": "exact",
+      "purpose": "Personal context, Unicode unknown values and a non-GUID opaque but unreserved ID remain source/native request- and byte-exact.",
+      "input": {"current_workspace": {"id": "opaque-._~42", "displayName": "É 雪🚀", "type": "Personal"}, "responses": [
+        {"status": 200, "body": {"id": "opaque-._~42", "displayName": "É 雪🚀", "z": 1, "a": 2}},
+        {"status": 200, "body": {"value": [{"id": "雪🚀", "z": 1, "a": 2}]}},
+        {"status": 200, "body": {"é": false}},
+        {"status": 200, "body": {"value": [{"id": "r~", "principal": "未知"}]}}
+      ]},
+      "expected": {"requests": [
+        "https://api.fabric.microsoft.com/v1/workspaces/opaque-._~42",
+        "https://api.fabric.microsoft.com/v1/workspaces/opaque-._~42/managedPrivateEndpoints",
+        "https://api.fabric.microsoft.com/v1/workspaces/opaque-._~42/spark/settings",
+        "https://api.fabric.microsoft.com/v1/workspaces/opaque-._~42/roleAssignments"
+      ], "output": {"status": "Success", "command": "get", "result": {"data": [
+        {"id": "opaque-._~42", "displayName": "É 雪🚀", "z": 1, "a": 2, "managedPrivateEndpoints": [{"id": "雪🚀", "z": 1, "a": 2}], "sparkSettings": {"é": false}, "roleAssignments": [{"id": "r~", "principal": "未知"}]}
+      ]}}}
+    },
+    {
+      "id": "consumer_primary_continuation", "category": "native-safety",
+      "purpose": "Actual source generic pager merges a primary metadata continuation before enrichment.",
+      "boundary": "Task policy forbids truthy continuation on a noncollection primary. Native fails ReadFailed at the first response; it must not follow the continuation or enrich.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline", "tags": ["first"], "continuationToken": "p"}},
+        {"status": 200, "body": {"id": "w", "displayName": "Ignored", "tags": ["last"], "laterOnly": true}},
+        {"status": 200, "body": {"value": []}}, {"status": 200, "body": {}}, {"status": 200, "body": {"value": []}}
+      ]},
+      "native_input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline", "tags": ["first"], "continuationToken": "p"}}
+      ]},
+      "expected": {"request_set": "primary_paged", "output": {"status": "Success", "command": "get", "result": {"data": [
+        {"id": "w", "displayName": "Offline", "tags": ["first", "last"], "total_pages": 1, "managedPrivateEndpoints": [], "sparkSettings": {}, "roleAssignments": []}
+      ]}}},
+      "native_expected": {"request_set": "primary", "exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {"error_code": "ReadFailed", "message": "Workspace metadata operation did not complete"}}}
+    },
+    {
+      "id": "consumer_spark_continuation", "category": "native-safety",
+      "purpose": "Source automatically pages Spark settings, merges only first-page list keys and adds total_pages one.",
+      "boundary": "Explicit noncollection-continuation safety is fatal for native Spark, not an optional omission. Stop at the third request and do not read ACL.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"rows": ["first"], "continuationToken": "s"}},
+        {"status": 200, "body": {"rows": ["last"], "laterOnly": true}},
+        {"status": 200, "body": {"value": []}}
+      ]},
+      "native_input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"rows": ["first"], "continuationToken": "s"}}
+      ]},
+      "expected": {"request_set": "spark_paged", "output": {"status": "Success", "command": "get", "result": {"data": [
+        {"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [], "sparkSettings": {"rows": ["first", "last"], "total_pages": 1}, "roleAssignments": []}
+      ]}}},
+      "native_expected": {"request_set": "spark_first", "exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {"error_code": "ReadFailed", "message": "Workspace metadata operation did not complete"}}}
+    },
+    {
+      "id": "consumer_foreign_mpe_continuation", "category": "native-safety",
+      "purpose": "Source ignores a foreign continuationUri and follows continuationToken against its original collection URL.",
+      "boundary": "Explicit native origin validation is fatal ReadFailed, not an optional service/shape omission. Native stops after primary and first MPE response.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+        {"status": 200, "body": {"value": [{"id": "first"}], "continuationToken": "m", "continuationUri": "https://foreign.invalid/v1/workspaces/w/managedPrivateEndpoints?continuationToken=m"}},
+        {"status": 200, "body": {"value": [{"id": "last"}]}},
+        {"status": 200, "body": {}}, {"status": 200, "body": {"value": []}}
+      ]},
+      "native_input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+        {"status": 200, "body": {"value": [{"id": "first"}], "continuationToken": "m", "continuationUri": "https://foreign.invalid/v1/workspaces/w/managedPrivateEndpoints?continuationToken=m"}}
+      ]},
+      "expected": {"request_set": "mpe_paged", "output": {"status": "Success", "command": "get", "result": {"data": [
+        {"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "first"}, {"id": "last"}], "sparkSettings": {}, "roleAssignments": []}
+      ]}}},
+      "native_expected": {"request_set": "mpe_first", "exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {"error_code": "ReadFailed", "message": "Workspace metadata operation did not complete"}}}
+    },
+    {
+      "id": "consumer_trailing_201", "category": "native-safety",
+      "purpose": "Source requests a 201 continuation but retains the original 200 MPE page and still reads Spark/ACL.",
+      "boundary": "Explicit native paging safety rejects trailing 201 as fatal InvalidContinuation rendered ReadFailed; no partial collection, Spark or ACL is returned/read.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+        {"status": 200, "body": {"value": [{"id": "first"}], "continuationToken": "m"}},
+        {"status": 201, "body": {"value": [{"id": "not-merged"}]}},
+        {"status": 200, "body": {}}, {"status": 200, "body": {"value": []}}
+      ]},
+      "native_input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+        {"status": 200, "body": {"value": [{"id": "first"}], "continuationToken": "m"}},
+        {"status": 201, "body": {"value": [{"id": "not-merged"}]}}
+      ]},
+      "expected": {"request_set": "mpe_paged", "output": {"status": "Success", "command": "get", "result": {"data": [
+        {"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "first"}], "sparkSettings": {}, "roleAssignments": []}
+      ]}}},
+      "native_expected": {"request_set": "mpe_trailing", "exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {"error_code": "ReadFailed", "message": "Workspace metadata operation did not complete"}}}
+    },
+    {
+      "id": "consumer_trailing_204", "category": "native-safety",
+      "purpose": "Source also silently truncates at a trailing 204 and continues all later enrichments.",
+      "boundary": "Explicit native paging safety rejects trailing 204 fatally at that response; all native stream/request/scope fields are independently frozen.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+        {"status": 200, "body": {"value": [{"id": "first"}], "continuationToken": "m"}},
+        {"status": 204, "body": ""},
+        {"status": 200, "body": {}}, {"status": 200, "body": {"value": []}}
+      ]},
+      "native_input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+        {"status": 200, "body": {"value": [{"id": "first"}], "continuationToken": "m"}},
+        {"status": 204, "body": ""}
+      ]},
+      "expected": {"request_set": "mpe_paged", "output": {"status": "Success", "command": "get", "result": {"data": [
+        {"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "first"}], "sparkSettings": {}, "roleAssignments": []}
+      ]}}},
+      "native_expected": {"request_set": "mpe_trailing", "exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {"error_code": "ReadFailed", "message": "Workspace metadata operation did not complete"}}}
+    },
+    {
+      "id": "consumer_optional_201_then_200", "category": "exact",
+      "purpose": "Both optional collection methods support first-page 201 followed by terminal 200; actual source promotion/merge remains exact, not relabeled safety.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+        {"status": 201, "body": {"value": [{"id": "m-first"}], "continuationToken": "m"}},
+        {"status": 200, "body": {"value": [{"id": "m-last"}]}},
+        {"status": 200, "body": {}},
+        {"status": 201, "body": {"value": [{"id": "r-first"}], "continuationToken": "r"}},
+        {"status": 200, "body": {"value": [{"id": "r-last"}]}}
+      ]},
+      "expected": {"request_set": "both_201_paged", "output": {"status": "Success", "command": "get", "result": {"data": [
+        {"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [{"id": "m-first"}, {"id": "m-last"}], "sparkSettings": {}, "roleAssignments": [{"id": "r-first"}, {"id": "r-last"}]}
+      ]}}}
+    },
+    {
+      "id": "consumer_optional_201_single", "category": "exact",
+      "purpose": "Without continuation, optional 201 responses are omitted at every step while later requests still run.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}},
+        {"status": 201, "body": {"value": [{"id": "ignored-m"}]}},
+        {"status": 201, "body": {"ignored": true}},
+        {"status": 201, "body": {"value": [{"id": "ignored-r"}]}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline"}]}}}
+    },
+    {
+      "id": "consumer_mpe_null_value", "category": "native-safety",
+      "purpose": "Source assigns collection value null literally; valid primary and later object/list enrichments remain intact.",
+      "boundary": "Explicit typed-SDK optional null/non-list collection policy omits MPE, reports no extra CLI diagnostic, and still attempts Spark/ACL.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 200, "body": {"value": null}},
+        {"status": 200, "body": {}}, {"status": 200, "body": {"value": []}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": null, "sparkSettings": {}, "roleAssignments": []}]}}},
+      "native_expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "sparkSettings": {}, "roleAssignments": []}]}}}
+    },
+    {
+      "id": "consumer_acl_nonlist_value", "category": "native-safety",
+      "purpose": "Source directly assigns an object-valued collection value rather than validating list shape.",
+      "boundary": "Explicit typed-SDK non-list collection safety omits ACL without deleting earlier successful data or printing diagnostics.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {}}, {"status": 200, "body": {"value": {"z": 1}}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [], "sparkSettings": {}, "roleAssignments": {"z": 1}}]}}},
+      "native_expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [], "sparkSettings": {}}]}}}
+    },
+    {
+      "id": "consumer_spark_null", "category": "native-safety",
+      "purpose": "Source includes a valid JSON null Spark body literally and still reads ACL.",
+      "boundary": "Explicit typed-SDK non-object Spark safety omits settings with no extra CLI diagnostic bytes.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": null}, {"status": 200, "body": {"value": []}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [], "sparkSettings": null, "roleAssignments": []}]}}},
+      "native_expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [], "roleAssignments": []}]}}}
+    },
+    {
+      "id": "consumer_spark_array", "category": "native-safety",
+      "purpose": "Source accepts array-shaped Spark JSON without object validation.",
+      "boundary": "Explicit typed-SDK non-object Spark safety omits this settings payload but still attempts ACL and emits no SDK diagnostic on CLI streams.",
+      "input": {"responses": [
+        {"status": 200, "body": {"id": "w", "displayName": "Offline"}}, {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": [1]}, {"status": 200, "body": {"value": []}}
+      ]},
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [], "sparkSettings": [1], "roleAssignments": []}]}}},
+      "native_expected": {"output": {"status": "Success", "command": "get", "result": {"data": [{"id": "w", "displayName": "Offline", "managedPrivateEndpoints": [], "roleAssignments": []}]}}}
+    },
+    {
+      "id": "consumer_query_wide_sum", "category": "unsupported", "script": "query", "query": "sum(`[9223372036854775807,1]`)",
+      "purpose": "Existing numeric query limitation remains visible through a fully valid metadata consumer.",
+      "boundary": "Unchanged over-i64 arithmetic limitation: actual source Python integers succeed, native must emit its existing InvalidInput query failure after all requests.",
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": ["9223372036854775808"]}}},
+      "native_expected": {"exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {"error_code": "InvalidInput", "message": "Invalid jmespath query (https://jmespath.org)"}}}
+    },
+    {
+      "id": "consumer_query_big_literal", "category": "unsupported", "script": "query", "query": "`18446744073709551616`",
+      "purpose": "Out-of-u64 query literal stays separately unsupported rather than weakening the old query golden.",
+      "boundary": "The existing query numeric boundary is not a metadata GET regression or exact parity. Source succeeds; native must fail explicitly with its unchanged InvalidInput query contract.",
+      "expected": {"output": {"status": "Success", "command": "get", "result": {"data": ["18446744073709551616"]}}},
+      "native_expected": {"exit_code": 1, "output": {"status": "Failure", "command": "get", "result": {"error_code": "InvalidInput", "message": "Invalid jmespath query (https://jmespath.org)"}}}
+    }
+  ]
+}

@@ -3,14 +3,19 @@
 
 //! Focused Fabric workspace SDK, independent of the SDK facade and identity backend.
 //!
-//! The implemented operation lists workspaces through caller-injected Azure
+//! Workspace listing and ordered enriched metadata use caller-injected Azure
 //! credentials, execution, and cancellation. No production transport, retry/LRO
 //! policy, ambient credential lookup, or async runtime is installed.
 
+pub mod metadata;
 pub mod models;
 pub mod workspaces;
 
 pub use fabric_core::{CredentialSelection, TokenCredential};
+pub use metadata::{
+    WorkspaceEnrichmentOutcome, WorkspaceMetadata, WorkspaceMetadataError,
+    WorkspaceMetadataErrorKind, WorkspaceMetadataResult, WorkspaceMetadataStep, WorkspaceOmission,
+};
 pub use models::{FabricServiceError, Page, Workspace};
 use std::{fmt, sync::Arc};
 pub use workspaces::{

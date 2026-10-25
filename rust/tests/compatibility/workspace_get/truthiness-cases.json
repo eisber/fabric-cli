@@ -1,0 +1,54 @@
+{
+  "_copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "schema_version": 1,
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "integration_commit": "fad3ea7fee3a3e4e66205ffcf34d6b943bb416d7",
+  "attribution": "Manually authored complete-dispatch truthiness contracts. Execute actual main.main, _execute_command, decorated fs.get_command, fs_get.exec_command, workspace exec and query/output definitions. No native observations or generated expected values. Earlier frozen manifests are unchanged.",
+  "case_count": 3,
+  "workspace": {"displayName": "Offline", "id": "w", "type": "Workspace"},
+  "requests": {
+    "all": [
+      "https://api.fabric.microsoft.com/v1/workspaces/w",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/spark/settings",
+      "https://api.fabric.microsoft.com/v1/workspaces/w/roleAssignments"
+    ]
+  },
+  "scripts": {
+    "empty_enrichments": [
+      {"status": 200, "body": {"id": "w", "displayName": "Offline", "flag": false}},
+      {"status": 200, "body": {"value": []}},
+      {"status": 200, "body": {}},
+      {"status": 200, "body": {"value": []}}
+    ]
+  },
+  "cases": [
+    {
+      "id": "dispatch_query_empty_role_assignments",
+      "category": "exact",
+      "source_dispatch": true,
+      "script": "empty_enrichments",
+      "query": "roleAssignments",
+      "purpose": "The real query_and_export gets an empty list and does not print; the real complete single-command dispatch pipeline also emits zero bytes, with no fallback success envelope.",
+      "expected": {"exit_code": 0, "output": null}
+    },
+    {
+      "id": "dispatch_query_empty_spark_settings",
+      "category": "exact",
+      "source_dispatch": true,
+      "script": "empty_enrichments",
+      "query": "sparkSettings",
+      "purpose": "The actual query returns an empty object; neither the helper nor fs dispatch nor main serializes an empty success envelope afterward.",
+      "expected": {"exit_code": 0, "output": null}
+    },
+    {
+      "id": "dispatch_query_false_scalar",
+      "category": "exact",
+      "source_dispatch": true,
+      "script": "empty_enrichments",
+      "query": "flag",
+      "purpose": "False is stringified to the nonempty string False and prints exactly one success envelope through the real whole-command dispatch pipeline.",
+      "expected": {"exit_code": 0, "output": {"status": "Success", "command": "get", "result": {"data": ["False"]}}}
+    }
+  ]
+}

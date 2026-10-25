@@ -11,6 +11,7 @@ mod folder_reads;
 pub mod parser;
 mod projection;
 mod reads;
+mod workspace_get;
 
 pub use folder_reads::FolderReadHost;
 pub use projection::{NoQuery, Projection, PythonQuery};

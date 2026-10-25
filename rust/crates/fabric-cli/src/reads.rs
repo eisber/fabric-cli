@@ -10,8 +10,8 @@ use fabric_cli_context::{
     WorkspaceType,
 };
 use fabric_cli_output::{
-    CommandError, HiddenItems, Indent, OutputEnvelope, OutputError, OutputInput, RenderPlan,
-    Timestamp,
+    CommandError, HiddenItems, Indent, OutputEnvelope, OutputError, OutputInput, OutputStream,
+    RenderPlan, Timestamp,
 };
 use fabric_sdk::{
     Client,
@@ -114,7 +114,14 @@ impl ReadHost<'_> {
     ) -> Result<RenderPlan, OutputError> {
         let result = self.execute(command, cancelled).await;
         match result {
-            Ok(input) => OutputEnvelope::new(self.timestamp.clone(), input).render(Indent::Four),
+            Ok(Some(input)) => {
+                OutputEnvelope::new(self.timestamp.clone(), input).render(Indent::Four)
+            }
+            Ok(None) => Ok(RenderPlan {
+                stream: OutputStream::Stdout,
+                exit_code: 0,
+                payload: Vec::new(),
+            }),
             Err(error) => error
                 .envelope(self.timestamp.clone(), Some(command.name.clone()))
                 .render(Indent::Four),
@@ -140,7 +147,7 @@ impl ReadHost<'_> {
         &self,
         command: &ReadCommand,
         cancelled: impl Future<Output = ()> + Send,
-    ) -> Result<OutputInput, CommandError> {
+    ) -> Result<Option<OutputInput>, CommandError> {
         let mut cancelled = pin!(cancelled);
         let was_cancelled = poll_fn(|cx| Poll::Ready(cancelled.as_mut().poll(cx).is_ready())).await;
         if was_cancelled {
@@ -318,6 +325,15 @@ impl ReadHost<'_> {
                 });
                 (data, hidden)
             }
+            (ReadKind::Get, NodeKind::Workspace(_)) => {
+                let Some(data) = self
+                    .workspace_get(&target, command, cancelled.as_mut())
+                    .await?
+                else {
+                    return Ok(None);
+                };
+                (data, None)
+            }
             (ReadKind::Get, NodeKind::Item(kind)) => {
                 if unsupported_get(kind) {
                     return Err(errors::error(
@@ -364,12 +380,12 @@ impl ReadHost<'_> {
                 ));
             }
         };
-        Ok(OutputInput {
+        Ok(Some(OutputInput {
             command: Some(command.name.clone()),
             data: Some(data),
             hidden_data,
             ..OutputInput::default()
-        })
+        }))
     }
 
     pub(crate) fn list_projection(

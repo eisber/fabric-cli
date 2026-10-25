@@ -75,6 +75,14 @@ after real SDK reads; additional inspection-callback and `NoQuery` tests retain
 the injected/disabled-provider contracts. The binary still requires a configured
 production host, independently of this completed query composition.
 
+Workspace metadata `get` calls `Client::get_workspace_metadata` using the existing
+workspace executor. It reads the primary object, managed private endpoints,
+Spark settings and role assignments before the same query/output boundary.
+Optional service/shape omissions are observed explicitly in the SDK; cancellation,
+credential/execution failures and safety limits fail the command rather than
+printing apparently complete partial metadata. The folder wrapper delegates this
+GET unchanged. See [workspace metadata GET](../../docs/workspace-get-compatibility.md).
+
 ## Explicit limits
 
 ### Additive folder presentation
@@ -114,7 +122,7 @@ augmentation are not ported here. Generic metadata is not advertised as a full
 item export. Python's unsupported GET item types are rejected.
 
 `--output`, `--verbose`, `--force`, text output,
-OneLake/virtual collection commands, workspace GET, ambient home discovery,
+OneLake/virtual collection commands, ambient home discovery,
 and local filesystem fallback fail explicitly. They are never silently ignored.
 Recognized binary read options still fail `NotConfigured` before host execution.
 

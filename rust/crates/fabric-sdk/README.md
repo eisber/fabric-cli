@@ -11,6 +11,15 @@ command, real HTTP transport, or identity backend. SDK callers supply an Azure
 facade. Consumers can construct an explicit selection without depending on the
 core implementation crate or changing the architecture's dependency directions.
 
+## Workspace metadata GET
+
+`Client::get_workspace_metadata` delegates to the focused workspace SDK using the
+same injected credential, selection, executor, finite limits and cancellation.
+`workspaces::WorkspaceMetadataResult` contains ordered primary metadata with
+managed-private-endpoint, Spark-settings and role-assignment enrichments, plus
+typed optional omission observations. Legacy workspace LIST types and behavior
+are unchanged. See [workspace GET compatibility](../../docs/workspace-get-compatibility.md).
+
 ## Folder LIST/GET
 
 The additive `folders` module and `Client::{list_folders,get_folder}` delegate to

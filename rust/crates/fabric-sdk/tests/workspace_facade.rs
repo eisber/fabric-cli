@@ -337,3 +337,46 @@ fn facade_future_remains_send_after_delegation() {
     let executor = ScriptedExecutor::default();
     assert_send(facade.list_workspaces(&executor, WorkspaceListLimits::default(), pending()));
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn metadata_facade_matches_focused_sdk_with_complete_ordered_enrichments() {
+    let credential = Arc::new(OfflineCredential::default());
+    let facade = Client::new(credential.clone(), selection(Audience::Fabric));
+    let direct = WorkspaceClient::new(credential.clone(), selection(Audience::Fabric));
+    let replies = [
+        json!({"id":"w","displayName":"W","unknown":null}),
+        json!({"value":[{"future":1}],"continuationToken":"next"}),
+        json!({"value":[]}),
+        json!({"spark":false}),
+        json!({"value":[]}),
+    ]
+    .map(|value| {
+        Ok(WorkspaceResponse {
+            status: 200,
+            body: serde_json::to_vec(&value).unwrap(),
+            headers: BTreeMap::new(),
+        })
+    });
+    let executor = || ScriptedExecutor {
+        replies: Mutex::new(replies.clone().into()),
+        ..Default::default()
+    };
+    let left = executor();
+    let right = executor();
+    let through_facade = facade
+        .get_workspace_metadata(&left, "w", WorkspaceListLimits::default(), pending())
+        .await
+        .unwrap();
+    let through_direct = direct
+        .get_workspace_metadata(&right, "w", WorkspaceListLimits::default(), pending())
+        .await
+        .unwrap();
+    assert_eq!(through_facade, through_direct);
+    assert_eq!(
+        *left.requests.lock().unwrap(),
+        *right.requests.lock().unwrap()
+    );
+    assert_eq!(through_facade.enrichments.len(), 3);
+    let _: fabric_sdk::workspaces::WorkspaceMetadata = through_direct.metadata;
+    assert_eq!(credential.scopes.lock().unwrap().len(), 10);
+}
