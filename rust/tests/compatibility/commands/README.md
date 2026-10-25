@@ -3,7 +3,7 @@
 # Source-pinned read-command oracle
 
 This independent reference covers tenant workspace `ls`, current-workspace item
-`ls`, and **bounded generic metadata** `get .` output. It is not full `get` parity.
+`ls`, and **bounded source-routed metadata** `get .` output. It is not full `get` parity.
 All new inputs and semantic expectations in `cases.json` are hand-authored,
 synthetic, and secret-free. Separately hand-authored native safety, unsupported,
 and schema-order assertions live in `native-boundaries.json`; they never replace
@@ -73,19 +73,25 @@ paths**, not the raw metadata object. Default traversal stops at depth four.
 Empty lists contribute a path; empty dictionaries do not. This runs the actual
 source traversal and introduces no JMESPath implementation.
 
-## Explicit generic-GET differences and omissions
+## Explicit source-route and historical generic-GET modes
 
-The bounded Rust command intentionally uses
-`/v1/workspaces/{workspace_id}/items/{item_id}`. The actual Python metadata helper
-uses `format_mapping`, for example `notebooks`, `lakehouses`, or `reports`.
-Every GET case therefore contains separately hand-authored `python_requests`
-and native `expected.requests`, and requires `comparison: specialized-uri`.
-Each side must satisfy its own exact URI expectation. For all six GET cases,
-**only that request URI now differs**; stdout bytes, stderr bytes, exit status,
+The Rust command now uses source `format_mapping` routes through finite SDK
+`ItemCollection`, for example `notebooks`, `lakehouses`, or `reports`.
+Pass **`--request-mode source-routed`** for current comparisons. This requires
+every actual native request equal the original `python_requests`; streams,
+exits, scopes and correlation must still be exact.
+
+The default **`--request-mode historical-generic`** preserves the historical
+`/v1/workspaces/{workspace_id}/items/{item_id}` request comparator.
+Every GET case retains separately hand-authored `python_requests` and native
+`expected.requests`, and requires `comparison: specialized-uri`.
+Neither field is rewritten. Historical probes must satisfy the original generic
+expectations; source-routed probes must satisfy the original Python routes.
+For all six historical GET cases, only that request URI differs; stdout bytes, stderr bytes, exit status,
 scope values/counts, and correlation ID must otherwise match. The two successful
 GETs previously had the historical projection/schema boundaries below, which
 remain protected evidence rather than current expectations. Dropping a declared
-boundary or treating either side's URI as the other's fails the guards.
+boundary or treating either mode's URI as the other's fails the guards.
 
 This deliberately does **not** execute `fab_fs_get_item.exec`, which ordinarily
 obtains definitions and augments the result with connections, schedules,
@@ -97,11 +103,12 @@ is evidence of full Python `get` command parity.
 **Every GET is sent to the actual native probe**, including successful service
 responses. The default `--get-mode metadata-preserving` requires both discovery
 outputs to match protected Python bytes/order. The actual read host calls
-`get_item_metadata`, retaining the complete validated ordered HTTP object,
+`get_item_metadata_from_collection`, retaining the complete validated ordered HTTP object,
 then uses real `PythonQuery`. Neither known fields nor extras are reconstructed
 through legacy `Item`; no expected-output callback is involved.
 
-Historical modes are explicit, never automatically selected for a failing probe:
+Historical metadata modes require historical-generic requests; they are never
+automatically selected for a failing probe:
 
 - `--get-mode historical-no-projection` requires the original exact
   `NotSupported` envelope, exit 1, generic metadata request and scope. These are
@@ -126,12 +133,19 @@ Duplicate keys retain the last value in the first position, matching the actual
 ordered `serde_json::Value` parser; this is parsed-data behavior, not an arbitrary
 new duplicate or lexical-body preservation contract.
 
-Generic metadata helper evidence is not source command-support evidence. In
+Metadata helper evidence is not source command-support evidence. In
 particular, the source full `get` command rejects Dashboard, PaginatedReport,
 SQLEndpoint, MirroredWarehouse, Datamart, OrgApp, MetricSet, ApacheAirflowJob,
 Exploration, RetailDataManager, Healthcaredatasolution,
 SustainabilityDataSolution, and AISkill. The Notebook helper cases do not
 override that routing policy or claim full Notebook GET behavior.
+
+The additive hand-authored `specialized-routes.json` checks all 44 original
+collection mappings and the separate 31-allowed/13-rejected FS_GET inventory.
+`specialized_reference.py` observes every helper at 200/401/403/404 (176 actual
+source outcomes) and compares all 124 command-supported native outcomes with
+source request equality. Native public tests separately require all 13 command
+rejections before credentials/HTTP. Unknown types do not become generic success.
 
 The native host/SDK owns request safety: safe resource-segment validation,
 trusted service origin, bounded responses/pagination, typed malformed-response
@@ -183,7 +197,7 @@ to the native probe.
 Output is one UTF-8 JSON line for each input, in order, with **exactly**:
 
 ```json
-{"id":"example","exit_code":0,"stdout":"...","stderr":"","requests":["https://api.fabric.microsoft.com/v1/workspaces/ws/items/item"],"scopes":[["https://api.fabric.microsoft.com/.default"]]}
+{"id":"example","exit_code":0,"stdout":"...","stderr":"","requests":["https://api.fabric.microsoft.com/v1/workspaces/ws/notebooks/item"],"scopes":[["https://api.fabric.microsoft.com/.default"]]}
 ```
 
 Command stdout is Python-compatible JSON with timestamp
@@ -202,37 +216,39 @@ From the repository root, using the already-built example executable:
 
 ```powershell
 python rust\tests\compatibility\commands\reference.py
-python rust\tests\compatibility\commands\reference.py --rust-probe rust\target\debug\examples\read_probe.exe
-python rust\tests\compatibility\commands\metadata_reference.py --rust-probe rust\target\debug\examples\read_probe.exe
+python rust\tests\compatibility\commands\reference.py --request-mode source-routed --rust-probe rust\target\debug\examples\read_probe.exe
+python rust\tests\compatibility\commands\metadata_reference.py --request-mode source-routed --rust-probe rust\target\debug\examples\read_probe.exe
+python rust\tests\compatibility\commands\specialized_reference.py --rust-probe rust\target\debug\examples\read_probe.exe
 python -m unittest discover -s rust\tests\compatibility\commands -p "test_*.py"
 ```
 
 Use the actual target directory/executable suffix on the host. `--case ID`
 selects one non-query case. Without selection the script checks **25 protected
-source observations plus one source-only observation**. All three native modes
+source observations plus one source-only observation**. All supported modes
 execute and assert **all 25 actual native outcomes**:
 
-| Exclusive assertion category | Historical `NoQuery` | Historical typed order | Default preserving metadata |
-| --- | ---: | ---: | ---: |
-| Fully exact source bytes/requests | 16 | 16 | 16 |
-| Exact GET output with generic-URI difference | 4 | 4 | 6 |
-| Separate native safety failures | 3 | 3 | 3 |
-| Actual explicit `NotSupported` GET failures | 2 | 0 | 0 |
-| Separate successful metadata schema/order evidence | 0 | 2 | 0 |
+| Exclusive assertion category | Historical `NoQuery` | Historical typed order | Historical preserving generic | Source-routed metadata |
+| --- | ---: | ---: | ---: | ---: |
+| Fully exact source bytes/requests | 16 | 16 | 16 | 22 |
+| Exact GET output with generic-URI difference | 4 | 4 | 6 | 0 |
+| Separate native safety failures | 3 | 3 | 3 | 3 |
+| Actual explicit `NotSupported` GET failures | 2 | 0 | 0 | 0 |
+| Separate successful metadata schema/order evidence | 0 | 2 | 0 | 0 |
 
 The two metadata-order differences are eliminated, not relabeled or hidden.
 Counting outputs alone gives 18 exact LS/inventory cases and four exact
 service-error cases, but **not 18 fully source-exact cases**: the two successful
 GET cases also use Python `notebooks`/`lakehouses` versus native `items`.
-All six URI differences remain independently asserted. Matching output is not
+All six historical URI differences remain independently asserted; source routing
+closes them through the actual SDK rather than rewriting fixtures. Matching output is not
 full GET parity; the three safety differences are not successes.
 
 Every mode requires all protected Python expectations unchanged.
 An absent probe is reported as **not requested**, never as native parity or
 proof that an unsupported native failure was actually observed.
 
-The unittest suite has **56 tests**, retaining all original source/guard tests
-and adding current-versus-historical mode and synthetic raw-metadata controls.
+The unittest suite has **60 tests**, retaining all original source/guard tests
+and adding source-route, all-collection and unknown-type controls.
 Guards reject source/pin identity drift, validator bypass, inventory erosion,
 expectation edits, stream/exit/request/scope drift, line-ending/format/timestamp/
 Unicode-escaping changes, undeclared URI differences, trivial fixtures,

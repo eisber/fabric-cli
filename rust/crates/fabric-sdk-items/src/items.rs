@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use crate::{FabricServiceError, Item, ItemClient, ItemMetadata, Page};
+use crate::{FabricServiceError, Item, ItemClient, ItemCollection, ItemMetadata, Page};
 use azure_core::{credentials::AccessToken, http::Url};
 use fabric_core::Audience;
 use std::{
@@ -133,7 +133,7 @@ pub struct ItemListOptions {
     pub limits: ItemListLimits,
 }
 
-/// GET options for a generic item, without specialized collection/definition APIs.
+/// GET options for item metadata, without definition or augmentation requests.
 #[derive(Clone, Debug)]
 pub struct ItemGetOptions {
     /// Ordered string parameters with the same encoding/replacement rules as LIST.
@@ -378,9 +378,14 @@ impl ItemClient {
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Item, ItemError> {
         let mut cancelled = pin!(cancelled);
-        self.get_one(executor, workspace_id, item_id, options, cancelled.as_mut())
-            .await
-            .map_err(|kind| ItemError { kind })
+        self.get_one(
+            executor,
+            || item_url(workspace_id, Some(item_id)),
+            options,
+            cancelled.as_mut(),
+        )
+        .await
+        .map_err(|kind| ItemError { kind })
     }
 
     /// Gets generic item metadata without changing the parsed HTTP field order.
@@ -400,22 +405,55 @@ impl ItemClient {
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<ItemMetadata, ItemError> {
         let mut cancelled = pin!(cancelled);
-        self.get_one(executor, workspace_id, item_id, options, cancelled.as_mut())
-            .await
-            .map_err(|kind| ItemError { kind })
+        self.get_one(
+            executor,
+            || item_url(workspace_id, Some(item_id)),
+            options,
+            cancelled.as_mut(),
+        )
+        .await
+        .map_err(|kind| ItemError { kind })
+    }
+
+    /// Gets ordered metadata from a finite source-known specialized collection.
+    ///
+    /// Uses the same credential, query, cancellation, response and error policies
+    /// as generic GET. It does not fetch definitions, connections or schedules,
+    /// and does not apply the CLI's separate command-support policy.
+    ///
+    /// # Errors
+    /// Returns the same typed failures and required-field validation as
+    /// [`Self::get_item_metadata`]. Identifiers cannot alter the route.
+    pub async fn get_item_metadata_from_collection(
+        &self,
+        executor: &dyn ItemExecutor,
+        workspace_id: &str,
+        collection: ItemCollection,
+        item_id: &str,
+        options: ItemGetOptions,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<ItemMetadata, ItemError> {
+        let mut cancelled = pin!(cancelled);
+        self.get_one(
+            executor,
+            || collection_url(workspace_id, collection.as_str(), Some(item_id)),
+            options,
+            cancelled.as_mut(),
+        )
+        .await
+        .map_err(|kind| ItemError { kind })
     }
 
     async fn get_one<T: serde::de::DeserializeOwned>(
         &self,
         executor: &dyn ItemExecutor,
-        workspace_id: &str,
-        item_id: &str,
+        build_url: impl FnOnce() -> Result<Url, ItemErrorKind> + Send,
         options: ItemGetOptions,
         mut cancelled: Pin<&mut (impl Future<Output = ()> + Send)>,
     ) -> Result<T, ItemErrorKind> {
         or_cancel(std::future::ready(()), cancelled.as_mut()).await?;
         self.validate_audience()?;
-        let mut url = item_url(workspace_id, Some(item_id))?;
+        let mut url = build_url()?;
         apply_query(&mut url, &unique_query(options.query));
         let response = self
             .read(
@@ -502,6 +540,14 @@ async fn or_cancel<T>(
 }
 
 fn item_url(workspace: &str, item: Option<&str>) -> Result<Url, ItemErrorKind> {
+    collection_url(workspace, "items", item)
+}
+
+fn collection_url(
+    workspace: &str,
+    collection: &str,
+    item: Option<&str>,
+) -> Result<Url, ItemErrorKind> {
     for id in std::iter::once(workspace).chain(item) {
         if id.is_empty()
             || matches!(id, "." | "..")
@@ -517,7 +563,7 @@ fn item_url(workspace: &str, item: Option<&str>) -> Result<Url, ItemErrorKind> {
         let mut path = url
             .path_segments_mut()
             .map_err(|_| ItemErrorKind::InvalidIdentifier)?;
-        path.extend(["v1", "workspaces", workspace, "items"]);
+        path.extend(["v1", "workspaces", workspace, collection]);
         if let Some(item) = item {
             path.push(item);
         }

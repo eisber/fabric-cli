@@ -81,6 +81,7 @@ GET_MODES = (
     "historical-typed-order",
     "historical-no-projection",
 )
+REQUEST_MODES = ("historical-generic", "source-routed")
 
 
 def _reference(area: str) -> ModuleType:
@@ -719,15 +720,18 @@ def run_rust(
 
 
 def compare_rust(
-    case: dict[str, Any], python: dict[str, Any], rust: dict[str, Any]
+    case: dict[str, Any], python: dict[str, Any], rust: dict[str, Any],
+    request_mode: str = "historical-generic",
 ) -> None:
     """Check each side independently before comparing all non-waived fields."""
+    if request_mode not in REQUEST_MODES:
+        raise ValueError("Unknown request comparison mode")
     assert_observation(case, python, python=True)
-    assert_observation(case, rust)
+    assert_observation(case, rust, python=request_mode == "source-routed")
     common = set(python) - {"requests"}
     if any(python[key] != rust[key] for key in common):
         raise AssertionError(f"{case['id']}: Python/Rust byte contract mismatch")
-    if case.get("comparison") != "specialized-uri":
+    if request_mode == "source-routed" or case.get("comparison") != "specialized-uri":
         if python["requests"] != rust["requests"]:
             raise AssertionError(f"{case['id']}: request equality was not preserved")
 
@@ -772,10 +776,15 @@ def compare_native_case(
     native: dict[str, Any],
     boundaries: dict[str, dict[str, dict[str, Any]]],
     get_mode: str = "metadata-preserving",
+    request_mode: str = "historical-generic",
 ) -> str:
     """Default to source-order equality; historical outcomes require explicit modes."""
     if get_mode not in GET_MODES:
         raise ValueError("Unknown GET comparison mode")
+    if request_mode not in REQUEST_MODES:
+        raise ValueError("Unknown request comparison mode")
+    if request_mode == "source-routed" and get_mode != "metadata-preserving":
+        raise ValueError("Source routing requires metadata-preserving GET")
     case_id = case["id"]
     if case_id in boundaries["safety_exceptions"]:
         category, label = "safety_exceptions", "native-safety"
@@ -789,7 +798,7 @@ def compare_native_case(
             else ("unsupported_projection", "unsupported-projection")
         )
     else:
-        compare_rust(case, python, native)
+        compare_rust(case, python, native, request_mode)
         return (
             "generic-get-uri"
             if python["requests"] != native["requests"]
@@ -823,6 +832,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rust-probe", type=Path)
     parser.add_argument(
+        "--request-mode", choices=REQUEST_MODES, default="historical-generic",
+        help="require actual source routes or explicitly retain historical generic routes",
+    )
+    parser.add_argument(
         "--get-mode",
         choices=GET_MODES,
         default="metadata-preserving",
@@ -841,6 +854,8 @@ def main() -> None:
     )
     parser.add_argument("--case", help="select one exact non-query case")
     options = parser.parse_args()
+    if options.request_mode == "source-routed" and options.get_mode != "metadata-preserving":
+        parser.error("source-routed requires metadata-preserving GET")
     if options.with_get_projection and not options.rust_probe:
         parser.error("--with-get-projection requires --rust-probe")
     if options.with_get_projection and options.get_mode == "historical-no-projection":
@@ -901,11 +916,12 @@ def main() -> None:
         python_by_id = {actual["id"]: actual for actual in python}
         for case, actual in zip(native_cases, rust[len(old):]):
             label = compare_native_case(
-                case, python_by_id[case["id"]], actual, boundaries, options.get_mode
+                case, python_by_id[case["id"]], actual, boundaries, options.get_mode,
+                options.request_mode,
             )
             counts[label] += 1
         print(
-            f"Native assertions (GET mode={options.get_mode}; "
+            f"Native assertions (GET mode={options.get_mode}; requests={options.request_mode}; "
             "separate evidence, not blanket parity): "
             + ", ".join(f"{label}={count}" for label, count in counts.items())
         )

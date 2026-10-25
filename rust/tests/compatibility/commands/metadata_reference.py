@@ -84,6 +84,9 @@ def main() -> None:
     """Execute source cases and optionally compare actual SDK-backed native GET."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rust-probe", type=Path)
+    parser.add_argument(
+        "--request-mode", choices=REFERENCE.REQUEST_MODES, default="historical-generic",
+    )
     options = parser.parse_args()
     sources = REFERENCE.load_sources()
     samples = cases()
@@ -97,11 +100,11 @@ def main() -> None:
             options.rust_probe, [case["input"] for case in samples]
         )
         for case, python, actual in zip(samples, observed, native):
-            REFERENCE.compare_rust(case, python, actual)
+            REFERENCE.compare_rust(case, python, actual, options.request_mode)
     print(
         f"Checked {len(samples)} additive raw-metadata source cases; "
         f"native outcomes={f'asserted {len(samples)}' if options.rust_probe else 'not requested'}; "
-        "generic/specialized URI differences retained, not full GET parity."
+        f"request mode={options.request_mode}; not full GET parity."
     )
 
 

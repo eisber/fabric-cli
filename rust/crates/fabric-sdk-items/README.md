@@ -3,7 +3,7 @@
 # Handwritten item LIST and GET SDK
 
 `fabric-sdk-items` implements generic workspace item listing and single-item
-lookup. It is a real SDK-layer crate with no facade, identity implementation,
+lookup, plus additive source-routed metadata GET. It is a real SDK-layer crate with no facade, identity implementation,
 deployment, CLI, Python runtime or HTTP/TLS backend dependency. Callers inject
 `Arc<dyn azure_core::credentials::TokenCredential>`, explicit
 `CredentialSelection`, an `ItemExecutor` and cancellation. Construction performs
@@ -11,7 +11,9 @@ no I/O. The caller must bind its credential to the selected account and tenant.
 
 Use `ItemClient::list_items` and `ItemClient::get_item` directly, or the additive
 `fabric_sdk::Client::{list_items,get_item}` facade methods. For ordered metadata,
-use `ItemClient::get_item_metadata` or the same additive facade method. The facade forwards
+use `ItemClient::get_item_metadata` for the unchanged generic route, or
+`get_item_metadata_from_collection` with finite `ItemCollection` for specialized
+metadata. Both are also available through the facade. The facade forwards
 the same credential and selection. Existing workspace imports and Notebook
 executor signatures are unchanged. `fabric-sdk-http::HttpExecutor` implements
 `ItemExecutor` in a separate module through its **private shared `execute`**
@@ -39,6 +41,7 @@ implementation of the algorithm.
 | --- | --- |
 | `fab_api_workspace.ls_workspace_items(args, workspace_id)` | GET `/v1/workspaces/{workspace_id}/items` |
 | `fab_api_item.get_item(args)` | GET `/v1/workspaces/{workspace_id}/items/{item_id}` |
+| `fab_item_util.get_item_with_definition(..., obtain_definition=False)` | `ItemCollection` selects the exact `format_mapping` segment; ordered metadata through the same GET policies |
 | `fab_api_client.do_request` | Fabric default scope, JSON Content-Type, caller query dictionary semantics and status-specific error-code precedence |
 | `_handle_successful_response` | Opaque token traversal; header presence overrides body, including empty header suppression; URI alone does not start paging |
 | `ApiResponse.append_text` | SDK rows retain page order/duplicates; actual `pages_received` replaces no raw Python envelope metadata |
@@ -46,10 +49,17 @@ implementation of the algorithm.
 `fab_mem_store._get_workspace_items_from_api` consumes LIST and separately
 constructs CLI items, resolves folders and suppresses unsupported CLI types.
 `fab_item_util.get_item_with_definition` and filesystem GET consumers can select
-specialized collections, definitions or metadata aggregation. Those consumer
-effects are **not** silently moved into this raw generic SDK. The new facade
-provides generic metadata needed by direct CLI/deployment consumers without
-rewriting their existing workspace/Notebook implementations.
+specialized collections, definitions or metadata aggregation. Only the finite
+metadata route selection is added; definitions and augmentation are **not**
+silently moved into the SDK. Existing generic and Notebook APIs are unchanged.
+
+`ItemCollection::from_item_type` maps the 44 pinned types case-insensitively
+to their exact source segments, including `GraphQuerySets`, `graphqlapis` and
+`variablelibraries`. Unknown types return `None`, never a generic route.
+The enum cannot contain caller-supplied URLs, collection paths or origins.
+The helper supports routes that the separate Python filesystem GET policy
+rejects: the CLI continues rejecting those 13 types before credentials/HTTP.
+See [specialized GET compatibility](../../docs/specialized-get-compatibility.md).
 
 ## Data, query and error contracts
 
@@ -150,11 +160,16 @@ tests execute GET retries, headers, byte limits, deadlines and exhaustion throug
 the public facade; existing workspace/Notebook adapter tests remain intact.
 Standalone and facade consumers also exercise ordered metadata and old `Item`
 struct literals. The real CLI read host now consumes this boundary before
-native query/path discovery; unchanged source command expectations assert both
-previous metadata-order failures as matching output. Specialized URI differences
-remain separate. See the [command oracle](../../tests/compatibility/commands/README.md).
+native query/path discovery. Its source-routed comparator asserts all 25 original
+command outcomes as 22 exact and three unchanged safety differences, including
+all six previously generic-versus-specialized URI differences. Historical
+generic/typed/no-projection modes remain explicit and retain their old evidence.
+An additive hand-authored route inventory checks all 44 actual source helper
+routes and 31 CLI-supported routes at 200/401/403/404; direct/facade consumers
+also retain generic API and struct-literal compatibility.
+See the [command oracle](../../tests/compatibility/commands/README.md).
 
-Not implemented: specialized `item_uri`/`ext_uri`, definitions, create/update/delete,
+Not implemented: arbitrary `item_uri`/`ext_uri`, definitions, create/update/delete,
 all item-specific service families, CLI projection/cache/folder resolution,
 Python arbitrary GET pagination, private links/non-Fabric audiences, live schema
 or credential claims. The [HTTP adapter limits](../fabric-sdk-http/README.md)

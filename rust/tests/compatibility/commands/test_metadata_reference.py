@@ -81,6 +81,26 @@ class MetadataReferenceTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 REFERENCE.assert_observation(mutated, actual, python=True)
 
+    def test_source_route_mode_requires_all_protocol_fields_and_preserves_history(self) -> None:
+        for case in METADATA.cases():
+            source = REFERENCE.observe(case["input"], self.sources)
+            REFERENCE.compare_rust(case, source, source, "source-routed")
+            historical = {**source, "requests": case["expected"]["requests"]}
+            REFERENCE.compare_rust(case, source, historical, "historical-generic")
+            with self.assertRaises(AssertionError):
+                REFERENCE.compare_rust(case, source, historical, "source-routed")
+            with self.assertRaises(AssertionError):
+                REFERENCE.compare_rust(case, source, source, "historical-generic")
+            for field, replacement in (
+                ("stdout", "{}\n"), ("stderr", "diagnostic"), ("exit_code", 1),
+                ("scopes", []), ("id", "reordered"), ("requests", []),
+            ):
+                with self.subTest(case=case["id"], field=field):
+                    with self.assertRaises(AssertionError):
+                        REFERENCE.compare_rust(
+                            case, source, {**source, field: replacement}, "source-routed"
+                        )
+
 
 if __name__ == "__main__":
     unittest.main()
