@@ -1002,3 +1002,55 @@ async fn unsupported_skill_header_is_not_silently_discarded_before_a_mutation() 
     assert_eq!(value["result"]["error_code"], "NotSupported");
     assert!(h.http.requests.lock().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn multi_token_folder_relative_and_explicit_home_paths_reach_the_same_job_target() {
+    for folder_current in [false, true] {
+        let mut h = Harness::resource("Notebook", [accepted()]);
+        let workspace = h.current.clone();
+        let folder = Element::child(
+            "nested",
+            Some("folder".into()),
+            NodeKind::Folder,
+            workspace.clone(),
+        )
+        .unwrap();
+        let item = Element::child(
+            "item with space",
+            Some("item".into()),
+            NodeKind::Item(ItemType::parse("Notebook").unwrap()),
+            folder.clone(),
+        )
+        .unwrap();
+        h.catalog = Catalog::new(vec![workspace, folder.clone(), item]);
+        let command = if folder_current {
+            h.current = folder;
+            parse(&["start", "./item", "with", "space.Notebook"])
+        } else {
+            parse(&["start", "nested.Folder/item", "with", "space.Notebook"])
+        };
+        let before = h.current.clone();
+        assert!(
+            h.host()
+                .execute(&command, pending())
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(h.current, before);
+        assert_eq!(
+            h.http.requests.lock().unwrap()[0].url().path(),
+            "/v1/workspaces/ws/items/item/jobs/instances"
+        );
+    }
+    let h = Harness::new([accepted()]);
+    let mut host = h.host();
+    host.home = HomeContext::Workspace("demo.Workspace".into());
+    assert!(
+        host.execute(&parse(&["start", "~/item.DataPipeline"]), pending())
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(h.http.requests.lock().unwrap().len(), 1);
+}
