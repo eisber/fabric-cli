@@ -21,7 +21,7 @@ not central parser/front-door integration or live parity.
 | rm/del item/folder | Confirmation/force/hard, exact route/query, accepted/completed messages, cache effects | Central context transition |
 | rm/del workspace | Forced workspace DELETE only | Non-force item selection, bulk/tenant orchestration |
 | exists workspace/item/folder | Truthy context ID; string message, no extra request | Central dispatch |
-| cp/copy, mv/move | SDK folder move endpoint; OneLake Lakehouse Files rename, nonrecursive remote file copy, caller-read local-byte upload helper | Fabric definition seam/orchestration, local filesystem orchestration, bulk/folder consumers |
+| cp/copy, mv/move | Within-workspace folder move consumer with parent-cache/count/evidence rules; OneLake Lakehouse Files rename, nonrecursive remote file copy, caller-read local-byte upload helper | Fabric definition/cross-workspace/bulk orchestration and local filesystem orchestration |
 | assign/unassign | Capacity SDK endpoints and CLI confirmation/linkage checks; primary metadata only | Domain branch, central dispatch |
 | start/stop | Mirrored-database POST status/action routes, state/force/prompt checks, source stop-substring quirk | Capacity ARM branch, central dispatch |
 | ln/mklink | Shortcut create/JSON/resolved-target, remove and SET CLI consumers over Fabric SDK/shared operation policy; SDK metadata GET | GET/export command projection, context/front-door composition |

@@ -172,6 +172,18 @@ The source rename sequence proceeds to delete the old shortcut even when the
 new create returned headerless 202 acceptance. This observed behavior is preserved
 separately from actual completion evidence and recorded for independent safety
 review; it is not silently fixed or used to authorize any live operation.
+
+## Within-workspace folder moves
+
+`MutationHost::move_folder` consumes the real focused folder SDK move endpoint.
+It preserves source same-parent no-op, workspace-root omission of targetFolderId,
+no extra prompt, and status-200-only message/cache update. The explicit
+`CacheEffect::MovedFolder` is applied by the existing main cache/context host.
+`FolderMoveResult` keeps the source's move count separate from actual operation
+evidence: the source increments after dispatch even for headerless 202, but that
+count is not reported here as a completed service mutation.
+Cross-workspace folder copy/move and bulk/item definition orchestration remain
+explicit gaps; this helper does not invent a deployment bridge.
 The original-Python comparison executes pinned request/handler functions; its
 wait flag comes from the original `do_request` assignment, not from whether an
 individual handler explicitly assigned `args.wait`.

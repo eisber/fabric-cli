@@ -76,9 +76,26 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
         NodeKind::Workspace(WorkspaceType::Workspace),
         tenant,
     )?;
+    let owning_workspace = Arc::clone(&workspace);
+    let source_parent = if input["source_parent"]
+        .as_str()
+        .is_some_and(|parent| parent != "root")
+    {
+        let id = input["source_parent"]
+            .as_str()
+            .ok_or("invalid source parent")?;
+        Element::child(
+            id.to_uppercase(),
+            Some(id.into()),
+            NodeKind::Folder,
+            Arc::clone(&workspace),
+        )?
+    } else {
+        Arc::clone(&workspace)
+    };
     let element = match kind {
         "Workspace" => workspace,
-        "Folder" => Element::child("Thing", id, NodeKind::Folder, workspace)?,
+        "Folder" => Element::child("Thing", id, NodeKind::Folder, source_parent)?,
         kind => Element::child(
             "Thing",
             id,
@@ -109,6 +126,7 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
         ui: &mut ui,
         metadata: &mut metadata,
     };
+    let mut moved_count = None;
     let result = match input["command"].as_str().ok_or("missing command")? {
         "create" => {
             host.create(
@@ -143,6 +161,21 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
             .await
         }
         "exists" => MutationHost::exists(&element),
+        "move_folder" => {
+            let parent = match input["destination"].as_str().unwrap_or("root") {
+                "root" => owning_workspace,
+                id => Element::child(
+                    id.to_uppercase(),
+                    Some(id.into()),
+                    NodeKind::Folder,
+                    owning_workspace,
+                )?,
+            };
+            host.move_folder(&element, &parent).await.map(|result| {
+                moved_count = Some(result.moved_count);
+                result.result
+            })
+        }
         "start" => {
             host.start(&element, input["force"].as_bool().unwrap_or(false))
                 .await
@@ -175,7 +208,7 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
         }
         _ => return Err("unsupported probe command".into()),
     };
-    Ok(match result {
+    let mut output = match result {
         Ok(result) => json!({
             "requests": operations.requests,
             "outputs": result.outputs.iter().map(|output| json!({
@@ -184,7 +217,11 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
             "error": null,
         }),
         Err(error) => json!({"requests": operations.requests, "outputs": [], "error": error.code}),
-    })
+    };
+    if let Some(count) = moved_count {
+        output["moved_count"] = count.into();
+    }
+    Ok(output)
 }
 
 #[tokio::main(flavor = "current_thread")]

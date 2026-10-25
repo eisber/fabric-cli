@@ -10,6 +10,7 @@ mod create;
 mod errors;
 mod execution;
 mod lifecycle;
+mod moves;
 mod onelake_read;
 mod onelake_write;
 mod set;
@@ -29,6 +30,7 @@ use std::{fmt, future::Future, pin::Pin, sync::Arc};
 pub use create::{CapacitySelection, CreateOptions};
 pub use errors::operation_error_output;
 pub use execution::FabricMutationBackend;
+pub use moves::FolderMoveResult;
 pub use onelake_read::{OneLakeReadError, OneLakeReadHost, OneLakeReadResult};
 pub use onelake_write::{
     OneLakeResourceKind, OneLakeWriteError, OneLakeWriteHost, OneLakeWriteResult,
@@ -97,6 +99,13 @@ pub enum CacheEffect {
         target: Arc<Element>,
         /// New display name, retaining JSON type for source fidelity.
         name: Value,
+    },
+    /// Source-confirmed folder reparenting for the caller's cache/context host.
+    MovedFolder {
+        /// Original immutable folder metadata.
+        target: Arc<Element>,
+        /// Selected new parent, preserving the owning workspace.
+        parent: Arc<Element>,
     },
 }
 

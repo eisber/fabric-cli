@@ -717,3 +717,83 @@ async fn unported_definition_encoding_values_fail_explicitly_without_a_payload_r
     assert_eq!(error.code, "NotSupported");
     assert!(operations.requests.is_empty());
 }
+
+#[tokio::test]
+async fn within_workspace_folder_move_keeps_source_count_and_only_completed_200_cache_effect() {
+    let parent = folder(Some("parent"));
+    let source = Element::child("Child", Some("child".into()), NodeKind::Folder, parent).unwrap();
+    for (response, effect) in [
+        (
+            ResourceOutcome::Completed {
+                status: 200,
+                data: None,
+            },
+            true,
+        ),
+        (
+            ResourceOutcome::Accepted {
+                operation_id: Some("operation".into()),
+            },
+            false,
+        ),
+    ] {
+        let mut operations = Operations {
+            responses: VecDeque::from([Ok(response.clone())]),
+            ..Operations::default()
+        };
+        let mut ui = Ui::default();
+        let mut metadata = Metadata::default();
+        let result = MutationHost {
+            operations: &mut operations,
+            ui: &mut ui,
+            metadata: &mut metadata,
+        }
+        .move_folder(&source, &workspace(Some("ws")))
+        .await
+        .unwrap();
+        assert_eq!(result.moved_count, 1);
+        assert_eq!(result.result.outcome, Some(response));
+        assert_eq!(result.result.effects.len(), usize::from(effect));
+        if effect {
+            assert!(
+                matches!(&result.result.effects[0],CacheEffect::MovedFolder { target,.. } if target.id()==Some("child"))
+            );
+        }
+        assert_eq!(operations.requests[0].2, Some(json!({})));
+        assert!(ui.prompts.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn same_parent_folder_move_is_noop_and_cross_workspace_stays_definition_interface_gap() {
+    let source = folder(Some("folder"));
+    let mut operations = Operations::default();
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let mut host = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    };
+    let result = host
+        .move_folder(&source, source.parent().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(result.moved_count, 0);
+    assert!(result.result.outcome.is_none());
+    let different = Element::child(
+        "Other",
+        Some("other".into()),
+        NodeKind::Workspace(WorkspaceType::Workspace),
+        Element::tenant("Tenant", "tenant"),
+    )
+    .unwrap();
+    assert_eq!(
+        host.move_folder(&source, &different)
+            .await
+            .unwrap_err()
+            .code,
+        "NotSupported"
+    );
+    assert!(operations.requests.is_empty());
+}
