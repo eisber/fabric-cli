@@ -82,6 +82,43 @@ prerequisites such as OpenSSL.
 
 ## Owner-confirmed affected-crate goal
 
+### Executable source-parity gate
+
+When `fabric-cli` is selected, native CI also compares the built `read_probe`
+and `projection_output` consumers against the independent pinned Python
+references. This runs on each selected Windows, Linux and macOS runner, after
+the existing Rust checks. Python 3.13 and development-only `jmespath==1.0.1`
+are installed for that comparison; neither becomes a Rust product dependency.
+The affected-crate selector and Python product workflows are unchanged.
+
+[`run_read_parity.py`](../tests/compatibility/run_read_parity.py) requires all
+current command comparisons, additive metadata cases, command guards, actual
+native query observations, query comparisons and query guards. Every subprocess
+has a finite timeout; nonzero exits, timeouts, missing probes and observation
+write failures fail the native job and therefore the existing final gate.
+There is no historical-mode fallback, fixture update, waived comparison or
+success-shaped empty observation. Separate runner tests inject failures at
+every stage. Each oracle retains its own exact/different/unsupported accounting;
+passing CI does not convert explicit safety exceptions into source equivalence.
+
+From `rust/`, after building both examples and installing the pinned
+development requirement in an isolated environment:
+
+```powershell
+cargo build --offline --locked -p fabric-cli -p fabric-cli-query --examples
+python -B -m unittest discover -s tests\compatibility -p test_run_read_parity.py -v
+python -B tests\compatibility\run_read_parity.py --read-probe target\debug\examples\read_probe.exe --query-probe target\debug\examples\projection_output.exe --artifacts $artifactDirectory
+```
+
+Use the actual private target and native executable suffix. The shared-host
+execution grant and common mutex still apply locally. CI supplies its runner
+temporary directory for observations; the runner never builds or installs
+anything and never rewrites source expectations. Tests/oracles do not perform
+live service or identity calls. Dependency restoration still uses the registry.
+This gate does not configure production credentials/transport, measure coverage,
+or claim parity for unported commands. Provider execution of the new workflow
+must be verified separately after publication.
+
 The owner confirmed crate-level selection including transitive consumers, rather
 than attempting to infer individual relevant test functions from changed lines.
 The outcome is to avoid compiling and testing unrelated crates while preserving

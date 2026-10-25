@@ -218,6 +218,14 @@ jobs:
         os: [windows-2025, ubuntu-24.04, macos-15]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up the development-only Python oracle
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Restore pinned oracle dependency
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
+        run: python -m pip install --disable-pip-version-check -r tests/compatibility/requirements.txt
       - name: Use repository-pinned toolchain and record actual host
         run: |
           cargo --version
@@ -247,6 +255,20 @@ jobs:
         run: |
           read -r -a packages <<< "$CARGO_PACKAGE_ARGS"
           cargo test --offline --locked "${packages[@]}" --doc
+      - name: Compare executable read and query behavior against pinned Python
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          cargo build --offline --locked -p fabric-cli -p fabric-cli-query --examples
+          suffix=""
+          if [[ "$RUNNER_OS" == Windows ]]; then suffix=".exe"; fi
+          python -B -m unittest discover -s tests/compatibility -p test_run_read_parity.py -v
+          python -B tests/compatibility/run_read_parity.py \
+            --read-probe "target/debug/examples/read_probe${suffix}" \
+            --query-probe "target/debug/examples/projection_output${suffix}" \
+            --artifacts "$RUNNER_TEMP/read-parity"
       - name: Check optional broker and safe-code consumer without authenticating
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-identity')
         run: |
