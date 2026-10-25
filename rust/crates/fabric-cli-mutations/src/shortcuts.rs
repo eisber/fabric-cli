@@ -49,6 +49,35 @@ pub struct ShortcutCreateDestination {
     pub item_type: ItemType,
 }
 
+/// Actual shortcut update output and independent create/delete response evidence.
+#[derive(Clone, Debug, Default)]
+pub struct ShortcutUpdateResult {
+    /// Existing source output message, if the update sequence returned.
+    pub outputs: Vec<fabric_cli_output::OutputInput>,
+    /// Actual create/update response, including explicit 202 acceptance.
+    pub created: Option<ResourceOutcome>,
+    /// Original shortcut deletion response when the source name changed.
+    pub deleted: Option<ResourceOutcome>,
+    /// The user declined after the source metadata GET, without writes.
+    pub declined: bool,
+}
+
+/// Shortcut update failure, retaining any earlier create/update response.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShortcutUpdateError {
+    /// Source command error with the failing operation's reconciliation evidence.
+    pub error: Box<MutationError>,
+    /// Actual prior create/update response, if deletion subsequently failed.
+    pub created: Option<ResourceOutcome>,
+}
+
+impl std::fmt::Display for ShortcutUpdateError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.error.fmt(formatter)
+    }
+}
+impl std::error::Error for ShortcutUpdateError {}
+
 /// Fabric-audience shortcut commands; never use storage token/execution fallback.
 pub struct OneLakeShortcutHost<'a> {
     /// Shared Fabric operation policy, with explicitly injected Fabric credential.
@@ -58,6 +87,104 @@ pub struct OneLakeShortcutHost<'a> {
 }
 
 impl OneLakeShortcutHost<'_> {
+    /// Execute source shortcut SET using the same metadata replacement policy.
+    ///
+    /// Reads before confirmation, removes service-only `target.type`, and uses
+    /// OverwriteOnly for unchanged names. Renaming creates first, then removes
+    /// the original with force/verbose=false, exactly as the pinned source does.
+    /// Acceptance is retained separately: a source "updated" message is not proof
+    /// that an accepted create/delete finished.
+    ///
+    /// # Errors
+    /// Validation/metadata/operation errors remain explicit. A failed later
+    /// deletion retains the prior creation response and does not invent rollback.
+    pub async fn update(
+        &mut self,
+        path: &ShortcutPath,
+        query: &str,
+        input: &str,
+        force: bool,
+    ) -> Result<ShortcutUpdateResult, ShortcutUpdateError> {
+        let mut created = None;
+        let result = async {
+            crate::set::validate_metadata_query(query, &[])?;
+            let read = ShortcutMutations::get(self.operations, path).await?;
+            let ResourceOutcome::Completed {
+                data: Some(metadata),
+                ..
+            } = read
+            else {
+                return Err(MutationError::new(
+                    "InvalidResponse",
+                    "Shortcut metadata is not complete",
+                ));
+            };
+            if !metadata.is_object() {
+                return Err(MutationError::new(
+                    "InvalidResponse",
+                    "Shortcut metadata is not an object",
+                ));
+            }
+            let current = metadata.get("name").cloned().unwrap_or(json!(""));
+            self.ui.notice(
+                NoticeKind::Warning,
+                "Modifying properties may lead to unintended consequences",
+            );
+            if !force && !self.ui.confirm("Are you sure?").await {
+                return Ok(ShortcutUpdateResult {
+                    declined: true,
+                    ..ShortcutUpdateResult::default()
+                });
+            }
+            let mut updated = crate::set::update_full_element(metadata, query, input)?;
+            if let Some(target) = updated.get_mut("target") {
+                match target {
+                    Value::Object(target) => {
+                        target.remove("type");
+                    }
+                    Value::Array(values) if !values.iter().any(|value| value == "type") => {}
+                    Value::String(value) if !value.contains("type") => {}
+                    _ => {
+                        return Err(MutationError::new(
+                            "InvalidQuery",
+                            "Shortcut target cannot remove its service type field",
+                        ));
+                    }
+                }
+            }
+            let renamed = updated.get("name").cloned().unwrap_or(json!("")) != current;
+            let outcome = ShortcutMutations::create(
+                self.operations,
+                path.workspace(),
+                path.item(),
+                updated,
+                if renamed {
+                    ShortcutConflictPolicy::Abort
+                } else {
+                    ShortcutConflictPolicy::OverwriteOnly
+                },
+            )
+            .await?;
+            created = Some(outcome.clone());
+            let deleted = if renamed {
+                Some(ShortcutMutations::delete(self.operations, path).await?)
+            } else {
+                None
+            };
+            Ok(ShortcutUpdateResult {
+                outputs: vec![message("Shortcut updated")],
+                created: Some(outcome),
+                deleted,
+                declined: false,
+            })
+        }
+        .await;
+        result.map_err(|error| ShortcutUpdateError {
+            error: Box::new(error),
+            created,
+        })
+    }
+
     /// Execute source `ln`/`mklink` with a resolved OneLake or JSON target.
     ///
     /// # Errors

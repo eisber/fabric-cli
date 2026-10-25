@@ -17,15 +17,15 @@ not central parser/front-door integration or live parity.
 | mkdir/create folder | Root/nested parent omission, optional description, POST, output/cache effects | Central dispatch |
 | mkdir/create item | Typed collection, generic metadata, folder ID, Lakehouse/Warehouse/Notebook payloads, MountedDataFactory ASCII identifier subset, SQLDatabase New/Restore/RestoreDeleted modes, explicit KQL/DTB parent paths, shared source-synchronous waiting | Templates/dependencies, Python-default definition JSON encoding, remaining type-specific options, central dispatch |
 | set workspace | Enriched-read ordering, blocklist/simple path, top-level projection, separate Spark PATCH | Main enriched read adapter, central dispatch |
-| set item/folder | Prompt ordering, metadata PATCH, renamed cache/context effect | Definition seam and friendly Notebook aliases |
+| set item/folder/shortcut | Metadata PATCH/cache effects; shortcut read-before-confirmation, full definition update, target.type removal and create/delete rename evidence | Item definition seam and friendly Notebook aliases, central dispatch |
 | rm/del item/folder | Confirmation/force/hard, exact route/query, accepted/completed messages, cache effects | Central context transition |
 | rm/del workspace | Forced workspace DELETE only | Non-force item selection, bulk/tenant orchestration |
 | exists workspace/item/folder | Truthy context ID; string message, no extra request | Central dispatch |
 | cp/copy, mv/move | SDK folder move endpoint; OneLake Lakehouse Files rename, nonrecursive remote file copy, caller-read local-byte upload helper | Fabric definition seam/orchestration, local filesystem orchestration, bulk/folder consumers |
 | assign/unassign | Capacity SDK endpoints and CLI confirmation/linkage checks; primary metadata only | Domain branch, central dispatch |
 | start/stop | Mirrored-database POST status/action routes, state/force/prompt checks, source stop-substring quirk | Capacity ARM branch, central dispatch |
-| ln/mklink | Shortcut create/JSON/resolved-target and remove CLI consumers over Fabric SDK/shared operation policy; SDK metadata GET | Shortcut SET and GET/export command projection, context/front-door composition |
-| OneLake | SDK reads/storage mutations/shortcut metadata over concrete shared HTTP; CLI `ls`/`exists`, directory create, DFS remove/rename/copy/upload and shortcut helpers | General GET, item-root/hidden resolution, shortcut SET, local filesystem and central dispatch |
+| ln/mklink | Shortcut create/JSON/resolved-target, remove and SET CLI consumers over Fabric SDK/shared operation policy; SDK metadata GET | GET/export command projection, context/front-door composition |
+| OneLake | SDK reads/storage mutations/shortcut metadata over concrete shared HTTP; CLI `ls`/`exists`, directory create, DFS remove/rename/copy/upload and shortcut helpers | General GET, item-root/hidden resolution, local filesystem and central dispatch |
 
 `ResourceOutcome::Accepted` is never completion evidence. Python's acceptance
 messages/cache eviction are preserved independently. `WaitForResult` may succeed

@@ -12,8 +12,8 @@ use azure_core::{
 };
 use fabric_cli_context::ItemType;
 use fabric_cli_mutations::{
-    CommandFuture, FabricMutationBackend, MutationUi, NoticeKind, OneLakeShortcutHost,
-    ShortcutCreateDestination, ShortcutCreateOptions,
+    CommandFuture, FabricMutationBackend, MutationResult, MutationUi, NoticeKind,
+    OneLakeShortcutHost, ShortcutCreateDestination, ShortcutCreateOptions,
 };
 use fabric_sdk_http::{
     ExecutionFuture, ExecutionOptions, ExecutionTimer, HttpExecutor, PublicOrigin,
@@ -197,6 +197,25 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
             )
             .await
         }
+        "set" => host
+            .update(
+                &ShortcutPath::new(
+                    "workspace",
+                    "item",
+                    input["folder"].as_str().unwrap_or("Files"),
+                    input["name"].as_str().unwrap_or("Chosen"),
+                )?,
+                input["query"].as_str().ok_or("missing query")?,
+                input["value"].as_str().ok_or("missing value")?,
+                input["force"].as_bool().unwrap_or(false),
+            )
+            .await
+            .map(|result| MutationResult {
+                outputs: result.outputs,
+                declined: result.declined,
+                ..MutationResult::default()
+            })
+            .map_err(|error| *error.error),
         _ => return Err("unsupported shortcut command".into()),
     };
     Ok(match result {

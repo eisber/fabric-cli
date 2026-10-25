@@ -61,6 +61,15 @@ impl ShortcutPath {
         Ok(value)
     }
 
+    /// Selected owning workspace, without discovering a credential or context.
+    pub fn workspace(&self) -> &str {
+        &self.workspace
+    }
+    /// Selected owning item, without a metadata fetch.
+    pub fn item(&self) -> &str {
+        &self.item
+    }
+
     fn operation(&self, method: ResourceMethod) -> Result<ResourceOperation, ResourceError> {
         let mut segments = vec![
             "workspaces",

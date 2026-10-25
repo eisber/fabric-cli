@@ -34,7 +34,10 @@ pub use onelake_write::{
     OneLakeResourceKind, OneLakeWriteError, OneLakeWriteHost, OneLakeWriteResult,
     OneLakeWriteTarget,
 };
-pub use shortcuts::{OneLakeShortcutHost, ShortcutCreateDestination, ShortcutCreateOptions};
+pub use shortcuts::{
+    OneLakeShortcutHost, ShortcutCreateDestination, ShortcutCreateOptions, ShortcutUpdateError,
+    ShortcutUpdateResult,
+};
 
 /// A caller-runtime asynchronous operation.
 pub type CommandFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;

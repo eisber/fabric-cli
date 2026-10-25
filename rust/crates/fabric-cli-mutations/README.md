@@ -133,7 +133,7 @@ Directory/shortcut destinations append the original file name; directory/table/
 shortcut sources reject recursive copy. The upload helper takes actual bytes
 from a caller-owned filesystem host: local filesystem discovery, reads/writes
 and path-error orchestration are not claimed as implemented by that helper.
-Shortcut removal remains an explicit separately routed Fabric handler gap, never
+Shortcut removal is selected through the separate Fabric shortcut host, never
 a recursive DFS delete fallback.
 
 `OneLakeWriteResult` retains actual accepted/completed response or upload-stage
@@ -152,12 +152,26 @@ or argparse-style JSON tokens. LN preserves prompt-before-validation, source
 Lakehouse/root/suffix/name checks, extension stripping, exclusive input/type
 rules, quote normalization and `GenerateUniqueName` only when forced.
 Shortcut removal preserves force/verbose behavior and actual acceptance.
+Shortcut SET reads before confirmation, reuses the same full-element replacement
+implementation, removes service-only `target.type` and uses OverwriteOnly when
+the name is unchanged. A rename uses Abort creation followed by forced/silent
+deletion of the original. `ShortcutUpdateResult` keeps those two responses
+independent; `ShortcutUpdateError` retains a prior creation response when a later
+delete fails. No rollback, replay or success-shaped failure fallback is added.
 
 The original-source consumer executes the pinned ln/API/name/JSON/delete helper
 bodies and compares actual CLI/SDK/shared-HTTP request payloads, encoded routes,
-notices, prompts, output and validation errors. General shortcut SET, context
-resolution and metadata GET/export command projection remain separate backlog;
+notices, prompts, output and validation errors. SET additionally executes the
+original query/mutation helper using development-only `jmespath==1.0.1`, already
+pinned by the independent compatibility requirements. It is not a shipped Rust
+dependency; restore it into an isolated development environment only if missing.
+Context resolution and metadata GET/export command projection remain separate backlog;
 the SDK metadata GET itself is implemented and exercised.
+
+The source rename sequence proceeds to delete the old shortcut even when the
+new create returned headerless 202 acceptance. This observed behavior is preserved
+separately from actual completion evidence and recorded for independent safety
+review; it is not silently fixed or used to authorize any live operation.
 The original-Python comparison executes pinned request/handler functions; its
 wait flag comes from the original `do_request` assignment, not from whether an
 individual handler explicitly assigned `args.wait`.

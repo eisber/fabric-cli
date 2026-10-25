@@ -85,5 +85,5 @@ existing strict identifier/raw string path guards remain unchanged.
 `ResourceOperation::with_query` safely encodes query values, not arbitrary origins.
 The generic operation engine accepts the private validated descriptor, retains
 Python's synchronous policy and does not install a shortcut-specific poller.
-CLI ln/remove orchestration is in `fabric-cli-mutations`; shortcut SET and generic
-GET/export command composition remain separate backlog.
+CLI ln/remove/SET orchestration is in `fabric-cli-mutations`; generic GET/export
+command composition and hierarchy/main-host integration remain separate backlog.
