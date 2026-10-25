@@ -6,7 +6,9 @@
 
 Python source: `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
 Rust assessment: published `a23b4deda07011ea36bb3a635f75266b14b35c80`,
-October 25, 2026. Python source is unchanged at this checkpoint.
+October 25, 2026. Python source is unchanged at this checkpoint. Later additive
+integration records below update individual library capabilities, not this
+original executable assessment.
 
 The authority is `core/fab_parser_setup.py::create_parser_and_subparsers` and
 the registration functions it actually calls, not the help dictionary, command
@@ -80,14 +82,14 @@ placeholder crates or claims of delivered code.
 | `label set` | - | Missing local label lookup plus service application/permissions | Same access owner plus local config |
 | `label rm` | `label del` | Missing sensitivity-label removal | Same access owner |
 | `label list-local` | - | Missing local label definitions/output; registered even though easy to omit from summaries | Same access/local-config owners |
-| `job start` | - | Missing source asynchronous run consumer; Notebook definition LRO is not job execution | New `fabric-sdk-jobs`, `fabric-cli-jobs` |
-| `job run` | - | Missing synchronous execution, parameters, timeout and status polling | Same jobs owner |
-| `job run-list` | - | Missing runs versus schedules listing and pagination | Same jobs owner |
-| `job run-cancel` | - | Missing running/scheduled job cancellation and reconciliation | Same jobs owner |
-| `job run-sch` | - | Missing schedule creation and validation | Same jobs owner |
-| `job run-update` | - | Missing schedule update and validation | Same jobs owner |
-| `job run-rm` | - | Missing schedule deletion and confirmation | Same jobs owner |
-| `job run-status` | - | Missing run/schedule status and output | Same jobs owner |
+| `job start` | - | Partial typed library submission/accepted handle and source output; binary host integration missing | Existing `fabric-sdk-jobs`, `fabric-cli-jobs` |
+| `job run` | - | Partial real status/wait/timeout/cancel policy and input conversion; text/front-door and numeric boundaries remain | Same jobs owner |
+| `job run-list` | - | Partial instances/schedules collection with shared `fabric-sdk-paging`; binary consumer missing | Same jobs owner |
+| `job run-cancel` | - | Partial accepted cancellation and actual status wait; generic-operation reconciler wiring missing | Same jobs owner |
+| `job run-sch` | - | Partial source schedule creation/validation library handler; host integration missing | Same jobs owner |
+| `job run-update` | - | Partial GET-before-PATCH schedule update library; host integration missing | Same jobs owner |
+| `job run-rm` | - | Partial confirmed/forced schedule deletion library; host integration missing | Same jobs owner |
+| `job run-status` | - | Partial run/schedule status and source-shaped output library; host integration missing | Same jobs owner |
 | `table schema` | - | Missing Lakehouse table schema/format contract | New `fabric-sdk-tables`, `fabric-cli-tables` |
 | `table load` | - | Missing source/file validation, load submission/completion and output | Same table owner plus OneLake boundary |
 | `table vacuum` | - | Missing retention/dry-run behavior, submission and completion | Same table owner |
@@ -178,6 +180,26 @@ a read-only pinned export. Integrate Rust-only lane deltas, not the unrelated
 upstream Python feature. Record source drift separately.
 
 ## Offline and online completion gates
+
+### Job and paging library integration
+
+The coordinator reviewed the exact jobs handoff `f75b7fe`, additive path coverage
+`e4faed4` and limitation clarification `4cf9d71`, applying only their Rust changes
+without the worker's unrelated upstream Python ancestry. The SDK has real
+submit/status/cancel/wait and schedule CRUD, and the CLI library owns all eight
+handlers over an actual shared `HttpExecutor` adapter. `TokenPager` is a reusable
+transport-neutral SDK collector first consumed by job listing; existing service
+pagers and protected oracles remain unchanged. Direct TableMaintenance consumers
+exercise submission, status and cancellation without a CLI/identity dependency.
+
+The existing front-door owner still must integrate registration, explicit host
+configuration, shared text output, batch/REPL and custom help. Generic Fabric
+operation reconciliation is an injected capability, not a copied job LRO engine;
+responses requiring it fail explicitly until that shared adapter is wired.
+Skill headers, bounded numeric/conversion-error differences and exact main-level
+unexpected-error envelopes remain documented gaps. See the
+[job compatibility matrix](job-compatibility.md); these rows are not complete
+binary or online parity.
 
 Every row needs independent Python-derived expected requests, outputs/streams,
 exit codes, errors, side effects and cancellation/cleanup. Validate options,

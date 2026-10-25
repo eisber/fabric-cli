@@ -82,6 +82,17 @@ prerequisites such as OpenSSL.
 
 ## Owner-confirmed affected-crate goal
 
+### Job and shared paging gate
+
+Changes selecting `fabric-sdk-paging`, `fabric-sdk-jobs` or `fabric-cli-jobs`
+require the independent pinned Python job reference and executed public
+`offline_job` consumer on every selected native runner. The reference uses only
+the Python standard library, verifies the original source ASTs and performs no
+product initialization, credential discovery or service calls. It is separate
+from, and does not replace, the existing read/query/folder comparisons.
+Native crate tests cover both the typed job handlers and the real shared HTTP
+adapter; dependency selection follows actual transitive consumers.
+
 ### Optional native transport gate
 
 Selecting `fabric-sdk-transport` runs its no-default-feature library check and
