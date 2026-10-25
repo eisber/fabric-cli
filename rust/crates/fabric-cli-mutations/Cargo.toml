@@ -1,0 +1,30 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-cli-mutations"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Source-pinned resource mutation command handlers"
+
+[package.metadata.fabric]
+layer = "cli"
+
+[dependencies]
+fabric-cli-context.workspace = true
+fabric-cli-output.workspace = true
+fabric-sdk-workspaces.workspace = true
+fabric-sdk-items.workspace = true
+fabric-sdk-folders.workspace = true
+serde_json.workspace = true
+jpx-core.workspace = true
+base64.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

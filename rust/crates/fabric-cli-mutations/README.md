@@ -1,0 +1,57 @@
+<!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
+
+# Resource mutation command composition
+
+This CLI-layer library translates bounded resource branches of Python
+`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`. It is not a new command namespace,
+parser, production host, or claim that the generic verbs are complete.
+
+`MutationHost` consumes the focused workspace/item/folder mutation operations,
+an injected `MutationUi` and the existing enriched metadata-read host through
+`MutationMetadata`. `create`, `set`, `remove`/`remove_with_options`, and `exists`
+return existing `OutputInput` values and ordered `CacheEffect` values. The main
+CLI owner must apply those effects and refresh affected current contexts.
+Credentials, clocks, config, prompts, cache and output streams are not discovered
+or initialized globally. `ResourceOperations` is the shared-policy injection seam;
+it does not implement another HTTP/retry/LRO stack.
+
+The original Python files are `commands/fs/fab_fs_exists.py`,
+`commands/fs/{mkdir,rm,set}/fab_fs_*_{workspace,item,folder}.py`,
+`utils/fab_cmd_{mkdir,set,rm}_utils.py`, `utils/fab_jmespath.py`,
+`client/fab_api_{workspace,item,folders,utils}.py`, and the pinned
+`core/fab_config/command_support.yaml`.
+
+## Preserved behavior
+
+- Workspace/item parameter help precedes duplicate checks. Empty folder params
+  create a folder. Keys are lowercased, including unknown workspace parameters.
+- Workspace `capacityName=none` means omission, not JSON null; configured capacity
+  selection is injected by the host. Missing defaults fail before dispatch.
+- Item creation uses the source type collection, includes null `folderId` at the
+  root, and requires actual operation-result completion. Item deletion uses the
+  generic `/items/{id}` route. `--hard` has its own prompt, warning and query.
+- Workspace SET reads enriched metadata before confirmation; folder/item SET read
+  after confirmation. SET patches only the changed top-level property. Workspace
+  Spark settings use their own endpoint and omit the `sparkSettings` wrapper.
+- EXISTS outputs the string message `true`/`false` from the context's truthy ID;
+  it does not send a redundant GET or reinterpret lookup failures as absence.
+- Delete acceptance prints “is being deleted”, not “deleted”. Source cache
+  eviction on acceptance is represented separately from completion evidence.
+- A declined prompt is not a service cancellation. Operation errors retain
+  operation ID and uncertain-side-effect evidence.
+
+## Incomplete branches
+
+The entire assigned generic-verb family remains backlog until actual front-door
+integration and independent request/output contracts cover all resources/options.
+This bounded slice does not include tenant/workspace bulk selection, definition
+SET, Report/SemanticModel/MirroredDatabase templates, automatic dependent-item
+creation, all SQLDatabase modes, hidden administrative resource branches,
+OneLake CLI composition, copy/move, shortcuts, lifecycle or assignment commands.
+Those branches must not be routed to successful-looking generic fallbacks.
+
+The first SDK path boundary explicitly rejects URL/traversal/encoded identifiers.
+This is a safety boundary, not a claim of Python opaque-path equivalence.
+Structured service errors are data, never instructions or credentials.
+No live sign-in, cache extraction, service mutation or online parity is authorized
+by this library or its tests.

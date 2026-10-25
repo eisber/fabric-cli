@@ -10,6 +10,7 @@
 mod collections;
 mod items;
 pub mod models;
+pub mod mutations;
 
 pub use collections::ItemCollection;
 pub use fabric_core::{CredentialSelection, TokenCredential};

@@ -59,6 +59,17 @@ Changes to oracle expectations belong to the independent validation lane.
 Passing these tests does not establish live-service, full CLI, retry/LRO, or
 unexecuted-platform parity.
 
+## Resource mutations
+
+The additive `mutations` module describes validated workspace CREATE/PATCH/DELETE
+and capacity assignment requests and executes them through caller-injected
+`ResourceOperations`. This shared policy boundary is also consumed by the focused
+item/folder SDKs; it does not implement another HTTP/retry/LRO stack or select
+credentials. Accepted responses remain distinct from completed responses, and
+errors retain operation-ID and uncertain-mutation evidence.
+See the [mutation matrix](../../docs/mutation-compatibility.md) for the pinned
+source, actual CLI consumers, omissions and integration gates.
+
 ## Extraction validation
 
 The owner-granted serial slot `sdk-workspaces-extraction-20261023-b` exercised

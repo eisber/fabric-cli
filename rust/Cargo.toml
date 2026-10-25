@@ -11,6 +11,7 @@ default-members = [
     "crates/fabric-sdk-items",
     "crates/fabric-sdk-capacities",
     "crates/fabric-sdk-folders",
+    "crates/fabric-sdk-onelake",
     "crates/fabric-sdk-http",
     "crates/fabric-sdk-transport",
     "crates/fabric-deploy",
@@ -21,6 +22,7 @@ default-members = [
     "crates/fabric-sdk-jobs",
     "crates/fabric-cli-jobs",
     "crates/fabric-sdk-paging",
+    "crates/fabric-cli-mutations",
 ]
 resolver = "3"
 
@@ -39,11 +41,13 @@ fabric-cli-query = { path = "crates/fabric-cli-query" }
 fabric-cli-jobs = { path = "crates/fabric-cli-jobs" }
 fabric-sdk-jobs = { path = "crates/fabric-sdk-jobs" }
 fabric-sdk-paging = { path = "crates/fabric-sdk-paging" }
+fabric-cli-mutations = { path = "crates/fabric-cli-mutations" }
 fabric-sdk = { path = "crates/fabric-sdk" }
 fabric-sdk-workspaces = { path = "crates/fabric-sdk-workspaces" }
 fabric-sdk-items = { path = "crates/fabric-sdk-items" }
 fabric-sdk-capacities = { path = "crates/fabric-sdk-capacities" }
 fabric-sdk-folders = { path = "crates/fabric-sdk-folders" }
+fabric-sdk-onelake = { path = "crates/fabric-sdk-onelake" }
 fabric-sdk-http = { path = "crates/fabric-sdk-http" }
 fabric-sdk-transport = { path = "crates/fabric-sdk-transport", default-features = false }
 fabric-identity-windows = { path = "crates/fabric-identity-windows" }
