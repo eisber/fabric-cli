@@ -1,0 +1,37 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Bounded Fabric read-command composition with caller-owned dependencies"
+
+[package.metadata.fabric]
+layer = "cli"
+
+[[bin]]
+name = "fab-rs"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+fabric-cli-context.workspace = true
+fabric-cli-output.workspace = true
+fabric-cli-query.workspace = true
+fabric-sdk.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+azure_core.workspace = true
+fabric-sdk-http.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

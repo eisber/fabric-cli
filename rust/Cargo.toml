@@ -1,0 +1,79 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[workspace]
+members = ["crates/*"]
+default-members = [
+    "crates/fabric-core",
+    "crates/fabric-identity",
+    "crates/fabric-sdk",
+    "crates/fabric-sdk-workspaces",
+    "crates/fabric-sdk-items",
+    "crates/fabric-sdk-capacities",
+    "crates/fabric-sdk-folders",
+    "crates/fabric-sdk-http",
+    "crates/fabric-sdk-transport",
+    "crates/fabric-deploy",
+    "crates/fabric-cli",
+    "crates/fabric-cli-output",
+    "crates/fabric-cli-context",
+    "crates/fabric-cli-query",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99.1"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+fabric-cli-context = { path = "crates/fabric-cli-context" }
+fabric-core = { path = "crates/fabric-core" }
+fabric-cli-output = { path = "crates/fabric-cli-output" }
+fabric-cli-query = { path = "crates/fabric-cli-query" }
+fabric-sdk = { path = "crates/fabric-sdk" }
+fabric-sdk-workspaces = { path = "crates/fabric-sdk-workspaces" }
+fabric-sdk-items = { path = "crates/fabric-sdk-items" }
+fabric-sdk-capacities = { path = "crates/fabric-sdk-capacities" }
+fabric-sdk-folders = { path = "crates/fabric-sdk-folders" }
+fabric-sdk-http = { path = "crates/fabric-sdk-http" }
+fabric-sdk-transport = { path = "crates/fabric-sdk-transport", default-features = false }
+fabric-identity-windows = { path = "crates/fabric-identity-windows" }
+azure_core = { version = "1.1.0", default-features = false }
+base64 = "0.22.1"
+async-trait = "0.1"
+futures-util = { version = "0.3.34", default-features = false, features = ["std", "async-await"] }
+clap = { version = "4.6.7", default-features = false, features = ["std", "help", "usage", "error-context"] }
+serde = { version = "1.0.229", features = ["derive"] }
+# CLI output preserves Python dictionary order and finite-float parsing fidelity.
+# These features intentionally unify across every workspace JSON consumer.
+serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip"] }
+thiserror = "2.0.21"
+jpx-core = { version = "=0.3.1", default-features = false }
+tokio = { version = "1.54.1", default-features = false, features = ["macros", "rt", "time", "net", "io-util", "sync"] }
+hyper = { version = "=1.12.0", default-features = false, features = ["client", "http1"] }
+hyper-util = { version = "=0.1.21", default-features = false, features = ["client-legacy", "client-proxy", "http1", "tokio"] }
+hyper-rustls = { version = "=0.27.10", default-features = false, features = ["http1", "ring", "tls12"] }
+hyper-timeout = { version = "=0.5.2", default-features = false }
+http = { version = "=1.5.0", default-features = false, features = ["std"] }
+http-body-util = { version = "=0.1.5", default-features = false }
+tower-service = { version = "=0.3.3", default-features = false }
+rustls = { version = "=0.23.46", default-features = false, features = ["std", "ring", "tls12"] }
+rustls-platform-verifier = { version = "=0.7.1", default-features = false }
+rustls-native-certs = { version = "=0.8.5", default-features = false }
+async-compression = { version = "=0.4.51", default-features = false, features = ["tokio", "gzip", "zlib"] }
+tokio-util = { version = "=0.7.20", default-features = false, features = ["io"] }
+rcgen = { version = "=0.14.10", default-features = false, features = ["ring", "crypto"] }
+tokio-rustls = { version = "=0.26.6", default-features = false, features = ["ring", "tls12"] }
+flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
+windows = { version = "=0.62.2", default-features = false, features = ["std", "Security_Authentication_Web_Core", "Security_Credentials", "Win32_Foundation", "Win32_System_WinRT", "Win32_UI_WindowsAndMessaging"] }
+windows-future = { version = "=0.3.2", default-features = false, features = ["std"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+
+[workspace.lints.clippy]
+all = "warn"

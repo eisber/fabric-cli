@@ -1,0 +1,343 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+//! Local Notebook loading, preparation, and SDK-backed native deployment.
+
+use crate::transforms::NotebookTransforms;
+use fabric_sdk::{
+    Client,
+    notebooks::{
+        DefinitionPart, NotebookDefinition, NotebookError, NotebookExecutor, NotebookLimits,
+    },
+};
+use serde_json::Value;
+use std::{
+    fmt, fs,
+    future::Future,
+    io::{self, Read},
+    num::NonZeroUsize,
+    path::Path,
+};
+
+/// Explicit native deployment failure, never a success-shaped skipped artifact.
+#[derive(Debug)]
+pub enum DeploymentError {
+    /// Local file read failed, with the underlying I/O error retained.
+    Io(io::Error),
+    /// Metadata, definition format, or caller input was invalid.
+    InvalidInput,
+    /// Content format/files are outside the supported single-Notebook slice.
+    UnsupportedContent,
+    /// A symlink, directory or special file is not a regular definition file.
+    UnsafeFile,
+    /// Input/output exceeds the caller's allocation bound.
+    Limit,
+    /// A referenced logical item has not been deployed.
+    UndeployedLogicalId,
+    /// More than one deployed Notebook has the exact selected name.
+    AmbiguousTarget,
+    /// SDK service failure with mutation/operation reconciliation evidence.
+    Service(Box<NotebookError>),
+}
+
+impl fmt::Display for DeploymentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Io(_) => "could not read the local Notebook definition",
+            Self::InvalidInput => "invalid Notebook deployment input or metadata",
+            Self::UnsupportedContent => "unsupported Notebook content in this native slice",
+            Self::UnsafeFile => "Notebook definition requires regular non-symlink files",
+            Self::Limit => "Notebook definition exceeded its byte bound",
+            Self::UndeployedLogicalId => "a referenced logical item is not deployed",
+            Self::AmbiguousTarget => "multiple deployed Notebooks match the exact name",
+            Self::Service(_) => "Notebook deployment failed or is incomplete",
+        })
+    }
+}
+
+impl std::error::Error for DeploymentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(error) => Some(error),
+            Self::Service(error) => Some(error.as_ref()),
+            _ => None,
+        }
+    }
+}
+
+/// Limits for local files and prepared output, enforced before service mutation.
+#[derive(Clone, Copy, Debug)]
+pub struct DefinitionLimits {
+    /// Maximum aggregate UTF-8 bytes across all input and transformed files.
+    pub max_bytes: NonZeroUsize,
+}
+
+impl Default for DefinitionLimits {
+    fn default() -> Self {
+        Self {
+            max_bytes: NonZeroUsize::new(10 * 1024 * 1024).unwrap(),
+        }
+    }
+}
+
+/// Loaded, bounded local content; it has not contacted Fabric.
+///
+/// Content is intentionally excluded from Debug to avoid exposing Notebook data.
+pub struct LocalNotebook {
+    name: String,
+    description: String,
+    files: Vec<(String, String)>,
+    ipynb: bool,
+    limits: DefinitionLimits,
+}
+
+impl LocalNotebook {
+    /// Reads a single Fabric Notebook directory synchronously.
+    ///
+    /// Supports `.platform` and exactly one `notebook-content.py` or
+    /// `notebook-content.ipynb`, plus optional Git `notebook-settings.json`.
+    /// Other files are explicitly unsupported, not silently omitted.
+    /// Call outside an async worker, or use the caller's blocking-I/O facility.
+    ///
+    /// # Errors
+    /// Rejects malformed metadata/content, symlinks/special files, excess bytes,
+    /// mixed formats, and unsupported nested/assets/config files.
+    pub fn load(directory: &Path, limits: DefinitionLimits) -> Result<Self, DeploymentError> {
+        let metadata = fs::symlink_metadata(directory).map_err(DeploymentError::Io)?;
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            return Err(DeploymentError::UnsafeFile);
+        }
+        let mut remaining = limits.max_bytes.get();
+        let mut files = Vec::new();
+        for entry in fs::read_dir(directory).map_err(DeploymentError::Io)? {
+            let entry = entry.map_err(DeploymentError::Io)?;
+            let file_type = entry.file_type().map_err(DeploymentError::Io)?;
+            if !file_type.is_file() || file_type.is_symlink() {
+                return Err(DeploymentError::UnsafeFile);
+            }
+            let name = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| DeploymentError::UnsupportedContent)?;
+            if !matches!(
+                name.as_str(),
+                ".platform"
+                    | "notebook-content.py"
+                    | "notebook-content.ipynb"
+                    | "notebook-settings.json"
+            ) {
+                return Err(DeploymentError::UnsupportedContent);
+            }
+            let mut bytes = Vec::new();
+            fs::File::open(entry.path())
+                .map_err(DeploymentError::Io)?
+                .take((remaining as u64).saturating_add(1))
+                .read_to_end(&mut bytes)
+                .map_err(DeploymentError::Io)?;
+            if bytes.len() > remaining {
+                return Err(DeploymentError::Limit);
+            }
+            remaining -= bytes.len();
+            let text = String::from_utf8(bytes).map_err(|_| DeploymentError::UnsupportedContent)?;
+            // Python Path.read_text uses universal newline handling.
+            let text = text.replace("\r\n", "\n").replace('\r', "\n");
+            files.push((name, text));
+        }
+        files.sort_by_key(|(name, _)| match name.as_str() {
+            ".platform" => 0,
+            "notebook-content.py" | "notebook-content.ipynb" => 1,
+            _ => 3,
+        });
+        let platform = files
+            .iter()
+            .find(|(name, _)| name == ".platform")
+            .ok_or(DeploymentError::InvalidInput)?;
+        let metadata: Value =
+            serde_json::from_str(&platform.1).map_err(|_| DeploymentError::InvalidInput)?;
+        let name = metadata
+            .pointer("/metadata/displayName")
+            .and_then(Value::as_str)
+            .filter(|name| !name.trim().is_empty())
+            .ok_or(DeploymentError::InvalidInput)?
+            .to_owned();
+        if metadata.pointer("/metadata/type").and_then(Value::as_str) != Some("Notebook")
+            || metadata
+                .pointer("/config/logicalId")
+                .and_then(Value::as_str)
+                .is_none_or(|id| id.trim().is_empty())
+        {
+            return Err(DeploymentError::InvalidInput);
+        }
+        let description = match metadata.pointer("/metadata/description") {
+            None => String::new(),
+            Some(Value::String(value)) => value.clone(),
+            _ => return Err(DeploymentError::InvalidInput),
+        };
+        let py = files.iter().any(|(name, _)| name == "notebook-content.py");
+        let ipynb = files
+            .iter()
+            .any(|(name, _)| name == "notebook-content.ipynb");
+        if py == ipynb
+            || (ipynb
+                && files
+                    .iter()
+                    .any(|(name, _)| name == "notebook-settings.json"))
+        {
+            return Err(DeploymentError::UnsupportedContent);
+        }
+        for (name, contents) in &files {
+            validate_json_file(name, contents)?;
+        }
+        Ok(Self {
+            name,
+            description,
+            files,
+            ipynb,
+            limits,
+        })
+    }
+
+    /// Applies the supported transforms and encodes exact ordered definition parts.
+    ///
+    /// # Errors
+    /// Rejects invalid workspace input, unresolved IDs, invalid transformed JSON
+    /// and allocation overflow before service discovery or mutation.
+    pub fn prepare(
+        &self,
+        workspace: &str,
+        transforms: &NotebookTransforms,
+    ) -> Result<PreparedNotebook, DeploymentError> {
+        if workspace.trim().is_empty() {
+            return Err(DeploymentError::InvalidInput);
+        }
+        let mut remaining = self.limits.max_bytes.get();
+        let mut parts = Vec::new();
+        for (path, content) in &self.files {
+            let content = if path == ".platform" {
+                content.clone()
+            } else {
+                transforms.apply(content, workspace, remaining)?
+            };
+            validate_json_file(path, &content)?;
+            remaining = remaining
+                .checked_sub(content.len())
+                .ok_or(DeploymentError::Limit)?;
+            parts.push(
+                DefinitionPart::inline(path, content.as_bytes())
+                    .map_err(|_| DeploymentError::InvalidInput)?,
+            );
+        }
+        Ok(PreparedNotebook {
+            workspace: workspace.to_owned(),
+            name: self.name.clone(),
+            description: self.description.clone(),
+            definition: NotebookDefinition {
+                format: self.ipynb.then(|| "ipynb".to_owned()),
+                parts,
+            },
+        })
+    }
+}
+
+fn validate_json_file(path: &str, content: &str) -> Result<(), DeploymentError> {
+    if path.ends_with(".json") || path.ends_with(".ipynb") || path == ".platform" {
+        let value: Value =
+            serde_json::from_str(content).map_err(|_| DeploymentError::InvalidInput)?;
+        if !value.is_object() {
+            return Err(DeploymentError::InvalidInput);
+        }
+        if path.ends_with(".ipynb")
+            && (!value.get("cells").is_some_and(Value::is_array)
+                || value.get("nbformat").and_then(Value::as_u64) != Some(4))
+        {
+            return Err(DeploymentError::UnsupportedContent);
+        }
+    }
+    Ok(())
+}
+
+/// Prepared Notebook input; no secret, ambient state, or runtime is stored.
+pub struct PreparedNotebook {
+    workspace: String,
+    name: String,
+    description: String,
+    definition: NotebookDefinition,
+}
+
+/// The service mutation that actually completed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeploymentAction {
+    /// A new Notebook was created.
+    Created,
+    /// An existing Notebook definition and metadata were updated.
+    Updated,
+}
+
+/// A completed native deployment, never merely an accepted request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeploymentOutcome {
+    /// Completed mutation type.
+    pub action: DeploymentAction,
+    /// Actual deployed item ID.
+    pub item_id: String,
+}
+
+impl PreparedNotebook {
+    /// Discovers the exact Notebook name, then creates or updates through the SDK.
+    ///
+    /// Uses only injected execution/credentials/cancellation. Never retries a
+    /// mutation or treats incomplete discovery as absence. Dropping/cancelling
+    /// the future releases local work but does not roll back a service mutation.
+    ///
+    /// # Errors
+    /// Surfaces ambiguous targets, discovery failures and accepted/incomplete
+    /// operation evidence; callers must reconcile before replaying.
+    pub async fn deploy(
+        &self,
+        client: &Client,
+        executor: &dyn NotebookExecutor,
+        limits: NotebookLimits,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<DeploymentOutcome, DeploymentError> {
+        let mut session = client.notebook_session(executor, limits, cancelled);
+        let items = session
+            .list_items(&self.workspace)
+            .await
+            .map_err(service_error)?;
+        let mut matches = items
+            .into_iter()
+            .filter(|item| item.item_type == "Notebook" && item.display_name == self.name);
+        let existing = matches.next();
+        if matches.next().is_some() {
+            return Err(DeploymentError::AmbiguousTarget);
+        }
+        if let Some(existing) = existing {
+            session
+                .update(&self.workspace, &existing.id, &self.definition)
+                .await
+                .map_err(service_error)?;
+            Ok(DeploymentOutcome {
+                action: DeploymentAction::Updated,
+                item_id: existing.id,
+            })
+        } else {
+            let item = session
+                .create(
+                    &self.workspace,
+                    &self.name,
+                    &self.description,
+                    &self.definition,
+                )
+                .await
+                .map_err(service_error)?;
+            Ok(DeploymentOutcome {
+                action: DeploymentAction::Created,
+                item_id: item.id,
+            })
+        }
+    }
+}
+
+fn service_error(error: NotebookError) -> DeploymentError {
+    DeploymentError::Service(Box::new(error))
+}

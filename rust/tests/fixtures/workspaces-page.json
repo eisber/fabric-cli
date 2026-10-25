@@ -1,0 +1,10 @@
+{
+  "value": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "displayName": "Offline workspace"
+    }
+  ],
+  "continuationToken": "opaque+/=token",
+  "continuationUri": "https://api.fabric.microsoft.com/v1/workspaces?continuationToken=opaque%2B%2F%3Dtoken"
+}

@@ -1,0 +1,80 @@
+<!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
+
+# Experimental Rust Fabric workspace
+
+This self-contained workspace stages the Fabric SDK, thin `fab-rs` CLI, optional
+identity implementation, and native deployment library before a future explicit
+cutover. The Python CLI remains authoritative. This is an unpublished offline
+scaffold, not a completed port.
+
+Change into this directory before running Cargo so Rustup uses the pinned
+Rust 1.99.1 toolchain:
+
+```text
+cargo run --locked -p fabric-cli -- --help
+cargo run --locked -p fabric-sdk --example injected_credentials
+```
+
+The CLI recognizes Python's `ls` (`dir`) and `get` names, but the binary returns
+typed `NotConfigured` until a production host is selected. Its
+[public async read-command library](crates/fabric-cli/README.md) composes real
+SDK reads, immutable context and JSON output using caller-injected dependencies.
+Default no-query LS works; GET/query output needs an injected projection provider.
+Other invocations fail explicitly. The example uses an expired test-only dummy credential and makes
+no service calls. Native workspace listing and a bounded
+[single-Notebook deployment library](crates/fabric-deploy/README.md) now execute
+through caller-injected SDK executors. The optional
+[native transport](crates/fabric-sdk-transport/README.md) supplies an Azure
+`HttpClient` and caller-runtime `TokioTimer`; its `hyper-rustls` backend must be
+selected explicitly. The SDK facade has no default HTTP/TLS backend, and no
+production credential/read host or CLI deployment command is installed.
+Azure CLI, Azure Developer CLI, and Python are not runtime requirements.
+
+Generic workspace item LIST and single-item GET are available through the
+[focused item SDK](crates/fabric-sdk-items/README.md) and additive stable facade
+methods. The existing shared HTTP executor implements its injected item adapter.
+The [item compatibility matrix](docs/item-compatibility.md) distinguishes
+source-backed behavior, explicit safety exceptions and unported CLI features.
+
+The focused [capacity-list SDK](crates/fabric-sdk-capacities/README.md) adds bounded
+Fabric `/v1/capacities` reads through standalone, facade and shared HTTP executor
+interfaces. It does not add ARM capacity operations or CLI commands. See the
+[capacity compatibility matrix](docs/capacity-compatibility.md) for source quirks
+and explicit SDK safety differences.
+
+The pure CLI-layer [JSON output](crates/fabric-cli-output/README.md) and
+[path/context](crates/fabric-cli-context/README.md) libraries now translate
+bounded Python behavior with independent source comparisons. The read-command
+library now consumes both; the binary still does not install a live read host.
+See [read-command compatibility](docs/read-command-compatibility.md).
+See their [output](docs/output-compatibility.md) and
+[context](docs/context-compatibility.md) matrices for unported behavior.
+
+Windows desktop interop is isolated in optional `fabric-identity-windows`,
+enabled through `fabric-identity/windows-broker`. The existing crates forbid
+unsafe code; default consumer graphs exclude the native crate. Enabling it
+provides safe Rust calls over reviewed unsafe interop, not a transitively
+unsafe-free binary or a completed login provider. See the
+[native boundary](docs/architecture.md#optional-native-unsafe-boundary).
+
+Read before contributing:
+
+- [Complete Python command inventory, crate owners and gaps](docs/command-parity.md)
+- [Shared `feature/rust` integration and safe synchronization](docs/integration-handoff.md)
+- [Agent instructions](AGENTS.md)
+- [Translation-first migration guidance](docs/migration-guidance.md)
+- [Architecture and validation commands](docs/architecture.md)
+- [Compatibility backlog and research baselines](docs/compatibility.md)
+- [Unresolved identity backend](docs/decisions/identity-backend.md)
+- [Integration validation baselines](docs/validation-baselines.md)
+- [Native build evidence](docs/build-validation.md)
+- [Workspace-list validation matrix](docs/validation-matrix.md)
+- [Deployment compatibility](docs/deployment-compatibility.md)
+- [Identity requirements and evidence](docs/identity-requirements.md)
+- [Extension and workflow boundaries](docs/extensions-and-skills.md)
+
+The repository's Microsoft copyright, MIT license, and applicable attribution
+continue to apply. Moving this directory into a new product destination later
+must retain those license and attribution files. GitHub Actions stays at the
+repository root and runs Cargo from this directory; its location does not create
+a product runtime dependency on Python.

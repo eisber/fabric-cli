@@ -1,0 +1,261 @@
+{
+  "_copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "origin": "https://api.fabric.microsoft.com",
+  "scope": "https://api.fabric.microsoft.com/.default",
+  "cases": [
+    {
+      "id": "default-order-duplicates-raw-parent-future",
+      "operation": "list",
+      "responses": [{"status": 200, "body": {"value": [{"id": "opaque", "displayName": "Root/\u65e5", "parentFolderId": null, "future": {"n": 1}}, {"id": "opaque", "displayName": ".Hidden", "parentFolderId": 7}]}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=True"], "rows": [{"id": "opaque", "displayName": "Root/\u65e5", "parentFolderId": null, "future": {"n": 1}}, {"id": "opaque", "displayName": ".Hidden", "parentFolderId": 7}]}
+    },
+    {
+      "id": "recursive-attribute-false",
+      "operation": "list", "recursive": false,
+      "responses": [{"status": 200, "body": {"value": []}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=False"], "rows": []}
+    },
+    {
+      "id": "recursive-attribute-none-is-present",
+      "operation": "list", "recursive": null,
+      "responses": [{"status": 200, "body": {"value": []}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=None"], "rows": []}
+    },
+    {
+      "id": "recursive-attribute-empty-is-present",
+      "operation": "list", "recursive": "",
+      "responses": [{"status": 200, "body": {"value": []}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive="], "rows": []}
+    },
+    {
+      "id": "request-recursive-overrides-attribute",
+      "operation": "list", "recursive": true, "query": [["recursive", "false"], ["x", "y"]],
+      "responses": [{"status": 200, "body": {"value": []}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=false&x=y"], "rows": []}
+    },
+    {
+      "id": "request-none-overrides-invalid-attribute",
+      "operation": "list", "recursive": "bad=x", "query": [["recursive", null]],
+      "responses": [{"status": 200, "body": {"value": []}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=None"], "rows": []}
+    },
+    {
+      "id": "root-none-precedes-uri-recursive",
+      "operation": "list", "root_folder_id": null,
+      "responses": [{"status": 200, "body": {"value": []}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?rootFolderId=None&recursive=True"], "rows": []}
+    },
+    {
+      "id": "root-replaces-in-place-and-query-punctuation",
+      "operation": "list", "root_folder_id": "r+/= ~*", "recursive": false,
+      "query": [["rootFolderId", "old"], ["x ~*", "a+b/%20 &=?"], ["rootFolderId", "other"]],
+      "responses": [{"status": 200, "body": {"value": []}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?rootFolderId=r%2B%2F%3D+~%2A&x+~%2A=a%2Bb%2F%2520+%26%3D%3F&recursive=False"], "rows": []}
+    },
+    {
+      "id": "memstore-namespace-without-request-params",
+      "operation": "list", "request_params_absent": true,
+      "responses": [{"status": 200, "body": {"value": []}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=True"], "rows": []}
+    },
+    {
+      "id": "two-pages-token-encoded-once",
+      "operation": "list", "query": [["x", 3]], "root_folder_id": "root",
+      "responses": [
+        {"status": 200, "body": {"value": [{"id": "a", "displayName": "A"}], "continuationToken": "next+/= ~*", "continuationUri": "https://api.fabric.microsoft.com/v1/workspaces/ws/folders?ignored=1"}},
+        {"status": 200, "body": {"value": [{"id": "a", "displayName": "A"}]}}
+      ],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?x=3&rootFolderId=root&recursive=True", "/v1/workspaces/ws/folders?x=3&rootFolderId=root&recursive=True&continuationToken=next%2B%2F%3D+~%2A"], "rows": [{"id": "a", "displayName": "A"}, {"id": "a", "displayName": "A"}], "pages": 2}
+    },
+    {
+      "id": "initial-token-replaced-in-original-position",
+      "operation": "list", "query": [["continuationToken", "initial"], ["recursive", false]],
+      "responses": [{"status": 200, "body": {"value": [], "continuationToken": "next"}}, {"status": 200, "body": {"value": []}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?continuationToken=initial&recursive=False", "/v1/workspaces/ws/folders?continuationToken=next&recursive=False"], "rows": [], "pages": 2}
+    },
+    {
+      "id": "case-insensitive-header-token-wins",
+      "operation": "list",
+      "responses": [{"status": 200, "headers": {"X-MS-Continuation": "header+"}, "body": {"value": [], "continuationToken": "body"}}, {"status": 200, "body": {"value": []}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=True", "/v1/workspaces/ws/folders?recursive=True&continuationToken=header%2B"], "rows": [], "pages": 2}
+    },
+    {
+      "id": "empty-header-suppresses-even-invalid-body-token",
+      "operation": "list",
+      "responses": [{"status": 200, "headers": {"x-ms-continuation": ""}, "body": {"value": [], "continuationToken": 7}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=True"], "rows": []}
+    },
+    {
+      "id": "null-token-is-terminal",
+      "operation": "list",
+      "responses": [{"status": 200, "body": {"value": [], "continuationToken": null}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=True"], "rows": []}
+    },
+    {
+      "id": "terminal-unused-uri-is-not-followed",
+      "operation": "list",
+      "responses": [{"status": 200, "body": {"value": [], "continuationUri": "https://elsewhere.invalid/ignore"}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=True"], "rows": []}
+    },
+    {
+      "id": "get-opaque-parent-and-future-fields",
+      "operation": "get",
+      "responses": [{"status": 200, "body": {"id": "not-a-uuid", "displayName": " A/\u65e5 ", "parentFolderId": {"future": true}, "description": null}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders/f"], "rows": [{"id": "not-a-uuid", "displayName": " A/\u65e5 ", "parentFolderId": {"future": true}, "description": null}]}
+    },
+    {
+      "id": "get-query-order-replacement-and-null",
+      "operation": "get", "query": [["x", "first"], ["y", null], ["x", "a+ ~*/%"], ["recursive", true]],
+      "responses": [{"status": 200, "body": {"id": "f", "displayName": "F"}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders/f?x=a%2B+~%2A%2F%25&y=None&recursive=True"], "rows": [{"id": "f", "displayName": "F"}]}
+    },
+    {
+      "id": "initial-201-accepted",
+      "operation": "list",
+      "responses": [{"status": 201, "body": {"value": []}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=True"], "rows": []}
+    },
+    {
+      "id": "403-public-code-before-legacy-and-body",
+      "operation": "get",
+      "responses": [{"status": 403, "headers": {"X-MS-Public-API-Error-Code": "Public", "x-ms-error-code": "Legacy"}, "body": {"errorCode": "Body", "message": "untrusted service message", "requestId": "trace"}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders/f"], "error_code": "Public"}
+    },
+    {
+      "id": "403-empty-public-falls-back-to-legacy",
+      "operation": "list",
+      "responses": [{"status": 403, "headers": {"x-ms-public-api-error-code": "", "X-MS-Error-Code": "Legacy"}, "body": {}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=True"], "error_code": "Legacy"}
+    },
+    {
+      "id": "404-ignores-all-service-codes",
+      "operation": "get",
+      "responses": [{"status": 404, "headers": {"x-ms-error-code": "Header"}, "body": {"errorCode": "Body", "message": "not found"}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders/f"], "error_code": "NotFound"}
+    },
+    {
+      "id": "400-structured-code-and-future-diagnostics",
+      "operation": "list",
+      "responses": [{"status": 400, "body": {"errorCode": "FolderBadQuery", "message": "untrusted", "moreDetails": [{"future": null}]}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=True"], "error_code": "FolderBadQuery"}
+    },
+    {
+      "id": "403-empty-body-is-error",
+      "operation": "get",
+      "responses": [{"status": 403, "text": ""}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders/f"], "error_code": "Forbidden"}
+    },
+    {
+      "id": "404-empty-body-is-error",
+      "operation": "list",
+      "responses": [{"status": 404, "text": ""}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=True"], "error_code": "NotFound"}
+    },
+    {
+      "id": "failure-after-page-is-not-empty-success",
+      "operation": "list",
+      "responses": [{"status": 200, "body": {"value": [{"id": "a", "displayName": "A"}], "continuationToken": "next"}}, {"status": 403, "body": {}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=True", "/v1/workspaces/ws/folders?recursive=True&continuationToken=next"], "error_code": "Forbidden", "partial_rows": [{"id": "a", "displayName": "A"}], "pages": 1}
+    },
+    {
+      "id": "401-legacy-header-precedence",
+      "operation": "get",
+      "responses": [{"status": 401, "headers": {"x-ms-error-code": "TokenDenied"}, "text": ""}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders/f"], "error_code": "TokenDenied"}
+    }
+  ],
+  "python_only": [
+    {
+      "id": "missing-value", "operation": "list",
+      "reason": "Python returns an untyped envelope; Rust requires value.",
+      "responses": [{"status": 200, "body": {}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=True"], "python": {"status": 200, "body": {}}},
+      "rust_error": "InvalidResponse"
+    },
+    {
+      "id": "null-payload", "operation": "list",
+      "reason": "Null is not a typed successful list.",
+      "responses": [{"status": 200, "body": null}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=True"], "python": {"status": 200, "body": null}},
+      "rust_error": "InvalidResponse"
+    },
+    {
+      "id": "malformed-json", "operation": "get",
+      "reason": "Python helper returns malformed text; Rust rejects it.",
+      "responses": [{"status": 200, "text": "{"}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders/f"], "python": {"status": 200, "text": "{"}},
+      "rust_error": "InvalidResponse"
+    },
+    {
+      "id": "empty-body", "operation": "get",
+      "reason": "An empty 200 is not a typed folder.",
+      "responses": [{"status": 200, "text": ""}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders/f"], "python": {"status": 200, "text": ""}},
+      "rust_error": "InvalidResponse"
+    },
+    {
+      "id": "null-required-id", "operation": "get",
+      "reason": "Required id/displayName must be strings, without UUID narrowing.",
+      "responses": [{"status": 200, "body": {"id": null, "displayName": "F"}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders/f"], "python": {"status": 200, "body": {"id": null, "displayName": "F"}}},
+      "rust_error": "InvalidResponse"
+    },
+    {
+      "id": "numeric-body-token", "operation": "list",
+      "reason": "Rust requires string/null token rather than Python truthiness/coercion.",
+      "responses": [{"status": 200, "body": {"value": [], "continuationToken": 7}}, {"status": 200, "body": {"value": []}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=True", "/v1/workspaces/ws/folders?recursive=True&continuationToken=7"], "python": {"status": 200, "body": {"value": [], "total_pages": 1}}},
+      "rust_error": "InvalidResponse"
+    },
+    {
+      "id": "active-cross-origin-uri", "operation": "list",
+      "reason": "Python ignores continuationUri. Rust validates active hints and never follows arbitrary origins.",
+      "responses": [{"status": 200, "body": {"value": [], "continuationToken": "next", "continuationUri": "https://elsewhere.invalid/steal"}}, {"status": 200, "body": {"value": []}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=True", "/v1/workspaces/ws/folders?recursive=True&continuationToken=next"], "python": {"status": 200, "body": {"value": [], "total_pages": 1}}},
+      "rust_error": "InvalidContinuation"
+    },
+    {
+      "id": "followup-201-discarded", "operation": "list",
+      "reason": "Python discards a non-200 follow-up; Rust reports explicit incomplete traversal.",
+      "responses": [{"status": 200, "body": {"value": [], "continuationToken": "next"}}, {"status": 201, "body": {"value": []}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=True", "/v1/workspaces/ws/folders?recursive=True&continuationToken=next"], "python": {"status": 200, "body": {"value": [], "continuationToken": "next"}}},
+      "rust_error": "UnsupportedStatus"
+    },
+    {
+      "id": "object-get-pagination", "operation": "get",
+      "reason": "Python merges arbitrary object-list fields; Rust GET must return one folder.",
+      "responses": [{"status": 200, "body": {"id": "f", "displayName": "F", "continuationToken": "next"}}, {"status": 200, "body": {"id": "g", "displayName": "G"}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders/f", "/v1/workspaces/ws/folders/f?continuationToken=next"], "python": {"status": 200, "body": {"id": "f", "displayName": "F", "total_pages": 1}}},
+      "rust_error": "InvalidContinuation"
+    },
+    {
+      "id": "204-empty-success", "operation": "get",
+      "reason": "Empty success is not a completed typed folder.",
+      "responses": [{"status": 204, "text": ""}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders/f"], "python": {"status": 204, "text": ""}},
+      "rust_error": "UnsupportedStatus"
+    },
+    {
+      "id": "202-with-wait-disabled", "operation": "list", "wait": false,
+      "reason": "A read LRO/accepted response is not a completed folder list.",
+      "responses": [{"status": 202, "body": {"value": []}}],
+      "expected": {"urls": ["/v1/workspaces/ws/folders?recursive=True"], "python": {"status": 202, "body": {"value": []}}},
+      "rust_error": "UnsupportedStatus"
+    },
+    {
+      "id": "recursive-naive-equals-error", "operation": "list", "recursive": "x=y",
+      "reason": "Python naively splits URI key/value and raises before auth; Rust gives InvalidQuery.",
+      "responses": [],
+      "expected": {"urls": [], "python": {"exception": "ValueError"}},
+      "rust_error": "InvalidQuery"
+    },
+    {
+      "id": "root-without-request-dictionary", "operation": "list", "request_params_absent": true, "root_folder_id": null,
+      "reason": "Python raises AttributeError when root is present without request_params. Explicit Rust options always supply a dictionary.",
+      "responses": [],
+      "expected": {"urls": [], "python": {"exception": "AttributeError"}},
+      "rust_error": null
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+<!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
+
+# Bounded read-command host
+
+`fabric-cli` composes the existing SDK facade, pure Fabric context resolver and
+JSON output library. It is not a production authentication or transport host.
+The `fab-rs` executable recognizes Python's `ls` (`dir`) and `get` names, paths,
+and flags, but returns sanitized `NotConfigured` errors for reads. Ordinary users
+cannot run live reads through this binary yet. Help/version need no host.
+
+## Public library boundary
+
+Call `parser::parse_args` with argv[0] included, then pass `Invocation::Read` to
+`ReadHost::dispatch` or `ReadHost::run`. The host explicitly supplies:
+
+- A real `fabric_sdk::Client` with caller-injected credentials and selection.
+- Workspace, item, and capacity executors. One caller-owned
+  `fabric_sdk_http::HttpExecutor` implements all three.
+- Immutable current/home context and an already-loaded `Lookup` snapshot.
+- Configuration, a validated output timestamp, query projection, and writers.
+
+LS/dir query arguments are scalar strings, preserving literal edge quotes.
+GET query/output arguments use the original variadic joining/quote-stripping
+policy. `None` and `Some("")` remain distinct parsed values. See the
+[argument matrix](../../docs/query-argument-compatibility.md) for option stops,
+precedence, path interaction and the independent source comparison.
+
+No runtime, clock, mutable global state, token discovery, Python/az/azd bridge,
+HTTP/TLS backend, file export, or production fixture mode is installed.
+Cancellation is a caller future. Dropping the operation drops SDK futures;
+partial pages never become successful command data. Writers are caller-owned;
+partial write failures propagate without fallback, retry, flush or success.
+
+`dispatch` returns the existing `RenderPlan`. `run` writes that plan and returns
+its exit status. JSON success and command failure both use stdout; Unauthorized
+exits 4, other command failures 1. Cooperative SDK cancellation is a command
+failure, not the separate Python main keyboard-interrupt branch (exit 2).
+
+## Implemented composition
+
+Root `ls` lists real SDK workspaces, filters future workspace types at the CLI
+boundary, attaches canonical suffixes and stably sorts lowercase full names.
+Workspace `ls` lists real SDK items, filters future/non-string item types,
+attaches canonical suffixes, and sorts by Python's short-name/enum-name keys.
+`--long` adds item IDs; root `--long` uses the existing capacity SDK for
+capacity name/ID/region enrichment. Duplicate capacity/workspace IDs use the
+last detail row. Missing capacity values retain Python's defaults/nulls.
+`--all` and `ReadConfig::show_hidden` expose sorted virtual collection names.
+
+No-query LS works with `NoQuery`, using source column projection. A nonempty
+query instead sees sorted source rows before column projection, through
+`Projection::project(Value, Option<&str>, bool)`. Call
+`ReadHost::with_default_projection()` to select the built-in `PythonQuery`
+provider, or supply that provider directly. It uses the real
+`fabric-cli-query` library rather than a callback stub.
+
+Item metadata `get` resolves a path using the supplied snapshot and actually
+calls the source-specific SDK collection through
+`get_item_metadata_from_collection`. Its finite `ItemCollection` maps the
+source's exact collection spelling; the CLI preserves its separate 13 rejected
+item types before authentication. Existing generic SDK methods remain available
+without changing their `/items/{id}` routes.
+It passes the validated, ordered parsed HTTP object directly to the projection
+boundary, without reserializing the legacy typed `Item`. Python GET with no query discovers JSON property
+paths; it does **not** return the object unchanged. The built-in provider maps
+absent GET expressions to native path discovery, preserves `"."` identity and
+Python scalar stringification, and maps query failures to source-shaped
+`InvalidInput` command errors. No-query LS still uses default columns rather
+than path discovery. The query library's documented unsupported numeric and
+grammar boundaries remain explicit errors. `NoQuery` remains an intentional
+host opt-out, rejecting GET discovery and queries instead of faking success.
+
+Integration tests and the offline read probe now use the built-in provider
+after real SDK reads; additional inspection-callback and `NoQuery` tests retain
+the injected/disabled-provider contracts. The binary still requires a configured
+production host, independently of this completed query composition.
+
+Workspace metadata `get` calls `Client::get_workspace_metadata` using the existing
+workspace executor. It reads the primary object, managed private endpoints,
+Spark settings and role assignments before the same query/output boundary.
+Optional service/shape omissions are observed explicitly in the SDK; cancellation,
+credential/execution failures and safety limits fail the command rather than
+printing apparently complete partial metadata. The folder wrapper delegates this
+GET unchanged. See [workspace metadata GET](../../docs/workspace-get-compatibility.md).
+
+## Explicit limits
+
+### Additive folder presentation
+
+`ReadHost::with_folders(&folder_executor)` borrows the existing host and a
+caller-owned SDK folder executor. Its `FolderReadHost` implements folder-aware
+workspace LS and folder-context LS without adding fields to `ReadHost` or
+changing existing struct-literal consumers. Other commands, including
+source-routed GET, delegate to the base host.
+
+For commands from `parser::parse_args`, select
+`host.with_folders(&folder_executor).with_scalar_query()`. This additive builder
+makes scalar LS `--query ""` use default columns, just like absence. The default
+wrapper deliberately retains its pre-existing handler-list contract, where a
+present joined empty list argument selects query path inventory. Neither mode
+rewrites `ReadCommand`; nonempty queries and folder-context query-ignore behavior
+are unchanged.
+
+The wrapper uses bounded SDK item/folder reads and a complete command-local
+folder snapshot, preserving source direct-child selection, structural parent
+equality, stable sorting and JSON output. Workspace LS uses the native query
+provider; folder-context LS preserves Python's separate branch that ignores
+query/hidden flags even when folder listing is disabled in configuration.
+Malformed or unresolved graphs fail explicitly instead of hanging, dropping
+rows or silently reparenting them. These safety outcomes and the snapshot/request
+differences are not exact source parity. See the
+[folder-command matrix](../../docs/folder-command-compatibility.md) and its
+independent 59-case evidence. The binary does not automatically configure this
+wrapper or a production host.
+
+### Remaining command boundaries
+
+The first slice is tenant/workspace LS and source-routed item metadata GET, not
+the whole Python `get` command. Definitions,
+sensitivity-label confirmation, connections, schedules, and environment/mirroring
+augmentation are not ported here. Generic metadata is not advertised as a full
+item export. Python's unsupported GET item types are rejected.
+
+`--output`, `--verbose`, `--force`, text output,
+OneLake/virtual collection commands, ambient home discovery,
+and local filesystem fallback fail explicitly. They are never silently ignored.
+Recognized binary read options still fail `NotConfigured` before host execution.
+
+Lookup is pure and caller-loaded; this slice does not recreate Python's TTL
+cache, cache-miss invalidation/retry or persistent/identity-bound context. Populate
+metadata with the SDK outside `Lookup`, then pass a consistent snapshot. Root
+LS uses the listing itself for long workspace details rather than making
+Python's second workspace-list request; enrichment is a single-list snapshot.
+Folder IDs do not affect flat workspace LS when folder listing is disabled.
+Folder presentation requires the explicit wrapper above; the base host alone
+still rejects folder-listing configuration and folder-context LS.
+
+SDK origin, pagination, malformed-response and identifier safety exceptions
+remain in force. In particular, foreign continuation URIs fail instead of
+being ignored, malformed pages return explicit typed failures, and no SDK
+partial progress is printed as a complete result. Metadata GET preserves source
+metadata field order, unknown/null values and JSON number types before native
+projection. The six former metadata request-URI differences are closed; matching
+the helper's requests and output does not establish full GET parity. See the
+[source-routing matrix](../../docs/specialized-get-compatibility.md).
+
+See [command compatibility](../../docs/read-command-compatibility.md).
+`examples/read_probe.rs` is a test subprocess harness over real SDK calls and an
+offline fake executor, not an executable runtime mode, bridge, or live backend.
