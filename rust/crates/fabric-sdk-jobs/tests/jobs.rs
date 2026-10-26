@@ -548,3 +548,100 @@ fn route_guards_and_polling_validation_are_explicit() {
         .is_ok()
     );
 }
+
+#[tokio::test]
+async fn additional_retry_after_integer_branches_preserve_wait_or_source_failure() {
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/jobs/branches.json"
+    ))
+    .unwrap();
+    for case in cases["polling"].as_array().unwrap() {
+        let header = case["header"].as_str().unwrap();
+        let http = ScriptedHttp::new([
+            response(
+                202,
+                "",
+                &[
+                    (
+                        "Location",
+                        "https://api.fabric.microsoft.com/v1/workspaces/ws/items/item/jobs/instances/run",
+                    ),
+                    ("retry-after", header),
+                ],
+            ),
+            response(200, r#"{"status":"Completed"}"#, &[]),
+        ]);
+        let timer = Arc::new(TestTimer::default());
+        let service = sdk(http.clone(), timer.clone());
+        let handle = service.submit(&target(), None, pending()).await.unwrap();
+        let result = service
+            .wait(&handle, WaitOptions::default(), |_| Ok(()), pending())
+            .await;
+        let seconds = case["expected"].as_i64().unwrap();
+        if seconds < 0 {
+            assert!(matches!(result, Err(JobError::InvalidSleep)));
+            assert_eq!(http.requests.lock().unwrap().len(), 1);
+        } else {
+            result.unwrap();
+            assert_eq!(
+                *timer.waits.lock().unwrap(),
+                if seconds == 0 {
+                    vec![]
+                } else {
+                    vec![seconds as u64]
+                },
+                "{header}"
+            );
+        }
+    }
+}
+
+#[test]
+fn explicit_skill_header_contract_is_bounded_redacted_and_old_executor_defaults_are_safe() {
+    use fabric_sdk_jobs::JobRequestHeaders;
+    for value in [None, Some("")] {
+        assert!(JobRequestHeaders::with_skill(value).unwrap().is_empty());
+    }
+    let headers = JobRequestHeaders::with_skill(Some("caller-skill")).unwrap();
+    assert_eq!(
+        headers.as_slice(),
+        &[("x-ms-fabric-skill".into(), "caller-skill".into())]
+    );
+    assert!(!format!("{headers:?}").contains("caller-skill"));
+    let maximum = 16 * 1024 - "x-ms-fabric-skill".len() - 4;
+    assert!(JobRequestHeaders::with_skill(Some(&"x".repeat(maximum))).is_ok());
+    assert!(matches!(
+        JobRequestHeaders::with_skill(Some(&"x".repeat(maximum + 1))),
+        Err(JobError::InvalidRequestHeaders)
+    ));
+    for value in ["bad\r\ninjection", "bad\t", "\u{7f}", " leading"] {
+        assert!(matches!(
+            JobRequestHeaders::with_skill(Some(value)),
+            Err(JobError::InvalidRequestHeaders)
+        ));
+    }
+}
+
+#[tokio::test]
+async fn old_executor_cannot_silently_drop_requested_headers_and_validation_does_not_acquire_tokens()
+ {
+    let credential = Arc::new(TestCredential::default());
+    let http = ScriptedHttp::new([]);
+    let service = client(
+        credential.clone(),
+        http.clone(),
+        Arc::new(TestTimer::default()),
+        JobLimits::default(),
+    );
+    let result = service.with_request_headers(
+        fabric_sdk_jobs::JobRequestHeaders::with_skill(Some("explicit")).unwrap(),
+    );
+    assert!(matches!(result, Err(JobError::RequestHeadersUnsupported)));
+    assert_eq!(credential.calls.load(Ordering::SeqCst), 0);
+    assert!(http.requests.lock().unwrap().is_empty());
+    let empty = service
+        .with_request_headers(fabric_sdk_jobs::JobRequestHeaders::default())
+        .unwrap();
+    assert!(empty.request_headers().is_empty());
+    assert!(service.request_headers().is_empty());
+}

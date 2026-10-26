@@ -64,9 +64,15 @@ host reader; no SDK/CLI library discovers ambient files.
 `--disable` storage are explicitly represented. Parser cardinality/required
 flags are checked against the unchanged full inventory.
 No job query option exists in the source inventory; this slice adds none.
-The hidden `--skill` value is retained in the typed command but rejected before
-I/O until coordinated host request-header plumbing exists; it is never silently
-accepted and discarded.
+The hidden `--skill` value now supplies only the explicitly caller-owned
+`x-ms-fabric-skill` header. Empty or absent values emit none, matching source
+truthiness. Immutable client/reconciler clones carry the selected context
+through all eight leaves, status polls, pages, timeout cancellation and generic
+operation/result retrieval. Existing host struct literals and default endpoint
+signatures remain valid. Legacy executors/reconcilers must opt in to header
+support or fail before mutation; they cannot silently discard the value.
+The actual HTTP adapter selects the existing checked `execute_bound` path with
+`PublicOrigin::Fabric`, not an inferred or arbitrary endpoint/audience.
 
 ## Preserved oddities, not redesigns
 
@@ -115,7 +121,7 @@ constructing Python's empty ID. Malformed typed responses and unexpected
 success statuses fail rather than silently producing no result.
 These are explicit bounded SDK safety differences, not unqualified Python parity.
 
-JSON integer parameters use the native signed 64-bit bound; non-finite float
+JSON integer parameters now preserve native signed and unsigned 64-bit values; non-finite float
 parameters are explicitly unsupported. Python's arbitrary-size integers,
 non-finite JSON and Unicode decimal-number syntax are not certified by this
 slice. Rust parser/conversion diagnostics can differ from Python exception
@@ -131,9 +137,48 @@ require the front-door integration. `execute` supplies the actual output data,
 source flags and immediate/deferred UI events for that integration; JSON output
 uses the existing shared envelope and writers. Windows local offline evidence
 does not establish Linux/macOS native runner success.
-The shared generic-operation adapter must be supplied by its existing owner;
-if an actual response requires it and none was configured, the command returns
+`SharedJobOperations` now supplies the actual generic-operation adapter over
+the released `OperationSession::reconcile_accepted(PythonSynchronous)`. It
+never issues the initial mutation, and `JobError::Operation` retains the
+original typed/raw failure, operation ID, cancellation and uncertainty.
+`HttpJobExecutor` can supply both operation interfaces over the existing HTTP
+engine. If a host omits a required reconciler, the command still returns
 `NotSupported`, not a successful-looking cancellation/completion.
+
+The resumed increment preserves the original 155 expectations and adds
+396 unchanged-Python branch checks, including source hierarchy support for
+all 44 pinned item types and eight leaves, additional payload/schedule/polling
+cases, source full-name progress events and non-boolean schedule enabled-value
+retention. Public native tests use real job/CLI/shared HTTP consumers; seven
+concrete bridge tests cover successful result retrieval, raw terminal errors,
+HTTP errors, bounds, transport loss, cancellation and no mutation replay.
+This is evidence for those cases, not closure of all shared integration gates.
+
+The approved formatter increment adopts the narrow released
+`d7bb0678e6f49c314699dc4ecf84677272bb364a` delta without importing unrelated
+OneLake code. `OperationError::resource_error` supplies the existing borrowed
+SDK mapping; `fabric_cli_mutations::operation_error_output` supplies the existing
+CLI formatting policy. `JobHost::execute` now returns `JobCommandError`,
+retaining either the existing command failure or the original operation failure.
+Its envelope and JSON runners invoke the borrowed shared formatter directly,
+preserving raw dictionary/list/scalar/Unicode diagnostics, error-code/exit
+selection, cancellation classification, operation ID and mutation uncertainty.
+A message containing only periods becomes the intentional empty string and is
+not passed through `CommandError::new` a second time. This is a necessary public
+CLI return-type change for consumers that previously annotated `CommandError`.
+
+The new job-operation output corpus is checked against unchanged Python
+HTTP/exception/decorator bodies, independently of the native real shared-HTTP
+handler tests. The original 155 contracts and resumed branch expectations remain
+unchanged. This closes the generic-operation formatter row, not all job parity.
+The caller-injected skill-header path is implemented without a shared engine
+change; controls/a leading ASCII space and the shared 16 KiB header
+budget fail explicitly before credentials or HTTP. This validation timing/code
+is a bounded SDK safety distinction from Python Requests exception details.
+The header-aware shared request path also retains its existing finite URL/body
+bounds; headerless default calls retain their old executor path.
+Wide/non-finite JSON representation and shared text/main-level exception
+projection remain separately coordinated interfaces.
 
 Online validation is unexecuted. Account approval alone does not authorize
 job start/cancel/deletion. Exact tenant, client registration, disposable workspace,

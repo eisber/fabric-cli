@@ -1,0 +1,24 @@
+{
+  "python_source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "terminal": [
+    {"name":"structured-ordered-detail","detail":{"errorCode":"Synthetic","message":"Failure."},"repr":"{'errorCode': 'Synthetic', 'message': 'Failure.'}"},
+    {"name":"nested-list-unicode","detail":{"z":null,"a":[true,false,1.0,1e-7,"x'y","日","\u200b","\u0001"]},"repr":"{'z': None, 'a': [True, False, 1.0, 1e-07, \"x'y\", '日', '\\u200b', '\\x01']}"},
+    {"name":"list-detail","detail":[1,"x'y",null],"repr":"[1, \"x'y\", None]"},
+    {"name":"plain-string","detail":"already a string","repr":"already a string"},
+    {"name":"string-trailing-periods","detail":"Unicode 日...","repr":"Unicode 日"},
+    {"name":"null-detail","detail":null,"repr":"None"},
+    {"name":"boolean-detail","detail":false,"repr":"False"},
+    {"name":"scalar-float-detail","detail":1e-7,"repr":"1e-07"}
+  ],
+  "http": [
+    {"name":"unauthorized-default","status":401,"body":{"errorCode":"BodyCode","message":"ignored"},"code":"Unauthorized","message":"Access is unauthorized","exit":4},
+    {"name":"unauthorized-header-code","status":401,"headers":{"x-ms-public-api-error-code":"PolicyDenied"},"body":{"errorCode":"BodyCode","message":"ignored"},"code":"PolicyDenied","message":"Access is unauthorized","exit":1},
+    {"name":"forbidden-secondary-header","status":403,"headers":{"x-ms-public-api-error-code":"","x-ms-error-code":"SecondaryDenied"},"body":{},"code":"SecondaryDenied","message":"Access is forbidden. You do not have permission to access this resource","exit":1},
+    {"name":"not-found-ignores-body-code","status":404,"body":{"errorCode":"BodyCode","message":"ignored"},"code":"NotFound","message":"The requested resource could not be found","exit":1},
+    {"name":"structured-http-body","status":400,"body":{"errorCode":"BodyCode","message":"Service message...","requestId":"synthetic"},"code":"BodyCode","message":"Service message","exit":1},
+    {"name":"unicode-http-body","status":500,"body":{"errorCode":"BodyCode","message":"診断 日...","nested":{"keep":true}},"code":"BodyCode","message":"診断 日","exit":1},
+    {"name":"partial-http-no-code","status":400,"body":{"message":"Message without error code."},"code":"UnknownError","message":"Message without error code","exit":1},
+    {"name":"partial-http-no-message","status":400,"body":{"errorCode":"CodeWithoutMessage"},"code":"CodeWithoutMessage","message":"An error occurred while processing the operation","exit":1},
+    {"name":"period-only-no-second-default","status":400,"body":{"errorCode":"","message":"..."},"code":"UnknownError","message":"","exit":1}
+  ]
+}
