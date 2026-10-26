@@ -252,6 +252,18 @@ pub struct OperationError {
     pub raw_service_error: Option<Box<serde_json::Value>>,
 }
 
+impl OperationError {
+    /// Project an owned resource-error view while retaining this original evidence.
+    ///
+    /// Uses the same mapping as the existing `ResourceOperations` implementation;
+    /// it neither formats raw service data nor invents an HTTP response/status.
+    /// The caller retains the typed kind, operation ID and uncertain-side-effect
+    /// evidence on this original error.
+    pub fn resource_error(&self) -> ResourceError {
+        resource_error(self.clone())
+    }
+}
+
 impl fmt::Display for OperationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Fabric operation failed or is incomplete; inspect classification and reconciliation evidence")

@@ -24,6 +24,7 @@ use serde_json::Value;
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
 pub use create::{CapacitySelection, CreateOptions};
+pub use errors::operation_error_output;
 pub use execution::FabricMutationBackend;
 
 /// A caller-runtime asynchronous operation.

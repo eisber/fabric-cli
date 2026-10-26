@@ -8,15 +8,15 @@ use azure_core::{
     credentials::{AccessToken, TokenCredential, TokenRequestOptions},
     time::OffsetDateTime,
 };
-use fabric_cli_mutations::MutationError;
+use fabric_cli_mutations::operation_error_output;
 use fabric_cli_output::{Indent, OutputEnvelope, Timestamp};
 use fabric_sdk_operations::{
-    Audience, OperationExecutionError, OperationExecutor, OperationLimits, OperationRequest,
-    OperationResponse, OperationSession,
+    Audience, FabricOperation, OperationExecutionError, OperationExecutor, OperationLimits,
+    OperationRequest, OperationResponse, OperationSession,
 };
 use fabric_sdk_workspaces::{
     CredentialSelection,
-    mutations::{CompletionPolicy, ResourceMethod, ResourceOperation, ResourceOperations},
+    mutations::{CompletionPolicy, ResourceMethod},
 };
 use serde_json::{Value, json};
 use std::{
@@ -123,20 +123,23 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
         OperationLimits::default(),
         pending(),
     );
-    let error: MutationError = ResourceOperations::execute(
-        &mut session,
-        ResourceOperation::new(
-            ResourceMethod::Patch,
-            &["workspaces", "ws", "items", "item"],
-            Some(json!({})),
-            CompletionPolicy::PythonSynchronous,
-        )?,
+    let error = session
+        .execute(
+            FabricOperation::new(
+                ResourceMethod::Patch,
+                "/v1/workspaces/ws/items/item",
+                b"{}".to_vec(),
+                CompletionPolicy::PythonSynchronous,
+            )
+            .map_err(|_| "invalid operation")?,
+        )
+        .await
+        .expect_err("error contract unexpectedly completed");
+    let plan = OutputEnvelope::new(
+        Timestamp::parse("2000-01-01T00:00:00Z")?,
+        operation_error_output(&error),
     )
-    .await
-    .expect_err("error contract unexpectedly completed")
-    .into();
-    let plan = OutputEnvelope::new(Timestamp::parse("2000-01-01T00:00:00Z")?, error.output())
-        .render(Indent::Four)?;
+    .render(Indent::Four)?;
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     plan.write_to(&mut stdout, &mut stderr)?;
     assert!(stderr.is_empty());
