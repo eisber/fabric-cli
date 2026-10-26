@@ -11,6 +11,57 @@ branch remains intact; references to it in dated evidence are historical.
 
 ## Read-command, query and folder integration
 
+### October 27 merge-tree F: resource and transfer source composition
+
+`validation/rust-merge-tree-f-dff9ad93` composes only the released D resource
+delta through `a7d043d4753ec23f86a9e1fdaf4d7a502c31adec` and E transfer delta
+through `1788f245d24927b32211094a4904153b641d0807` onto exact shared
+`b3d7daac62068b73f2b34bc8d1e4295bc0bcdb27`. Both source branches fork at
+`91e7523ea978c67ca183abaea04500e323c27eb3`; their unrelated ancestry is not
+merged. The inherited newer Python branch remains separate. The exact
+source-to-integration commit/blob ledger and provider head are recorded in
+workstream document `rust/merge-tree/20261027/F.json`.
+
+The resource API is
+`fabric_cli_mutations::frontdoor::{resource_subcommands, command_from_matches,
+ResourceCommand, ResourceContext, ResourceConfig, ResourceHost}`.
+`ResourceHost::execute` returns existing mutation output/cache/operation
+evidence. Select `ResourceTransferHost` and injected `ResourceFiles` for storage
+`cp`/`mv`; preserve the separate `OneLakeWriteResult`/`OneLakeWriteError`
+create/append/flush and partial-effect evidence. These are eleven bounded
+family-adapter leaves, not eleven new mounted executable paths. See the
+[resource host contract](../crates/fabric-cli-mutations/src/frontdoor/README.md)
+for unsupported branches and source argument limitations.
+
+The transfer API is
+`fabric_cli_transfer::{transfer_subcommands, command_from_matches,
+TransferCommand, TransferHost, TransferMetadata, TransferFiles, TransferUi}`.
+It delegates export, recursive bulk export and import to existing
+`fabric_deploy::definitions`. Preserve `TransferResult` file progress and
+deferred import cache effects, original `TransferError` operation uncertainty,
+and shared `render_result`/`render_error`/`write_result` stream failures.
+`LocalTransferFiles` requires an explicit stable local root. Full config-driven
+`deploy` remains an explicit `NotSupported` gap, not a fourth happy leaf.
+See the [transfer contract](../crates/fabric-cli-transfer/README.md).
+
+Cargo composition adds the safe transfer default member, its centralized local
+path declarations and package block, and the resource crate's existing Clap
+dependency. All 218 external registry blocks and external dependency features
+must remain unchanged. No central main/parser/Invocation/runtime/session,
+native-read, SDK/core/output/HTTP/auth implementation, Python product or old
+oracle is changed. Existing job/read base history remains intact.
+
+This is a **source-composed candidate, not merged-head validation or shared
+publication readiness**. The D source has actual Linux format/check/strict
+Clippy, 87 Rust tests and 37 resource plus six storage source/native comparisons
+at its own SHA. E's recorded Linux format pass is followed by all-target
+`E0599` failures at `tests/commands.rs:507,569,950` (`Body::as_bytes`);
+19 registered tests are not a passing count. Original owners supply immutable
+repairs. The existing capped validator must check the exact merged head through
+the root relay; no local heavy-build lease is implied. Neither family is mounted
+in the executable here, and Windows/macOS, live authentication and full
+deployment remain unproven. Only the root publishes `feature/rust`.
+
 ### October 26 released transfer and jobs library candidate
 
 The isolated `dev/marcozo/released-library-c728-1302861` candidate starts at
