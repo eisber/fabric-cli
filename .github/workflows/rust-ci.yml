@@ -221,7 +221,14 @@ jobs:
         with:
           fetch-depth: 0
       - name: Set up the development-only Python oracle
-        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
+        if: >-
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-jobs') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-jobs') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-paging') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-mutations') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-operations') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake')
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
@@ -310,9 +317,36 @@ jobs:
           cargo clippy --offline --locked -p fabric-identity --all-targets --features windows-broker -- -D warnings
           cargo run --offline --locked -p fabric-identity --example safe_consumer --no-default-features
           cargo run --offline --locked -p fabric-identity --example safe_consumer --features windows-broker
+      - name: Require pinned Python job contracts and actual offline job consumer
+        if: >-
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-jobs') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-jobs') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-paging')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python -B tests/compatibility/jobs/reference.py
+          cargo run --offline --locked -p fabric-cli-jobs --example offline_job
       - name: Run independent offline SDK example
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk')
         run: cargo run --offline --locked -p fabric-sdk --example injected_credentials
+      - name: Compare resource operations and errors with pinned Python consumers
+        if: >-
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-mutations') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-operations') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake')
+        timeout-minutes: 5
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          cargo build --offline --locked -p fabric-cli-mutations -p fabric-sdk-operations --examples
+          suffix=""
+          if [[ "$RUNNER_OS" == Windows ]]; then suffix=".exe"; fi
+          python -B crates/fabric-cli-mutations/tests/python_reference.py --probe "target/debug/examples/offline_mutation${suffix}"
+          python -B crates/fabric-cli-mutations/tests/operation_reference.py --probe "target/debug/examples/python_operation${suffix}"
+          python -B crates/fabric-cli-mutations/tests/error_reference.py --probe "target/debug/examples/error_contract${suffix}"
       - name: Check CLI help
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
         run: cargo run --offline --locked -p fabric-cli -- --help

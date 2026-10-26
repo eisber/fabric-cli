@@ -6,7 +6,9 @@
 
 Python source: `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
 Rust assessment: published `a23b4deda07011ea36bb3a635f75266b14b35c80`,
-October 25, 2026. Python source is unchanged at this checkpoint.
+October 25, 2026. Python source is unchanged at this checkpoint. Later additive
+integration records below update individual library capabilities, not this
+original executable assessment.
 
 The authority is `core/fab_parser_setup.py::create_parser_and_subparsers` and
 the registration functions it actually calls, not the help dictionary, command
@@ -44,18 +46,18 @@ placeholder crates or claims of delivered code.
 | `get` | - | Partial ordered item/specialized/workspace metadata and projection; missing other resources, complete enrichment and live host | Existing read host and focused SDKs |
 | `cd` | - | Partial immutable path/context resolver; missing command persistence and interactive state | Existing `fabric-cli-context`; new `fabric-cli-local` |
 | `pwd` | - | Partial context types; missing command/output/session integration | `fabric-cli-context`, new `fabric-cli-local` |
-| `exists` | - | Partial lookup primitives; missing command, resource/error truthiness and OneLake branches | Existing focused SDKs/context, new OneLake SDK |
+| `exists` | - | Partial workspace/item/folder truthy-ID handler and source message; other resources, OneLake and binary dispatch remain | Existing focused SDKs/context/mutation CLI, OneLake SDK |
 | `open` | - | Missing source URL selection and injected platform browser handler | New `fabric-cli-local`, existing context/SDK |
-| `mkdir` | `create` | Partial Notebook create in SDK; missing full workspace/item/folder/file/hidden-resource routing and command | Existing focused SDKs; new OneLake SDK and `fabric-cli-mutations` |
-| `rm` | `del` | Missing full resource deletion, selection/prompts, hard/recursive modes and cleanup | Same mutation owners |
+| `mkdir` | `create` | Partial workspace/item/folder library consumers, SQL creation modes and explicit UI/cache effects; templates/dependencies, other resources and binary dispatch remain | Existing focused SDKs, `fabric-sdk-onelake`, `fabric-cli-mutations` |
+| `rm` | `del` | Partial item/folder force/hard and forced workspace deletion library; bulk/non-force selection, file branches and binary dispatch remain | Same mutation owners |
 | `mv` | `move` | Missing cross-workspace/item/file move, recursive traversal, confirmations and reconciliation | Mutation owners plus deployment/definitions |
 | `cp` | `copy` | Missing item/file recursive copy, overwrite and path-collision behavior | Mutation owners plus deployment/definitions |
-| `set` | - | Missing property-specific mutations and dispatch; read metadata is not a setter | Existing focused SDKs and `fabric-cli-mutations` |
+| `set` | - | Partial workspace/Spark/item/folder metadata library setters; source read adapter, definitions, other resource branches and binary dispatch remain | Existing focused SDKs and `fabric-cli-mutations` |
 | `ln` | `mklink` | Missing OneLake and external shortcut requests/types/overwrite behavior | New `fabric-sdk-onelake`, mutation CLI |
-| `start` | - | Missing capacity ARM and mirrored-resource lifecycle; distinct from `job start` | Existing capacity SDK, new resource lifecycle SDK |
-| `stop` | - | Missing capacity/mirrored-resource stop and completion handling | Same lifecycle owners |
-| `assign` | - | Missing capacity/domain workspace assignment and routing | Existing workspace/capacity SDKs; new catalog SDK |
-| `unassign` | - | Missing capacity/domain unassignment and routing | Same assignment owners |
+| `start` | - | Partial mirrored-database library lifecycle; capacity ARM/other resources and binary dispatch missing; distinct from `job start` | Existing resource/mutation and shared-operation SDKs |
+| `stop` | - | Partial mirrored-database library lifecycle; capacity ARM/other resources and binary dispatch missing | Same lifecycle owners |
+| `assign` | - | Partial capacity assignment library and metadata checks; domain/other resources and binary dispatch missing | Existing workspace SDK/mutation CLI; catalog extension pending |
+| `unassign` | - | Partial capacity unassignment library; domain/other resources and binary dispatch missing | Same assignment owners |
 | `export` | - | Missing full item-definition retrieval, transforms and filesystem output | Existing `fabric-deploy`; new `fabric-cli-transfer` |
 | `bulk-export` | - | Missing recursive workspace/folder export, structure and binding preservation | Same transfer owners |
 | `import` | - | Partial Notebook preparation/create/update/LRO; missing complete CLI and item-type branches | Existing `fabric-deploy`/SDK; transfer CLI |
@@ -80,14 +82,14 @@ placeholder crates or claims of delivered code.
 | `label set` | - | Missing local label lookup plus service application/permissions | Same access owner plus local config |
 | `label rm` | `label del` | Missing sensitivity-label removal | Same access owner |
 | `label list-local` | - | Missing local label definitions/output; registered even though easy to omit from summaries | Same access/local-config owners |
-| `job start` | - | Missing source asynchronous run consumer; Notebook definition LRO is not job execution | New `fabric-sdk-jobs`, `fabric-cli-jobs` |
-| `job run` | - | Missing synchronous execution, parameters, timeout and status polling | Same jobs owner |
-| `job run-list` | - | Missing runs versus schedules listing and pagination | Same jobs owner |
-| `job run-cancel` | - | Missing running/scheduled job cancellation and reconciliation | Same jobs owner |
-| `job run-sch` | - | Missing schedule creation and validation | Same jobs owner |
-| `job run-update` | - | Missing schedule update and validation | Same jobs owner |
-| `job run-rm` | - | Missing schedule deletion and confirmation | Same jobs owner |
-| `job run-status` | - | Missing run/schedule status and output | Same jobs owner |
+| `job start` | - | Partial typed library submission/accepted handle and source output; binary host integration missing | Existing `fabric-sdk-jobs`, `fabric-cli-jobs` |
+| `job run` | - | Partial real status/wait/timeout/cancel policy and input conversion; text/front-door and numeric boundaries remain | Same jobs owner |
+| `job run-list` | - | Partial instances/schedules collection with shared `fabric-sdk-paging`; binary consumer missing | Same jobs owner |
+| `job run-cancel` | - | Partial accepted cancellation and actual status wait; generic-operation reconciler wiring missing | Same jobs owner |
+| `job run-sch` | - | Partial source schedule creation/validation library handler; host integration missing | Same jobs owner |
+| `job run-update` | - | Partial GET-before-PATCH schedule update library; host integration missing | Same jobs owner |
+| `job run-rm` | - | Partial confirmed/forced schedule deletion library; host integration missing | Same jobs owner |
+| `job run-status` | - | Partial run/schedule status and source-shaped output library; host integration missing | Same jobs owner |
 | `table schema` | - | Missing Lakehouse table schema/format contract | New `fabric-sdk-tables`, `fabric-cli-tables` |
 | `table load` | - | Missing source/file validation, load submission/completion and output | Same table owner plus OneLake boundary |
 | `table vacuum` | - | Missing retention/dry-run behavior, submission and completion | Same table owner |
@@ -153,17 +155,33 @@ byte and deadline guards still apply.
 
 Table schema owns interpretation of Delta commit logs, not a second OneLake
 filesystem client. The resource/OneLake lane supplies list/read/properties;
-the jobs lane supplies generic `TableMaintenance` run/status/cancel. Table-load
-202 is source-shaped acceptance, not a completed load. Generic resource LRO
+the jobs lane supplies generic `TableMaintenance` run/status/cancel. Table-load 202 cannot be interpreted from the command handler alone: Python's
+shared client defaults `wait=True` and polls Fabric operation responses before
+returning when operation headers exist, except for job-instance locations.
+Without operation headers it returns the original 202; `raw_response` bypasses
+this processing. The load handler's "operation started" branch applies only when
+202 reaches that handler. Preserve these complete client/handler branches rather
+than treating all 202 responses as immediate acceptance or always polling.
+Generic resource LRO
 extraction must retain one policy implementation and preserve existing public
 Notebook APIs and independent contracts.
 
 Keep focused SDK executor traits independent of the facade-dependent HTTP
 adapter, avoiding a facade -> service -> HTTP -> facade cycle. Narrow composition
 adapters can bind the shared HTTP implementation after service interfaces are
-committed. Storage/ARM/Power BI and custom-header execution still need explicitly
-bound adapters; the Fabric-only method never infers token audience or expands
-its allowed hosts.
+committed. `HttpExecutor::execute_bound` separately supplies fixed public
+Fabric/OneLake/ARM/Power BI origins and validated bounded non-auth headers through
+that same engine. The caller must bind credential selection/acquisition to the
+explicit origin's audience; Power BI preserves the pinned Python Fabric scope.
+Authentication, cookies, Host, proxy and framing/hop-by-hop overrides are rejected.
+The existing Fabric-only method never infers token audience or expands its
+allowed hosts. Typed raw-command and OneLake service adapters still need wiring
+and consumer evidence; the shared primitive alone is not command completion.
+
+`TokenPager::with_collection_field` selects source root arrays such as
+`accessDetails` or `domains` without reserializing their responses into `value`.
+Byte limits apply to original decoded response bytes before parsing; token
+precedence, ordering, cancellation, partial errors and bounds are unchanged.
 
 Some worker launch branches preserve newer upstream `8ad4c70` ancestry. Its item
 type changes are not the pinned Python oracle. Preserve those commits and
@@ -172,6 +190,52 @@ a read-only pinned export. Integrate Rust-only lane deltas, not the unrelated
 upstream Python feature. Record source drift separately.
 
 ## Offline and online completion gates
+
+### Released resource and operation library checkpoint
+
+Seven released Rust-only increments ending at `128398d` provide
+`fabric-cli-mutations`, focused workspace/item/folder endpoint extensions,
+`fabric-sdk-onelake` read/list/HEAD and `fabric-sdk-operations`.
+These are bounded library consumers, not full generic filesystem verbs.
+The generic operation engine is extracted from the existing Notebook policy;
+Notebook's public API delegates through a compatibility adapter rather than
+retaining a second polling implementation.
+
+`OperationSession` preserves explicit credentials, finite requests/bytes/delays,
+cancellation, raw service error data, observed operation IDs and mutation
+uncertainty. `reconcile_accepted` consumes an already-issued 202 without another
+mutation. `PythonSynchronous` handles the complete source client behavior while
+the existing strict Notebook completion policy remains distinct. No transport,
+retry, runtime or identity backend is created by the service engine.
+
+The released OneLake checkpoint supplies a caller-injected storage executor
+interface, not yet its later concrete bound-HTTP adapter or write/shortcut/move
+increments. Those newer worker commits remain separate until reviewed and
+validated. Source command, poller and error/exit comparisons use actual public
+native consumers; existing source expectations and Python product code remain
+unchanged. Main dispatch, context/presentation integration, templates/bulk and
+other resource branches remain explicit gaps. See the
+[resource matrix](mutation-compatibility.md).
+
+### Job and paging library integration
+
+The coordinator reviewed the exact jobs handoff `f75b7fe`, additive path coverage
+`e4faed4` and limitation clarification `4cf9d71`, applying only their Rust changes
+without the worker's unrelated upstream Python ancestry. The SDK has real
+submit/status/cancel/wait and schedule CRUD, and the CLI library owns all eight
+handlers over an actual shared `HttpExecutor` adapter. `TokenPager` is a reusable
+transport-neutral SDK collector first consumed by job listing; existing service
+pagers and protected oracles remain unchanged. Direct TableMaintenance consumers
+exercise submission, status and cancellation without a CLI/identity dependency.
+
+The existing front-door owner still must integrate registration, explicit host
+configuration, shared text output, batch/REPL and custom help. Generic Fabric
+operation reconciliation is an injected capability, not a copied job LRO engine;
+responses requiring it fail explicitly until that shared adapter is wired.
+Skill headers, bounded numeric/conversion-error differences and exact main-level
+unexpected-error envelopes remain documented gaps. See the
+[job compatibility matrix](job-compatibility.md); these rows are not complete
+binary or online parity.
 
 Every row needs independent Python-derived expected requests, outputs/streams,
 exit codes, errors, side effects and cancellation/cleanup. Validate options,

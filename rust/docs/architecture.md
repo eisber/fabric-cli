@@ -279,6 +279,23 @@ See [CLI contracts](compatibility.md#bootstrap-cli-contract).
 
 ## Runtime and transport policy
 
+`fabric-sdk-operations` owns the shared bounded Fabric request/operation
+reconciliation engine extracted from the original Notebook implementation.
+It depends on SDK/core types, never the facade, HTTP implementation, identity,
+CLI or deployment. Notebook's public API remains a compatibility consumer of
+that engine, with its original strict status/result policy. Resource endpoint
+operations select separately documented source-synchronous policies. An already
+received 202 can be reconciled without replaying the original mutation, retaining
+operation IDs, raw service failures and uncertainty through cancellation.
+
+`fabric-cli-mutations::FabricMutationBackend` is thin CLI composition over that
+SDK policy and `fabric-sdk-http`, not a second SDK or operation loop.
+`fabric-sdk-onelake` owns bounded storage list/read/HEAD with explicit storage
+selection and an injected executor; its first released checkpoint adds no
+facade, CLI, credential backend or concrete HTTP dependency. Complete filesystem
+verbs, storage adapters, broader mutations and the main CLI host remain separate
+implementation/consumer gates. See the [resource matrix](mutation-compatibility.md).
+
 `fabric-sdk-http` is the first reusable executor adapter for workspace and
 Notebook service requests. It accepts a caller-owned Azure `HttpClient` and
 asynchronous timer, with bounded streaming, deadlines, read-status retries and

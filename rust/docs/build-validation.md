@@ -82,6 +82,42 @@ prerequisites such as OpenSSL.
 
 ## Owner-confirmed affected-crate goal
 
+### Resource and shared operation consumers
+
+Selecting `fabric-cli-mutations`, `fabric-sdk-operations` or
+`fabric-sdk-onelake` requires building the actual offline command, operation and
+error examples and comparing them to three independent pinned Python references.
+These standard-library runners execute original Git source functions with
+synthetic collaborators; they do not import product initialization or call live
+services. Comparisons assert requests, output, status/exit and reconciliation,
+not just compiled models. The new native step has a finite five-minute bound,
+requires Python even for resource-only selections and preserves existing read,
+job, Notebook and transport gates. All public/native proof remains separate
+from the unavailable production host and online test scope.
+
+### Existing Windows linker environment
+
+If a resumed lane reports `link.exe` missing, first check its process environment,
+not a new global installation. On the ananke host the existing x64 setup was
+verified at
+`C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat`;
+it resolves the installed MSVC `14.51.36231` linker/compiler. Run that setup and
+Cargo (or the gated validation PowerShell process) in the **same `cmd.exe`
+process**. Calling the batch file in one tool invocation does not preserve its
+PATH/LIB/INCLUDE for a later invocation. The shared build mutex is still required.
+This observed host path is not a requirement for other developers or CI runners.
+
+### Job and shared paging gate
+
+Changes selecting `fabric-sdk-paging`, `fabric-sdk-jobs` or `fabric-cli-jobs`
+require the independent pinned Python job reference and executed public
+`offline_job` consumer on every selected native runner. The reference uses only
+the Python standard library, verifies the original source ASTs and performs no
+product initialization, credential discovery or service calls. It is separate
+from, and does not replace, the existing read/query/folder comparisons.
+Native crate tests cover both the typed job handlers and the real shared HTTP
+adapter; dependency selection follows actual transitive consumers.
+
 ### Optional native transport gate
 
 Selecting `fabric-sdk-transport` runs its no-default-feature library check and

@@ -11,6 +11,83 @@ branch remains intact; references to it in dated evidence are historical.
 
 ## Read-command, query and folder integration
 
+### Resource consumers and one shared operation engine
+
+The coordinator reviewed and applied seven released Rust-only commits, in order:
+`2d2d770`, `bc450f5`, `b3a527a`, `e7155cc`, `ba25faa`, `4e02e3b` and `128398d`,
+onto `ef17b8096fae51ca94d701cdec11f101902868a1`. The initial manifest/lock conflict
+was resolved as the union of existing jobs/paging and new local resource packages,
+not by replacing either lane or changing registry versions. Unrelated upstream
+Python ancestry and newer unreleased resource increments were not merged.
+
+`fabric-cli-mutations` composes source-backed workspace/item/folder create,
+metadata update, delete and existence branches, SQL creation modes, mirrored
+resource lifecycle and capacity linkage. `fabric-sdk-onelake` supplies bounded
+list/read/HEAD over an injected storage executor. `fabric-sdk-operations` owns
+the shared bounded request/poll/result engine; the existing Notebook public API
+now delegates through a compatibility adapter. Python source-synchronous and
+strict Notebook completion policies remain distinct. Already-accepted responses
+can be reconciled without replaying mutations, retaining operation IDs, raw
+service failures, cancellation and uncertain-side-effect evidence.
+
+Independent combined Windows x64 validation passed **388 non-documentation Rust
+tests and seven doctests**, strict all-target workspace Clippy, formatting and
+the executed job consumer. Actual public resource examples passed **95 original
+Python command cases, 12 poller cases and 23 HTTP/exception/decorator error/exit
+cases**. All 155 independent job contracts and sixteen pre-existing read/query/
+folder/workspace comparison stages passed unchanged. These denominators are
+separate scenarios, not a complete command or migration coverage percentage.
+
+All previous registry package versions, sources, checksums and features were
+preserved. Only local package/edge additions were required; Python product
+source and protected expectations remain unchanged. Native CI now requires the
+three resource source-to-native comparisons on every selected OS, including
+resource-only selections. The shared local validation mutex released normally.
+The exact published checkpoint and fresh provider result are supplied separately.
+
+This is not complete generic filesystem verbs, a live CLI host, broader
+templates/dependencies/bulk selection, copy/move, shortcuts, ARM/domain
+administration or online parity. The later concrete OneLake adapter and storage
+mutation increments remain separate handoffs. See the
+[resource compatibility matrix](mutation-compatibility.md).
+
+### Job handlers and shared token paging integration
+
+The coordinator reviewed and applied only the released Rust commits
+`f75b7fe6ac492a61b203691926ffb17df9e151a1`,
+`e4faed444a0fa9c212a477692e7d30149ad0457b` and
+`4cf9d71f19ae693a2a6193096f77265f670037ed` onto `869263b`.
+The worker's unrelated upstream Python ancestry was not merged.
+`fabric-sdk-jobs` has real run/status/cancel/wait and schedule CRUD;
+`fabric-cli-jobs` supplies all eight typed handlers, registration and an actual
+shared `HttpExecutor` adapter. `fabric-sdk-paging::TokenPager` is a
+transport-neutral collector first used by job lists. Direct TableMaintenance
+tests exercise submission, status and cancellation through shared execution.
+
+Independent combined Windows x64 validation passed **343 non-documentation Rust
+tests and seven doctests**, strict all-target workspace Clippy, formatting, the
+executed offline job consumer and **155 unchanged pinned Python job contracts**.
+All sixteen pre-existing read/query/folder/workspace source stages passed
+unchanged. The new job/pager source reference and executed consumer are required
+on every selected native runner, including changes that select only these new
+families rather than the central CLI.
+
+Only three local workspace packages were added; existing registry versions,
+sources, checksums and dependency features were preserved. Normal SDK job/pager
+graphs exclude HTTP implementations, facade, identity, CLI and deployment.
+Existing public service pagers, Python product source and protected expectations
+remain unchanged. The common local validation mutex released normally.
+The exact published checkpoint and fresh provider result are supplied separately.
+
+This is partial library/handler integration, not a completed production
+executable or online job validation. The existing front-door owner must compose
+the handlers with host configuration, text rendering, batch/REPL and help.
+Generic-operation reconciliation is an injected shared capability and still
+needs its adapter; skill headers, bounded numeric/conversion-error differences
+and main-level unexpected-error envelopes remain explicit gates. Account
+approval alone does not authorize live job mutations. See the
+[job compatibility matrix](job-compatibility.md).
+
 ### Explicit native transport integration
 
 The coordinator reviewed and merged exact lane commit

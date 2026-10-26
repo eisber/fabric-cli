@@ -43,12 +43,44 @@ Thin composition adapters must not reproduce its retry or deadline policies.
 those adapters, without shadowing `NotebookExecutor::wait` or replacing a
 whole-job deadline. Zero delays do not start a sleep; excessive delays fail.
 
+### Explicit public-origin adapter
+
+`execute_bound(PublicOrigin, method, url, token, body, headers, limit)` is a
+separate opt-in seam for the source's four public service origins. The existing
+`execute_fabric` and typed service adapters remain restricted to Fabric.
+
+| Explicit origin | Allowed HTTPS host (port 443) | Caller-acquired audience |
+| --- | --- | --- |
+| Fabric | `api.fabric.microsoft.com` | Fabric |
+| OneLake | `onelake.dfs.fabric.microsoft.com` | OneLake/storage |
+| ARM | `management.azure.com` | ARM |
+| Power BI | `api.powerbi.com` | Fabric, preserving the pinned Python mapping |
+
+The service adapter must bind its credential selection to this explicit pair
+before acquiring a token. Neither URLs nor opaque tokens establish identity or
+scope; the HTTP method never discovers credentials or parses JWTs. It rejects
+origin mismatches, user information, fragments, non-HTTPS/other ports and unsafe
+headers before transport I/O. Authorization, Host, proxy credentials, cookies,
+framing and hop-by-hop headers cannot be overridden. This is a deliberate
+restriction on Python's unrestricted header dictionary. Ordinary repeated
+headers use the last case-insensitive value; Content-Type may be supplied for
+binary/multipart request bodies.
+
+The new seam bounds URLs to 16 KiB, bodies to 4 MiB, supplied header pairs to 64
+and combined header bytes (including separators) to 16 KiB. These are additional
+explicit adapter safety limits, not new restrictions on old Fabric-only calls.
+Exact request bytes/query, status and headers flow through the same existing
+GET-retry/deadline/decoded-stream engine. HEAD and mutations are not replayed.
+This adds no pager, operation reconciler, TLS implementation, scope fallback,
+sovereign/private origin support or live-service certification.
+
 The HTTP client must provide decoded response chunks, disable redirects and
 its own automatic retries, and release local work when its future is dropped.
 The adapter does not inspect or override an opaque client's configuration.
 Use established HTTP libraries: this is not an HTTP/TLS implementation, default
 client factory, or approval of proxy/certificate settings. Only the existing
-public-cloud Fabric origin is accepted; no credentials are discovered.
+public-cloud Fabric origin is accepted by default; other public pairs require
+the explicit bound adapter above. No credentials are discovered.
 
 Consumers can explicitly select the separate
 [`fabric-sdk-transport`](../fabric-sdk-transport/README.md) crate's `hyper-rustls`
@@ -74,7 +106,7 @@ Reference source: `src/fabric_cli/client/fab_api_client.py` at
 | urllib3 Retry-After statuses 413/429/503 | GET retry classification includes 413/429 when Retry-After is present |
 | `do_request`: four headerless 429 responses | Four outer iterations and ten-second waits, then explicit retry exhaustion; adapter budget restarts on each iteration |
 | Fabric token and JSON Content-Type | Uses the operation-supplied token; sends exact body/query and JSON Content-Type |
-| `_poll_operation` sleeps asynchronously in Rust | Notebook executor waits use the caller timer and bounded policy; operation/result logic stays in `fabric-sdk` |
+| `_poll_operation` sleeps asynchronously in Rust | Executor waits use the caller timer; operation/result logic lives in shared `fabric-sdk-operations`, with the existing Notebook API as a compatibility consumer |
 | Request timeout defaults to 240 seconds | Rust uses an overall execution deadline, including reads and retry waits, not Requests' per-attempt socket timeout |
 
 The seven immutable [retry reference cases](../../tests/compatibility/http/README.md)
@@ -98,8 +130,9 @@ This is **not full Python parity**. Explicit remaining differences/gates:
 - This crate supplies no production HTTP/TLS factory. The separately selected
   transport has bounded offline proxy/trust/decompression evidence, not general
   enterprise certification. CLI User-Agent/skill headers, sovereign clouds,
-  private links, OneLake/ARM API execution and identity backends remain outside
-  this slice. There are no new CLI commands.
+  private links, typed OneLake/ARM operations and identity backends remain outside
+  the default adapters. The explicitly bound HTTP primitive does not itself
+  implement those service operations or new CLI commands.
 - The shared executor does not replace the existing SDK's operation-specific
   success-status, decoding, continuation, error, or LRO rules.
 

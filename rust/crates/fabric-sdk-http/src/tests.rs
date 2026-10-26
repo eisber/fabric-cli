@@ -30,6 +30,346 @@ const WORKSPACE: &str = "11111111-1111-1111-1111-111111111111";
 const OPERATION: &str = "22222222-2222-2222-2222-222222222222";
 const ITEM: &str = "33333333-3333-3333-3333-333333333333";
 
+#[tokio::test]
+async fn bound_request_limits_accept_exact_url_body_header_bytes_and_count() {
+    let prefix = "https://management.azure.com/";
+    let url = Url::parse(&format!("{prefix}{}", "x".repeat(16 * 1024 - prefix.len()))).unwrap();
+    assert_eq!(url.as_str().len(), 16 * 1024);
+    let body = vec![0_u8; 4 * 1024 * 1024];
+    let name = "x-bound";
+    let headers = [(name.into(), "v".repeat(16 * 1024 - name.len() - 4))];
+    let client = ScriptedClient::new([response(200, "", &[]), response(200, "", &[])]);
+    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
+    exec.execute_bound(
+        PublicOrigin::Arm,
+        Method::Put,
+        &url,
+        &token(),
+        &body,
+        &headers,
+        NonZeroUsize::new(1).unwrap(),
+    )
+    .await
+    .unwrap();
+    let headers: Vec<_> = (0..64)
+        .map(|index| (format!("x-{index}"), "v".into()))
+        .collect();
+    exec.execute_bound(
+        PublicOrigin::Arm,
+        Method::Get,
+        &url,
+        &token(),
+        &[],
+        &headers,
+        NonZeroUsize::new(1).unwrap(),
+    )
+    .await
+    .unwrap();
+    let requests = client.requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(Bytes::from(requests[0].body()).len(), 4 * 1024 * 1024);
+    assert_eq!(requests[1].headers().get_str(&"x-63".into()).unwrap(), "v");
+}
+
+#[tokio::test]
+async fn bound_requests_preserve_explicit_origin_scope_headers_body_and_status() {
+    for (origin, endpoint, audience) in [
+        (
+            PublicOrigin::Fabric,
+            "https://api.fabric.microsoft.com/v1/workspaces",
+            fabric_sdk::Audience::Fabric,
+        ),
+        (
+            PublicOrigin::OneLake,
+            "https://onelake.dfs.fabric.microsoft.com/ws/item/Files/source.csv",
+            fabric_sdk::Audience::OneLake,
+        ),
+        (
+            PublicOrigin::Arm,
+            "https://management.azure.com/subscriptions/test?api-version=1",
+            fabric_sdk::Audience::Arm,
+        ),
+        (
+            PublicOrigin::PowerBi,
+            "https://api.powerbi.com/v1.0/myorg/groups",
+            fabric_sdk::Audience::Fabric,
+        ),
+    ] {
+        assert_eq!(origin.audience(), audience);
+        let client = ScriptedClient::new([response(202, "", &[("x-test", "retained")])]);
+        let exec = executor(client.clone(), Arc::new(TestTimer::default()));
+        let url = Url::parse(endpoint).unwrap();
+        let body = b"exact binary \x00\xff";
+        let result = exec
+            .execute_bound(
+                origin,
+                Method::Post,
+                &url,
+                &token(),
+                body,
+                &[
+                    ("X-Test".into(), "first".into()),
+                    ("x-test".into(), "last".into()),
+                    ("Content-Type".into(), "application/octet-stream".into()),
+                ],
+                NonZeroUsize::new(1).unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.status, 202);
+        assert_eq!(result.headers["x-test"], "retained");
+        let requests = client.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].url(), &url);
+        assert_eq!(Bytes::from(requests[0].body()).as_ref(), body);
+        assert_eq!(
+            requests[0].headers().get_str(&"x-test".into()).unwrap(),
+            "last"
+        );
+        assert_eq!(
+            requests[0]
+                .headers()
+                .get_str(&"content-type".into())
+                .unwrap(),
+            "application/octet-stream"
+        );
+        assert_eq!(
+            requests[0]
+                .headers()
+                .get_str(&"authorization".into())
+                .unwrap(),
+            format!("Bearer {}", token().token.secret())
+        );
+    }
+}
+
+#[tokio::test]
+async fn bound_origin_and_header_failures_occur_before_transport_io() {
+    let client = ScriptedClient::new([]);
+    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
+    let limit = NonZeroUsize::new(1).unwrap();
+    for (origin, url) in [
+        (
+            PublicOrigin::Fabric,
+            "https://onelake.dfs.fabric.microsoft.com/ws",
+        ),
+        (
+            PublicOrigin::OneLake,
+            "https://api.fabric.microsoft.com/v1/workspaces",
+        ),
+        (PublicOrigin::Arm, "https://management.azure.com.invalid/"),
+        (PublicOrigin::PowerBi, "https://user@api.powerbi.com/"),
+        (
+            PublicOrigin::OneLake,
+            "http://onelake.dfs.fabric.microsoft.com/",
+        ),
+        (PublicOrigin::Arm, "https://management.azure.com:444/"),
+        (PublicOrigin::PowerBi, "https://api.powerbi.com/#fragment"),
+    ] {
+        assert_eq!(
+            exec.execute_bound(
+                origin,
+                Method::Get,
+                &Url::parse(url).unwrap(),
+                &token(),
+                &[],
+                &[],
+                limit
+            )
+            .await
+            .unwrap_err(),
+            ExecutionError::InvalidInput
+        );
+    }
+    for (name, value) in [
+        ("Authorization", "replacement"),
+        ("hOsT", "evil.invalid"),
+        ("Proxy-Authorization", "replacement"),
+        ("Proxy-Authenticate", "replacement"),
+        ("Cookie", "private"),
+        ("Set-Cookie", "private"),
+        ("Content-Length", "0"),
+        ("Connection", "x-test"),
+        ("Transfer-Encoding", "chunked"),
+        ("Upgrade", "protocol"),
+        ("TE", "trailers"),
+        ("Trailer", "x-test"),
+        ("x invalid", "invalid"),
+        ("", "invalid"),
+        ("x-test", "injected\r\nAuthorization: private"),
+        ("x-test", "bad\tvalue"),
+    ] {
+        assert_eq!(
+            exec.execute_bound(
+                PublicOrigin::Fabric,
+                Method::Get,
+                &Url::parse("https://api.fabric.microsoft.com/v1/workspaces").unwrap(),
+                &token(),
+                &[],
+                &[(name.into(), value.into())],
+                limit
+            )
+            .await
+            .unwrap_err(),
+            ExecutionError::InvalidInput
+        );
+    }
+    let url = Url::parse("https://management.azure.com/subscriptions/test").unwrap();
+    for headers in [
+        vec![("x-test".into(), "x".repeat(16 * 1024))],
+        vec![("x-test".into(), "x".into()); 65],
+    ] {
+        assert_eq!(
+            exec.execute_bound(
+                PublicOrigin::Arm,
+                Method::Get,
+                &url,
+                &token(),
+                &[],
+                &headers,
+                limit
+            )
+            .await
+            .unwrap_err(),
+            ExecutionError::InvalidInput
+        );
+    }
+    let body = vec![0; 4 * 1024 * 1024 + 1];
+    assert_eq!(
+        exec.execute_bound(
+            PublicOrigin::Arm,
+            Method::Post,
+            &url,
+            &token(),
+            &body,
+            &[],
+            limit
+        )
+        .await
+        .unwrap_err(),
+        ExecutionError::InvalidInput
+    );
+    let long = Url::parse(&format!(
+        "https://management.azure.com/{}",
+        "x".repeat(16 * 1024)
+    ))
+    .unwrap();
+    assert_eq!(
+        exec.execute_bound(
+            PublicOrigin::Arm,
+            Method::Get,
+            &long,
+            &token(),
+            &[],
+            &[],
+            limit
+        )
+        .await
+        .unwrap_err(),
+        ExecutionError::InvalidInput
+    );
+    for text in ["", "bad\nbearer"] {
+        let invalid = AccessToken::new(text, OffsetDateTime::UNIX_EPOCH);
+        assert_eq!(
+            exec.execute_bound(
+                PublicOrigin::Arm,
+                Method::Get,
+                &url,
+                &invalid,
+                &[],
+                &[],
+                limit
+            )
+            .await
+            .unwrap_err(),
+            ExecutionError::InvalidInput
+        );
+    }
+    assert!(client.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn bound_non_get_requests_are_never_replayed_and_response_caps_remain_enforced() {
+    let url = Url::parse("https://onelake.dfs.fabric.microsoft.com/ws/item/file").unwrap();
+    for method in [
+        Method::Head,
+        Method::Post,
+        Method::Patch,
+        Method::Put,
+        Method::Delete,
+    ] {
+        let client = ScriptedClient::new([response(429, "", &[("Retry-After", "1")])]);
+        let exec = executor(client.clone(), Arc::new(TestTimer::default()));
+        let result = exec
+            .execute_bound(
+                PublicOrigin::OneLake,
+                method,
+                &url,
+                &token(),
+                &[],
+                &[],
+                NonZeroUsize::new(1).unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.status, 429);
+        assert_eq!(client.requests.lock().unwrap().len(), 1);
+    }
+    let client = ScriptedClient::new([response(200, "ab", &[])]);
+    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
+    assert_eq!(
+        exec.execute_bound(
+            PublicOrigin::OneLake,
+            Method::Get,
+            &url,
+            &token(),
+            &[],
+            &[],
+            NonZeroUsize::new(1).unwrap()
+        )
+        .await
+        .unwrap_err(),
+        ExecutionError::ResponseLimit
+    );
+    assert_eq!(client.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn bound_gets_reuse_existing_retries_but_original_fabric_adapters_stay_restricted() {
+    let url = Url::parse("https://management.azure.com/subscriptions/test").unwrap();
+    let client = ScriptedClient::new([response(503, "", &[]), response(200, "ok", &[])]);
+    let exec = executor(client.clone(), Arc::new(TestTimer::default()));
+    assert_eq!(
+        exec.execute_bound(
+            PublicOrigin::Arm,
+            Method::Get,
+            &url,
+            &token(),
+            &[],
+            &[],
+            NonZeroUsize::new(2).unwrap()
+        )
+        .await
+        .unwrap()
+        .body,
+        b"ok"
+    );
+    assert_eq!(client.requests.lock().unwrap().len(), 2);
+    assert_eq!(
+        exec.execute_fabric(
+            Method::Get,
+            &url,
+            &token(),
+            &[],
+            NonZeroUsize::new(2).unwrap()
+        )
+        .await
+        .unwrap_err(),
+        ExecutionError::InvalidInput
+    );
+    assert_eq!(client.requests.lock().unwrap().len(), 2);
+}
+
 #[derive(Default)]
 pub(super) struct TestTimer {
     waits: Mutex<Vec<Duration>>,

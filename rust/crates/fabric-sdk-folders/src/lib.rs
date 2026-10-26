@@ -10,6 +10,7 @@
 
 mod folders;
 pub mod models;
+pub mod mutations;
 
 pub use fabric_core::{CredentialSelection, TokenCredential};
 pub use fabric_sdk_items::{

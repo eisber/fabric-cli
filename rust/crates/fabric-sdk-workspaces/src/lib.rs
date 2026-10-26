@@ -9,6 +9,7 @@
 
 pub mod metadata;
 pub mod models;
+pub mod mutations;
 pub mod workspaces;
 
 pub use fabric_core::{CredentialSelection, TokenCredential};
