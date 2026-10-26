@@ -1,0 +1,25 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-cli-local"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Injected local configuration and navigation command family"
+
+[package.metadata.fabric]
+layer = "cli"
+
+[dependencies]
+clap.workspace = true
+fabric-cli-context.workspace = true
+fabric-cli-output.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

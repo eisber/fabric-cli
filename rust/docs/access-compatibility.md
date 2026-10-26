@@ -6,6 +6,9 @@ Python authority: `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
 This is additive library composition, not binary registration or live parity.
 The separately owned front door supplies explicitly resolved targets and
 configuration; no runtime, identity backend or second parser is created.
+The [typed frontdoor adapter](access-frontdoor.md) supplies the nine modular
+Clap registrations, conversion and borrowed host over these same handlers.
+Central executable mounting remains a separate integration requirement.
 
 | Leaf/resource | Route / implemented consumer |
 | --- | --- |

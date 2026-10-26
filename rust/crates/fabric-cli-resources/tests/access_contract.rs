@@ -5,6 +5,7 @@
 
 mod boundary_contract;
 mod catalog_contract;
+mod frontdoor_contract;
 mod lifecycle_contract;
 mod raw_api_contract;
 mod render_contract;

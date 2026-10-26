@@ -11,6 +11,93 @@ branch remains intact; references to it in dated evidence are historical.
 
 ## Read-command, query and folder integration
 
+### October 27 merge-tree C: local and access source composition
+
+The integration-only branch `validation/rust-merge-tree-c-local-access-1302934`
+adopts exact `b3d7daac62068b73f2b34bc8d1e4295bc0bcdb27` by an additive merge,
+preserving inherited Python history at
+`8ad4c703bdd6738189f59318a04cab297b6c4381`. The independent Python oracle remains
+`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`; newer Python is not a new oracle.
+Only the following released deltas are cherry-picked, not either divergent
+worker branch's whole tree:
+
+| Released source | C integration commit | Scope |
+| --- | --- | --- |
+| `4652285f3555b10058a7e049b92f2d0a137970d5` | `67d0b76fdbe9c3f1ef29c6d5e48e65d4dfd59947` | Local configuration, cache and named version handlers |
+| `bb842ed6886708232b078ae2aa86ca21dce92b0a` | `f5026f557d90e985009126df51246b9314c266b2` | Released local formatting |
+| `1bfce8f9b8718df83ca67dbd95b81b09ecaed8ce` | `43de37310fb862078cc7ba863c4d9cf270fb2443` | Navigation, browser, terminal and source support interfaces |
+| `6f06a63cff5114ce4f02bc60602798809f4d65f5` | `84824df4a110de8e4267fc3076214c626532cc87` | ACL, catalog and raw API typed frontdoor |
+| `b2ef54aee4d78dff66072c1b511a8595fcd9f8a6` | `b56591523fd6880f8d35779a121be8a9738ccaa1` | ACL and label mutation frontdoors |
+| `2b48992607a78cb09ddf1fe904d3c6c7acd4d039` | `55bd13315f4c9bcd01d97ba591fc8e40b9788d68` | Access composed-schema consumer and compatibility notes |
+| `27b01af956bf16aa4ece82ecb87eb0b322ce9411` | `a4b44c8531d35bd041125aa4ae58685f3b919a45` | Original local owner's pinned-source table-header correction |
+
+The local crate tree matches the released `27b01af` tree exactly, and the
+resources crate tree matches `2b48992` exactly. The Cargo union adds only the
+safe `fabric-cli-local` default member/workspace dependency, its local lock
+record with six existing dependencies, and the resources-to-Clap lock edge.
+All 218 external registry blocks, their order, and existing external dependency
+versions/features are unchanged. Existing job/read, validator, engine, identity,
+output and protected-oracle files remain intact. C does not edit central
+main/parser/Invocation/native/session/runtime files.
+
+#### Family API ledger for the eventual central assembler
+
+| Surface | Released interface and caller responsibility |
+| --- | --- |
+| Local registration/conversion | `fabric_cli_local::{root_commands, from_matches}` returns `LocalInvocation`/`LocalCommand`; eight distinct root names, including the four-leaf `config` group; aliases are not extra leaves |
+| Local execution/configuration | `execute`, `ConfigStore`, `LocalEffects`, `Capacity`; explicit file root, cache invalidation and preloaded capacity metadata; no identity or service discovery |
+| Local navigation/platform | `NavigationState`, `NavigationHost`, `BrowserIdentity`, `SystemBrowserLauncher`, `AnsiTerminal`; caller-owned context/home/session, explicit authenticated identity metadata and actual opt-in effects |
+| Local output/failure | `LocalOutput::render`, `LocalError::command_error`, `LocalCommand::command_path`; existing output pipeline and caller-owned streams; preserve `pwd` stderr and named-version behavior |
+| Access registration/conversion | `fabric_cli_resources::frontdoor::{register, AccessCommand, AccessKind, RawApiCommand}`; distinct `acl`, `label`, `find`, `api` roots; conversion does not execute or acquire identity |
+| Access local-only execution | `frontdoor::execute_local(command, definitions)` runs `label list-local` before account/remote-host setup, without dummy credentials |
+| Access remote execution | `AccessHost`, `ApiClients`, `AccessTargets`; borrow existing runtime, context resolver, explicit audience-bound clients, confirmation, limits and request bounds |
+| Access output/failure | `frontdoor::render`, `AccessOutput::write_to`; shared family renderer, explicit warnings, ordered streams and writer failures |
+
+The two root-name sets are disjoint. Their common output-format/skill options
+remain family-owned leaf arguments, not duplicated root globals. Local
+navigation uses `HierarchyLookup`/`PathElement`; access borrows
+`AccessTargets`/`Element`. The eventual central host must adapt its existing
+metadata session to these released boundaries, not add another resolver,
+runtime, HTTP engine or credential fallback. ACL export and access skill-header
+binding remain explicitly unsupported; REPL/batch and platform debt are not
+closed by source composition. See the [local host contract](../crates/fabric-cli-local/README.md)
+and [access host contract](access-frontdoor.md).
+
+#### Source readiness is not merged-head validation
+
+C's static preservation checks pass: exact family blobs, 218 unchanged registry
+blocks, unchanged external manifest features, protected central/oracle trees,
+inherited Python content/history, and whitespace. No heavy local build or
+second WSL setup is authorized. This Windows session has no Cargo, rustfmt or
+Python on PATH; no installation or native pass is claimed.
+
+The existing Linux builder's component receipts are not merged-head proof:
+local `1bfce8f` passed formatting, all-target check, strict Clippy and two pinned
+Python source references, but `config_consumer` had eight passes and one failure
+at line 189 (`text.contains("Setting")`), receipt
+`4302712e7386460886252f79bab45921`. Navigation tests were not subsequently run.
+Access `2b48992` had 55 passes and three failures:
+`frontdoor_contract/mutations.rs:263` (empty stdout), line 319
+(`mutation_may_have_occurred`), and `frontdoor_contract/mod.rs:474`
+(empty stdout). Original family owners retain these repairs; C does not change
+their algorithms or weaken expectations.
+
+The subsequent original-owner `27b01af` release replaces the new native test's
+incorrect title-case assumption with the source's lowercase `setting`/`value`
+headers, separator and all eighteen ordered rows. It adds execution of the
+pinned Python renderer to establish that contract; production handlers and
+existing frozen fixtures are unchanged. C includes this immutable correction,
+but a passing native result for it is not yet available. The old failing receipt
+remains historical evidence, not a result for the corrected C head.
+
+The immutable C head, provider-head verification, source-to-integration ledger,
+and any subsequently released corrections are recorded in workstream context
+`rust/merge-tree/20261027/C.json`. `source_ready` permits the next source join
+with explicit failures; it is not passing validation, mounted command coverage,
+shared publication readiness, or a claim that eleven plus nine library leaves
+are executable commands. Actual merged-head Linux validation must use the
+existing capped builder through the authorized parent/root relay.
+
 ### October 26 released transfer and jobs library candidate
 
 The isolated `dev/marcozo/released-library-c728-1302861` candidate starts at

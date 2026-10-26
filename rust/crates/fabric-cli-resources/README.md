@@ -2,6 +2,15 @@
 
 # Resource command consumers
 
+`frontdoor` now supplies modular Clap builders, `AccessCommand::from_matches`
+and a borrowed `AccessHost` for all nine ACL/label/FIND/API leaves. Mount
+`frontdoor::register(root)` in the single CLI parser; do not copy
+its argument definitions into another binary. See the
+[frontdoor contract](../../docs/access-frontdoor.md) and `access_frontdoor`
+public consumer example. This library addition does not register the executable.
+Run `frontdoor::execute_local` before remote-host/account construction so
+configured local label listing never needs an SDK client or account.
+
 This is an injected command library, not a competing front door. `REGISTRATIONS`
 describes implemented canonical/alias paths. `AclRead`/`read_acls` compose actual
 SDK enumeration, source-specific projection, native JMESPath and existing JSON

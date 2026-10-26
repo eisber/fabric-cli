@@ -417,6 +417,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-cli-local"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fabric-cli-context",
+ "fabric-cli-output",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "fabric-cli-mutations"
 version = "0.1.0"
 dependencies = [
@@ -465,6 +477,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "azure_core",
+ "clap",
  "fabric-cli-context",
  "fabric-cli-output",
  "fabric-cli-query",
