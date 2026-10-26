@@ -8,7 +8,7 @@
 use async_trait::async_trait;
 use azure_core::{
     credentials::{AccessToken, TokenCredential, TokenRequestOptions},
-    http::{AsyncRawResponse, HttpClient, Method, Request, StatusCode, headers::Headers},
+    http::{AsyncRawResponse, Body, HttpClient, Method, Request, StatusCode, headers::Headers},
     time::OffsetDateTime,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -78,6 +78,13 @@ fn source(case: &str) -> Value {
         .find(|row| row["case"] == case)
         .unwrap()
         .clone()
+}
+
+fn request_body(request: &Request) -> &[u8] {
+    match request.body() {
+        Body::Bytes(bytes) => bytes.as_ref(),
+        _ => panic!("definition requests must use an in-memory byte body"),
+    }
 }
 
 fn definition() -> Value {
@@ -504,7 +511,7 @@ async fn bulk_real_handler_matches_source_all_request_summary_and_local_file() {
     let requests = harness.http.requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
     assert_eq!(
-        requests[0].body().as_bytes().unwrap().as_ref(),
+        request_body(&requests[0]),
         source("bulk-export")["calls"][0]["body"]
             .as_str()
             .unwrap()
@@ -566,7 +573,7 @@ async fn import_create_and_update_match_source_exact_bodies_messages_and_cache()
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].method(), Method::Post);
         assert_eq!(
-            requests[0].body().as_bytes().unwrap().as_ref(),
+            request_body(&requests[0]),
             case["calls"][0]["body"].as_str().unwrap().as_bytes()
         );
         assert_eq!(
@@ -947,7 +954,7 @@ async fn folder_bulk_uses_selective_request_and_strips_only_ancestors() {
     let requests = harness.http.requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
     assert_eq!(
-        requests[0].body().as_bytes().unwrap().as_ref(),
+        request_body(&requests[0]),
         format!("{{\"items\": [{{\"id\": \"{ITEM}\"}}], \"mode\": \"Selective\"}}").as_bytes()
     );
 }
