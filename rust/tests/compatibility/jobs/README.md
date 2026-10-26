@@ -40,3 +40,14 @@ and records exact pinned file/function/line decisions, raise expressions,
 measured source lines and observed line arcs beside the immutable full argument
 inventory. Decision-line observation is not full branch coverage, byte-for-byte
 parity or proof that shared host/numeric/header integration is complete.
+
+`operation_output.json` adds 25 independent generic-operation error contracts.
+`operation_output_reference.py` executes the released, unchanged Python
+HTTP/exception/decorator oracle over those values rather than implementing
+another Python representation formatter. The native `operation_output` tests
+exercise actual job cancellation and timeout cancellation through the shared
+HTTP/operation engine, then the borrowed shared CLI formatter. They cover
+Failed/Cancelled structured, list, scalar, Unicode and null errors, HTTP
+authorization/code precedence and a period-only message that must stay empty
+after its first normalization. Original SDK reconciliation evidence remains
+inspectable after repeated output projections.

@@ -388,6 +388,7 @@ dependencies = [
  "azure_core",
  "clap",
  "fabric-cli-context",
+ "fabric-cli-mutations",
  "fabric-cli-output",
  "fabric-sdk-http",
  "fabric-sdk-jobs",

@@ -25,7 +25,7 @@ use fabric_cli_output::{
 };
 use fabric_sdk_jobs::{
     JobClient, JobError, JobOperationReconciler, JobState, JobStatus, JobTarget, JobType,
-    RunHandle, WaitOptions,
+    OperationError, RunHandle, WaitOptions,
 };
 use parser::invalid;
 use serde_json::{Value, json};
@@ -77,6 +77,38 @@ pub struct JobOutput {
     pub show_key_value_list: bool,
     /// Source events emitted after the result has been written, not before it.
     pub after_output: Vec<JobEvent>,
+}
+
+/// A command failure retaining the original generic-operation reconciliation evidence.
+///
+/// Operation output is projected only when requested, through the borrowed shared
+/// CLI formatter. It is never normalized again through `CommandError::new`.
+#[derive(Debug)]
+pub enum JobCommandError {
+    /// Existing command/context/input/presentation failure.
+    Command(CommandError),
+    /// Original shared-operation classification, raw diagnostics, ID and uncertainty.
+    Operation(Box<OperationError>),
+}
+
+impl JobCommandError {
+    /// Build the source failure envelope without consuming reconciliation evidence.
+    pub fn envelope(&self, timestamp: Timestamp, command: Option<String>) -> OutputEnvelope {
+        match self {
+            Self::Command(error) => error.envelope(timestamp, command),
+            Self::Operation(error) => {
+                let mut output = fabric_cli_mutations::operation_error_output(error);
+                output.command = command;
+                OutputEnvelope::new(timestamp, output)
+            }
+        }
+    }
+}
+
+impl From<CommandError> for JobCommandError {
+    fn from(error: CommandError) -> Self {
+        Self::Command(error)
+    }
 }
 
 impl JobOutput {
@@ -156,7 +188,7 @@ impl JobHost<'_> {
         &self,
         command: &JobCommand,
         cancelled: impl Future<Output = ()> + Send,
-    ) -> Result<Option<JobOutput>, CommandError> {
+    ) -> Result<Option<JobOutput>, JobCommandError> {
         let mut cancelled = pin!(cancelled);
         self.execute_inner(command, cancelled.as_mut()).await
     }
@@ -177,10 +209,10 @@ impl JobHost<'_> {
             .as_deref()
             .is_some_and(|value| value != "json")
         {
-            Err(command_error(
+            Err(JobCommandError::from(command_error(
                 "NotSupported",
                 "Text output requires the host's text renderer",
-            ))
+            )))
         } else {
             self.execute(command, cancelled).await
         };
@@ -214,10 +246,10 @@ impl JobHost<'_> {
             .as_deref()
             .is_some_and(|value| value != "json")
         {
-            Err(command_error(
+            Err(JobCommandError::from(command_error(
                 "NotSupported",
                 "Text output requires the host's text renderer",
-            ))
+            )))
         } else {
             self.execute(command, cancelled).await
         };
@@ -245,18 +277,18 @@ impl JobHost<'_> {
         &self,
         command: &JobCommand,
         mut cancelled: std::pin::Pin<&mut (impl Future<Output = ()> + Send)>,
-    ) -> Result<Option<JobOutput>, CommandError> {
+    ) -> Result<Option<JobOutput>, JobCommandError> {
         if poll_fn(|cx| Poll::Ready(cancelled.as_mut().poll(cx).is_ready())).await {
-            return Err(command_error(
-                "LongRunningOperationCancelled",
-                "Operation cancelled",
-            ));
+            return Err(
+                command_error("LongRunningOperationCancelled", "Operation cancelled").into(),
+            );
         }
         if command.skill.is_some() {
             return Err(command_error(
                 "NotSupported",
                 "Fabric skill headers require coordinated host header plumbing",
-            ));
+            )
+            .into());
         }
         let wait_options = WaitOptions {
             timeout: command.timeout,
@@ -268,7 +300,7 @@ impl JobHost<'_> {
                 .map_err(|e| sdk_error(e, command.id.as_deref()))?;
         }
         if command.path.is_empty() {
-            return Err(invalid("A job path is required"));
+            return Err(invalid("A job path is required").into());
         }
         let resolver = Resolver::new(self.lookup, self.current.clone(), self.home.clone());
         let tokens: Vec<_> = command.path.iter().map(String::as_str).collect();
@@ -493,6 +525,7 @@ impl JobHost<'_> {
                     .map_err(|e| {
                         if matches!(&e, JobError::Http { code, .. } if code == "EntityConflict") {
                             command_error("NotSupported", "Only one schedule per item is supported")
+                                .into()
                         } else {
                             sdk_error(e, None)
                         }
@@ -517,7 +550,7 @@ impl JobHost<'_> {
                 )?;
                 let args = &command.schedule_args;
                 if args.enable && args.disable {
-                    return Err(invalid("You must specify one of --enable --disable"));
+                    return Err(invalid("You must specify one of --enable --disable").into());
                 }
                 let existing = self
                     .sdk
@@ -601,7 +634,7 @@ impl JobHost<'_> {
         timeout_policy: bool,
         command_path: &str,
         mut cancelled: std::pin::Pin<&mut (impl Future<Output = ()> + Send)>,
-    ) -> Result<Option<JobOutput>, CommandError> {
+    ) -> Result<Option<JobOutput>, JobCommandError> {
         let mut observer_error = None;
         let ui = self.ui;
         let result = self
@@ -633,7 +666,7 @@ impl JobHost<'_> {
             )
             .await;
         if let Some(error) = observer_error {
-            return Err(error);
+            return Err(error.into());
         }
         match result {
             Ok(status) => match status.state() {
@@ -708,11 +741,12 @@ fn command_error(code: &str, message: impl Into<String>) -> CommandError {
     CommandError::new(Some(message.into()), Some(code.into()))
 }
 
-fn sdk_error(error: JobError, id: Option<&str>) -> CommandError {
-    match error {
+fn sdk_error(error: JobError, id: Option<&str>) -> JobCommandError {
+    let error = match error {
+        JobError::Operation(error) => return JobCommandError::Operation(Box::new(error)),
         JobError::OperationReconcilerRequired => command_error("NotSupported", error.to_string()),
         JobError::Paging(error) => match error.kind {
-            fabric_sdk_jobs::PagingErrorKind::Fetch(error) => sdk_error(error, id),
+            fabric_sdk_jobs::PagingErrorKind::Fetch(error) => return sdk_error(error, id),
             fabric_sdk_jobs::PagingErrorKind::Cancelled => {
                 command_error("LongRunningOperationCancelled", "Operation cancelled")
             }
@@ -756,5 +790,6 @@ fn sdk_error(error: JobError, id: Option<&str>) -> CommandError {
             invalid(error.to_string())
         }
         _ => command_error("UnexpectedError", error.to_string()),
-    }
+    };
+    error.into()
 }
