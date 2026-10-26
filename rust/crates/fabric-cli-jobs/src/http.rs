@@ -3,6 +3,10 @@
 
 use fabric_sdk_http::{ExecutionError, HttpExecutor};
 use fabric_sdk_jobs::{JobExecutionError, JobExecutor, JobFuture, JobRequest, JobResponse};
+use fabric_sdk_operations::{
+    OperationExecutionError, OperationExecutor, OperationRequest, OperationResponse,
+};
+use fabric_sdk_workspaces::mutations::ResourceMethod;
 use std::time::Duration;
 
 /// Thin host adapter over the existing shared HTTP engine and caller-owned timer.
@@ -41,6 +45,51 @@ impl JobExecutor for HttpJobExecutor {
 
     fn wait(&self, delay: Duration) -> JobFuture<'_, Result<(), JobExecutionError>> {
         Box::pin(async move { self.http.wait_for(delay).await.map_err(map_error) })
+    }
+}
+
+impl OperationExecutor for HttpJobExecutor {
+    fn execute<'a>(
+        &'a self,
+        request: OperationRequest<'a>,
+    ) -> JobFuture<'a, Result<OperationResponse, OperationExecutionError>> {
+        Box::pin(async move {
+            let method = match request.method() {
+                ResourceMethod::Get => azure_core::http::Method::Get,
+                ResourceMethod::Post => azure_core::http::Method::Post,
+                ResourceMethod::Patch => azure_core::http::Method::Patch,
+                ResourceMethod::Delete => azure_core::http::Method::Delete,
+            };
+            self.http
+                .execute_fabric(
+                    method,
+                    request.url(),
+                    request.token(),
+                    request.body(),
+                    request.max_response_bytes(),
+                )
+                .await
+                .map(|response| OperationResponse {
+                    status: response.status,
+                    body: response.body,
+                    headers: response.headers,
+                })
+                .map_err(operation_error)
+        })
+    }
+    fn wait(&self, delay: Duration) -> JobFuture<'_, Result<(), OperationExecutionError>> {
+        Box::pin(async move { self.http.wait_for(delay).await.map_err(operation_error) })
+    }
+}
+
+fn operation_error(error: ExecutionError) -> OperationExecutionError {
+    match error {
+        ExecutionError::TimedOut => OperationExecutionError::TimedOut,
+        ExecutionError::ResponseLimit => OperationExecutionError::ResponseLimit,
+        ExecutionError::RetriesExhausted => OperationExecutionError::RetriesExhausted,
+        ExecutionError::InvalidInput | ExecutionError::Transport | ExecutionError::RetryDelay => {
+            OperationExecutionError::Failed
+        }
     }
 }
 

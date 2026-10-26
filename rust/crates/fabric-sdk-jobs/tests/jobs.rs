@@ -548,3 +548,50 @@ fn route_guards_and_polling_validation_are_explicit() {
         .is_ok()
     );
 }
+
+#[tokio::test]
+async fn additional_retry_after_integer_branches_preserve_wait_or_source_failure() {
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/jobs/branches.json"
+    ))
+    .unwrap();
+    for case in cases["polling"].as_array().unwrap() {
+        let header = case["header"].as_str().unwrap();
+        let http = ScriptedHttp::new([
+            response(
+                202,
+                "",
+                &[
+                    (
+                        "Location",
+                        "https://api.fabric.microsoft.com/v1/workspaces/ws/items/item/jobs/instances/run",
+                    ),
+                    ("retry-after", header),
+                ],
+            ),
+            response(200, r#"{"status":"Completed"}"#, &[]),
+        ]);
+        let timer = Arc::new(TestTimer::default());
+        let service = sdk(http.clone(), timer.clone());
+        let handle = service.submit(&target(), None, pending()).await.unwrap();
+        let result = service
+            .wait(&handle, WaitOptions::default(), |_| Ok(()), pending())
+            .await;
+        let seconds = case["expected"].as_i64().unwrap();
+        if seconds < 0 {
+            assert!(matches!(result, Err(JobError::InvalidSleep)));
+            assert_eq!(http.requests.lock().unwrap().len(), 1);
+        } else {
+            result.unwrap();
+            assert_eq!(
+                *timer.waits.lock().unwrap(),
+                if seconds == 0 {
+                    vec![]
+                } else {
+                    vec![seconds as u64]
+                },
+                "{header}"
+            );
+        }
+    }
+}

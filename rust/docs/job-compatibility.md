@@ -115,7 +115,7 @@ constructing Python's empty ID. Malformed typed responses and unexpected
 success statuses fail rather than silently producing no result.
 These are explicit bounded SDK safety differences, not unqualified Python parity.
 
-JSON integer parameters use the native signed 64-bit bound; non-finite float
+JSON integer parameters now preserve native signed and unsigned 64-bit values; non-finite float
 parameters are explicitly unsupported. Python's arbitrary-size integers,
 non-finite JSON and Unicode decimal-number syntax are not certified by this
 slice. Rust parser/conversion diagnostics can differ from Python exception
@@ -131,9 +131,28 @@ require the front-door integration. `execute` supplies the actual output data,
 source flags and immediate/deferred UI events for that integration; JSON output
 uses the existing shared envelope and writers. Windows local offline evidence
 does not establish Linux/macOS native runner success.
-The shared generic-operation adapter must be supplied by its existing owner;
-if an actual response requires it and none was configured, the command returns
+`SharedJobOperations` now supplies the actual generic-operation adapter over
+the released `OperationSession::reconcile_accepted(PythonSynchronous)`. It
+never issues the initial mutation, and `JobError::Operation` retains the
+original typed/raw failure, operation ID, cancellation and uncertainty.
+`HttpJobExecutor` can supply both operation interfaces over the existing HTTP
+engine. If a host omits a required reconciler, the command still returns
 `NotSupported`, not a successful-looking cancellation/completion.
+
+The resumed increment preserves the original 155 expectations and adds
+396 unchanged-Python branch checks, including source hierarchy support for
+all 44 pinned item types and eight leaves, additional payload/schedule/polling
+cases, source full-name progress events and non-boolean schedule enabled-value
+retention. Public native tests use real job/CLI/shared HTTP consumers; seven
+concrete bridge tests cover successful result retrieval, raw terminal errors,
+HTTP errors, bounds, transport loss, cancellation and no mutation replay.
+This is evidence for those cases, not closure of all shared integration gates.
+
+Operation-to-resource error-format conversion, hidden skill-header plumbing,
+wide/non-finite JSON representation and shared text/main-level exception
+projection still require coordinated shared interfaces. The SDK operation
+failure is retained losslessly; the legacy CLI error convenience projection
+does not yet promise the shared resource formatter's detailed operation output.
 
 Online validation is unexecuted. Account approval alone does not authorize
 job start/cancel/deletion. Exact tenant, client registration, disposable workspace,

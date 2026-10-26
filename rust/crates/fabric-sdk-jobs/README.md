@@ -33,11 +33,21 @@ mutation. The CLI owns the Python timeout-cancellation configuration and
 schedule-removal confirmation. SDK callers can explicitly cancel a handle and
 wait for service-confirmed cancellation.
 
-`JobOperationReconciler` is the injection contract for the source HTTP helper's
-generic-operation branch, not a second LRO engine. If a synchronous cancellation
-actually selects that branch without a configured reconciler, it fails explicitly.
-Ordinary accepted job-instance/no-operation-header responses need no reconciler.
-The generic-operation implementation remains owned by the shared-operation lane.
+`SharedJobOperations` is the concrete `JobOperationReconciler` over
+`fabric-sdk-operations::OperationSession::reconcile_accepted` with the source
+`PythonSynchronous` policy. It receives an already-accepted response and never
+submits/replays the cancellation. Callers inject credentials, explicit selection,
+an `OperationExecutor` and limits. `JobError::Operation` retains the exact shared
+`OperationError`, including known operation ID, raw service data, cancellation
+classification and mutation uncertainty; none are recast as fabricated HTTP
+or `JobFailed` errors.
+
+`reconcile_with_cancellation` routes cancellation into the shared session before
+returning evidence. Existing custom reconcilers can continue implementing
+`reconcile`; their default cancellation race does not promise the concrete
+bridge's operation evidence. Ordinary job-instance/no-operation-header accepted
+responses bypass generic reconciliation. Missing required capability still
+fails explicitly, rather than silently reporting completion.
 
 See the [job compatibility matrix](../../docs/job-compatibility.md) for
 source behavior, independent offline contracts, bounded safety differences,

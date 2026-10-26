@@ -755,10 +755,8 @@ async fn local_cancellation_and_output_failures_do_not_claim_success_or_remote_c
     assert!(h.http.requests.lock().unwrap().is_empty());
     let h = Harness::new([]);
     h.http.pending.store(true, Ordering::SeqCst);
-    let mut first = true;
-    let cancel = poll_fn(move |cx| {
-        if first {
-            first = false;
+    let cancel = poll_fn(|cx| {
+        if h.http.requests.lock().unwrap().is_empty() {
             cx.waker().wake_by_ref();
             Poll::Pending
         } else {
@@ -1053,4 +1051,214 @@ async fn multi_token_folder_relative_and_explicit_home_paths_reach_the_same_job_
             .is_some()
     );
     assert_eq!(h.http.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn additional_parameter_branches_reach_real_http_or_fail_before_mutation() {
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/jobs/branches.json"
+    ))
+    .unwrap();
+    for case in cases["execution"].as_array().unwrap() {
+        let resource = case["resource"].as_str().unwrap();
+        let h = Harness::resource(
+            resource,
+            if case.get("error").is_none() {
+                vec![accepted()]
+            } else {
+                vec![]
+            },
+        );
+        let path = format!("item.{resource}");
+        let mut command = parse(&["start", &path]);
+        command.params = tokens(case["args"].get("params"));
+        command.config = tokens(case["args"].get("config"));
+        command.input = tokens(case["args"].get("input"));
+        let plan = h.host().dispatch_json(&command, pending()).await.unwrap();
+        let output: Value = serde_json::from_slice(&plan.payload).unwrap();
+        if let Some(error) = case.get("error") {
+            assert_eq!(plan.exit_code, 1, "{}", case["name"]);
+            assert_eq!(
+                output["result"]["error_code"], error["code"],
+                "{}",
+                case["name"]
+            );
+            assert_eq!(
+                output["result"]["message"],
+                error["message"].as_str().unwrap().trim_end_matches('.'),
+                "{}",
+                case["name"]
+            );
+            assert!(h.http.requests.lock().unwrap().is_empty());
+        } else {
+            assert_eq!(plan.exit_code, 0, "{}: {output}", case["name"]);
+            match h.http.requests.lock().unwrap()[0].body() {
+                azure_core::http::Body::Bytes(bytes) => assert_eq!(
+                    serde_json::from_slice::<Value>(bytes).unwrap(),
+                    json!({"executionData":case["expected"]}),
+                    "{}",
+                    case["name"]
+                ),
+                _ => panic!("expected bounded bytes"),
+            }
+        }
+    }
+}
+
+#[test]
+fn additional_schedule_shapes_match_unchanged_python_error_precedence() {
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/jobs/branches.json"
+    ))
+    .unwrap();
+    for case in cases["schedules"].as_array().unwrap() {
+        let raw = &case["args"];
+        let args = ScheduleArgs {
+            enable: raw["enable"] == true,
+            disable: raw.get("disable") == Some(&Value::Bool(false)),
+            schedule_type: raw["type"].as_str().map(Into::into),
+            interval: raw["interval"].as_str().map(Into::into),
+            start: raw["start"].as_str().map(Into::into),
+            end: raw["end"].as_str().map(Into::into),
+            days: raw["days"].as_str().map(Into::into),
+        };
+        let input = tokens(raw.get("input"));
+        let result =
+            schedule_configuration(&args, input.as_deref(), case["update"] == true, &NoFiles);
+        if let Some(expected) = case.get("error") {
+            let output = serde_json::to_value(
+                result
+                    .unwrap_err()
+                    .envelope(Timestamp::parse("2000-01-01T00:00:00Z").unwrap(), None),
+            )
+            .unwrap();
+            assert_eq!(
+                output["result"]["error_code"], expected["code"],
+                "{}",
+                case["name"]
+            );
+            assert_eq!(
+                output["result"]["message"],
+                expected["message"].as_str().unwrap().trim_end_matches('.'),
+                "{}",
+                case["name"]
+            );
+        } else {
+            assert_eq!(
+                result.unwrap().unwrap_or(Value::Null),
+                case["expected"],
+                "{}",
+                case["name"]
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn every_pinned_unsupported_resource_is_rejected_for_every_leaf_before_http() {
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/jobs/branches.json"
+    ))
+    .unwrap();
+    assert_eq!(cases["rejected_resources"].as_array().unwrap().len(), 39);
+    for resource in cases["rejected_resources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+    {
+        for leaf in [
+            "start",
+            "run",
+            "run-list",
+            "run-cancel",
+            "run-status",
+            "run-sch",
+            "run-update",
+            "run-rm",
+        ] {
+            let h = Harness::resource(resource, []);
+            let path = format!("item.{resource}");
+            let args = if ["run-cancel", "run-status", "run-update", "run-rm"].contains(&leaf) {
+                vec![leaf, path.as_str(), "--id", "run"]
+            } else {
+                vec![leaf, path.as_str()]
+            };
+            let plan = h
+                .host()
+                .dispatch_json(&parse(&args), pending())
+                .await
+                .unwrap();
+            assert_eq!(plan.exit_code, 1, "{leaf}: {resource}");
+            let output: Value = serde_json::from_slice(&plan.payload).unwrap();
+            assert_eq!(
+                output["result"]["error_code"], "UnsupportedCommand",
+                "{leaf}: {resource}"
+            );
+            assert_eq!(
+                output["result"]["message"],
+                format!(
+                    "not supported for command 'job {}'",
+                    if leaf == "start" { "run" } else { leaf }
+                )
+            );
+            assert!(
+                h.http.requests.lock().unwrap().is_empty(),
+                "{leaf}: {resource}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn wrapper_progress_uses_the_source_full_item_name_not_the_short_display_name() {
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/jobs/branches.json"
+    ))
+    .unwrap();
+    for case in cases["wrapper_events"].as_array().unwrap() {
+        let mut replies = vec![accepted()];
+        if case["wait"] == true {
+            replies.push(response(200, r#"{"status":"Completed"}"#, &[]));
+        }
+        let h = Harness::resource("Notebook", replies);
+        let command = parse(&[
+            case["leaf"].as_str().unwrap(),
+            case["item"].as_str().unwrap(),
+        ]);
+        h.host().execute(&command, pending()).await.unwrap();
+        assert_eq!(
+            h.ui.events.lock().unwrap().first(),
+            Some(&JobEvent::Grey(case["expected"].as_str().unwrap().into()))
+        );
+    }
+}
+
+#[tokio::test]
+async fn update_preserves_unmodified_source_enabled_values_in_the_actual_patch() {
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/jobs/branches.json"
+    ))
+    .unwrap();
+    for case in cases["schedule_updates"].as_array().unwrap() {
+        let h = Harness::new([
+            response(200, &case["existing"].to_string(), &[]),
+            response(200, r#"{"id":"sch"}"#, &[]),
+        ]);
+        let mut command = parse(&["run-update", "item.DataPipeline", "--id", "sch"]);
+        command.input = tokens(case["args"].get("input"));
+        let result = h.host().execute(&command, pending()).await.unwrap();
+        assert!(result.is_some());
+        let requests = h.http.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        match requests[1].body() {
+            azure_core::http::Body::Bytes(bytes) => assert_eq!(
+                serde_json::from_slice::<Value>(bytes).unwrap(),
+                case["expected"],
+                "{}",
+                case["name"]
+            ),
+            _ => panic!("expected bounded request bytes"),
+        }
+    }
 }

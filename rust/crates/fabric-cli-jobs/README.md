@@ -29,6 +29,14 @@ discovers credentials, starts a runtime, or reads global configuration.
 policy; `NoFiles` explicitly rejects file requests. Neither silently falls
 back to ambient filesystem access.
 
+`HttpJobExecutor` also implements the shared `OperationExecutor` trait. The
+same caller-owned executor can therefore compose `SharedJobOperations` without
+a new transport or polling loop. Cancellation is passed through SDK operations,
+including the generic-operation bridge, rather than an outer race discarding
+the operation session's reconciliation evidence. The terminal/UI boundary still
+uses the shared command-error contract; lossless operation-to-resource formatter
+conversion is coordinated separately.
+
 The registration preserves `path`, `params`, `config` and `input` token
 cardinality, required IDs, signed timeout, positive polling interval, schedule
 choices, last repeated option, and source option abbreviation. Root batch/REPL,
