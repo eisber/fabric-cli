@@ -13,8 +13,12 @@ mod parser;
 
 use std::io;
 
-use fabric_cli_output::text::{self, CharacterWidth, OutputFormat, Presentation, TextOptions, TextPlan};
-use fabric_cli_output::{CommandError, OutputEnvelope, OutputError, OutputInput, OutputStream, Timestamp};
+use fabric_cli_output::text::{
+    self, CharacterWidth, OutputFormat, Presentation, TextOptions, TextPlan,
+};
+use fabric_cli_output::{
+    CommandError, OutputEnvelope, OutputError, OutputInput, OutputStream, Timestamp,
+};
 use serde_json::{Value, json};
 use thiserror::Error;
 
@@ -122,7 +126,10 @@ pub enum LocalError {
 impl LocalError {
     /// Construct a source-coded error without printing or terminating.
     pub fn command(code: &'static str, message: impl Into<String>) -> Self {
-        Self::Command { code, message: message.into() }
+        Self::Command {
+            code,
+            message: message.into(),
+        }
     }
 
     /// Adapt to the existing shared output error pipeline.
@@ -155,15 +162,33 @@ enum LocalNotice {
 
 impl LocalOutput {
     fn data(data: Value) -> Self {
-        Self { input: Some(OutputInput { data: Some(data), ..OutputInput::default() }), headers: false, prelude: Vec::new() }
+        Self {
+            input: Some(OutputInput {
+                data: Some(data),
+                ..OutputInput::default()
+            }),
+            headers: false,
+            prelude: Vec::new(),
+        }
     }
 
     fn message(message: String) -> Self {
-        Self { input: Some(OutputInput { message: Some(message), ..OutputInput::default() }), headers: false, prelude: Vec::new() }
+        Self {
+            input: Some(OutputInput {
+                message: Some(message),
+                ..OutputInput::default()
+            }),
+            headers: false,
+            prelude: Vec::new(),
+        }
     }
 
     fn empty() -> Self {
-        Self { input: None, headers: false, prelude: Vec::new() }
+        Self {
+            input: None,
+            headers: false,
+            prelude: Vec::new(),
+        }
     }
 
     /// Render through the existing output pipeline using explicit caller inputs.
@@ -177,11 +202,21 @@ impl LocalOutput {
         widths: &impl CharacterWidth,
         presentation: Presentation,
     ) -> Result<TextPlan, LocalError> {
-        let mut plan = TextPlan { records: Vec::new(), exit_code: 0 };
+        let mut plan = TextPlan {
+            records: Vec::new(),
+            exit_code: 0,
+        };
         for notice in &self.prelude {
             let rendered = match notice {
-                LocalNotice::Grey(message) => text::render_line(message, text::Style::Grey, OutputStream::Stderr, presentation),
-                LocalNotice::Warning(message) => text::render_notice(text::Notice::Warning(message), None, presentation),
+                LocalNotice::Grey(message) => text::render_line(
+                    message,
+                    text::Style::Grey,
+                    OutputStream::Stderr,
+                    presentation,
+                ),
+                LocalNotice::Warning(message) => {
+                    text::render_notice(text::Notice::Warning(message), None, presentation)
+                }
                 LocalNotice::Version => text::render_version(PREVIEW_VERSION, presentation),
             };
             plan.records.extend(rendered.records);
@@ -190,9 +225,14 @@ impl LocalOutput {
             let mut input = input.clone();
             input.command = Some(command.to_owned());
             let rendered = text::render(
-                &OutputEnvelope::new(timestamp, input), format,
-                &TextOptions { show_headers: self.headers, ..TextOptions::default() },
-                widths, presentation,
+                &OutputEnvelope::new(timestamp, input),
+                format,
+                &TextOptions {
+                    show_headers: self.headers,
+                    ..TextOptions::default()
+                },
+                widths,
+                presentation,
             )?;
             plan.exit_code = rendered.exit_code;
             plan.records.extend(rendered.records);
@@ -213,7 +253,8 @@ pub fn execute(
 ) -> Result<LocalOutput, LocalError> {
     if matches!(command, LocalCommand::Version) {
         return Ok(LocalOutput {
-            input: None, headers: false,
+            input: None,
+            headers: false,
             prelude: vec![LocalNotice::Version],
         });
     }
@@ -224,37 +265,65 @@ pub fn execute(
             let value = value.trim().trim_matches('\'').trim_matches('"');
             if key == "mode" {
                 if value == "interactive" {
-                    return Err(LocalError::command("Unsupported", "Interactive mode is not implemented in the native preview"));
+                    return Err(LocalError::command(
+                        "Unsupported",
+                        "Interactive mode is not implemented in the native preview",
+                    ));
                 }
                 return Ok(mode_output(false));
             }
             let setting = config::setting(&key)?;
             if !setting.allowed.is_empty() && !setting.allowed.contains(&value) {
-                let allowed = setting.allowed.iter().map(|value| format!("'{value}'")).collect::<Vec<_>>().join(", ");
-                return Err(LocalError::command("InvalidInput", format!("'{value}' is not a valid value for '{key}'. Allowed values are: [{allowed}]")));
+                let allowed = setting
+                    .allowed
+                    .iter()
+                    .map(|value| format!("'{value}'"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(LocalError::command(
+                    "InvalidInput",
+                    format!(
+                        "'{value}' is not a valid value for '{key}'. Allowed values are: [{allowed}]"
+                    ),
+                ));
             }
             let mut capacity_id = None;
             let value = if key == "default_capacity" {
                 let name = value.replace(".Capacity", "").replace(".capacity", "");
-                if let Some(capacity) = effects.capacities()?.into_iter().find(|capacity| capacity.display_name.to_lowercase() == name.to_lowercase()) {
+                if let Some(capacity) = effects
+                    .capacities()?
+                    .into_iter()
+                    .find(|capacity| capacity.display_name.to_lowercase() == name.to_lowercase())
+                {
                     capacity_id = Some(capacity.id);
                     name
                 } else {
-                    return Err(LocalError::command("InvalidInput", format!("'{name}' is not a valid capacity. Please provide a valid capacity name")));
+                    return Err(LocalError::command(
+                        "InvalidInput",
+                        format!(
+                            "'{name}' is not a valid capacity. Please provide a valid capacity name"
+                        ),
+                    ));
                 }
             } else {
                 value.to_owned()
             };
             if key == "local_definition_labels" && !std::path::Path::new(&value).try_exists()? {
-                return Err(LocalError::command("InvalidPath", "The specified file or directory does not exist"));
+                return Err(LocalError::command(
+                    "InvalidPath",
+                    "The specified file or directory does not exist",
+                ));
             }
             settings.insert(key.clone(), Value::String(value.to_owned()));
             if let Some(id) = capacity_id {
                 settings.insert("fab_default_capacity_id".to_owned(), Value::String(id));
             }
             store.write(&settings)?;
-            let mut result = LocalOutput::message(format!("Configuration '{key}' set to '{value}'"));
-            result.prelude.push(LocalNotice::Grey(format!("Updating '{key}' value...")));
+            let mut result =
+                LocalOutput::message(format!("Configuration '{key}' set to '{value}'"));
+            result
+                .prelude
+                .push(LocalNotice::Grey(format!("Updating '{key}' value...")));
             Ok(result)
         }
         LocalCommand::ConfigGet { key } => {
@@ -286,7 +355,11 @@ pub fn execute(
 }
 
 fn mode_output(get: bool) -> LocalOutput {
-    let mut result = if get { LocalOutput::data(Value::String("command_line".to_owned())) } else { LocalOutput::empty() };
+    let mut result = if get {
+        LocalOutput::data(Value::String("command_line".to_owned()))
+    } else {
+        LocalOutput::empty()
+    };
     result.prelude.push(LocalNotice::Warning("The 'mode' setting is deprecated. Run 'fab' without arguments to enter REPL mode, or use 'fab <command>' for command-line mode."));
     result
 }
