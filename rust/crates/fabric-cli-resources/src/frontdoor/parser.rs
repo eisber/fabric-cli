@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use crate::{CommandError, FamilySurface, FindOptions};
+use crate::{AclChange, CommandError, FamilySurface, FindOptions, LabelChange};
 use azure_core::http::Method;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use fabric_cli_output::text::OutputFormat;
@@ -18,7 +18,7 @@ pub struct AccessCommand {
     pub skill: Option<String>,
 }
 
-/// The first read-only command batch, independently mountable in the root parser.
+/// The nine source leaves, independently mountable in the root parser.
 #[derive(Clone, Debug)]
 pub enum AccessKind {
     /// `acl ls` / `acl dir`; the source query is scalar, not token-joined.
@@ -38,6 +38,24 @@ pub enum AccessKind {
         query: Option<String>,
         /// Requested export path; unsupported hosts fail before service I/O.
         output: Option<String>,
+    },
+    /// `acl set` / `acl rm` / `acl del`, with existing source mutation semantics.
+    AclChange {
+        /// Unresolved source path tokens.
+        path: Vec<String>,
+        /// Supplied identity and role, without canonicalizing request case.
+        change: AclChange,
+        /// Skip confirmation, never validation or operation reconciliation.
+        force: bool,
+    },
+    /// `label set` / `label rm` / `label del` for existing supported items.
+    LabelChange {
+        /// Unresolved source path tokens.
+        path: Vec<String>,
+        /// Exact joined label name or removal.
+        change: LabelChange,
+        /// Skip confirmation, never local definition or support checks.
+        force: bool,
     },
     /// `label list-local`; only caller-configured definitions are read.
     LabelListLocal,
@@ -120,6 +138,30 @@ pub fn acl_subcommand() -> Command {
                 .arg(query(true))
                 .arg(Arg::new("output").long("output").short('o')),
         )
+        .subcommand(
+            leaf("set")
+                .arg(path())
+                .arg(
+                    Arg::new("identity")
+                        .long("identity")
+                        .short('I')
+                        .required(true),
+                )
+                .arg(Arg::new("role").long("role").short('R').required(true))
+                .arg(flag("force", Some('f'))),
+        )
+        .subcommand(
+            leaf("rm")
+                .visible_alias("del")
+                .arg(path())
+                .arg(
+                    Arg::new("identity")
+                        .long("identity")
+                        .short('I')
+                        .required(true),
+                )
+                .arg(flag("force", Some('f'))),
+        )
 }
 
 /// Source label subtree; bare group help performs no file or credential access.
@@ -128,6 +170,18 @@ pub fn label_subcommand() -> Command {
         .about("Manage sensitivity labels")
         .arg_required_else_help(true)
         .subcommand(leaf("list-local"))
+        .subcommand(
+            leaf("set")
+                .arg(path())
+                .arg(tokens("name", 'n').required(true))
+                .arg(flag("force", Some('f'))),
+        )
+        .subcommand(
+            leaf("rm")
+                .visible_alias("del")
+                .arg(path())
+                .arg(flag("force", Some('f'))),
+        )
 }
 
 /// Source root FIND leaf. `-P` is optional-scalar, unlike raw API parameters.
@@ -237,16 +291,47 @@ impl AccessCommand {
                         query: joined(args, "query"),
                         output: string(args, "output"),
                     },
+                    "set" => AccessKind::AclChange {
+                        path,
+                        change: AclChange::Set {
+                            identity: string(args, "identity").ok_or_else(invalid)?,
+                            role: string(args, "role").ok_or_else(invalid)?,
+                        },
+                        force: boolean(args, "force"),
+                    },
+                    "rm" => AccessKind::AclChange {
+                        path,
+                        change: AclChange::Remove {
+                            identity: string(args, "identity").ok_or_else(invalid)?,
+                        },
+                        force: boolean(args, "force"),
+                    },
                     _ => return Err(invalid()),
                 };
                 (kind, args)
             }
             "label" => {
                 let (name, args) = group.subcommand().ok_or_else(invalid)?;
-                if name != "list-local" {
-                    return Err(invalid());
-                }
-                (AccessKind::LabelListLocal, args)
+                let kind = match name {
+                    "list-local" => AccessKind::LabelListLocal,
+                    "set" | "rm" => {
+                        let path = values(args, "path");
+                        if path.is_empty() {
+                            return Err(invalid());
+                        }
+                        AccessKind::LabelChange {
+                            path,
+                            change: if name == "set" {
+                                LabelChange::Set(joined(args, "name").ok_or_else(invalid)?)
+                            } else {
+                                LabelChange::Remove
+                            },
+                            force: boolean(args, "force"),
+                        }
+                    }
+                    _ => return Err(invalid()),
+                };
+                (kind, args)
             }
             "find" => (
                 AccessKind::Find(FindOptions {
@@ -301,8 +386,10 @@ impl AccessCommand {
     /// Source output command context is the root family, not the alias spelling.
     pub const fn command_name(&self) -> &'static str {
         match self.kind {
-            AccessKind::AclList { .. } | AccessKind::AclGet { .. } => "acl",
-            AccessKind::LabelListLocal => "label",
+            AccessKind::AclList { .. }
+            | AccessKind::AclGet { .. }
+            | AccessKind::AclChange { .. } => "acl",
+            AccessKind::LabelListLocal | AccessKind::LabelChange { .. } => "label",
             AccessKind::Find(_) => "find",
             AccessKind::Api(_) => "api",
         }
@@ -313,6 +400,9 @@ impl AccessCommand {
         match &self.kind {
             AccessKind::AclList { .. } => FamilySurface::AclList,
             AccessKind::AclGet { .. } => FamilySurface::Get,
+            AccessKind::AclChange { .. } | AccessKind::LabelChange { .. } => {
+                FamilySurface::Mutation
+            }
             AccessKind::LabelListLocal => FamilySurface::LocalLabels,
             AccessKind::Find(options) => FamilySurface::Find { long: options.long },
             AccessKind::Api(_) => FamilySurface::Api,
