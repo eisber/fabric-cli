@@ -13,8 +13,9 @@ from types import SimpleNamespace
 from typing import Any
 
 from metadata_set_reference import reference as set_reference
+from frontdoor_parser_reference import source_root_parser
 from operation_reference import functions
-from python_reference import CLIError, PIN, load, reference
+from python_reference import CLIError, PIN, reference
 from shortcut_reference import reference as shortcut_reference
 
 
@@ -47,13 +48,10 @@ def source_parser() -> argparse.ArgumentParser:
             "_fs_module_path": "unused-offline",
         },
     )
-    globals_ = load("parsers/fab_global_params.py", {"argparse": argparse})
-    parser = argparse.ArgumentParser()
+    parser = source_root_parser()
     subparsers = parser.add_subparsers(dest="command", required=True)
     for name in ["exists", "mkdir", "rm", "set", "ln", "start", "stop", "assign", "unassign"]:
         namespace[f"register_{name}_parser"](subparsers)
-    for child in set(subparsers.choices.values()):
-        globals_.add_global_flags(child)
     return parser
 
 
