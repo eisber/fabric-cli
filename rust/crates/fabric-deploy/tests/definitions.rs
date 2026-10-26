@@ -841,13 +841,13 @@ fn unimplemented_corrupt_payload_and_large_integer_branches_are_explicit() {
             Kind::Unsupported(_)
         ));
     }
+}
 
-    #[test]
-    fn ordinary_text_with_large_numeric_tokens_is_not_misclassified_as_lossy_json() {
-        let raw = definition(&[("script.py", b"print(18446744073709551616)")]);
-        let files = decode_export_files(&raw, false, DefinitionLimits::default()).unwrap();
-        assert_eq!(files[0].bytes, b"print(18446744073709551616)");
-    }
+#[test]
+fn ordinary_text_with_large_numeric_tokens_is_not_misclassified_as_lossy_json() {
+    let raw = definition(&[("script.py", b"print(18446744073709551616)")]);
+    let files = decode_export_files(&raw, false, DefinitionLimits::default()).unwrap();
+    assert_eq!(files[0].bytes, b"print(18446744073709551616)");
 }
 
 #[test]

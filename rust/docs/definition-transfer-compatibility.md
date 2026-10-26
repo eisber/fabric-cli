@@ -2,15 +2,19 @@
 
 # Definition transfer: bounded native library contract
 
-Status: uncompiled implementation checkpoint. The exact shared Unicode encoder
+Status: the bounded read/export/copy/SET codec library is compiled and tested on
+Windows x64. The exact shared Unicode encoder
 commit `d72d68b5370ab5ab95c63815ba084513390d68e4` was surgically adopted as
 `bbed590e1477af8a79a5dcef6a155026525e0329`; it shares the existing engine and
-preserves the default ASCII APIs. The only remaining compile binding is the
-assigned operation owner's `OperationSession::check_cancelled` commit. Source
-receipts and current formatting ran; reviewed gate-v2 receipt
-`format-receipt-2.json` records successful formatting at 12:26Z on October 26.
-The native consumer has not compiled or executed. The contract below describes
-the bounded implementation, not a validated release or integrated command parity.
+preserves the default ASCII APIs. Exact cancellation commit
+`09c939ba075d6e9fc3142b3ee801344f961208fd` was adopted as
+`0e8ec5c896060e9bd7ce189efe5f6f52e025111e`, keeping its four additive tests and
+all existing baseline tests. Reviewed gate-v2 `native-receipt-2.json` records
+24 definition consumers, 24 unchanged Notebook consumers, 13 shared-operation
+tests, five shared-encoder tests and three doctests passing, followed by targeted
+Clippy with `-D warnings` and formatting checks. No expected source outputs,
+skips or lint waivers were changed. This is native offline library evidence,
+not integrated CLI, live Fabric or full command parity.
 
 Python reference: `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
 Rust integration base: `61d77e330be8a13cbd5033713f1f2badcecfce60`.
