@@ -2,11 +2,11 @@
 // Licensed under the MIT License.
 
 use crate::{
-    CacheEffect, MutationError, MutationHost, MutationResult, NoticeKind, message,
-    supported_element, workspace_id,
+    CacheEffect, CreationEvidence, MutationError, MutationHost, MutationResult, NoticeKind,
+    message, supported_element, workspace_id,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
-use fabric_cli_context::{Element, NodeKind};
+use fabric_cli_context::{Element, ItemType, NodeKind};
 use fabric_sdk_folders::mutations::FolderMutations;
 use fabric_sdk_items::{ItemCollection, mutations::ItemMutations};
 use fabric_sdk_workspaces::mutations::{ResourceError, ResourceOutcome, WorkspaceMutations};
@@ -108,35 +108,7 @@ impl MutationHost<'_> {
             }
             NodeKind::Item(item_type) => {
                 check_create_support(item_type.as_str())?;
-                validate_required_params(item_type.as_str(), &params)?;
-                let folder_id = element
-                    .parent()
-                    .filter(|parent| parent.kind() == NodeKind::Folder)
-                    .and_then(|parent| parent.id());
-                let mut payload = json!({
-                    "displayName": element.short_name(),
-                    "type": item_type.as_str(),
-                    "folderId": folder_id,
-                });
-                if let Some(description) = params.get("description").filter(|v| truthy(v)) {
-                    payload["description"] = description.clone();
-                }
-                self.ui.notice(
-                    NoticeKind::Progress,
-                    &format!("Creating a new {}...", item_type.as_str()),
-                );
-                add_item_payload(
-                    item_type.as_str(),
-                    workspace_id(element)?,
-                    &params,
-                    &mut payload,
-                )?;
-                let collection =
-                    ItemCollection::from_item_type(item_type.as_str()).ok_or_else(|| {
-                        MutationError::new("NotSupported", "Unmapped item collection")
-                    })?;
-                ItemMutations::create(self.operations, workspace_id(element)?, collection, payload)
-                    .await?
+                return self.create_item_with_dependencies(element, params).await;
             }
             NodeKind::Tenant => unreachable!("validated above"),
         };
@@ -198,6 +170,216 @@ impl MutationHost<'_> {
         }
         Ok(result)
     }
+
+    async fn create_item_with_dependencies(
+        &mut self,
+        element: &Arc<Element>,
+        mut params: Map<String, Value>,
+    ) -> Result<MutationResult, MutationError> {
+        let mut evidence = CreationEvidence::default();
+        let result = async {
+            let NodeKind::Item(item_type) = element.kind() else {
+                unreachable!("item dispatch");
+            };
+            validate_required_params(item_type.as_str(), &params)?;
+            self.ui.notice(
+                NoticeKind::Progress,
+                &format!("Creating a new {}...", item_type.as_str()),
+            );
+            params.remove("displayname");
+            params.remove("type");
+            let dependency = dependency_for(item_type.as_str(), &params);
+            let mut dependency_id = None;
+            if let Some((kind, warning)) = dependency {
+                self.ui.notice(NoticeKind::Warning, warning);
+                let parent = Arc::clone(element.parent().ok_or_else(|| {
+                    MutationError::new("InvalidContext", "Missing creation parent")
+                })?);
+                let target = Element::child(
+                    format!("{}_auto", element.short_name()),
+                    None,
+                    NodeKind::Item(ItemType::parse(kind).map_err(|_| {
+                        MutationError::new("InvalidItemType", "Invalid dependency item type")
+                    })?),
+                    parent,
+                )
+                .map_err(|_| {
+                    MutationError::new("InvalidContext", "Invalid dependency creation parent")
+                })?;
+                self.ui
+                    .notice(NoticeKind::Progress, &format!("Creating a new {kind}..."));
+                let outcome = self.dispatch_item_create(&target, &params, None).await?;
+                evidence.responses.push(outcome.clone());
+                record_item_creation(&target, &outcome, &mut evidence)?;
+                dependency_id = completed_id(&outcome);
+            }
+            let outcome = self
+                .dispatch_item_create(element, &params, dependency_id.as_ref())
+                .await?;
+            evidence.responses.push(outcome.clone());
+            record_item_creation(element, &outcome, &mut evidence)?;
+            let mut result = MutationResult {
+                outcome: Some(outcome.clone()),
+                effects: evidence.effects.clone(),
+                ..MutationResult::default()
+            };
+            if let ResourceOutcome::Completed {
+                status: 200 | 201,
+                data: Some(data),
+            } = outcome
+            {
+                let (text, data) = if dependency.is_some() {
+                    (
+                        batch_message(&evidence.batch_names),
+                        Value::Array(evidence.batch_items.clone()),
+                    )
+                } else {
+                    (format!("'{}' created", element.name()), data)
+                };
+                result.outputs.push(fabric_cli_output::OutputInput {
+                    message: Some(text),
+                    data: Some(data),
+                    ..Default::default()
+                });
+                result.show_headers = true;
+            }
+            result.creation = Some(Box::new(evidence.clone()));
+            Ok(result)
+        }
+        .await;
+        result.map_err(|mut error: MutationError| {
+            if !evidence.responses.is_empty() {
+                error.creation = Some(Box::new(evidence));
+            }
+            error
+        })
+    }
+
+    async fn dispatch_item_create(
+        &mut self,
+        element: &Arc<Element>,
+        params: &Map<String, Value>,
+        dependency: Option<&Value>,
+    ) -> Result<ResourceOutcome, MutationError> {
+        let NodeKind::Item(item_type) = element.kind() else {
+            unreachable!("item dispatch");
+        };
+        let folder = element
+            .parent()
+            .filter(|parent| parent.kind() == NodeKind::Folder)
+            .and_then(|parent| parent.id());
+        let mut payload =
+            json!({"displayName":element.short_name(),"type":item_type.as_str(),"folderId":folder});
+        if let Some(description) = params.get("description").filter(|value| truthy(value)) {
+            payload["description"] = description.clone();
+        }
+        add_item_payload(
+            item_type.as_str(),
+            workspace_id(element)?,
+            params,
+            dependency,
+            &mut payload,
+        )?;
+        let collection = ItemCollection::from_item_type(item_type.as_str())
+            .ok_or_else(|| MutationError::new("NotSupported", "Unmapped item collection"))?;
+        Ok(
+            ItemMutations::create(self.operations, workspace_id(element)?, collection, payload)
+                .await?,
+        )
+    }
+}
+
+fn dependency_for(
+    item_type: &str,
+    params: &Map<String, Value>,
+) -> Option<(&'static str, &'static str)> {
+    let has = |key: &str| params.get(key).is_some_and(truthy);
+    let text = |key: &str, default: &str| {
+        params
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or(default)
+            .to_lowercase()
+    };
+    match item_type {
+        "KQLDatabase"
+            if !(has("eventhouseid")
+                && (text("dbtype", "readwrite") == "readwrite"
+                    || (text("dbtype", "readwrite") == "shortcut"
+                        && has("clusteruri")
+                        && has("databasename")))) =>
+        {
+            Some((
+                "Eventhouse",
+                "EventHouse not provided in params. Creating one first",
+            ))
+        }
+        "DigitalTwinBuilderFlow" if !has("digitaltwinbuilderid") => Some((
+            "DigitalTwinBuilder",
+            "DigitalTwinBuilder not provided in params. Creating one first",
+        )),
+        "Report" if !has("semanticmodelid") => Some((
+            "SemanticModel",
+            "Semantic Model not provided in params. Creating one first",
+        )),
+        _ => None,
+    }
+}
+
+fn completed_id(outcome: &ResourceOutcome) -> Option<Value> {
+    match outcome {
+        ResourceOutcome::Completed {
+            status: 200 | 201,
+            data: Some(data),
+        } => data.get("id").filter(|value| truthy(value)).cloned(),
+        _ => None,
+    }
+}
+
+fn record_item_creation(
+    target: &Arc<Element>,
+    outcome: &ResourceOutcome,
+    evidence: &mut CreationEvidence,
+) -> Result<(), MutationError> {
+    if let ResourceOutcome::Completed {
+        status: 200 | 201,
+        data,
+    } = outcome
+    {
+        let Some(data) = data.as_ref().filter(|value| value.is_object()) else {
+            return Err(incomplete_create(
+                outcome,
+                "InvalidResponse",
+                "Creation returned invalid resource metadata",
+            ));
+        };
+        evidence.batch_names.push(target.name());
+        evidence.batch_items.push(data.clone());
+        evidence.effects.push(if completed_id(outcome).is_some() {
+            CacheEffect::Created {
+                target: Arc::clone(target),
+                data: data.clone(),
+            }
+        } else {
+            CacheEffect::Invalidate {
+                target: Arc::clone(target),
+            }
+        });
+    }
+    Ok(())
+}
+
+fn batch_message(names: &[String]) -> String {
+    let prefix = if names.len() == 2 {
+        format!("'{}' and '{}'", names[0], names[1])
+    } else {
+        format!(
+            "'{}' and '{}'",
+            names[..names.len() - 1].join("', '"),
+            names[names.len() - 1]
+        )
+    };
+    format!("{prefix} created")
 }
 
 fn incomplete_create(outcome: &ResourceOutcome, code: &str, message: &str) -> MutationError {
@@ -270,6 +452,7 @@ fn add_item_payload(
     item_type: &str,
     workspace: &str,
     params: &Map<String, Value>,
+    dependency: Option<&Value>,
     payload: &mut Value,
 ) -> Result<(), MutationError> {
     let text = |key: &str| params.get(key).and_then(Value::as_str).unwrap_or("");
@@ -288,11 +471,10 @@ fn add_item_payload(
         }
         "KQLDatabase" => {
             let eventhouse = text("eventhouseid");
-            if eventhouse.is_empty() {
-                return Err(unported("KQLDatabase dependency creation"));
-            }
             let db_type = text("dbtype");
-            if db_type.is_empty() || db_type.eq_ignore_ascii_case("readwrite") {
+            if dependency_for(item_type, params).is_some() {
+                payload["creationPayload"] = json!({"databaseType":"ReadWrite","parentEventhouseItemId":dependency.cloned().unwrap_or(Value::Null)});
+            } else if !params.contains_key("dbtype") || db_type.eq_ignore_ascii_case("readwrite") {
                 payload["creationPayload"] = json!({
                     "databaseType": "ReadWrite", "parentEventhouseItemId": eventhouse,
                 });
@@ -305,23 +487,25 @@ fn add_item_payload(
                     "sourceClusterUri": text("clusteruri"),
                     "sourceDatabaseName": text("databasename"),
                 });
-            } else {
-                return Err(unported("KQLDatabase fallback dependency creation"));
             }
         }
         "DigitalTwinBuilderFlow" => {
-            if text("digitaltwinbuilderid").is_empty() {
-                return Err(unported("DigitalTwinBuilderFlow dependency creation"));
-            }
             payload["creationPayload"] = json!({
                 "digitalTwinBuilderItemReference": {
                     "referenceType": "ById",
-                    "itemId": text("digitaltwinbuilderid"),
+                    "itemId": params.get("digitaltwinbuilderid").filter(|value|truthy(value)).cloned().or_else(||dependency.cloned()).unwrap_or(Value::Null),
                     "workspaceId": workspace,
                 }
             });
         }
-        "Report" | "SemanticModel" | "MirroredDatabase" => {
+        "SemanticModel" => payload["definition"] = crate::templates::semantic_model(),
+        "MirroredDatabase"
+            if text("mirrortype").is_empty()
+                || text("mirrortype").eq_ignore_ascii_case("genericmirror") =>
+        {
+            payload["definition"] = crate::templates::generic_mirror()
+        }
+        "Report" | "MirroredDatabase" => {
             return Err(unported("item-specific definition template creation"));
         }
         "Notebook" => {

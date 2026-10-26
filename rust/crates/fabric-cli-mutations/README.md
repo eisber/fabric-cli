@@ -51,10 +51,30 @@ The entire assigned generic-verb family remains backlog until actual front-door
 integration and independent request/output contracts cover all resources/options.
 This bounded slice does not include tenant/workspace bulk selection, definition
 SET, Report/SemanticModel/MirroredDatabase templates, automatic dependent-item
-creation, hidden administrative resource branches, general OneLake GET/context
+Report template/dependency creation, dynamic MirroredDatabase templates, hidden administrative resource branches, general OneLake GET/context
 composition, Fabric definition copy/move, shortcuts, capacity ARM lifecycle or
 domain assignment commands.
 Those branches must not be routed to successful-looking generic fallbacks.
+
+KQLDatabase and DigitalTwinBuilderFlow now create their source-dependent
+Eventhouse/DigitalTwinBuilder in the same parent before dispatching the root
+create. They retain inherited params/description, fallback conditions, progress/
+warnings, null parent references when a dependency only returns acceptance or no
+ID, and the source consolidated batch message/data/cache order. SemanticModel and
+GenericMirror definitions embed byte-verified pinned data, not runtime Python
+files. Unknown dependency cache/workspace effects are not fabricated.
+
+`CreationEvidence` records actual responses, confirmed cache effects and completed
+batch rows/names; it is available on the result and on a later `MutationError`.
+Accepted dependencies/root responses never become completed artifacts. A failed
+root does not trigger invented rollback/replay or lose the earlier dependency.
+The source's unusual single-name batch output after an accepted dependency is
+retained independently of completion evidence.
+
+`tests/branch_ledger.py` inventories the exact pinned functions/if/match/loops/
+failure branches and command-support/rejection entries, including separate helper
+ownership/dependencies. Its unreconciled rows remain backlog; a candidate test
+reference or existing command name is not marked as full branch verification.
 
 SQLDatabase creation includes New, Restore and RestoreDeletedDatabase modes,
 source required-parameter failures, default `ById`, optional collation and signed/

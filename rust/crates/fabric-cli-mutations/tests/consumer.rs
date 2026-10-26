@@ -797,3 +797,169 @@ async fn same_parent_folder_move_is_noop_and_cross_workspace_stays_definition_in
     );
     assert!(operations.requests.is_empty());
 }
+
+#[tokio::test]
+async fn kql_dependency_is_created_with_same_parent_and_source_batch_cache_order() {
+    let workspace = workspace(Some("ws"));
+    let folder =
+        Element::child("Nested", Some("folder".into()), NodeKind::Folder, workspace).unwrap();
+    let target = Element::child(
+        "Database",
+        None,
+        NodeKind::Item(ItemType::parse("KQLDatabase").unwrap()),
+        folder,
+    )
+    .unwrap();
+    let mut operations = Operations {
+        responses: VecDeque::from([
+            completed(201, Some(json!({"id":"eventhouse"}))),
+            completed(201, Some(json!({"id":"database"}))),
+        ]),
+        ..Operations::default()
+    };
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let result = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(
+        &target,
+        &options(json!({"run":"true","description":"shared"})),
+    )
+    .await
+    .unwrap();
+    assert_eq!(operations.requests[0].1, "/v1/workspaces/ws/eventhouses");
+    assert_eq!(
+        operations.requests[0].2,
+        Some(
+            json!({"displayName":"Database_auto","type":"Eventhouse","folderId":"folder","description":"shared"})
+        )
+    );
+    assert_eq!(
+        operations.requests[1].2.as_ref().unwrap()["creationPayload"],
+        json!({"databaseType":"ReadWrite","parentEventhouseItemId":"eventhouse"})
+    );
+    assert_eq!(
+        result.outputs[0].message.as_deref(),
+        Some("'Database_auto.Eventhouse' and 'Database.KQLDatabase' created")
+    );
+    assert_eq!(
+        result.outputs[0].data,
+        Some(json!([{"id":"eventhouse"},{"id":"database"}]))
+    );
+    assert_eq!(result.effects.len(), 2);
+    assert_eq!(result.creation.unwrap().responses.len(), 2);
+}
+
+#[tokio::test]
+async fn failed_root_creation_retains_actual_dependency_and_never_rolls_it_back_or_replays() {
+    let mut failure = ResourceError::input();
+    failure.code = "Forbidden".into();
+    failure.status = Some(403);
+    failure.mutation_may_have_occurred = true;
+    let mut operations = Operations {
+        responses: VecDeque::from([completed(201, Some(json!({"id":"builder"}))), Err(failure)]),
+        ..Operations::default()
+    };
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let error = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(
+        &item("DigitalTwinBuilderFlow", None),
+        &options(json!({"run":"true"})),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.code, "Forbidden");
+    let evidence = error.creation.unwrap();
+    assert_eq!(
+        evidence.responses,
+        [ResourceOutcome::Completed {
+            status: 201,
+            data: Some(json!({"id":"builder"}))
+        }]
+    );
+    assert!(
+        matches!(&evidence.effects[..],[CacheEffect::Created {target,..}] if target.name()=="Thing_auto.DigitalTwinBuilder")
+    );
+    assert!(error.operation.unwrap().mutation_may_have_occurred);
+    assert_eq!(operations.requests.len(), 2);
+}
+
+#[tokio::test]
+async fn accepted_dependency_keeps_null_parent_id_and_original_single_name_batch_oddity() {
+    let mut operations = Operations {
+        responses: VecDeque::from([
+            Ok(ResourceOutcome::Accepted {
+                operation_id: Some("pending".into()),
+            }),
+            completed(201, Some(json!({"id":"database"}))),
+        ]),
+        ..Operations::default()
+    };
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let result = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(&item("KQLDatabase", None), &options(json!({"run":"true"})))
+    .await
+    .unwrap();
+    assert!(
+        operations.requests[1].2.as_ref().unwrap()["creationPayload"]["parentEventhouseItemId"]
+            .is_null()
+    );
+    assert_eq!(
+        result.outputs[0].message.as_deref(),
+        Some("'' and 'Thing.KQLDatabase' created")
+    );
+    let evidence = result.creation.unwrap();
+    assert!(
+        matches!(&evidence.responses[0],ResourceOutcome::Accepted { operation_id:Some(id) } if id=="pending")
+    );
+    assert_eq!(evidence.effects.len(), 1);
+}
+
+#[tokio::test]
+async fn accepted_root_emits_no_consolidated_success_but_retains_prior_dependency_cache_work() {
+    let mut operations = Operations {
+        responses: VecDeque::from([
+            completed(201, Some(json!({"id":"builder"}))),
+            Ok(ResourceOutcome::Accepted {
+                operation_id: Some("root-pending".into()),
+            }),
+        ]),
+        ..Operations::default()
+    };
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let result = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(
+        &item("DigitalTwinBuilderFlow", None),
+        &options(json!({"run":"true"})),
+    )
+    .await
+    .unwrap();
+    assert!(result.outputs.is_empty());
+    assert_eq!(result.effects.len(), 1);
+    assert!(matches!(
+        result.outcome,
+        Some(ResourceOutcome::Accepted { .. })
+    ));
+    assert_eq!(
+        result.creation.unwrap().batch_items,
+        [json!({"id":"builder"})]
+    );
+}

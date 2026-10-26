@@ -16,6 +16,7 @@ mod onelake_write;
 mod set;
 mod shortcuts;
 mod sql_database;
+mod templates;
 
 use fabric_cli_context::{Element, NodeKind};
 use fabric_cli_output::{OutputInput, OutputStatus};
@@ -122,6 +123,21 @@ pub struct MutationResult {
     pub declined: bool,
     /// Creation's source `show_headers=True` for the text-output host.
     pub show_headers: bool,
+    /// Multi-item creation responses/cache effects, including accepted dependencies.
+    pub creation: Option<Box<CreationEvidence>>,
+}
+
+/// Actual creation progress, never a rollback promise or invented batch success.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CreationEvidence {
+    /// Responses in dispatch order, even when a dependent create only returned 202.
+    pub responses: Vec<ResourceOutcome>,
+    /// Confirmed source cache work before a later operation failed or was accepted.
+    pub effects: Vec<CacheEffect>,
+    /// Completed dependency/root metadata collected by Python's batch-output logic.
+    pub batch_items: Vec<Value>,
+    /// Matching full names, preserving source batch order.
+    pub batch_names: Vec<String>,
 }
 
 /// Structured command error retaining operation reconciliation evidence.
@@ -133,6 +149,8 @@ pub struct MutationError {
     pub message: String,
     /// Underlying policy/service error, if execution was attempted.
     pub operation: Option<Box<ResourceError>>,
+    /// Earlier dependency responses and cache work that must not be lost on failure.
+    pub creation: Option<Box<CreationEvidence>>,
 }
 
 impl MutationError {
@@ -152,6 +170,7 @@ impl MutationError {
                 message.trim_end_matches('.').to_owned()
             },
             operation: None,
+            creation: None,
         }
     }
 
@@ -319,6 +338,7 @@ impl MutationHost<'_> {
             effects,
             declined: false,
             show_headers: false,
+            creation: None,
         })
     }
 }

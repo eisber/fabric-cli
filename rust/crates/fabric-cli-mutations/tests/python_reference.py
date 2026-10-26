@@ -15,6 +15,7 @@ import ast
 import base64
 import enum
 from functools import cache
+from collections import deque
 import json
 import os
 import subprocess
@@ -42,7 +43,7 @@ def load(relative: str, namespace: dict[str, Any]) -> SimpleNamespace:
     ]
     tree.body.insert(0, ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0))
     ast.fix_missing_locations(tree)
-    namespace = dict(namespace, __file__=str(ROOT / path))
+    namespace = dict(namespace, __file__=namespace.get("__file__", str(ROOT / path)))
     exec(compile(tree, path, "exec"), namespace)
     return SimpleNamespace(**namespace)
 
@@ -93,6 +94,9 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
     """Run original handlers/client/helpers using only synthetic collaborators."""
     requests: list[dict[str, Any]] = []
     outputs: list[dict[str, Any]] = []
+    notices: list[dict[str, Any]] = []
+    cache_events: list[dict[str, Any]] = []
+    responses=deque(case["responses"]) if "responses" in case else None
     constants = SimpleNamespace(
         ERROR_ALREADY_EXISTS="AlreadyExists", ERROR_INVALID_INPUT="InvalidInput",
         ERROR_NOT_SUPPORTED="NotSupported", FAB_DEFAULT_CAPACITY_ID="default",
@@ -102,7 +106,9 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
         SQL_DATABASE_CREATION_MODE_RESTORE_DELETED="RestoreDeletedDatabase",
     )
     ui = SimpleNamespace(
-        print_grey=lambda *_: None, print_warning=lambda *_: None, print=lambda *_: None,
+        print_grey=lambda message:notices.append(dict(kind="progress",message=message)),
+        print_warning=lambda message:notices.append(dict(kind="warning",message=message)),
+        print=lambda message:notices.append(dict(kind="help",message=message)),
         prompt_confirm=lambda *_: case.get("confirm", True),
         print_output_format=lambda args, message=None, data=None, **_: outputs.append({"message": message, "data": data}),
     )
@@ -112,6 +118,8 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
             "invalidate_item_cache", "invalidate_folder_cache", "delete_item_from_cache", "delete_folder_from_cache",
         ]
     })
+    cache.upsert_item_to_cache=lambda item:cache_events.append(dict(action="upsert",name=item.name))
+    cache.invalidate_item_cache=lambda workspace:cache_events.append(dict(action="invalidate",workspace=workspace.id))
     errors = load("errors/mkdir.py", {})
     common = dict(json=json, os=os, base64=base64, Namespace=argparse.Namespace, FabricCLIError=CLIError,
                   fab_constant=constants, constant=constants, utils_ui=ui, utils_mem_store=cache,
@@ -128,6 +136,7 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
         element.parent=parent
     if kind not in ("Workspace", "Folder"):
         element.item_type = types.ItemType.from_string(kind)
+        element.folder_id=element.parent.id if isinstance(element.parent,FolderResource) else None
     params = {key.lower(): value for key, value in case.get("params", {}).items()}
     if kind == "Workspace" and case.get("unassigned"):
         params["capacityname"] = "none"
@@ -143,7 +152,10 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
         requests.append({"method": args.method, "uri": uri,
                          "payload": json.loads(data) if data else None,
                          "wait": source_wait(args)})
-        return SimpleNamespace(status_code=case.get("status", 200), text=json.dumps(case.get("data")))
+        reply=responses.popleft() if responses is not None else case
+        if "error" in reply:
+            raise CLIError(reply.get("message","synthetic failure"),reply["error"])
+        return SimpleNamespace(status_code=reply.get("status", 200), text=json.dumps(reply.get("data")))
 
     api = SimpleNamespace(do_request=request)
     api_utils = load("client/fab_api_utils.py", dict(common, fabric_api=api))
@@ -152,13 +164,24 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
     folder_api = load("client/fab_api_folders.py", dict(common, fabric_api=api, api_utils=api_utils))
     mirroring_api = load("client/fab_api_mirroring.py", dict(common, fabric_api=api, api_utils=api_utils))
     utils = SimpleNamespace(remove_keys_from_dict=lambda value, keys: [value.pop(key, None) for key in keys])
-    mkdir_utils = load("utils/fab_cmd_mkdir_utils.py", dict(
-        common, ItemType=types.ItemType, fab_logger=SimpleNamespace(log_warning=lambda *_: None)
-    ))
+    def dependency_item(name:str,identifier:str|None,parent:Resource,item_type:str)->ItemResource:
+        item=ItemResource(name,item_type,identifier)
+        item.item_type=types.ItemType.from_string(item_type)
+        item.name=f"{name}.{item.item_type}"
+        item.parent=parent;item.workspace=parent if isinstance(parent,WorkspaceResource) else parent.workspace
+        item.folder_id=parent.id if isinstance(parent,FolderResource) else None
+        return item
+    mkdir_module=SimpleNamespace()
+    helper_namespace=dict(common,ItemType=types.ItemType,Item=dependency_item,mkdir_item=mkdir_module,
+        fab_logger=SimpleNamespace(log_warning=lambda message:notices.append(dict(kind="warning",message=message))))
+    if os.environ.get("FABRIC_PARITY_TEMPLATE_SOURCE"):
+        helper_namespace["__file__"]=str(Path(os.environ["FABRIC_PARITY_TEMPLATE_SOURCE"]) / "src" / "fabric_cli" / "utils" / "fab_cmd_mkdir_utils.py")
+    mkdir_utils = load("utils/fab_cmd_mkdir_utils.py", helper_namespace)
     env = dict(common, Workspace=WorkspaceResource, Folder=FolderResource, Item=ItemResource, FabricElement=Resource,
                workspace_api=ws_api, item_api=item_api, folder_api=folder_api, utils=utils,
                format_mapping=types.format_mapping, mkdir_utils=mkdir_utils,
                fab_state_config=SimpleNamespace(get_config=lambda *_: "capacity"))
+    mkdir_module.exec=load("commands/fs/mkdir/fab_fs_mkdir_item.py",env).exec
     error = None
     moved_count = None
     try:
@@ -206,6 +229,10 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
     result={"requests": requests, "outputs": outputs, "error": error}
     if moved_count is not None:
         result["moved_count"]=moved_count
+    if responses:
+        raise AssertionError(f"Unused original creation responses: {len(responses)}")
+    if case.get("capture_creation"):
+        result.update(cache=cache_events,notices=notices)
     return result
 
 
