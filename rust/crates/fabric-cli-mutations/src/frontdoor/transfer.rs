@@ -7,7 +7,9 @@ use crate::{
     OneLakeWriteHost, OneLakeWriteResult, OneLakeWriteTarget, file_destination,
     validate_copy_destination,
 };
-use fabric_cli_context::{LocalKind, LocalMetadata, OneLakeKind, PathElement, PathKind, ResolveOptions};
+use fabric_cli_context::{
+    LocalKind, LocalMetadata, OneLakeKind, PathElement, PathKind, ResolveOptions,
+};
 use fabric_sdk_onelake::OneLakePath;
 use std::{future::Future, sync::Arc};
 
@@ -55,71 +57,120 @@ impl ResourceTransferHost<'_> {
     ) -> Result<OneLakeWriteResult, OneLakeWriteError> {
         let (destination, moving, force, recursive, collision) = match command {
             ResourceCommand::Copy {
-                destination, force, recursive, block_on_path_collision, ..
-            } => (destination, false, *force, *recursive, *block_on_path_collision),
-            ResourceCommand::Move { destination, force, recursive, .. } => {
-                (destination, true, *force, *recursive, false)
-            }
+                destination,
+                force,
+                recursive,
+                block_on_path_collision,
+                ..
+            } => (
+                destination,
+                false,
+                *force,
+                *recursive,
+                *block_on_path_collision,
+            ),
+            ResourceCommand::Move {
+                destination,
+                force,
+                recursive,
+                ..
+            } => (destination, true, *force, *recursive, false),
             _ => return Err(local(parser::invalid("Expected a copy or move command"))),
         };
         if command.args().skill.is_some() {
             return Err(local(gap(command, "--skill storage request headers")));
         }
         if recursive || collision {
-            return Err(local(gap(command, "recursive/collision-policy transfer options")));
+            return Err(local(gap(
+                command,
+                "recursive/collision-policy transfer options",
+            )));
         }
-        let source = self.context.resolve(
-            &command.args().path,
-            ResolveOptions {
-                raise_error: true,
-                supports_local_path: !moving,
-            },
-        ).map_err(local)?;
-        let target = self.context.resolve(
-            destination,
-            ResolveOptions {
-                raise_error: false,
-                supports_local_path: !moving,
-            },
-        ).map_err(local)?;
+        let source = self
+            .context
+            .resolve(
+                &command.args().path,
+                ResolveOptions {
+                    raise_error: true,
+                    supports_local_path: !moving,
+                },
+            )
+            .map_err(local)?;
+        let target = self
+            .context
+            .resolve(
+                destination,
+                ResolveOptions {
+                    raise_error: false,
+                    supports_local_path: !moving,
+                },
+            )
+            .map_err(local)?;
         if !matches!(target.kind(), PathKind::OneLake(_)) {
-            return Err(local(gap(command, "Fabric definition or local-destination transfer")));
+            return Err(local(gap(
+                command,
+                "Fabric definition or local-destination transfer",
+            )));
         }
         let target = storage_target(command, &target)?;
         let mut result = if moving {
             if !matches!(source.kind(), PathKind::OneLake(_)) {
-                return Err(local(gap(command, "Fabric definition or local-source move")));
+                return Err(local(gap(
+                    command,
+                    "Fabric definition or local-source move",
+                )));
             }
-            self.storage.rename(
-                &storage_target(command, &source)?, &target, force, cancelled,
-            ).await?
+            self.storage
+                .rename(
+                    &storage_target(command, &source)?,
+                    &target,
+                    force,
+                    cancelled,
+                )
+                .await?
         } else if matches!(source.kind(), PathKind::OneLake(_)) {
-            self.storage.copy_file(
-                &storage_target(command, &source)?, &target, cancelled,
-            ).await?
+            self.storage
+                .copy_file(&storage_target(command, &source)?, &target, cancelled)
+                .await?
         } else {
             validate_copy_destination(&target)?;
             match source.kind() {
                 PathKind::Local(LocalKind::Directory) => {
-                    return Err(local(MutationError::new("NotSupported", "Recursive copy not supported")));
+                    return Err(local(MutationError::new(
+                        "NotSupported",
+                        "Recursive copy not supported",
+                    )));
                 }
                 PathKind::Local(LocalKind::File) => {}
                 PathKind::Local(_) => {
-                    return Err(local(MutationError::new("InvalidPath", "Invalid source, expected file")));
+                    return Err(local(MutationError::new(
+                        "InvalidPath",
+                        "Invalid source, expected file",
+                    )));
                 }
                 _ => return Err(local(gap(command, "Fabric definition copy"))),
             }
-            let file = source.local_metadata()
+            let file = source
+                .local_metadata()
                 .ok_or_else(|| local(parser::invalid("Missing caller-classified local file")))?;
             let target = file_destination(&target, &file.name)?;
-            let files = self.files.as_deref_mut()
-                .ok_or_else(|| local(gap(command, "local copy requires an injected file reader")))?;
-            self.storage.ui.notice(NoticeKind::Progress, &format!(
-                "Copying '{}' \u{2192} '{}'...", file.path, target.display_path,
-            ));
-            let bytes = files.read(file, self.storage.write_limits.max_request_bytes.get()).await
+            let files = self.files.as_deref_mut().ok_or_else(|| {
+                local(gap(command, "local copy requires an injected file reader"))
+            })?;
+            self.storage.ui.notice(
+                NoticeKind::Progress,
+                &format!(
+                    "Copying '{}' \u{2192} '{}'...",
+                    file.path, target.display_path,
+                ),
+            );
+            let bytes = files
+                .read(file, self.storage.write_limits.max_request_bytes.get())
+                .await
                 .map_err(local)?;
-            self.storage.upload_bytes(&target, &file.name, &bytes, cancelled).await?
+            self.storage
+                .upload_bytes(&target, &file.name, &bytes, cancelled)
+                .await?
         };
         for output in &mut result.outputs {
             output.command = Some(command.name().into());
@@ -143,8 +194,11 @@ fn storage_target(
     };
     Ok(OneLakeWriteTarget {
         path: OneLakePath::new(
-            &destination.workspace, &destination.item, &destination.local_path,
-        ).map_err(OneLakeWriteError::Read)?,
+            &destination.workspace,
+            &destination.item,
+            &destination.local_path,
+        )
+        .map_err(OneLakeWriteError::Read)?,
         item_type: destination.item_type,
         kind,
         display_path: destination.display_path,

@@ -66,8 +66,14 @@ impl ResourceHost<'_> {
         &mut self,
         command: &ResourceCommand,
     ) -> Result<MutationResult, MutationError> {
-        if matches!(command, ResourceCommand::Copy { .. } | ResourceCommand::Move { .. }) {
-            return Err(gap(command, "OneLake/local transfer requires ResourceTransferHost; Fabric definition transfer is a separate branch"));
+        if matches!(
+            command,
+            ResourceCommand::Copy { .. } | ResourceCommand::Move { .. }
+        ) {
+            return Err(gap(
+                command,
+                "OneLake/local transfer requires ResourceTransferHost; Fabric definition transfer is a separate branch",
+            ));
         }
         if command.args().skill.is_some() {
             return Err(gap(
@@ -77,7 +83,9 @@ impl ResourceHost<'_> {
         }
         let creating = matches!(
             command,
-            ResourceCommand::Exists(_) | ResourceCommand::Mkdir { .. } | ResourceCommand::Link { .. }
+            ResourceCommand::Exists(_)
+                | ResourceCommand::Mkdir { .. }
+                | ResourceCommand::Link { .. }
         );
         let target = self.context.resolve(
             &command.args().path,
@@ -87,9 +95,7 @@ impl ResourceHost<'_> {
             },
         )?;
         let mut result = match command {
-            ResourceCommand::Exists(_) => {
-                MutationHost::exists(fabric_target(command, &target)?)?
-            }
+            ResourceCommand::Exists(_) => MutationHost::exists(fabric_target(command, &target)?)?,
             ResourceCommand::Mkdir { params, .. } => {
                 let element = fabric_target(command, &target)?;
                 let params = creation_parameters(params)?;
@@ -115,12 +121,20 @@ impl ResourceHost<'_> {
             ResourceCommand::Remove { force, hard, .. } => {
                 let element = fabric_target(command, &target)?;
                 if matches!(element.kind(), NodeKind::Workspace(_) | NodeKind::Tenant) {
-                    return Err(gap(command, "workspace removal requires the catalog/selection host"));
+                    return Err(gap(
+                        command,
+                        "workspace removal requires the catalog/selection host",
+                    ));
                 }
-                self.mutations.remove_with_options(element, *force, *hard).await?
+                self.mutations
+                    .remove_with_options(element, *force, *hard)
+                    .await?
             }
             ResourceCommand::Set {
-                query, input, force, ..
+                query,
+                input,
+                force,
+                ..
             } => {
                 self.mutations
                     .set(
@@ -170,21 +184,32 @@ impl ResourceHost<'_> {
                     .stop(fabric_target(command, &target)?, *force)
                     .await?
             }
-            ResourceCommand::Assign { workspace, force, .. }
-            | ResourceCommand::Unassign { workspace, force, .. } => {
-                if target.kind()
-                    != PathKind::VirtualWorkspaceItem(VirtualWorkspaceKind::Capacity)
-                {
-                    return Err(gap(command, "only the selected Capacity branch is implemented"));
+            ResourceCommand::Assign {
+                workspace, force, ..
+            }
+            | ResourceCommand::Unassign {
+                workspace, force, ..
+            } => {
+                if target.kind() != PathKind::VirtualWorkspaceItem(VirtualWorkspaceKind::Capacity) {
+                    return Err(gap(
+                        command,
+                        "only the selected Capacity branch is implemented",
+                    ));
                 }
                 let workspace = self.context.resolve(workspace, ResolveOptions::default())?;
                 let workspace = fabric_target(command, &workspace)?;
-                let id = target.id().filter(|id| !id.is_empty())
+                let id = target
+                    .id()
+                    .filter(|id| !id.is_empty())
                     .ok_or_else(|| MutationError::new("NotFound", "The capacity does not exist"))?;
                 if matches!(command, ResourceCommand::Assign { .. }) {
-                    self.mutations.assign_capacity(workspace, id, &target.name(), *force).await?
+                    self.mutations
+                        .assign_capacity(workspace, id, &target.name(), *force)
+                        .await?
                 } else {
-                    self.mutations.unassign_capacity(workspace, id, &target.name(), *force).await?
+                    self.mutations
+                        .unassign_capacity(workspace, id, &target.name(), *force)
+                        .await?
                 }
             }
             ResourceCommand::Copy { .. } | ResourceCommand::Move { .. } => {
@@ -224,7 +249,9 @@ impl ResourceHost<'_> {
             ResolveOptions::default(),
         )?;
         if selected.kind() != PathKind::VirtualWorkspaceItem(VirtualWorkspaceKind::Capacity) {
-            return Err(parser::invalid("capacityName did not resolve to a Capacity"));
+            return Err(parser::invalid(
+                "capacityName did not resolve to a Capacity",
+            ));
         }
         Ok(CapacitySelection::Resolved(
             selected
@@ -240,9 +267,12 @@ fn fabric_target<'a>(
     command: &ResourceCommand,
     target: &'a PathElement,
 ) -> Result<&'a Arc<fabric_cli_context::Element>, MutationError> {
-    target
-        .fabric()
-        .ok_or_else(|| gap(command, &format!("{} resource branch", target.kind().as_str())))
+    target.fabric().ok_or_else(|| {
+        gap(
+            command,
+            &format!("{} resource branch", target.kind().as_str()),
+        )
+    })
 }
 
 fn shortcut_destination(
@@ -274,6 +304,9 @@ fn shortcut_destination(
 fn gap(command: &ResourceCommand, branch: &str) -> MutationError {
     MutationError::new(
         "NotSupported",
-        format!("{}: {branch} is not supported by this resource adapter", command.name()),
+        format!(
+            "{}: {branch} is not supported by this resource adapter",
+            command.name()
+        ),
     )
 }
