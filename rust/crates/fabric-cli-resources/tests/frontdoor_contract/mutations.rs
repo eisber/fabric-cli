@@ -260,8 +260,29 @@ async fn four_mutation_leaves_match_original_python_requests_prompts_messages_an
             .unwrap();
             let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
             assert_eq!(output.write_to(&mut stdout, &mut stderr).unwrap(), 1);
-            assert!(stdout.is_empty());
-            assert!(!stderr.is_empty());
+            assert_eq!(
+                serde_json::from_slice::<Value>(&stdout).unwrap(),
+                json!({
+                    "timestamp":"2000-01-01T00:00:00Z",
+                    "status":"Failure",
+                    "command":family,
+                    "result":{
+                        "error_code":expected["error"]["code"],
+                        "message":expected["error"]["message"],
+                    },
+                }),
+                "{}",
+                case["name"]
+            );
+            assert_eq!(
+                String::from_utf8(stderr).unwrap(),
+                diagnostics
+                    .iter()
+                    .map(|line| format!("{line}\n"))
+                    .collect::<String>(),
+                "{}",
+                case["name"],
+            );
         }
     }
     assert_eq!(leaves.len(), 4);
@@ -338,4 +359,95 @@ async fn unconfigured_confirmation_unsupported_resource_and_uncertain_mutations_
         "UnsupportedCommand"
     );
     assert!(wire.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn every_headerless_accepted_mutation_retains_uncertainty_and_does_not_replay() {
+    let assignment = json!({"value":[{
+        "id":"assignment",
+        "role":"Viewer",
+        "principal":{"id":"principal","displayName":"Principal","type":"User"},
+    }]});
+    let definitions = Definitions::new(&json!([{"name":"Public","id":"label"}]));
+    for (args, listed, method, url) in [
+        (
+            vec![
+                "acl",
+                "set",
+                "Workspace.Workspace",
+                "-I",
+                "principal",
+                "-R",
+                "Viewer",
+                "-f",
+            ],
+            Some(json!({"value":[]})),
+            "POST",
+            "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+        ),
+        (
+            vec![
+                "acl",
+                "set",
+                "Workspace.Workspace",
+                "-I",
+                "principal",
+                "-R",
+                "Viewer",
+                "-f",
+            ],
+            Some(assignment.clone()),
+            "PATCH",
+            "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments/principal",
+        ),
+        (
+            vec!["acl", "rm", "Workspace.Workspace", "-I", "principal", "-f"],
+            Some(assignment),
+            "DELETE",
+            "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments/assignment",
+        ),
+        (
+            vec![
+                "label",
+                "set",
+                "Workspace.Workspace/Item.Notebook",
+                "-n",
+                "Public",
+                "-f",
+            ],
+            None,
+            "POST",
+            "https://api.fabric.microsoft.com/v1/admin/items/bulkSetLabels",
+        ),
+        (
+            vec!["label", "rm", "Workspace.Workspace/Item.Notebook", "-f"],
+            None,
+            "POST",
+            "https://api.fabric.microsoft.com/v1/admin/items/bulkRemoveLabels",
+        ),
+    ] {
+        let label = args[0] == "label";
+        let mut replies = Vec::new();
+        if let Some(listed) = &listed {
+            replies.push(reply(200, &listed.to_string(), &[]));
+        }
+        replies.push(reply(202, "{}", &[]));
+        let (api, wire, credential) = setup(replies);
+        let targets = target(label.then_some("Notebook"));
+        let mut host = host(&api, &targets);
+        host.label_definitions = Some(&definitions.0);
+        let command = parse(&args);
+        let error = host.execute(&command, pending()).await.unwrap_err();
+        assert!(error.mutation_may_have_occurred, "{method} {url}");
+        assert_eq!(error.code, "UnexpectedError");
+        assert_eq!(error.message, "unsupported completion status 202");
+        assert_eq!(error.warnings.len(), usize::from(method == "PATCH"));
+        assert_eq!(error.diagnostics.len(), usize::from(method != "PATCH"));
+        let requests = wire.requests.lock().unwrap();
+        let count = usize::from(listed.is_some()) + 1;
+        assert_eq!(requests.len(), count);
+        assert_eq!(requests.last().unwrap().method().to_string(), method);
+        assert_eq!(requests.last().unwrap().url().as_str(), url);
+        assert_eq!(credential.calls.load(Ordering::SeqCst), count);
+    }
 }

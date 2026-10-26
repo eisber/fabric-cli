@@ -93,6 +93,19 @@ then targeted all-target Clippy and the `access_frontdoor` example.
 The only new dependency edge is the already locked workspace Clap library.
 No dependency version, feature pin or third-party package is added.
 
+The first Linux receipt at `2b48992607a78cb09ddf1fe904d3c6c7acd4d039`
+passed all six source references, compilation and strict Clippy, but found three
+new consumer assertions failing (55 tests passed). Two assertions incorrectly
+expected JSON failures on stderr; the unchanged source UI fixtures require
+Failure envelopes on stdout and progress on stderr. The corrected consumers
+assert the failure shape, source error/message, exit and exact progress stream.
+The third exposed a real metadata loss: headerless accepted mutations were
+rejected without retaining uncertainty. The existing mutation consumer now keeps
+`mutation_may_have_occurred` for those `202` failures, without changing their
+code/message, retry behavior or the shared operation engine. A regression covers
+ACL add/update/remove and both label mutations. These corrections require a new
+validator receipt; the earlier compilation/Clippy result is not a test pass.
+
 Happy-path token cardinality, aliases, last-option-wins and list/scalar quote
 processing are source-backed. The existing read-only lexical adapter is not
 reimplemented here. Exact argparse diagnostics, unusual attached/negative-number
