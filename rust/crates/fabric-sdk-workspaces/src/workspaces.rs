@@ -19,6 +19,9 @@ use std::{
     pin::{Pin, pin},
 };
 
+#[cfg(test)]
+const WORKSPACES_URL: &str = "https://api.fabric.microsoft.com/v1/workspaces";
+
 /// One workspace GET request bound to the caller's validated endpoint.
 ///
 /// Debug output deliberately excludes the URL query and injected token.
