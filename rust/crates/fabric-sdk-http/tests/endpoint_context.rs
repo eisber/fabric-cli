@@ -238,7 +238,10 @@ async fn public_and_daily_context_reach_workspace_item_continuation_and_lro_wire
         assert!(requests.iter().all(|request| {
             request.url().host_str() == Some(host)
                 && request.method() == Method::Get
-                && request.headers().get_str(&"authorization".into()).is_some()
+                && request
+                    .headers()
+                    .get_str(&"authorization".into())
+                    .is_ok_and(|value| value == "Bearer offline-endpoint-context")
         }));
         assert_eq!(
             *credential.scopes.lock().unwrap(),
