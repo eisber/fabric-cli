@@ -1,0 +1,101 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const {sha, lane, ciDelta, select, plan, execute, options, requireFastPass} = require('./rust-fast-check.cjs');
+
+test('only full source IDs and finite lanes are accepted', () => {
+  assert.equal(sha('a'.repeat(40)), true);
+  for (const value of ['abc123', '0'.repeat(40), '--upload-pack=x', 'a'.repeat(40) + ';echo']) {
+    assert.equal(sha(value), false);
+  }
+  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values']) assert.equal(lane(value), value);
+  for (const value of ['__proto__', 'unknown', 'cli-jobs;echo']) assert.throws(() => lane(value));
+  assert.throws(() => options(['--source', 'a', '--source', 'b'], ['--source']));
+  assert.throws(() => options(['--command', 'echo'], ['--source']));
+});
+
+test('CI composition cannot modify product, old workflow, lock or oracle', () => {
+  ciDelta(['.github/workflows/rust-fast-check.yml', 'rust/scripts/rust-fast-check.cjs']);
+  for (const file of ['rust/Cargo.lock', '.github/workflows/rust-ci.yml',
+    'rust/crates/fabric-cli/src/main.rs', 'rust/tests/compatibility/jobs/reference.py']) {
+    assert.throws(() => ciDelta([file]));
+  }
+});
+
+test('selection retains transitive consumers and safe default scope', () => {
+  const metadata = {
+    workspace_default_members: ['core', 'http', 'items', 'cli'],
+    packages: [
+      {id: 'core', name: 'fabric-core', dependencies: []},
+      {id: 'http', name: 'fabric-sdk-http', dependencies: [{name: 'fabric-core'}]},
+      {id: 'items', name: 'fabric-sdk-items', dependencies: [{name: 'fabric-core'}]},
+      {id: 'cli', name: 'fabric-cli', dependencies: [{name: 'fabric-sdk-http'}]},
+      {id: 'windows', name: 'fabric-identity-windows', dependencies: []},
+    ],
+  };
+  const expected = ['fabric-cli', 'fabric-core', 'fabric-sdk-http', 'fabric-sdk-items'];
+  assert.deepEqual(select(metadata, 'baseline'), expected);
+  assert.deepEqual(select(metadata, 'endpoint'), expected);
+  assert.throws(() => select(metadata, 'cli-jobs'), /Missing lane package/);
+});
+
+test('mandatory stages use locked offline all-targets and actual single-thread tests', () => {
+  const manifest = {lane: 'endpoint', packages: ['fabric-core'], target: 'x86_64-unknown-linux-gnu'};
+  assert.deepEqual(plan('fmt', manifest)[0].args, ['fmt', '--all', '--', '--check']);
+  for (const stage of ['check', 'clippy']) {
+    const args = plan(stage, manifest)[0].args;
+    for (const expected of ['--offline', '--locked', '--all-targets', 'fabric-core']) assert.ok(args.includes(expected));
+  }
+  for (const item of plan('test', manifest)) assert.ok(item.args.includes('--test-threads=1'));
+  assert.throws(() => plan('arbitrary shell', manifest));
+});
+
+test('job lane executes actual consumer and requires released comparison hook', () => {
+  const manifest = {lane: 'cli-jobs', packages: ['fabric-cli', 'fabric-cli-jobs']};
+  const commands = plan('family', manifest, '/private/target', '/private/receipts', () => true);
+  assert.ok(commands.some(item => item.args.includes('offline_job')));
+  assert.ok(commands.some(item => item.args.includes('tests/compatibility/job_reads/compare.py')));
+  assert.ok(commands.some(item => item.args.includes('native-read')));
+  assert.throws(() => plan('family', manifest, '/target', '/receipts', () => false), /comparator is missing/);
+});
+
+test('native-values requires native and text observations without weakening oracle', () => {
+  const manifest = {lane: 'native-values', packages: ['fabric-core-json', 'fabric-cli-output']};
+  const commands = plan('family', manifest, '/target', '/receipts', () => true);
+  assert.ok(commands.some(item => item.args.includes('native_json') && item.stdout));
+  assert.ok(commands.some(item => item.args.includes('--encoding-only')));
+  assert.ok(commands.some(item => item.args.includes('tests/compatibility/output/text_reference.py')));
+  assert.throws(() => plan('family', manifest, '/target', '/receipts', () => false), /comparator is missing/);
+});
+
+test('command spy proves nonzero exits, spawn errors and signals stop subsequent work', () => {
+  const commands = [{program: 'cargo', args: ['test']}, {program: 'cargo', args: ['run']}];
+  for (const failure of [{status: 101}, {status: null, error: new Error('not installed')},
+    {status: null, signal: 'SIGTERM'}]) {
+    const calls = [];
+    const results = execute(commands, '.', (program, args, opts) => {
+      calls.push({program, args, opts});
+      return failure;
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].opts.shell, false);
+    assert.equal(calls[0].opts.timeout, 300000);
+    assert.equal(results.length, 1);
+    assert.notEqual(results[0].exit, 0);
+  }
+  assert.equal(execute(commands, '.', () => ({status: 0})).length, 2);
+});
+
+test('full dispatch requires real fast success at the combined immutable head', () => {
+  const receipt = {head: 'a'.repeat(40), source: 'b'.repeat(40)};
+  const run = {head_sha: receipt.head, path: '.github/workflows/rust-fast-check.yml',
+    status: 'completed', conclusion: 'success'};
+  requireFastPass(receipt, run);
+  for (const patch of [{head_sha: receipt.source}, {status: 'in_progress'},
+    {conclusion: 'failure'}, {conclusion: 'skipped'}, {path: '.github/workflows/rust-ci.yml'}]) {
+    assert.throws(() => requireFastPass(receipt, {...run, ...patch}));
+  }
+});
