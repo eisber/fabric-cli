@@ -27,6 +27,32 @@ fn job_reads_never_discover_credentials_or_fabricate_success() {
     for args in [
         vec!["job", "start", "Secret.Workspace/Book.Notebook"],
         vec!["job", "run", "Secret.Workspace/Book.Notebook"],
+        vec![
+            "job",
+            "run-cancel",
+            "Secret.Workspace/Book.Notebook",
+            "--id=run",
+        ],
+        vec![
+            "job",
+            "run-sch",
+            "Secret.Workspace/Book.Notebook",
+            "--input={}",
+        ],
+        vec![
+            "job",
+            "run-update",
+            "Secret.Workspace/Book.Notebook",
+            "--id=sch",
+            "--disable",
+        ],
+        vec![
+            "job",
+            "run-rm",
+            "Secret.Workspace/Book.Notebook",
+            "--id=sch",
+            "--force",
+        ],
         vec!["job", "run-list", "Secret.Workspace/Book.Notebook"],
         vec![
             "job",
@@ -63,6 +89,7 @@ fn malformed_job_arguments_precede_host_selection() {
             "run-cancel",
             "Book.Notebook",
             "--id=must-not-be-echoed",
+            "--schedule",
         ],
     ] {
         let output = invoke(&args, true);

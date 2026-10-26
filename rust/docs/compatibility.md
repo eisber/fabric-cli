@@ -21,10 +21,12 @@ The separate `native-read` feature now installs an explicitly configured Windows
 read host; the bootstrap table below continues to describe default builds.
 See [native host setup and limits](native-read-host.md) for supported composition,
 distinct failures and still-unexecuted live acceptance.
-The additive [bounded job composition](native-job-reads.md) recognizes
-`job run-list`, `job run-status`, `job start` and `job run`, with the same default
+The additive [bounded job composition](native-job-reads.md) recognizes all eight
+source job leaves, with the same default
 `NotConfigured` and explicit native-host selection. Their documented family/value/operation gaps
 remain incomplete source branches, not complete-command acceptance.
+The native removal path requires explicit `--force`; injected offline/library
+UI hosts also exercise confirmation, decline and cancellation.
 
 | Invocation | Exit status | Standard output | Standard error |
 | --- | --- | --- | --- |

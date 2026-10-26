@@ -15,7 +15,9 @@ use fabric_cli::{
     session::ReadSession,
 };
 use fabric_cli_context::{Element, HomeContext};
-use fabric_cli_jobs::{Confirmation, HttpJobExecutor, JobConfig, JobEvent, JobUi, JsonInput};
+use fabric_cli_jobs::{
+    Confirmation, HttpJobExecutor, JobConfig, JobEvent, JobKind, JobUi, JsonInput,
+};
 use fabric_cli_output::{CommandError, Timestamp, text::TextPlan};
 use fabric_sdk_http::{ExecutionOptions, HttpExecutor};
 use serde_json::{Value, json};
@@ -87,6 +89,11 @@ struct Ui {
     streams: Mutex<(Vec<u8>, Vec<u8>)>,
     events: Mutex<Vec<String>>,
     fail: bool,
+    confirmed: bool,
+    confirmations: Mutex<usize>,
+    hold_confirmation: bool,
+    fail_confirmation: bool,
+    allow_confirmation: bool,
 }
 
 impl Ui {
@@ -114,7 +121,21 @@ impl JobUi for Ui {
     }
 
     fn confirm(&self) -> Confirmation<'_> {
-        panic!("start/run cannot prompt")
+        assert!(self.allow_confirmation, "Only schedule removal can prompt");
+        *self.confirmations.lock().unwrap() += 1;
+        Box::pin(async {
+            if self.hold_confirmation {
+                pending::<()>().await;
+            }
+            if self.fail_confirmation {
+                Err(CommandError::new(
+                    Some("Injected confirmation failure".into()),
+                    Some("UnexpectedError".into()),
+                ))
+            } else {
+                Ok(self.confirmed)
+            }
+        })
     }
 }
 
@@ -155,9 +176,10 @@ pub fn observe(input: &Value) -> Value {
         .unwrap()
         .iter()
         .map(|value| value.as_str().unwrap());
-    let Invocation::JobRun(command) = parse_args(std::iter::once("fab-rs").chain(args)).unwrap()
-    else {
-        panic!("job start/run required")
+    let command = match parse_args(std::iter::once("fab-rs").chain(args)).unwrap() {
+        Invocation::JobRun(command) => command.family_command(),
+        Invocation::JobMutation(command) => command.family_command(),
+        _ => panic!("a job execution or mutation leaf is required"),
     };
     let credential = Arc::new(reads::Credential::default());
     let sdk = reads::sdk(credential.clone());
@@ -188,6 +210,10 @@ pub fn observe(input: &Value) -> Value {
     };
     let ui = Ui {
         fail: input["fail_ui"] == true,
+        confirmed: input["confirmed"] == true,
+        hold_confirmation: input["cancel_confirmation"] == true,
+        fail_confirmation: input["fail_confirmation"] == true,
+        allow_confirmation: command.kind == JobKind::Remove,
         ..Ui::default()
     };
     let session = JobSession {
@@ -201,26 +227,27 @@ pub fn observe(input: &Value) -> Value {
     };
     let cancelled = poll_fn(|cx| {
         if input["cancelled"] == true
+            || (input["cancel_confirmation"] == true && *ui.confirmations.lock().unwrap() > 0)
             || http
                 .hold_after
                 .is_some_and(|count| http.requests.lock().unwrap().len() >= count)
         {
             Poll::Ready(())
         } else {
-            if http.hold_after.is_some() {
+            if http.hold_after.is_some() || input["cancel_confirmation"] == true {
                 cx.waker().wake_by_ref();
             }
             Poll::Pending
         }
     });
-    let plan = reads::complete(session.dispatch(&command.family_command(), cancelled)).unwrap();
+    let plan = reads::complete(session.dispatch(&command, cancelled)).unwrap();
     ui.write(&plan);
     assert!(
         http.replies.lock().unwrap().is_empty(),
         "unused fixture replies"
     );
     let streams = ui.streams.lock().unwrap();
-    json!({
+    let mut observation = json!({
         "exit":plan.exit_code,
         "stdout":String::from_utf8(streams.0.clone()).unwrap(),
         "stderr":String::from_utf8(streams.1.clone()).unwrap(),
@@ -228,5 +255,9 @@ pub fn observe(input: &Value) -> Value {
         "scopes":*credential.scopes.lock().unwrap(),
         "file_reads":*files.reads.lock().unwrap(),
         "waits":timer.0.lock().unwrap().iter().map(|delay| delay.as_secs()).filter(|delay| *delay != 240).collect::<Vec<_>>(),
-    })
+    });
+    if input["observe_confirmation"] == true {
+        observation["confirmations"] = json!(*ui.confirmations.lock().unwrap());
+    }
+    observation
 }

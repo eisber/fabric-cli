@@ -79,6 +79,89 @@ impl JobRunCommand {
     }
 }
 
+/// Remaining source job leaves, distinct from submission and the read-only DTO.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum JobMutationKind {
+    /// Cancel an existing instance.
+    Cancel,
+    /// Create a schedule.
+    Schedule,
+    /// Update an existing schedule.
+    Update,
+    /// Remove a schedule.
+    Remove,
+}
+
+/// Source arguments for cancellation and schedule changes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JobMutationCommand {
+    /// Canonical mutation leaf.
+    pub kind: JobMutationKind,
+    /// Original path tokens.
+    pub path: Vec<String>,
+    /// Required instance/schedule ID, absent for creation.
+    pub id: Option<String>,
+    /// Schedule JSON, inline or an explicitly selected file.
+    pub input: Option<Vec<String>>,
+    /// Wait for actual cancellation status.
+    pub wait: bool,
+    /// Explicitly bypass removal confirmation.
+    pub force: bool,
+    /// Enable the schedule.
+    pub enable: bool,
+    /// Source disable flag occurrence, not its inverted stored value.
+    pub disable: bool,
+    /// Schedule type.
+    pub schedule_type: Option<String>,
+    /// Interval or source time list.
+    pub interval: Option<String>,
+    /// Source start timestamp.
+    pub start: Option<String>,
+    /// Source end timestamp.
+    pub end: Option<String>,
+    /// Source weekday list.
+    pub days: Option<String>,
+    /// Explicit source output format.
+    pub output_format: Option<String>,
+    /// Explicit source header selection.
+    pub skill: Option<String>,
+}
+
+impl JobMutationCommand {
+    /// Pass source values to the released handler without interpreting its payload.
+    pub fn family_command(&self) -> JobCommand {
+        JobCommand {
+            kind: match self.kind {
+                JobMutationKind::Cancel => JobKind::Cancel,
+                JobMutationKind::Schedule => JobKind::Schedule,
+                JobMutationKind::Update => JobKind::Update,
+                JobMutationKind::Remove => JobKind::Remove,
+            },
+            path: self.path.clone(),
+            id: self.id.clone(),
+            input: self.input.clone(),
+            wait: self.wait,
+            force: self.force,
+            schedule_args: ScheduleArgs {
+                enable: self.enable,
+                disable: self.disable,
+                schedule_type: self.schedule_type.clone(),
+                interval: self.interval.clone(),
+                start: self.start.clone(),
+                end: self.end.clone(),
+                days: self.days.clone(),
+            },
+            output_format: self.output_format.clone(),
+            skill: self.skill.clone(),
+            params: None,
+            config: None,
+            timeout: None,
+            polling_interval: None,
+            schedule: false,
+        }
+    }
+}
+
 impl JobReadCommand {
     pub(crate) fn family_command(&self) -> JobCommand {
         JobCommand {
@@ -104,18 +187,7 @@ impl JobReadCommand {
 }
 
 pub(super) fn register() -> Command {
-    let source = fabric_cli_jobs::job_subcommand();
-    Command::new("job")
-        .about("Run Fabric item jobs and read their runs and schedules")
-        .arg_required_else_help(true)
-        .subcommands(
-            source
-                .get_subcommands()
-                .filter(|leaf| {
-                    matches!(leaf.get_name(), "start" | "run" | "run-list" | "run-status")
-                })
-                .cloned(),
-        )
+    fabric_cli_jobs::job_subcommand()
 }
 
 pub(super) fn parse(group: &ArgMatches) -> Result<super::Invocation, clap::Error> {
@@ -130,6 +202,32 @@ pub(super) fn parse(group: &ArgMatches) -> Result<super::Invocation, clap::Error
             input: command.input,
             timeout: command.timeout,
             polling_interval: command.polling_interval,
+            output_format: command.output_format,
+            skill: command.skill,
+        }));
+    }
+    let mutation = match command.kind {
+        JobKind::Cancel => Some(JobMutationKind::Cancel),
+        JobKind::Schedule => Some(JobMutationKind::Schedule),
+        JobKind::Update => Some(JobMutationKind::Update),
+        JobKind::Remove => Some(JobMutationKind::Remove),
+        _ => None,
+    };
+    if let Some(kind) = mutation {
+        return Ok(super::Invocation::JobMutation(JobMutationCommand {
+            kind,
+            path: command.path,
+            id: command.id,
+            input: command.input,
+            wait: command.wait,
+            force: command.force,
+            enable: command.schedule_args.enable,
+            disable: command.schedule_args.disable,
+            schedule_type: command.schedule_args.schedule_type,
+            interval: command.schedule_args.interval,
+            start: command.schedule_args.start,
+            end: command.schedule_args.end,
+            days: command.schedule_args.days,
             output_format: command.output_format,
             skill: command.skill,
         }));

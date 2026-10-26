@@ -5,7 +5,7 @@
 
 use fabric_cli::{
     HostError,
-    parser::{JobReadCommand, JobRunCommand, ReadCommand},
+    parser::{JobMutationCommand, JobReadCommand, JobRunCommand, ReadCommand},
 };
 use serde_json::json;
 use std::{
@@ -27,6 +27,7 @@ enum NativeCommand<'a> {
     Read(&'a ReadCommand),
     Job(&'a JobReadCommand),
     JobExecution(&'a JobRunCommand),
+    JobMutation(&'a JobMutationCommand),
 }
 
 fn failure(code: &'static str, message: impl Into<String>, exit: u8) -> Failure {
@@ -70,6 +71,10 @@ pub(crate) fn run_job(command: &JobReadCommand) -> io::Result<ExitCode> {
 
 pub(crate) fn run_job_execution(command: &JobRunCommand) -> io::Result<ExitCode> {
     run_command(NativeCommand::JobExecution(command))
+}
+
+pub(crate) fn run_job_mutation(command: &JobMutationCommand) -> io::Result<ExitCode> {
+    run_command(NativeCommand::JobMutation(command))
 }
 
 fn run_command(command: NativeCommand<'_>) -> io::Result<ExitCode> {
@@ -137,6 +142,7 @@ fn run_selected(
         NativeCommand::Read(_) => None,
         NativeCommand::Job(command) => command.skill.as_deref(),
         NativeCommand::JobExecution(command) => command.skill.as_deref(),
+        NativeCommand::JobMutation(command) => command.skill.as_deref(),
     };
     fabric_sdk_jobs::JobRequestHeaders::with_skill(skill).map_err(|_| {
         failure(
@@ -289,15 +295,10 @@ async fn execute(
             .await
         }
         NativeCommand::JobExecution(command) => {
-            fabric_cli::jobs::JobSession {
-                reads: &session,
-                jobs: Arc::new(fabric_cli_jobs::HttpJobExecutor::new(executor.clone())),
-                files: &fabric_cli::jobs::SelectedJobFiles,
-                ui: &NativeJobUi,
-                config: fabric_cli_jobs::JobConfig::default(),
-            }
-            .dispatch(&command.family_command(), std::future::pending())
-            .await
+            execute_job(&session, &executor, &command.family_command()).await
+        }
+        NativeCommand::JobMutation(command) => {
+            execute_job(&session, &executor, &command.family_command()).await
         }
     };
     match result {
@@ -314,6 +315,23 @@ async fn execute(
             Err(failure("render_failed", error.to_string(), 1))
         }
     }
+}
+
+#[cfg(windows)]
+async fn execute_job(
+    session: &fabric_cli::session::ReadSession<'_>,
+    executor: &fabric_sdk_http::HttpExecutor,
+    command: &fabric_cli_jobs::JobCommand,
+) -> Result<fabric_cli_output::text::TextPlan, fabric_cli_output::text::TextError> {
+    fabric_cli::jobs::JobSession {
+        reads: session,
+        jobs: std::sync::Arc::new(fabric_cli_jobs::HttpJobExecutor::new(executor.clone())),
+        files: &fabric_cli::jobs::SelectedJobFiles,
+        ui: &NativeJobUi,
+        config: fabric_cli_jobs::JobConfig::default(),
+    }
+    .dispatch(command, std::future::pending())
+    .await
 }
 
 #[cfg(windows)]
@@ -343,7 +361,7 @@ impl fabric_cli_jobs::JobUi for NativeJobUi {
     fn confirm(&self) -> fabric_cli_jobs::Confirmation<'_> {
         Box::pin(async {
             Err(fabric_cli_output::CommandError::new(
-                Some("This job slice cannot request confirmation".into()),
+                Some("Native interactive confirmation is not supported; select --force explicitly or inject a confirmation UI".into()),
                 Some("NotSupported".into()),
             ))
         })

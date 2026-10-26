@@ -6,8 +6,8 @@ Python source: `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
 Released Rust prerequisite: `50eb337e696d5de8d49c65039ca9eff4ca3e0a60`,
 adopted by ordinary merge after preserving the original `9c396ce` draft.
 The first slice added `job run-list` and `job run-status` to `fab-rs`.
-The next additive composition also registers `job start` and `job run` as
-described below. Cancellation and schedule mutation leaves remain unregistered.
+The next additive compositions register the remaining six source job leaves as
+described below. All eight registrations come from the existing jobs family.
 These are partial entry points, not complete Python commands or live proof.
 
 ## Additive submission and synchronous execution
@@ -15,8 +15,8 @@ These are partial entry points, not complete Python commands or live proof.
 The second microbatch mounts the released family's `start` and `run`
 registrations and typed conversion once. `Invocation::JobRun` preserves
 `-P/--params`, `-C/--config`, `-i/--input`, signed `--timeout`, positive
-`--polling_interval`, output selection and hidden skill selection. Other job
-leaves/options still fail during parsing; no placeholder handlers are registered.
+`--polling_interval`, output selection and hidden skill selection. Unsupported
+options still fail during parsing; no placeholder handlers are registered.
 The existing read DTO and `JobReadSession` struct-literal API remain available.
 
 `JobSession` borrows the same `ReadSession`/command-local `Snapshot` and
@@ -58,6 +58,43 @@ round integers outside the supported JSON domain. This is a reported family
 API gap, not closed by the native file reader or response guard; no full
 input-domain compatibility is claimed by this candidate.
 
+## Additive cancellation and schedule changes
+
+The third microbatch mounts `job run-cancel`, `job run-sch`, `job run-update`
+and `job run-rm`. The complete family registration is now mounted once;
+`Invocation::JobMutation` converts its existing typed result without parsing
+payloads, inventing schedule defaults or copying service logic.
+It preserves required IDs, `--wait/-w`, `--force/-f`, inline/file input,
+cron/daily/weekly fields, enable/disable flag occurrences, output and skill.
+
+All four paths reuse the same `JobSession`, credential selection, metadata
+snapshot, files/UI/configuration capabilities and `SharedJobOperations`.
+Cancellation delegates one POST and optional actual job-status wait; accepted
+generic operations use the existing shared operation/result retrieval, not a
+second poller. Schedule updates retain the family's GET-before-PATCH and enabled
+state rules. Removal never assumes consent: an injected UI can confirm, decline,
+fail or be cancelled before DELETE. Native terminal prompting remains explicitly
+unsupported; the native removal happy path requires the caller's `--force`.
+Non-forced native removal fails `NotSupported` without DELETE rather than
+blocking the current-thread runtime or silently approving the action.
+
+The same `job_execution_probe` now accepts these typed invocations.
+`tests/compatibility/job_mutations/compare.py` independently freezes 64 source
+observations covering four leaves, five resource types, both output formats,
+real status waits, daily/weekly schedules, full inline/file schedule envelopes,
+enabled-state updates and both confirmation outcomes. Its request bodies,
+methods, streams, exits, credential scopes, file reads, waits and confirmation
+counts are compared with the production session. Focused native tests additionally
+exercise shared generic-operation retrieval, invalid source arguments,
+confirmation cancellation/failure, unauthorized reads and non-replayed mutations.
+No live job, schedule, account or credential store is used.
+
+This is a source candidate until the exact Linux compile/lint/tests and native
+comparisons pass. Registration or passing Python-only fixtures do not advance
+mounted-command coverage. The family raw-JSON input fix must be explicitly
+released and validated in the final composition; this microbatch does not copy
+an unpublished family patch.
+
 ## Selection and composition
 
 Default and broker-only builds recognize these leaves but return
@@ -85,8 +122,8 @@ The only new internal dependency edges are `fabric-cli -> fabric-cli-jobs` and
 `fabric-cli -> fabric-sdk-jobs`; registry packages and default native
 identity/transport feature selection are unchanged.
 
-The parser reuses only the two released family registrations and its typed
-conversion. It preserves source token paths, required status `--id`, repeated
+The read-only DTO reuses the released family typed conversion. It preserves
+source token paths, required status `--id`, repeated
 scalar flags, `--schedule`, long-option abbreviations and global
 `--output_format json|text`. There is no source query/filter/sort option for
 these leaves: `-q`/`--query` and mutation-only switches fail during parsing.
