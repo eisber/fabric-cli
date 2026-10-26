@@ -16,6 +16,7 @@ from reference import FabricJobType, SourceError, load_functions
 
 
 def check_branches() -> None:
+    """Execute each additive expectation against unchanged pinned Python bodies."""
     directory = Path(__file__).resolve().parent
     root = directory.parents[3]
     cases = json.loads((directory / "branches.json").read_text(encoding="utf-8"))
