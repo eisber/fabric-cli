@@ -223,6 +223,8 @@ jobs:
       - name: Set up the development-only Python oracle
         if: >-
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-core-json') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-output') ||
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-jobs') ||
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-jobs') ||
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-paging') ||
@@ -311,6 +313,21 @@ jobs:
             --query-probe "target/debug/examples/projection_output${suffix}" \
             --folder-probe "target/debug/examples/folder_read_probe${suffix}" \
             --artifacts "$RUNNER_TEMP/read-parity"
+      - name: Require shared core and CLI JSON byte compatibility
+        if: >-
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-core-json') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-output')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          cargo run --quiet --offline --locked -p fabric-core-json --example definition_json > "$RUNNER_TEMP/core-definition-json.json"
+          cargo run --quiet --offline --locked -p fabric-cli-output --example definition_json > "$RUNNER_TEMP/cli-definition-json.json"
+          cargo run --quiet --offline --locked -p fabric-cli-output --example compatibility_probe > "$RUNNER_TEMP/output-json.json"
+          python -B tests/compatibility/output/definition_reference.py --observed "$RUNNER_TEMP/core-definition-json.json"
+          python -B tests/compatibility/output/definition_reference.py --observed "$RUNNER_TEMP/cli-definition-json.json"
+          python -B tests/compatibility/output/reference.py --observed "$RUNNER_TEMP/output-json.json"
+          python -B -m unittest discover -s tests/compatibility/output -p test_reference.py -v
       - name: Check optional broker and safe-code consumer without authenticating
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-identity')
         run: |

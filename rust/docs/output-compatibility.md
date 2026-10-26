@@ -27,6 +27,19 @@ serializer and controlled headless print implementation, with LF checked
 explicitly. No existing fixture is regenerated, normalized or weakened.
 The Rust probe emits **observations**, never Python expected output.
 
+The shared `fabric-core-json` library now owns the single string, number and
+layout encoder. `fabric-cli-output` retains its public types and delegates to
+that core implementation; SDK callers can use raw default-layout
+`fabric_core_json::json_dumps` without a CLI dependency. The CLI's raw-data
+wrapper preserves its `Result<String, OutputError>` signature. This is distinct
+from envelope construction and from `indent=0`, which still emits newlines.
+Twelve additional hand-authored default-layout cases cover separators, insertion
+order, ASCII escaping and finite numeric boundaries. Native CI compares both
+actual core and CLI example output with Python's serializer and the pinned
+source helper, and preserves all 42 existing envelope comparisons. The exact
+reviewed output-to-JSON-core dependency is guarded by positive and negative
+architecture tests, not a general CLI-to-core permission.
+
 Byte equality is demonstrated on the finite numeric cases, not every possible
 f64 value or CPython dtoa tie. Arbitrary-size Python integers, non-standard
 NaN/Infinity literals and unsupported Python runtime objects lie outside the
