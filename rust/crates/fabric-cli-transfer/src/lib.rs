@@ -309,6 +309,8 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
         command: &TransferCommand,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<TransferResult, TransferError> {
+        OutputFormat::resolve(command.output_format.as_deref(), Some("text"))
+            .map_err(|error| error.command_error())?;
         if command.kind == TransferKind::Deploy {
             return Err(command_error("NotSupported",
                 "deploy --config requires the unported CICD configuration, parameter validation, planning and command-scoped bulk-flag lifecycle; the bounded Notebook publisher is not this command").into());
@@ -327,6 +329,11 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             &mut cancelled,
         )
         .await?;
+        if context.items.len() > self.definition_limits.max_files.get()
+            || context.selection_order.len() > self.definition_limits.max_files.get()
+        {
+            return Err(DefinitionError::from(DefinitionErrorKind::Limit).into());
+        }
         match command.kind {
             TransferKind::Export => self.export(command, context, &mut cancelled).await,
             TransferKind::BulkExport => self.bulk(command, context, &mut cancelled).await,
@@ -477,6 +484,7 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             inner: self.files,
             ui: self.ui,
             progress: Some(progress),
+            at_directory: true,
         };
         let outcome = definitions::export_item(
             &mut session,
@@ -600,6 +608,7 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
                 snapshot.from_path,
                 root.display()
             )),
+            at_directory: false,
         };
         let outcome = definitions::bulk_export(
             &mut session,
@@ -787,11 +796,11 @@ struct NotifyingFiles<'a> {
     inner: &'a mut dyn TransferFiles,
     ui: &'a dyn TransferUi,
     progress: Option<String>,
+    at_directory: bool,
 }
 
-impl DefinitionFileSystem for NotifyingFiles<'_> {
-    fn preflight(&mut self, root: &Path, files: &[DefinitionFile]) -> io::Result<()> {
-        self.inner.preflight(root, files)?;
+impl NotifyingFiles<'_> {
+    fn notify(&mut self) -> io::Result<()> {
         if let Some(progress) = self.progress.take() {
             self.ui
                 .emit(TransferEvent::Grey(progress))
@@ -799,9 +808,20 @@ impl DefinitionFileSystem for NotifyingFiles<'_> {
         }
         Ok(())
     }
+}
+
+impl DefinitionFileSystem for NotifyingFiles<'_> {
+    fn preflight(&mut self, root: &Path, files: &[DefinitionFile]) -> io::Result<()> {
+        self.inner.preflight(root, files)?;
+        if !self.at_directory {
+            self.notify()?;
+        }
+        Ok(())
+    }
 
     fn create_directory(&mut self, root: &Path, name: &str) -> io::Result<()> {
-        self.inner.create_directory(root, name)
+        self.inner.create_directory(root, name)?;
+        self.notify()
     }
 
     fn write(&mut self, root: &Path, file: &DefinitionFile) -> io::Result<()> {

@@ -493,6 +493,13 @@ async fn bulk_real_handler_matches_source_all_request_summary_and_local_file() {
         source("bulk-export")["outputs"][0]["data"][0]["exported_types"]
     );
     assert!(result.key_value);
+    let mut expected = source("bulk-export")["outputs"][0]["data"].clone();
+    expected[0]["output"] = json!("output");
+    assert_eq!(result.outputs[0].data.as_ref().unwrap(), &expected);
+    assert_eq!(
+        result.outputs[0].message.as_deref(),
+        Some("Exported 1 items to 'output'")
+    );
     assert_file(&directory.0, "bulk-export");
     let requests = harness.http.requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
@@ -1081,6 +1088,39 @@ async fn explicit_json_override_controls_stream_even_with_text_configuration() {
         "export"
     );
     assert!(stderr.is_empty());
+}
+
+#[tokio::test]
+async fn invalid_public_output_selection_and_metadata_bounds_fail_before_mutation() {
+    let directory = Directory::new();
+    let harness = Harness::new(context(false, false), Vec::new());
+    let mut command = parse(&[
+        "import",
+        "Demo.Workspace/Pipe.DataPipeline",
+        "-i",
+        "input",
+        "-f",
+    ]);
+    command.output_format = Some("yaml".into());
+    assert!(
+        harness
+            .host(&mut directory.files())
+            .execute(&command, pending())
+            .await
+            .is_err()
+    );
+    assert_eq!(harness.metadata.calls.load(Ordering::SeqCst), 0);
+    harness.no_requests();
+
+    let mut ctx = context(true, true);
+    ctx.items.push(ctx.items[0].clone());
+    let harness = Harness::new(ctx, Vec::new());
+    let command = parse(&["export", "Demo.Workspace", "-o", "output", "-a", "-f"]);
+    let mut files = directory.files();
+    let mut host = harness.host(&mut files);
+    host.definition_limits.max_files = std::num::NonZeroUsize::new(1).unwrap();
+    assert!(host.execute(&command, pending()).await.is_err());
+    harness.no_requests();
 }
 
 #[cfg(unix)]
