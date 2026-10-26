@@ -239,6 +239,8 @@ pub enum OneLakeError {
         status: u16,
         /// Storage `x-ms-error-code`, if present.
         code: Option<String>,
+        /// Parsed storage failure body retained as untrusted data, never Display.
+        raw_service_error: Option<Box<Value>>,
     },
     /// Malformed path listing or unexpected successful status.
     InvalidResponse,
@@ -677,6 +679,7 @@ impl OneLakeClient {
             202..=299 => Err(OneLakeError::InvalidResponse),
             status => Err(OneLakeError::Http {
                 status,
+                raw_service_error: serde_json::from_slice(&response.body).ok().map(Box::new),
                 code: if matches!(status, 401 | 403) {
                     header(&response.headers, "x-ms-public-api-error-code")
                         .filter(|code| !code.is_empty())

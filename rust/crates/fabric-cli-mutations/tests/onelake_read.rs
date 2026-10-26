@@ -345,6 +345,33 @@ async fn aggregate_metadata_bound_is_enforced_without_changing_complete_sdk_path
     );
 }
 
+#[test]
+fn storage_body_errors_preserve_raw_evidence_but_source_json_message_removes_request_metadata() {
+    let raw = json!({"error":{"code":"BodyCode","message":"Failure\nRequestId:abc\nTime:2000-01-01T00:00:00Z"}});
+    let error = OneLakeError::Http {
+        status: 400,
+        code: Some("IgnoredHeader".into()),
+        raw_service_error: Some(Box::new(raw.clone())),
+    };
+    assert!(!error.to_string().contains("Failure"));
+    let output = OneLakeReadError::Sdk(error.clone()).output();
+    assert_eq!(output.error_code.as_deref(), Some("BodyCode"));
+    assert_eq!(output.message.as_deref(), Some("Failure"));
+    assert!(matches!(error,OneLakeError::Http { raw_service_error:Some(value),.. } if *value==raw));
+}
+
+#[test]
+fn storage_period_only_error_is_normalized_once_not_replaced_by_a_second_default() {
+    let output = OneLakeReadError::Sdk(OneLakeError::Http {
+        status: 400,
+        code: None,
+        raw_service_error: Some(Box::new(json!({"error":{"code":"","message":"..."}}))),
+    })
+    .output();
+    assert_eq!(output.error_code.as_deref(), Some("UnknownError"));
+    assert_eq!(output.message.as_deref(), Some(""));
+}
+
 #[tokio::test]
 async fn item_roots_use_the_item_path_route_and_distinct_source_name_projection() {
     let client = client();

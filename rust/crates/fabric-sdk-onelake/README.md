@@ -45,6 +45,10 @@ detects repeated continuation tokens, and never reports partial data as complete
 Malformed bodies or a 403 are not absence. HTTP status and storage header error
 codes are retained as data; display text is sanitized. Cancelled futures drop
 local request/credential work without claiming any completed response.
+HTTP failures also retain the parsed storage body in `raw_service_error`.
+SDK Display does not emit that provider data. CLI adapters explicitly select
+the source JSON diagnostic policy: standard 401/403 header precedence and 404,
+otherwise the nested storage code/message, without losing raw request/time data.
 
 Metadata GET and path enumeration share one collection loop. Header continuation
 takes precedence over body `continuationToken`; no service link is followed.

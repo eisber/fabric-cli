@@ -114,8 +114,13 @@ than Python's success-shaped fallback.
 
 Hidden-resource resolution, filesystem export and main-host
 composition remain separate backlog
-items. HTTP errors beyond the source's standard 401/403/404 diagnostics retain
-the SDK's sanitized message; full storage-body diagnostics are not claimed.
+items. Storage JSON errors preserve the source 401/403 header precedence and 404
+diagnostic, otherwise the nested body code/message, default/error parsing and
+request/time token-removal behavior. Raw SDK error data is retained independently
+of explicitly rendered messages; the SDK Display remains sanitized. The original
+HTTP/exception/decorator comparison includes Unicode whitespace, repeated and
+empty metadata prefixes, period-only messages and code-selected authorization
+exits. Additional text-mode RequestId/Time adornments remain with the main host.
 
 OneLake directory GET returns source metadata plus the existing query projection.
 It retains the raw local path (unlike LS/EXISTS), removes only the source's

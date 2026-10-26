@@ -309,7 +309,8 @@ async fn get_retries_share_existing_policy_but_head_is_single_attempt() {
         error,
         OneLakeError::Http {
             status: 503,
-            code: None
+            code: None,
+            raw_service_error: None,
         }
     );
     assert_eq!(
@@ -394,7 +395,8 @@ async fn service_forbidden_and_not_found_remain_distinct_with_storage_error_code
             error,
             OneLakeError::Http {
                 status,
-                code: Some("SyntheticStorageError".into())
+                code: Some("SyntheticStorageError".into()),
+                raw_service_error: None,
             }
         );
         assert!(!error.to_string().contains("untrusted diagnostic"));
@@ -700,7 +702,8 @@ async fn failed_upload_stages_retain_response_progress_and_possible_side_effects
             error.kind,
             OneLakeError::Http {
                 status: 403,
-                code: None
+                code: None,
+                raw_service_error: None,
             }
         );
         assert!(error.mutation_may_have_occurred);

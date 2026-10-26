@@ -22,18 +22,22 @@ pub enum OneLakeReadError {
 impl OneLakeReadError {
     /// Convert to the existing output boundary without losing the typed source.
     ///
-    /// Other storage body-specific diagnostics are not invented when the SDK has
-    /// retained only a status/header code. The caller can inspect this error.
+    /// Storage body diagnostics follow the source exception policy at this explicit
+    /// output boundary; SDK Display remains sanitized and raw data is retained.
     pub fn output(&self) -> OutputInput {
         let error = match self {
             Self::Query(error) => MutationError::new(error.code(), error.message()),
-            Self::Sdk(OneLakeError::Http { status: 401, code }) => MutationError::new(
+            Self::Sdk(OneLakeError::Http {
+                status: 401, code, ..
+            }) => MutationError::new(
                 code.as_deref()
                     .filter(|code| !code.is_empty())
                     .unwrap_or("Unauthorized"),
                 "Access is unauthorized",
             ),
-            Self::Sdk(OneLakeError::Http { status: 403, code }) => MutationError::new(
+            Self::Sdk(OneLakeError::Http {
+                status: 403, code, ..
+            }) => MutationError::new(
                 code.as_deref()
                     .filter(|code| !code.is_empty())
                     .unwrap_or("Forbidden"),
@@ -42,6 +46,9 @@ impl OneLakeReadError {
             Self::Sdk(OneLakeError::Http { status: 404, .. }) => {
                 MutationError::new("NotFound", "The requested resource could not be found")
             }
+            Self::Sdk(OneLakeError::Http {
+                raw_service_error, ..
+            }) => storage_error_output(raw_service_error.as_deref()),
             Self::Sdk(error) => MutationError::new(
                 match error {
                     OneLakeError::InvalidInput => "InvalidInput",
@@ -302,6 +309,62 @@ impl OneLakeReadHost<'_> {
             output: message(if exists { "true" } else { "false" }),
             show_headers: false,
         })
+    }
+}
+
+fn storage_error_output(raw: Option<&Value>) -> MutationError {
+    let invalid = || {
+        MutationError::new(
+            "InvalidResponse",
+            "Storage returned invalid error diagnostics",
+        )
+    };
+    let error = match raw {
+        None => None,
+        Some(Value::Object(value)) => match value.get("error") {
+            None => None,
+            Some(Value::Object(error)) => Some(error),
+            _ => return invalid(),
+        },
+        _ => return invalid(),
+    };
+    let code = error
+        .and_then(|error| error.get("code"))
+        .and_then(Value::as_str)
+        .filter(|code| !code.is_empty())
+        .unwrap_or("UnknownError");
+    let value = error.and_then(|error| error.get("message"));
+    if value.is_some_and(|value| truthy(value) && !value.is_string()) {
+        return invalid();
+    }
+    let message = value
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("An error occurred while processing the operation");
+    let mut message = message.replace("\nRequestId:", "RequestId:");
+    strip_metadata_token(&mut message, "RequestId:");
+    message = message.replace("\nTime:", "Time:");
+    strip_metadata_token(&mut message, "Time:");
+    MutationError::new(code, message)
+}
+
+fn strip_metadata_token(message: &mut String, prefix: &str) {
+    let whitespace =
+        |character: char| character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}');
+    let token = message.match_indices(prefix).find_map(|(index, _)| {
+        let start = index + prefix.len();
+        let rest = &message[start..];
+        if rest.chars().next().is_none_or(whitespace) {
+            return None;
+        }
+        let end = rest
+            .char_indices()
+            .find(|(_, character)| whitespace(*character))
+            .map_or(rest.len(), |(index, _)| index);
+        Some(message[index..start + end].to_owned())
+    });
+    if let Some(token) = token {
+        *message = message.replace(&token, "");
     }
 }
 

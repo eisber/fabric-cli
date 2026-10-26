@@ -181,7 +181,8 @@ async fn failed_flush_preserves_partial_effects_and_never_prints_done() {
         error.kind,
         OneLakeError::Http {
             status: 403,
-            code: None
+            code: None,
+            raw_service_error: None,
         }
     );
     assert_eq!(

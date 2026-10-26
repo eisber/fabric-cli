@@ -66,7 +66,7 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
     exceptions = load("core/fab_exceptions.py", dict(json=json, html=html, re=re))
     common = load("errors/common.py", {})
     values = constants({
-        "SCOPE_FABRIC_DEFAULT", "SCOPE_AZURE_DEFAULT", "API_ENDPOINT_FABRIC", "API_VERSION_FABRIC",
+        "SCOPE_FABRIC_DEFAULT", "SCOPE_AZURE_DEFAULT", "SCOPE_ONELAKE_DEFAULT", "API_ENDPOINT_FABRIC", "API_ENDPOINT_ONELAKE", "API_VERSION_FABRIC",
         "ERROR_UNAUTHORIZED", "ERROR_FORBIDDEN", "ERROR_NOT_FOUND", "ERROR_OPERATION_FAILED",
         "ERROR_OPERATION_CANCELLED", "EXIT_CODE_AUTHORIZATION_REQUIRED", "EXIT_CODE_ERROR",
     })
@@ -90,7 +90,7 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
 
     class SyntheticAuth:
         def get_access_token(self, scope: list[str]) -> str:
-            assert scope == values["SCOPE_FABRIC_DEFAULT"]
+            assert scope == values["SCOPE_ONELAKE_DEFAULT"] if case.get("audience")=="storage" else scope == values["SCOPE_FABRIC_DEFAULT"]
             return "synthetic-error-contract-only"
 
     def request(method: str, url: str, **_: Any) -> Any:
@@ -126,9 +126,10 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
         EXIT_CODE_AUTHORIZATION_REQUIRED=values["EXIT_CODE_AUTHORIZATION_REQUIRED"],
         EXIT_CODE_ERROR=values["EXIT_CODE_ERROR"],
     ))
-    handler = decorators["handle_exceptions"]()(lambda args: namespace["do_request"](args, data="{}"))
-    exit_code = handler(argparse.Namespace(uri="workspaces/ws/items/item", method="patch",
-                                          command_path="set", output_format="json", request_params={}))
+    storage=case.get("audience")=="storage"
+    handler = decorators["handle_exceptions"]()(lambda args: namespace["do_request"](args, data=None if storage else "{}"))
+    exit_code = handler(argparse.Namespace(uri="workspace/item/Files/error" if storage else "workspaces/ws/items/item", method="get" if storage else "patch",
+                                          audience=case.get("audience"),command_path="set", output_format="json", request_params={}))
     if replies or not captured:
         raise AssertionError("Original source did not finish the expected failure script")
     return dict(captured, exit=exit_code, requests=requests)
@@ -162,6 +163,20 @@ def main() -> None:
                 dict(status=202, data={}, headers={"x-ms-operation-id": OP}),
                 dict(status=200, data={"status": state, "error": detail}),
             ]})
+    for status in [401,403,404,400,500]:
+        for headers in [{},{"x-ms-public-api-error-code":"HeaderCode","x-ms-error-code":"OtherCode"}]:
+            cases.append({"audience":"storage","replies":[dict(status=status,data={"error":{"code":"StorageBodyCode","message":"Service body..."}} ,headers=headers)]})
+    for data in [
+        {},{"error":{}},{"error":{"code":"OnlyCode"}},{"error":{"message":"OnlyMessage."}},
+        {"error":{"code":"","message":"..."}},
+        {"error":{"code":"Storage","message":"Failure\nRequestId:abc\nTime:2000-01-01T00:00:00Z"}},
+        {"error":{"code":"Storage","message":"Failure RequestId:abc repeated RequestId:abc\nTime:now."}},
+        {"error":{"code":"Storage","message":"Failure RequestId: empty RequestId:abc\u001cTime:now"}},
+        {"error":{"code":"Storage","message":"\u65e5\u00a0message\nRequestId:request\u00a0Time:now"}},
+    ]:
+        cases.append({"audience":"storage","replies":[dict(status=400,data=data)]})
+    cases.append({"audience":"storage","replies":[dict(status=400,text="not JSON")]})
+    cases.append({"audience":"storage","replies":[dict(status=400,data={"error":{"code":"Unauthorized","message":"Code selects source authorization exit"}})]})
     expected = [reference(case) for case in cases]
     result = subprocess.run([args.probe], input="".join(json.dumps(case) + "\n" for case in cases),
                             text=True, encoding="utf-8", capture_output=True, check=True)
