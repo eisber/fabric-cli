@@ -9,9 +9,11 @@
 
 mod params;
 mod parser;
+mod transfer;
 
 pub use params::creation_parameters;
 pub use parser::{ResourceArgs, ResourceCommand, command_from_matches, resource_subcommands};
+pub use transfer::{ResourceFiles, ResourceTransferHost};
 
 use crate::{
     CapacitySelection, CreateOptions, MutationError, MutationHost, MutationResult,
@@ -64,6 +66,9 @@ impl ResourceHost<'_> {
         &mut self,
         command: &ResourceCommand,
     ) -> Result<MutationResult, MutationError> {
+        if matches!(command, ResourceCommand::Copy { .. } | ResourceCommand::Move { .. }) {
+            return Err(gap(command, "OneLake/local transfer requires ResourceTransferHost; Fabric definition transfer is a separate branch"));
+        }
         if command.args().skill.is_some() {
             return Err(gap(
                 command,
@@ -181,6 +186,9 @@ impl ResourceHost<'_> {
                 } else {
                     self.mutations.unassign_capacity(workspace, id, &target.name(), *force).await?
                 }
+            }
+            ResourceCommand::Copy { .. } | ResourceCommand::Move { .. } => {
+                unreachable!("transfer host selected before resolving context")
             }
         };
         for output in &mut result.outputs {
