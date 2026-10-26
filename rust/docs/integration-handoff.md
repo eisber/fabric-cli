@@ -11,6 +11,87 @@ branch remains intact; references to it in dated evidence are historical.
 
 ## Read-command, query and folder integration
 
+### October 27 merge-tree C: exact-base local and access source composition
+
+The integration-only branch `validation/rust-merge-tree-c-exactbase-1302934`
+starts at exact `b3d7daac62068b73f2b34bc8d1e4295bc0bcdb27` in its own artifact
+worktree. The inherited newer Python checkout/history at
+`8ad4c703bdd6738189f59318a04cab297b6c4381` is preserved separately, not merged
+into this candidate. All non-Rust files match b3d exactly; the independent
+Python oracle remains `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
+
+| Released source | C integration commit | Scope |
+| --- | --- | --- |
+| `4652285f3555b10058a7e049b92f2d0a137970d5` | `b72055a2db3df89404a1e3f37f7e036d956dad76` | Local configuration, cache and named version |
+| `bb842ed6886708232b078ae2aa86ca21dce92b0a` | `75c93e622912c4a06d5fe23b667cdb2e9efbe325` | Released local formatting |
+| `1bfce8f9b8718df83ca67dbd95b81b09ecaed8ce` | `dd3d2a8d619bf13a708a62c86f6d1335e66bfbdf` | Navigation, browser, terminal and support interfaces |
+| `6f06a63cff5114ce4f02bc60602798809f4d65f5` | `e659e498183a84eb2b0271c4feae1cf05aabcef7` | Read access, catalog and raw API frontdoor |
+| `b2ef54aee4d78dff66072c1b511a8595fcd9f8a6` | `66ad171af55eaefbbc5e84784e6fe750928ba531` | ACL and label mutation frontdoors |
+| `2b48992607a78cb09ddf1fe904d3c6c7acd4d039` | `a07138b856b19bfada557221206deb8133da1133` | Access composed-schema consumer and docs |
+| `27b01af956bf16aa4ece82ecb87eb0b322ce9411` | `a0245543834089e68fa1f4b579a78e24b2c38586` | Local owner's pinned-source table-header correction |
+
+Only these seven released deltas are applied; neither divergent worker branch
+is merged wholesale. The local crate tree matches `27b01af` exactly and the
+resources crate tree matches `2b48992` exactly. Cargo adds only the safe local
+default member/workspace dependency, its local lock record with six existing
+dependencies, and the resources-to-Clap lock edge. All 218 external registry
+blocks, their order, and existing external dependency versions/features are
+unchanged. Existing job/read, validator, engine, identity, output and protected
+oracle files remain intact. Central main/parser/Invocation/native/session/runtime
+files are unchanged.
+
+#### Family API ledger
+
+| Surface | Released interface and caller responsibility |
+| --- | --- |
+| Local registration | `fabric_cli_local::{root_commands, from_matches, LocalInvocation, LocalCommand}`; distinct roots `cd`, `pwd`, `open`, `clear`, `desc`, `extension`, `version`, `config` |
+| Local state/effects | `execute`, `ConfigStore`, `LocalEffects`, `Capacity`, `NavigationState`, `NavigationHost`; explicit nonsecret file root/current/home/session, cache invalidation and preloaded capacity metadata |
+| Local platform/output | `BrowserIdentity`, `SystemBrowserLauncher`, `AnsiTerminal`, `LocalOutput::render`, `LocalError::command_error`, `LocalCommand::command_path`; explicit authenticated identity metadata, actual opt-in effects and existing caller-owned output streams |
+| Access registration | `fabric_cli_resources::frontdoor::{register, AccessCommand, AccessKind, RawApiCommand}`; distinct roots `acl`, `label`, `find`, `api` |
+| Access local-first | `frontdoor::execute_local(command, definitions)` runs `label list-local` before account/remote-host setup, without dummy credentials |
+| Access execution | `AccessHost`, `ApiClients`, `AccessTargets`; existing runtime/context resolver, explicit audience sessions, asynchronous confirmation, limits and request bounds |
+| Access output | `frontdoor::render`, `AccessOutput::write_to`; shared family renderer, explicit warnings, ordered streams and writer failures |
+
+Root-name sets are disjoint; output-format/skill options remain family-owned
+leaf arguments, not duplicated root globals. Local navigation consumes
+`HierarchyLookup`/`PathElement`, while access consumes `AccessTargets`/`Element`.
+The central host must adapt its existing metadata session to those boundaries,
+not duplicate resolution, HTTP, runtime or credential discovery. Preserve `pwd`
+stderr and the named-version distinction. ACL export/access skill binding,
+REPL/batch and Windows/macOS debt remain explicit. See the
+[local](../crates/fabric-cli-local/README.md) and [access](access-frontdoor.md)
+host contracts.
+
+#### Source readiness and validation debt
+
+Static checks establish clean immutable source composition, exact family
+blobs, unchanged registry records/features and protected trees, exact b3d
+non-Rust content, and whitespace. No heavy local build or second WSL setup is
+authorized. Cargo, rustfmt and Python are not on this Windows session's PATH;
+no tool installation or merged-head native pass is claimed.
+
+Existing component evidence is not merged-head proof. Local `1bfce8f` passed
+fmt/all-target check/strict Clippy/two pinned Python source references, but had
+eight config-consumer passes and one failure at line 189
+(`text.contains("Setting")`), receipt `4302712e7386460886252f79bab45921`.
+Navigation tests were not subsequently run. Owner correction `27b01af`
+establishes lowercase `setting`/`value` headers, separator and all eighteen
+ordered rows through the pinned Python renderer, without changing production
+handlers or frozen fixtures. It is included here; its native retest is pending.
+Access `2b48992` had 55 passes and three failures:
+`frontdoor_contract/mutations.rs:263` (empty stdout), line 319
+(`mutation_may_have_occurred`), and `frontdoor_contract/mod.rs:474`
+(empty stdout). Original owners retain feature repairs; C does not rewrite
+their algorithms or weaken expectations.
+
+Workstream context `rust/merge-tree/20261027/C.json` records the immutable
+candidate/provider head, exact deltas and receipts. This exact-base result
+supersedes the retained `validation/rust-merge-tree-c-local-access-1302934`
+candidate, which included newer Python ancestry. No reset or force-push was
+used. Source readiness permits the next join with explicit debt, not passing
+validation, mounted command coverage or shared publication readiness.
+Merged-head Linux proof must use the existing capped builder via parent/root.
+
 ### October 26 released transfer and jobs library candidate
 
 The isolated `dev/marcozo/released-library-c728-1302861` candidate starts at
