@@ -3,6 +3,8 @@
 
 //! Source-named job-read parser contracts with no host or service execution.
 
+mod parser_support;
+
 use fabric_cli::parser::{Invocation, JobReadCommand, JobReadKind, parse_args};
 
 fn parse(args: &[&str]) -> JobReadCommand {
@@ -100,4 +102,28 @@ fn job_help_does_not_select_a_host_or_advertise_mutations() {
             Invocation::Display(_)
         ));
     }
+}
+
+#[test]
+fn legacy_read_probe_explicitly_rejects_job_invocations() {
+    let input = serde_json::json!({
+        "id": "job-read-is-not-a-read-probe-command",
+        "parse_only": true,
+        "command": ["job", "run-list", "Book.Notebook"],
+    });
+    assert_eq!(
+        parser_support::observe(&input),
+        Some(serde_json::json!({
+            "id": input["id"],
+            "parse": {"error": true},
+        }))
+    );
+    let read = parser_support::observe(&serde_json::json!({
+        "id": "existing-read",
+        "parse_only": true,
+        "command": ["ls", "/"],
+    }))
+    .unwrap();
+    assert_eq!(read["parse"]["read"]["kind"], "list");
+    assert_eq!(read["parse"]["read"]["path"], serde_json::json!(["/"]));
 }
