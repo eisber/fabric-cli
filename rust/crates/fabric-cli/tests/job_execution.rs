@@ -224,8 +224,12 @@ fn cancellation_invalid_skill_and_ui_failures_cannot_submit() {
         ),
         ("fail_ui", json!(true), vec![], metadata("Notebook"), 2),
     ] {
+        let command = ["job", "start", "Demo.Workspace/Book.Notebook"]
+            .into_iter()
+            .chain(extra)
+            .collect::<Vec<_>>();
         let mut input = json!({
-            "command": ["job","start","Demo.Workspace/Book.Notebook"].into_iter().chain(extra).collect::<Vec<_>>(),
+            "command": command,
             "responses":replies,
         });
         input[key] = value;
