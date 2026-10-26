@@ -6,6 +6,12 @@
 `get_command_context` parity and not a service command or REPL. Python remains
 authoritative. Source pin: `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
 
+This page records the original `Resolver` contract and its unchanged oracle.
+The additive `PathResolver` follow-up covers virtual, OneLake and explicitly
+injected local-fallback branches without reclassifying the original six
+unsupported fixtures. See the [extended source branch ledger](context-branch-ledger.md)
+for those new APIs, source branch mappings and evidence boundaries.
+
 ## Source and consumers
 
 The translation follows `src/fabric_cli/core/fab_handle_context.py`:

@@ -48,3 +48,34 @@ This is a bounded translation, not full Python `get_command_context` parity.
 See [context compatibility](../../docs/context-compatibility.md) for the exact
 source pin, Python quirks, unsupported boundaries and independent oracle.
 The `resolve` example is a standalone offline consumer.
+
+## Additive extended hierarchy
+
+`PathResolver` opts into virtual collections/resources, OneLake traversal and
+conditional local fallback without changing the original `Resolver`, `Element`
+or `NodeKind` contracts. Adapt a Fabric current context with
+`PathElement::from_fabric`. `PathKind` distinguishes Fabric, virtual, OneLake and
+local objects without guessing from OS-looking strings.
+
+Implement `HierarchyLookup: Lookup` for caller-resolved virtual IDs and OneLake
+properties, or compose an immutable `HierarchyCatalog`. Supply the source
+`ls`/`dir` alias explicitly for item traversal diagnostics. `CommandPolicy`
+models source supported/unsupported-item precedence; `source_list` is the pinned
+internal traversal policy, not an authorization grant.
+
+`LocalLookup` is optional and entirely caller-owned: exists/access/dirname and
+`LocalMetadata` classification are injected, including the selected OS basename
+and opaque local identity. `supports_local_path=True` attempts Fabric first and
+only falls back for the source's three eligible error codes. No ambient
+filesystem access is introduced. `LocalProbe::Boolean` deliberately represents
+the source's writable-parent `exists(dirname and access)` quirk rather than
+performing a real file-descriptor stat.
+
+`PathResolution` and `PathFailure` retain source diagnostics separately from
+rendering, including failed local-fallback attempts and external-share warnings.
+Resolution remains non-mutating; explicit `change_context` is atomic and
+remote-only. Consumers own command support, service execution and persistence.
+
+See [the source branch ledger](../../docs/context-branch-ledger.md) for exact
+function/line mappings, caller boundaries, evidence and remaining exclusions.
+The `extended_resolve` example is a public hidden-resource/OneLake consumer.
