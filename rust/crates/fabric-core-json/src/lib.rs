@@ -43,6 +43,29 @@ impl Indent {
     }
 }
 
+/// Explicit Python JSON formatting options, separate from the legacy entry points.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Options {
+    /// Default separators or a supported integer-indent layout.
+    pub format: Format,
+    /// Escape non-ASCII Unicode when true (Python's default).
+    ///
+    /// False retains Unicode scalar values as UTF-8, including DEL and Unicode
+    /// separators. JSON syntax, quotes, backslashes and U+0000-U+001F are still
+    /// escaped. Rust strings cannot contain lone surrogates; this option does
+    /// not substitute replacement characters for unrepresentable Python values.
+    pub ensure_ascii: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            format: Format::Default,
+            ensure_ascii: true,
+        }
+    }
+}
+
 /// Encode an already-validated JSON value without adding a trailing newline.
 ///
 /// Unknown object keys retain insertion order. Unicode uses Python's default
@@ -51,12 +74,69 @@ impl Indent {
 /// accept integers outside serde_json's i64/u64 domain. Callers must reject
 /// unsupported numeric inputs before a lossy upstream conversion to `Value`.
 pub fn encode(value: &Value, format: Format) -> String {
+    encode_with_options(
+        value,
+        Options {
+            format,
+            ..Options::default()
+        },
+    )
+}
+
+/// Encode a JSON-domain value like Python `json.dumps(..., ensure_ascii=False)`.
+///
+/// Uses the same recursive engine as [`encode`], retaining valid Unicode scalars
+/// as UTF-8 while still escaping JSON syntax and controls below U+0020. Layout,
+/// ordering, numeric policy and absence of a trailing newline are unchanged.
+/// `Format::Pretty(Indent::Four)` matches the definition metadata/export layout.
+/// Lone surrogates, arbitrary-width integers and nonfinite Python values remain
+/// outside this `serde_json::Value` contract; no replacement or coercion occurs.
+///
+/// ```
+/// use fabric_core_json::{Format, Indent, encode_unicode};
+/// use serde_json::json;
+///
+/// let encoded = encode_unicode(&json!({"name": "caf\u{e9}"}), Format::Pretty(Indent::Four));
+/// assert_eq!(encoded, "{\n    \"name\": \"caf\u{e9}\"\n}");
+/// ```
+pub fn encode_unicode(value: &Value, format: Format) -> String {
+    encode_with_options(
+        value,
+        Options {
+            format,
+            ensure_ascii: false,
+        },
+    )
+}
+
+/// Encode a JSON-domain value with an explicit Python `ensure_ascii` policy.
+///
+/// This shares the legacy encoder's string, number and container implementation.
+/// No envelope, sorting, newline or lossy coercion is added. For example, native
+/// definition metadata uses Python `json.dumps(data, ensure_ascii=False, indent=4)`:
+///
+/// ```
+/// use fabric_core_json::{Format, Indent, Options, encode_with_options};
+/// use serde_json::json;
+///
+/// let value = json!({"name": "caf\u{00e9} \u{1f680}"});
+/// let encoded = encode_with_options(&value, Options {
+///     format: Format::Pretty(Indent::Four),
+///     ensure_ascii: false,
+/// });
+/// assert_eq!(encoded, "{\n    \"name\": \"caf\u{00e9} \u{1f680}\"\n}");
+/// ```
+///
+/// As with [`encode`], the input domain remains i64/u64, finite f64 and valid
+/// Unicode scalar strings. Arbitrary integers, nonfinite Python values and lone
+/// surrogates require a separate lossless native-value contract, not this API.
+pub fn encode_with_options(value: &Value, options: Options) -> String {
     let mut output = String::new();
-    let width = match format {
+    let width = match options.format {
         Format::Default => None,
         Format::Pretty(indent) => Some(indent.width()),
     };
-    write_value(value, width, 0, &mut output);
+    write_value(value, width, 0, options.ensure_ascii, &mut output);
     output
 }
 
@@ -71,7 +151,7 @@ fn padding(output: &mut String, width: usize, depth: usize) {
     output.extend(std::iter::repeat_n(' ', width * depth));
 }
 
-fn string(value: &str, output: &mut String) {
+fn string(value: &str, ensure_ascii: bool, output: &mut String) {
     output.push('"');
     for c in value.chars() {
         match c {
@@ -83,6 +163,7 @@ fn string(value: &str, output: &mut String) {
             '\r' => output.push_str("\\r"),
             '\t' => output.push_str("\\t"),
             ' '..='~' => output.push(c),
+            _ if !ensure_ascii && c >= '\u{20}' => output.push(c),
             _ => {
                 for unit in c.encode_utf16(&mut [0; 2]) {
                     write!(output, "\\u{unit:04x}").expect("writing to String cannot fail");
@@ -144,13 +225,19 @@ fn number(value: &serde_json::Number, output: &mut String) {
     }
 }
 
-fn write_value(value: &Value, width: Option<usize>, depth: usize, output: &mut String) {
+fn write_value(
+    value: &Value,
+    width: Option<usize>,
+    depth: usize,
+    ensure_ascii: bool,
+    output: &mut String,
+) {
     match value {
         Value::Null => output.push_str("null"),
         Value::Bool(true) => output.push_str("true"),
         Value::Bool(false) => output.push_str("false"),
         Value::Number(value) => number(value, output),
-        Value::String(value) => string(value, output),
+        Value::String(value) => string(value, ensure_ascii, output),
         Value::Array(values) => {
             output.push('[');
             for (index, value) in values.iter().enumerate() {
@@ -164,7 +251,7 @@ fn write_value(value: &Value, width: Option<usize>, depth: usize, output: &mut S
                     output.push('\n');
                     padding(output, width, depth + 1);
                 }
-                write_value(value, width, depth + 1, output);
+                write_value(value, width, depth + 1, ensure_ascii, output);
             }
             if let Some(width) = width.filter(|_| !values.is_empty()) {
                 output.push('\n');
@@ -185,9 +272,9 @@ fn write_value(value: &Value, width: Option<usize>, depth: usize, output: &mut S
                     output.push('\n');
                     padding(output, width, depth + 1);
                 }
-                string(key, output);
+                string(key, ensure_ascii, output);
                 output.push_str(": ");
-                write_value(value, width, depth + 1, output);
+                write_value(value, width, depth + 1, ensure_ascii, output);
             }
             if let Some(width) = width.filter(|_| !values.is_empty()) {
                 output.push('\n');
