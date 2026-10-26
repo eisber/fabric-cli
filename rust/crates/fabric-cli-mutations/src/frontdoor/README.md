@@ -39,6 +39,8 @@ never opens a terminal or swallows an output error.
 | `rm` (`del`) | Item/folder confirmation, force, item hard delete, accepted/cache evidence | Workspace/tenant catalog and selection composition; virtual and OneLake removal |
 | `set` | Workspace/item/folder metadata, source query/input cardinality and read/confirmation ordering | Definition codec composition, virtual and shortcut SET |
 | `ln` (`mklink`) | Lakehouse shortcut from inline JSON, all registered target types and force conflict policy | `--target` needs lazy resolution after source prompt/validation |
+| `start`, `stop` | MirroredDatabase status/action requests through the existing lifecycle host; force retains state validation | Capacity ARM lifecycle and other item types |
+| `assign`, `unassign` | Selected Capacity and target workspace; source unassignment metadata/linkage check before confirmation | Domain assignment and non-workspace destinations |
 
 `--skill` is parsed but returns an explicit `NotSupported` error until shared
 resource request-header plumbing is available. It is never ignored. `--type`
@@ -53,9 +55,10 @@ preview rejects malformed/Unicode keys rather than emulating Python regex
 substring recovery. This stricter lexical boundary is not full argparse/regex
 parity. No protected oracle, source pin, or source expectations are rewritten.
 
-`start`, `stop`, `assign`, `unassign`, `cp` and `mv` are not registered by this
-first microbatch. The released lifecycle, capacity, folder-move and OneLake
-helpers remain available for the next bounded adapter increment.
+The first immutable microbatch contains five leaves. A separate additive
+increment registers the four lifecycle/assignment leaves above. `cp` and `mv`
+remain unregistered while their released folder-move and OneLake helpers are
+composed into a subsequent bounded adapter.
 
 ## Offline evidence
 

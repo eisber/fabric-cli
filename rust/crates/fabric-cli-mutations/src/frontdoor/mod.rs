@@ -155,6 +155,33 @@ impl ResourceHost<'_> {
                 )
                 .await?
             }
+            ResourceCommand::Start { force, .. } => {
+                self.mutations
+                    .start(fabric_target(command, &target)?, *force)
+                    .await?
+            }
+            ResourceCommand::Stop { force, .. } => {
+                self.mutations
+                    .stop(fabric_target(command, &target)?, *force)
+                    .await?
+            }
+            ResourceCommand::Assign { workspace, force, .. }
+            | ResourceCommand::Unassign { workspace, force, .. } => {
+                if target.kind()
+                    != PathKind::VirtualWorkspaceItem(VirtualWorkspaceKind::Capacity)
+                {
+                    return Err(gap(command, "only the selected Capacity branch is implemented"));
+                }
+                let workspace = self.context.resolve(workspace, ResolveOptions::default())?;
+                let workspace = fabric_target(command, &workspace)?;
+                let id = target.id().filter(|id| !id.is_empty())
+                    .ok_or_else(|| MutationError::new("NotFound", "The capacity does not exist"))?;
+                if matches!(command, ResourceCommand::Assign { .. }) {
+                    self.mutations.assign_capacity(workspace, id, &target.name(), *force).await?
+                } else {
+                    self.mutations.unassign_capacity(workspace, id, &target.name(), *force).await?
+                }
+            }
         };
         for output in &mut result.outputs {
             output.command = Some(command.name().into());

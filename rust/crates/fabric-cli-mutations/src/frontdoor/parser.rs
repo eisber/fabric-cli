@@ -60,6 +60,38 @@ pub enum ResourceCommand {
         /// Bypass confirmation and use GenerateUniqueName.
         force: bool,
     },
+    /// Start a mirrored database after reading its current state.
+    Start {
+        /// Shared source arguments.
+        args: ResourceArgs,
+        /// Bypass confirmation, not the state check.
+        force: bool,
+    },
+    /// Stop a mirrored database after reading its current state.
+    Stop {
+        /// Shared source arguments.
+        args: ResourceArgs,
+        /// Bypass confirmation, not the state check.
+        force: bool,
+    },
+    /// Assign a selected capacity to a workspace.
+    Assign {
+        /// Selected capacity path and shared source arguments.
+        args: ResourceArgs,
+        /// Original target workspace tokens.
+        workspace: Vec<String>,
+        /// Bypass confirmation.
+        force: bool,
+    },
+    /// Unassign a selected capacity after checking the actual workspace linkage.
+    Unassign {
+        /// Selected capacity path and shared source arguments.
+        args: ResourceArgs,
+        /// Original target workspace tokens.
+        workspace: Vec<String>,
+        /// Bypass confirmation, not the linkage check.
+        force: bool,
+    },
 }
 
 impl ResourceCommand {
@@ -71,6 +103,10 @@ impl ResourceCommand {
             Self::Remove { .. } => "rm",
             Self::Set { .. } => "set",
             Self::Link { .. } => "ln",
+            Self::Start { .. } => "start",
+            Self::Stop { .. } => "stop",
+            Self::Assign { .. } => "assign",
+            Self::Unassign { .. } => "unassign",
         }
     }
 
@@ -81,7 +117,11 @@ impl ResourceCommand {
             | Self::Mkdir { args, .. }
             | Self::Remove { args, .. }
             | Self::Set { args, .. }
-            | Self::Link { args, .. } => args,
+            | Self::Link { args, .. }
+            | Self::Start { args, .. }
+            | Self::Stop { args, .. }
+            | Self::Assign { args, .. }
+            | Self::Unassign { args, .. } => args,
         }
     }
 }
@@ -150,6 +190,14 @@ pub fn resource_subcommands() -> Vec<Command> {
             .arg(tokens("target"))
             .arg(tokens("input").short('i'))
             .arg(flag("force", Some('f'))),
+        leaf("start").arg(flag("force", Some('f'))),
+        leaf("stop").arg(flag("force", Some('f'))),
+        leaf("assign")
+            .arg(tokens("workspace").short('W').required(true))
+            .arg(flag("force", Some('f'))),
+        leaf("unassign")
+            .arg(tokens("workspace").short('W').required(true))
+            .arg(flag("force", Some('f'))),
     ]
 }
 
@@ -191,6 +239,26 @@ pub fn command_from_matches(root: &ArgMatches) -> Result<ResourceCommand, Mutati
                 .ok_or_else(|| invalid("Missing shortcut type"))?,
             target: values(matches, "target")?,
             input: values(matches, "input")?,
+            force: boolean(matches, "force")?,
+        }),
+        "start" => Ok(ResourceCommand::Start {
+            args,
+            force: boolean(matches, "force")?,
+        }),
+        "stop" => Ok(ResourceCommand::Stop {
+            args,
+            force: boolean(matches, "force")?,
+        }),
+        "assign" => Ok(ResourceCommand::Assign {
+            args,
+            workspace: values(matches, "workspace")?
+                .ok_or_else(|| invalid("Missing assignment workspace"))?,
+            force: boolean(matches, "force")?,
+        }),
+        "unassign" => Ok(ResourceCommand::Unassign {
+            args,
+            workspace: values(matches, "workspace")?
+                .ok_or_else(|| invalid("Missing unassignment workspace"))?,
             force: boolean(matches, "force")?,
         }),
         _ => Err(invalid("Unknown resource command")),
