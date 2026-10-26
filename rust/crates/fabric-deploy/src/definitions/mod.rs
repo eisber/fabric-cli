@@ -8,11 +8,16 @@
 //! cancellation through the shared operation session. No runtime, prompt, global
 //! configuration, credential provider or HTTP/polling implementation lives here.
 
+mod bulk;
 mod codec;
 mod import;
 mod local;
 mod transfer;
 
+pub use bulk::{
+    BulkExportOutcome, BulkExportSnapshot, BulkItem, BulkScope, CommandSupport, bulk_export,
+    bulk_export_payload, filter_bulk_definition, strip_bulk_parent_prefix,
+};
 pub use codec::{DefinitionFile, decode_export_files, validate_part_path};
 pub use import::{
     DefinitionEntry, DefinitionEntryKind, DefinitionImportFileSystem, ImportAction,
@@ -379,16 +384,33 @@ pub async fn export_item<E: OperationExecutor>(
         file.path = format!("{item_name}/{}", file.path);
         validate_part_path(&file.path, limits)?;
     }
+    let completed_paths =
+        write_export_files(session, filesystem, root, &files, Some(item_name)).await?;
+    Ok(ExportOutcome {
+        read,
+        completed_paths,
+    })
+}
+
+async fn write_export_files<E: OperationExecutor>(
+    session: &mut OperationSession<'_, E>,
+    filesystem: &mut dyn DefinitionFileSystem,
+    root: &Path,
+    files: &[DefinitionFile],
+    item_name: Option<&str>,
+) -> Result<Vec<String>, DefinitionError> {
     check_cancelled(session).await?;
     filesystem
-        .preflight(root, &files)
+        .preflight(root, files)
         .map_err(DefinitionErrorKind::FileSystem)?;
-    check_cancelled(session).await?;
-    filesystem
-        .create_directory(root, item_name)
-        .map_err(DefinitionErrorKind::FileSystem)?;
+    if let Some(item_name) = item_name {
+        check_cancelled(session).await?;
+        filesystem
+            .create_directory(root, item_name)
+            .map_err(DefinitionErrorKind::FileSystem)?;
+    }
     let mut completed_paths = Vec::new();
-    for file in &files {
+    for file in files {
         if let Err(mut error) = check_cancelled(session).await {
             error.completed_paths = completed_paths;
             return Err(error);
@@ -406,10 +428,7 @@ pub async fn export_item<E: OperationExecutor>(
         error.completed_paths = completed_paths;
         return Err(error);
     }
-    Ok(ExportOutcome {
-        read,
-        completed_paths,
-    })
+    Ok(completed_paths)
 }
 
 async fn execute<E: OperationExecutor>(
@@ -417,13 +436,18 @@ async fn execute<E: OperationExecutor>(
     method: ResourceMethod,
     path: &str,
 ) -> Result<Vec<u8>, DefinitionError> {
-    let operation = FabricOperation::new(
-        method,
-        path,
-        Vec::new(),
-        CompletionPolicy::PythonSynchronous,
-    )
-    .map_err(|kind| DefinitionErrorKind::Operation(Box::new(session.evidence(kind))))?;
+    execute_body(session, method, path, Vec::new()).await
+}
+
+async fn execute_body<E: OperationExecutor>(
+    session: &mut OperationSession<'_, E>,
+    method: ResourceMethod,
+    path: &str,
+    body: Vec<u8>,
+) -> Result<Vec<u8>, DefinitionError> {
+    let operation =
+        FabricOperation::new(method, path, body, CompletionPolicy::PythonSynchronous)
+            .map_err(|kind| DefinitionErrorKind::Operation(Box::new(session.evidence(kind))))?;
     let response = session
         .execute(operation)
         .await

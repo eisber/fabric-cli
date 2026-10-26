@@ -3,6 +3,8 @@
 
 //! Offline public library -> shared SDK policy -> actual HTTP executor -> file I/O.
 
+#![deny(unnameable_test_items)]
+
 use async_trait::async_trait;
 use azure_core::{
     Bytes,
@@ -12,6 +14,10 @@ use azure_core::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use fabric_core::{Audience, CredentialSelection};
+use fabric_deploy::definitions::{
+    BulkExportSnapshot, BulkItem, BulkScope, CommandSupport, bulk_export, bulk_export_payload,
+    filter_bulk_definition, strip_bulk_parent_prefix,
+};
 use fabric_deploy::definitions::{
     DefinitionEntry, DefinitionErrorKind as Kind, DefinitionFile, DefinitionFileSystem,
     DefinitionImportFileSystem, DefinitionLimits, DefinitionRead, DefinitionTarget, ImportAction,
@@ -1380,4 +1386,331 @@ async fn export_and_prepared_import_futures_are_send_with_caller_owned_file_oper
     assert_send(prepared.execute(&mut harness.session(pending())))
         .await
         .unwrap();
+}
+
+fn bulk_items() -> Vec<BulkItem> {
+    vec![
+        BulkItem {
+            id: WORKSPACE.into(),
+            item_type: "Notebook".into(),
+            support: CommandSupport::Supported,
+        },
+        BulkItem {
+            id: ITEM.into(),
+            item_type: "Unknown".into(),
+            support: CommandSupport::Unsupported,
+        },
+        BulkItem {
+            id: OPERATION.into(),
+            item_type: "Notebook".into(),
+            support: CommandSupport::Supported,
+        },
+    ]
+}
+
+fn bulk_snapshot(items: &[BulkItem], scope: BulkScope) -> BulkExportSnapshot<'_> {
+    BulkExportSnapshot {
+        workspace_id: WORKSPACE,
+        from_path: "WS.Workspace",
+        scope,
+        items,
+    }
+}
+
+#[test]
+fn pinned_bulk_source_requests_index_prefix_filter_and_parent_path_cases_match() {
+    let fixture: Value = serde_json::from_str(include_str!("definition_bulk_source.json")).unwrap();
+    assert_eq!(
+        fixture["source"],
+        "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4"
+    );
+    assert_eq!(
+        bulk_export_payload(&[], DefinitionLimits::default()).unwrap(),
+        fixture["all_body"].as_str().unwrap().as_bytes()
+    );
+    let items = bulk_items();
+    assert_eq!(
+        bulk_export_payload(
+            &[items[0].id.clone(), items[1].id.clone()],
+            DefinitionLimits::default()
+        )
+        .unwrap(),
+        fixture["selective_body"].as_str().unwrap().as_bytes()
+    );
+    let mut response = fixture["workspace_filter"]["input"].clone();
+    let (supported, skipped) = filter_bulk_definition(
+        bulk_snapshot(&items, BulkScope::Workspace),
+        &mut response,
+        DefinitionLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(response, fixture["workspace_filter"]["output"]);
+    assert_eq!(
+        json!(supported),
+        fixture["workspace_filter"]["supported_ids"]
+    );
+    assert_eq!(
+        json!(skipped),
+        fixture["workspace_filter"]["unsupported_ids"]
+    );
+    for case in fixture["paths"].as_array().unwrap() {
+        let mut response = case["input"].clone();
+        let result = strip_bulk_parent_prefix(&mut response, case["from_path"].as_str().unwrap());
+        if case.get("error").is_some() {
+            assert!(result.is_err());
+        } else {
+            result.unwrap();
+            assert_eq!(response, case["output"]);
+        }
+    }
+}
+
+#[tokio::test]
+async fn actual_workspace_bulk_all_http_filters_unknown_unsupported_and_missing_items_then_writes()
+{
+    let fixture: Value = serde_json::from_str(include_str!("definition_bulk_source.json")).unwrap();
+    let response = fixture["workspace_filter"]["input"].clone();
+    let harness = Harness::new([reply(200, &response.to_string(), &[])]);
+    let items = bulk_items();
+    let directory = Directory::new();
+    let mut filesystem = LocalDefinitionFileSystem::new(DefinitionLimits::default());
+    let outcome = bulk_export(
+        &mut harness.session(pending()),
+        &mut filesystem,
+        bulk_snapshot(&items, BulkScope::Workspace),
+        &directory.0,
+        true,
+        true,
+        DefinitionLimits::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(outcome.supported_ids, [WORKSPACE]);
+    assert_eq!(outcome.skipped_ids, [ITEM, OPERATION]);
+    assert_eq!(outcome.completed_paths, ["Folder/A.Notebook/a.txt"]);
+    assert_eq!(
+        fs::read(directory.0.join("Folder").join("A.Notebook").join("a.txt")).unwrap(),
+        b"a"
+    );
+    assert!(!directory.0.join("Unsupported.Item").exists());
+    assert!(!directory.0.join("Unknown.Item").exists());
+    let requests = harness.http.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method(), Method::Post);
+    assert_eq!(
+        requests[0].url().path(),
+        format!("/v1/workspaces/{WORKSPACE}/items/bulkExportDefinitions")
+    );
+    assert_eq!(requests[0].url().query(), Some("beta=true"));
+    assert_eq!(
+        Bytes::from(requests[0].body()).as_ref(),
+        fixture["all_body"].as_str().unwrap().as_bytes()
+    );
+}
+
+#[tokio::test]
+async fn folder_bulk_selective_keeps_target_folder_and_notebook_outputs_without_single_export_cleanup()
+ {
+    let mut items = bulk_items();
+    items[2].support = CommandSupport::Rejected;
+    let snapshot = BulkExportSnapshot {
+        from_path: "WS.Workspace/Parent.Folder/Child.Folder",
+        ..bulk_snapshot(&items, BulkScope::Folder)
+    };
+    let raw = json!({"definitionParts":[{
+        "path":"/Parent/Child/Report.Notebook/notebook.ipynb",
+        "payload":STANDARD.encode(br#"{"cells":[{"outputs":[1]}]}"#)
+    }]});
+    let harness = Harness::new([reply(200, &raw.to_string(), &[])]);
+    let directory = Directory::new();
+    let mut filesystem = LocalDefinitionFileSystem::new(DefinitionLimits::default());
+    let result = bulk_export(
+        &mut harness.session(pending()),
+        &mut filesystem,
+        snapshot,
+        &directory.0,
+        true,
+        true,
+        DefinitionLimits::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.supported_ids, [WORKSPACE]);
+    assert_eq!(result.skipped_ids, [OPERATION]);
+    assert_eq!(
+        result.completed_paths,
+        ["Child/Report.Notebook/notebook.ipynb"]
+    );
+    let bytes = fs::read(
+        directory
+            .0
+            .join("Child")
+            .join("Report.Notebook")
+            .join("notebook.ipynb"),
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&bytes).unwrap()["cells"][0]["outputs"],
+        json!([1])
+    );
+    let requests = harness.http.requests.lock().unwrap();
+    assert_eq!(
+        Bytes::from(requests[0].body()).as_ref(),
+        bulk_export_payload(&[WORKSPACE.into()], DefinitionLimits::default()).unwrap()
+    );
+}
+
+#[tokio::test]
+async fn bulk_recursive_confirmation_empty_and_unsupported_folder_fail_before_credentials() {
+    let items = bulk_items();
+    for (recursive, confirmed) in [(false, true), (true, false)] {
+        let harness = Harness::new([]);
+        let mut files = Files::default();
+        assert!(
+            bulk_export(
+                &mut harness.session(pending()),
+                &mut files,
+                bulk_snapshot(&items, BulkScope::Workspace),
+                Path::new("unused"),
+                recursive,
+                confirmed,
+                DefinitionLimits::default()
+            )
+            .await
+            .is_err()
+        );
+        assert!(harness.http.requests.lock().unwrap().is_empty());
+        assert_eq!(harness.credential.0.load(Ordering::SeqCst), 0);
+    }
+    for items in [
+        vec![],
+        vec![BulkItem {
+            id: WORKSPACE.into(),
+            item_type: "Notebook".into(),
+            support: CommandSupport::Rejected,
+        }],
+    ] {
+        let harness = Harness::new([]);
+        let mut files = Files::default();
+        assert!(
+            bulk_export(
+                &mut harness.session(pending()),
+                &mut files,
+                bulk_snapshot(&items, BulkScope::Folder),
+                Path::new("unused"),
+                true,
+                true,
+                DefinitionLimits::default()
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(harness.credential.0.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[tokio::test]
+async fn bulk_parent_mismatch_and_bare_acceptance_never_write_and_partial_failure_keeps_progress() {
+    let items = [BulkItem {
+        id: WORKSPACE.into(),
+        item_type: "Notebook".into(),
+        support: CommandSupport::Supported,
+    }];
+    let snapshot = BulkExportSnapshot {
+        from_path: "WS.Workspace/Parent.Folder/Child.Folder",
+        ..bulk_snapshot(&items, BulkScope::Folder)
+    };
+    let mismatch = json!({"definitionParts":[{"path":"/Wrong/Child/a.txt","payload":"YQ=="}]});
+    for response in [reply(200, &mismatch.to_string(), &[]), reply(202, "", &[])] {
+        let harness = Harness::new([response]);
+        let mut files = Files::default();
+        assert!(
+            bulk_export(
+                &mut harness.session(pending()),
+                &mut files,
+                snapshot,
+                Path::new("unused"),
+                true,
+                true,
+                DefinitionLimits::default()
+            )
+            .await
+            .is_err()
+        );
+        assert!(files.calls.is_empty());
+        assert_eq!(harness.http.requests.lock().unwrap().len(), 1);
+    }
+    let response = json!({"definitionParts":[
+        {"path":"/Parent/Child/a.txt","payload":"YQ=="},
+        {"path":"/Parent/Child/b.txt","payload":"Yg=="}
+    ]});
+    let harness = Harness::new([reply(200, &response.to_string(), &[])]);
+    let mut files = Files {
+        fail_at: Some(1),
+        ..Files::default()
+    };
+    let error = bulk_export(
+        &mut harness.session(pending()),
+        &mut files,
+        snapshot,
+        Path::new("unused"),
+        true,
+        true,
+        DefinitionLimits::default(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.completed_paths, ["Child/a.txt"]);
+    assert_eq!(error.incomplete_path.as_deref(), Some("Child/b.txt"));
+}
+
+#[tokio::test]
+async fn bulk_lro_uses_actual_shared_result_without_replaying_bulk_post() {
+    let items = [BulkItem {
+        id: WORKSPACE.into(),
+        item_type: "Notebook".into(),
+        support: CommandSupport::Supported,
+    }];
+    let response = json!({"definitionParts":[{"path":"/N.Notebook/a.txt","payload":"YQ=="}]});
+    let location = format!("https://api.fabric.microsoft.com/v1/operations/{OPERATION}");
+    let result_location = format!("{location}/result");
+    let harness = Harness::new([
+        reply(
+            202,
+            "",
+            &[
+                ("Location", &location),
+                ("x-ms-operation-id", OPERATION),
+                ("Retry-After", "0"),
+            ],
+        ),
+        reply(
+            200,
+            r#"{"status":"Succeeded"}"#,
+            &[("Location", &result_location)],
+        ),
+        reply(200, &response.to_string(), &[]),
+    ]);
+    let mut files = Files::default();
+    let result = bulk_export(
+        &mut harness.session(pending()),
+        &mut files,
+        bulk_snapshot(&items, BulkScope::Folder),
+        Path::new("unused"),
+        true,
+        true,
+        DefinitionLimits::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.completed_paths, ["N.Notebook/a.txt"]);
+    let requests = harness.http.requests.lock().unwrap();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.method() == Method::Post)
+            .count(),
+        1
+    );
 }

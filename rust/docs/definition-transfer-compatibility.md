@@ -46,6 +46,7 @@ filesystem work on an appropriate caller worker; the library does not create one
 | `decode_set_definition`, `ensure_notebook_dependency`, `encode_set_definition` | `fab_cmd_set_utils._decode_payload`, `ensure_notebook_dependency`, `_encode_payload` | SET JSON-decodes every part, does not clean Notebook outputs, initializes dependencies before caller replacement, exact default JSON/base64 encoding |
 | `load_import_definition` | `fab_cmd_import_utils._build_definition`, `_encode_file_to_base64` | Injected filesystem, sorted root files before recursive sorted directories, raw bytes, full-path cache exclusion after Report validation |
 | `prepare_import`, `PreparedImport::execute` | `fab_fs_import_item.import_single_item`, `_import_create_item`, `_import_update_item` | Explicit caller-resolved target/confirmation, ordered create versus definition-only update body, shared operation policy, actual result ID |
+| `bulk_export_payload`, `filter_bulk_definition`, `strip_bulk_parent_prefix`, `bulk_export` | `fab_cmd_bulk_export_utils`, workspace/folder bulk handlers | Exact All/Selective bodies, caller-complete cached support snapshot, workspace response-index filtering, parent-folder stripping, actual shared HTTP/LRO and ordered writes |
 
 SET's restricted explicit-path mutation and friendly-name aliases remain the
 resource caller's responsibility. They are not JMESPath projection or deployment
@@ -75,6 +76,21 @@ Create sends type/folder/name/definition in source order; update sends only
 the definition wrapper. Prepared execution consumes the input and never replays
 an uncertain mutation. Environment import remains explicitly unsupported before
 reads or mutation until readiness/publish reconciliation is ported.
+
+Bulk export accepts a complete immutable `BulkExportSnapshot` from the existing
+metadata/context owner, not a second cache/discovery engine. Workspace All sends
+no selected IDs, matches returned index IDs against known workspace items,
+ignores unknown returned items, and counts known missing items as skipped.
+Prefix matching requires the item prefix followed by `/`, excluding textual
+siblings. Folder Selective uses the caller's source recursive item order and
+does not apply workspace response-index filtering. Source false-return versus
+exception support outcomes remain distinct: the folder collector silently omits
+a false return but counts its Fabric exception as unsupported; the native result
+retains that source distinction rather than inventing a universal support rule.
+Parent prefix removal preserves the selected folder and rejects mismatched
+ancestors. Bulk Notebook parts retain outputs; only single export cleans them.
+The same filesystem checkpoint/write helper preserves cancellation and partial
+progress for both single and bulk export.
 
 ## Failure and safety boundaries
 
@@ -149,13 +165,25 @@ architecture checks and formatting passed. `import-receipt-1.json` retains the
 earlier pre-validation refusal for unavailable Python process metadata. The
 refused process exited; no foreign process was killed or guard bypassed.
 
+`definition_bulk_reference.py` executes actual pinned request-builder, workspace
+index-filter and parent-path functions with synthetic injected cache/support
+callbacks. Its fixed receipt includes exact All/Selective request bytes,
+known/unknown/missing index behavior, textual-sibling filtering, and four parent
+path cases. It was captured before Rust bulk execution. Gate-v2
+`bulk-native-receipt-2.json` records all 37 registered definition/import/bulk
+consumers plus 24 unchanged Notebook consumers and the deployment doctest
+passing, followed by strict Clippy and formatting. The prior bulk lint failure
+is retained: an incorrectly nested new test block was moved to module scope.
+`#![deny(unnameable_test_items)]` now makes accidental nested test registration a
+compile failure even before strict linting. No test was removed, waived or skipped.
+
 ## Remaining branch matrix
 
 | Surface | Implemented bounded boundary | Still required for full command parity |
 | --- | --- | --- |
 | Single export | Generic item metadata/definition read, ordered local parts, first-part Notebook cleanup | Full command support dispatch, interactive selection/output/cache integration, remote Lakehouse destination, permissive/error-preserving decode branches |
 | Workspace export | Reusable single-item export | Complete discovery, config sorting versus execution order, source selection/confirmation/count/error behavior |
-| Bulk export | No new completed implementation in this slice | Recursive folder/workspace discovery, bulk request/index ownership, parent-folder stripping, binding preservation, remote storage and partial outcomes |
+| Bulk export | Exact All/Selective shared HTTP/LRO, injected complete snapshots, workspace index/prefix filtering, ancestor stripping, unchanged Notebook outputs, local writes and partial outcomes | Full context/cache discovery and recursive snapshot assembly by its existing owner, command prompts/output integration, complete resource support dispatch and remote storage |
 | Import | Injected deterministic local traversal/cache exclusion/Report checks, create versus definition-only update with actual shared HTTP/LRO/result consumers; existing Notebook deployment unchanged | Full command support/context dispatch, prompt/decline/cache outcomes, Environment readiness/publish lifecycle, remote input error presentation |
 | SET | Raw read plus exact decoded/base64/request-body codec | Caller query/friendly aliases, complete update orchestration and command output |
 | Copy/move | Raw definition payload contract | Resource-owner discovery/confirm/collision/create/update/delete/cache algorithms and uncertain-mutation handling |
