@@ -20,6 +20,8 @@ fabric-cli-context.workspace = true
 fabric-cli-output.workspace = true
 fabric-sdk-jobs.workspace = true
 fabric-sdk-http.workspace = true
+fabric-sdk-operations.workspace = true
+fabric-sdk-workspaces.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 

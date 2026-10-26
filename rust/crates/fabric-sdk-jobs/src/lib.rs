@@ -7,17 +7,20 @@
 //! `client/fab_api_jobs.py` and `utils/fab_cmd_job_utils.py`. Credentials,
 //! transport, asynchronous time and cancellation belong to the caller.
 
+mod operations;
 use azure_core::{
     credentials::AccessToken,
     http::{Method, Url},
 };
 pub use fabric_core::{Audience, CredentialSelection, TokenCredential};
+pub use fabric_sdk_operations::OperationError;
 use fabric_sdk_paging::TokenPager;
 pub use fabric_sdk_paging::{PagedValues, PagingError, PagingErrorKind, PagingLimits};
 use fabric_sdk_workspaces::models::FabricServiceError;
 pub use fabric_sdk_workspaces::workspaces::{
     WorkspaceExecutionError as JobExecutionError, WorkspaceResponse as JobResponse,
 };
+pub use operations::SharedJobOperations;
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
@@ -99,6 +102,19 @@ pub trait JobOperationReconciler: Send + Sync {
         &'a self,
         accepted: &'a JobResponse,
     ) -> JobFuture<'a, Result<JobResponse, JobError>>;
+
+    /// Reconcile with the command's cancellation signal.
+    ///
+    /// Implementations supporting operation evidence should override this method
+    /// so cancellation is recorded by the shared operation session before return.
+    /// The default preserves compatibility with existing custom reconcilers.
+    fn reconcile_with_cancellation<'a>(
+        &'a self,
+        accepted: &'a JobResponse,
+        cancelled: JobFuture<'a, ()>,
+    ) -> JobFuture<'a, Result<JobResponse, JobError>> {
+        Box::pin(cancellable(cancelled, self.reconcile(accepted)))
+    }
 }
 
 /// Pinned source job types; spelling and casing are service-significant.
@@ -347,6 +363,9 @@ impl Default for JobLimits {
 /// Typed failures; Display never includes tokens, URLs or raw provider diagnostics.
 #[derive(Debug, thiserror::Error)]
 pub enum JobError {
+    /// Original shared-operation failure, including ID, raw diagnostics and uncertainty.
+    #[error(transparent)]
+    Operation(#[from] OperationError),
     /// The explicit selection is not Fabric.
     #[error("job operations require the Fabric audience")]
     InvalidAudience,
@@ -368,6 +387,8 @@ pub enum JobError {
         code: String,
         /// Structured service response, when valid.
         service_error: Option<Box<FabricServiceError>>,
+        /// Exact parsed service failure, including missing or future structured fields.
+        raw_service_error: Option<Box<Value>>,
         /// Original service headers.
         headers: BTreeMap<String, String>,
     },
@@ -409,6 +430,9 @@ pub enum JobError {
     /// Python rejects a negative sleep rather than silently using a default.
     #[error("sleep length must be non-negative")]
     InvalidSleep,
+    /// A syntactically valid service polling integer exceeds native duration bounds.
+    #[error("job polling interval exceeds the supported duration bound")]
+    PollingDelayLimit,
     /// Shared page collection failed with precise committed partial progress.
     #[error("job page collection failed")]
     Paging(Box<PagingError<JobError>>),
@@ -629,20 +653,20 @@ impl JobClient {
         operations: Option<&dyn JobOperationReconciler>,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Option<RunHandle>, JobError> {
-        cancellable(cancelled, async {
-            let mut handle = self.cancel(target, id, std::future::pending()).await?;
-            if handle.requires_operation_reconciliation() {
-                let operations = operations.ok_or(JobError::OperationReconcilerRequired)?;
-                let result = operations.reconcile(&handle.accepted).await?;
-                match result.status {
-                    200 | 201 | 204 => return Ok(None),
-                    202 => handle.accepted = result,
-                    status => return Err(JobError::UnexpectedStatus(status)),
-                }
+        let mut cancelled = pin!(cancelled);
+        let mut handle = self.cancel(target, id, cancelled.as_mut()).await?;
+        if handle.requires_operation_reconciliation() {
+            let operations = operations.ok_or(JobError::OperationReconcilerRequired)?;
+            let result = operations
+                .reconcile_with_cancellation(&handle.accepted, Box::pin(cancelled.as_mut()))
+                .await?;
+            match result.status {
+                200 | 201 | 204 => return Ok(None),
+                202 => handle.accepted = result,
+                status => return Err(JobError::UnexpectedStatus(status)),
             }
-            Ok(Some(handle))
-        })
-        .await
+        }
+        Ok(Some(handle))
     }
 
     /// Request remote cancellation once; acceptance is not terminal cancellation.
@@ -884,11 +908,35 @@ fn polling_interval(
     if let Some(custom) = custom {
         return Ok(custom);
     }
-    match header(headers, "retry-after").and_then(|v| v.trim().parse::<i64>().ok()) {
-        Some(value) if value < 0 => Err(JobError::InvalidSleep),
-        Some(value) => Ok(value as u64),
-        None => Ok(10),
+    let Some(value) = header(headers, "retry-after") else {
+        return Ok(10);
+    };
+    let value = value.trim();
+    let negative = value.starts_with('-');
+    let digits = value.strip_prefix(['+', '-']).unwrap_or(value);
+    let bytes = digits.as_bytes();
+    if bytes.is_empty()
+        || !bytes[0].is_ascii_digit()
+        || !bytes[bytes.len() - 1].is_ascii_digit()
+        || !bytes.iter().enumerate().all(|(i, b)| {
+            b.is_ascii_digit()
+                || (*b == b'_'
+                    && i > 0
+                    && bytes[i - 1].is_ascii_digit()
+                    && i + 1 < bytes.len()
+                    && bytes[i + 1].is_ascii_digit())
+        })
+    {
+        return Ok(10);
     }
+    let seconds = digits
+        .replace('_', "")
+        .parse::<u64>()
+        .map_err(|_| JobError::PollingDelayLimit)?;
+    if negative && seconds != 0 {
+        return Err(JobError::InvalidSleep);
+    }
+    Ok(seconds)
 }
 
 fn service_failure(response: &JobResponse) -> JobError {
@@ -914,6 +962,7 @@ fn service_failure(response: &JobResponse) -> JobError {
     JobError::Http {
         status: response.status,
         code,
+        raw_service_error: body.clone().map(Box::new),
         service_error: body
             .and_then(|v| serde_json::from_value(v).ok())
             .map(Box::new),
