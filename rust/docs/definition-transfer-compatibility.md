@@ -1,0 +1,131 @@
+<!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
+
+# Definition transfer: bounded native library contract
+
+Status: uncompiled implementation checkpoint awaiting exact shared
+Unicode-encoding and local-cancellation-checkpoint commits from their assigned
+owners. The initial draft was formatted, and source receipts ran. Later
+independent contract/filesystem changes have not run formatting or compilation
+while the coordinator holds heavy work for validation-gate repair. The native
+consumer has not executed. The contract below describes the bounded
+implementation, not a validated release or integrated command parity.
+
+Python reference: `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
+Rust integration base: `61d77e330be8a13cbd5033713f1f2badcecfce60`.
+The committed `fabric-cli-definitions` candidate at
+`b245a05da0a08651369e486accc47aa017f46d56` supplies prior art for portable path
+validation, local filesystem preflight, decoding and ordered partial-write
+evidence. Its separate HTTP/polling/JSON implementations and competing central
+host are not adopted.
+
+The additive API lives in `fabric_deploy::definitions`. It neither replaces the
+existing single-Notebook publisher nor installs a CLI parser, command host,
+identity provider, HTTP implementation or runtime. Caller-owned SDK operation
+sessions provide credentials, bounded shared HTTP execution, operation
+reconciliation and cancellation. Caller-owned filesystem implementations provide
+local preflight, directory creation and exact byte writes. Schedule synchronous
+filesystem work on an appropriate caller worker; the library does not create one.
+
+## API and source mapping
+
+| Native API | Actual Python source boundary | Contract |
+| --- | --- | --- |
+| `resolve_format` | `fab_item_util.resolve_definition_format`, `fab_types.definition_format_mapping` | Exact selectors/defaults, no arbitrary query interpolation |
+| `read_definition` | `fab_api_item.get_item_definition` | Empty-body POST, optional source format, shared synchronous operation/result policy |
+| `read_item_definition` | `fab_api_item.get_item_withdefinition` | Metadata GET before definition POST, ordered object update, explicit 401/403 metadata-only fallback |
+| `read_copy_definition` | `fab_fs_cp_item._copy_item_with_definition` then `fab_api_item.get_item_withdefinition` | Explicit empty API format, no Notebook default query; raw outputs retained |
+| `decode_export_files` | `fab_cmd_export_utils.decode_payload`, `clean_notebook_cells`; `fab_storage._validate_json`, `_write_to_local` | Service part order, JSON-suffix versus ordinary-text distinction, binary/empty payloads, first-part Notebook output cleanup, native text newlines |
+| `export_item` | `fab_fs_export_item.export_single_item` | Explicit prior confirmation, context item directory name, no extra overwrite prompt, ordered writes with exact failure progress |
+| `copy_payload` | `fab_fs_cp_item._copy_item_with_definition` | Raw base64 definition, ordered type/name/definition/folder fields, null folder retained, truthy description appended |
+| `decode_set_definition`, `ensure_notebook_dependency`, `encode_set_definition` | `fab_cmd_set_utils._decode_payload`, `ensure_notebook_dependency`, `_encode_payload` | SET JSON-decodes every part, does not clean Notebook outputs, initializes dependencies before caller replacement, exact default JSON/base64 encoding |
+
+SET's restricted explicit-path mutation and friendly-name aliases remain the
+resource caller's responsibility. They are not JMESPath projection or deployment
+JSONPath. Call `read_definition`, decode, initialize the dependency container,
+apply the caller's existing replacement, then encode. The GET and mutation use
+separate caller operation sessions: the shared engine conservatively treats a
+dispatched POST as potentially mutating and must not be reset/replayed.
+
+Copy calls `read_copy_definition` and consumes `DefinitionRead.item`, not
+formatted export files. It deliberately omits the format query even for Notebook
+and SparkJobDefinition; export and SET use type-specific source defaults.
+Discovery, same-workspace `_copy` naming, item-type support, folder collisions,
+overwrite confirmation, actual create/update/delete, and cache reconciliation
+are not replaced by the payload builder.
+
+## Failure and safety boundaries
+
+An HTTP 202 is never a completed export. The existing shared source-synchronous
+operation policy owns polling/result retrieval; definition consumers reject a
+bare accepted response or unusable result rather than reporting empty success.
+Operation failures retain the shared operation ID, structured service data and
+dispatch uncertainty. No request is automatically replayed.
+
+Definition 401/403 retains the source metadata fallback as an explicit
+`definition_access_denied` value for read consumers. Export does not disguise
+that fallback as a successful empty definition. Other service failures propagate.
+
+Local errors retain fully written paths in service order plus a possibly partial
+`incomplete_path`. Cancellation between filesystem boundaries retains completed
+writes; no file deletion/rollback or automatic write replay occurs. An empty
+parts array still creates the item directory, as in Python.
+
+The released candidate's portable path policy rejects traversal, device/ADS
+aliases, reparse/symlink/network paths, case-aliased paths and file/directory
+collisions. Stable caller-owned local directories are required; this is not an
+isolation boundary against hostile concurrent filesystem replacement. Explicit
+file/path/decoded/formatted byte bounds are separate from SDK response/request/
+poll/deadline bounds. These are safety limits, not unqualified source parity.
+These checks intentionally differ from Python's leading-slash stripping and
+unrestricted `os.path.join`/ordinary local open behavior. They are recorded safety
+exceptions, not a claim that the Python path algorithm enforces the same policy.
+Leading slashes are stripped as in source before portable validation. Exact
+duplicate paths retain source ordered overwrites; case aliases and file/parent
+collisions fail. Empty definitions receive the same checked item-directory
+creation policy rather than bypassing alias/link checks.
+
+Python's permissive base64 decoder, malformed-suffix-JSON per-part error fallback,
+nested SET parts, and Python numeric domains outside the shared JSON value range
+remain explicit unsupported branches. They are not silently repaired, treated as
+empty, or counted as parity. SET's unusual array/scalar rule is preserved:
+non-string/non-object edited payloads are not base64-encoded or relabeled by the
+source encoder. Fixing that behavior requires a separate product decision.
+
+## Independent new evidence
+
+`fabric-deploy/tests/definition_export_reference.py` extracts and executes actual
+immutable Python leaves without importing product code, authentication or mutable
+CLI state. Its twelve synthetic cases capture exact local bytes, including
+Unicode/float/null, JSON suffix scalars, raw text JSON, binary/empty files,
+CRLF translation and Notebook cleanup. `definition_set_reference.py` captures
+six exact decode/encode/request-body cases, including the source array/scalar
+oddity. These additive expectations were captured before Rust execution; old
+fixtures, oracle pins and guards remain unchanged.
+
+The Windows byte receipt is fixed. Native non-Windows comparison removes only
+the source Windows text-write newline translation for text cases, never binary
+bytes. Capturing another platform is additional evidence, not permission to
+overwrite the existing receipt.
+
+The Rust public consumer composes the actual `OperationSession` and
+`HttpExecutor` with a scripted Azure `HttpClient`, then exports to its own
+synthetic local directory. It also covers confirmation, invalid selectors/IDs,
+definition permission fallback, accepted/result handling, file bounds, partial
+writes, cancellation and overwrite/path failures. This is offline library
+evidence, not proof of front-door CLI registration, live Fabric, Linux or macOS.
+
+## Remaining branch matrix
+
+| Surface | Implemented bounded boundary | Still required for full command parity |
+| --- | --- | --- |
+| Single export | Generic item metadata/definition read, ordered local parts, first-part Notebook cleanup | Full command support dispatch, interactive selection/output/cache integration, remote Lakehouse destination, permissive/error-preserving decode branches |
+| Workspace export | Reusable single-item export | Complete discovery, config sorting versus execution order, source selection/confirmation/count/error behavior |
+| Bulk export | No new completed implementation in this slice | Recursive folder/workspace discovery, bulk request/index ownership, parent-folder stripping, binding preservation, remote storage and partial outcomes |
+| Import | Existing native single-Notebook deployment remains unchanged | General source file traversal/cache exclusion/Report checks, create versus definition-only update, prompts/cache outcomes, Environment readiness/publish lifecycle |
+| SET | Raw read plus exact decoded/base64/request-body codec | Caller query/friendly aliases, complete update orchestration and command output |
+| Copy/move | Raw definition payload contract | Resource-owner discovery/confirm/collision/create/update/delete/cache algorithms and uncertain-mutation handling |
+| Deploy | Existing native single-Notebook config/transforms/publish path remains unchanged | Full pinned CICD config/YAML/parameters/types/dependencies/reconciliation/bulk/unpublish and CLI wrapper cleanup |
+
+No remaining branch is waived or counted complete because a helper or fixture
+exists. See [deployment compatibility](deployment-compatibility.md) for the
+unchanged independent 44-case config/transform oracle and Notebook publisher.
