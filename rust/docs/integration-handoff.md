@@ -29,8 +29,9 @@ worker branch's whole tree:
 | `6f06a63cff5114ce4f02bc60602798809f4d65f5` | `84824df4a110de8e4267fc3076214c626532cc87` | ACL, catalog and raw API typed frontdoor |
 | `b2ef54aee4d78dff66072c1b511a8595fcd9f8a6` | `b56591523fd6880f8d35779a121be8a9738ccaa1` | ACL and label mutation frontdoors |
 | `2b48992607a78cb09ddf1fe904d3c6c7acd4d039` | `55bd13315f4c9bcd01d97ba591fc8e40b9788d68` | Access composed-schema consumer and compatibility notes |
+| `27b01af956bf16aa4ece82ecb87eb0b322ce9411` | `a4b44c8531d35bd041125aa4ae58685f3b919a45` | Original local owner's pinned-source table-header correction |
 
-The local crate tree matches the released `1bfce8f` tree exactly, and the
+The local crate tree matches the released `27b01af` tree exactly, and the
 resources crate tree matches `2b48992` exactly. The Cargo union adds only the
 safe `fabric-cli-local` default member/workspace dependency, its local lock
 record with six existing dependencies, and the resources-to-Clap lock edge.
@@ -80,6 +81,14 @@ Access `2b48992` had 55 passes and three failures:
 (`mutation_may_have_occurred`), and `frontdoor_contract/mod.rs:474`
 (empty stdout). Original family owners retain these repairs; C does not change
 their algorithms or weaken expectations.
+
+The subsequent original-owner `27b01af` release replaces the new native test's
+incorrect title-case assumption with the source's lowercase `setting`/`value`
+headers, separator and all eighteen ordered rows. It adds execution of the
+pinned Python renderer to establish that contract; production handlers and
+existing frozen fixtures are unchanged. C includes this immutable correction,
+but a passing native result for it is not yet available. The old failing receipt
+remains historical evidence, not a result for the corrected C head.
 
 The immutable C head, provider-head verification, source-to-integration ledger,
 and any subsequently released corrections are recorded in workstream context
