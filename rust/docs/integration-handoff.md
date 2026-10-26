@@ -53,6 +53,17 @@ new executable-routing or whole-family completion claim. CI must also exercise
 the new OneLake, creation, removal, SET, preflight and continuation comparisons,
 not only the three historical resource comparison commands.
 
+The follow-up CI-only checkpoint requires all fifteen comparisons through
+`tests/compatibility/run_resource_parity.py` on each selected native runner.
+It validates every built probe before exporting only the pinned `cf67fd52`
+payload directory into a private temporary directory. Export, missing probes,
+failed comparisons and timeouts fail closed; five runner guards cover the
+orchestration separately from unchanged source expectations. Resource-only
+selections restore the existing pinned oracle dependencies, including changes
+confined to `fabric-sdk-onelake-http`. Shared JSON checks also compare actual
+Unicode-preserving bytes and run their independent guards. Product crates,
+manifests, lockfile, existing expectations and native matrix are unchanged.
+
 ### Resource consumers and one shared operation engine
 
 The coordinator reviewed and applied seven released Rust-only commits, in order:

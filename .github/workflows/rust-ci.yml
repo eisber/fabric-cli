@@ -230,12 +230,18 @@ jobs:
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-paging') ||
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-mutations') ||
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-operations') ||
-          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake')
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake-http')
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
       - name: Restore pinned oracle dependency
-        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
+        if: >-
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-mutations') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-operations') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake-http')
         run: python -m pip install --disable-pip-version-check -r tests/compatibility/requirements.txt
       - name: Use repository-pinned toolchain and record actual host
         run: |
@@ -324,10 +330,13 @@ jobs:
           cargo run --quiet --offline --locked -p fabric-core-json --example definition_json > "$RUNNER_TEMP/core-definition-json.json"
           cargo run --quiet --offline --locked -p fabric-cli-output --example definition_json > "$RUNNER_TEMP/cli-definition-json.json"
           cargo run --quiet --offline --locked -p fabric-cli-output --example compatibility_probe > "$RUNNER_TEMP/output-json.json"
+          cargo run --quiet --offline --locked -p fabric-core-json --example unicode_json > "$RUNNER_TEMP/unicode-json.json"
           python -B tests/compatibility/output/definition_reference.py --observed "$RUNNER_TEMP/core-definition-json.json"
           python -B tests/compatibility/output/definition_reference.py --observed "$RUNNER_TEMP/cli-definition-json.json"
           python -B tests/compatibility/output/reference.py --observed "$RUNNER_TEMP/output-json.json"
+          python -B tests/compatibility/output/unicode_reference.py --observed "$RUNNER_TEMP/unicode-json.json"
           python -B -m unittest discover -s tests/compatibility/output -p test_reference.py -v
+          python -B -m unittest discover -s tests/compatibility/output -p test_unicode_reference.py -v
       - name: Check optional broker and safe-code consumer without authenticating
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-identity') || contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
         run: |
@@ -393,18 +402,18 @@ jobs:
         if: >-
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-mutations') ||
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-operations') ||
-          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake')
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake-http')
         timeout-minutes: 5
         env:
           PYTHONUTF8: "1"
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
           cargo build --offline --locked -p fabric-cli-mutations -p fabric-sdk-operations --examples
-          suffix=""
-          if [[ "$RUNNER_OS" == Windows ]]; then suffix=".exe"; fi
-          python -B crates/fabric-cli-mutations/tests/python_reference.py --probe "target/debug/examples/offline_mutation${suffix}"
-          python -B crates/fabric-cli-mutations/tests/operation_reference.py --probe "target/debug/examples/python_operation${suffix}"
-          python -B crates/fabric-cli-mutations/tests/error_reference.py --probe "target/debug/examples/error_contract${suffix}"
+          python -B -m unittest discover -s tests/compatibility -p test_run_resource_parity.py -v
+          python -B tests/compatibility/run_resource_parity.py \
+            --probes target/debug/examples \
+            --artifacts "$RUNNER_TEMP/resource-parity"
       - name: Check CLI help
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
         run: cargo run --offline --locked -p fabric-cli -- --help
