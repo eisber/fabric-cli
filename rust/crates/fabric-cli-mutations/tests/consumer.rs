@@ -115,6 +115,53 @@ fn options(params: Value) -> CreateOptions {
 }
 
 #[tokio::test]
+async fn rejected_creation_type_precedes_help_existing_id_and_all_io() {
+    for params in [json!({}), json!({"run":"true"})] {
+        let mut operations = Operations::default();
+        let mut ui = Ui::default();
+        let mut metadata = Metadata::default();
+        let error = MutationHost {
+            operations: &mut operations,
+            ui: &mut ui,
+            metadata: &mut metadata,
+        }
+        .create(&item("OrgApp", Some("existing")), &options(params))
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, "UnsupportedCommand");
+        assert_eq!(error.message, "not supported for command 'mkdir'");
+        assert!(operations.requests.is_empty());
+        assert!(ui.notices.is_empty());
+        assert_eq!(metadata.reads, 0);
+    }
+}
+
+#[tokio::test]
+async fn creation_parameters_lowercase_keys_in_objects_nested_inside_arrays_without_mutating_options()
+ {
+    let mut operations = Operations {
+        responses: VecDeque::from([completed(201, Some(json!({"id":"created"})))]),
+        ..Operations::default()
+    };
+    let options = options(json!({"run":"true","CUSTOM":[{"UPPER":[{"DeepKey":1}]}]}));
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(&workspace(None), &options)
+    .await
+    .unwrap();
+    assert_eq!(
+        operations.requests[0].2.as_ref().unwrap()["custom"],
+        json!([{"upper":[{"deepkey":1}]}])
+    );
+    assert_eq!(options.params["CUSTOM"], json!([{"UPPER":[{"DeepKey":1}]}]));
+}
+
+#[tokio::test]
 async fn create_workspace_preserves_lowercase_unknown_params_and_none_capacity_omission() {
     for (capacity, expected) in [
         (

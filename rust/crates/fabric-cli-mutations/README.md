@@ -77,6 +77,15 @@ separately owned; the public offline consumer uses actual shared HTTP.
 
 ## Dynamic creation definitions
 
+Creation support checks run before help/duplicate/payload work, preserving the
+original command boundary even for empty params on a rejected item type.
+Source parameter keys are lowercased recursively through both objects and arrays
+without mutating caller-owned options. `tests/creation_policy_reference.py`
+compares every pinned item type's support, help/duplicate priority and collection
+dispatch, source status behavior, required-value distinctions and nested request
+values. This is a bounded policy matrix, not proof of every option or main-host
+dispatch.
+
 Report creation embeds all seven original parts and changes only the
 `definition.pbir` dataset reference when the explicit/dependent SemanticModel ID
 is truthy. A missing ID after accepted or incomplete dependency creation retains

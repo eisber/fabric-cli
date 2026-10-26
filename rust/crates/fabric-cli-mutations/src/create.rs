@@ -47,6 +47,9 @@ impl MutationHost<'_> {
         options: &CreateOptions,
     ) -> Result<MutationResult, MutationError> {
         supported_element(element)?;
+        if let NodeKind::Item(item_type) = element.kind() {
+            check_create_support(item_type.as_str())?;
+        }
         let params = lowercase_map(&options.params);
         if element.kind() != NodeKind::Folder && params.is_empty() {
             self.ui.notice(NoticeKind::Help, &parameter_help(element));
@@ -105,8 +108,7 @@ impl MutationHost<'_> {
                     .notice(NoticeKind::Progress, "Creating a new Folder...");
                 FolderMutations::create(self.operations, workspace_id(element)?, body).await?
             }
-            NodeKind::Item(item_type) => {
-                check_create_support(item_type.as_str())?;
+            NodeKind::Item(_) => {
                 return self.create_item_with_dependencies(element, params).await;
             }
             NodeKind::Tenant => unreachable!("validated above"),
@@ -435,7 +437,7 @@ fn check_create_support(item_type: &str) -> Result<(), MutationError> {
     ) {
         return Err(MutationError::new(
             "UnsupportedCommand",
-            format!("mkdir is not supported for {item_type}"),
+            "not supported for command 'mkdir'",
         ));
     }
     Ok(())
@@ -544,16 +546,16 @@ fn add_item_payload(
 pub(crate) fn lowercase_map(params: &Map<String, Value>) -> Map<String, Value> {
     params
         .iter()
-        .map(|(key, value)| {
-            (
-                key.to_lowercase(),
-                match value {
-                    Value::Object(map) => Value::Object(lowercase_map(map)),
-                    _ => value.clone(),
-                },
-            )
-        })
+        .map(|(key, value)| (key.to_lowercase(), lowercase_value(value)))
         .collect()
+}
+
+fn lowercase_value(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => Value::Object(lowercase_map(map)),
+        Value::Array(values) => Value::Array(values.iter().map(lowercase_value).collect()),
+        _ => value.clone(),
+    }
 }
 
 pub(crate) fn truthy(value: &Value) -> bool {
