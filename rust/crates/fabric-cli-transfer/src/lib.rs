@@ -432,11 +432,12 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             result.declined = true;
             return Ok(result);
         }
-        let mut count = 0;
-        for item in supported
+        let filtered_items = supported
             .into_iter()
             .filter(|item| selected.contains(&item.element.name()))
-        {
+            .collect::<Vec<_>>();
+        let count = filtered_items.len();
+        for item in filtered_items {
             match self
                 .export_one(&item.element, command, &root, cancelled)
                 .await
@@ -449,7 +450,6 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
                     return Err(error);
                 }
             }
-            count += 1;
         }
         result.outputs.push(message(format!(
             "{count} {} exported successfully",
