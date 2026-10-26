@@ -37,6 +37,14 @@ selection, stream handles, flushing, and process exit.
 
 ## Data and serialization contract
 
+`json_dumps(&Value)` encodes raw definition/data values with Python's **default
+no-indent** layout: comma-space/colon-space, ASCII escaping, insertion order,
+and no newline. It does not produce an envelope, wrap data, or omit falsey data.
+This differs from `Indent::Zero`, which remains pretty JSON with newlines.
+`examples/definition_json.rs` demonstrates this standalone public API; its
+independent source comparison is `definition_reference.py`. The existing numeric
+domain and unsupported-runtime exceptions below apply unchanged.
+
 - A list is retained, even when empty. `None`/JSON null, false, numeric zero,
   empty strings and empty objects omit `data`; other values become one-element
   lists. Nulls and falsey values *inside* lists are preserved.

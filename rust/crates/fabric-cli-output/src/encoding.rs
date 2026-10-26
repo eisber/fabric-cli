@@ -7,7 +7,13 @@ use std::fmt::Write;
 
 pub(crate) fn encode(value: &Value, indent: Indent) -> String {
     let mut output = String::new();
-    write_value(value, indent.width(), 0, &mut output);
+    write_value(value, Some(indent.width()), 0, &mut output);
+    output
+}
+
+pub(crate) fn encode_default(value: &Value) -> String {
+    let mut output = String::new();
+    write_value(value, None, 0, &mut output);
     output
 }
 
@@ -88,7 +94,7 @@ fn number(value: &serde_json::Number, output: &mut String) {
     }
 }
 
-fn write_value(value: &Value, width: usize, depth: usize, output: &mut String) {
+fn write_value(value: &Value, width: Option<usize>, depth: usize, output: &mut String) {
     match value {
         Value::Null => output.push_str("null"),
         Value::Bool(true) => output.push_str("true"),
@@ -100,12 +106,17 @@ fn write_value(value: &Value, width: usize, depth: usize, output: &mut String) {
             for (index, value) in values.iter().enumerate() {
                 if index > 0 {
                     output.push(',');
+                    if width.is_none() {
+                        output.push(' ');
+                    }
                 }
-                output.push('\n');
-                padding(output, width, depth + 1);
+                if let Some(width) = width {
+                    output.push('\n');
+                    padding(output, width, depth + 1);
+                }
                 write_value(value, width, depth + 1, output);
             }
-            if !values.is_empty() {
+            if let Some(width) = width.filter(|_| !values.is_empty()) {
                 output.push('\n');
                 padding(output, width, depth);
             }
@@ -116,14 +127,19 @@ fn write_value(value: &Value, width: usize, depth: usize, output: &mut String) {
             for (index, (key, value)) in values.iter().enumerate() {
                 if index > 0 {
                     output.push(',');
+                    if width.is_none() {
+                        output.push(' ');
+                    }
                 }
-                output.push('\n');
-                padding(output, width, depth + 1);
+                if let Some(width) = width {
+                    output.push('\n');
+                    padding(output, width, depth + 1);
+                }
                 string(key, output);
                 output.push_str(": ");
                 write_value(value, width, depth + 1, output);
             }
-            if !values.is_empty() {
+            if let Some(width) = width.filter(|_| !values.is_empty()) {
                 output.push('\n');
                 padding(output, width, depth);
             }
