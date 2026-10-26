@@ -7,6 +7,7 @@
 //! `client/fab_api_jobs.py` and `utils/fab_cmd_job_utils.py`. Credentials,
 //! transport, asynchronous time and cancellation belong to the caller.
 
+mod headers;
 mod operations;
 use azure_core::{
     credentials::AccessToken,
@@ -20,6 +21,7 @@ use fabric_sdk_workspaces::models::FabricServiceError;
 pub use fabric_sdk_workspaces::workspaces::{
     WorkspaceExecutionError as JobExecutionError, WorkspaceResponse as JobResponse,
 };
+pub use headers::JobRequestHeaders;
 pub use operations::SharedJobOperations;
 use serde_json::{Value, json};
 use std::{
@@ -43,6 +45,7 @@ pub struct JobRequest<'a> {
     token: &'a AccessToken,
     body: Vec<u8>,
     max_response_bytes: NonZeroUsize,
+    headers: JobRequestHeaders,
 }
 
 impl JobRequest<'_> {
@@ -66,6 +69,10 @@ impl JobRequest<'_> {
     pub fn max_response_bytes(&self) -> NonZeroUsize {
         self.max_response_bytes
     }
+    /// Validated caller-owned headers for this command, never ambient defaults.
+    pub fn headers(&self) -> &JobRequestHeaders {
+        &self.headers
+    }
 }
 
 impl fmt::Debug for JobRequest<'_> {
@@ -81,6 +88,13 @@ impl fmt::Debug for JobRequest<'_> {
 /// Use the shared HTTP engine for deadlines, read retries and response bounds;
 /// never replay mutations, follow redirects, select credentials or create a runtime.
 pub trait JobExecutor: Send + Sync {
+    /// Explicit header capability; existing executors accept only the empty contract.
+    ///
+    /// An implementation opting in must forward all supported fields through its
+    /// checked shared request path, never silently discard them.
+    fn supports_request_headers(&self, headers: &JobRequestHeaders) -> bool {
+        headers.is_empty()
+    }
     /// Execute one validated job request.
     fn execute<'a>(
         &'a self,
@@ -97,6 +111,20 @@ pub trait JobExecutor: Send + Sync {
 /// capability is needed only when a synchronous cancellation response identifies
 /// a generic operation instead of a job instance.
 pub trait JobOperationReconciler: Send + Sync {
+    /// Inspect the explicit header context; existing implementations have none.
+    fn request_headers(&self) -> JobRequestHeaders {
+        JobRequestHeaders::default()
+    }
+    /// Return a command-local reconciler preserving the selected request headers.
+    ///
+    /// Existing custom reconcilers fail explicitly rather than dropping a skill
+    /// during generic-operation follow-ups. The default path needs no scoping.
+    fn with_request_headers(
+        &self,
+        _headers: &JobRequestHeaders,
+    ) -> Result<Arc<dyn JobOperationReconciler>, JobError> {
+        Err(JobError::RequestHeadersUnsupported)
+    }
     /// Reconcile the accepted generic operation and retain its actual HTTP result.
     fn reconcile<'a>(
         &'a self,
@@ -363,6 +391,12 @@ impl Default for JobLimits {
 /// Typed failures; Display never includes tokens, URLs or raw provider diagnostics.
 #[derive(Debug, thiserror::Error)]
 pub enum JobError {
+    /// Caller supplied a skill header rejected before credentials or service I/O.
+    #[error("invalid job request headers")]
+    InvalidRequestHeaders,
+    /// An injected executor/reconciler did not opt into the requested headers.
+    #[error("the injected job executor or reconciler does not support request headers")]
+    RequestHeadersUnsupported,
     /// Original shared-operation failure, including ID, raw diagnostics and uncertainty.
     #[error(transparent)]
     Operation(#[from] OperationError),
@@ -447,6 +481,7 @@ pub struct JobClient {
     selection: CredentialSelection,
     executor: Arc<dyn JobExecutor>,
     limits: JobLimits,
+    headers: JobRequestHeaders,
 }
 
 impl JobClient {
@@ -462,7 +497,30 @@ impl JobClient {
             selection,
             executor,
             limits,
+            headers: JobRequestHeaders::default(),
         }
+    }
+
+    /// Clone a command-local client with explicit validated request headers.
+    ///
+    /// The original client and its injected identity/executor remain unchanged.
+    /// Unsupported executor capability fails before credentials or mutation.
+    pub fn with_request_headers(&self, headers: JobRequestHeaders) -> Result<Self, JobError> {
+        if !self.executor.supports_request_headers(&headers) {
+            return Err(JobError::RequestHeadersUnsupported);
+        }
+        Ok(Self {
+            credential: self.credential.clone(),
+            selection: self.selection.clone(),
+            executor: self.executor.clone(),
+            limits: self.limits,
+            headers,
+        })
+    }
+
+    /// Inspect the explicit immutable request context, without identity acquisition.
+    pub fn request_headers(&self) -> &JobRequestHeaders {
+        &self.headers
     }
 
     async fn request(
@@ -509,6 +567,7 @@ impl JobClient {
                 token: &token,
                 body: bytes,
                 max_response_bytes,
+                headers: self.headers.clone(),
             })
             .await
             .map_err(JobError::Execution)?;

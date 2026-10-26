@@ -1,0 +1,23 @@
+{
+  "python_source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "header": "x-ms-fabric-skill",
+  "values": [
+    {"name":"absent","skill":null,"expected":null},
+    {"name":"empty","skill":"","expected":null},
+    {"name":"ordinary","skill":"synthetic-skill/v1","expected":"synthetic-skill/v1"},
+    {"name":"spaces-preserved","skill":"skill with spaces ","expected":"skill with spaces "}
+  ],
+  "audiences": [
+    {"name":"implicit-fabric","audience":null,"expected":true},
+    {"name":"explicit-fabric","audience":"fabric","expected":true},
+    {"name":"storage-does-not-get-fabric-header","audience":"storage","expected":false},
+    {"name":"arm-does-not-get-fabric-header","audience":"azure","expected":false},
+    {"name":"powerbi-does-not-get-fabric-header","audience":"powerbi","expected":false}
+  ],
+  "followup_uris": [
+    "workspaces/ws/items/item/jobs/instances/run",
+    "workspaces/ws/items/item/jobs/instances/run/cancel",
+    "operations/11111111-1111-1111-1111-111111111111",
+    "operations/11111111-1111-1111-1111-111111111111/result"
+  ]
+}

@@ -24,8 +24,8 @@ use fabric_cli_output::{
     Timestamp,
 };
 use fabric_sdk_jobs::{
-    JobClient, JobError, JobOperationReconciler, JobState, JobStatus, JobTarget, JobType,
-    OperationError, RunHandle, WaitOptions,
+    JobClient, JobError, JobOperationReconciler, JobRequestHeaders, JobState, JobStatus, JobTarget,
+    JobType, OperationError, RunHandle, WaitOptions,
 };
 use parser::invalid;
 use serde_json::{Value, json};
@@ -190,6 +190,37 @@ impl JobHost<'_> {
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Option<JobOutput>, JobCommandError> {
         let mut cancelled = pin!(cancelled);
+        if poll_fn(|cx| Poll::Ready(cancelled.as_mut().poll(cx).is_ready())).await {
+            return Err(
+                command_error("LongRunningOperationCancelled", "Operation cancelled").into(),
+            );
+        }
+        if command.skill.is_some() {
+            let headers = JobRequestHeaders::with_skill(command.skill.as_deref())
+                .map_err(|error| sdk_error(error, None))?;
+            let sdk = self
+                .sdk
+                .with_request_headers(headers.clone())
+                .map_err(|error| sdk_error(error, None))?;
+            let operations = self
+                .operations
+                .filter(|operations| !headers.is_empty() || operations.request_headers() != headers)
+                .map(|operations| operations.with_request_headers(&headers))
+                .transpose()
+                .map_err(|error| sdk_error(error, None))?;
+            let scoped = JobHost {
+                sdk: &sdk,
+                operations: operations.as_deref().or(self.operations),
+                lookup: self.lookup,
+                current: self.current.clone(),
+                home: self.home.clone(),
+                files: self.files,
+                ui: self.ui,
+                config: self.config,
+                timestamp: self.timestamp.clone(),
+            };
+            return scoped.execute_inner(command, cancelled.as_mut()).await;
+        }
         self.execute_inner(command, cancelled.as_mut()).await
     }
 
@@ -282,13 +313,6 @@ impl JobHost<'_> {
             return Err(
                 command_error("LongRunningOperationCancelled", "Operation cancelled").into(),
             );
-        }
-        if command.skill.is_some() {
-            return Err(command_error(
-                "NotSupported",
-                "Fabric skill headers require coordinated host header plumbing",
-            )
-            .into());
         }
         let wait_options = WaitOptions {
             timeout: command.timeout,
@@ -743,6 +767,8 @@ fn command_error(code: &str, message: impl Into<String>) -> CommandError {
 
 fn sdk_error(error: JobError, id: Option<&str>) -> JobCommandError {
     let error = match error {
+        JobError::InvalidRequestHeaders => invalid(error.to_string()),
+        JobError::RequestHeadersUnsupported => command_error("NotSupported", error.to_string()),
         JobError::Operation(error) => return JobCommandError::Operation(Box::new(error)),
         JobError::OperationReconcilerRequired => command_error("NotSupported", error.to_string()),
         JobError::Paging(error) => match error.kind {
