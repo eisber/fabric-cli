@@ -381,6 +381,7 @@ jobs:
           suffix=""
           if [[ "$RUNNER_OS" == Windows ]]; then suffix=".exe"; fi
           python -B tests/compatibility/read_session/consumer.py --rust-probe "target/debug/examples/read_session_probe${suffix}"
+          python -B tests/compatibility/job_reads/compare.py --probe "target/debug/examples/job_read_session_probe${suffix}"
       - name: Require extended context and actual text output observations
         if: >-
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli') ||

@@ -49,6 +49,13 @@ The default/broker-only binary recognizes reads but has no read host.
 The explicit `native-read` feature composes the runtime-neutral `ReadSession`,
 complete async metadata scopes, existing handlers and native broker/transport;
 see [native host boundaries](native-read-host.md).
+The same private native composition now dispatches the two read-only job leaves,
+without a second runtime or credential/HTTP setup. `JobReadSession` borrows the
+existing read metadata session and delegates to released `fabric-cli-jobs` and
+`fabric-sdk-jobs` through allowed CLI-to-CLI/SDK edges. Its successful raw JSON
+guard reuses the existing output parser before SDK decoding, never adding an
+SDK-to-CLI dependency or changing default SDK consumers.
+See [bounded job reads](native-job-reads.md) for the incomplete source branches.
 The initial five crates are not a fixed count or a maximum. Workspace membership
 uses `crates/*`, so a new crate directory does not require editing a central
 member list. Default members explicitly include safe crates and exclude the

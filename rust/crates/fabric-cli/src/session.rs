@@ -3,7 +3,7 @@
 
 //! Runtime-neutral read invocation, including async metadata discovery.
 
-mod snapshot;
+pub(crate) mod snapshot;
 
 use crate::{PythonQuery, ReadConfig, ReadHost, errors, parser::ReadCommand};
 use fabric_cli_context::{Element, HomeContext};

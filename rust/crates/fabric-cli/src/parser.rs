@@ -6,6 +6,9 @@
 use clap::{Arg, ArgAction, Command, error::ErrorKind};
 use std::ffi::OsString;
 
+mod jobs;
+pub use jobs::{JobReadCommand, JobReadKind};
+
 #[cfg(feature = "windows-broker")]
 mod auth;
 #[cfg(feature = "windows-broker")]
@@ -53,6 +56,8 @@ pub enum Invocation {
     Display(String),
     /// A command requiring explicitly supplied dependencies.
     Read(ReadCommand),
+    /// Read-only job leaf; never submission, cancellation or schedule mutation.
+    JobRead(JobReadCommand),
     /// Explicit opt-in broker command; parsing never signs in.
     #[cfg(feature = "windows-broker")]
     Auth(AuthCommand),
@@ -82,8 +87,9 @@ pub fn command() -> Command {
     #[cfg(feature = "windows-broker")]
     let command = auth::register(command);
     #[cfg(feature = "native-read")]
-    let command = command.after_help("Native ls/get reads require FAB_RUST_TENANT, FAB_RUST_ACCOUNT and FAB_RUST_CLIENT_ID. Windows broker authentication is opt-in; reads are silent and never show sign-in UI. Use explicit auth login first when required. FAB_RUST_CONTEXT defaults to /; FAB_RUST_HOME is optional. No token input, credential fallback or deployment command is available.");
+    let command = command.after_help("Native ls/get and job run-list/run-status reads require FAB_RUST_TENANT, FAB_RUST_ACCOUNT and FAB_RUST_CLIENT_ID. Windows broker authentication is opt-in; reads are silent and never show sign-in UI. Use explicit auth login first when required. FAB_RUST_CONTEXT defaults to /; FAB_RUST_HOME is optional. No token input, credential fallback, job mutation or deployment command is available.");
     command
+        .subcommand(jobs::register())
         .subcommand(
             Command::new("ls")
                 .visible_alias("dir")
@@ -176,6 +182,13 @@ where
             INVALID_ARGUMENTS,
         ));
     };
+    if name == "job" {
+        let mut command = jobs::parse(values)?;
+        command.output_format = command
+            .output_format
+            .or_else(|| matches.get_one::<String>("output_format").cloned());
+        return Ok(Invocation::JobRead(command));
+    }
     if !matches!(name, "ls" | "get") {
         return Err(invalid_arguments());
     }
@@ -229,7 +242,7 @@ fn source_read_arguments(
 ) -> Result<Vec<OsString>, clap::Error> {
     let Some(start) = args
         .iter()
-        .position(|arg| matches!(arg.to_str(), Some("ls" | "dir" | "get")))
+        .position(|arg| matches!(arg.to_str(), Some("ls" | "dir" | "get" | "job")))
     else {
         return Ok(args.to_vec());
     };
@@ -237,6 +250,17 @@ fn source_read_arguments(
     let schema = parser
         .find_subcommand(if name == "dir" { "ls" } else { name })
         .expect("bounded read schema");
+    let (schema, start) = if name == "job" {
+        let Some(leaf) = args.get(start + 1).and_then(|arg| arg.to_str()) else {
+            return Ok(args.to_vec());
+        };
+        let Some(schema) = schema.find_subcommand(leaf) else {
+            return Ok(args.to_vec());
+        };
+        (schema, start + 1)
+    } else {
+        (schema, start)
+    };
     let mut normalized = args[..=start].to_vec();
     let mut path = Vec::new();
     let mut path_closed = false;

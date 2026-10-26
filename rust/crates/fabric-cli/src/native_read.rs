@@ -3,7 +3,10 @@
 
 //! Explicit opt-in binary composition. Libraries never read these host inputs.
 
-use fabric_cli::{HostError, parser::ReadCommand};
+use fabric_cli::{
+    HostError,
+    parser::{JobReadCommand, ReadCommand},
+};
 use serde_json::json;
 use std::{
     io::{self, Write},
@@ -11,6 +14,19 @@ use std::{
 };
 
 type Failure = (&'static str, String, u8);
+
+#[derive(Clone, Copy)]
+#[cfg_attr(
+    not(windows),
+    allow(
+        dead_code,
+        reason = "The selected host is explicitly unsupported off Windows."
+    )
+)]
+enum NativeCommand<'a> {
+    Read(&'a ReadCommand),
+    Job(&'a JobReadCommand),
+}
 
 fn failure(code: &'static str, message: impl Into<String>, exit: u8) -> Failure {
     (code, message.into(), exit)
@@ -44,6 +60,14 @@ fn required(name: &str) -> Result<String, Failure> {
 }
 
 pub(crate) fn run(command: &ReadCommand) -> io::Result<ExitCode> {
+    run_command(NativeCommand::Read(command))
+}
+
+pub(crate) fn run_job(command: &JobReadCommand) -> io::Result<ExitCode> {
+    run_command(NativeCommand::Job(command))
+}
+
+fn run_command(command: NativeCommand<'_>) -> io::Result<ExitCode> {
     let result = (|| {
         // Public selectors only, never token/secret environment inputs.
         let tenant = required("FAB_RUST_TENANT")?;
@@ -62,7 +86,7 @@ pub(crate) fn run(command: &ReadCommand) -> io::Result<ExitCode> {
 
 #[cfg(not(windows))]
 fn run_selected(
-    _: &ReadCommand,
+    _: NativeCommand<'_>,
     _: &str,
     _: &str,
     _: &str,
@@ -76,7 +100,7 @@ fn run_selected(
 
 #[cfg(windows)]
 fn run_selected(
-    command: &ReadCommand,
+    command: NativeCommand<'_>,
     tenant: &str,
     account: &str,
     client: &str,
@@ -95,12 +119,23 @@ fn run_selected(
         },
         selected_home,
     )?;
-    if command.output.is_some() || command.force || command.verbose {
+    if let NativeCommand::Read(command) = command
+        && (command.output.is_some() || command.force || command.verbose)
+    {
         return Err(failure(
             "NotSupported",
             "GET export, verbose and definition/confirmation options are not ported.",
             1,
         ));
+    }
+    if let NativeCommand::Job(command) = command {
+        fabric_sdk_jobs::JobRequestHeaders::with_skill(command.skill.as_deref()).map_err(|_| {
+            failure(
+                "invalid_arguments",
+                "Invalid job request header selection.",
+                2,
+            )
+        })?;
     }
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -155,7 +190,7 @@ fn optional_path(name: &str, default: &str) -> Result<String, Failure> {
 
 #[cfg(windows)]
 async fn execute(
-    command: &ReadCommand,
+    command: NativeCommand<'_>,
     options: fabric_identity::LoginOptions,
     current: &str,
     home: fabric_cli_context::HomeContext,
@@ -221,7 +256,7 @@ async fn execute(
             1,
         )
     })?;
-    let result = ReadSession {
+    let session = ReadSession {
         sdk: &sdk,
         executor: &executor,
         tenant,
@@ -229,10 +264,23 @@ async fn execute(
         home,
         timestamp,
         config: fabric_cli::ReadConfig::default(),
-    }
-    .with_source_operations(&executor)
-    .dispatch(command, std::future::pending())
-    .await;
+    };
+    let result = match command {
+        NativeCommand::Read(command) => {
+            session
+                .with_source_operations(&executor)
+                .dispatch(command, std::future::pending())
+                .await
+        }
+        NativeCommand::Job(command) => {
+            fabric_cli::jobs::JobReadSession {
+                reads: &session,
+                jobs: Arc::new(fabric_cli_jobs::HttpJobExecutor::new(executor.clone())),
+            }
+            .dispatch(command, std::future::pending())
+            .await
+        }
+    };
     match result {
         Ok(plan) => Ok(plan),
         Err(error) => {
