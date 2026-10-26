@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Native job-read subprocess contracts without inherited credentials or live I/O.
+
 use std::process::{Command, Output};
 
 fn invoke(args: &[&str], selectors: bool) -> Output {

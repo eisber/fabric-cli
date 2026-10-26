@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Source-named job-read parser contracts with no host or service execution.
+
 use fabric_cli::parser::{Invocation, JobReadCommand, JobReadKind, parse_args};
 
 fn parse(args: &[&str]) -> JobReadCommand {

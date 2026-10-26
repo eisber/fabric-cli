@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Production job-read session contracts with injected offline HTTP, credentials and time.
+
 #[allow(dead_code, unused_imports)]
 mod folder_support;
 
