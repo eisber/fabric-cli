@@ -62,3 +62,20 @@ resource types and skill variants, shared HTTP reads/retries/pages/polls,
 generic-operation errors/results, concurrent isolation and capability/syntax
 rejection before mutation. The synthetic header consumer does not certify
 live-service acceptance or new credential/identity behavior.
+
+`presentation_cases.json` drives a complete-stream comparison:
+`presentation_reference.py --probe <presentation_probe executable>` executes
+pinned job/parser/API/helper/error bodies together with the existing source UI
+oracle, then compares actual stdout, stderr, exits and request order with the
+public native consumer. The probe uses actual handlers, SDK and shared HTTP
+with synthetic responses, not manually assembled output models. The cases cover
+all eight text leaves plus JSON-with-events, Failed/unknown raw tables, warnings,
+timeout policy, empty output, confirmations, authorization/API diagnostics,
+terminal width, explicit Unicode properties, TTY/fallback, CRLF and explicit
+format precedence. It does not regenerate protected fixtures.
+
+Additional native boundary tests cover cross-stream result-before-hint order,
+first writer failure, partial text rendering, unsupported Unicode properties,
+cancellation before I/O and explicitly unresolved generic-operation normalized
+text projection. Passing the measured finite cases is not a whole Unicode or
+Python runtime-value claim.

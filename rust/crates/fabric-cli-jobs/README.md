@@ -72,3 +72,38 @@ cargo run --offline --locked -p fabric-cli-jobs --example offline_job
 
 It uses synthetic credentials and HTTP only. It never contacts a service.
 See the [compatibility matrix](../../docs/job-compatibility.md).
+
+## Shared JSON/text consumer
+
+`JobHost::run` is an additive complete-writer adapter over the existing handler.
+The caller supplies `JobRenderOptions`: resolved configuration format, the
+shared `TextOptions`, a source-equivalent character-width provider and explicit
+`Presentation`. A command's `--output_format` takes precedence. It creates no
+main/parser, terminal probe, logger, Unicode database or global state.
+The older `execute`, `dispatch_json`, `run_json` APIs and host literals remain
+available. Writers for the new adapter must implement `Write + Send`; synchronous
+UI callbacks borrow them through a command-local mutex, never across an await.
+
+Immediate grey/progress/warning/log-warning events and raw job-status tables
+use the shared renderer even in JSON mode. Results preserve table/header and
+key-value intent; deferred status hints are written only after the result.
+Confirmation delegates to the injected `JobUi`, but its `emit` is not invoked
+again, preventing a host UI from duplicating output. Declined removal and
+Cancelled/Deduped/unknown terminal source branches produce no invented success
+envelope.
+
+`JobOutput::render` and `JobEvent::render` expose the same pure composition to
+other hosts. Text formatting failures retain the shared typed error and any
+partial source writes; `run` writes that partial output once before returning
+the failure. Writer errors stop local work without a second fallback write,
+success hint, remote rollback or request replay.
+
+`JobCommandError::Service` now retains ordinary job HTTP evidence beside its
+once-normalized diagnostic, enabling text-only Fabric request-ID decoration
+without changing JSON output. Generic-operation JSON projection remains the
+borrowed shared formatter. Generic-operation **text** still requires an
+additive shared boundary accepting an already-normalized error: constructing
+another `CommandError` would incorrectly default a period-only empty message.
+Until that exact seam is released, `JobRenderError::OperationTextProjectionRequired`
+returns the original operation error rather than a fabricated text diagnostic.
+This explicitly unclosed branch is not claimed as full presentation parity.

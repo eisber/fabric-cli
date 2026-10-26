@@ -113,8 +113,8 @@ def create_ledger(output: Path) -> None:
         "resources": json.loads((Path(__file__).parent / "cases.json").read_text(encoding="utf-8"))["resources"],
         "functions": functions,
         "remaining_shared_gates": [
-            "Lossless OperationError to shared resource error formatter conversion",
-            "Skill header request plumbing and shared text renderer intent integration",
+            "Generic-operation text projection of already-normalized errors without another CommandError constructor",
+            "Central front-door integration of the implemented job JSON/text writer adapter",
             "Shared JSON representation for arbitrary integers and non-finite numeric tokens",
             "Exact main-level unexpected-exception output normalization",
             "Documented typed response/origin/limit exceptions require separate review; source-line coverage does not waive them",

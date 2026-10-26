@@ -11,6 +11,8 @@
 mod http;
 mod parser;
 mod payload;
+mod presentation;
+pub use presentation::{JobRenderError, JobRenderOptions};
 
 pub use http::HttpJobExecutor;
 pub use parser::{JobCommand, JobKind, ScheduleArgs, command_from_matches, job_subcommand};
@@ -87,6 +89,13 @@ pub struct JobOutput {
 pub enum JobCommandError {
     /// Existing command/context/input/presentation failure.
     Command(CommandError),
+    /// Original job-service failure and its once-normalized source diagnostic.
+    Service {
+        /// Raw HTTP/service evidence for text-only API decorations.
+        source: Box<JobError>,
+        /// Existing JSON-compatible code/message projection.
+        projection: CommandError,
+    },
     /// Original shared-operation classification, raw diagnostics, ID and uncertainty.
     Operation(Box<OperationError>),
 }
@@ -96,6 +105,7 @@ impl JobCommandError {
     pub fn envelope(&self, timestamp: Timestamp, command: Option<String>) -> OutputEnvelope {
         match self {
             Self::Command(error) => error.envelope(timestamp, command),
+            Self::Service { projection, .. } => projection.envelope(timestamp, command),
             Self::Operation(error) => {
                 let mut output = fabric_cli_mutations::operation_error_output(error);
                 output.command = command;
@@ -766,6 +776,33 @@ fn command_error(code: &str, message: impl Into<String>) -> CommandError {
 }
 
 fn sdk_error(error: JobError, id: Option<&str>) -> JobCommandError {
+    if let JobError::Http {
+        status,
+        code,
+        service_error,
+        raw_service_error,
+        ..
+    } = &error
+    {
+        let message = match status {
+            401 => "Access is unauthorized".into(),
+            403 => "Access is forbidden. You do not have permission to access this resource".into(),
+            404 => "The requested resource could not be found".into(),
+            _ => raw_service_error
+                .as_deref()
+                .and_then(|value| value.get("message"))
+                .and_then(Value::as_str)
+                .filter(|message| !message.is_empty())
+                .map(str::to_owned)
+                .or_else(|| service_error.as_ref().map(|e| e.message.clone()))
+                .unwrap_or_else(|| "An error occurred while processing the operation".into()),
+        };
+        let projection = command_error(code, message);
+        return JobCommandError::Service {
+            source: Box::new(error),
+            projection,
+        };
+    }
     let error = match error {
         JobError::InvalidRequestHeaders => invalid(error.to_string()),
         JobError::RequestHeadersUnsupported => command_error("NotSupported", error.to_string()),
@@ -778,30 +815,6 @@ fn sdk_error(error: JobError, id: Option<&str>) -> JobCommandError {
             }
             kind => command_error("UnexpectedError", kind.to_string()),
         },
-        JobError::Http {
-            status,
-            code,
-            service_error,
-            raw_service_error,
-            ..
-        } => {
-            let message = match status {
-                401 => "Access is unauthorized".into(),
-                403 => {
-                    "Access is forbidden. You do not have permission to access this resource".into()
-                }
-                404 => "The requested resource could not be found".into(),
-                _ => raw_service_error
-                    .as_deref()
-                    .and_then(|value| value.get("message"))
-                    .and_then(Value::as_str)
-                    .filter(|message| !message.is_empty())
-                    .map(str::to_owned)
-                    .or_else(|| service_error.map(|e| e.message))
-                    .unwrap_or_else(|| "An error occurred while processing the operation".into()),
-            };
-            command_error(&code, message)
-        }
         JobError::Failed { .. } => command_error(
             "JobFailed",
             format!("Job instance '{}' Failed", id.unwrap_or("")),

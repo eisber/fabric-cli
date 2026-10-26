@@ -131,12 +131,25 @@ Python main omits that field for uncaught non-`FabricCLIError` conversion
 exceptions. Exact main-level unexpected-exception normalization remains a
 front-door compatibility gap, not a claim of byte-for-byte error parity.
 
-Text terminal width/color/layout, root/group custom help, `-help`, batch/REPL,
-global option/configuration propagation and a production identity/context host
-require the front-door integration. `execute` supplies the actual output data,
-source flags and immediate/deferred UI events for that integration; JSON output
-uses the existing shared envelope and writers. Windows local offline evidence
-does not establish Linux/macOS native runner success.
+The additive `JobHost::run` now composes actual job execution with the existing
+shared JSON/text renderer and caller-owned output properties/writers. Text
+table/key-value routing, immediate and deferred UI events, raw status tables
+in JSON mode, confirmations, TTY/fallback/newline selection, width/property
+injection, source exits and partial I/O are owned consumer boundaries rather
+than another renderer. `JobCommandError::Service` retains ordinary HTTP evidence
+for text-only Fabric request-ID decorations; JSON remains unchanged.
+
+Root/group custom help, `-help`, batch/REPL, ambient configuration resolution and
+production identity/context composition remain with the front-door owner.
+Generic-operation text additionally requires a shared already-normalized error
+render boundary; the current renderer accepts only `CommandError`, whose
+constructor would normalize a shared formatter's intentional empty message
+twice. That branch returns `OperationTextProjectionRequired` retaining the
+original error, not a fake successful output or changed diagnostic. The existing
+generic-operation JSON path remains implemented. Wider Unicode/string/numeric
+properties must be explicitly supplied by the released shared contracts; no
+approximate property database is installed by jobs.
+Windows local offline evidence does not establish hosted Linux/macOS results.
 `SharedJobOperations` now supplies the actual generic-operation adapter over
 the released `OperationSession::reconcile_accepted(PythonSynchronous)`. It
 never issues the initial mutation, and `JobError::Operation` retains the

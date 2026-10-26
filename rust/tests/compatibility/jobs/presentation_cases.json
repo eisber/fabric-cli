@@ -1,0 +1,33 @@
+{
+  "python_source_commit":"cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases":[
+    {"name":"start-text","args":["start","item.DataPipeline"],"replies":[{"accepted":true}]},
+    {"name":"start-json-with-text-events","format":"json","args":["start","item.DataPipeline"],"replies":[{"accepted":true}]},
+    {"name":"run-text-complete","args":["run","item.DataPipeline"],"replies":[{"accepted":true},{"status":200,"data":{"id":"run","status":"Completed"}}]},
+    {"name":"run-cancelled-warning-no-envelope","args":["run","item.DataPipeline"],"replies":[{"accepted":true},{"status":200,"data":{"id":"run","status":"Cancelled"}}]},
+    {"name":"run-deduped-warning-no-envelope","args":["run","item.DataPipeline"],"replies":[{"accepted":true},{"status":200,"data":{"id":"run","status":"Deduped"}}]},
+    {"name":"run-failed-raw-table-then-error","args":["run","item.DataPipeline"],"replies":[{"accepted":true},{"status":200,"data":{"id":"run","status":"Failed","detail":"bad"}}]},
+    {"name":"run-unknown-warning-table-json-mode","format":"json","args":["run","item.DataPipeline"],"replies":[{"accepted":true},{"status":200,"data":{"id":"run","status":"Future"}}]},
+    {"name":"timeout-cancel-text","args":["run","item.DataPipeline","--timeout","3"],"replies":[{"accepted":true},{"status":202}]},
+    {"name":"timeout-retain-warning-no-envelope","cancel_on_timeout":false,"args":["run","item.DataPipeline","--timeout","3"],"replies":[{"accepted":true}]},
+    {"name":"list-table","args":["run-list","item.DataPipeline"],"replies":[{"status":200,"data":{"value":[{"id":"one","status":"Completed"},{"id":"two","status":"InProgress","ignored":true}]}}]},
+    {"name":"list-empty-schedules","args":["run-list","item.DataPipeline","--schedule"],"replies":[{"status":200,"data":{"value":[]}}]},
+    {"name":"status-full-table","args":["run-status","item.DataPipeline","--id","run"],"replies":[{"status":200,"data":{"id":"run","status":"InProgress","count":2}}]},
+    {"name":"cancel-async-text-hint-after-output","args":["run-cancel","item.DataPipeline","--id","run"],"replies":[{"status":202}]},
+    {"name":"cancel-wait-warning-no-completion","args":["run-cancel","item.DataPipeline","--id","run","--wait"],"replies":[{"status":202},{"status":200,"data":{"id":"run","status":"Cancelled"}}]},
+    {"name":"schedule-create-text","args":["run-sch","item.DataPipeline","--input","{'enabled':false,'configuration':{}}"],"replies":[{"status":201,"data":{"id":"sch"}}]},
+    {"name":"schedule-update-text","args":["run-update","item.DataPipeline","--id","sch","--disable"],"replies":[{"status":200,"data":{"id":"sch","enabled":true,"configuration":{"type":"Cron","interval":10}}},{"status":200,"data":{"id":"sch"}}]},
+    {"name":"schedule-remove-declined","args":["run-rm","item.DataPipeline","--id","sch"],"confirmed":false,"replies":[]},
+    {"name":"schedule-remove-confirmed","args":["run-rm","item.DataPipeline","--id","sch"],"confirmed":true,"replies":[{"status":200}]},
+    {"name":"schedule-remove-forced-crlf","crlf":true,"args":["run-rm","item.DataPipeline","--id","sch","--force"],"replies":[{"status":200}]},
+    {"name":"invalid-parameter-text","args":["start","item.DataPipeline","--params","bad"],"replies":[]},
+    {"name":"http-unauthorized-text","args":["run-status","item.DataPipeline","--id","run"],"replies":[{"status":401,"data":{"errorCode":"ignored","message":"ignored"}}]},
+    {"name":"http-service-detail-text","args":["run-status","item.DataPipeline","--id","run"],"replies":[{"status":400,"data":{"errorCode":"ServiceRejected","message":"source message...","requestId":"offline"}}]},
+    {"name":"http-period-only-text","args":["run-status","item.DataPipeline","--id","run"],"replies":[{"status":400,"data":{"errorCode":"","message":"..."}}]},
+    {"name":"status-width-wrap","width":18,"args":["run-status","item.DataPipeline","--id","run"],"replies":[{"status":200,"data":{"id":"run","status":"VeryLongStatus"}}]},
+    {"name":"status-unicode-width","args":["run-status","item.DataPipeline","--id","run"],"replies":[{"status":200,"data":{"id":"日","status":"Completed"}}]},
+    {"name":"start-tty-styles","tty":true,"args":["start","item.DataPipeline"],"replies":[{"accepted":true}]},
+    {"name":"timeout-fallback","fallback":true,"args":["run","item.DataPipeline","--timeout","1"],"cancel_on_timeout":false,"replies":[{"accepted":true}]},
+    {"name":"explicit-json-overrides-text-config","args":["start","item.DataPipeline","--output_format","json"],"replies":[{"accepted":true}]}
+  ]
+}
