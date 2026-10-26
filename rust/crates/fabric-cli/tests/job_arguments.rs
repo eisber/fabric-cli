@@ -17,10 +17,20 @@ fn only_the_two_read_leaves_are_registered() {
     let schema = fabric_cli::parser::command();
     let group = schema.find_subcommand("job").unwrap();
     assert_eq!(
-        group.get_subcommands().map(|leaf| leaf.get_name()).collect::<Vec<_>>(),
+        group
+            .get_subcommands()
+            .map(|leaf| leaf.get_name())
+            .collect::<Vec<_>>(),
         ["run-list", "run-status"]
     );
-    for leaf in ["start", "run", "run-cancel", "run-sch", "run-rm", "run-update"] {
+    for leaf in [
+        "start",
+        "run",
+        "run-cancel",
+        "run-sch",
+        "run-rm",
+        "run-update",
+    ] {
         assert!(parse_args(["fab-rs", "job", leaf, "item.Notebook"]).is_err());
     }
 }
@@ -28,9 +38,17 @@ fn only_the_two_read_leaves_are_registered() {
 #[test]
 fn source_path_id_schedule_and_output_options_retain_values() {
     let command = parse(&[
-        "--output_format", "text", "job", "run-status",
-        "'Demo.Workspace/Book", "One.Notebook'", "--id", "first",
-        "--id=last", "--sched", "--output_format=json",
+        "--output_format",
+        "text",
+        "job",
+        "run-status",
+        "'Demo.Workspace/Book",
+        "One.Notebook'",
+        "--id",
+        "first",
+        "--id=last",
+        "--sched",
+        "--output_format=json",
     ]);
     assert_eq!(command.kind, JobReadKind::Status);
     assert_eq!(command.path, ["'Demo.Workspace/Book", "One.Notebook'"]);
@@ -43,7 +61,8 @@ fn source_path_id_schedule_and_output_options_retain_values() {
     assert!(command.id.is_none());
     assert_eq!(
         parse(&["--output_format=text", "job", "run-list", "Book.Notebook"])
-            .output_format.as_deref(),
+            .output_format
+            .as_deref(),
         Some("text")
     );
 }

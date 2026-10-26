@@ -16,7 +16,11 @@ The runner executes actual unchanged job API/handler/projection/UI definitions
 using the existing protected AST/blob-pinned source loaders. It asserts
 hand-authored output trees, then freezes source stdout/stderr/exit before
 starting the native process. Sixty exact cases cover three response branches,
-five resource types, two route selections and JSON/text. Four API-gap cases
+five resource types, two route selections and JSON/text. Four additional exact
+cases exercise present-empty/selected skills through the released header
+plumbing; the native probe asserts exact job-scoped header presence. The
+existing independent `jobs/skill_headers_reference.py` separately executes
+actual Python HTTP-header creation. Four API-gap cases
 retain their distinct source expectations and require explicit native failure,
 not successful partial parity.
 

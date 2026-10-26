@@ -3,7 +3,8 @@
 # Bounded native job reads
 
 Python source: `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
-Released Rust prerequisite: `9c396cef44b736733a635070431d871c8f18762c`.
+Released Rust prerequisite: `50eb337e696d5de8d49c65039ca9eff4ca3e0a60`,
+adopted by ordinary merge after preserving the original `9c396ce` draft.
 This adds only `job run-list` and `job run-status` to `fab-rs`. It does not
 register job submission, cancellation, execution or schedule mutations.
 These are partial entry points, not complete Python commands or live proof.
@@ -25,9 +26,15 @@ discovery and constructs the released `JobClient` with that SDK's exact
 credential and selection. The same command-local `Snapshot` and pure resolver
 load workspace/item/folder scopes before the existing `JobHost` executes.
 The job adapter delegates HTTP and time to `HttpJobExecutor`; pagination stays
-in the existing SDK `TokenPager`. The old read session's public fields,
+in the existing SDK `TokenPager`. The released `SharedJobOperations` is composed
+over that same executor, credential and selection; read GET202 reconciliation
+still requires a family API and is not invented here.
+The old read session's public fields,
 default strict SDK behavior and source-synchronous workspace GET opt-in remain
 unchanged.
+The only new internal dependency edges are `fabric-cli -> fabric-cli-jobs` and
+`fabric-cli -> fabric-sdk-jobs`; registry packages and default native
+identity/transport feature selection are unchanged.
 
 The parser reuses only the two released family registrations and its typed
 conversion. It preserves source token paths, required status `--id`, repeated
@@ -44,7 +51,7 @@ The existing sanitized invalid-arguments diagnostic remains byte-compatible.
 | Run list | Instance endpoint, bounded complete paging, first-row key projection in original order |
 | Schedule list | Job-type schedule endpoint; the same paging/projection, distinct empty message |
 | Run status | Required ID, full ordered object with string status; future status strings remain data |
-| Schedule status | Required ID, full ordered schedule object, without instance-status interpretation |
+| Schedule status | Required ID, full ordered schedule object with a string ID, without instance-status interpretation |
 | Empty list | `No runs found` or `No schedules found`; not an empty metadata snapshot |
 | Context | Absolute, relative, tokenized/quoted, current, explicit home and folder resolution |
 | Failures | Existing full leaf error envelopes, JSON stdout, Unauthorized exit 4, no partial-page success |
@@ -52,7 +59,12 @@ The existing sanitized invalid-arguments diagnostic remains byte-compatible.
 
 The five pinned source resources are Spark job definitions, notebooks, data
 pipelines, lakehouses and graph models. Other resources fail explicitly.
-No skill headers are sent by default. Present empty values remain distinct
+No skill headers are sent by default. Explicit `--skill` uses the released
+`JobRequestHeaders`/`JobClient::with_request_headers` support; empty values emit
+no header. Discovery retains its original unscoped metadata requests, while
+job pages retain the selected skill. The checked executor forwards header
+capabilities, rather than silently discarding a selected value.
+Present empty values remain distinct
 from absent arguments. Null, empty, false and finite numeric fields are not
 stringified or normalized to invented defaults.
 
@@ -61,14 +73,12 @@ stringified or normalized to invented defaults.
 The released family APIs cannot yet express every source branch. These gaps
 are reported to the integration owner for the existing jobs family owner:
 
-- `--skill`, including a present empty value, fails `NotSupported` before
-  metadata/job I/O. Native configuration validation retains its existing order.
 - Non-200 success responses fail nonzero. Python's handlers emit no output
   for such responses, potentially after source HTTP operation reconciliation.
   No accepted response is treated as completed or replayed. No generic GET
   operation policy is added by this slice.
 - The released status API requires a JSON object with a string `status`;
-  the schedule API requires an object. Python can print other JSON values,
+  the schedule API requires an object with a string ID. Python can print other JSON values,
   including missing/null status fields. Lists require an array of objects;
   Python has additional malformed/missing/value-shape branches.
 - Python arbitrary-size integers, NaN/Infinity and lone surrogates require a
@@ -94,7 +104,8 @@ source before native comparisons. Its runner executes the unchanged job API,
 list/status handlers, list projection and real JSON/text UI source, then freezes
 all observations before launching the native consumer. It compares exact
 streams, exits, ordered requests and Fabric scopes for both routes/formats and
-all five resources. Four separately classified API-gap cases must fail
+all five resources, plus present-empty and selected skill cases using the
+released source header contracts. Four separately classified API-gap cases must fail
 nonzero; they cannot count as exact matches.
 
 Metadata discovery expectations are independently specified synthetic fixtures,
@@ -104,3 +115,12 @@ context, cancellation, shared HTTP deadlines, absent headers, unrepresentable
 values and writer failures. Actual `fab-rs` subprocess tests separately cover
 registration, malformed arguments and missing/invalid selectors.
 No service, valid account, broker cache, mutation or live job is exercised.
+
+## Candidate validation status
+
+This source candidate is **unvalidated** locally. Both immutable v3 receipts
+(`gate-jobs-01.json`, `gate-jobs-02.json`) refused host quiescence before any
+validation command started; neither is a test failure or a passing receipt.
+The coordinator owns isolated hosted CI at the exact candidate SHA. Source
+self-review and formatting do not establish compilation or any passing test
+count. No registration/coverage metric is advanced by this candidate.

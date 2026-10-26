@@ -140,10 +140,26 @@ def check(probe: Path | None) -> None:
             command += ["--schedule"]
         inputs.append({"command": command, "responses": [*discovery("Notebook"), case["response"]]})
         expectations.append((case["name"], observed, case["native_error"]))
+    for leaf in ("run-list", "run-status"):
+        case = next(case for case in manifest["exact"] if case["leaf"] == leaf)
+        observed, _ = source_observation(case, "Notebook", False, "json")
+        observed["requests"] = [
+            f"{ORIGIN}/workspaces", f"{ORIGIN}/workspaces/w/items", *observed["requests"],
+        ]
+        observed["scopes"] = [["https://api.fabric.microsoft.com/.default"]] * 3
+        for skill in ("", "selected"):
+            command = ["job", leaf, "Demo.Workspace/Book.Notebook", f"--skill={skill}"]
+            if leaf == "run-status":
+                command += ["--id=run"]
+            inputs.append({
+                "command": command, "responses": [*discovery("Notebook"), case["response"]],
+                "timestamp": manifest["timestamp"],
+            })
+            expectations.append((f"{leaf}/skill={skill}", copy.deepcopy(observed), None))
     frozen = copy.deepcopy(expectations)
-    assert len(frozen) == 64
+    assert len(frozen) == 68
     if probe is None:
-        print("PASS 60 independently pinned source job read observations; 4 declared API gaps")
+        print("PASS 64 independently pinned source job read observations; 4 declared API gaps")
         return
     environment = {k: v for k, v in os.environ.items() if k.upper() in ("SYSTEMROOT", "WINDIR", "TEMP", "TMP")}
     result = subprocess.run(
@@ -162,7 +178,7 @@ def check(probe: Path | None) -> None:
             assert row["requests"][:2] == [f"{ORIGIN}/workspaces", f"{ORIGIN}/workspaces/w/items"]
             assert len(row["requests"]) == len(row["scopes"]) == 3
     assert expectations == frozen, "source expectations were mutated during native execution"
-    print("PASS 60 exact native job read comparisons; 4 explicit API gaps fail nonzero")
+    print("PASS 64 exact native job read comparisons; 4 explicit API gaps fail nonzero")
 
 
 if __name__ == "__main__":

@@ -3,14 +3,21 @@
 
 //! Runtime-neutral read-only job composition shared by native and offline hosts.
 
-use crate::{errors, parser::JobReadCommand, session::{ReadSession, snapshot::Snapshot}};
-use fabric_cli_jobs::{Confirmation, JobConfig, JobEvent, JobHost, JobUi, NoFiles};
+use crate::{
+    errors,
+    parser::JobReadCommand,
+    session::{ReadSession, snapshot::Snapshot},
+};
+use fabric_cli_jobs::{
+    Confirmation, JobCommandError, JobConfig, JobEvent, JobHost, JobUi, NoFiles,
+};
 use fabric_cli_output::{
     CommandError, OutputEnvelope,
     text::{self, OutputFormat, Presentation, TextOptions, TextPlan},
 };
 use fabric_sdk_jobs::{
-    JobClient, JobExecutionError, JobExecutor, JobFuture, JobLimits, JobRequest, JobResponse,
+    JobClient, JobExecutionError, JobExecutor, JobFuture, JobLimits, JobRequest, JobRequestHeaders,
+    JobResponse, SharedJobOperations,
 };
 use std::{future::Future, pin::pin, sync::Arc};
 
@@ -47,13 +54,13 @@ impl JobReadSession<'_, '_> {
                 || reads.sdk.selection().audience() != fabric_sdk::Audience::Fabric
                 || !reads.current_path.starts_with('/')
             {
-                return Err(errors::error("InvalidInput", "Invalid selected read context"));
+                return Err(JobCommandError::from(errors::error(
+                    "InvalidInput",
+                    "Invalid selected read context",
+                )));
             }
-            if command.skill.is_some() {
-                return Err(errors::unsupported(
-                    "Fabric skill headers require coordinated host header plumbing",
-                ));
-            }
+            JobRequestHeaders::with_skill(command.skill.as_deref())
+                .map_err(|error| errors::error("InvalidInput", error.to_string()))?;
             let mut snapshot = Snapshot::default();
             let current = snapshot
                 .resolve(reads, &reads.tenant, reads.current_path, cancelled.as_mut())
@@ -67,15 +74,22 @@ impl JobReadSession<'_, '_> {
                     cancelled.as_mut(),
                 )
                 .await?;
+            let jobs: Arc<dyn JobExecutor> = Arc::new(CheckedJobExecutor(Arc::clone(&self.jobs)));
             let sdk = JobClient::new(
                 Arc::clone(reads.sdk.credential()),
                 reads.sdk.selection().clone(),
-                Arc::new(CheckedJobExecutor(Arc::clone(&self.jobs))),
+                Arc::clone(&jobs),
                 JobLimits::default(),
+            );
+            let operations = SharedJobOperations::from_job_executor(
+                Arc::clone(reads.sdk.credential()),
+                reads.sdk.selection().clone(),
+                jobs,
+                fabric_sdk_operations::OperationLimits::default(),
             );
             JobHost {
                 sdk: &sdk,
-                operations: None,
+                operations: Some(&operations),
                 lookup: &snapshot,
                 current,
                 home: reads.home.clone(),
@@ -101,7 +115,12 @@ impl JobReadSession<'_, '_> {
                     output.show_key_value_list,
                 )
             }
-            Ok(None) => return Ok(TextPlan { records: Vec::new(), exit_code: 0 }),
+            Ok(None) => {
+                return Ok(TextPlan {
+                    records: Vec::new(),
+                    exit_code: 0,
+                });
+            }
             Err(error) => (
                 error.envelope(self.reads.timestamp.clone(), Some(family.command_path())),
                 false,
@@ -127,6 +146,10 @@ struct ReadOnlyUi;
 struct CheckedJobExecutor(Arc<dyn JobExecutor>);
 
 impl JobExecutor for CheckedJobExecutor {
+    fn supports_request_headers(&self, headers: &JobRequestHeaders) -> bool {
+        self.0.supports_request_headers(headers)
+    }
+
     fn execute<'a>(
         &'a self,
         request: JobRequest<'a>,
@@ -135,8 +158,8 @@ impl JobExecutor for CheckedJobExecutor {
             let response = self.0.execute(request).await?;
             if response.status == 200 {
                 // Reject values before serde_json can round oversized integer tokens.
-                let json = std::str::from_utf8(&response.body)
-                    .map_err(|_| JobExecutionError::Failed)?;
+                let json =
+                    std::str::from_utf8(&response.body).map_err(|_| JobExecutionError::Failed)?;
                 fabric_cli_output::parse_data(json).map_err(|_| JobExecutionError::Failed)?;
             }
             Ok(response)

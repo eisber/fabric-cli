@@ -26,7 +26,7 @@ pub struct JobReadCommand {
     pub schedule: bool,
     /// Explicit output selection; JSON is the native preview default.
     pub output_format: Option<String>,
-    /// Hidden source option, explicitly unsupported by the released handler.
+    /// Hidden source skill selection, forwarded through the released job header API.
     pub skill: Option<String>,
 }
 
@@ -68,8 +68,8 @@ pub(super) fn register() -> Command {
 }
 
 pub(super) fn parse(group: &ArgMatches) -> Result<JobReadCommand, clap::Error> {
-    let command = fabric_cli_jobs::command_from_matches(group)
-        .map_err(|_| super::invalid_arguments())?;
+    let command =
+        fabric_cli_jobs::command_from_matches(group).map_err(|_| super::invalid_arguments())?;
     let kind = match command.kind {
         JobKind::List => JobReadKind::List,
         JobKind::Status => JobReadKind::Status,

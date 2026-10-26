@@ -3,7 +3,10 @@
 
 //! Explicit opt-in binary composition. Libraries never read these host inputs.
 
-use fabric_cli::{HostError, parser::{JobReadCommand, ReadCommand}};
+use fabric_cli::{
+    HostError,
+    parser::{JobReadCommand, ReadCommand},
+};
 use serde_json::json;
 use std::{
     io::{self, Write},
@@ -13,7 +16,13 @@ use std::{
 type Failure = (&'static str, String, u8);
 
 #[derive(Clone, Copy)]
-#[cfg_attr(not(windows), allow(dead_code, reason = "The selected host is explicitly unsupported off Windows."))]
+#[cfg_attr(
+    not(windows),
+    allow(
+        dead_code,
+        reason = "The selected host is explicitly unsupported off Windows."
+    )
+)]
 enum NativeCommand<'a> {
     Read(&'a ReadCommand),
     Job(&'a JobReadCommand),
@@ -119,14 +128,14 @@ fn run_selected(
             1,
         ));
     }
-    if let NativeCommand::Job(command) = command
-        && command.skill.is_some()
-    {
-        return Err(failure(
-            "NotSupported",
-            "Fabric skill headers require coordinated host header plumbing.",
-            1,
-        ));
+    if let NativeCommand::Job(command) = command {
+        fabric_sdk_jobs::JobRequestHeaders::with_skill(command.skill.as_deref()).map_err(|_| {
+            failure(
+                "invalid_arguments",
+                "Invalid job request header selection.",
+                2,
+            )
+        })?;
     }
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -257,16 +266,20 @@ async fn execute(
         config: fabric_cli::ReadConfig::default(),
     };
     let result = match command {
-        NativeCommand::Read(command) => session
-            .with_source_operations(&executor)
-            .dispatch(command, std::future::pending())
-            .await,
-        NativeCommand::Job(command) => fabric_cli::jobs::JobReadSession {
-            reads: &session,
-            jobs: Arc::new(fabric_cli_jobs::HttpJobExecutor::new(executor.clone())),
+        NativeCommand::Read(command) => {
+            session
+                .with_source_operations(&executor)
+                .dispatch(command, std::future::pending())
+                .await
         }
-        .dispatch(command, std::future::pending())
-        .await,
+        NativeCommand::Job(command) => {
+            fabric_cli::jobs::JobReadSession {
+                reads: &session,
+                jobs: Arc::new(fabric_cli_jobs::HttpJobExecutor::new(executor.clone())),
+            }
+            .dispatch(command, std::future::pending())
+            .await
+        }
     };
     match result {
         Ok(plan) => Ok(plan),
