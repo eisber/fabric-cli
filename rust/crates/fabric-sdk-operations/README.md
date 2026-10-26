@@ -59,6 +59,18 @@ The source policy was extracted from the Rust baseline
 `cc908ce08617f92601aa2dd68622797ccbcde9e7`, `fabric-sdk/src/notebooks.rs`.
 Generic resource endpoint/prompt/output semantics remain pinned to Python
 `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
+
+The focused resource operation's explicit `with_continuation_token` is passed
+through the existing `FabricOperation::from_resource` adapter unchanged; the
+engine does not acquire or remember command-local read query state. Ordinary
+operations remain stateless and polled operation/result URLs are not decorated.
+`examples/continuation_query.rs` and `tests/continuation_reference.py` compare
+actual domain PATCH/unassign POST and GET/DELETE URLs/body/status against the
+original `do_request`, including opaque tokens and query overwrite/encoding.
+External Rust consumers also verify cancellation, audience, response/request
+bounds, headerless acceptance, no poll leakage and no fresh-command inheritance.
+The production operation engine/ARM behavior is unchanged.
+
 The development-only `python_operation` example compares actual original
 `_handle_fab_long_running_op`, `_poll_operation`, `_fetch_operation_result` and
 `get_polling_interval` bodies, using synthetic network/time only. It neither

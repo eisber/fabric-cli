@@ -143,6 +143,61 @@ impl ResourceOperation {
         Ok(self)
     }
 
+    /// Explicitly attach one opaque source-command continuation token.
+    ///
+    /// This opt-in builder carries no state between operations. The caller must
+    /// supply the actual last-dispatched token when reproducing a command that
+    /// reuses Python's `args.request_params`; an unconsumed next-page token is not
+    /// evidence of such a request. An empty token does not override an existing
+    /// token or add one; existing query keys still use source encoding/overwrite.
+    ///
+    /// Existing query keys use dictionary overwrite semantics: the last value
+    /// wins at the first key position, and `continuationToken` is replaced there
+    /// or appended if absent. The shared URL query serializer is adjusted to
+    /// Python `urlencode` spelling (space `+`, star `%2A`, tilde `~`). Supply the
+    /// decoded opaque token, not an already-encoded query fragment.
+    ///
+    /// # Errors
+    /// Rejects control-bearing tokens before any credential or request work.
+    /// Route, method, JSON body and completion policy remain unchanged.
+    pub fn with_continuation_token(self, token: &str) -> Result<Self, ResourceError> {
+        if token.chars().any(char::is_control) {
+            return Err(ResourceError::input());
+        }
+        self.with_source_query("continuationToken", (!token.is_empty()).then_some(token))
+    }
+
+    fn with_source_query(mut self, name: &str, value: Option<&str>) -> Result<Self, ResourceError> {
+        let mut url = Url::parse(&format!("https://api.fabric.microsoft.com{}", self.path))
+            .map_err(|_| ResourceError::input())?;
+        let mut query = Vec::<(String, String)>::new();
+        for (key, previous) in url.query_pairs() {
+            if let Some((_, old)) = query.iter_mut().find(|(existing, _)| existing == &key) {
+                *old = previous.into_owned();
+            } else {
+                query.push((key.into_owned(), previous.into_owned()));
+            }
+        }
+        if let Some(value) = value {
+            if let Some((_, old)) = query.iter_mut().find(|(key, _)| key == name) {
+                value.clone_into(old);
+            } else {
+                query.push((name.into(), value.into()));
+            }
+        }
+        if query.is_empty() {
+            return Ok(self);
+        }
+        url.query_pairs_mut().clear().extend_pairs(&query);
+        let encoded = url
+            .query()
+            .ok_or_else(ResourceError::input)?
+            .replace('*', "%2A")
+            .replace("%7E", "~");
+        self.path = format!("{}?{encoded}", url.path());
+        Ok(self)
+    }
+
     /// HTTP method.
     pub const fn method(&self) -> ResourceMethod {
         self.method
@@ -167,12 +222,11 @@ impl ResourceOperation {
     ///
     /// # Errors
     /// Rejects applying this option to another method.
-    pub fn with_hard_delete(mut self) -> Result<Self, ResourceError> {
+    pub fn with_hard_delete(self) -> Result<Self, ResourceError> {
         if self.method != ResourceMethod::Delete {
             return Err(ResourceError::input());
         }
-        self.path.push_str("?hardDelete=true");
-        Ok(self)
+        self.with_source_query("hardDelete", Some("true"))
     }
 }
 

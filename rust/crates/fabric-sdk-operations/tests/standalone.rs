@@ -29,6 +29,8 @@ use std::{
     time::Duration,
 };
 
+const ROOT: &str = "https://api.fabric.microsoft.com";
+
 #[derive(Debug, Default)]
 struct Credential(AtomicUsize);
 #[async_trait]
@@ -51,6 +53,7 @@ struct Executor {
     responses: Arc<Mutex<VecDeque<OperationResponse>>>,
     methods: Arc<Mutex<Vec<ResourceMethod>>>,
     urls: Arc<Mutex<Vec<String>>>,
+    bodies: Arc<Mutex<Vec<Vec<u8>>>>,
 }
 impl OperationExecutor for Executor {
     fn execute<'a>(
@@ -60,6 +63,7 @@ impl OperationExecutor for Executor {
     {
         self.methods.lock().unwrap().push(request.method());
         self.urls.lock().unwrap().push(request.url().to_string());
+        self.bodies.lock().unwrap().push(request.body().to_vec());
         let response = self
             .responses
             .lock()
@@ -85,6 +89,189 @@ fn response(status: u16, body: &str) -> OperationResponse {
         status,
         body: body.as_bytes().into(),
         headers: BTreeMap::new(),
+    }
+}
+
+#[tokio::test]
+async fn explicit_continuation_reaches_domain_mutations_without_state_in_fresh_operations() {
+    for (method, action, body) in [
+        (ResourceMethod::Patch, "", json!({"displayName":"Updated"})),
+        (
+            ResourceMethod::Post,
+            "unassignWorkspaces",
+            json!({"workspacesIds":["workspace"]}),
+        ),
+    ] {
+        let credential = Credential::default();
+        let selection = selection();
+        let executor = Executor::default();
+        for token in [Some("*~ +%literal/日"), None] {
+            executor
+                .responses
+                .lock()
+                .unwrap()
+                .push_back(response(202, ""));
+            let mut segments = vec!["admin", "domains", "domain"];
+            if !action.is_empty() {
+                segments.push(action);
+            }
+            let mut operation = ResourceOperation::new(
+                method,
+                &segments,
+                Some(body.clone()),
+                CompletionPolicy::PythonSynchronous,
+            )
+            .unwrap();
+            if let Some(token) = token {
+                operation = operation.with_continuation_token(token).unwrap();
+            }
+            let mut session = OperationSession::new(
+                &credential,
+                &selection,
+                executor.clone(),
+                OperationLimits::default(),
+                pending(),
+            );
+            assert_eq!(
+                ResourceOperations::execute(&mut session, operation)
+                    .await
+                    .unwrap(),
+                ResourceOutcome::Accepted { operation_id: None }
+            );
+        }
+        let expected_route = format!(
+            "{ROOT}/v1/admin/domains/domain{}",
+            if action.is_empty() {
+                String::new()
+            } else {
+                format!("/{action}")
+            }
+        );
+        assert_eq!(
+            *executor.urls.lock().unwrap(),
+            [
+                format!("{expected_route}?continuationToken=%2A~+%2B%25literal%2F%E6%97%A5"),
+                expected_route,
+            ]
+        );
+        assert_eq!(*executor.methods.lock().unwrap(), [method, method]);
+        assert_eq!(
+            *executor.bodies.lock().unwrap(),
+            [
+                serde_json::to_vec(&body).unwrap(),
+                serde_json::to_vec(&body).unwrap()
+            ]
+        );
+        assert_eq!(credential.0.load(Ordering::SeqCst), 2);
+    }
+}
+
+#[tokio::test]
+async fn explicit_token_does_not_change_cancellation_audience_or_response_limits() {
+    for (audience, cancel, limit, expected) in [
+        (Audience::Fabric, true, 1024, OperationErrorKind::Cancelled),
+        (
+            Audience::OneLake,
+            false,
+            1024,
+            OperationErrorKind::InvalidAudience,
+        ),
+        (Audience::Fabric, false, 1, OperationErrorKind::Limit),
+    ] {
+        let credential = Credential::default();
+        let selection = CredentialSelection::new("offline", "tenant", audience).unwrap();
+        let executor = Executor::default();
+        executor
+            .responses
+            .lock()
+            .unwrap()
+            .push_back(response(200, "{}"));
+        let cancellation: Pin<Box<dyn Future<Output = ()> + Send>> = if cancel {
+            Box::pin(std::future::ready(()))
+        } else {
+            Box::pin(pending())
+        };
+        let mut session = OperationSession::new(
+            &credential,
+            &selection,
+            executor.clone(),
+            OperationLimits {
+                max_response_bytes: std::num::NonZeroUsize::new(limit).unwrap(),
+                ..OperationLimits::default()
+            },
+            cancellation,
+        );
+        let operation = ResourceOperation::new(
+            ResourceMethod::Patch,
+            &["admin", "domains", "domain"],
+            Some(json!({})),
+            CompletionPolicy::PythonSynchronous,
+        )
+        .unwrap()
+        .with_continuation_token("opaque")
+        .unwrap();
+        let error = session
+            .execute(FabricOperation::from_resource(&operation).unwrap())
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, expected);
+        let dispatched = usize::from(!cancel && audience == Audience::Fabric);
+        assert_eq!(executor.urls.lock().unwrap().len(), dispatched);
+        assert_eq!(credential.0.load(Ordering::SeqCst), dispatched);
+        assert_eq!(error.mutation_may_have_occurred, dispatched == 1);
+    }
+}
+
+#[tokio::test]
+async fn continuation_is_not_copied_to_poll_requests_and_request_budget_still_bounds_reconciliation()
+ {
+    for maximum in [1, 2] {
+        let credential = Credential::default();
+        let selection = selection();
+        let executor = Executor::default();
+        executor
+            .responses
+            .lock()
+            .unwrap()
+            .extend([accepted(), response(200, r#"{"status":"Succeeded"}"#)]);
+        let mut session = OperationSession::new(
+            &credential,
+            &selection,
+            executor.clone(),
+            OperationLimits {
+                max_requests: std::num::NonZeroUsize::new(maximum).unwrap(),
+                ..OperationLimits::default()
+            },
+            pending(),
+        );
+        let operation = ResourceOperation::new(
+            ResourceMethod::Post,
+            &["admin", "domains", "domain", "unassignWorkspaces"],
+            Some(json!({"workspacesIds":["workspace"]})),
+            CompletionPolicy::PythonSynchronous,
+        )
+        .unwrap()
+        .with_continuation_token("source-read-token")
+        .unwrap();
+        let result = session
+            .execute(FabricOperation::from_resource(&operation).unwrap())
+            .await;
+        if maximum == 1 {
+            let error = result.unwrap_err();
+            assert_eq!(error.kind, OperationErrorKind::Limit);
+            assert!(error.mutation_may_have_occurred);
+            assert_eq!(
+                error.operation_id.as_deref(),
+                Some("22222222-2222-2222-2222-222222222222")
+            );
+        } else {
+            assert_eq!(result.unwrap().status, 200);
+            assert_eq!(
+                executor.urls.lock().unwrap()[1],
+                format!("{ROOT}/v1/operations/22222222-2222-2222-2222-222222222222")
+            );
+        }
+        assert_eq!(executor.methods.lock().unwrap().len(), maximum);
     }
 }
 
