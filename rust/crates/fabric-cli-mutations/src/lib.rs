@@ -37,6 +37,7 @@ pub use onelake_write::{
     OneLakeResourceKind, OneLakeWriteError, OneLakeWriteHost, OneLakeWriteResult,
     OneLakeWriteTarget,
 };
+pub use set::update_fabric_element;
 pub use shortcuts::{
     OneLakeShortcutHost, ShortcutCreateDestination, ShortcutCreateOptions, ShortcutUpdateError,
     ShortcutUpdateResult,
