@@ -36,7 +36,7 @@ pub use moves::FolderMoveResult;
 pub use onelake_read::{OneLakeGetResult, OneLakeReadError, OneLakeReadHost, OneLakeReadResult};
 pub use onelake_write::{
     OneLakeResourceKind, OneLakeWriteError, OneLakeWriteHost, OneLakeWriteResult,
-    OneLakeWriteTarget,
+    OneLakeWriteTarget, file_destination, validate_copy_destination,
 };
 pub use removal::{
     RemovalCatalog, RemovalError, RemovalHost, RemovalResult, RemovalSort, RemovalUi,

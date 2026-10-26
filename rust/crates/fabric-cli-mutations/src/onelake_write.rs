@@ -407,6 +407,33 @@ fn destination(
     }
 }
 
+/// Validate the source `cp` destination policy without dispatching or prompting.
+///
+/// Filesystem callers must invoke this **before** testing whether the local
+/// source is a directory/file. This shares the existing upload/copy policy;
+/// it does not read local files, discover context or call a storage executor.
+///
+/// # Errors
+/// Returns the existing item-type/root diagnostic for a non-writable target.
+pub fn validate_copy_destination(target: &OneLakeWriteTarget) -> Result<(), OneLakeWriteError> {
+    writable(target, false)
+}
+
+/// Resolve the source file name against a previously validated copy destination.
+///
+/// Call after the local source directory/file checks but before reading bytes.
+/// Existing files/unresolved paths are retained; folders/shortcuts gain the
+/// actual source name. No read, upload, empty-body probe or request is performed.
+///
+/// # Errors
+/// Preserves the existing destination-kind and bounded path/name failures.
+pub fn file_destination(
+    target: &OneLakeWriteTarget,
+    source_name: &str,
+) -> Result<OneLakeWriteTarget, OneLakeWriteError> {
+    destination(target, source_name)
+}
+
 fn writable(target: &OneLakeWriteTarget, mkdir: bool) -> Result<(), OneLakeWriteError> {
     let supported: &[&str] = match target.item_type.as_str() {
         "Lakehouse" | "Warehouse" | "SQLDatabase" | "MirroredDatabase" | "MirroredWarehouse" => {
