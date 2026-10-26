@@ -11,6 +11,11 @@ selection and token acquisition, cancellation, uncertain mutation evidence,
 validated operation/result links and terminal-state reconciliation. Callers supply
 an Azure `TokenCredential`, `CredentialSelection`, `OperationExecutor`, limits and
 cancellation future. The request's token is never discovered or persisted.
+`check_cancelled().await` checks that same cancellation signal between
+caller-owned network/filesystem phases. A pending signal returns immediately;
+ready cancellation stays latched without polling its completed future again.
+It preserves operation ID, mutation uncertainty and request budgets, performs no
+credential or executor work, and does not cancel or roll back a remote operation.
 For SDKs that have already dispatched a request, a fresh session's
 `reconcile_accepted(response, completion)` accepts that actual 202 and runs the
 same bounded GET polling/result policy without issuing another mutation. The

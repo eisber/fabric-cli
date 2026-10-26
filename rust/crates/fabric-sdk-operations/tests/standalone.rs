@@ -20,12 +20,13 @@ use fabric_sdk_workspaces::mutations::{
 use serde_json::json;
 use std::{
     collections::{BTreeMap, VecDeque},
-    future::{Future, pending},
+    future::{Future, pending, poll_fn},
     pin::Pin,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
+    task::Poll,
     time::Duration,
 };
 
@@ -90,6 +91,194 @@ fn response(status: u16, body: &str) -> OperationResponse {
         body: body.as_bytes().into(),
         headers: BTreeMap::new(),
     }
+}
+
+#[tokio::test]
+async fn cancellation_checkpoint_pending_signal_preserves_the_request_budget() {
+    let credential = Credential::default();
+    let selection = selection();
+    let executor = Executor::default();
+    executor
+        .responses
+        .lock()
+        .unwrap()
+        .push_back(response(200, "{}"));
+    let mut session = OperationSession::new(
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits {
+            max_requests: std::num::NonZeroUsize::new(1).unwrap(),
+            ..OperationLimits::default()
+        },
+        pending(),
+    );
+    session.check_cancelled().await.unwrap();
+    session.check_cancelled().await.unwrap();
+    assert_eq!(credential.0.load(Ordering::SeqCst), 0);
+    assert!(executor.methods.lock().unwrap().is_empty());
+    let operation = || {
+        FabricOperation::new(
+            ResourceMethod::Get,
+            "/v1/workspaces/ws",
+            Vec::new(),
+            CompletionPolicy::PythonSynchronous,
+        )
+        .unwrap()
+    };
+    assert_eq!(session.execute(operation()).await.unwrap().status, 200);
+    session.check_cancelled().await.unwrap();
+    let error = session.execute(operation()).await.unwrap_err();
+    assert_eq!(error.kind, OperationErrorKind::Limit);
+    assert!(!error.mutation_may_have_occurred);
+    assert_eq!(error.operation_id, None);
+    assert_eq!(credential.0.load(Ordering::SeqCst), 1);
+    assert_eq!(*executor.methods.lock().unwrap(), [ResourceMethod::Get]);
+}
+
+#[tokio::test]
+async fn cancellation_checkpoint_ready_signal_is_latched_without_credentials_or_dispatch() {
+    let credential = Credential::default();
+    let selection = selection();
+    let executor = Executor::default();
+    let polls = AtomicUsize::new(0);
+    let cancelled = poll_fn(|_| {
+        assert_eq!(polls.fetch_add(1, Ordering::SeqCst), 0);
+        Poll::Ready(())
+    });
+    let mut session = OperationSession::new(
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits::default(),
+        cancelled,
+    );
+    for _ in 0..2 {
+        let error = session.check_cancelled().await.unwrap_err();
+        assert_eq!(error.kind, OperationErrorKind::Cancelled);
+        assert_eq!(error.operation_id, None);
+        assert!(!error.mutation_may_have_occurred);
+    }
+    let error = session
+        .execute(
+            FabricOperation::new(
+                ResourceMethod::Delete,
+                "/v1/workspaces/ws",
+                Vec::new(),
+                CompletionPolicy::ReturnAccepted,
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, OperationErrorKind::Cancelled);
+    assert!(!error.mutation_may_have_occurred);
+    assert_eq!(polls.load(Ordering::SeqCst), 1);
+    assert_eq!(credential.0.load(Ordering::SeqCst), 0);
+    assert!(executor.methods.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn cancellation_checkpoint_retains_accepted_id_and_uncertainty_without_repolling() {
+    let credential = Credential::default();
+    let selection = selection();
+    let executor = Executor::default();
+    executor.responses.lock().unwrap().push_back(accepted());
+    let ready = AtomicBool::new(false);
+    let completions = AtomicUsize::new(0);
+    let cancelled = poll_fn(|_| {
+        if ready.load(Ordering::SeqCst) {
+            assert_eq!(completions.fetch_add(1, Ordering::SeqCst), 0);
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    });
+    let mut session = OperationSession::new(
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits::default(),
+        cancelled,
+    );
+    let response = session
+        .execute(
+            FabricOperation::new(
+                ResourceMethod::Post,
+                "/v1/workspaces",
+                br#"{"displayName":"Created"}"#.to_vec(),
+                CompletionPolicy::ReturnAccepted,
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status, 202);
+    session.check_cancelled().await.unwrap();
+    let before = session.evidence(OperationErrorKind::Cancelled);
+    ready.store(true, Ordering::SeqCst);
+    for _ in 0..2 {
+        let error = session.check_cancelled().await.unwrap_err();
+        assert_eq!(error, before);
+        assert_eq!(
+            error.operation_id.as_deref(),
+            Some("22222222-2222-2222-2222-222222222222")
+        );
+        assert!(error.mutation_may_have_occurred);
+    }
+    assert_eq!(completions.load(Ordering::SeqCst), 1);
+    assert_eq!(credential.0.load(Ordering::SeqCst), 1);
+    assert_eq!(*executor.methods.lock().unwrap(), [ResourceMethod::Post]);
+}
+
+#[tokio::test]
+async fn cancellation_checkpoint_future_is_send_and_get_cancellation_does_not_mark_mutation() {
+    fn assert_send<T: Send>(value: T) -> T {
+        value
+    }
+    let credential = Credential::default();
+    let selection = selection();
+    let executor = Executor::default();
+    executor
+        .responses
+        .lock()
+        .unwrap()
+        .push_back(response(200, "{}"));
+    let ready = AtomicBool::new(false);
+    let cancelled = poll_fn(|_| {
+        if ready.load(Ordering::SeqCst) {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    });
+    let mut session = OperationSession::new(
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits::default(),
+        cancelled,
+    );
+    assert_send(session.check_cancelled()).await.unwrap();
+    session
+        .execute(
+            FabricOperation::new(
+                ResourceMethod::Get,
+                "/v1/workspaces/ws",
+                Vec::new(),
+                CompletionPolicy::PythonSynchronous,
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    ready.store(true, Ordering::SeqCst);
+    let error = assert_send(session.check_cancelled()).await.unwrap_err();
+    assert_eq!(error.kind, OperationErrorKind::Cancelled);
+    assert!(!error.mutation_may_have_occurred);
+    assert_eq!(error.operation_id, None);
+    assert_eq!(credential.0.load(Ordering::SeqCst), 1);
+    assert_eq!(*executor.methods.lock().unwrap(), [ResourceMethod::Get]);
 }
 
 #[tokio::test]

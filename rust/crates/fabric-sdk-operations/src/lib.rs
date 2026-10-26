@@ -351,6 +351,24 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         &self.warnings
     }
 
+    /// Check the existing cancellation signal between caller-owned phases.
+    ///
+    /// A pending signal returns immediately. Observed cancellation stays latched,
+    /// so its completed future is never polled again. This performs no I/O or
+    /// credential work and does not change request budgets or mutation evidence.
+    ///
+    /// # Errors
+    /// Returns cancellation with the session's operation ID and uncertainty.
+    pub async fn check_cancelled(&mut self) -> Result<(), OperationError> {
+        Self::run(
+            &mut self.cancelled,
+            &mut self.cancelled_observed,
+            std::future::ready(()),
+        )
+        .await
+        .map_err(|kind| self.evidence(kind))
+    }
+
     /// Execute a validated operation and optionally reconcile its accepted state.
     ///
     /// # Errors
