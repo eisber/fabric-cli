@@ -44,6 +44,8 @@ filesystem work on an appropriate caller worker; the library does not create one
 | `export_item` | `fab_fs_export_item.export_single_item` | Explicit prior confirmation, context item directory name, no extra overwrite prompt, ordered writes with exact failure progress |
 | `copy_payload` | `fab_fs_cp_item._copy_item_with_definition` | Raw base64 definition, ordered type/name/definition/folder fields, null folder retained, truthy description appended |
 | `decode_set_definition`, `ensure_notebook_dependency`, `encode_set_definition` | `fab_cmd_set_utils._decode_payload`, `ensure_notebook_dependency`, `_encode_payload` | SET JSON-decodes every part, does not clean Notebook outputs, initializes dependencies before caller replacement, exact default JSON/base64 encoding |
+| `load_import_definition` | `fab_cmd_import_utils._build_definition`, `_encode_file_to_base64` | Injected filesystem, sorted root files before recursive sorted directories, raw bytes, full-path cache exclusion after Report validation |
+| `prepare_import`, `PreparedImport::execute` | `fab_fs_import_item.import_single_item`, `_import_create_item`, `_import_update_item` | Explicit caller-resolved target/confirmation, ordered create versus definition-only update body, shared operation policy, actual result ID |
 
 SET's restricted explicit-path mutation and friendly-name aliases remain the
 resource caller's responsibility. They are not JMESPath projection or deployment
@@ -58,6 +60,21 @@ and SparkJobDefinition; export and SET use type-specific source defaults.
 Discovery, same-workspace `_copy` naming, item-type support, folder collisions,
 overwrite confirmation, actual create/update/delete, and cache reconciliation
 are not replaced by the payload builder.
+
+Import preparation is synchronous and injected; it must run on a caller worker
+appropriate for local file reads before asynchronous mutation. It does not
+reinterpret import as CICD Notebook deployment: no `.platform` requirement,
+Notebook cell cleanup, newline normalization or text transform is added.
+`DefinitionImportFileSystem` supplies bounded entries/read operations.
+`LocalDefinitionFileSystem` implements both import and export adapters for
+stable caller-owned directories. Input and encoded request bytes are separately
+checked against finite bounds. Source `cache.abf` substring exclusions are
+reported, including full-root-path matches; `definition.pbir` byPath validation
+still runs before exclusion. Empty directories retain an empty parts array.
+Create sends type/folder/name/definition in source order; update sends only
+the definition wrapper. Prepared execution consumes the input and never replays
+an uncertain mutation. Environment import remains explicitly unsupported before
+reads or mutation until readiness/publish reconciliation is ported.
 
 ## Failure and safety boundaries
 
@@ -120,6 +137,18 @@ definition permission fallback, accepted/result handling, file bounds, partial
 writes, cancellation and overwrite/path failures. This is offline library
 evidence, not proof of front-door CLI registration, live Fabric, Linux or macOS.
 
+The additive `definition_import_source.json` has seven further actual pinned
+source cases, captured before Rust import execution. Its reference script
+executes `_build_definition` and `_encode_file_to_base64` on synthetic local
+directories; no previous expected output was regenerated. The low-level fixture
+format is already resolved, while command preparation separately resolves the
+user's item-type format selector. Gate-v2 `import-receipt-2.json` completed at
+13:13Z on October 26: all 31 definition/import consumers, 24 unchanged Notebook
+consumers, one compiled deployment doctest, strict targeted Clippy, ten workspace
+architecture checks and formatting passed. `import-receipt-1.json` retains the
+earlier pre-validation refusal for unavailable Python process metadata. The
+refused process exited; no foreign process was killed or guard bypassed.
+
 ## Remaining branch matrix
 
 | Surface | Implemented bounded boundary | Still required for full command parity |
@@ -127,7 +156,7 @@ evidence, not proof of front-door CLI registration, live Fabric, Linux or macOS.
 | Single export | Generic item metadata/definition read, ordered local parts, first-part Notebook cleanup | Full command support dispatch, interactive selection/output/cache integration, remote Lakehouse destination, permissive/error-preserving decode branches |
 | Workspace export | Reusable single-item export | Complete discovery, config sorting versus execution order, source selection/confirmation/count/error behavior |
 | Bulk export | No new completed implementation in this slice | Recursive folder/workspace discovery, bulk request/index ownership, parent-folder stripping, binding preservation, remote storage and partial outcomes |
-| Import | Existing native single-Notebook deployment remains unchanged | General source file traversal/cache exclusion/Report checks, create versus definition-only update, prompts/cache outcomes, Environment readiness/publish lifecycle |
+| Import | Injected deterministic local traversal/cache exclusion/Report checks, create versus definition-only update with actual shared HTTP/LRO/result consumers; existing Notebook deployment unchanged | Full command support/context dispatch, prompt/decline/cache outcomes, Environment readiness/publish lifecycle, remote input error presentation |
 | SET | Raw read plus exact decoded/base64/request-body codec | Caller query/friendly aliases, complete update orchestration and command output |
 | Copy/move | Raw definition payload contract | Resource-owner discovery/confirm/collision/create/update/delete/cache algorithms and uncertain-mutation handling |
 | Deploy | Existing native single-Notebook config/transforms/publish path remains unchanged | Full pinned CICD config/YAML/parameters/types/dependencies/reconciliation/bulk/unpublish and CLI wrapper cleanup |

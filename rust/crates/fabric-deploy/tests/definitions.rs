@@ -13,10 +13,12 @@ use azure_core::{
 use base64::{Engine, engine::general_purpose::STANDARD};
 use fabric_core::{Audience, CredentialSelection};
 use fabric_deploy::definitions::{
-    DefinitionErrorKind as Kind, DefinitionFile, DefinitionFileSystem, DefinitionLimits,
-    DefinitionRead, DefinitionTarget, LocalDefinitionFileSystem, copy_payload, decode_export_files,
+    DefinitionEntry, DefinitionErrorKind as Kind, DefinitionFile, DefinitionFileSystem,
+    DefinitionImportFileSystem, DefinitionLimits, DefinitionRead, DefinitionTarget, ImportAction,
+    ImportTarget, LocalDefinitionFileSystem, copy_payload, decode_export_files,
     decode_set_definition, encode_set_definition, ensure_notebook_dependency, export_item,
-    read_copy_definition, read_definition, read_item_definition, resolve_format,
+    load_import_definition, prepare_import, read_copy_definition, read_definition,
+    read_item_definition, resolve_format,
 };
 use fabric_sdk_http::{
     ExecutionError, ExecutionFuture, ExecutionOptions, ExecutionTimer, HttpExecutor,
@@ -995,4 +997,387 @@ fn repeated_exact_part_path_preserves_source_overwrite_order_but_parent_case_ali
             .kind,
         Kind::Collision
     ));
+}
+
+fn import_target(item_id: Option<&str>) -> ImportTarget<'_> {
+    ImportTarget {
+        workspace_id: WORKSPACE,
+        item_id,
+        item_type: "Notebook",
+        display_name: "Synthetic",
+        folder_id: None,
+    }
+}
+
+#[test]
+fn actual_pinned_import_cases_preserve_file_order_binary_newlines_report_checks_and_cache_exclusion()
+ {
+    let fixture: Value =
+        serde_json::from_str(include_str!("definition_import_source.json")).unwrap();
+    assert_eq!(
+        fixture["source"],
+        "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4"
+    );
+    assert_eq!(fixture["cases"].as_array().unwrap().len(), 7);
+    for case in fixture["cases"].as_array().unwrap() {
+        let directory = Directory::new();
+        for file in case["files"].as_array().unwrap() {
+            let path = directory.0.join(file["path"].as_str().unwrap());
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(
+                path,
+                STANDARD.decode(file["bytes"].as_str().unwrap()).unwrap(),
+            )
+            .unwrap();
+        }
+        let mut filesystem = LocalDefinitionFileSystem::new(DefinitionLimits::default());
+        let result = load_import_definition(
+            &mut filesystem,
+            &directory.0,
+            case["format"].as_str(),
+            DefinitionLimits::default(),
+        );
+        if case.get("error").is_some() {
+            assert!(
+                matches!(result.unwrap_err().kind, Kind::Unsupported(_)),
+                "{}",
+                case["name"]
+            );
+        } else {
+            let result = result.unwrap();
+            assert_eq!(result.definition, case["definition"], "{}", case["name"]);
+            assert_eq!(
+                fabric_core_json::json_dumps(&json!({"definition":result.definition})),
+                case["update_body"].as_str().unwrap(),
+                "{}",
+                case["name"]
+            );
+            if case["name"] == "ordered" {
+                assert_eq!(result.excluded_paths, ["cache.abf", "sub-a/cache.abf.copy"]);
+            }
+            if case["name"] == "notebook-format" {
+                let prepared = prepare_import(
+                    &mut filesystem,
+                    &directory.0,
+                    import_target(None),
+                    Some(".ipynb"),
+                    true,
+                    DefinitionLimits::default(),
+                )
+                .unwrap();
+                assert_eq!(
+                    prepared.body(),
+                    case["create_body"].as_str().unwrap().as_bytes()
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn local_import_create_and_definition_only_update_use_actual_sdk_http_and_exact_bodies() {
+    let directory = Directory::new();
+    fs::write(directory.0.join("notebook.ipynb"), b"{\"cells\":[]}\r\n").unwrap();
+    let mut filesystem = LocalDefinitionFileSystem::new(DefinitionLimits::default());
+    for existing in [None, Some(ITEM)] {
+        let prepared = prepare_import(
+            &mut filesystem,
+            &directory.0,
+            import_target(existing),
+            None,
+            true,
+            DefinitionLimits::default(),
+        )
+        .unwrap();
+        let expected = prepared.body().to_vec();
+        let harness = Harness::new([reply(
+            if existing.is_some() { 204 } else { 201 },
+            if existing.is_some() {
+                ""
+            } else {
+                r#"{"id":"22222222-2222-2222-2222-222222222222"}"#
+            },
+            &[],
+        )]);
+        let result = prepared
+            .execute(&mut harness.session(pending()))
+            .await
+            .unwrap();
+        assert_eq!(result.item_id, ITEM);
+        assert_eq!(
+            result.action,
+            if existing.is_some() {
+                ImportAction::Update
+            } else {
+                ImportAction::Create
+            }
+        );
+        let requests = harness.http.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method(), Method::Post);
+        assert_eq!(Bytes::from(requests[0].body()).as_ref(), expected);
+        let body: Value = serde_json::from_slice(&expected).unwrap();
+        assert_eq!(body["definition"]["format"], "ipynb");
+        let path = if existing.is_some() {
+            assert_eq!(body.as_object().unwrap().len(), 1);
+            format!("/v1/workspaces/{WORKSPACE}/items/{ITEM}/updateDefinition")
+        } else {
+            assert_eq!(
+                body.as_object()
+                    .unwrap()
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+                ["type", "folderId", "displayName", "definition"]
+            );
+            assert_eq!(body["folderId"], Value::Null);
+            format!("/v1/workspaces/{WORKSPACE}/items")
+        };
+        assert_eq!(requests[0].url().path(), path);
+        assert_eq!(requests[0].url().query(), None);
+    }
+}
+
+#[tokio::test]
+async fn local_import_create_acceptance_retrieves_actual_result_and_never_replays_post() {
+    let directory = Directory::new();
+    fs::write(directory.0.join("part.txt"), b"source").unwrap();
+    let mut filesystem = LocalDefinitionFileSystem::new(DefinitionLimits::default());
+    let prepared = prepare_import(
+        &mut filesystem,
+        &directory.0,
+        import_target(None),
+        None,
+        true,
+        DefinitionLimits::default(),
+    )
+    .unwrap();
+    let location = format!("https://api.fabric.microsoft.com/v1/operations/{OPERATION}");
+    let result_location = format!("{location}/result");
+    let harness = Harness::new([
+        reply(
+            202,
+            "",
+            &[
+                ("Location", &location),
+                ("x-ms-operation-id", OPERATION),
+                ("Retry-After", "0"),
+            ],
+        ),
+        reply(
+            200,
+            r#"{"status":"Succeeded"}"#,
+            &[("Location", &result_location)],
+        ),
+        reply(200, &json!({"id":ITEM}).to_string(), &[]),
+    ]);
+    let result = prepared
+        .execute(&mut harness.session(pending()))
+        .await
+        .unwrap();
+    assert_eq!(result.item_id, ITEM);
+    let requests = harness.http.requests.lock().unwrap();
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.method() == Method::Post)
+            .count(),
+        1
+    );
+    assert_eq!(requests.len(), 3);
+}
+
+struct NoImportReads;
+
+impl DefinitionImportFileSystem for NoImportReads {
+    fn entries(&mut self, _: &Path, _: &str) -> io::Result<Vec<DefinitionEntry>> {
+        panic!("invalid/unsupported preparation must not touch filesystem")
+    }
+    fn read(&mut self, _: &Path, _: &str, _: usize) -> io::Result<Vec<u8>> {
+        panic!("invalid/unsupported preparation must not touch filesystem")
+    }
+}
+
+#[test]
+fn import_confirmation_invalid_target_and_environment_lifecycle_fail_before_file_or_service_work() {
+    let mut filesystem = NoImportReads;
+    assert!(matches!(
+        prepare_import(
+            &mut filesystem,
+            Path::new("unused"),
+            import_target(None),
+            None,
+            false,
+            DefinitionLimits::default()
+        )
+        .unwrap_err()
+        .kind,
+        Kind::ConfirmationRequired
+    ));
+    let target = ImportTarget {
+        item_type: "Environment",
+        ..import_target(None)
+    };
+    assert!(matches!(
+        prepare_import(
+            &mut filesystem,
+            Path::new("unused"),
+            target,
+            None,
+            true,
+            DefinitionLimits::default()
+        )
+        .unwrap_err()
+        .kind,
+        Kind::Unsupported(_)
+    ));
+    let target = ImportTarget {
+        workspace_id: "../escape",
+        ..import_target(None)
+    };
+    assert!(matches!(
+        prepare_import(
+            &mut filesystem,
+            Path::new("unused"),
+            target,
+            None,
+            true,
+            DefinitionLimits::default()
+        )
+        .unwrap_err()
+        .kind,
+        Kind::InvalidInput
+    ));
+    assert!(
+        prepare_import(
+            &mut filesystem,
+            Path::new("unused"),
+            import_target(None),
+            Some("invalid"),
+            true,
+            DefinitionLimits::default()
+        )
+        .is_err()
+    );
+}
+
+#[tokio::test]
+async fn import_cancel_accepted_malformed_and_lost_post_keep_uncertainty_without_retry() {
+    let directory = Directory::new();
+    let mut filesystem = LocalDefinitionFileSystem::new(DefinitionLimits::default());
+    for response in [
+        reply(202, "", &[]),
+        reply(201, "{}", &[]),
+        reply(204, "", &[]),
+        Err(azure_core::Error::with_message(
+            azure_core::error::ErrorKind::Other,
+            "synthetic lost POST",
+        )),
+    ] {
+        let prepared = prepare_import(
+            &mut filesystem,
+            &directory.0,
+            import_target(None),
+            None,
+            true,
+            DefinitionLimits::default(),
+        )
+        .unwrap();
+        let harness = Harness::new([response]);
+        let error = prepared
+            .execute(&mut harness.session(pending()))
+            .await
+            .unwrap_err();
+        let Kind::Operation(operation) = error.kind else {
+            panic!("expected shared operation evidence");
+        };
+        assert!(operation.mutation_may_have_occurred);
+        assert_eq!(harness.http.requests.lock().unwrap().len(), 1);
+    }
+    let prepared = prepare_import(
+        &mut filesystem,
+        &directory.0,
+        import_target(None),
+        None,
+        true,
+        DefinitionLimits::default(),
+    )
+    .unwrap();
+    let harness = Harness::new([]);
+    let error = prepared
+        .execute(&mut harness.session(std::future::ready(())))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error.kind, Kind::Operation(operation) if operation.kind == OperationErrorKind::Cancelled
+        && !operation.mutation_may_have_occurred)
+    );
+    assert_eq!(harness.credential.0.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn import_input_and_request_bounds_are_explicit_and_do_not_ignore_files() {
+    let directory = Directory::new();
+    fs::write(directory.0.join("part.txt"), b"abcd").unwrap();
+    let limits = DefinitionLimits {
+        max_bytes: NonZeroUsize::new(3).unwrap(),
+        ..DefinitionLimits::default()
+    };
+    let mut filesystem = LocalDefinitionFileSystem::new(limits);
+    assert!(load_import_definition(&mut filesystem, &directory.0, None, limits).is_err());
+    let limits = DefinitionLimits {
+        max_bytes: NonZeroUsize::new(100).unwrap(),
+        ..DefinitionLimits::default()
+    };
+    let mut filesystem = LocalDefinitionFileSystem::new(limits);
+    assert!(matches!(
+        prepare_import(
+            &mut filesystem,
+            &directory.0,
+            import_target(None),
+            None,
+            true,
+            limits
+        )
+        .unwrap_err()
+        .kind,
+        Kind::Limit
+    ));
+}
+
+#[tokio::test]
+async fn export_and_prepared_import_futures_are_send_with_caller_owned_file_operations() {
+    fn assert_send<T: Send>(value: T) -> T {
+        value
+    }
+    let raw = definition(&[("a.txt", b"source")]);
+    let harness = Harness::new([reply(200, "{}", &[]), reply(200, &raw.to_string(), &[])]);
+    let mut files = Files::default();
+    assert_send(export_item(
+        &mut harness.session(pending()),
+        &mut files,
+        target("Report"),
+        "Name.Report",
+        Path::new("unused"),
+        None,
+        true,
+        DefinitionLimits::default(),
+    ))
+    .await
+    .unwrap();
+    let directory = Directory::new();
+    let mut filesystem = LocalDefinitionFileSystem::new(DefinitionLimits::default());
+    let prepared = prepare_import(
+        &mut filesystem,
+        &directory.0,
+        import_target(Some(ITEM)),
+        None,
+        true,
+        DefinitionLimits::default(),
+    )
+    .unwrap();
+    let harness = Harness::new([reply(204, "", &[])]);
+    assert_send(prepared.execute(&mut harness.session(pending())))
+        .await
+        .unwrap();
 }

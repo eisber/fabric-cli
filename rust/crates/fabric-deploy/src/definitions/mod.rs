@@ -9,10 +9,16 @@
 //! configuration, credential provider or HTTP/polling implementation lives here.
 
 mod codec;
+mod import;
 mod local;
 mod transfer;
 
 pub use codec::{DefinitionFile, decode_export_files, validate_part_path};
+pub use import::{
+    DefinitionEntry, DefinitionEntryKind, DefinitionImportFileSystem, ImportAction,
+    ImportDefinition, ImportOutcome, ImportTarget, PreparedImport, load_import_definition,
+    prepare_import,
+};
 pub use local::LocalDefinitionFileSystem;
 pub use transfer::{
     copy_payload, decode_set_definition, encode_set_definition, ensure_notebook_dependency,
@@ -63,23 +69,28 @@ pub struct DefinitionTarget<'a> {
 impl DefinitionTarget<'_> {
     fn path(&self) -> Result<String, DefinitionErrorKind> {
         for id in [self.workspace_id, self.item_id] {
-            if id.len() != 36
-                || !id.bytes().enumerate().all(|(index, byte)| {
-                    if matches!(index, 8 | 13 | 18 | 23) {
-                        byte == b'-'
-                    } else {
-                        byte.is_ascii_hexdigit()
-                    }
-                })
-            {
-                return Err(DefinitionErrorKind::InvalidInput);
-            }
+            validate_id(id)?;
         }
         Ok(format!(
             "/v1/workspaces/{}/items/{}",
             self.workspace_id, self.item_id
         ))
     }
+}
+
+fn validate_id(id: &str) -> Result<(), DefinitionErrorKind> {
+    if id.len() != 36
+        || !id.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        })
+    {
+        return Err(DefinitionErrorKind::InvalidInput);
+    }
+    Ok(())
 }
 
 /// Raw ordered metadata merged with the service definition, without export cleanup.
@@ -167,7 +178,7 @@ impl std::error::Error for DefinitionError {}
 /// the current directory/home or grant writes to arbitrary paths. Text bytes are
 /// already encoded with native Python newlines; implementations write bytes
 /// verbatim, replacing ordinary existing files as the source does.
-pub trait DefinitionFileSystem {
+pub trait DefinitionFileSystem: Send {
     /// Validate the existing root and every destination without making changes.
     fn preflight(&mut self, root: &Path, files: &[DefinitionFile]) -> std::io::Result<()>;
     /// Create the item directory, including when the definition has no parts.

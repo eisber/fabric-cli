@@ -15,7 +15,7 @@ use std::{
 /// device paths and portable aliases fail. This does not protect against hostile
 /// concurrent directory replacement; the caller must own the output tree.
 pub struct LocalDefinitionFileSystem {
-    limits: DefinitionLimits,
+    pub(super) limits: DefinitionLimits,
 }
 
 impl LocalDefinitionFileSystem {
@@ -29,7 +29,7 @@ fn invalid() -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, "unsafe definition output path")
 }
 
-fn regular(metadata: &fs::Metadata) -> bool {
+pub(super) fn regular(metadata: &fs::Metadata) -> bool {
     if metadata.file_type().is_symlink() {
         return false;
     }
@@ -43,7 +43,7 @@ fn regular(metadata: &fs::Metadata) -> bool {
     metadata.is_dir() || metadata.is_file()
 }
 
-fn directory_chain(path: &Path) -> io::Result<()> {
+pub(super) fn directory_chain(path: &Path) -> io::Result<()> {
     if !path.is_absolute() {
         return Err(invalid());
     }
