@@ -11,6 +11,40 @@ branch remains intact; references to it in dated evidence are historical.
 
 ## Read-command, query and folder integration
 
+### October 26 resource-library integration candidate
+
+The isolated integration branch
+`dev/marcozo/resource-integration-exact61d-1302851` starts at exact
+`61d77e330be8a13cbd5033713f1f2badcecfce60`. It preserves the inherited
+`8ad4c703bdd6738189f59318a04cab297b6c4381` checkout separately; Python behavior
+and template comparisons remain pinned to
+`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
+
+The candidate applies the twelve released OneLake/resource extensions
+`05d18f2` through `e47e74c`, followed by `6151041`, `c22dd98`, `7690755`,
+`713501b`, `059ce49`, `c441271`, `de2739f`, `4badbaa`, `2269502` and `5596edb`.
+The latter sequence's released evidence-only prerequisite `1545bbe` is retained
+in the `c441271` ledger-context reconciliation. The resulting resource/OneLake
+crates, shared-operation crate and workspace mutation implementation are
+byte-identical to the released `5596edb` files. The existing `ef17b80` shared
+HTTP prerequisite and `2c44a99` definition encoder are not applied twice.
+The single core JSON encoder and its CLI wrapper remain unchanged.
+
+Only local workspace dependencies are added; all 218 previous registry lockfile
+blocks are unchanged. Main, parser, native-read, `ReadSession`, original
+compatibility expectations and Python files are untouched. Newer Python drift
+is excluded, not adopted as a new oracle. Raw embedded templates deliberately
+retain the pinned source bytes, including trailing blank lines.
+
+This is an **unvalidated integration candidate**, not a publication, native CI,
+executable-routing or whole-family completion claim. Local validation attempts
+were refused by the shared heavy-process guard before any checks ran. The
+session handoff retains the exact source-to-integration commit map, receipts
+and bounded validation script; coordinator-controlled host quiescence and a
+fresh successful run are required before release. CI must also exercise the
+new OneLake, creation, removal, SET, preflight and continuation comparisons,
+not only the three historical resource comparison commands.
+
 ### Resource consumers and one shared operation engine
 
 The coordinator reviewed and applied seven released Rust-only commits, in order:
