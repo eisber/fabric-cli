@@ -15,13 +15,18 @@ layer = "identity"
 
 [features]
 default = []
-windows-broker = ["dep:fabric-identity-windows"]
+windows-broker = ["dep:fabric-identity-windows", "dep:azure_core", "dep:async-trait"]
 
 [dependencies]
 fabric-core.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 fabric-identity-windows = { workspace = true, optional = true }
+azure_core = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio.workspace = true
 
 [lints]
 workspace = true

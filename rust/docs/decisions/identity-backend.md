@@ -2,8 +2,10 @@
 
 # Identity backend decision
 
-**Status: unresolved.** Production interactive authentication is blocked;
-workspace scaffolding and direct SDK credential injection are not.
+**Status: production support unresolved.** The owner-approved experimental
+direct-WAM Windows login is implemented behind an explicit feature; it has not
+been validated with a real account or tenant policy. Direct SDK credential
+injection and default offline builds remain independent.
 
 ## Accepted boundary
 
@@ -88,3 +90,39 @@ silently bind an account/tenant, implement local persistence/logout, or launch
 authentication from a test. The original public `interactive_credential`
 continues to return `Unsupported`. Provider-contract and live-policy proof gates
 remain open; no success-shaped login or browser fallback is introduced.
+
+## Experimental direct-WAM login, October 23, 2026
+
+After the owner requested actual login, the missing provider-field reference was
+established from official MSAL.NET **4.30.1**, commit
+`0661b34a41255bfdd7980663572be0544578117e`:
+[AadPlugin](https://github.com/AzureAD/microsoft-authentication-library-for-dotnet/blob/0661b34a41255bfdd7980663572be0544578117e/src/client/Microsoft.Identity.Client/Platforms/Features/WamBroker/AadPlugin.cs),
+[WamAdapters](https://github.com/AzureAD/microsoft-authentication-library-for-dotnet/blob/0661b34a41255bfdd7980663572be0544578117e/src/client/Microsoft.Identity.Client/Platforms/Features/WamBroker/WamAdapters.cs),
+[WebAccountProviderFactory](https://github.com/AzureAD/microsoft-authentication-library-for-dotnet/blob/0661b34a41255bfdd7980663572be0544578117e/src/client/Microsoft.Identity.Client/Platforms/Features/WamBroker/WebAccountProviderFactory.cs)
+and [CoreHelpers](https://github.com/AzureAD/microsoft-authentication-library-for-dotnet/blob/0661b34a41255bfdd7980663572be0544578117e/src/client/Microsoft.Identity.Client/Utils/CoreHelpers.cs).
+These MIT-licensed released sources were inspected on October 23, 2026. They are
+historical official implementation evidence, not a current Microsoft support
+promise for a custom Rust adapter.
+
+The request sets `wam_compat=2.0`, explicit `authority`, `validateAuthority=yes`,
+and `LoginHint`, using the requested `.default` scope plus MSAL's OIDC scopes.
+Interactive requests use the selected-account prompt; silent calls never show
+UI. Response `Authority` must match the explicit public-cloud tenant.
+`TokenExpiresOn` is **seconds since January 1, 1601**, not FILETIME ticks or Unix
+seconds: subtract 11,644,473,600, reject missing/malformed/expired timestamps and
+never invent expiry or inspect access-token JWT claims. Native account ID and
+UPN are checked across all three audiences and subsequent SDK refresh.
+
+`WindowsCredential::login` and the opt-in CLI now execute actual broker calls;
+the original synchronous metadata-only `interactive_credential` remains
+unsupported because it has no explicit client registration or async interaction
+contract. WAM owns secure token persistence. CLI success publishes only
+non-secret metadata after all three acquisitions; no local plaintext cache,
+provider-error text, developer-tool fallback or service call is added.
+`status`/SDK refresh are silent; logout is explicit/app-scoped. Cancellation and
+partial failures do not promise rollback of broker state.
+
+This is runnable experimental Windows code, **not live-validated MFA or CA
+parity**. The supplied client registration's redirects/permissions, current
+provider behavior (including guests/aliases), real expiry fields and policy
+outcomes still require manual acceptance. See [usage](../../README.md#run-an-actual-windows-broker-login).

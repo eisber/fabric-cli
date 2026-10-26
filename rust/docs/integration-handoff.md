@@ -88,6 +88,53 @@ and main-level unexpected-error envelopes remain explicit gates. Account
 approval alone does not authorize live job mutations. See the
 [job compatibility matrix](job-compatibility.md).
 
+### Offline Windows credential forward-port
+
+The identity lane deliberately merged exact
+`a23b4deda07011ea36bb3a635f75266b14b35c80` into its existing
+`bf4479f926d491393657ca923b656e1beec456d9` credential implementation, without
+resetting either history or adopting the moving shared head. The current read
+parser/entry point remains authoritative. Feature-gated auth registration now
+extends that parser and returns typed `Invocation::Auth` arguments to the
+separate auth execution module. Existing `ReadCommand`, `ReadHost`,
+`FolderReadHost`, LS/dir/GET option/query rules and read-host `NotConfigured`
+results are preserved; successful login does not install a live read host.
+
+The broker and transport features retain empty defaults and remain independently
+selected. The SDK has no identity edge; unsafe native calls remain in
+`fabric-identity-windows`. Only the optional auth CLI dependency adds Tokio signal
+support; the shared transport feature set and all 216 existing registry lock
+entries are retained. The lock adds only the credential slice's `errno` and
+`signal-hook-registry` entries. No protected reference input or Python product
+source/test is changed.
+
+On October 25, 2026, focused offline Rust 1.99.1 Windows x64 checks passed
+**72 default CLI tests** and **99 broker-feature CLI/identity/native tests**,
+with no skipped tests in those targeted runs. These counts are separate run
+denominators, not 171 distinct contracts. They cover default CLI reads, auth arguments named
+like read commands, read paths named `auth`, invalid auth selectors, all existing
+CLI read-host tests, native/credential tests and both unsafe-forbidden consumer
+examples. The original sixteen-stage source-comparison runner also passed with
+default **and** broker-enabled native probes; classifications and expectations
+were not changed. CI retains the default comparison and additionally requires the
+feature-enabled comparison. The common OS mutex, private short Cargo target and
+serial jobs/tests were used.
+
+Original classifications were retained in both source runs: read dispatch
+22 exact/three safety cases, query 108 exact/ten unsupported, folder commands
+32 exact/21 safety/three snapshot differences/three unsupported, all 60 raw
+argument cases exact, and each workspace-GET probe's 58 consumer cases classified
+44 exact/12 safety/two unsupported. The independent 70-case workspace source
+inventory and its guards also passed; it is not relabeled native parity.
+
+No live sign-in, credential/cache extraction, logout, app-registration change or
+Fabric call was performed. Offline integration does not depend on choosing a new
+backend or repeating the platform decision. Live acceptance still needs the
+registration owner's confirmation of tenant/client/redirect/permissions and
+separately authorized service targets; real MFA/CA proof is not established by
+these checks. Full native three-OS CI remains an integration-owner gate, not a
+local Windows result.
+
 ### Explicit native transport integration
 
 The coordinator reviewed and merged exact lane commit

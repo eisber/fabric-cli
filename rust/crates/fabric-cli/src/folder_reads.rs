@@ -8,7 +8,9 @@ use crate::{
     parser::{ReadCommand, ReadKind},
     reads::{enum_name, required_id},
 };
-use fabric_cli_context::{Element, NodeKind, PathInput, ResolveOptions, Resolver};
+use fabric_cli_context::{
+    Element, LookupKind, LookupRequest, NodeKind, PathInput, ResolveOptions, Resolver,
+};
 use fabric_cli_output::{
     CommandError, HiddenItems, Indent, OutputEnvelope, OutputError, OutputInput, RenderPlan,
 };
@@ -91,6 +93,26 @@ impl FolderReadHost<'_, '_> {
         command: &ReadCommand,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<RenderPlan, OutputError> {
+        match self.execute(command, cancelled).await {
+            Ok(Some(input)) => {
+                OutputEnvelope::new(self.base.timestamp.clone(), input).render(Indent::Four)
+            }
+            Ok(None) => Ok(RenderPlan {
+                stream: fabric_cli_output::OutputStream::Stdout,
+                exit_code: 0,
+                payload: Vec::new(),
+            }),
+            Err(error) => error
+                .envelope(self.base.timestamp.clone(), Some(command.name.clone()))
+                .render(Indent::Four),
+        }
+    }
+
+    pub(crate) async fn execute(
+        &self,
+        command: &ReadCommand,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<Option<OutputInput>, CommandError> {
         let mut cancelled = pin!(cancelled);
         if command.kind != ReadKind::List
             || command
@@ -101,11 +123,11 @@ impl FolderReadHost<'_, '_> {
             || command.force
             || command.verbose
         {
-            return self.base.dispatch(command, cancelled).await;
+            return self.base.execute(command, cancelled).await;
         }
         // Preserve cancellation priority, without polling a completed future again.
         if poll_fn(|cx| Poll::Ready(cancelled.as_mut().poll(cx).is_ready())).await {
-            return self.base.dispatch(command, ready(())).await;
+            return self.base.execute(command, ready(())).await;
         }
         let tokens: Vec<_> = command.path.iter().map(String::as_str).collect();
         let resolver = Resolver::new(
@@ -122,16 +144,9 @@ impl FolderReadHost<'_, '_> {
             {
                 target
             }
-            _ => return self.base.dispatch(command, cancelled).await,
+            _ => return self.base.execute(command, cancelled).await,
         };
-        match self.list(command, target, cancelled).await {
-            Ok(input) => {
-                OutputEnvelope::new(self.base.timestamp.clone(), input).render(Indent::Four)
-            }
-            Err(error) => error
-                .envelope(self.base.timestamp.clone(), Some(command.name.clone()))
-                .render(Indent::Four),
-        }
+        self.list(command, target, cancelled).await.map(Some)
     }
 
     /// Dispatch and write using the base host's timestamp and caller-owned streams.
@@ -307,7 +322,7 @@ impl FolderReadHost<'_, '_> {
 }
 
 #[derive(Clone, Copy, Debug, thiserror::Error, Eq, PartialEq)]
-enum GraphFailure {
+pub(crate) enum GraphFailure {
     #[error("Folder graph is unsupported (NullParent safety boundary)")]
     NullParent,
     #[error("Folder graph is unsupported (NonStringParent safety boundary)")]
@@ -321,7 +336,7 @@ enum GraphFailure {
 }
 
 impl GraphFailure {
-    fn command_error(self) -> CommandError {
+    pub(crate) fn command_error(self) -> CommandError {
         errors::unsupported(&self.to_string())
     }
 }
@@ -334,7 +349,7 @@ struct FolderNode {
 
 // Compact, interned parent contexts avoid recursive equality/drop and repeated
 // ancestor scans. Roots are context zero; equal source Folder objects share a key.
-struct FolderGraph {
+pub(crate) struct FolderGraph {
     nodes: Vec<FolderNode>,
     order: Vec<usize>,
     first_by_id: BTreeMap<String, usize>,
@@ -342,7 +357,7 @@ struct FolderGraph {
 }
 
 impl FolderGraph {
-    fn new(folders: Vec<Folder>) -> Result<Self, GraphFailure> {
+    pub(crate) fn new(folders: Vec<Folder>) -> Result<Self, GraphFailure> {
         let mut graph = Self {
             nodes: folders
                 .into_iter()
@@ -412,6 +427,21 @@ impl FolderGraph {
         Ok(graph)
     }
 
+    pub(crate) fn lookup(&self, request: LookupRequest<'_>) -> Option<String> {
+        let context = if request.kind == LookupKind::NestedFolder {
+            self.target_context(request.parent)?
+        } else {
+            0
+        };
+        self.order.iter().find_map(|&index| {
+            let node = &self.nodes[index];
+            let name = format!("{}.Folder", node.folder.display_name);
+            (name == request.name.trim_matches('/')
+                && (request.kind == LookupKind::Folder || node.parent == context))
+                .then(|| node.folder.id.clone())
+        })
+    }
+
     fn append(&mut self, index: usize, parent: usize) {
         let node = &mut self.nodes[index];
         node.parent = parent;
@@ -453,7 +483,7 @@ impl FolderGraph {
     }
 }
 
-fn folder_error(kind: &FolderErrorKind) -> CommandError {
+pub(crate) fn folder_error(kind: &FolderErrorKind) -> CommandError {
     match kind {
         FolderErrorKind::Http {
             status,

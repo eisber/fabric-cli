@@ -148,6 +148,12 @@ fn workspace_members_and_internal_edges_respect_library_boundaries() {
     for package in packages {
         let name = package["name"].as_str().unwrap();
         let manifest = std::fs::read_to_string(package["manifest_path"].as_str().unwrap()).unwrap();
+        if matches!(
+            name,
+            "fabric-cli" | "fabric-identity" | "fabric-sdk-transport"
+        ) {
+            assert_eq!(package["features"]["default"], json!([]));
+        }
         if name == "fabric-identity-windows" {
             assert!(!defaults.contains(package["id"].as_str().unwrap()));
             assert_eq!(package["metadata"]["fabric"]["layer"], "identity");
@@ -176,6 +182,9 @@ fn workspace_members_and_internal_edges_respect_library_boundaries() {
                 assert_eq!(name, "fabric-identity");
                 assert_eq!(dependency["optional"], true);
                 assert_eq!(dependency["target"], "cfg(windows)");
+            }
+            if name == "fabric-cli" && target == "fabric-identity" {
+                assert_eq!(dependency["optional"], true);
             }
             if target == "windows" || target == "windows-future" {
                 assert_eq!(name, "fabric-identity-windows");

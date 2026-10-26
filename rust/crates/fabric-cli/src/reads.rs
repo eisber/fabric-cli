@@ -143,7 +143,7 @@ impl ReadHost<'_> {
         Ok(plan.exit_code)
     }
 
-    async fn execute(
+    pub(crate) async fn execute(
         &self,
         command: &ReadCommand,
         cancelled: impl Future<Output = ()> + Send,

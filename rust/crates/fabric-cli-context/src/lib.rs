@@ -3,15 +3,19 @@
 
 //! Pure bounded translation of Python Fabric path resolution.
 //!
-//! This is not complete `get_command_context` parity. Only remote tenant,
-//! workspace, folder and item nodes are ported. The caller supplies immutable
-//! current/home context and resolved metadata. No OS paths, credentials, I/O,
-//! runtime, persistent context, or CLI entry-point integration are involved.
+//! The original [`Resolver`] is bounded to remote tenant/workspace/folder/item
+//! nodes. Additive [`PathResolver`] covers virtual and OneLake hierarchy and
+//! caller-classified local fallback. Both use explicit immutable current/home
+//! context and caller-resolved metadata, never ambient credentials, I/O,
+//! runtimes, persistent context, or CLI entry-point integration.
 //!
 #![doc = include_str!("../README.md")]
 
 mod catalog;
+mod extended;
 mod model;
+
+pub use extended::*;
 
 pub use catalog::{Catalog, Lookup, LookupKind, LookupRequest};
 pub use model::{
@@ -175,7 +179,7 @@ impl<'a, L: Lookup + ?Sized> Resolver<'a, L> {
         Ok(resolved)
     }
 
-    fn child(
+    pub(crate) fn child(
         &self,
         parent: &Arc<Element>,
         part: &str,
@@ -361,7 +365,7 @@ fn ancestry(current: &Arc<Element>) -> Vec<Arc<Element>> {
     result
 }
 
-fn split_parts(path: &str) -> Vec<String> {
+pub(crate) fn split_parts(path: &str) -> Vec<String> {
     let mut start = 0;
     let mut previous = None;
     let mut result = Vec::new();

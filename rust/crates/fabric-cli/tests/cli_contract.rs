@@ -30,7 +30,12 @@ fn help_succeeds_on_stdout_only() {
         assert!(stdout.contains("Usage: fab-rs"));
         assert!(stdout.contains("--help"));
         assert!(stdout.contains("--version"));
-        assert!(stdout.contains("no production authentication or HTTP transport"));
+        if cfg!(feature = "windows-broker") {
+            assert!(stdout.contains("Windows broker authentication is opt-in"));
+            assert!(stdout.contains("auth"));
+        } else {
+            assert!(stdout.contains("no production authentication or HTTP transport"));
+        }
         assert!(stdout.contains("Commands:"));
         assert!(stdout.contains("ls"));
         assert!(stdout.contains("get"));
@@ -78,6 +83,69 @@ fn invalid_commands_fail_with_sanitized_json_on_stderr() {
     }
 }
 
+#[cfg(feature = "windows-broker")]
+#[test]
+fn auth_help_and_invalid_selectors_never_start_a_login() {
+    for action in ["login", "status", "logout"] {
+        let help = invoke(&["auth", action, "--help"]);
+        assert!(help.status.success());
+        let stdout = String::from_utf8(help.stdout).unwrap();
+        assert!(stdout.contains("--tenant"));
+        assert!(stdout.contains("--account"));
+        assert!(stdout.contains("--client-id"));
+        let output = invoke(&[
+            "auth",
+            action,
+            "--tenant",
+            "not-a-guid",
+            "--account",
+            "must-not-be-echoed",
+        ]);
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(!stderr.contains("must-not-be-echoed"));
+        let data: serde_json::Value = serde_json::from_str(&stderr).unwrap();
+        assert_eq!(
+            data["error"]["code"],
+            if cfg!(windows) {
+                "invalid_configuration"
+            } else {
+                "unsupported"
+            }
+        );
+    }
+}
+
+#[cfg(feature = "windows-broker")]
+#[test]
+fn authentication_rejects_raw_tokens_and_invalid_timeouts_before_native_calls() {
+    for extra in [
+        vec!["--token", "must-not-be-echoed"],
+        vec!["--password", "must-not-be-echoed"],
+        vec!["--timeout-seconds", "0"],
+        vec!["--timeout-seconds", "601"],
+    ] {
+        let mut args = vec![
+            "auth",
+            "login",
+            "--tenant",
+            "11111111-2222-3333-4444-555555555555",
+            "--account",
+            "user@example.test",
+        ];
+        args.extend(extra);
+        let output = invoke(&args);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        assert!(
+            !String::from_utf8(output.stderr)
+                .unwrap()
+                .contains("must-not-be-echoed")
+        );
+    }
+}
+
 #[test]
 fn reads_are_recognized_but_never_discover_credentials_or_fake_success() {
     for args in [
@@ -108,6 +176,7 @@ fn read_help_and_invalid_read_options_remain_distinct() {
         assert!(output.stderr.is_empty());
         assert!(String::from_utf8_lossy(&output.stdout).contains("--query"));
     }
+
     for args in [
         vec!["get"],
         vec!["ls", "--query"],
@@ -123,5 +192,58 @@ fn read_help_and_invalid_read_options_remain_distinct() {
         assert_eq!(output.status.code(), Some(2));
         assert!(output.stdout.is_empty());
         assert!(!String::from_utf8_lossy(&output.stderr).contains("must-not-be-echoed"));
+    }
+}
+
+#[cfg(feature = "native-read")]
+#[test]
+fn native_reads_have_a_real_host_but_invalid_selection_never_accesses_credentials() {
+    let output = Command::new(env!("CARGO_BIN_EXE_fab-rs"))
+        .env_clear()
+        .env("FAB_RUST_TENANT", "invalid-tenant")
+        .env("FAB_RUST_ACCOUNT", "must-not-be-echoed")
+        .env("FAB_RUST_CLIENT_ID", "invalid-client")
+        .args(["ls", "/"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let text = String::from_utf8(output.stderr).unwrap();
+    assert!(!text.contains("must-not-be-echoed"));
+    let error: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        error["error"]["code"],
+        if cfg!(windows) {
+            "invalid_configuration"
+        } else {
+            "unsupported"
+        }
+    );
+    assert_ne!(error["error"]["code"], "NotConfigured");
+}
+
+#[cfg(all(feature = "native-read", windows))]
+#[test]
+fn invalid_context_configuration_fails_before_native_access() {
+    for (name, value) in [
+        ("FAB_RUST_CONTEXT", "relative-path"),
+        ("FAB_RUST_HOME", ""),
+        ("FAB_RUST_HOME", "not-a-workspace"),
+        ("FAB_RUST_CLIENT_ID", ""),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fab-rs"))
+            .env_clear()
+            .env("FAB_RUST_TENANT", "11111111-2222-3333-4444-555555555555")
+            .env("FAB_RUST_ACCOUNT", "synthetic@example.test")
+            .env("FAB_RUST_CLIENT_ID", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+            .env(name, value)
+            .args(["ls", "/"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(error["error"]["code"], "invalid_configuration");
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("synthetic"));
     }
 }

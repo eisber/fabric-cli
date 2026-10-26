@@ -43,15 +43,18 @@ Repository-wide contribution and team-review rules still apply.
   manifest, lockfile, toolchain, and architecture changes with integration.
 - SDK consumers inject `azure_core::credentials::TokenCredential`. Libraries
   never prompt, exit, initialize a global logger/runtime, or use mutable CLI
-  globals. Reuse the caller's async runtime.
+  globals. Reuse the caller's async runtime. The owner-approved experimental
+  Windows login API may initiate broker UI only when the CLI caller explicitly
+  permits it; silent SDK refresh must never prompt.
 - Implement typed REST endpoints by hand over shared transport and behavioral
   policies; do not duplicate HTTP, paging, or LRO machinery per endpoint or adopt
   the generator PoCs. Keep Swagger as a contract/reference input. See the
   [REST client decision](docs/decisions/rest-client-implementation.md).
 - Tests stay offline and secret-free. Do not discover ambient credentials,
   implement static-token production fallback, persist plaintext credentials, or
-  add a Python/az/azd runtime requirement. The production identity backend remains
-  unresolved and requires team review.
+  add a Python/az/azd runtime requirement. The `windows-broker` feature now includes
+  experimental user-invoked login/status/logout, not a production support claim.
+  Native login/MFA/tenant-policy proof and team review remain required.
 
 Run the pinned checks from this directory, not the repository root. There is no
 fixed crate count. Prefer focused crates that enable independent ownership,
@@ -65,6 +68,8 @@ Existing crates retain
 documented unsafe blocks; its public API is safe Rust. Default consumers exclude
 that crate; opting in does not make a binary transitively unsafe-free. Coordinate
 shared interfaces and cross-layer changes with integration; do not add empty
-future modules or runtime loaders as scaffold shortcuts. `fab-rs` recognizes
-bounded read arguments but still requires a production host; its preview
+future modules or runtime loaders as scaffold shortcuts. Default/broker-only `fab-rs` recognizes
+bounded read arguments but still requires a read host. Explicit `native-read`
+builds provide the bounded Windows host described in `docs/native-read-host.md`;
+its preview
 help/version/error contracts are not proof of parity with Python `fab`.

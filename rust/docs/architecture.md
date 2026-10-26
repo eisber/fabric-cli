@@ -34,15 +34,21 @@ identity also depends on core, and `fabric-deploy` depends on `fabric-sdk`.
 The CLI read-command library now consumes the SDK facade, CLI context, CLI
 output and CLI query libraries. `PythonQuery` connects native evaluation and GET
 path discovery to the actual read host; no-query LS preserves source columns.
-Its test-only shared HTTP consumer uses `fabric-sdk-http`.
+Its offline consumers use `fabric-sdk-http`; the optional `native-read` binary
+selects that same executor and `fabric-sdk-transport/hyper-rustls`.
 An additive borrowed `FolderReadHost`, selected with `ReadHost::with_folders`,
 composes the same SDK, context, query and output layers for folder-aware LS.
 It preserves existing host struct literals and delegates other reads, including
 source-routed GET, rather than duplicating their orchestration. Its bounded
 folder graph and command-local snapshot boundaries are documented in the
 [folder-command matrix](folder-command-compatibility.md).
-These are allowed CLI-to-SDK/CLI edges, not a dependency on core or identity
-implementation. The binary recognizes reads but has no production host.
+These read paths use allowed CLI-to-SDK/CLI edges, not identity implementation.
+The optional auth command separately selects `fabric-identity/windows-broker`;
+it never adds an SDK-to-identity edge or installs a read host.
+The default/broker-only binary recognizes reads but has no read host.
+The explicit `native-read` feature composes the runtime-neutral `ReadSession`,
+complete async metadata scopes, existing handlers and native broker/transport;
+see [native host boundaries](native-read-host.md).
 The initial five crates are not a fixed count or a maximum. Workspace membership
 uses `crates/*`, so a new crate directory does not require editing a central
 member list. Default members explicitly include safe crates and exclude the
@@ -220,10 +226,13 @@ transport; no production credential host or CLI deployment command is installed.
 See [deployment compatibility](deployment-compatibility.md) for the
 exact source, supported subset, safety bounds and unported behavior.
 
-`fabric-identity::interactive_credential` always returns a typed `Unsupported`
-error. No backend, unattended adapter, credential chain, interactive login,
-cache, or plaintext persistence is implemented. See the
-[identity decision](decisions/identity-backend.md).
+The original synchronous `fabric-identity::interactive_credential` returns
+`Unsupported`; its metadata-only input cannot authorize async UI/client setup.
+The owner-approved opt-in Windows slice instead provides
+`WindowsCredential::login`, a configured Entra WAM acquisition path and Azure
+`TokenCredential` with silent refresh. The default build has no backend or ambient
+credential discovery. No unattended adapter, chain or local credential file is
+implemented. See the [identity decision](decisions/identity-backend.md).
 
 ### Optional native unsafe boundary
 
@@ -265,19 +274,33 @@ resources until terminal status can be observed. Later cleanup cannot overwrite
 that failure with a successful result. This is not a bounded-cleanup guarantee
 when the operating system/provider stops responding.
 
-This is low-level interop, not the completed Fabric provider. The response is
-opaque, is not printed by Debug, and must be explicitly interpreted by a future
-adapter. Tenant/resource binding, authoritative token expiry, provider errors,
-silent refresh, local selection metadata and logout integration remain separate
-requirements. `interactive_credential` still returns `Unsupported`; no CLI login
-command invokes this boundary. Completion/cancellation tests use synthetic
-results. Windows-only lifecycle tests initialize an STA and create/destroy a
-hidden system-class parent window, checking explicit close, repeated close and
-scope-exit cleanup. They never acquire a broker factory, enumerate Windows
-accounts, request tokens, access a credential store or display broker UI.
+The low-level raw request API remains separate from `entra`, the native crate's
+safe-Rust provider adapter. That adapter validates explicit account/tenant/client
+configuration, selects only the requested UPN/native account ID, sets the
+source-backed Entra request fields, and checks returned authority/account/expiry.
+Tokens are opaque and never shown by Debug. Windows broker metadata, not a JWT
+parse or guessed lifetime, supplies expiry. WAM owns token persistence. Login
+acquires all three Python audiences before publishing a credential; SDK refresh
+is silent and account pinned. Logout is explicit/client scoped. No provider
+response text, local plaintext cache or developer-tool fallback is introduced.
 
-`fab-rs` recognizes Python LS/dir/GET and returns typed `NotConfigured` until a
-host explicitly supplies credentials, transport, context and time. The public
+Building the CLI with `windows-broker` adds actual user-run login/status/logout;
+without it the existing bounded read parser/host contract remains. These commands
+can contact Entra and alter the broker cache, but are never run with valid
+credentials by tests/CI. Completion/cancellation and provider-field tests use
+synthetic results. Windows lifecycle tests create/destroy only an STA and hidden
+system-class parent window. Subprocess tests exercise help/invalid configuration,
+not broker factories, account enumeration, tokens, stores or sign-in UI.
+
+The forward-port onto `a23b4de` registers auth additively in the public parser.
+`Invocation::Auth` and its non-secret typed arguments exist only with the broker
+feature; the executable dispatches them to auth without replacing read parsing.
+Read-host configuration/execution still belongs to callers, not login. Tests and
+CI compare existing source read/query behavior with broker enabled and disabled.
+
+Default and broker-only `fab-rs` recognize Python LS/dir/GET and return typed
+`NotConfigured`. The optional native host explicitly supplies credentials,
+transport, context and time. The public
 `fabric_cli::ReadHost` runs real SDK reads on the caller's runtime, with pure
 lookup snapshots and caller-owned JSON writers. No-query LS works without query
 dependencies; generic metadata GET projects through the injected query boundary.
@@ -314,11 +337,15 @@ SDK consumers remain free to inject other executors. See its
 [source mapping and compatibility limits](../crates/fabric-sdk-http/README.md).
 It does not install a production HTTP/TLS backend or create a runtime.
 
-Libraries must not prompt, exit the process, initialize a global logger, create
+Libraries must not prompt implicitly, exit the process, initialize a global logger, create
 their own async runtime, or hold global mutable CLI context. Async work reuses
 the caller's runtime. The explicitly selected `fabric-sdk-transport` uses
 Tokio time and I/O; it never creates a runtime. Tokio's `macros` and
 single-thread `rt` support remains available for offline consumers and tests.
+The CLI owns its single-thread Tokio runtime, signal handler and timeout only
+when the auth or native-read feature is enabled. Tokio's signal feature is selected by that
+optional CLI dependency, not by default read/SDK consumers. A dedicated native
+STA thread is a WinRT/UI requirement, not an independent async runtime.
 
 `azure_core` default features remain disabled. Direct SDK consumers still
 exclude HTTP/TLS implementations. The optional
@@ -396,6 +423,20 @@ The identity lane ran the following offline checks on
 | Native-boundary tests | 11 passed: 9 synthetic lifecycle/error tests and 2 real STA/hidden-window lifecycle tests | No broker/account/token/store operation or live MFA |
 | `forbid(unsafe_code)` executable example | Built and ran with broker disabled and enabled | Example does not invoke the broker; the opt-in dependency contains unsafe interop |
 | Identity library as Windows `cdylib` | Compiled/linked with broker disabled and enabled, retaining workspace unsafe prohibition in the consumer | Compile/link probe only; no exported C ABI, DLL-loading or broker invocation proof |
+
+These are isolation-slice results, before the later actual-login implementation.
+The login slice additionally runs feature-enabled command parsing/invalid input,
+strict provider identity/expiry/status and SDK scope/redaction tests, without real
+authentication. It preserves the same unsafe isolation; manual MFA/provider and
+service acceptance remain unexecuted.
+
+The final targeted actual-login run on the same Rust 1.99.1 Windows x64 host
+passed **32 tests** with `fabric-cli/windows-broker`: 19 native/Entra-contract,
+2 identity, 3 core, 5 CLI and 3 architecture. A separate default-build CLI run
+passed its original 3 CLI and 3 architecture tests. Targeted Clippy with
+`-D warnings`, formatting, feature-enabled auth help, safe-consumer example runs
+with broker off/on and the feature-enabled identity `cdylib` compile/link probe
+also passed. No valid-account login/status/logout or service request was run.
 
 The DLL compile/link probes, from `rust/`, were:
 
