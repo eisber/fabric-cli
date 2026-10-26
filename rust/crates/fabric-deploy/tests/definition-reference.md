@@ -44,3 +44,9 @@ directories: deterministic order, binary/CRLF preservation, empty directories,
 Report byConnection/byPath/null, and Report validation before cache exclusion.
 Definition format is an already-resolved low-level input; command preparation
 independently resolves user selectors. Existing receipts remain unchanged.
+
+`definition_bulk_source.json` comes from actual pinned bulk payload, workspace
+filter and parent-prefix leaves with injected synthetic metadata/support
+callbacks. It includes All/Selective request bytes, index matching and sibling
+prefix filtering, plus four parent-prefix cases. No Rust response was used to
+construct these expectations.
