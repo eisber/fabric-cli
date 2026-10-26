@@ -17,6 +17,7 @@ mod removal;
 mod set;
 mod shortcuts;
 mod sql_database;
+mod template_enumeration;
 mod templates;
 
 use fabric_cli_context::{Element, NodeKind};
@@ -46,6 +47,7 @@ pub use shortcuts::{
     OneLakeShortcutHost, ShortcutCreateDestination, ShortcutCreateOptions, ShortcutUpdateError,
     ShortcutUpdateResult,
 };
+pub use template_enumeration::{TemplateDirectory, TemplateEnumeration};
 
 /// A caller-runtime asynchronous operation.
 pub type CommandFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;

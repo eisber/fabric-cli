@@ -7,7 +7,7 @@
 use fabric_cli_context::{Element, ItemType, NodeKind, WorkspaceType};
 use fabric_cli_mutations::{
     CapacitySelection, CommandFuture, CreateOptions, MutationError, MutationHost, MutationMetadata,
-    MutationUi, NoticeKind,
+    MutationUi, NoticeKind, TemplateDirectory, TemplateEnumeration,
 };
 use fabric_sdk_workspaces::mutations::{
     CompletionPolicy, ResourceError, ResourceMethod, ResourceOperation, ResourceOperations,
@@ -67,6 +67,37 @@ impl MutationUi for Ui {
 }
 
 struct Metadata(Value, usize);
+
+fn template_enumeration(input: &Value) -> Result<TemplateEnumeration, Box<dyn std::error::Error>> {
+    let mut enumeration = TemplateEnumeration::default();
+    for (template, rows) in input.as_object().ok_or("invalid template enumeration")? {
+        let mut directories = Vec::new();
+        for row in rows.as_array().ok_or("invalid template rows")? {
+            let names = |key: &str| -> Result<Vec<String>, Box<dyn std::error::Error>> {
+                row[key]
+                    .as_array()
+                    .ok_or("invalid template names")?
+                    .iter()
+                    .map(|name| {
+                        name.as_str()
+                            .map(str::to_owned)
+                            .ok_or_else(|| "invalid template name".into())
+                    })
+                    .collect()
+            };
+            directories.push(TemplateDirectory {
+                directory: row["directory"]
+                    .as_str()
+                    .ok_or("invalid template directory")?
+                    .into(),
+                directories: names("directories")?,
+                files: names("files")?,
+            });
+        }
+        enumeration.templates.insert(template.clone(), directories);
+    }
+    Ok(enumeration)
+}
 
 impl MutationMetadata for Metadata {
     fn read<'a>(
@@ -180,19 +211,22 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
     let mut moved_count = None;
     let result = match input["command"].as_str().ok_or("missing command")? {
         "create" => {
-            host.create(
-                &element,
-                &CreateOptions {
-                    params: input["params"].as_object().cloned().unwrap_or_default(),
-                    default_capacity_id: Some("capacity".into()),
-                    capacity: if input["unassigned"] == true {
-                        CapacitySelection::Unassigned
-                    } else {
-                        CapacitySelection::Default
-                    },
+            let options = CreateOptions {
+                params: input["params"].as_object().cloned().unwrap_or_default(),
+                default_capacity_id: Some("capacity".into()),
+                capacity: if input["unassigned"] == true {
+                    CapacitySelection::Unassigned
+                } else {
+                    CapacitySelection::Default
                 },
-            )
-            .await
+            };
+            if let Some(listings) = input.get("template_enumeration") {
+                let enumeration = template_enumeration(listings)?;
+                host.create_with_template_enumeration(&element, &options, &enumeration)
+                    .await
+            } else {
+                host.create(&element, &options).await
+            }
         }
         "remove" => {
             host.remove_with_options(

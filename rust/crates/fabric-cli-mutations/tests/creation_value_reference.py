@@ -18,6 +18,7 @@ import python_reference
 from creation_reference import verify_templates
 from operation_reference import functions
 from python_reference import CLIError, PIN, load
+from template_listing_inputs import bind_listings
 
 LAST_ERROR:list[str]=[]
 
@@ -88,6 +89,8 @@ def main()->None:
         for value in [None,False,0,"",[],{},True,1,{"ID":"value"}]:
             add("SQLDatabase",dict(creationMode=mode,restorePointInTime=value,itemId=value,workspaceId=value,
                                   restorableDeletedDatabaseName=value,referenceType=None))
+    for case in cases:
+        bind_listings(case)
     expected_results=[expected(case) for case in cases]
     run=subprocess.run([args.probe],input="".join(json.dumps(case)+"\n" for case in cases),
         text=True,encoding="utf-8",capture_output=True,check=True)

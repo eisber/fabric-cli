@@ -175,6 +175,10 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
     helper_namespace=dict(common,ItemType=types.ItemType,Item=dependency_item,mkdir_item=mkdir_module,
         fab_logger=SimpleNamespace(log_warning=lambda message:notices.append(dict(kind="warning",message=message))))
     if os.environ.get("FABRIC_PARITY_TEMPLATE_SOURCE"):
+        from template_listing_inputs import walk
+        helper_namespace["os"] = SimpleNamespace(**dict(
+            vars(os), walk=lambda directory: walk(case["template_enumeration"], directory)
+        ))
         helper_namespace["__file__"]=str(Path(os.environ["FABRIC_PARITY_TEMPLATE_SOURCE"]) / "src" / "fabric_cli" / "utils" / "fab_cmd_mkdir_utils.py")
     mkdir_utils = load("utils/fab_cmd_mkdir_utils.py", helper_namespace)
     env = dict(common, Workspace=WorkspaceResource, Folder=FolderResource, Item=ItemResource, FabricElement=Resource,

@@ -3,43 +3,58 @@
 
 //! Native embedded definition bytes pinned to Python cf67fd52, never runtime files.
 
-use crate::MutationError;
+use crate::{MutationError, TemplateEnumeration, template_enumeration::apply};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Map, Value, json};
 
-pub(crate) fn semantic_model() -> Value {
-    parts(&[
-        (
-            ".platform",
-            include_bytes!("../templates/Blank.SemanticModel/.platform"),
-        ),
-        (
-            "definition.pbism",
-            include_bytes!("../templates/Blank.SemanticModel/definition.pbism"),
-        ),
-        (
-            "definition/database.tmdl",
-            include_bytes!("../templates/Blank.SemanticModel/definition/database.tmdl"),
-        ),
-        (
-            "definition/model.tmdl",
-            include_bytes!("../templates/Blank.SemanticModel/definition/model.tmdl"),
-        ),
-        (
-            "definition/tables/Table.tmdl",
-            include_bytes!("../templates/Blank.SemanticModel/definition/tables/Table.tmdl"),
-        ),
-    ])
+pub(crate) fn semantic_model(
+    enumeration: Option<&TemplateEnumeration>,
+) -> Result<Value, MutationError> {
+    apply(
+        enumeration,
+        "Blank.SemanticModel",
+        parts(&[
+            (
+                ".platform",
+                include_bytes!("../templates/Blank.SemanticModel/.platform"),
+            ),
+            (
+                "definition.pbism",
+                include_bytes!("../templates/Blank.SemanticModel/definition.pbism"),
+            ),
+            (
+                "definition/database.tmdl",
+                include_bytes!("../templates/Blank.SemanticModel/definition/database.tmdl"),
+            ),
+            (
+                "definition/model.tmdl",
+                include_bytes!("../templates/Blank.SemanticModel/definition/model.tmdl"),
+            ),
+            (
+                "definition/tables/Table.tmdl",
+                include_bytes!("../templates/Blank.SemanticModel/definition/tables/Table.tmdl"),
+            ),
+        ]),
+    )
 }
 
-pub(crate) fn generic_mirror() -> Value {
-    parts(&[(
-        "mirroring.json",
-        include_bytes!("../templates/MirroredDatabase.GenericMirror/mirroring.json"),
-    )])
+pub(crate) fn generic_mirror(
+    enumeration: Option<&TemplateEnumeration>,
+) -> Result<Value, MutationError> {
+    apply(
+        enumeration,
+        "MirroredDatabase.GenericMirror",
+        parts(&[(
+            "mirroring.json",
+            include_bytes!("../templates/MirroredDatabase.GenericMirror/mirroring.json"),
+        )]),
+    )
 }
 
-pub(crate) fn report(semantic_model: Option<&Value>) -> Result<Value, MutationError> {
+pub(crate) fn report(
+    semantic_model: Option<&Value>,
+    enumeration: Option<&TemplateEnumeration>,
+) -> Result<Value, MutationError> {
     let files: &[(&str, &[u8])] = &[
         (
             ".platform",
@@ -88,10 +103,13 @@ pub(crate) fn report(semantic_model: Option<&Value>) -> Result<Value, MutationEr
         });
         result["parts"][1]["payload"] = encoded_json(&definition)?.into();
     }
-    Ok(result)
+    apply(enumeration, "Blank.Report", result)
 }
 
-pub(crate) fn mirror(params: &Map<String, Value>) -> Result<Value, MutationError> {
+pub(crate) fn mirror(
+    params: &Map<String, Value>,
+    enumeration: Option<&TemplateEnumeration>,
+) -> Result<Value, MutationError> {
     let mirror_type = match params
         .get("mirrortype")
         .filter(|value| crate::create::truthy(value))
@@ -101,16 +119,29 @@ pub(crate) fn mirror(params: &Map<String, Value>) -> Result<Value, MutationError
         None => "genericmirror".into(),
     };
     if mirror_type == "genericmirror" {
-        return Ok(generic_mirror());
+        return generic_mirror(enumeration);
     }
-    let bytes: &[u8] = match mirror_type.as_str() {
-        "azuresql" => {
-            include_bytes!("../templates/MirroredDatabase.AzureSQLDatabase/mirroring.json")
-        }
-        "azuresqlmi" => include_bytes!("../templates/MirroredDatabase.AzureSqlMI/mirroring.json"),
-        "snowflake" => include_bytes!("../templates/MirroredDatabase.Snowflake/mirroring.json"),
-        "cosmosdb" => include_bytes!("../templates/MirroredDatabase.CosmosDb/mirroring.json"),
-        _ => include_bytes!("../templates/MirroredDatabase.GenericMirror/mirroring.json"),
+    let (template, bytes): (&str, &[u8]) = match mirror_type.as_str() {
+        "azuresql" => (
+            "MirroredDatabase.AzureSQLDatabase",
+            include_bytes!("../templates/MirroredDatabase.AzureSQLDatabase/mirroring.json"),
+        ),
+        "azuresqlmi" => (
+            "MirroredDatabase.AzureSqlMI",
+            include_bytes!("../templates/MirroredDatabase.AzureSqlMI/mirroring.json"),
+        ),
+        "snowflake" => (
+            "MirroredDatabase.Snowflake",
+            include_bytes!("../templates/MirroredDatabase.Snowflake/mirroring.json"),
+        ),
+        "cosmosdb" => (
+            "MirroredDatabase.CosmosDb",
+            include_bytes!("../templates/MirroredDatabase.CosmosDb/mirroring.json"),
+        ),
+        _ => (
+            "MirroredDatabase.GenericMirror",
+            include_bytes!("../templates/MirroredDatabase.GenericMirror/mirroring.json"),
+        ),
     };
     let mut data = template_json(bytes)?;
     data["properties"]["source"]["typeProperties"]["connection"] =
@@ -154,9 +185,13 @@ pub(crate) fn mirror(params: &Map<String, Value>) -> Result<Value, MutationError
         }
         data["properties"]["mountedTables"] = Value::Array(mounted);
     }
-    Ok(json!({"parts":[{
-        "path":"mirroring.json","payload":encoded_json(&data)?,"payloadType":"InlineBase64",
-    }]}))
+    apply(
+        enumeration,
+        template,
+        json!({"parts":[{
+            "path":"mirroring.json","payload":encoded_json(&data)?,"payloadType":"InlineBase64",
+        }]}),
+    )
 }
 
 pub(crate) fn mounted_factory(params: &Map<String, Value>) -> Result<Value, MutationError> {

@@ -77,6 +77,15 @@ separately owned; the public offline consumer uses actual shared HTTP.
 
 ## Dynamic creation definitions
 
+Template enumeration is an explicit caller input through the additive
+`MutationHost::create_with_template_enumeration` method. It preserves supplied
+top-down directory/file order, including dependent creation. Existing `create`
+and `CreateOptions` consumers retain the historical bundled default order.
+See the [template contract](templates/README.md) for the complete-listing safety
+classification, controlled actual-source/native permutation evidence, and
+unproven ambient-order boundary. No filesystem or Python runtime adapter is
+installed by either method.
+
 Creation support checks run before help/duplicate/payload work, preserving the
 original command boundary even for empty params on a rejected item type.
 Source parameter keys are lowercased recursively through both objects and arrays

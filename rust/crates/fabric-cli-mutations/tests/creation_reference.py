@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from python_reference import PIN, ROOT, reference
+from template_listing_inputs import bind_listings
 
 
 def verify_templates(root: Path) -> None:
@@ -77,6 +78,8 @@ def main() -> None:
                                   source_parent=parent,capture_creation=True,responses=[child,root_reply]))
         cases.append(dict(kind=item_type,command="create",params=params,capture_creation=True,
                           responses=[dict(status=403,error="Forbidden")]))
+    for case in cases:
+        bind_listings(case)
     expected=[reference(case) for case in cases]
     run=subprocess.run([args.probe],input="".join(json.dumps(case)+"\n" for case in cases),
                        text=True,encoding="utf-8",capture_output=True,check=True)
@@ -86,6 +89,8 @@ def main() -> None:
     for case,old,new in zip(cases,expected,actual,strict=True):
         if old!=new:
             raise AssertionError(json.dumps(dict(case=case,python=old,rust=new),indent=2))
+    from template_enumeration_reference import compare
+    compare(args.probe)
     print(json.dumps(dict(source=PIN,creation_cases=len(cases),result="passed")))
 
 

@@ -20,6 +20,7 @@ from creation_reference import verify_templates
 from operation_reference import functions
 from python_reference import CLIError, PIN, load, reference
 from removal_reference import policy_classes
+from template_listing_inputs import bind_listings
 
 
 @cache
@@ -96,6 +97,7 @@ def main()->None:
     ])
     expected=[]
     for case in cases:
+        bind_listings(case)
         try:
             if case["kind"]!="Workspace":check(case["kind"])
         except CLIError as failure:

@@ -16,6 +16,7 @@ from typing import Any
 from creation_reference import verify_templates
 from operation_reference import functions
 from python_reference import CLIError, PIN, reference
+from template_listing_inputs import bind_listings
 
 
 def main() -> None:
@@ -66,6 +67,8 @@ def main() -> None:
         params=dict(zip(["subscriptionId","resourceGroup","factoryName"],values,strict=True))
         cases.append(dict(kind="MountedDataFactory",command="create",params=params,capture_creation=True,
                           responses=[dict(status=201,data={"id":"mounted"})]))
+    for case in cases:
+        bind_listings(case)
     expected=[reference(case) for case in cases]
     run=subprocess.run([args.probe],input="".join(json.dumps(case)+"\n" for case in cases),
                        text=True,encoding="utf-8",capture_output=True,check=True)
@@ -86,6 +89,7 @@ def main() -> None:
         malformed.append(dict(kind="MirroredDatabase",command="create",params=params,capture_error=True,responses=[]))
     errors=[]
     for case in malformed:
+        bind_listings(case)
         try:
             reference(case)
         except (AttributeError,ValueError) as failure:

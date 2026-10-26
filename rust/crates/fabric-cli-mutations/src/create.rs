@@ -3,7 +3,7 @@
 
 use crate::{
     CacheEffect, CreationEvidence, MutationError, MutationHost, MutationResult, NoticeKind,
-    message, supported_element, workspace_id,
+    TemplateEnumeration, message, supported_element, workspace_id,
 };
 use fabric_cli_context::{Element, ItemType, NodeKind};
 use fabric_sdk_folders::mutations::FolderMutations;
@@ -45,6 +45,32 @@ impl MutationHost<'_> {
         &mut self,
         element: &Arc<Element>,
         options: &CreateOptions,
+    ) -> Result<MutationResult, MutationError> {
+        self.create_inner(element, options, None).await
+    }
+
+    /// Create using explicit ordered template listings, including dependencies.
+    ///
+    /// Existing `create` retains its bundled default order. This method does not
+    /// discover host filesystem order or change any embedded template bytes.
+    ///
+    /// # Errors
+    /// Returns existing creation failures and `InvalidTemplateEnumeration` for
+    /// incomplete, duplicate, invalid or non-top-down consumed template listings.
+    pub async fn create_with_template_enumeration(
+        &mut self,
+        element: &Arc<Element>,
+        options: &CreateOptions,
+        enumeration: &TemplateEnumeration,
+    ) -> Result<MutationResult, MutationError> {
+        self.create_inner(element, options, Some(enumeration)).await
+    }
+
+    async fn create_inner(
+        &mut self,
+        element: &Arc<Element>,
+        options: &CreateOptions,
+        enumeration: Option<&TemplateEnumeration>,
     ) -> Result<MutationResult, MutationError> {
         supported_element(element)?;
         if let NodeKind::Item(item_type) = element.kind() {
@@ -109,7 +135,9 @@ impl MutationHost<'_> {
                 FolderMutations::create(self.operations, workspace_id(element)?, body).await?
             }
             NodeKind::Item(_) => {
-                return self.create_item_with_dependencies(element, params).await;
+                return self
+                    .create_item_with_dependencies(element, params, enumeration)
+                    .await;
             }
             NodeKind::Tenant => unreachable!("validated above"),
         };
@@ -176,6 +204,7 @@ impl MutationHost<'_> {
         &mut self,
         element: &Arc<Element>,
         mut params: Map<String, Value>,
+        enumeration: Option<&TemplateEnumeration>,
     ) -> Result<MutationResult, MutationError> {
         let mut evidence = CreationEvidence::default();
         let result = async {
@@ -209,13 +238,15 @@ impl MutationHost<'_> {
                 })?;
                 self.ui
                     .notice(NoticeKind::Progress, &format!("Creating a new {kind}..."));
-                let outcome = self.dispatch_item_create(&target, &params, None).await?;
+                let outcome = self
+                    .dispatch_item_create(&target, &params, None, enumeration)
+                    .await?;
                 evidence.responses.push(outcome.clone());
                 record_item_creation(&target, &outcome, &mut evidence)?;
                 dependency_id = completed_id(&outcome);
             }
             let outcome = self
-                .dispatch_item_create(element, &params, dependency_id.as_ref())
+                .dispatch_item_create(element, &params, dependency_id.as_ref(), enumeration)
                 .await?;
             evidence.responses.push(outcome.clone());
             record_item_creation(element, &outcome, &mut evidence)?;
@@ -261,6 +292,7 @@ impl MutationHost<'_> {
         element: &Arc<Element>,
         params: &Map<String, Value>,
         dependency: Option<&Value>,
+        enumeration: Option<&TemplateEnumeration>,
     ) -> Result<ResourceOutcome, MutationError> {
         let NodeKind::Item(item_type) = element.kind() else {
             unreachable!("item dispatch");
@@ -291,6 +323,7 @@ impl MutationHost<'_> {
             params,
             dependency,
             &mut payload,
+            enumeration,
         )?;
         let collection = ItemCollection::from_item_type(item_type.as_str())
             .ok_or_else(|| MutationError::new("NotSupported", "Unmapped item collection"))?;
@@ -476,6 +509,7 @@ fn add_item_payload(
     params: &Map<String, Value>,
     dependency: Option<&Value>,
     payload: &mut Value,
+    enumeration: Option<&TemplateEnumeration>,
 ) -> Result<(), MutationError> {
     match item_type {
         "Lakehouse" => {
@@ -514,9 +548,9 @@ fn add_item_payload(
                 }
             });
         }
-        "SemanticModel" => payload["definition"] = crate::templates::semantic_model(),
+        "SemanticModel" => payload["definition"] = crate::templates::semantic_model(enumeration)?,
         "MirroredDatabase" => {
-            payload["definition"] = crate::templates::mirror(params)?;
+            payload["definition"] = crate::templates::mirror(params, enumeration)?;
         }
         "Report" => {
             payload["definition"] = crate::templates::report(
@@ -524,6 +558,7 @@ fn add_item_payload(
                     .get("semanticmodelid")
                     .filter(|value| truthy(value))
                     .or(dependency),
+                enumeration,
             )?;
         }
         "Notebook" => {
