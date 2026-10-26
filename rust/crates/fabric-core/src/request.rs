@@ -45,6 +45,9 @@ pub async fn cancel_with<T>(
     .await
 }
 
+/// A caller-runtime authenticated execution future with its typed response and error.
+pub type AuthenticatedFuture<'a, T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + Send + 'a>>;
+
 /// An operation-specific executor receiving an authenticated, validated URL.
 ///
 /// Implementations supply their own transport and behavioral policies. This
@@ -60,7 +63,7 @@ pub trait AuthenticatedExecution {
         &'a mut self,
         url: &'a Url,
         token: &'a AccessToken,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'a>>;
+    ) -> AuthenticatedFuture<'a, Self::Response, Self::Error>;
 }
 
 /// Authentication and execution failures, preserving executor failures by type.
@@ -375,8 +378,7 @@ mod tests {
             &'a mut self,
             url: &'a Url,
             token: &'a AccessToken,
-        ) -> Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'a>>
-        {
+        ) -> AuthenticatedFuture<'a, Self::Response, Self::Error> {
             self.calls += 1;
             Box::pin(async move {
                 assert_eq!(token.token.secret(), TEST_TOKEN);

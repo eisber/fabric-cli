@@ -11,8 +11,8 @@
 use azure_core::{credentials::AccessToken, http::Url};
 pub use fabric_core::Audience;
 use fabric_core::{
-    AuthenticatedExecution, CredentialSelection, EndpointBinding, RequestAuthentication,
-    RequestContext, RequestError, ServiceOrigin, TokenCredential,
+    AuthenticatedExecution, AuthenticatedFuture, CredentialSelection, EndpointBinding,
+    RequestAuthentication, RequestContext, RequestError, ServiceOrigin, TokenCredential,
 };
 use fabric_sdk_workspaces::{
     FabricServiceError,
@@ -800,7 +800,7 @@ impl<E: OperationExecutor> AuthenticatedExecution for SessionExecution<'_, E> {
         &'a mut self,
         url: &'a Url,
         token: &'a AccessToken,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'a>> {
+    ) -> AuthenticatedFuture<'a, Self::Response, Self::Error> {
         Box::pin(async move {
             *self.requests += 1;
             if self.method != ResourceMethod::Get {

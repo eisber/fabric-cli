@@ -60,6 +60,10 @@ GET retries and mutation no-replay remain in `fabric-sdk-http`; operation
 budgets, reconciliation and uncertain-side-effect evidence remain in
 `fabric-sdk-operations`.
 
+Implementers of `AuthenticatedExecution` can return the documented
+`AuthenticatedFuture<'a, Response, Error>` alias. It preserves the same boxed
+`Send` future and operation-specific result types without another execution layer.
+
 ## Configuration boundary and fixed audiences
 
 The pinned Python baseline is

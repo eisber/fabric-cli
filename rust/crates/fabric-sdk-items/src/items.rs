@@ -4,7 +4,8 @@
 use crate::{FabricServiceError, Item, ItemClient, ItemCollection, ItemMetadata, Page};
 use azure_core::{credentials::AccessToken, http::Url};
 use fabric_core::{
-    Audience, AuthenticatedExecution, EndpointBinding, RequestError, ServiceOrigin, cancel_with,
+    Audience, AuthenticatedExecution, AuthenticatedFuture, EndpointBinding, RequestError,
+    ServiceOrigin, cancel_with,
 };
 use std::{
     collections::{BTreeMap, HashSet},
@@ -544,7 +545,7 @@ impl AuthenticatedExecution for ItemRead<'_> {
         &'a mut self,
         url: &'a Url,
         token: &'a AccessToken,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'a>> {
+    ) -> AuthenticatedFuture<'a, Self::Response, Self::Error> {
         self.executor.execute(ItemRequest {
             url: url.clone(),
             token,

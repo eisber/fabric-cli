@@ -9,8 +9,8 @@
 pub use azure_core::credentials::{AccessToken, TokenCredential, TokenRequestOptions};
 pub use endpoint::{EndpointBinding, EndpointError, ServiceOrigin};
 pub use request::{
-    AuthenticatedExecution, Cancelled, RequestAuthentication, RequestContext, RequestError,
-    cancel_with,
+    AuthenticatedExecution, AuthenticatedFuture, Cancelled, RequestAuthentication, RequestContext,
+    RequestError, cancel_with,
 };
 use thiserror::Error;
 
