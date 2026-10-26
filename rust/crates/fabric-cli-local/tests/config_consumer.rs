@@ -186,8 +186,21 @@ fn config_list_and_alias_use_source_order_all_keys_and_defaults() {
         OutputFormat::Text,
     );
     let text = String::from_utf8(text).unwrap();
-    assert!(text.contains("Setting"));
-    assert!(text.contains("cache_enabled"));
+    let lines = text.lines().collect::<Vec<_>>();
+    assert_eq!(
+        lines[0].split_whitespace().collect::<Vec<_>>(),
+        ["setting", "value"],
+    );
+    assert_eq!(lines.len(), 20);
+    assert_eq!(lines[1], "-".repeat(lines[0].len()));
+    for (line, (key, value)) in lines[2..].iter().zip(expected) {
+        let expected_cells = if value.is_empty() {
+            vec![key]
+        } else {
+            vec![key, value]
+        };
+        assert_eq!(line.split_whitespace().collect::<Vec<_>>(), expected_cells);
+    }
 }
 
 #[test]
