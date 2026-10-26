@@ -11,6 +11,96 @@ branch remains intact; references to it in dated evidence are historical.
 
 ## Read-command, query and folder integration
 
+### October 26 access and physical-storage candidate
+
+The isolated branch `dev/marcozo/resource-storage-exact9c396-1302865` starts at
+exact `9c396cef44b736733a635070431d871c8f18762c`. The inherited newer Python
+checkout is preserved separately; the source oracle remains exact
+`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`. No whole worker branch or newer
+Python ancestry is merged.
+
+| Released source | Integration commit | Adopted scope |
+| --- | --- | --- |
+| Access chain through `7e1bd53f314ffaa038d8ec05472072a7f2e97c3d` | `ba3383081cec4779cd52350d25f4ecc8ef09836a` | `fabric-sdk-access`, `fabric-sdk-api`, `fabric-sdk-catalog`, `fabric-cli-resources`, their source oracles and compatibility docs |
+| Physical-copy chain through `f048914e72b200c63e46b1071a96ecfeaa7893f8`, docs `9f4e38bc5c084120c900ba6df5c6154fb2476938`, fix `437d2eaf6b91224dbe7bca0219a098d327b583a9` | `9bde307dd811f4ccb3db8e2ed85aa2b6e03dd3d4` | Only `fabric-cli-storage-files`, including the retained-source-handle and empty-native-path behavior |
+
+All 92 adopted blobs match those immutable releases. The source-to-integration
+ledger retains the complete original commit and per-file blob inventories.
+The existing text renderer already matches the access release; its adoption-only
+`8a6404c` prerequisite is not replayed. Existing resource/OneLake code already
+contains the newer consolidated preflight and mutation behavior, so the storage
+branch's older shared/resource files are not substituted. No shared HTTP,
+operations, GET, JSON, native-value, identity, main, parser, session, jobs,
+transfer or deployment implementation changes are included.
+
+The workspace adds only five local default members/dependency entries and their
+local lockfile blocks. All 218 registry blocks and all pre-existing local blocks
+are byte-identical; existing dependency versions/features and architecture
+policies remain unchanged. Actual normal SDK graphs exclude CLI, identity and
+deployment implementations.
+
+#### Central consumer contract
+
+`ApiClient::new` receives an injected Azure credential, explicit selection and
+executor. `ResourceHttpExecutor(Arc<HttpExecutor>)` delegates to the existing
+bounded execution/timer APIs; `AccessClient` and `CatalogClient` wrap that client.
+ACL handlers (`read_acls`, `read_named_acls`, `mutate_acl`), label handlers,
+`find`/`find_interactive`, hidden-name/metadata helpers and raw `api` are callable
+library consumers. The host owns resolved context, source support checks, finite
+limits, cancellation, asynchronous confirmation and interactive output.
+`export_acls` still requires a real caller-provided `AclExportSink`; this
+integration does not install a writer or a successful no-op.
+
+`render_family_output`/`render_family_error` compose the shared renderer through
+`FamilySurface` and `FamilyPresentation`. Supply timestamps, format, terminal
+width, accurate Unicode properties and caller-owned streams, preserving ordered
+records, source-silent results, separate warnings and handled OneLake error
+exit zero. `REGISTRATIONS` is an inventory, not executable registration.
+See [access](access-compatibility.md), [catalog/raw API](catalog-api-compatibility.md)
+and [query dispatch](query-dispatch-compatibility.md).
+
+`StorageFilesHost::{upload,download}` borrow the existing OneLake client/executor,
+`LocalFileSystem`, mutation notices and finite limits. `OsFileSystem::new` requires
+an explicit existing root and existing Tokio handle. Select storage-audience
+credentials explicitly; resolved `OneLakeWriteTarget` and native path/token
+handling remain host-owned. Preserve `CopyError` stage, accepted/partial remote
+steps and local-write evidence, not only its formatted message. The actual source
+lease survives upload; cancellation is cooperative, not rollback. This crate
+does not add recursive copies, local-to-local copies, physical moves, parent
+directory creation or cleanup deletion. See its
+[host contract](../crates/fabric-cli-storage-files/HOST-CONTRACT.md) and
+[source branches](../crates/fabric-cli-storage-files/SOURCE-BRANCHES.md).
+
+#### Actual validation and remaining gate
+
+Windows x64 Rust 1.99.1 targeted validation passed **367 non-documentation tests
+and one doctest**, including all 46 family-consumer tests, 35 physical-copy tests,
+eight architecture contracts and existing CLI/native-read regressions. Formatting,
+strict all-target Clippy, examples, source/blob/lock checks, every released
+access/catalog/raw API source harness and **120 real-filesystem source-equal
+cases** passed, including 79 uploads. Two SDK-status differences are asserted
+separately, outside those 120 parity cases. Family rendering compares
+64 original-handler/UI cases with stream order; these counts overlap other
+inventories and are not whole-command coverage percentages.
+
+The full old read/session/resource comparison continuation is **not complete**.
+Receipt 01 failed before product validation on launcher quoting. Receipt 02
+retains the passing checks above but failed after the first three read comparisons
+and 64 source guards because the session launcher supplied the output example
+instead of the existing `projection_output` query consumer. Only the artifact
+launcher was corrected; no product, oracle, ordering or expectation changed.
+Receipt 03 started no validation: the approved v3 gate exhausted its bounded
+quiescence wait with a foreign Python blocker. All failed receipts are retained.
+No automatic retry, foreign process termination or classifier change is allowed.
+The coordinator must authorize a new gated continuation within the remaining
+acquired-time budget before this candidate is considered integration-ready.
+
+No push, PR, live operation, native Linux/macOS result, publication or completed
+front-door registration is claimed. Central executable routing, concrete export
+writers, fresh three-platform CI and eventual live acceptance remain separate
+gates. Managed-resource, capacity and table releases are not included in this
+first bounded access/storage candidate.
+
 ### October 26 resource-library integration candidate
 
 The isolated integration branch
