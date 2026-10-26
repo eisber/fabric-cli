@@ -332,12 +332,17 @@ jobs:
           cargo run --quiet --offline --locked -p fabric-cli-output --example definition_json > "$RUNNER_TEMP/cli-definition-json.json"
           cargo run --quiet --offline --locked -p fabric-cli-output --example compatibility_probe > "$RUNNER_TEMP/output-json.json"
           cargo run --quiet --offline --locked -p fabric-core-json --example unicode_json > "$RUNNER_TEMP/unicode-json.json"
+          cargo run --quiet --offline --locked -p fabric-core-json --example native_json > "$RUNNER_TEMP/native-json.json"
+          cargo run --quiet --offline --locked -p fabric-cli-output --example text_probe > "$RUNNER_TEMP/core-text-observations.json"
           python -B tests/compatibility/output/definition_reference.py --observed "$RUNNER_TEMP/core-definition-json.json"
           python -B tests/compatibility/output/definition_reference.py --observed "$RUNNER_TEMP/cli-definition-json.json"
           python -B tests/compatibility/output/reference.py --observed "$RUNNER_TEMP/output-json.json"
           python -B tests/compatibility/output/unicode_reference.py --observed "$RUNNER_TEMP/unicode-json.json"
+          python -B tests/compatibility/output/native_reference.py --encoding-only --observed "$RUNNER_TEMP/native-json.json"
+          python -B tests/compatibility/output/text_reference.py --observed "$RUNNER_TEMP/core-text-observations.json"
           python -B -m unittest discover -s tests/compatibility/output -p test_reference.py -v
           python -B -m unittest discover -s tests/compatibility/output -p test_unicode_reference.py -v
+          python -B -m unittest discover -s tests/compatibility/output -p test_native_reference.py -v
       - name: Check optional broker and safe-code consumer without authenticating
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-identity') || contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
         run: |
