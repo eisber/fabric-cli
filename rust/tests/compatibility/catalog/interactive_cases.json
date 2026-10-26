@@ -1,0 +1,345 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "name": "interactive-empty-then-result",
+      "interactive": true,
+      "confirmations": [],
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [],
+            "continuationToken": "next"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "A",
+                "type": "Report"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "search": "needle",
+              "pageSize": 30
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "continuationToken": "next",
+              "pageSize": 30
+            }
+          }
+        ],
+        "data": [
+          {
+            "name": "A",
+            "type": "Report",
+            "workspace": null
+          }
+        ],
+        "diagnostics": [
+          "Searching...",
+          "",
+          "1 item found",
+          "",
+          ""
+        ],
+        "error": null,
+        "outputs": [
+          [
+            {
+              "name": "A",
+              "type": "Report",
+              "workspace": null
+            }
+          ]
+        ],
+        "questions": []
+      }
+    },
+    {
+      "name": "interactive-continue",
+      "interactive": true,
+      "confirmations": [
+        true
+      ],
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "A",
+                "type": "Report"
+              }
+            ],
+            "continuationToken": "next"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "A",
+                "type": "Report"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "search": "needle",
+              "pageSize": 30
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "continuationToken": "next",
+              "pageSize": 30
+            }
+          }
+        ],
+        "data": [
+          {
+            "name": "A",
+            "type": "Report",
+            "workspace": null
+          }
+        ],
+        "diagnostics": [
+          "Searching...",
+          "",
+          "1 item found (more available)",
+          "",
+          "",
+          "",
+          "",
+          "2 items found",
+          "",
+          ""
+        ],
+        "error": null,
+        "outputs": [
+          [
+            {
+              "name": "A",
+              "type": "Report",
+              "workspace": null
+            }
+          ],
+          [
+            {
+              "name": "A",
+              "type": "Report",
+              "workspace": null
+            }
+          ]
+        ],
+        "questions": [
+          "Press Enter to continue... (Ctrl+C to stop)"
+        ]
+      }
+    },
+    {
+      "name": "interactive-eof",
+      "interactive": true,
+      "confirmations": [
+        false
+      ],
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "A",
+                "type": "Report"
+              }
+            ],
+            "continuationToken": "next"
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "search": "needle",
+              "pageSize": 30
+            }
+          }
+        ],
+        "data": [
+          {
+            "name": "A",
+            "type": "Report",
+            "workspace": null
+          }
+        ],
+        "diagnostics": [
+          "Searching...",
+          "",
+          "1 item found (more available)",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "error": null,
+        "outputs": [
+          [
+            {
+              "name": "A",
+              "type": "Report",
+              "workspace": null
+            }
+          ]
+        ],
+        "questions": [
+          "Press Enter to continue... (Ctrl+C to stop)"
+        ]
+      }
+    },
+    {
+      "name": "repeated-type",
+      "params": "type=Report,type!=Dashboard,type=Lakehouse",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "A",
+                "type": "Report"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "search": "needle",
+              "pageSize": 1000,
+              "filter": "Type ne 'Dashboard'"
+            }
+          }
+        ],
+        "data": [
+          {
+            "name": "A",
+            "type": "Report",
+            "workspace": null
+          }
+        ],
+        "diagnostics": [
+          "Searching...",
+          "",
+          "1 item found",
+          "",
+          ""
+        ],
+        "error": null,
+        "outputs": [
+          [
+            {
+              "name": "A",
+              "type": "Report",
+              "workspace": null
+            }
+          ]
+        ],
+        "questions": []
+      }
+    },
+    {
+      "name": "mixed-parameter",
+      "params": "type=Report,other=bad",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": []
+          }
+        }
+      ],
+      "expected": {
+        "requests": [],
+        "data": null,
+        "diagnostics": [],
+        "error": {
+          "code": "InvalidInput",
+          "message": "'other' isn't a supported parameter"
+        },
+        "outputs": [],
+        "questions": []
+      }
+    },
+    {
+      "name": "raw-auth-service-code",
+      "responses": [
+        {
+          "status": 401,
+          "body": {
+            "errorCode": "ServiceDenied",
+            "message": "Selected identity denied"
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "search": "needle",
+              "pageSize": 1000
+            }
+          }
+        ],
+        "data": null,
+        "diagnostics": [
+          "Searching..."
+        ],
+        "error": {
+          "code": "ServiceDenied",
+          "message": "Catalog search failed: Selected identity denied"
+        },
+        "outputs": [],
+        "questions": []
+      }
+    }
+  ]
+}
