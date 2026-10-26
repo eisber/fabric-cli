@@ -7,6 +7,7 @@
 mod api;
 mod export;
 mod find;
+pub mod frontdoor;
 mod hidden;
 mod interactive_find;
 mod mutations;
