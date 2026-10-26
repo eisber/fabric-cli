@@ -36,3 +36,11 @@ Native non-Windows comparison must account for the Windows text-mode newline
 translation in the export receipt, but must never transform binary payloads.
 Source receipt capture is not a passing native comparison or full command
 parity claim.
+
+`definition_import_source.json` adds seven cases captured by
+`definition_import_reference.py` before Rust import execution. It executes
+the actual `_build_definition` and `_encode_file_to_base64` leaves on synthetic
+directories: deterministic order, binary/CRLF preservation, empty directories,
+Report byConnection/byPath/null, and Report validation before cache exclusion.
+Definition format is an already-resolved low-level input; command preparation
+independently resolves user selectors. Existing receipts remain unchanged.
