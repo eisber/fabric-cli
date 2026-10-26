@@ -32,6 +32,15 @@ literals remain unchanged. See the
 [source/consumer matrix](../../docs/workspace-get-compatibility.md) for API shape,
 source quirks, exact-versus-safety boundaries and independent offline evidence.
 
+`WorkspaceClient::enrich_workspace_metadata` accepts validated, completed
+`WorkspaceMetadata` from an explicit caller-owned primary operation. It runs
+the same optional enrichment loop without repeating primary GET. It does not
+accept an operation handle or interpret 202 as completed metadata; the existing
+`get_workspace_metadata` status, shape, cancellation and safety contracts remain
+unchanged. The facade exposes the same additive forwarding method. This focused
+crate still has no dependency on the shared operation engine or a concrete
+HTTP adapter, avoiding a reverse dependency cycle.
+
 ## Ownership and dependencies
 
 The crate belongs to the `sdk` layer. Its production dependencies are

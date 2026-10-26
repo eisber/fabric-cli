@@ -66,7 +66,11 @@ fn main() {
                 Poll::Pending
             }
         });
-        let result = support::complete(session.dispatch(&command, cancelled));
+        let result = support::complete(
+            session
+                .with_source_operations(&executor)
+                .dispatch(&command, cancelled),
+        );
         let (mut stdout, mut stderr) = (vec![], vec![]);
         let (exit, render_error) = match result {
             Ok(plan) => {

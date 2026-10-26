@@ -34,6 +34,7 @@ pub struct FabricOperation {
     url: Url,
     body: Vec<u8>,
     completion: CompletionPolicy,
+    source_read_operation_ids: bool,
 }
 
 impl FabricOperation {
@@ -75,6 +76,7 @@ impl FabricOperation {
             url,
             body,
             completion,
+            source_read_operation_ids: false,
         })
     }
 
@@ -99,7 +101,27 @@ impl FabricOperation {
             url,
             body,
             completion: operation.completion(),
+            source_read_operation_ids: false,
         })
+    }
+
+    /// Permit bounded opaque operation IDs for an explicit source-synchronous GET.
+    ///
+    /// Default operations, Notebook calls, mutations and external acceptance
+    /// reconciliation retain their GUID-only policy. This opt-in accepts at most
+    /// 256 ASCII letters, digits, hyphens or underscores in a single response ID;
+    /// fixed origins, response bounds and the existing shared poller are unchanged.
+    ///
+    /// # Errors
+    /// Rejects any method or completion policy except GET/PythonSynchronous.
+    pub fn with_source_read_operation_ids(mut self) -> Result<Self, OperationErrorKind> {
+        if self.method != ResourceMethod::Get
+            || self.completion != CompletionPolicy::PythonSynchronous
+        {
+            return Err(OperationErrorKind::InvalidInput);
+        }
+        self.source_read_operation_ids = true;
+        Ok(self)
     }
 }
 
@@ -421,7 +443,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             if response.body.len() > self.limits.max_response_bytes.get() {
                 return Err(OperationErrorKind::Limit);
             }
-            self.resolve_accepted(response, completion).await
+            self.resolve_accepted(response, completion, false).await
         }
         .await;
         result.map_err(|kind| self.evidence(kind))
@@ -449,13 +471,19 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             ensure_source_status(&response, &[200, 201, 204], python)?;
             return Ok(response);
         }
-        self.resolve_accepted(response, operation.completion).await
+        self.resolve_accepted(
+            response,
+            operation.completion,
+            operation.source_read_operation_ids,
+        )
+        .await
     }
 
     async fn resolve_accepted(
         &mut self,
         mut response: OperationResponse,
         completion: CompletionPolicy,
+        source_read_operation_ids: bool,
     ) -> Result<OperationResponse, OperationErrorKind> {
         let python = completion == CompletionPolicy::PythonSynchronous;
         if completion == CompletionPolicy::ReturnAccepted {
@@ -470,14 +498,30 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         let mut original = python.then(|| response.clone());
         let id = if python {
             let location = header(&response, "Location")?.unwrap_or("");
-            let id = header(&response, "x-ms-operation-id")?.unwrap_or("");
+            let operation_id = header(&response, "x-ms-operation-id")?;
+            if source_read_operation_ids
+                && operation_id.is_some_and(|id| {
+                    id.is_empty()
+                        || id.len() > 256
+                        || !id
+                            .bytes()
+                            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+                })
+            {
+                return Err(OperationErrorKind::InvalidResponse);
+            }
+            let id = operation_id.unwrap_or("");
             if location.contains("/jobs/instances/") || (location.is_empty() && id.is_empty()) {
                 return Ok(response);
             }
             if !location.is_empty() {
                 validate_source_origin(location)?;
             }
-            if !id.is_empty() && !valid_id(id) {
+            if source_read_operation_ids {
+                if id.is_empty() {
+                    return Err(OperationErrorKind::InvalidResponse);
+                }
+            } else if !id.is_empty() && !valid_id(id) {
                 return Err(OperationErrorKind::InvalidResponse);
             }
             id.to_owned()

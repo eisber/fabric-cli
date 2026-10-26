@@ -148,6 +148,90 @@ fn client(credential: Arc<Credential>, audience: Audience) -> WorkspaceClient {
 }
 
 #[tokio::test]
+async fn completed_primary_enrichment_reuses_optional_steps_without_rereading_primary() {
+    let executor = Executor::new([empty(), response(200, json!({"enabled":true})), empty()]);
+    let credential = Arc::new(Credential::default());
+    let client = client(credential.clone(), Audience::Fabric);
+    let metadata: WorkspaceMetadata = serde_json::from_slice(&primary().body).unwrap();
+    let result = client
+        .enrich_workspace_metadata(
+            &executor,
+            "w",
+            metadata,
+            WorkspaceListLimits::default(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.enrichments.len(), 3);
+    assert!(
+        result
+            .enrichments
+            .iter()
+            .all(|step| step.omission.is_none())
+    );
+    assert_eq!(
+        result.metadata.as_value()["sparkSettings"],
+        json!({"enabled":true})
+    );
+    assert_eq!(credential.calls.load(Ordering::SeqCst), 3);
+    assert_eq!(
+        *executor.requests.lock().unwrap(),
+        [
+            "https://api.fabric.microsoft.com/v1/workspaces/w/managedPrivateEndpoints",
+            "https://api.fabric.microsoft.com/v1/workspaces/w/spark/settings",
+            "https://api.fabric.microsoft.com/v1/workspaces/w/roleAssignments",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn completed_primary_enrichment_keeps_selection_identifier_and_cancellation_guards() {
+    let executor = Executor::default();
+    let credential = Arc::new(Credential::default());
+    for (audience, id, cancelled, expected) in [
+        (
+            Audience::OneLake,
+            "w",
+            false,
+            MetadataError::Read(ReadError::InvalidAudience),
+        ),
+        (
+            Audience::Fabric,
+            "../escape",
+            false,
+            MetadataError::InvalidIdentifier,
+        ),
+        (
+            Audience::Fabric,
+            "w",
+            true,
+            MetadataError::Read(ReadError::Cancelled),
+        ),
+    ] {
+        let signal: Pin<Box<dyn Future<Output = ()> + Send>> = if cancelled {
+            Box::pin(ready(()))
+        } else {
+            Box::pin(pending())
+        };
+        let metadata = serde_json::from_slice(&primary().body).unwrap();
+        let error = client(credential.clone(), audience)
+            .enrich_workspace_metadata(
+                &executor,
+                id,
+                metadata,
+                WorkspaceListLimits::default(),
+                signal,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, expected);
+    }
+    assert_eq!(credential.calls.load(Ordering::SeqCst), 0);
+    assert!(executor.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn ordered_metadata_preserves_unknowns_numbers_nulls_and_replacement_positions() {
     let original = r#"{"before":{"z":null,"a":[1,1.0]},"sparkSettings":"old","id":"opaque","roleAssignments":false,"displayName":"\u65e5","managedPrivateEndpoints":null,"after":9007199254740993}"#;
     let executor = Executor::new([

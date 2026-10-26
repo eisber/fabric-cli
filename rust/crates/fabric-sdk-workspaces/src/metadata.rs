@@ -199,19 +199,53 @@ impl WorkspaceClient {
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<WorkspaceMetadataResult, WorkspaceMetadataError> {
         let mut cancelled = pin!(cancelled);
-        let mut step = WorkspaceMetadataStep::Primary;
-        let mut enrichments = Vec::new();
-        let result = async {
+        let primary = async {
             or_cancel(ready(()), cancelled.as_mut()).await?;
             if self.selection().audience() != Audience::Fabric {
                 return Err(WorkspaceListErrorKind::InvalidAudience.into());
             }
-            let url = metadata_url(workspace_id, step)?;
+            let url = metadata_url(workspace_id, WorkspaceMetadataStep::Primary)?;
             let value = self
                 .metadata_value(executor, url, limits, false, cancelled.as_mut())
                 .await?;
-            let mut metadata: WorkspaceMetadata = serde_json::from_value(value)
-                .map_err(|_| WorkspaceListErrorKind::InvalidResponse)?;
+            serde_json::from_value(value)
+                .map_err(|_| WorkspaceListErrorKind::InvalidResponse.into())
+        }
+        .await
+        .map_err(|kind| WorkspaceMetadataError {
+            step: WorkspaceMetadataStep::Primary,
+            kind,
+            enrichments: Vec::new(),
+        })?;
+        self.enrich_workspace_metadata(executor, workspace_id, primary, limits, cancelled)
+            .await
+    }
+
+    /// Enrich already-completed, validated primary metadata without reading it again.
+    ///
+    /// Explicit compatibility callers may obtain the primary value through the
+    /// shared operation policy first. This reuses exactly the strict metadata
+    /// API's optional-step ordering, omissions, bounds and cancellation behavior;
+    /// it never interprets an accepted response as completed primary metadata.
+    ///
+    /// # Errors
+    /// Rejects invalid selection/identifiers and preserves failed-step evidence.
+    pub async fn enrich_workspace_metadata(
+        &self,
+        executor: &dyn WorkspaceExecutor,
+        workspace_id: &str,
+        mut metadata: WorkspaceMetadata,
+        limits: WorkspaceListLimits,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<WorkspaceMetadataResult, WorkspaceMetadataError> {
+        let mut cancelled = pin!(cancelled);
+        let mut step = WorkspaceMetadataStep::Primary;
+        let mut enrichments = Vec::new();
+        let result = async {
+            metadata_url(workspace_id, step)?;
+            if self.selection().audience() != Audience::Fabric {
+                return Err(WorkspaceListErrorKind::InvalidAudience.into());
+            }
             for next in [
                 WorkspaceMetadataStep::ManagedPrivateEndpoints,
                 WorkspaceMetadataStep::SparkSettings,

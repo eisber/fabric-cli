@@ -93,6 +93,205 @@ fn response(status: u16, body: &str) -> OperationResponse {
     }
 }
 
+#[test]
+fn source_read_id_builder_rejects_mutations_and_other_completion_policies() {
+    for method in [
+        ResourceMethod::Get,
+        ResourceMethod::Post,
+        ResourceMethod::Patch,
+        ResourceMethod::Delete,
+    ] {
+        for completion in [
+            CompletionPolicy::PythonSynchronous,
+            CompletionPolicy::ReturnAccepted,
+            CompletionPolicy::WaitForCompletion,
+            CompletionPolicy::WaitForResult,
+        ] {
+            let operation =
+                FabricOperation::new(method, "/v1/workspaces/ws", Vec::new(), completion).unwrap();
+            let result = operation.with_source_read_operation_ids();
+            assert_eq!(
+                result.is_ok(),
+                method == ResourceMethod::Get && completion == CompletionPolicy::PythonSynchronous
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn source_read_id_opt_in_polls_safe_opaque_ids_without_mutation_evidence() {
+    for id in ["op".to_owned(), "A_0-z".to_owned(), "a".repeat(256)] {
+        let credential = Credential::default();
+        let selection = selection();
+        let executor = Executor::default();
+        let mut initial = response(202, "{}");
+        initial
+            .headers
+            .insert("x-ms-operation-id".into(), id.clone());
+        initial.headers.insert("Retry-After".into(), "0".into());
+        let mut polled = response(200, r#"{"status":"Succeeded"}"#);
+        polled.headers.insert(
+            "Location".into(),
+            format!("{ROOT}/v1/operations/{id}/result"),
+        );
+        executor.responses.lock().unwrap().extend([
+            initial,
+            polled,
+            response(200, r#"{"id":"actual"}"#),
+        ]);
+        let mut session = OperationSession::new(
+            &credential,
+            &selection,
+            executor.clone(),
+            OperationLimits::default(),
+            pending(),
+        );
+        let result = session
+            .execute(
+                FabricOperation::new(
+                    ResourceMethod::Get,
+                    "/v1/workspaces/ws",
+                    Vec::new(),
+                    CompletionPolicy::PythonSynchronous,
+                )
+                .unwrap()
+                .with_source_read_operation_ids()
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.body, br#"{"id":"actual"}"#);
+        assert_eq!(
+            *executor.urls.lock().unwrap(),
+            [
+                format!("{ROOT}/v1/workspaces/ws"),
+                format!("{ROOT}/v1/operations/{id}"),
+                format!("{ROOT}/v1/operations/{id}/result"),
+            ]
+        );
+        let evidence = session.evidence(OperationErrorKind::Cancelled);
+        assert_eq!(evidence.operation_id.as_deref(), Some(id.as_str()));
+        assert!(!evidence.mutation_may_have_occurred);
+        assert_eq!(credential.0.load(Ordering::SeqCst), 3);
+    }
+}
+
+#[tokio::test]
+async fn source_read_id_opt_in_keeps_default_guid_guard_and_rejects_unsafe_ids() {
+    let oversized = "a".repeat(257);
+    for (id, explicit) in [
+        ("op", false),
+        ("../escape", true),
+        ("/escape", true),
+        ("a\\b", true),
+        ("a?b", true),
+        ("a#b", true),
+        ("a%b", true),
+        ("a.b", true),
+        ("a@b", true),
+        ("a b", true),
+        ("a\nb", true),
+        ("a\0b", true),
+        ("a\rb", true),
+        ("a\tb", true),
+        ("a\u{7f}b", true),
+        ("\u{65e5}", true),
+        (oversized.as_str(), true),
+        ("", true),
+    ] {
+        let credential = Credential::default();
+        let selection = selection();
+        let executor = Executor::default();
+        let mut initial = response(202, "{}");
+        initial
+            .headers
+            .insert("x-ms-operation-id".into(), id.into());
+        executor.responses.lock().unwrap().push_back(initial);
+        let mut session = OperationSession::new(
+            &credential,
+            &selection,
+            executor.clone(),
+            OperationLimits::default(),
+            pending(),
+        );
+        let operation = FabricOperation::new(
+            ResourceMethod::Get,
+            "/v1/workspaces/ws",
+            Vec::new(),
+            CompletionPolicy::PythonSynchronous,
+        )
+        .unwrap();
+        let operation = if explicit {
+            operation.with_source_read_operation_ids().unwrap()
+        } else {
+            operation
+        };
+        let error = session.execute(operation).await.unwrap_err();
+        assert_eq!(error.kind, OperationErrorKind::InvalidResponse, "{id}");
+        assert!(!error.mutation_may_have_occurred);
+        assert_eq!(executor.methods.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn source_read_id_opt_in_keeps_acceptance_and_request_budget_semantics() {
+    let credential = Credential::default();
+    let selection = selection();
+    let executor = Executor::default();
+    executor
+        .responses
+        .lock()
+        .unwrap()
+        .push_back(response(202, "{}"));
+    let operation = || {
+        FabricOperation::new(
+            ResourceMethod::Get,
+            "/v1/workspaces/ws",
+            Vec::new(),
+            CompletionPolicy::PythonSynchronous,
+        )
+        .unwrap()
+        .with_source_read_operation_ids()
+        .unwrap()
+    };
+    let mut session = OperationSession::new(
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits::default(),
+        pending(),
+    );
+    assert_eq!(session.execute(operation()).await.unwrap().status, 202);
+    assert!(
+        !session
+            .evidence(OperationErrorKind::Cancelled)
+            .mutation_may_have_occurred
+    );
+    let mut initial = response(202, "{}");
+    initial
+        .headers
+        .insert("x-ms-operation-id".into(), "op".into());
+    executor.responses.lock().unwrap().push_back(initial);
+    let mut bounded = OperationSession::new(
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits {
+            max_requests: std::num::NonZeroUsize::new(1).unwrap(),
+            ..OperationLimits::default()
+        },
+        pending(),
+    );
+    let error = bounded.execute(operation()).await.unwrap_err();
+    assert_eq!(error.kind, OperationErrorKind::Limit);
+    assert_eq!(error.operation_id.as_deref(), Some("op"));
+    assert!(!error.mutation_may_have_occurred);
+    assert_eq!(
+        *executor.methods.lock().unwrap(),
+        [ResourceMethod::Get, ResourceMethod::Get]
+    );
+}
+
 #[tokio::test]
 async fn cancellation_checkpoint_pending_signal_preserves_the_request_budget() {
     let credential = Credential::default();

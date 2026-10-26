@@ -113,6 +113,16 @@ impl FolderReadHost<'_, '_> {
         command: &ReadCommand,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Option<OutputInput>, CommandError> {
+        self.execute_with_source_operations(command, None, cancelled)
+            .await
+    }
+
+    pub(crate) async fn execute_with_source_operations(
+        &self,
+        command: &ReadCommand,
+        operations: Option<&dyn fabric_sdk_operations::OperationExecutor>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<Option<OutputInput>, CommandError> {
         let mut cancelled = pin!(cancelled);
         if command.kind != ReadKind::List
             || command
@@ -123,11 +133,17 @@ impl FolderReadHost<'_, '_> {
             || command.force
             || command.verbose
         {
-            return self.base.execute(command, cancelled).await;
+            return self
+                .base
+                .execute_with_source_operations(command, operations, cancelled)
+                .await;
         }
         // Preserve cancellation priority, without polling a completed future again.
         if poll_fn(|cx| Poll::Ready(cancelled.as_mut().poll(cx).is_ready())).await {
-            return self.base.execute(command, ready(())).await;
+            return self
+                .base
+                .execute_with_source_operations(command, operations, ready(()))
+                .await;
         }
         let tokens: Vec<_> = command.path.iter().map(String::as_str).collect();
         let resolver = Resolver::new(
@@ -144,7 +160,12 @@ impl FolderReadHost<'_, '_> {
             {
                 target
             }
-            _ => return self.base.execute(command, cancelled).await,
+            _ => {
+                return self
+                    .base
+                    .execute_with_source_operations(command, operations, cancelled)
+                    .await;
+            }
         };
         self.list(command, target, cancelled).await.map(Some)
     }
