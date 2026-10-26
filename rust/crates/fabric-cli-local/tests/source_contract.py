@@ -43,7 +43,7 @@ def module(name: str) -> ModuleType:
 def function(path: str, name: str, globals_: dict) -> object:
     """Compile the actual source function, not a rewritten approximation."""
     tree = ast.parse(source(path))
-    node = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name)
+    node = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == name)
     exec(compile(ast.Module(body=[node], type_ignores=[]), path, "exec"), globals_)
     return globals_[name]
 
