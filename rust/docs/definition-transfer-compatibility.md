@@ -177,6 +177,31 @@ is retained: an incorrectly nested new test block was moved to module scope.
 `#![deny(unnameable_test_items)]` now makes accidental nested test registration a
 compile failure even before strict linting. No test was removed, waived or skipped.
 
+The exact `c72860db65e821ada2ec3cbac8f34c4bc7458042` integration candidate
+adopts the released definition tree through
+`230ab09375f4e741a74050a8fd88f21fa85e61dc` without replaying the shared Unicode
+or cancellation adoptions. Its fresh gate-v3 transfer checkpoint passed all
+37 definition consumers, 24 unchanged Notebook consumers, 18 existing shared
+operation tests, five JSON tests, three doctests, ten architecture tests,
+strict targeted Clippy and formatting. All four actual pinned Python captures
+matched the immutable receipts in insertion order. This is local Windows x64
+evidence, not a three-platform or executable-command completion claim.
+
+Affected native CI selections now require those source captures as well as the
+public Rust definition consumers. From `rust/`, run:
+
+```text
+python -B -m unittest discover -s tests/compatibility -p test_run_definition_parity.py -v
+python -B tests/compatibility/run_definition_parity.py --artifacts <private-artifact-directory>
+cargo test --offline --locked -p fabric-deploy --test definitions
+```
+
+The source runner writes only private temporary receipts and compares all four
+captures without sorting arrays or object keys. Missing inputs, observations,
+source pins, subprocess failures and timeouts fail closed. On non-Windows hosts
+only the fixed export receipt's documented text newline expansion is removed;
+binary bytes, actual observations and committed expectations are never changed.
+
 ## Remaining branch matrix
 
 | Surface | Implemented bounded boundary | Still required for full command parity |

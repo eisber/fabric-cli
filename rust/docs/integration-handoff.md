@@ -11,6 +11,44 @@ branch remains intact; references to it in dated evidence are historical.
 
 ## Read-command, query and folder integration
 
+### October 26 released transfer and jobs library candidate
+
+The isolated `dev/marcozo/released-library-c728-1302861` candidate starts at
+exact `c72860db65e821ada2ec3cbac8f34c4bc7458042`, retaining the original newer
+Python checkout separately. It adopts the released definition chain through
+`230ab09375f4e741a74050a8fd88f21fa85e61dc`, skipping its duplicate shared
+Unicode and cancellation adoptions. The deployment crate remains byte-identical
+to that release, including the existing Notebook publisher.
+
+Jobs require released prerequisites `e7dade25f1ac4f3d5d6b1b88f7711e41d62f225b`,
+`44b2b068f56e3eb116af678c4c00d91cdf00fb84` and
+`0543353ea3ca3bcc6820286ed8cd781e8fce51a3` before the explicit skill-header
+delta `55701bfeda34e8132062207319a8ae3fc61c4910`. The duplicate borrowed
+formatter adoption `809f6bcc2e9b333f1bc7d232209b1c7ff6eae03d` is not replayed:
+the base already supplies the shared formatter and resource-error projection.
+Only the family consumers and semantic union of eight internal lockfile edges
+are adopted; all 218 external registry package blocks and package order remain
+unchanged. The jobs crate trees and source consumers match the released header
+checkpoint exactly. Native CI additionally requires the released branch,
+operation-output and skill-header source suites, not just the original jobs suite.
+
+Resource SET/copy integration consumes `fabric_deploy::definitions`, never
+export-cleaned bytes. Copy uses `read_copy_definition` and `copy_payload` with
+the source's absent format query and raw parts. SET uses `read_definition`,
+`decode_set_definition`, `ensure_notebook_dependency`, the resource owner's
+existing restricted path replacement, then `encode_set_definition`. Definition
+POST and subsequent mutation use distinct caller-owned operation sessions;
+uncertain requests are never reset or replayed. Discovery, support, aliases,
+confirmation, collisions, mutation sequencing, deletion and cache reconciliation
+remain owned by the resource caller.
+
+This candidate changes no central main/parser/runtime/native-read/ReadSession,
+shared HTTP/operation policy, core JSON, Python product, old expectations or
+template-order repair. It does not install native command routing or increase
+the five-of-52 partial executable-entrypoint count. Fresh validation receipts
+and the exact source-to-integration map are retained in the lane handoff for
+coordinator review; publication remains the coordinator's separate action.
+
 ### October 26 resource-library integration candidate
 
 The isolated integration branch
