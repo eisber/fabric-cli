@@ -11,6 +11,46 @@ branch remains intact; references to it in dated evidence are historical.
 
 ## Read-command, query and folder integration
 
+### Resource consumers and one shared operation engine
+
+The coordinator reviewed and applied seven released Rust-only commits, in order:
+`2d2d770`, `bc450f5`, `b3a527a`, `e7155cc`, `ba25faa`, `4e02e3b` and `128398d`,
+onto `ef17b8096fae51ca94d701cdec11f101902868a1`. The initial manifest/lock conflict
+was resolved as the union of existing jobs/paging and new local resource packages,
+not by replacing either lane or changing registry versions. Unrelated upstream
+Python ancestry and newer unreleased resource increments were not merged.
+
+`fabric-cli-mutations` composes source-backed workspace/item/folder create,
+metadata update, delete and existence branches, SQL creation modes, mirrored
+resource lifecycle and capacity linkage. `fabric-sdk-onelake` supplies bounded
+list/read/HEAD over an injected storage executor. `fabric-sdk-operations` owns
+the shared bounded request/poll/result engine; the existing Notebook public API
+now delegates through a compatibility adapter. Python source-synchronous and
+strict Notebook completion policies remain distinct. Already-accepted responses
+can be reconciled without replaying mutations, retaining operation IDs, raw
+service failures, cancellation and uncertain-side-effect evidence.
+
+Independent combined Windows x64 validation passed **388 non-documentation Rust
+tests and seven doctests**, strict all-target workspace Clippy, formatting and
+the executed job consumer. Actual public resource examples passed **95 original
+Python command cases, 12 poller cases and 23 HTTP/exception/decorator error/exit
+cases**. All 155 independent job contracts and sixteen pre-existing read/query/
+folder/workspace comparison stages passed unchanged. These denominators are
+separate scenarios, not a complete command or migration coverage percentage.
+
+All previous registry package versions, sources, checksums and features were
+preserved. Only local package/edge additions were required; Python product
+source and protected expectations remain unchanged. Native CI now requires the
+three resource source-to-native comparisons on every selected OS, including
+resource-only selections. The shared local validation mutex released normally.
+The exact published checkpoint and fresh provider result are supplied separately.
+
+This is not complete generic filesystem verbs, a live CLI host, broader
+templates/dependencies/bulk selection, copy/move, shortcuts, ARM/domain
+administration or online parity. The later concrete OneLake adapter and storage
+mutation increments remain separate handoffs. See the
+[resource compatibility matrix](mutation-compatibility.md).
+
 ### Job handlers and shared token paging integration
 
 The coordinator reviewed and applied only the released Rust commits

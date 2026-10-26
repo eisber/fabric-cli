@@ -82,6 +82,19 @@ prerequisites such as OpenSSL.
 
 ## Owner-confirmed affected-crate goal
 
+### Resource and shared operation consumers
+
+Selecting `fabric-cli-mutations`, `fabric-sdk-operations` or
+`fabric-sdk-onelake` requires building the actual offline command, operation and
+error examples and comparing them to three independent pinned Python references.
+These standard-library runners execute original Git source functions with
+synthetic collaborators; they do not import product initialization or call live
+services. Comparisons assert requests, output, status/exit and reconciliation,
+not just compiled models. The new native step has a finite five-minute bound,
+requires Python even for resource-only selections and preserves existing read,
+job, Notebook and transport gates. All public/native proof remains separate
+from the unavailable production host and online test scope.
+
 ### Existing Windows linker environment
 
 If a resumed lane reports `link.exe` missing, first check its process environment,

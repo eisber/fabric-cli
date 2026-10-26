@@ -46,18 +46,18 @@ placeholder crates or claims of delivered code.
 | `get` | - | Partial ordered item/specialized/workspace metadata and projection; missing other resources, complete enrichment and live host | Existing read host and focused SDKs |
 | `cd` | - | Partial immutable path/context resolver; missing command persistence and interactive state | Existing `fabric-cli-context`; new `fabric-cli-local` |
 | `pwd` | - | Partial context types; missing command/output/session integration | `fabric-cli-context`, new `fabric-cli-local` |
-| `exists` | - | Partial lookup primitives; missing command, resource/error truthiness and OneLake branches | Existing focused SDKs/context, new OneLake SDK |
+| `exists` | - | Partial workspace/item/folder truthy-ID handler and source message; other resources, OneLake and binary dispatch remain | Existing focused SDKs/context/mutation CLI, OneLake SDK |
 | `open` | - | Missing source URL selection and injected platform browser handler | New `fabric-cli-local`, existing context/SDK |
-| `mkdir` | `create` | Partial Notebook create in SDK; missing full workspace/item/folder/file/hidden-resource routing and command | Existing focused SDKs; new OneLake SDK and `fabric-cli-mutations` |
-| `rm` | `del` | Missing full resource deletion, selection/prompts, hard/recursive modes and cleanup | Same mutation owners |
+| `mkdir` | `create` | Partial workspace/item/folder library consumers, SQL creation modes and explicit UI/cache effects; templates/dependencies, other resources and binary dispatch remain | Existing focused SDKs, `fabric-sdk-onelake`, `fabric-cli-mutations` |
+| `rm` | `del` | Partial item/folder force/hard and forced workspace deletion library; bulk/non-force selection, file branches and binary dispatch remain | Same mutation owners |
 | `mv` | `move` | Missing cross-workspace/item/file move, recursive traversal, confirmations and reconciliation | Mutation owners plus deployment/definitions |
 | `cp` | `copy` | Missing item/file recursive copy, overwrite and path-collision behavior | Mutation owners plus deployment/definitions |
-| `set` | - | Missing property-specific mutations and dispatch; read metadata is not a setter | Existing focused SDKs and `fabric-cli-mutations` |
+| `set` | - | Partial workspace/Spark/item/folder metadata library setters; source read adapter, definitions, other resource branches and binary dispatch remain | Existing focused SDKs and `fabric-cli-mutations` |
 | `ln` | `mklink` | Missing OneLake and external shortcut requests/types/overwrite behavior | New `fabric-sdk-onelake`, mutation CLI |
-| `start` | - | Missing capacity ARM and mirrored-resource lifecycle; distinct from `job start` | Existing capacity SDK, new resource lifecycle SDK |
-| `stop` | - | Missing capacity/mirrored-resource stop and completion handling | Same lifecycle owners |
-| `assign` | - | Missing capacity/domain workspace assignment and routing | Existing workspace/capacity SDKs; new catalog SDK |
-| `unassign` | - | Missing capacity/domain unassignment and routing | Same assignment owners |
+| `start` | - | Partial mirrored-database library lifecycle; capacity ARM/other resources and binary dispatch missing; distinct from `job start` | Existing resource/mutation and shared-operation SDKs |
+| `stop` | - | Partial mirrored-database library lifecycle; capacity ARM/other resources and binary dispatch missing | Same lifecycle owners |
+| `assign` | - | Partial capacity assignment library and metadata checks; domain/other resources and binary dispatch missing | Existing workspace SDK/mutation CLI; catalog extension pending |
+| `unassign` | - | Partial capacity unassignment library; domain/other resources and binary dispatch missing | Same assignment owners |
 | `export` | - | Missing full item-definition retrieval, transforms and filesystem output | Existing `fabric-deploy`; new `fabric-cli-transfer` |
 | `bulk-export` | - | Missing recursive workspace/folder export, structure and binding preservation | Same transfer owners |
 | `import` | - | Partial Notebook preparation/create/update/LRO; missing complete CLI and item-type branches | Existing `fabric-deploy`/SDK; transfer CLI |
@@ -190,6 +190,32 @@ a read-only pinned export. Integrate Rust-only lane deltas, not the unrelated
 upstream Python feature. Record source drift separately.
 
 ## Offline and online completion gates
+
+### Released resource and operation library checkpoint
+
+Seven released Rust-only increments ending at `128398d` provide
+`fabric-cli-mutations`, focused workspace/item/folder endpoint extensions,
+`fabric-sdk-onelake` read/list/HEAD and `fabric-sdk-operations`.
+These are bounded library consumers, not full generic filesystem verbs.
+The generic operation engine is extracted from the existing Notebook policy;
+Notebook's public API delegates through a compatibility adapter rather than
+retaining a second polling implementation.
+
+`OperationSession` preserves explicit credentials, finite requests/bytes/delays,
+cancellation, raw service error data, observed operation IDs and mutation
+uncertainty. `reconcile_accepted` consumes an already-issued 202 without another
+mutation. `PythonSynchronous` handles the complete source client behavior while
+the existing strict Notebook completion policy remains distinct. No transport,
+retry, runtime or identity backend is created by the service engine.
+
+The released OneLake checkpoint supplies a caller-injected storage executor
+interface, not yet its later concrete bound-HTTP adapter or write/shortcut/move
+increments. Those newer worker commits remain separate until reviewed and
+validated. Source command, poller and error/exit comparisons use actual public
+native consumers; existing source expectations and Python product code remain
+unchanged. Main dispatch, context/presentation integration, templates/bulk and
+other resource branches remain explicit gaps. See the
+[resource matrix](mutation-compatibility.md).
 
 ### Job and paging library integration
 

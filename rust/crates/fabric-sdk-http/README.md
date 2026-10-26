@@ -106,7 +106,7 @@ Reference source: `src/fabric_cli/client/fab_api_client.py` at
 | urllib3 Retry-After statuses 413/429/503 | GET retry classification includes 413/429 when Retry-After is present |
 | `do_request`: four headerless 429 responses | Four outer iterations and ten-second waits, then explicit retry exhaustion; adapter budget restarts on each iteration |
 | Fabric token and JSON Content-Type | Uses the operation-supplied token; sends exact body/query and JSON Content-Type |
-| `_poll_operation` sleeps asynchronously in Rust | Notebook executor waits use the caller timer and bounded policy; operation/result logic stays in `fabric-sdk` |
+| `_poll_operation` sleeps asynchronously in Rust | Executor waits use the caller timer; operation/result logic lives in shared `fabric-sdk-operations`, with the existing Notebook API as a compatibility consumer |
 | Request timeout defaults to 240 seconds | Rust uses an overall execution deadline, including reads and retry waits, not Requests' per-attempt socket timeout |
 
 The seven immutable [retry reference cases](../../tests/compatibility/http/README.md)
