@@ -755,10 +755,8 @@ async fn local_cancellation_and_output_failures_do_not_claim_success_or_remote_c
     assert!(h.http.requests.lock().unwrap().is_empty());
     let h = Harness::new([]);
     h.http.pending.store(true, Ordering::SeqCst);
-    let mut first = true;
-    let cancel = poll_fn(move |cx| {
-        if first {
-            first = false;
+    let cancel = poll_fn(|cx| {
+        if h.http.requests.lock().unwrap().is_empty() {
             cx.waker().wake_by_ref();
             Poll::Pending
         } else {
@@ -994,9 +992,12 @@ async fn generic_operation_cancellation_uses_the_injected_policy_or_fails_explic
 #[tokio::test]
 async fn unsupported_skill_header_is_not_silently_discarded_before_a_mutation() {
     let h = Harness::new([]);
+    let legacy = sdk(h.http.clone(), h.timer.clone());
+    let mut host = h.host();
+    host.sdk = &legacy;
     let command = parse(&["start", "item.DataPipeline", "--skill", "synthetic-skill"]);
     assert_eq!(command.skill.as_deref(), Some("synthetic-skill"));
-    let plan = h.host().dispatch_json(&command, pending()).await.unwrap();
+    let plan = host.dispatch_json(&command, pending()).await.unwrap();
     assert_eq!(plan.exit_code, 1);
     let value: Value = serde_json::from_slice(&plan.payload).unwrap();
     assert_eq!(value["result"]["error_code"], "NotSupported");
@@ -1053,4 +1054,583 @@ async fn multi_token_folder_relative_and_explicit_home_paths_reach_the_same_job_
             .is_some()
     );
     assert_eq!(h.http.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn additional_parameter_branches_reach_real_http_or_fail_before_mutation() {
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/jobs/branches.json"
+    ))
+    .unwrap();
+    for case in cases["execution"].as_array().unwrap() {
+        let resource = case["resource"].as_str().unwrap();
+        let h = Harness::resource(
+            resource,
+            if case.get("error").is_none() {
+                vec![accepted()]
+            } else {
+                vec![]
+            },
+        );
+        let path = format!("item.{resource}");
+        let mut command = parse(&["start", &path]);
+        command.params = tokens(case["args"].get("params"));
+        command.config = tokens(case["args"].get("config"));
+        command.input = tokens(case["args"].get("input"));
+        let plan = h.host().dispatch_json(&command, pending()).await.unwrap();
+        let output: Value = serde_json::from_slice(&plan.payload).unwrap();
+        if let Some(error) = case.get("error") {
+            assert_eq!(plan.exit_code, 1, "{}", case["name"]);
+            assert_eq!(
+                output["result"]["error_code"], error["code"],
+                "{}",
+                case["name"]
+            );
+            assert_eq!(
+                output["result"]["message"],
+                error["message"].as_str().unwrap().trim_end_matches('.'),
+                "{}",
+                case["name"]
+            );
+            assert!(h.http.requests.lock().unwrap().is_empty());
+        } else {
+            assert_eq!(plan.exit_code, 0, "{}: {output}", case["name"]);
+            match h.http.requests.lock().unwrap()[0].body() {
+                azure_core::http::Body::Bytes(bytes) => assert_eq!(
+                    serde_json::from_slice::<Value>(bytes).unwrap(),
+                    json!({"executionData":case["expected"]}),
+                    "{}",
+                    case["name"]
+                ),
+                _ => panic!("expected bounded bytes"),
+            }
+        }
+    }
+}
+
+#[test]
+fn additional_schedule_shapes_match_unchanged_python_error_precedence() {
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/jobs/branches.json"
+    ))
+    .unwrap();
+    for case in cases["schedules"].as_array().unwrap() {
+        let raw = &case["args"];
+        let args = ScheduleArgs {
+            enable: raw["enable"] == true,
+            disable: raw.get("disable") == Some(&Value::Bool(false)),
+            schedule_type: raw["type"].as_str().map(Into::into),
+            interval: raw["interval"].as_str().map(Into::into),
+            start: raw["start"].as_str().map(Into::into),
+            end: raw["end"].as_str().map(Into::into),
+            days: raw["days"].as_str().map(Into::into),
+        };
+        let input = tokens(raw.get("input"));
+        let result =
+            schedule_configuration(&args, input.as_deref(), case["update"] == true, &NoFiles);
+        if let Some(expected) = case.get("error") {
+            let output = serde_json::to_value(
+                result
+                    .unwrap_err()
+                    .envelope(Timestamp::parse("2000-01-01T00:00:00Z").unwrap(), None),
+            )
+            .unwrap();
+            assert_eq!(
+                output["result"]["error_code"], expected["code"],
+                "{}",
+                case["name"]
+            );
+            assert_eq!(
+                output["result"]["message"],
+                expected["message"].as_str().unwrap().trim_end_matches('.'),
+                "{}",
+                case["name"]
+            );
+        } else {
+            assert_eq!(
+                result.unwrap().unwrap_or(Value::Null),
+                case["expected"],
+                "{}",
+                case["name"]
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn every_pinned_unsupported_resource_is_rejected_for_every_leaf_before_http() {
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/jobs/branches.json"
+    ))
+    .unwrap();
+    assert_eq!(cases["rejected_resources"].as_array().unwrap().len(), 39);
+    for resource in cases["rejected_resources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+    {
+        for leaf in [
+            "start",
+            "run",
+            "run-list",
+            "run-cancel",
+            "run-status",
+            "run-sch",
+            "run-update",
+            "run-rm",
+        ] {
+            let h = Harness::resource(resource, []);
+            let path = format!("item.{resource}");
+            let args = if ["run-cancel", "run-status", "run-update", "run-rm"].contains(&leaf) {
+                vec![leaf, path.as_str(), "--id", "run"]
+            } else {
+                vec![leaf, path.as_str()]
+            };
+            let plan = h
+                .host()
+                .dispatch_json(&parse(&args), pending())
+                .await
+                .unwrap();
+            assert_eq!(plan.exit_code, 1, "{leaf}: {resource}");
+            let output: Value = serde_json::from_slice(&plan.payload).unwrap();
+            assert_eq!(
+                output["result"]["error_code"], "UnsupportedCommand",
+                "{leaf}: {resource}"
+            );
+            assert_eq!(
+                output["result"]["message"],
+                format!(
+                    "not supported for command 'job {}'",
+                    if leaf == "start" { "run" } else { leaf }
+                )
+            );
+            assert!(
+                h.http.requests.lock().unwrap().is_empty(),
+                "{leaf}: {resource}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn wrapper_progress_uses_the_source_full_item_name_not_the_short_display_name() {
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/jobs/branches.json"
+    ))
+    .unwrap();
+    for case in cases["wrapper_events"].as_array().unwrap() {
+        let mut replies = vec![accepted()];
+        if case["wait"] == true {
+            replies.push(response(200, r#"{"status":"Completed"}"#, &[]));
+        }
+        let h = Harness::resource("Notebook", replies);
+        let command = parse(&[
+            case["leaf"].as_str().unwrap(),
+            case["item"].as_str().unwrap(),
+        ]);
+        h.host().execute(&command, pending()).await.unwrap();
+        assert_eq!(
+            h.ui.events.lock().unwrap().first(),
+            Some(&JobEvent::Grey(case["expected"].as_str().unwrap().into()))
+        );
+    }
+}
+
+#[tokio::test]
+async fn update_preserves_unmodified_source_enabled_values_in_the_actual_patch() {
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/jobs/branches.json"
+    ))
+    .unwrap();
+    for case in cases["schedule_updates"].as_array().unwrap() {
+        let h = Harness::new([
+            response(200, &case["existing"].to_string(), &[]),
+            response(200, r#"{"id":"sch"}"#, &[]),
+        ]);
+        let mut command = parse(&["run-update", "item.DataPipeline", "--id", "sch"]);
+        command.input = tokens(case["args"].get("input"));
+        let result = h.host().execute(&command, pending()).await.unwrap();
+        assert!(result.is_some());
+        let requests = h.http.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        match requests[1].body() {
+            azure_core::http::Body::Bytes(bytes) => assert_eq!(
+                serde_json::from_slice::<Value>(bytes).unwrap(),
+                case["expected"],
+                "{}",
+                case["name"]
+            ),
+            _ => panic!("expected bounded request bytes"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn all_job_leaves_forward_explicit_skill_and_keep_default_clients_and_hosts_unchanged() {
+    let fixture = fixtures();
+    for skill in [
+        None,
+        Some(""),
+        Some("synthetic-skill/v1"),
+        Some("skill with spaces "),
+    ] {
+        for resource in fixture["resources"].as_object().unwrap().keys() {
+            for case in fixture["cli"].as_array().unwrap() {
+                let replies = case["responses"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|reply| {
+                        let headers: Vec<_> = reply
+                            .get("headers")
+                            .and_then(Value::as_object)
+                            .map(|o| {
+                                o.iter()
+                                    .map(|(k, v)| (k.as_str(), v.as_str().unwrap()))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        response(
+                            reply["status"].as_u64().unwrap() as u16,
+                            &reply.get("body").map(Value::to_string).unwrap_or_default(),
+                            &headers,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let mut h = Harness::resource(resource, replies);
+                h.ui.answer = case["confirmed"] == true;
+                let executor = Arc::new(HttpJobExecutor::new(
+                    HttpExecutor::new(h.http.clone(), h.timer.clone(), ExecutionOptions::default())
+                        .unwrap(),
+                ));
+                let operations = fabric_sdk_jobs::SharedJobOperations::from_job_executor(
+                    Arc::new(TestCredential::default()),
+                    CredentialSelection::new("offline", "synthetic", Audience::Fabric).unwrap(),
+                    executor,
+                    fabric_sdk_operations::OperationLimits::default(),
+                );
+                let mut args = vec![
+                    case["leaf"].as_str().unwrap().to_owned(),
+                    format!("item.{resource}"),
+                ];
+                if let Some(fields) = case.get("args").and_then(Value::as_object) {
+                    for (name, value) in fields {
+                        if name == "disable" && *value == false {
+                            args.push("--disable".into());
+                        } else if *value == true {
+                            args.push(format!("--{name}"));
+                        } else if !value.is_boolean() {
+                            args.push(format!(
+                                "--{}",
+                                if name == "schedule_id" { "id" } else { name }
+                            ));
+                            args.push(
+                                value
+                                    .as_str()
+                                    .map(str::to_owned)
+                                    .unwrap_or_else(|| value.to_string()),
+                            );
+                        }
+                    }
+                }
+                if let Some(skill) = skill {
+                    args.extend(["--skill".into(), skill.into()]);
+                }
+                let borrowed: Vec<_> = args.iter().map(String::as_str).collect();
+                let mut host = h.host();
+                host.operations = Some(&operations);
+                host.config.cancel_on_timeout = case
+                    .get("cancel_on_timeout")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true);
+                let command = parse(&borrowed);
+                let plan = host.dispatch_json(&command, pending()).await.unwrap();
+                assert_eq!(
+                    plan.exit_code,
+                    if case.get("error").is_some() { 1 } else { 0 },
+                    "{} {resource}",
+                    case["name"]
+                );
+                let requests = h.http.requests.lock().unwrap();
+                assert_eq!(requests.len(), case["responses"].as_array().unwrap().len());
+                for request in requests.iter() {
+                    let header = request
+                        .headers()
+                        .get_optional_str(&"x-ms-fabric-skill".into());
+                    assert_eq!(
+                        header,
+                        skill.filter(|value| !value.is_empty()),
+                        "{} {resource}",
+                        case["name"]
+                    );
+                    assert_eq!(request.url().host_str(), Some("api.fabric.microsoft.com"));
+                }
+                assert!(h.sdk.request_headers().is_empty());
+                assert!(operations.request_headers().is_empty());
+                assert_eq!(host.current, h.current);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn invalid_skill_headers_fail_before_credential_acquisition_or_mutation() {
+    for skill in [
+        " leading",
+        "\tleading",
+        "bad\r\nx-other: injected",
+        "bad\n",
+        "bad\0",
+        "\u{7f}",
+    ] {
+        let h = Harness::new([]);
+        let plan = h
+            .host()
+            .dispatch_json(
+                &parse(&["start", "item.DataPipeline", "--skill", skill]),
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(plan.exit_code, 1);
+        let output: Value = serde_json::from_slice(&plan.payload).unwrap();
+        assert_eq!(output["result"]["error_code"], "InvalidInput");
+        assert!(h.http.requests.lock().unwrap().is_empty());
+        assert!(!String::from_utf8(plan.payload).unwrap().contains(skill));
+    }
+}
+
+#[tokio::test]
+async fn skill_scoping_does_not_leak_across_concurrent_or_repeated_commands() {
+    let h = Harness::new([accepted(), accepted(), accepted(), accepted()]);
+    let host = h.host();
+    let first = parse(&["start", "item.DataPipeline", "--skill", "first"]);
+    let second = parse(&["start", "item.DataPipeline", "--skill", "second"]);
+    let (a, b) = tokio::join!(
+        host.execute(&first, pending()),
+        host.execute(&second, pending())
+    );
+    a.unwrap();
+    b.unwrap();
+    host.execute(&parse(&["start", "item.DataPipeline"]), pending())
+        .await
+        .unwrap();
+    host.execute(
+        &parse(&["start", "item.DataPipeline", "--skill", ""]),
+        pending(),
+    )
+    .await
+    .unwrap();
+    let requests = h.http.requests.lock().unwrap();
+    assert_eq!(
+        requests
+            .iter()
+            .map(|r| r.headers().get_optional_str(&"x-ms-fabric-skill".into()))
+            .collect::<Vec<_>>(),
+        [Some("first"), Some("second"), None, None]
+    );
+    assert!(h.sdk.request_headers().is_empty());
+}
+
+#[tokio::test]
+async fn skill_is_preserved_by_shared_get_retry_and_mutations_remain_single_attempt() {
+    let h = Harness::new([
+        response(503, "{}", &[]),
+        response(200, r#"{"id":"run","status":"Completed"}"#, &[]),
+    ]);
+    let plan = h
+        .host()
+        .dispatch_json(
+            &parse(&[
+                "run-status",
+                "item.DataPipeline",
+                "--id",
+                "run",
+                "--skill",
+                "retry",
+            ]),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(plan.exit_code, 0);
+    {
+        let requests = h.http.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(requests.iter().all(|r| {
+            r.headers().get_optional_str(&"x-ms-fabric-skill".into()) == Some("retry")
+        }));
+    }
+    let h = Harness::new([response(
+        429,
+        r#"{"errorCode":"Throttled","message":"synthetic"}"#,
+        &[],
+    )]);
+    assert_eq!(
+        h.host()
+            .dispatch_json(
+                &parse(&["start", "item.DataPipeline", "--skill", "once"]),
+                pending()
+            )
+            .await
+            .unwrap()
+            .exit_code,
+        1
+    );
+    assert_eq!(h.http.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn skill_is_preserved_across_pages_without_changing_the_opaque_continuation_query() {
+    for schedules in [false, true] {
+        let h = Harness::new([
+            response(
+                200,
+                r#"{"value":[{"id":"one"}],"continuationToken":"a +&"}"#,
+                &[],
+            ),
+            response(200, r#"{"value":[{"id":"two"}]}"#, &[]),
+        ]);
+        let mut command = parse(&["run-list", "item.DataPipeline", "--skill", "page-context"]);
+        command.schedule = schedules;
+        let output = h
+            .host()
+            .execute(&command, pending())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(output.input.data, Some(json!([{"id":"one"},{"id":"two"}])));
+        let requests = h.http.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(
+            requests[1].url().query(),
+            Some("continuationToken=a+%2B%26")
+        );
+        for request in requests.iter() {
+            assert_eq!(
+                request
+                    .headers()
+                    .get_optional_str(&"x-ms-fabric-skill".into()),
+                Some("page-context")
+            );
+            assert!(request.url().path().ends_with(if schedules {
+                "/jobs/Pipeline/schedules"
+            } else {
+                "/jobs/instances"
+            }));
+        }
+    }
+}
+
+#[tokio::test]
+async fn command_skill_follows_generic_operation_result_get_without_replaying_cancel() {
+    let h = Harness::new([
+        response(
+            202,
+            "",
+            &[("x-ms-operation-id", "11111111-1111-1111-1111-111111111111")],
+        ),
+        response(
+            200,
+            r#"{"status":"Succeeded"}"#,
+            &[(
+                "Location",
+                "https://api.fabric.microsoft.com/v1/operations/11111111-1111-1111-1111-111111111111/result",
+            )],
+        ),
+        response(200, r#"{"id":"operation-result"}"#, &[]),
+    ]);
+    let operations = fabric_sdk_jobs::SharedJobOperations::from_job_executor(
+        Arc::new(TestCredential::default()),
+        CredentialSelection::new("offline", "tenant", Audience::Fabric).unwrap(),
+        Arc::new(HttpJobExecutor::new(
+            HttpExecutor::new(h.http.clone(), h.timer.clone(), ExecutionOptions::default())
+                .unwrap(),
+        )),
+        fabric_sdk_operations::OperationLimits::default(),
+    );
+    let mut host = h.host();
+    host.operations = Some(&operations);
+    let result = host
+        .execute(
+            &parse(&[
+                "run-cancel",
+                "item.DataPipeline",
+                "--id",
+                "run",
+                "--wait",
+                "--skill",
+                "result-context",
+            ]),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert!(result.is_none());
+    let requests = h.http.requests.lock().unwrap();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[0].method(), azure_core::http::Method::Post);
+    assert_eq!(requests[1].method(), azure_core::http::Method::Get);
+    assert_eq!(requests[2].method(), azure_core::http::Method::Get);
+    assert!(requests[2].url().path().ends_with("/result"));
+    assert!(requests.iter().all(|r| {
+        r.headers().get_optional_str(&"x-ms-fabric-skill".into()) == Some("result-context")
+    }));
+    assert!(operations.request_headers().is_empty());
+}
+
+#[tokio::test]
+async fn explicit_empty_skill_clears_preconfigured_client_and_reconciler_context_without_mutation_of_either()
+ {
+    let h = Harness::new([
+        response(
+            202,
+            "",
+            &[("x-ms-operation-id", "11111111-1111-1111-1111-111111111111")],
+        ),
+        response(200, r#"{"status":"Succeeded"}"#, &[]),
+    ]);
+    let selected =
+        fabric_sdk_jobs::JobRequestHeaders::with_skill(Some("previous-context")).unwrap();
+    let sdk = h.sdk.with_request_headers(selected.clone()).unwrap();
+    let base = fabric_sdk_jobs::SharedJobOperations::from_job_executor(
+        Arc::new(TestCredential::default()),
+        CredentialSelection::new("offline", "tenant", Audience::Fabric).unwrap(),
+        Arc::new(HttpJobExecutor::new(
+            HttpExecutor::new(h.http.clone(), h.timer.clone(), ExecutionOptions::default())
+                .unwrap(),
+        )),
+        fabric_sdk_operations::OperationLimits::default(),
+    );
+    let operations =
+        fabric_sdk_jobs::JobOperationReconciler::with_request_headers(&base, &selected).unwrap();
+    let mut host = h.host();
+    host.sdk = &sdk;
+    host.operations = Some(operations.as_ref());
+    let result = host
+        .execute(
+            &parse(&[
+                "run-cancel",
+                "item.DataPipeline",
+                "--id",
+                "run",
+                "--wait",
+                "--skill",
+                "",
+            ]),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert!(result.is_none());
+    let requests = h.http.requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert!(requests.iter().all(|r| {
+        r.headers()
+            .get_optional_str(&"x-ms-fabric-skill".into())
+            .is_none()
+    }));
+    assert_eq!(sdk.request_headers(), &selected);
+    assert_eq!(operations.request_headers(), selected);
 }

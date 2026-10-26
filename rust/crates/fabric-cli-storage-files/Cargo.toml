@@ -1,0 +1,32 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-cli-storage-files"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Source-pinned local filesystem and OneLake copy consumers"
+
+[package.metadata.fabric]
+layer = "cli"
+
+[dependencies]
+fabric-cli-mutations.workspace = true
+fabric-cli-output.workspace = true
+fabric-sdk-onelake.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+azure_core.workspace = true
+async-trait.workspace = true
+fabric-cli-context.workspace = true
+fabric-sdk-http.workspace = true
+fabric-sdk-onelake-http.workspace = true
+fabric-sdk-workspaces.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

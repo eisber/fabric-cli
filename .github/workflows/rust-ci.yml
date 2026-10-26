@@ -223,6 +223,7 @@ jobs:
       - name: Set up the development-only Python oracle
         if: >-
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-deploy') ||
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-core-json') ||
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-output') ||
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-jobs') ||
@@ -355,7 +356,19 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
           python -B tests/compatibility/jobs/reference.py
+          python -B tests/compatibility/jobs/branches_reference.py
+          python -B tests/compatibility/jobs/operation_output_reference.py
+          python -B tests/compatibility/jobs/skill_headers_reference.py
           cargo run --offline --locked -p fabric-cli-jobs --example offline_job
+      - name: Require released definition source receipts and native transfer consumers
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-deploy')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python -B -m unittest discover -s tests/compatibility -p test_run_definition_parity.py -v
+          python -B tests/compatibility/run_definition_parity.py --artifacts "$RUNNER_TEMP/definition-parity"
+          cargo test --offline --locked -p fabric-deploy --test definitions
       - name: Require opt-in native read host without authentication
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
         env:

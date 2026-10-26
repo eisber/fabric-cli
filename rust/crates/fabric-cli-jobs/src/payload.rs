@@ -111,18 +111,15 @@ fn parameter_start(text: &str, offset: usize) -> Option<(usize, usize, usize)> {
 }
 
 fn parameters(text: &str, job_type: JobType) -> Result<Map<String, Value>, CommandError> {
-    if !matches!(job_type, JobType::Notebook | JobType::Pipeline) {
-        return Err(not_runnable(format!(
-            "Parameters not supported for job type: {}. Please use the input argument instead",
-            job_type.as_str()
-        )));
-    }
     let mut result = Map::new();
     let mut offset = 0;
     while let Some((start, colon, equal)) = parameter_start(text, offset) {
-        let mut end = text.len();
+        let mut end = text.strip_suffix('\n').map_or(text.len(), str::len);
         for (relative, _) in text[equal + 1..].match_indices(',') {
             let comma = equal + 1 + relative;
+            if comma == equal + 1 {
+                continue;
+            }
             let following = &text[comma + 1..];
             let trimmed = following.trim_start();
             let next = text.len() - trimmed.len();
@@ -133,10 +130,22 @@ fn parameters(text: &str, job_type: JobType) -> Result<Map<String, Value>, Comma
         }
         let raw = &text[equal + 1..end];
         if raw.is_empty() || raw.contains('\n') {
-            return Err(not_runnable(format!("Invalid parameter format: {text}")));
+            offset = start
+                + text[start..]
+                    .chars()
+                    .next()
+                    .expect("parameter start")
+                    .len_utf8();
+            continue;
         }
         let name = &text[start..colon];
         let kind = &text[colon + 1..equal];
+        if !matches!(job_type, JobType::Notebook | JobType::Pipeline) {
+            return Err(not_runnable(format!(
+                "Parameters not supported for job type: {}. Please use the input argument instead",
+                job_type.as_str()
+            )));
+        }
         let value = parameter_value(kind, raw, job_type)?;
         let value = if job_type == JobType::Notebook {
             json!({"type": kind, "value": value})
@@ -145,7 +154,7 @@ fn parameters(text: &str, job_type: JobType) -> Result<Map<String, Value>, Comma
         };
         result.insert(name.into(), value);
         offset = end;
-        if end == text.len() {
+        if end >= text.len() || &text[end..] == "\n" {
             break;
         }
     }
@@ -171,13 +180,13 @@ fn parameter_value(kind: &str, raw: &str, job_type: JobType) -> Result<Value, Co
             {
                 return Err(not_runnable("Invalid integer parameter value"));
             }
-            value
-                .replace('_', "")
-                .parse::<i64>()
-                .map(|n| json!(n))
-                .map_err(|_| {
-                    not_runnable("Integer parameter exceeds the supported JSON integer bound")
-                })
+            let normalized = value.replace('_', "");
+            if let Ok(value) = normalized.parse::<i64>() {
+                return Ok(json!(value));
+            }
+            normalized.parse::<u64>().map(|n| json!(n)).map_err(|_| {
+                not_runnable("Integer parameter exceeds the supported JSON integer bound")
+            })
         }
         "float" => {
             if !valid_numeric_underscores(raw.trim()) {
@@ -224,11 +233,12 @@ pub fn schedule_configuration(
     update: bool,
     files: &dyn JsonInput,
 ) -> Result<Option<Value>, CommandError> {
-    let supplied = args.schedule_type.is_some()
-        || args.start.is_some()
-        || args.end.is_some()
-        || args.interval.is_some()
-        || args.days.is_some();
+    let nonempty = |value: &Option<String>| value.as_ref().is_some_and(|s| !s.is_empty());
+    let supplied = nonempty(&args.schedule_type)
+        || nonempty(&args.start)
+        || nonempty(&args.end)
+        || nonempty(&args.interval)
+        || nonempty(&args.days);
     if let Some(input) = input {
         let config = json_input(input, files)?;
         if args.enable || (update && args.disable) || supplied {
@@ -246,6 +256,11 @@ pub fn schedule_configuration(
                 "`type`, `interval`, `start`, and `end` are required parameters for schedule creation.",
             ));
         };
+        if kind.is_empty() || start.is_empty() || end.is_empty() || interval.is_empty() {
+            return Err(not_runnable(
+                "`type`, `interval`, `start`, and `end` are required parameters for schedule creation.",
+            ));
+        }
         let mut config = Map::new();
         let capitalized = match kind.as_str() {
             "cron" => "Cron",
@@ -256,12 +271,13 @@ pub fn schedule_configuration(
         config.insert("type".into(), json!(capitalized));
         match kind.as_str() {
             "cron" => {
-                if interval.is_empty() || !interval.bytes().all(|c| c.is_ascii_digit()) {
+                let normalized = interval.strip_suffix('\n').unwrap_or(interval);
+                if normalized.is_empty() || !normalized.bytes().all(|c| c.is_ascii_digit()) {
                     return Err(not_runnable(format!(
                         "Invalid format for interval: {interval}. Must be an integer."
                     )));
                 }
-                let number = interval.parse::<u64>().map_err(|_| {
+                let number = normalized.parse::<u64>().map_err(|_| {
                     not_runnable("Schedule interval exceeds the JSON integer bound")
                 })?;
                 config.insert("interval".into(), json!(number));
@@ -338,7 +354,7 @@ pub fn schedule_configuration(
     }
 }
 
-pub(crate) fn schedule_payload(config: Value, enabled: bool) -> Result<Value, CommandError> {
+pub(crate) fn schedule_payload(config: Value, enabled: Value) -> Result<Value, CommandError> {
     let contains = |key: &str| -> Result<bool, CommandError> {
         match &config {
             Value::Object(values) => Ok(values.contains_key(key)),
