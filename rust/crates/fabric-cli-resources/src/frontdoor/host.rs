@@ -3,16 +3,16 @@
 
 use super::{AccessCommand, AccessKind};
 use crate::{
-    AclRead, ApiOptions, CommandError, CommandValue, FamilyPresentation, NamedResource,
-    acl_resource, api, find, list_local_labels, read_api_input, read_named_acls,
-    render_family_error, render_family_output,
+    AclRead, ApiOptions, CommandError, CommandValue, Confirmation, FamilyPresentation,
+    MutationOptions, NamedResource, acl_resource, api, find, list_local_labels, mutate_acl,
+    mutate_label, read_api_input, read_named_acls, render_family_error, render_family_output,
 };
-use fabric_cli_context::{Element, Lookup, PathInput, ResolveOptions, Resolver};
+use fabric_cli_context::{Element, Lookup, NodeKind, PathInput, ResolveOptions, Resolver};
 use fabric_cli_output::{
     Timestamp,
     text::{CharacterWidth, TextError, TextPlan},
 };
-use fabric_sdk_access::AccessClient;
+use fabric_sdk_access::{AccessClient, LabelItem};
 use fabric_sdk_api::{ApiClient, Limits, Origin, RequestBounds, cancellable};
 use fabric_sdk_catalog::CatalogClient;
 use std::{
@@ -71,6 +71,29 @@ impl ApiClients<'_> {
     }
 }
 
+/// Executes the configured local-only leaf before constructing any remote host.
+/// `None` means a remote leaf; no SDK client, account, resolver or runtime is needed.
+pub fn execute_local(
+    command: &AccessCommand,
+    definitions: Option<&Path>,
+) -> Option<Result<CommandValue, CommandError>> {
+    if !matches!(command.kind, AccessKind::LabelListLocal) {
+        return None;
+    }
+    Some(if command.skill.is_some() {
+        Err(unbound_skill())
+    } else {
+        list_local_labels(definitions)
+    })
+}
+
+fn unbound_skill() -> CommandError {
+    CommandError::new(
+        "NotSupported",
+        "Skill headers require a configured shared host binding",
+    )
+}
+
 /// Borrowed command host. No runtime, token discovery, terminal or HTTP engine
 /// is constructed. Files are only opened through explicit configured arguments.
 pub struct AccessHost<'a> {
@@ -80,6 +103,9 @@ pub struct AccessHost<'a> {
     pub targets: &'a dyn AccessTargets,
     /// Isolated configured local definition file, never discovered in home.
     pub label_definitions: Option<&'a Path>,
+    /// Caller-owned asynchronous confirmation; force bypasses questions only.
+    /// Missing interactive capability is an explicit error, never consent.
+    pub confirmation: Option<&'a mut dyn Confirmation>,
     /// Explicit validated framing boundary for a source multipart upload.
     pub multipart_boundary: &'a str,
     /// Existing collection/response bounds.
@@ -96,10 +122,7 @@ impl AccessHost<'_> {
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<CommandValue, CommandError> {
         if command.skill.is_some() {
-            return Err(CommandError::new(
-                "NotSupported",
-                "Skill headers require a configured shared host binding",
-            ));
+            return Err(unbound_skill());
         }
         let mut cancelled = pin!(cancelled);
         match &command.kind {
@@ -143,11 +166,80 @@ impl AccessHost<'_> {
                 .await
             }
             AccessKind::LabelListLocal => cancellable(
-                async { list_local_labels(self.label_definitions) },
+                async { execute_local(command, self.label_definitions).expect("local leaf") },
                 cancelled.as_mut(),
             )
             .await
             .map_err(CommandError::from)?,
+            AccessKind::AclChange {
+                path,
+                change,
+                force,
+            } => {
+                let context = cancellable(self.targets.resolve(path), cancelled.as_mut())
+                    .await
+                    .map_err(CommandError::from)??;
+                let target = NamedResource {
+                    resource: acl_resource(&context)?,
+                    name: context.name(),
+                };
+                let mut missing = MissingConfirmation;
+                let prompt = self.confirmation.as_deref_mut().unwrap_or(&mut missing);
+                mutate_acl(
+                    &AccessClient::new(self.clients.fabric.clone()),
+                    &target,
+                    change,
+                    MutationOptions {
+                        force: *force,
+                        limits: self.limits,
+                    },
+                    prompt,
+                    cancelled.as_mut(),
+                )
+                .await
+            }
+            AccessKind::LabelChange {
+                path,
+                change,
+                force,
+            } => {
+                let context = cancellable(self.targets.resolve(path), cancelled.as_mut())
+                    .await
+                    .map_err(CommandError::from)??;
+                let NodeKind::Item(kind) = context.kind() else {
+                    return Err(CommandError::new(
+                        "UnsupportedCommand",
+                        "Resource does not support sensitivity labels",
+                    ));
+                };
+                let item = LabelItem {
+                    id: context
+                        .id()
+                        .ok_or_else(|| {
+                            CommandError::new(
+                                "NotFound",
+                                "The requested resource could not be found",
+                            )
+                        })?
+                        .into(),
+                    item_type: kind.as_str().into(),
+                };
+                let mut missing = MissingConfirmation;
+                let prompt = self.confirmation.as_deref_mut().unwrap_or(&mut missing);
+                mutate_label(
+                    &AccessClient::new(self.clients.fabric.clone()),
+                    &item,
+                    change,
+                    self.label_definitions,
+                    MutationOptions {
+                        force: *force,
+                        limits: self.limits,
+                    },
+                    prompt,
+                    cancelled.as_mut(),
+                )
+                .await
+            }
             AccessKind::Find(options) => {
                 find(
                     &CatalogClient::new(self.clients.fabric.clone()),
@@ -184,6 +276,21 @@ impl AccessHost<'_> {
                 .await
             }
         }
+    }
+}
+
+struct MissingConfirmation;
+impl Confirmation for MissingConfirmation {
+    fn confirm<'a>(
+        &'a mut self,
+        _: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<bool, CommandError>> + Send + 'a>> {
+        Box::pin(async {
+            Err(CommandError::new(
+                "NotConfigured",
+                "Confirmation is not configured; use an explicit force flag to skip the prompt",
+            ))
+        })
     }
 }
 
