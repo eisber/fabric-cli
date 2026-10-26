@@ -105,8 +105,7 @@ impl ResourceOperation {
         {
             return Err(ResourceError::input());
         }
-        let mut url = Url::parse("https://api.fabric.microsoft.com/v1")
-            .map_err(|_| ResourceError::input())?;
+        let mut url = relative_encoding_url("/v1")?;
         url.path_segments_mut()
             .map_err(|_| ResourceError::input())?
             .extend(segments);
@@ -130,8 +129,7 @@ impl ResourceOperation {
         }) {
             return Err(ResourceError::input());
         }
-        let mut url = Url::parse(&format!("https://api.fabric.microsoft.com{}", self.path))
-            .map_err(|_| ResourceError::input())?;
+        let mut url = relative_encoding_url(&self.path)?;
         url.query_pairs_mut().extend_pairs(query.iter().copied());
         self.path = format!(
             "{}{}",
@@ -168,8 +166,7 @@ impl ResourceOperation {
     }
 
     fn with_source_query(mut self, name: &str, value: Option<&str>) -> Result<Self, ResourceError> {
-        let mut url = Url::parse(&format!("https://api.fabric.microsoft.com{}", self.path))
-            .map_err(|_| ResourceError::input())?;
+        let mut url = relative_encoding_url(&self.path)?;
         let mut query = Vec::<(String, String)>::new();
         for (key, previous) in url.query_pairs() {
             if let Some((_, old)) = query.iter_mut().find(|(existing, _)| existing == &key) {
@@ -228,6 +225,11 @@ impl ResourceOperation {
         }
         self.with_source_query("hardDelete", Some("true"))
     }
+}
+
+fn relative_encoding_url(path: &str) -> Result<Url, ResourceError> {
+    // A hierarchical, authority-free URL supplies only path/query serialization.
+    Url::parse(&format!("fabric:{path}")).map_err(|_| ResourceError::input())
 }
 
 impl fmt::Debug for ResourceOperation {

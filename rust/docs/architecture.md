@@ -135,11 +135,11 @@ operation-specific executor and regression tests. Direct consumers use
 types, never on the facade, identity implementation, CLI or deployment library.
 It creates no transport or runtime.
 
-`fabric-sdk` remains a facade. Its existing `Client` still owns its injected
-credential and selection, preserving a place for other service methods without
-making the workspace crate their owner. `Client::list_workspaces` delegates to a
-focused `WorkspaceClient` using cloned selection metadata and the same credential
-`Arc`; it does not reacquire or discover a provider during construction.
+`fabric-sdk` remains a facade. Its `Client` owns an immutable core
+`RequestContext`, preserving a place for other service methods without making
+the workspace crate their owner. Context-enabled workspace and item methods
+delegate using the same endpoint binding, selection metadata and credential
+`Arc`; construction neither acquires tokens nor discovers a provider.
 `fabric_sdk::Page`, `fabric_sdk::models::{Workspace, FabricServiceError}` and the
 public `fabric_sdk::workspaces` types are reexports, not duplicate wire/error types.
 Downstream integration tests exercise both paths without `cfg(test)` helpers.
@@ -151,6 +151,20 @@ deployment lane owns its separately scoped Notebook work and coordinates
 facade/shared-manifest changes through exact commit handoffs, not shared writers.
 
 Skills describe workflows using the CLI. They do not contain service logic.
+
+### Explicit endpoint and authenticated request foundation
+
+Core `EndpointBinding` separates the caller-selected validated hostname from
+the fixed public-cloud audience and API prefix. Immutable `RequestContext`
+owns that binding, selection and the caller's original credential `Arc`.
+Workspace/item reads use one core authenticated execution primitive while
+retaining their typed response/error wrappers. The shared HTTP executor
+independently validates the same selected binding; the existing operation
+session uses it for initial, polling and result requests. No new dependency
+edge, HTTP engine, token cache or poller is introduced. Existing constructors
+retain public defaults. See the [endpoint API and migration matrix](endpoint-context.md)
+for the additive interfaces, stricter hostname boundaries and unmigrated
+families. Environment-variable mapping belongs to the CLI, never the SDK.
 
 ### Focused CLI query projection
 

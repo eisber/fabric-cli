@@ -33,8 +33,11 @@ performing a workspace operation.
 
 The service client acquires the explicitly selected Fabric token and interprets
 service-specific responses. This seam accepts only
-`https://api.fabric.microsoft.com:443`; storage, ARM, Power BI and arbitrary
-origins remain rejected before transport I/O. It does not add custom headers or
+`https://api.fabric.microsoft.com:443` by default. The additive
+`with_endpoint(EndpointBinding)` builder selects one validated explicit endpoint,
+which must match the service client's context. Fabric-only methods still reject
+storage, ARM and Power BI origin selections before transport I/O.
+It does not add custom headers or
 infer a token audience. Dropping the future cancels local work; it is not rollback.
 Keep focused service executor traits independent of this facade-dependent
 adapter to avoid a facade -> service -> HTTP -> facade dependency cycle.
@@ -73,6 +76,13 @@ framing and hop-by-hop headers cannot be overridden. This is a deliberate
 restriction on Python's unrestricted header dictionary. Ordinary repeated
 headers use the last case-insensitive value; Content-Type may be supplied for
 binary/multipart request bodies.
+
+`PublicOrigin` is a reexport of core `ServiceOrigin`, not a duplicate host/scope
+table. For the selected origin, `execute_bound` validates the exact configured
+binding; other explicitly requested origin families retain their native public
+default. No alternate host is inferred from a request or response.
+See the [endpoint context guide](../../docs/endpoint-context.md) for all four
+hostname configuration shapes, fixed scopes and the first migrated consumers.
 
 The new seam bounds URLs to 16 KiB, bodies to 4 MiB, supplied header pairs to 64
 and combined header bytes (including separators) to 16 KiB. These are additional
