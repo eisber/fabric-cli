@@ -123,6 +123,17 @@ duplicate paths retain source ordered overwrites; case aliases and file/parent
 collisions fail. Empty definitions receive the same checked item-directory
 creation policy rather than bypassing alias/link checks.
 
+The local adapter requires an already-resolved root. A caller that explicitly
+selects and owns a stable directory resolves that root before invoking import
+or export; it must not canonicalize individual service-supplied definition
+paths to bypass link checks. Rust's
+[`temp_dir`](https://doc.rust-lang.org/std/env/fn.temp_dir.html) may contain a
+symbolic link, including system temporary-directory aliases on macOS. The
+synthetic native tests therefore canonicalize their own newly created root
+before passing it to the adapter. The adapter still rejects unresolved root
+aliases, linked directories and linked files. Independent source receipts,
+request bytes, ordered outcomes and production path validation are unchanged.
+
 Python's permissive base64 decoder, malformed-suffix-JSON per-part error fallback,
 nested SET parts, and Python numeric domains outside the shared JSON value range
 remain explicit unsupported branches. They are not silently repaired, treated as

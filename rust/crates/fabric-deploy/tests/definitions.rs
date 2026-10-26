@@ -269,7 +269,7 @@ impl Directory {
             NEXT.fetch_add(1, Ordering::SeqCst)
         ));
         fs::create_dir(&path).unwrap();
-        Self(path)
+        Self(fs::canonicalize(path).unwrap())
     }
 }
 
@@ -883,6 +883,117 @@ fn local_adapter_replaces_existing_regular_files_and_rejects_directory_collision
         bytes: vec![],
     };
     assert!(filesystem.preflight(&directory.0, &[collision]).is_err());
+}
+
+#[test]
+fn local_adapter_round_trips_files_under_the_callers_resolved_root() {
+    let directory = Directory::new();
+    assert_eq!(fs::canonicalize(&directory.0).unwrap(), directory.0);
+    let mut filesystem = LocalDefinitionFileSystem::new(DefinitionLimits::default());
+    let file = DefinitionFile {
+        path: "Resolved.Report/part.txt".into(),
+        bytes: b"exact\r\nbytes".to_vec(),
+    };
+    filesystem
+        .preflight(&directory.0, std::slice::from_ref(&file))
+        .unwrap();
+    filesystem
+        .create_directory(&directory.0, "Resolved.Report")
+        .unwrap();
+    filesystem.write(&directory.0, &file).unwrap();
+    let loaded = load_import_definition(
+        &mut filesystem,
+        &directory.0.join("Resolved.Report"),
+        None,
+        DefinitionLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(loaded.definition["parts"][0]["path"], "part.txt");
+    assert_eq!(
+        STANDARD
+            .decode(loaded.definition["parts"][0]["payload"].as_str().unwrap())
+            .unwrap(),
+        file.bytes
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn local_adapter_requires_root_resolution_without_following_links_inside_the_root() {
+    use std::os::unix::fs::symlink;
+
+    let directory = Directory::new();
+    let outside = Directory::new();
+    let root = directory.0.join("root");
+    fs::create_dir(&root).unwrap();
+    fs::write(root.join("source.txt"), b"source").unwrap();
+    let alias = directory.0.join("alias");
+    symlink(&root, &alias).unwrap();
+    let mut filesystem = LocalDefinitionFileSystem::new(DefinitionLimits::default());
+    let file = DefinitionFile {
+        path: "Written.Report/part.txt".into(),
+        bytes: b"written".to_vec(),
+    };
+    let parent_alias = alias.join("..").join("alias");
+    for unresolved in [&alias, &parent_alias] {
+        assert!(
+            filesystem
+                .preflight(unresolved, std::slice::from_ref(&file))
+                .is_err()
+        );
+        assert!(
+            filesystem
+                .create_directory(unresolved, "Written.Report")
+                .is_err()
+        );
+        assert!(filesystem.write(unresolved, &file).is_err());
+        assert!(filesystem.entries(unresolved, "").is_err());
+        assert!(filesystem.read(unresolved, "source.txt", 1024).is_err());
+    }
+    assert!(!root.join("Written.Report").exists());
+
+    let resolved = fs::canonicalize(&alias).unwrap();
+    assert_eq!(resolved, root);
+    filesystem
+        .preflight(&resolved, std::slice::from_ref(&file))
+        .unwrap();
+    filesystem
+        .create_directory(&resolved, "Written.Report")
+        .unwrap();
+    filesystem.write(&resolved, &file).unwrap();
+    assert_eq!(
+        filesystem.read(&resolved, &file.path, 1024).unwrap(),
+        file.bytes
+    );
+
+    fs::write(outside.0.join("source.txt"), b"outside").unwrap();
+    symlink(&outside.0, resolved.join("linked-directory")).unwrap();
+    symlink(
+        outside.0.join("source.txt"),
+        resolved.join("linked-file.txt"),
+    )
+    .unwrap();
+    for relative in ["linked-directory/source.txt", "linked-file.txt"] {
+        let linked = DefinitionFile {
+            path: relative.into(),
+            bytes: b"must not write".to_vec(),
+        };
+        assert!(
+            filesystem
+                .preflight(&resolved, std::slice::from_ref(&linked))
+                .is_err()
+        );
+        assert!(filesystem.write(&resolved, &linked).is_err());
+        assert!(filesystem.read(&resolved, relative, 1024).is_err());
+    }
+    assert!(
+        filesystem
+            .create_directory(&resolved, "linked-directory")
+            .is_err()
+    );
+    assert!(filesystem.entries(&resolved, "").is_err());
+    assert!(filesystem.entries(&resolved, "linked-directory").is_err());
+    assert_eq!(fs::read(outside.0.join("source.txt")).unwrap(), b"outside");
 }
 
 #[tokio::test]

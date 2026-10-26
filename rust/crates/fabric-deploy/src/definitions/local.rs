@@ -14,6 +14,9 @@ use std::{
 /// without another confirmation, as in Python export. Symlink/reparse/network/
 /// device paths and portable aliases fail. This does not protect against hostile
 /// concurrent directory replacement; the caller must own the output tree.
+/// Supply an already-resolved root: temporary-directory paths may themselves
+/// contain system symlink aliases. Resolve the selected stable root explicitly,
+/// not individual definition paths, before using this adapter.
 pub struct LocalDefinitionFileSystem {
     pub(super) limits: DefinitionLimits,
 }
