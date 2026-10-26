@@ -271,6 +271,21 @@ fn truthy(value: &Value) -> bool {
     }
 }
 
+/// Encode JSON-domain data like Python `json.dumps(data)` with default options.
+///
+/// This is a data/definition encoder, **not** an output envelope. It retains
+/// insertion order and ASCII escaping, uses `", "` and `": "` separators,
+/// performs no list wrapping, and appends no newline. Integer `indent=0` is a
+/// different pretty-printing mode; [`Indent::Zero`] deliberately does not select
+/// this layout. The same i64/u64/finite-f64 domain and numeric compatibility
+/// limits as the envelope serializer apply.
+///
+/// Use [`parse_data`] and [`finite_number`] at raw input boundaries so unsupported
+/// numbers fail before an upstream serde conversion can silently discard them.
+pub fn json_dumps(data: &Value) -> Result<String, OutputError> {
+    Ok(encoding::encode_default(data))
+}
+
 /// Parse strict JSON instead of silently coercing malformed or non-finite data.
 ///
 /// Unsupported Python objects, bytes, lone surrogates, and NaN/Infinity literals
