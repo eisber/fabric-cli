@@ -45,7 +45,9 @@ pub fn creation_parameters(tokens: &[String]) -> Result<Map<String, Value>, Muta
                 match fabric_cli_output::parse_data(value) {
                     Ok(value) => value,
                     Err(_) if serde_json::from_str::<Value>(value).is_ok() => {
-                        return Err(invalid("Creation parameter is outside the supported JSON domain"));
+                        return Err(invalid(
+                            "Creation parameter is outside the supported JSON domain",
+                        ));
                     }
                     Err(_) => Value::String(value.replace(['\'', '"'], "")),
                 }

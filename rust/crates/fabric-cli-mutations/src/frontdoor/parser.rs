@@ -205,19 +205,14 @@ pub fn resource_subcommands() -> Vec<Command> {
             .arg(flag("force", Some('f'))),
         leaf("ln")
             .visible_alias("mklink")
-            .arg(
-                Arg::new("type")
-                    .long("type")
-                    .required(true)
-                    .value_parser([
-                        "adlsGen2",
-                        "amazonS3",
-                        "dataverse",
-                        "googleCloudStorage",
-                        "oneLake",
-                        "s3Compatible",
-                    ]),
-            )
+            .arg(Arg::new("type").long("type").required(true).value_parser([
+                "adlsGen2",
+                "amazonS3",
+                "dataverse",
+                "googleCloudStorage",
+                "oneLake",
+                "s3Compatible",
+            ]))
             .arg(tokens("target"))
             .arg(tokens("input").short('i'))
             .arg(flag("force", Some('f'))),
@@ -260,9 +255,12 @@ pub fn command_from_matches(root: &ArgMatches) -> Result<ResourceCommand, Mutati
         let destination = paths.pop().ok_or_else(|| invalid("Missing destination"))?;
         (paths, Some(vec![destination]))
     } else {
-        (values(matches, "path")?
-            .filter(|tokens| !tokens.is_empty())
-            .ok_or_else(|| invalid("A resource path is required"))?, None)
+        (
+            values(matches, "path")?
+                .filter(|tokens| !tokens.is_empty())
+                .ok_or_else(|| invalid("A resource path is required"))?,
+            None,
+        )
     };
     let args = ResourceArgs {
         path,

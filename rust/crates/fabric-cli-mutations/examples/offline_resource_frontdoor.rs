@@ -200,12 +200,14 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
         )?);
     }
     let capacities = PathElement::child(
-        ".capacities", None,
+        ".capacities",
+        None,
         PathKind::VirtualWorkspace(VirtualWorkspaceKind::Capacity),
         PathElement::from_fabric(tenant.clone()),
     )?;
     let capacity = PathElement::child(
-        "Chosen", Some("cap".into()),
+        "Chosen",
+        Some("cap".into()),
         PathKind::VirtualWorkspaceItem(VirtualWorkspaceKind::Capacity),
         capacities,
     )?;
@@ -315,10 +317,8 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
             }
             for output in result.outputs {
                 outputs.push(json!({"message":output.message,"data":output.data}));
-                let envelope = OutputEnvelope::new(
-                    Timestamp::parse("2000-01-01T00:00:00Z")?,
-                    output,
-                );
+                let envelope =
+                    OutputEnvelope::new(Timestamp::parse("2000-01-01T00:00:00Z")?, output);
                 let plan = envelope.render(Indent::Zero)?;
                 plans.push(json!({
                     "stream": if plan.stream == OutputStream::Stdout { "stdout" } else { "stderr" },
@@ -329,17 +329,16 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
             Value::Null
         }
         Err(error) => {
-            operation = error.operation.as_ref().map_or(Value::Null, |operation| json!({
-                "id": operation.operation_id,
-                "mutation_may_have_occurred": operation.mutation_may_have_occurred,
-            }));
+            operation = error.operation.as_ref().map_or(Value::Null, |operation| {
+                json!({
+                    "id": operation.operation_id,
+                    "mutation_may_have_occurred": operation.mutation_may_have_occurred,
+                })
+            });
             let mut output = error.output();
             output.command = Some(command.name().into());
-            let plan = OutputEnvelope::new(
-                Timestamp::parse("2000-01-01T00:00:00Z")?,
-                output,
-            )
-            .render(Indent::Zero)?;
+            let plan = OutputEnvelope::new(Timestamp::parse("2000-01-01T00:00:00Z")?, output)
+                .render(Indent::Zero)?;
             plans.push(json!({
                 "stream": if plan.stream == OutputStream::Stdout { "stdout" } else { "stderr" },
                 "exit": plan.exit_code,
@@ -385,10 +384,30 @@ mod tests {
         ];
         let expected = [
             ("exists", "", Value::Null, json!([])),
-            ("mkdir", "/v1/workspaces/ws/folders", json!({"displayName":"Thing"}), json!(["created"])),
-            ("rm", "/v1/workspaces/ws/items/id?hardDelete=true", Value::Null, json!(["deleted"])),
-            ("set", "/v1/workspaces/ws/notebooks/id", json!({"displayName":"After"}), json!([{"renamed":"After"}])),
-            ("ln", "/v1/workspaces/ws/items/id/shortcuts?shortcutConflictPolicy=GenerateUniqueName", json!({"path":"Files","name":"Chosen","target":{"oneLake":{"workspaceId":"other","itemId":"target","path":"Files"}}}), json!([])),
+            (
+                "mkdir",
+                "/v1/workspaces/ws/folders",
+                json!({"displayName":"Thing"}),
+                json!(["created"]),
+            ),
+            (
+                "rm",
+                "/v1/workspaces/ws/items/id?hardDelete=true",
+                Value::Null,
+                json!(["deleted"]),
+            ),
+            (
+                "set",
+                "/v1/workspaces/ws/notebooks/id",
+                json!({"displayName":"After"}),
+                json!([{"renamed":"After"}]),
+            ),
+            (
+                "ln",
+                "/v1/workspaces/ws/items/id/shortcuts?shortcutConflictPolicy=GenerateUniqueName",
+                json!({"path":"Files","name":"Chosen","target":{"oneLake":{"workspaceId":"other","itemId":"target","path":"Files"}}}),
+                json!([]),
+            ),
         ];
         for (case, (leaf, path, body, effects)) in cases.iter().zip(expected) {
             let trace = probe(case).await.unwrap();
@@ -401,7 +420,10 @@ mod tests {
                 assert_eq!(trace["outputs"][0]["message"], "true");
             } else {
                 assert_eq!(trace["requests"].as_array().unwrap().len(), 1);
-                assert_eq!(trace["requests"][0]["url"], format!("https://api.fabric.microsoft.com{path}"));
+                assert_eq!(
+                    trace["requests"][0]["url"],
+                    format!("https://api.fabric.microsoft.com{path}")
+                );
                 assert_eq!(trace["requests"][0]["payload"], body);
                 assert_eq!(trace["outcome"], "completed");
             }
@@ -415,9 +437,14 @@ mod tests {
         let trace = probe(&json!({
             "argv":["rm","Team.Workspace/Thing.Notebook","-f"],
             "kind":"Notebook","id":"id","replies":[{"status":202}],
-        })).await.unwrap();
+        }))
+        .await
+        .unwrap();
         assert_eq!(trace["outcome"], "accepted");
-        assert_eq!(trace["outputs"][0]["message"], "'Thing.Notebook' is being deleted");
+        assert_eq!(
+            trace["outputs"][0]["message"],
+            "'Thing.Notebook' is being deleted"
+        );
         assert_eq!(trace["effects"], json!(["deleted"]));
         assert_eq!(trace["requests"].as_array().unwrap().len(), 1);
     }
@@ -434,7 +461,9 @@ mod tests {
                 "argv":["set",path,"-q","displayName","-i","After"],
                 "kind":kind,"id":"id","metadata":{"displayName":"before"},
                 "confirm":false,"replies":[],
-            })).await.unwrap();
+            }))
+            .await
+            .unwrap();
             assert_eq!(trace["error"], Value::Null);
             assert_eq!(trace["declined"], true);
             assert_eq!(trace["requests"], json!([]));
@@ -463,7 +492,9 @@ mod tests {
             let cancelled = probe(&json!({
                 "argv":["rm","Team.Workspace/Thing.Notebook","-f"],
                 "kind":"Notebook","id":"id","cancelled":true,"replies":[],
-            })).await.unwrap();
+            }))
+            .await
+            .unwrap();
             assert_eq!(cancelled["error"]["code"], "LongRunningOperationCancelled");
             assert_eq!(cancelled["requests"], json!([]));
             assert_eq!(cancelled["plans"][0]["exit"], 1);
@@ -490,11 +521,21 @@ mod tests {
                         "argv":[verb,"Team.Workspace/Thing.MirroredDatabase","-f"],
                         "kind":"MirroredDatabase","id":"id",
                         "replies":[{"status":200,"data":{"status":state}},{"status":200}],
-                    })).await.unwrap();
+                    }))
+                    .await
+                    .unwrap();
                     assert_eq!(trace["error"], Value::Null, "{trace}");
                     assert_eq!(trace["requests"].as_array().unwrap().len(), 2);
-                    assert_eq!(trace["requests"][0]["url"], "https://api.fabric.microsoft.com/v1/workspaces/ws/mirroredDatabases/id/getMirroringStatus");
-                    assert_eq!(trace["requests"][1]["url"], format!("https://api.fabric.microsoft.com/v1/workspaces/ws/mirroredDatabases/id/{action}"));
+                    assert_eq!(
+                        trace["requests"][0]["url"],
+                        "https://api.fabric.microsoft.com/v1/workspaces/ws/mirroredDatabases/id/getMirroringStatus"
+                    );
+                    assert_eq!(
+                        trace["requests"][1]["url"],
+                        format!(
+                            "https://api.fabric.microsoft.com/v1/workspaces/ws/mirroredDatabases/id/{action}"
+                        )
+                    );
                     assert_eq!(trace["requests"][1]["payload"], Value::Null);
                 }
                 for verb in ["assign", "unassign"] {
@@ -506,13 +547,31 @@ mod tests {
                     let trace = probe(&json!({
                         "argv":[verb,"/.capacities/Chosen.Capacity","-W","Team.Workspace","-f"],
                         "kind":"Capacity","id":"cap","replies":replies,
-                    })).await.unwrap();
+                    }))
+                    .await
+                    .unwrap();
                     assert_eq!(trace["error"], Value::Null, "{trace}");
                     let requests = trace["requests"].as_array().unwrap();
                     let final_request = requests.last().unwrap();
-                    assert_eq!(final_request["url"], format!("https://api.fabric.microsoft.com/v1/workspaces/ws/{}",
-                        if verb == "assign" { "assignToCapacity" } else { "unassignFromCapacity" }));
-                    assert_eq!(final_request["payload"], if verb == "assign" { json!({"capacityId":"cap"}) } else { Value::Null });
+                    assert_eq!(
+                        final_request["url"],
+                        format!(
+                            "https://api.fabric.microsoft.com/v1/workspaces/ws/{}",
+                            if verb == "assign" {
+                                "assignToCapacity"
+                            } else {
+                                "unassignFromCapacity"
+                            }
+                        )
+                    );
+                    assert_eq!(
+                        final_request["payload"],
+                        if verb == "assign" {
+                            json!({"capacityId":"cap"})
+                        } else {
+                            Value::Null
+                        }
+                    );
                     assert_eq!(trace["resolutions"].as_array().unwrap().len(), 2);
                     assert_eq!(trace["metadata_reads"], 0);
                 }
@@ -524,14 +583,18 @@ mod tests {
                     "argv":["start","Team.Workspace/Thing.MirroredDatabase","-f"],
                     "kind":"MirroredDatabase","id":"id",
                     "replies":[{"status":200,"data":{"status":"Running"}}],
-                })).await.unwrap();
+                }))
+                .await
+                .unwrap();
                 assert_eq!(state["error"]["code"], "AlreadyRunning");
                 assert_eq!(state["requests"].as_array().unwrap().len(), 1);
                 let linkage = probe(&json!({
                     "argv":["unassign","/.capacities/Chosen.Capacity","-W","Team.Workspace","-f"],
                     "kind":"Capacity","id":"cap",
                     "replies":[{"status":200,"data":{"capacityId":"other"}}],
-                })).await.unwrap();
+                }))
+                .await
+                .unwrap();
                 assert_eq!(linkage["error"]["code"], "InvalidInput");
                 assert_eq!(linkage["requests"].as_array().unwrap().len(), 1);
                 assert_eq!(linkage["prompts"], json!([]));
@@ -545,31 +608,64 @@ mod tests {
     #[test]
     fn source_aliases_defaults_and_scalar_versus_variadic_arguments_are_retained() {
         let parse = |tokens: Vec<&str>| {
-            command_from_matches(&Command::new("fab-rs")
-                .subcommands(resource_subcommands())
-                .try_get_matches_from(tokens).unwrap()).unwrap()
+            command_from_matches(
+                &Command::new("fab-rs")
+                    .subcommands(resource_subcommands())
+                    .try_get_matches_from(tokens)
+                    .unwrap(),
+            )
+            .unwrap()
         };
-        let ResourceCommand::Mkdir { params, .. } = parse(vec!["fab-rs", "create", "x.Notebook"]) else { panic!("mkdir alias") };
+        let ResourceCommand::Mkdir { params, .. } = parse(vec!["fab-rs", "create", "x.Notebook"])
+        else {
+            panic!("mkdir alias")
+        };
         assert_eq!(params, ["run=true"]);
-        let ResourceCommand::Mkdir { params, .. } = parse(vec!["fab-rs", "mkdir", "x.Notebook", "-P"]) else { panic!("mkdir") };
+        let ResourceCommand::Mkdir { params, .. } =
+            parse(vec!["fab-rs", "mkdir", "x.Notebook", "-P"])
+        else {
+            panic!("mkdir")
+        };
         assert!(params.is_empty());
-        let ResourceCommand::Set { query, input, .. } = parse(vec!["fab-rs", "set", "x", "-q", "'displayName'", "-i", "'one", "two'"]) else { panic!("set") };
+        let ResourceCommand::Set { query, input, .. } = parse(vec![
+            "fab-rs",
+            "set",
+            "x",
+            "-q",
+            "'displayName'",
+            "-i",
+            "'one",
+            "two'",
+        ]) else {
+            panic!("set")
+        };
         assert_eq!(query, "'displayName'");
         assert_eq!(fabric_cli_query::join_query_args(&input), "one two");
         for tokens in [
-            vec!["fab-rs","exists","x","--force"],
-            vec!["fab-rs","mkdir","x","--capacity","capacity"],
-            vec!["fab-rs","ln","x","--type","onelake","-i","{}"],
+            vec!["fab-rs", "exists", "x", "--force"],
+            vec!["fab-rs", "mkdir", "x", "--capacity", "capacity"],
+            vec!["fab-rs", "ln", "x", "--type", "onelake", "-i", "{}"],
         ] {
-            assert!(Command::new("fab-rs").subcommands(resource_subcommands()).try_get_matches_from(tokens).is_err());
+            assert!(
+                Command::new("fab-rs")
+                    .subcommands(resource_subcommands())
+                    .try_get_matches_from(tokens)
+                    .is_err()
+            );
         }
     }
 
     #[test]
     fn creation_values_do_not_implicitly_turn_strings_into_json_scalars() {
         assert_eq!(
-            creation_parameters(&["run=true,n=42,nested.value='true',rows=[{\"Keep\":true}]".into()]).unwrap(),
-            json!({"run":"true","n":"42","nested":{"value":"'true'"},"rows":[{"Keep":true}]}).as_object().unwrap().clone(),
+            creation_parameters(&[
+                "run=true,n=42,nested.value='true',rows=[{\"Keep\":true}]".into()
+            ])
+            .unwrap(),
+            json!({"run":"true","n":"42","nested":{"value":"'true'"},"rows":[{"Keep":true}]})
+                .as_object()
+                .unwrap()
+                .clone(),
         );
         assert!(creation_parameters(&["not-a-key=value".into()]).is_err());
     }
