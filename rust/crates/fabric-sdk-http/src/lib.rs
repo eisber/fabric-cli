@@ -92,6 +92,7 @@ mod capacities;
 pub use bound::PublicOrigin;
 mod folders;
 mod items;
+mod operations;
 #[cfg(test)]
 mod tests;
 

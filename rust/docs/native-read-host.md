@@ -64,6 +64,29 @@ Synchronous `Lookup` never performs network I/O. A missing scope is an internal
 request to load metadata, not a service `NotFound` or successful empty snapshot.
 At most 128 scope-loading passes are allowed for each resolution.
 
+The native host and `read_session_probe` explicitly select
+`ReadSession::with_source_operations(&executor)`. This borrowed wrapper uses
+that same `HttpExecutor` and its existing timer through `OperationExecutor`.
+Workspace primary GET selects the shared `PythonSynchronous` policy before
+the existing three enrichment steps. A remaining non-200 primary response,
+including headerless 202, emits no result or enrichment requests; it does not
+fabricate completed metadata. Completed 200 metadata is validated and handed to
+`enrich_workspace_metadata`, which reuses the existing optional-read policies.
+Operation failures use the existing borrowed CLI formatter without normalizing
+its message a second time.
+Only that explicit GET operation opts into bounded opaque operation IDs:
+one to 256 ASCII letters, digits, hyphens or underscores. This preserves IDs
+such as `op` without rewriting them to synthetic GUIDs; unsafe path/query,
+origin and response inputs remain errors. Default operations and strict SDK
+metadata consumers do not acquire this compatibility mode.
+
+Default `ReadSession::dispatch`, its public fields and custom `ReadExecutor`
+implementations keep their existing contracts. In particular, the generic SDK
+metadata API still rejects accepted primary responses rather than installing
+operation polling implicitly. No new executor supertrait, runtime or transport
+is required by old library consumers. Dispatch retains the original
+current-thread lookup contract; it does not promise a Send future.
+
 Supported branches include root workspace LS/dir (including paging, long capacity
 enrichment and hidden collection names), named workspace flat item LS,
 folder-context LS, source-routed supported item metadata GET and enriched
@@ -106,6 +129,39 @@ Readiness review and separate owner-approved live scope are required. If silent
 read acquisition needs interaction, an authorized operator must explicitly run
 `auth login` with the same tenant/account/client selectors before retrying reads.
 The host does not change registrations, consent, policy, trust or service data.
+
+### Source-synchronous workspace GET evidence
+
+The bounded GET202 recovery was exercised on October 26, 2026, from exact
+`c72860db65e821ada2ec3cbac8f34c4bc7458042`, using Rust 1.99.1 on
+`x86_64-pc-windows-msvc`. The actual `read_session_probe` matched all 15 workspace
+observations frozen independently at
+`5ff98d8360cbd6f2939790b3aa8c7f2b4cd90781` and
+`075375250875c0c1b0a43de5993c4c673dd9d0c1`, including both previously failing
+202 cases. The comparator asserted exit, exact stdout/stderr, request order and
+Fabric scope calls. It did not compare Python return objects, sleeps, events,
+files or request parameters.
+
+The same production-session executable passed its existing 15 compositions.
+Affected-package tests/doctests, the complete existing read parity runner,
+12 operation, 44 error and 290 continuation comparisons, strict default and
+native-feature all-target Clippy, native-feature CLI tests and formatting passed.
+Existing SDK primary-202 rejection and default `ReadSession` behavior remained
+covered. All 218 external registry lock records and 1,796 protected Python,
+oracle, workflow, root manifest and toolchain files remained byte-identical.
+The default CLI graph still excludes the broker and native transport; the SDK
+graph excludes CLI and identity implementations.
+
+Private receipts `gate-get202-01.json` and `gate-get202-02.json` retain the actual
+outcomes. The first batch passed every product check but failed its final
+artifact-only graph assertion, which incorrectly prohibited ordinary
+`windows-sys` dependencies along with the broker. The corrected custody-only
+check passed in the second receipt; this is not a single all-green batch.
+No product code or protected expectation changed for that correction. No live
+service, sign-in, Linux/macOS execution, remote CI or broader command-family
+acceptance is claimed by these local checks.
+
+### Separately approved live setup
 
 After that separate approval, the operator setup is:
 

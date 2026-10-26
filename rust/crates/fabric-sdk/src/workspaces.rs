@@ -16,6 +16,26 @@ pub use fabric_sdk_workspaces::workspaces::{
 use std::future::Future;
 
 impl Client {
+    /// Enrich completed primary metadata through the existing bounded read policy.
+    ///
+    /// No primary request or operation polling is performed here. The caller must
+    /// supply validated completed metadata, not a headerless accepted response.
+    ///
+    /// # Errors
+    /// Preserves the focused SDK's selection, identifier and failed-step evidence.
+    pub async fn enrich_workspace_metadata(
+        &self,
+        executor: &dyn WorkspaceExecutor,
+        workspace_id: &str,
+        metadata: WorkspaceMetadata,
+        limits: WorkspaceListLimits,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<WorkspaceMetadataResult, WorkspaceMetadataError> {
+        WorkspaceClient::new(self.credential().clone(), self.selection().clone())
+            .enrich_workspace_metadata(executor, workspace_id, metadata, limits, cancelled)
+            .await
+    }
+
     /// Reads ordered workspace metadata and all three bounded optional enrichments.
     ///
     /// Uses the same credential, selection and execution policies as workspace
