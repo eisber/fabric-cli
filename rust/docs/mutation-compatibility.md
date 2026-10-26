@@ -15,7 +15,7 @@ not central parser/front-door integration or live parity.
 | --- | --- | --- |
 | mkdir/create workspace | Parameter help, duplicate/capacity checks, lowercased payload, actual POST, output/cache effects | Central dispatch, live scope |
 | mkdir/create folder | Root/nested parent omission, optional description, POST, output/cache effects | Central dispatch |
-| mkdir/create item | Typed collection, folder/description, Lakehouse/Warehouse/Notebook, SQL modes, SemanticModel/GenericMirror raw templates, KQL/DTB explicit or automatic dependencies and source batch/cache/partial evidence | Report/dynamic Mirrored templates and Python-default encoder, remaining type-specific options, central dispatch |
+| mkdir/create item | Typed collection, folder/description, Lakehouse/Warehouse/Notebook, SQL modes, raw and dynamic definition templates, Report/KQL/DTB explicit or automatic dependencies, shared Python-default JSON encoder and source batch/cache/partial evidence | Remaining type/option policy reconciliation, central dispatch |
 | set workspace | Enriched-read ordering, blocklist/simple path, top-level projection, separate Spark PATCH | Main enriched read adapter, central dispatch |
 | set item/folder/shortcut | Metadata PATCH/cache effects; shortcut read-before-confirmation, full definition update, target.type removal and create/delete rename evidence | Item definition seam and friendly Notebook aliases, central dispatch |
 | rm/del item/folder | Confirmation/force/hard, exact route/query, accepted/completed messages, cache effects | Central context transition |

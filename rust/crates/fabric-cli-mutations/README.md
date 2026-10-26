@@ -49,8 +49,7 @@ The original Python files are `commands/fs/fab_fs_exists.py`,
 
 The entire assigned generic-verb family remains backlog until actual front-door
 integration and independent request/output contracts cover all resources/options.
-This bounded slice does not include definition SET, Report template/dependency
-creation, dynamic MirroredDatabase templates, hidden administrative resource
+This bounded slice does not include definition SET, hidden administrative resource
 branches, general main-host OneLake context
 composition, Fabric definition copy/move, shortcuts, capacity ARM lifecycle or
 domain assignment commands.
@@ -75,6 +74,31 @@ Accepted state separately. `RemovalError.partial` keeps prior outputs, counts,
 responses and cache effects if a later mutation fails, without a false final
 summary, retry or rollback. Main catalog/selection/context integration remains
 separately owned; the public offline consumer uses actual shared HTTP.
+
+## Dynamic creation definitions
+
+Report creation embeds all seven original parts and changes only the
+`definition.pbir` dataset reference when the explicit/dependent SemanticModel ID
+is truthy. A missing ID after accepted or incomplete dependency creation retains
+the original by-path bytes, not an invented successful reference. Previously
+created dependency outputs/cache evidence survive a failed root request.
+
+MirroredDatabase supports the original Azure SQL, SQL MI, Snowflake and Cosmos DB
+templates, preserving connection/database/default-schema/mounted-table insertion
+order, the Azure SQL warning, and the unknown-type fallback: it dynamically
+modifies the GenericMirror template, rather than rejecting or silently using the
+unchanged raw bytes. GenericMirror itself retains raw bytes and ignores those
+parameters. Empty schema/table names and whitespace are not normalized.
+Malformed separator counts or non-string split/lower inputs retain the source
+outer handler's `UnexpectedError` code/message before sending a definition
+request, rather than silently dropping malformed entries or normalizing input.
+
+MountedDataFactory preserves original f-string handling for the finite JSON
+domain, including booleans/numbers/containers, escapes and Unicode. Modified
+definition JSON uses the shared `fabric-cli-output::json_dumps`, not a second
+serializer. Dynamic definitions and encoded bytes are compared with the original
+Python helpers through `tests/dynamic_creation_reference.py`; templates are
+verified against pinned Git blobs, not generated expected Rust data.
 
 KQLDatabase and DigitalTwinBuilderFlow now create their source-dependent
 Eventhouse/DigitalTwinBuilder in the same parent before dispatching the root

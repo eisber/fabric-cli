@@ -272,7 +272,14 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
             })).collect::<Vec<_>>(),
             "error": null,
         }),
-        Err(error) => json!({"requests": operations.requests, "outputs": [], "error": error.code}),
+        Err(error) => {
+            let mut output =
+                json!({"requests":operations.requests,"outputs":[],"error":error.code});
+            if input["capture_error"] == true {
+                output["error_message"] = json!(error.output().message);
+            }
+            output
+        }
     };
     if let Some(count) = moved_count {
         output["moved_count"] = count.into();

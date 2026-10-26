@@ -5,7 +5,6 @@ use crate::{
     CacheEffect, CreationEvidence, MutationError, MutationHost, MutationResult, NoticeKind,
     message, supported_element, workspace_id,
 };
-use base64::{Engine, engine::general_purpose::STANDARD};
 use fabric_cli_context::{Element, ItemType, NodeKind};
 use fabric_sdk_folders::mutations::FolderMutations;
 use fabric_sdk_items::{ItemCollection, mutations::ItemMutations};
@@ -40,8 +39,8 @@ impl MutationHost<'_> {
     /// Execute `mkdir`/`create` for a workspace, folder or supported item.
     ///
     /// # Errors
-    /// Preserves duplicate/required-parameter failures. Definition-template and
-    /// dependency-creation branches not yet translated fail explicitly.
+    /// Preserves duplicate/required-parameter failures, dynamic definition and
+    /// dependency-creation errors, and prior dependency responses/cache work.
     pub async fn create(
         &mut self,
         element: &Arc<Element>,
@@ -273,6 +272,17 @@ impl MutationHost<'_> {
         if let Some(description) = params.get("description").filter(|value| truthy(value)) {
             payload["description"] = description.clone();
         }
+        if item_type.as_str() == "MirroredDatabase"
+            && params
+                .get("mirrortype")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value.eq_ignore_ascii_case("azuresql"))
+        {
+            self.ui.notice(
+                NoticeKind::Warning,
+                "Requires system-assigned managed identity on",
+            );
+        }
         add_item_payload(
             item_type.as_str(),
             workspace_id(element)?,
@@ -499,14 +509,16 @@ fn add_item_payload(
             });
         }
         "SemanticModel" => payload["definition"] = crate::templates::semantic_model(),
-        "MirroredDatabase"
-            if text("mirrortype").is_empty()
-                || text("mirrortype").eq_ignore_ascii_case("genericmirror") =>
-        {
-            payload["definition"] = crate::templates::generic_mirror()
+        "MirroredDatabase" => {
+            payload["definition"] = crate::templates::mirror(params)?;
         }
-        "Report" | "MirroredDatabase" => {
-            return Err(unported("item-specific definition template creation"));
+        "Report" => {
+            payload["definition"] = crate::templates::report(
+                params
+                    .get("semanticmodelid")
+                    .filter(|value| truthy(value))
+                    .or(dependency),
+            )?;
         }
         "Notebook" => {
             payload["definition"] = json!({"parts": [{
@@ -516,31 +528,7 @@ fn add_item_payload(
             }]});
         }
         "MountedDataFactory" => {
-            for key in ["subscriptionid", "resourcegroup", "factoryname"] {
-                let value = params
-                    .get(key)
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| unported("MountedDataFactory non-string creation parameters"))?;
-                if !value.is_ascii()
-                    || value.chars().any(char::is_control)
-                    || value.contains(['"', '\\'])
-                {
-                    return Err(unported(
-                        "MountedDataFactory Python-compatible definition serialization",
-                    ));
-                }
-            }
-            let content = format!(
-                "{{\"dataFactoryResourceId\": \"/subscriptions/{}/resourceGroups/{}/providers/Microsoft.DataFactory/factories/{}\"}}",
-                text("subscriptionid"),
-                text("resourcegroup"),
-                text("factoryname"),
-            );
-            payload["definition"] = json!({"parts": [{
-                "path": "mountedDataFactory-content.json",
-                "payload": STANDARD.encode(content.as_bytes()),
-                "payloadType": "InlineBase64",
-            }]});
+            payload["definition"] = crate::templates::mounted_factory(params)?;
         }
         "SQLDatabase" => {
             let creation = crate::sql_database::creation_payload(params)?;
@@ -551,13 +539,6 @@ fn add_item_payload(
         _ => {}
     }
     Ok(())
-}
-
-fn unported(branch: &str) -> MutationError {
-    MutationError::new(
-        "NotSupported",
-        format!("This Rust creation branch is not yet translated: {branch}"),
-    )
 }
 
 pub(crate) fn lowercase_map(params: &Map<String, Value>) -> Map<String, Value> {

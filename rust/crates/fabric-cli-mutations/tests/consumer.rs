@@ -706,16 +706,91 @@ async fn payload_errors_keep_source_progress_order_and_required_params_precede_p
 }
 
 #[tokio::test]
-async fn unported_definition_encoding_values_fail_explicitly_without_a_payload_request() {
-    let mut operations = Operations::default();
+async fn translated_definition_encoding_preserves_original_escaped_unicode_payload_bytes() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let mut operations = Operations {
+        responses: VecDeque::from([completed(201, Some(json!({"id":"mounted"})))]),
+        ..Operations::default()
+    };
     let mut ui = Ui::default();
     let mut metadata = Metadata::default();
-    let error = MutationHost { operations: &mut operations, ui: &mut ui, metadata: &mut metadata }
+    let result = MutationHost { operations: &mut operations, ui: &mut ui, metadata: &mut metadata }
         .create(&item("MountedDataFactory", None), &options(json!({
             "subscriptionId":"subscription", "resourceGroup":"non-ascii-\u{65e5}", "factoryName":"factory",
-        }))).await.unwrap_err();
-    assert_eq!(error.code, "NotSupported");
-    assert!(operations.requests.is_empty());
+        }))).await.unwrap();
+    let definition = operations.requests[0].2.as_ref().unwrap();
+    let encoded = definition["definition"]["parts"][0]["payload"]
+        .as_str()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8(STANDARD.decode(encoded).unwrap()).unwrap(),
+        "{\"dataFactoryResourceId\": \"/subscriptions/subscription/resourceGroups/non-ascii-\\u65e5/providers/Microsoft.DataFactory/factories/factory\"}"
+    );
+    assert_eq!(
+        result.outputs[0].message.as_deref(),
+        Some("'Thing.MountedDataFactory' created")
+    );
+}
+
+#[tokio::test]
+async fn malformed_dynamic_mirror_parameters_fail_before_dispatch_not_as_empty_definition() {
+    for params in [
+        json!({"mirrorType":true}),
+        json!({"mirrorType":"snowflake","mountedTables":["schema.table"]}),
+        json!({"mirrorType":"snowflake","mountedTables":"missing"}),
+        json!({"mirrorType":"snowflake","mountedTables":"too.many.parts"}),
+        json!({"mirrorType":"snowflake","mountedTables":"ok.table,"}),
+    ] {
+        let mut operations = Operations::default();
+        let mut ui = Ui::default();
+        let mut metadata = Metadata::default();
+        let error = MutationHost {
+            operations: &mut operations,
+            ui: &mut ui,
+            metadata: &mut metadata,
+        }
+        .create(&item("MirroredDatabase", None), &options(params))
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, "UnexpectedError");
+        assert!(operations.requests.is_empty());
+        assert!(error.creation.is_none());
+    }
+}
+
+#[tokio::test]
+async fn failed_report_root_keeps_semantic_model_effects_and_no_false_root_success() {
+    let mut operations = Operations {
+        responses: VecDeque::from([
+            completed(201, Some(json!({"id":"semantic-model"}))),
+            Err(ResourceError::input()),
+        ]),
+        ..Operations::default()
+    };
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let error = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(&item("Report", None), &options(json!({"run":"true"})))
+    .await
+    .unwrap_err();
+    let evidence = error.creation.unwrap();
+    assert_eq!(evidence.responses.len(), 1);
+    assert_eq!(evidence.batch_names, ["Thing_auto.SemanticModel"]);
+    assert!(
+        matches!(&evidence.effects[..],[CacheEffect::Created{target,..}] if target.name()=="Thing_auto.SemanticModel")
+    );
+    assert_eq!(operations.requests.len(), 2);
+    assert!(
+        operations.requests[1].2.as_ref().unwrap()["definition"]["parts"]
+            .as_array()
+            .unwrap()
+            .len()
+            == 7
+    );
 }
 
 #[tokio::test]
