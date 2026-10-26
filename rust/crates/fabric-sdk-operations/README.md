@@ -32,6 +32,15 @@ existing resource mapping without consuming the original typed error; CLI layers
 can explicitly render that view while retaining reconciliation evidence.
 
 `FabricOperation` accepts only fixed public Fabric `/v1/` paths and finite methods.
+Its additive `with_source_read_operation_ids()` builder is restricted to explicit
+GET plus `PythonSynchronous`. It permits response operation IDs containing one
+to 256 ASCII letters/digits/hyphens/underscores so source CLI reads can reconcile
+opaque IDs without rewriting them. Empty operation IDs on advertised operations,
+controls, non-ASCII, separators, query/fragment/percent/dot/user-information
+syntax and oversized IDs fail before polling. Headerless 202 still remains
+accepted. Existing constructors, Notebook/mutation consumers and
+`reconcile_accepted` remain GUID-strict unless this GET-only builder is selected;
+no origin or shared polling policy is relaxed globally.
 `CompletionPolicy::ReturnAccepted` preserves 202; `WaitForResult` retrieves the
 actual operation result; `WaitForCompletion` waits without fetching a resource.
 `PythonSynchronous` implements the pinned Python client's default `wait=True`:
