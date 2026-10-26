@@ -19,7 +19,7 @@ not central parser/front-door integration or live parity.
 | set workspace | Enriched-read ordering, blocklist/simple path, top-level projection, separate Spark PATCH | Main enriched read adapter, central dispatch |
 | set item/folder/shortcut | Metadata PATCH/cache effects; shortcut read-before-confirmation, full definition update, target.type removal and create/delete rename evidence | Item definition seam and friendly Notebook aliases, central dispatch |
 | rm/del item/folder | Confirmation/force/hard, exact route/query, accepted/completed messages, cache effects | Central context transition |
-| rm/del workspace | Forced workspace DELETE only | Non-force item selection, bulk/tenant orchestration |
+| rm/del workspace/tenant | Force catalog/count/workspace deletion; non-force supported Item-only selection with sort/hard/cache/output rules; tenant selection/confirmation and accepted/partial evidence | Existing main catalog/UI/context integration and broader bulk/cross-workspace consumers |
 | exists workspace/item/folder | Truthy context ID; string message, no extra request | Central dispatch |
 | cp/copy, mv/move | Within-workspace folder move consumer with parent-cache/count/evidence rules; OneLake Lakehouse Files rename, nonrecursive remote file copy, caller-read local-byte upload helper | Fabric definition/cross-workspace/bulk orchestration and local filesystem orchestration |
 | assign/unassign | Capacity SDK endpoints and CLI confirmation/linkage checks; primary metadata only | Domain branch, central dispatch |

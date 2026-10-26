@@ -31,6 +31,40 @@ CONSUMERS = {
     "exists": ["offline_mutation", "offline_onelake", "onelake_reference.py"],
 }
 
+VERIFIED_INCREMENTS = [
+    {
+        "id":"dependency-and-static-template-creation",
+        "implementation_commit":"6151041f6e89d62e4443b5cd8121f0317a49c3c6",
+        "source_functions":[
+            ["commands/fs/mkdir/fab_fs_mkdir_item.py","exec"],
+            ["utils/fab_cmd_mkdir_utils.py","add_type_specific_payload"],
+            ["utils/fab_cmd_mkdir_utils.py","_create_payload"],
+            ["utils/fab_cmd_mkdir_utils.py","_initialize_batch_collection_for_dependency_creation"],
+        ],
+        "verified_branches":[
+            "KQL ReadWrite explicit Eventhouse and complete Shortcut payload",
+            "KQL missing Eventhouse / unknown or empty dbType / incomplete Shortcut fallback creates Eventhouse",
+            "DigitalTwinBuilderFlow explicit builder / missing or empty builder creates dependency",
+            "SemanticModel raw definition parts and GenericMirror raw mirroring definition",
+            "root versus nested Folder parent, inherited description and removed displayname/type params",
+            "dependency200/201 metadata, missing ID, headerless202, root202 and failure after prior dependency",
+            "source batch message/data/cache order, null parent ID and accepted-dependency single-name quirk",
+        ],
+        "verification_status":"implemented_and_tested_for_listed_cases_only",
+        "public_consumer":"examples/offline_mutation.rs",
+        "original_source_comparison":"tests/creation_reference.py",
+        "original_case_count":82,
+        "native_regressions":"tests/consumer.rs dependency/cache/acceptance/failure tests",
+        "receipt":"validation-44.json",
+        "remaining_function_branches":[
+            "Report template plus SemanticModel auto creation",
+            "dynamic MirroredDatabase source schemas/connections/tables",
+            "MountedDataFactory escaped/Unicode/non-string definition values",
+            "all create type/param help/support combinations and main namespace dispatch",
+        ],
+    },
+]
+
 
 def owner(path: str) -> tuple[str, list[str]]:
     """Keep actual helper ownership separate from original generic orchestration."""
@@ -112,6 +146,8 @@ def source_rows(path: str) -> list[dict[str, Any]]:
                 "required_contracts": ["selected resource/options/mode", "actual request/response", "output/exit",
                                        "error/acceptance/cancellation", "partial/cache/cleanup where applicable"],
                 "note": "Candidate consumers are evidence references, not a claim that every condition here is tested or complete.",
+                "verified_increment_refs":[entry["id"] for entry in VERIFIED_INCREMENTS
+                    if [path,function.name] in entry["source_functions"]],
             })
     return rows
 
@@ -169,6 +205,7 @@ def main() -> None:
     ledger = {
         "source_commit": PIN, "native_scope": "resource mutations/OneLake; complete source denominator, not a completion assertion",
         "source_files": paths, "branches": rows, "support_and_rejection_gates": support_rows(),
+        "verified_increments":VERIFIED_INCREMENTS,
         "counts": {"source_files": len(paths), "function_and_branch_rows": len(rows)},
         "standing_constraints": ["No protected oracle rewrite", "No duplicate HTTP/pager/LRO", "No live calls",
                                  "Missing helper blocks only dependent row", "All unreconciled rows remain backlog"],

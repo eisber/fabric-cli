@@ -49,12 +49,32 @@ The original Python files are `commands/fs/fab_fs_exists.py`,
 
 The entire assigned generic-verb family remains backlog until actual front-door
 integration and independent request/output contracts cover all resources/options.
-This bounded slice does not include tenant/workspace bulk selection, definition
-SET, Report/SemanticModel/MirroredDatabase templates, automatic dependent-item
-Report template/dependency creation, dynamic MirroredDatabase templates, hidden administrative resource branches, general OneLake GET/context
+This bounded slice does not include definition SET, Report template/dependency
+creation, dynamic MirroredDatabase templates, hidden administrative resource
+branches, general main-host OneLake context
 composition, Fabric definition copy/move, shortcuts, capacity ARM lifecycle or
 domain assignment commands.
 Those branches must not be routed to successful-looking generic fallbacks.
+
+## Non-force workspace and tenant removal
+
+`RemovalHost` composes a complete caller-owned `RemovalCatalog`, explicit
+`RemovalSort`, the existing UI plus `RemovalUi::select`, and real focused
+SDK/shared Fabric operations. Non-force workspace rm removes only selected
+supported items, never the workspace itself. A folder may be displayed as
+selectable but is excluded from the source's actual Item-only delete list.
+Force reads/counts the underlying catalog first, while tenant force does not
+skip workspace multi-select/confirmation. Known source rejected item types are
+filtered before sorting; failed catalog discovery is not coerced into empty.
+
+Case-sensitive workspace sorting, short-name/type item sorting, hard-delete
+queries, verbose/silent per-operation output and 200/201/202 counter/cache rules
+are preserved. The source non-force bulk helper prints an item `deleted` message
+even after headerless acceptance; `RemovalResult.responses` retains the actual
+Accepted state separately. `RemovalError.partial` keeps prior outputs, counts,
+responses and cache effects if a later mutation fails, without a false final
+summary, retry or rollback. Main catalog/selection/context integration remains
+separately owned; the public offline consumer uses actual shared HTTP.
 
 KQLDatabase and DigitalTwinBuilderFlow now create their source-dependent
 Eventhouse/DigitalTwinBuilder in the same parent before dispatching the root

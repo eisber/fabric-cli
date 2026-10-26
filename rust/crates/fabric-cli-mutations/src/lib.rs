@@ -13,6 +13,7 @@ mod lifecycle;
 mod moves;
 mod onelake_read;
 mod onelake_write;
+mod removal;
 mod set;
 mod shortcuts;
 mod sql_database;
@@ -36,6 +37,9 @@ pub use onelake_read::{OneLakeGetResult, OneLakeReadError, OneLakeReadHost, OneL
 pub use onelake_write::{
     OneLakeResourceKind, OneLakeWriteError, OneLakeWriteHost, OneLakeWriteResult,
     OneLakeWriteTarget,
+};
+pub use removal::{
+    RemovalCatalog, RemovalError, RemovalHost, RemovalResult, RemovalSort, RemovalUi,
 };
 pub use set::update_fabric_element;
 pub use shortcuts::{
