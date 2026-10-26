@@ -15,7 +15,7 @@ branch remains intact; references to it in dated evidence are historical.
 
 `validation/rust-merge-tree-f-dff9ad93` composes only the released D resource
 delta through `a7d043d4753ec23f86a9e1fdaf4d7a502c31adec` and E transfer delta
-through `1788f245d24927b32211094a4904153b641d0807` onto exact shared
+through `47715d9589e728aa2e586f36be4a05ec1d31b418` onto exact shared
 `b3d7daac62068b73f2b34bc8d1e4295bc0bcdb27`. Both source branches fork at
 `91e7523ea978c67ca183abaea04500e323c27eb3`; their unrelated ancestry is not
 merged. The inherited newer Python branch remains separate. The exact
@@ -55,9 +55,14 @@ This is a **source-composed candidate, not merged-head validation or shared
 publication readiness**. The D source has actual Linux format/check/strict
 Clippy, 87 Rust tests and 37 resource plus six storage source/native comparisons
 at its own SHA. E's recorded Linux format pass is followed by all-target
-`E0599` failures at `tests/commands.rs:507,569,950` (`Body::as_bytes`);
-19 registered tests are not a passing count. Original owners supply immutable
-repairs. The existing capped validator must check the exact merged head through
+`E0599` failures at `tests/commands.rs:507,569,950` (`Body::as_bytes`) on
+`1788f245d24927b32211094a4904153b641d0807`. The original owner's released
+`47715d9589e728aa2e586f36be4a05ec1d31b418` changes only that test consumer to
+match `Body::Bytes`, retaining exact request-byte assertions and explicitly
+rejecting unexpected streaming bodies. The correction is included, but its
+actual Linux result is pending; 19 registered tests are not a passing count.
+Original owners supply immutable repairs. The existing capped validator must
+check the exact merged head through
 the root relay; no local heavy-build lease is implied. Neither family is mounted
 in the executable here, and Windows/macOS, live authentication and full
 deployment remain unproven. Only the root publishes `feature/rust`.
