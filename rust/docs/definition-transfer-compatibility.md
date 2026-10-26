@@ -2,13 +2,15 @@
 
 # Definition transfer: bounded native library contract
 
-Status: uncompiled implementation checkpoint awaiting exact shared
-Unicode-encoding and local-cancellation-checkpoint commits from their assigned
-owners. The initial draft was formatted, and source receipts ran. Later
-independent contract/filesystem changes have not run formatting or compilation
-while the coordinator holds heavy work for validation-gate repair. The native
-consumer has not executed. The contract below describes the bounded
-implementation, not a validated release or integrated command parity.
+Status: uncompiled implementation checkpoint. The exact shared Unicode encoder
+commit `d72d68b5370ab5ab95c63815ba084513390d68e4` was surgically adopted as
+`bbed590e1477af8a79a5dcef6a155026525e0329`; it shares the existing engine and
+preserves the default ASCII APIs. The only remaining compile binding is the
+assigned operation owner's `OperationSession::check_cancelled` commit. Source
+receipts and current formatting ran; reviewed gate-v2 receipt
+`format-receipt-2.json` records successful formatting at 12:26Z on October 26.
+The native consumer has not compiled or executed. The contract below describes
+the bounded implementation, not a validated release or integrated command parity.
 
 Python reference: `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
 Rust integration base: `61d77e330be8a13cbd5033713f1f2badcecfce60`.
