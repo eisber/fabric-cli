@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Production job submission/run contracts with synthetic HTTP, credentials, files and UI.
+
 mod job_execution_support;
 
 use fabric_cli::{
