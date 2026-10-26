@@ -22,6 +22,7 @@ The caller creates `OneLakeClient` from an `Arc<dyn TokenCredential>` and explic
 | `client.read(executor,path,limits,cancelled)` | GET `https://onelake.dfs.fabric.microsoft.com/{workspace}/{item}/{relative}` | Exact bytes; empty is a valid file |
 | `client.read_file(executor,path,limits,cancelled)` | Same single GET | Exact bytes and same-response headers for file copy |
 | `client.properties(executor,path,limits,cancelled)` | HEAD at the same file URL | Exact response headers |
+| `client.directory_metadata(executor,path,limits,cancelled)` | Same workspace-directory GET route as list | Source first-page metadata, merged list fields and actual page count |
 
 The encoded query preserves directory values; query spelling/order and source
 `continuationToken` spelling are explicit. Unlike source string concatenation,
@@ -43,6 +44,18 @@ detects repeated continuation tokens, and never reports partial data as complete
 Malformed bodies or a 403 are not absence. HTTP status and storage header error
 codes are retained as data; display text is sanitized. Cancelled futures drop
 local request/credential work without claiming any completed response.
+
+Metadata GET and path enumeration share one collection loop. Header continuation
+takes precedence over body `continuationToken`; no service link is followed.
+The metadata projection retains first-page extra fields and Python's generic
+`ApiResponse.append_text` quirks: only a recursive result at status 200 merges,
+only list fields already present in the earlier page append, lower-case token
+fields are removed on merge, and `total_pages` is set to one rather than the
+actual page count. `pages_received` records the latter independently.
+Raw SDK path enumeration remains an explicitly complete ordered traversal;
+source CLI LS/GET select the source metadata merge view. Captured wire bytes and
+merged metadata are bounded in aggregate by `max_response_bytes`, not just per
+page. Malformed merge fields/tokens stay typed failures, not coerced success.
 
 The synthetic consumer exercises `_delta_log` listing/JSON bytes as the public
 table dependency seam. Table schema parsing, Delta interpretation, load and

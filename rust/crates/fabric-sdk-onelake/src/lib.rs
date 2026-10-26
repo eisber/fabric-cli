@@ -277,6 +277,21 @@ pub struct OneLakeList {
     pub pages_received: usize,
 }
 
+/// Source-compatible directory metadata, preserving the first page's extra fields.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OneLakeDirectoryMetadata {
+    /// Original first-page object with source list-append/token-removal semantics.
+    pub data: Value,
+    /// Actual complete pages retrieved, distinct from Python's `total_pages` quirk.
+    pub pages_received: usize,
+}
+
+struct DirectoryCollection {
+    paths: Vec<Value>,
+    pages_received: usize,
+    metadata: Option<Value>,
+}
+
 /// A focused client with no dependency on CLI, deployment or identity backends.
 #[derive(Clone)]
 pub struct OneLakeClient {
@@ -318,10 +333,56 @@ impl OneLakeClient {
         limits: OneLakeLimits,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<OneLakeList, OneLakeError> {
+        let result = self
+            .collect_directory(executor, path, recursive, limits, false, cancelled)
+            .await?;
+        Ok(OneLakeList {
+            paths: result.paths,
+            pages_received: result.pages_received,
+        })
+    }
+
+    /// Read source-compatible directory metadata for OneLake GET composition.
+    ///
+    /// Reuses the same bounded collection loop as `list`, retains first-page extra
+    /// fields and source generic list-append/continuation/201 quirks. Captured page
+    /// bytes and the merged object are additionally bounded by max_response_bytes
+    /// in aggregate; an oversized metadata result is never a partial success.
+    ///
+    /// # Errors
+    /// Returns the same explicit SDK failures as list, and rejects malformed
+    /// non-array merge fields instead of coercing them into successful metadata.
+    pub async fn directory_metadata(
+        &self,
+        executor: &dyn OneLakeExecutor,
+        path: &OneLakePath,
+        limits: OneLakeLimits,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<OneLakeDirectoryMetadata, OneLakeError> {
+        let result = self
+            .collect_directory(executor, path, false, limits, true, cancelled)
+            .await?;
+        Ok(OneLakeDirectoryMetadata {
+            data: result.metadata.ok_or(OneLakeError::InvalidResponse)?,
+            pages_received: result.pages_received,
+        })
+    }
+
+    async fn collect_directory(
+        &self,
+        executor: &dyn OneLakeExecutor,
+        path: &OneLakePath,
+        recursive: bool,
+        limits: OneLakeLimits,
+        capture: bool,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<DirectoryCollection, OneLakeError> {
         let mut cancelled = pin!(cancelled);
         let mut paths = Vec::new();
         let mut seen = HashSet::new();
         let mut continuation: Option<String> = None;
+        let mut metadata = Vec::new();
+        let mut captured_bytes = 0_usize;
         for page in 1..=limits.max_pages.get() {
             let mut url = Url::parse(ORIGIN).map_err(|_| OneLakeError::InvalidInput)?;
             url.set_path(&format!("/{}/", path.workspace));
@@ -364,13 +425,32 @@ impl OneLakeClient {
                 return Err(OneLakeError::InvalidResponse);
             }
             paths.extend(rows.iter().cloned());
-            continuation = header(&response.headers, "x-ms-continuation")
-                .map(str::to_owned)
-                .filter(|token| !token.is_empty());
+            continuation = match header(&response.headers, "x-ms-continuation") {
+                Some(token) => (!token.is_empty()).then(|| token.to_owned()),
+                None => match value.get("continuationToken") {
+                    None | Some(Value::Null) => None,
+                    Some(Value::String(token)) => (!token.is_empty()).then(|| token.clone()),
+                    _ => return Err(OneLakeError::InvalidResponse),
+                },
+            };
+            if capture {
+                captured_bytes = captured_bytes
+                    .checked_add(response.body.len())
+                    .ok_or(OneLakeError::Limit)?;
+                if captured_bytes > limits.max_response_bytes.get() {
+                    return Err(OneLakeError::Limit);
+                }
+                metadata.push((response.status, value));
+            }
             let Some(next) = &continuation else {
-                return Ok(OneLakeList {
+                return Ok(DirectoryCollection {
                     paths,
                     pages_received: page,
+                    metadata: if capture {
+                        Some(merge_metadata(metadata, limits.max_response_bytes)?)
+                    } else {
+                        None
+                    },
                 });
             };
             if !seen.insert(next.clone()) {
@@ -545,6 +625,48 @@ struct Exchange {
     body: Vec<u8>,
     headers: Vec<(String, String)>,
     limit: NonZeroUsize,
+}
+
+fn merge_metadata(
+    mut pages: Vec<(u16, Value)>,
+    limit: NonZeroUsize,
+) -> Result<Value, OneLakeError> {
+    let mut next = pages.pop().ok_or(OneLakeError::InvalidResponse)?;
+    while let Some(mut page) = pages.pop() {
+        if next.0 == 200 {
+            let following = next.1.as_object().ok_or(OneLakeError::InvalidResponse)?;
+            let current = page
+                .1
+                .as_object_mut()
+                .ok_or(OneLakeError::InvalidResponse)?;
+            for (key, value) in current.iter_mut() {
+                if let Value::Array(values) = value
+                    && let Some(additional) = following.get(key)
+                {
+                    values.extend(
+                        additional
+                            .as_array()
+                            .ok_or(OneLakeError::InvalidResponse)?
+                            .iter()
+                            .cloned(),
+                    );
+                }
+            }
+            current.remove("continuationToken");
+            current.remove("continuationUri");
+            current.insert("total_pages".into(), 1.into());
+            page.0 = 200;
+        }
+        next = page;
+    }
+    if serde_json::to_vec(&next.1)
+        .map_err(|_| OneLakeError::InvalidResponse)?
+        .len()
+        > limit.get()
+    {
+        return Err(OneLakeError::Limit);
+    }
+    Ok(next.1)
 }
 
 async fn or_cancel<T>(

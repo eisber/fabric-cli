@@ -265,3 +265,103 @@ async fn list_keeps_page_order_then_applies_truthiness_and_long_column_order() {
         ["permissions", "lastModified", "name", "type"]
     );
 }
+
+#[tokio::test]
+async fn metadata_get_preserves_first_page_fields_and_source_paging_quirks_before_projection() {
+    let client = client();
+    let first = response(
+        200,
+        json!({"paths":[{"name":"first"}],"annotations":[1],"firstOnly":true,"ContinuationToken":"remove","continuationToken":"next"}),
+    );
+    let second = response(
+        200,
+        json!({"paths":[{"name":"second"}],"annotations":[2],"secondOnly":true}),
+    );
+    let executor = executor(vec![first, second]);
+    let result = OneLakeReadHost {
+        client: &client,
+        executor: &executor,
+        limits: OneLakeLimits::default(),
+    }
+    .get(&path(), Some("."), false, pending())
+    .await
+    .unwrap();
+    assert_eq!(
+        result.metadata,
+        json!({"paths":[{"name":"first"},{"name":"second"}],"annotations":[1,2],"firstOnly":true,"total_pages":1})
+    );
+    assert_eq!(result.projected, result.metadata);
+    assert_eq!(result.output.unwrap().data, Some(result.metadata));
+    assert!(executor.requests.lock().unwrap()[0].contains("link.Shortcut"));
+    assert!(executor.requests.lock().unwrap()[1].ends_with("continuationToken=next"));
+}
+
+#[tokio::test]
+async fn falsey_get_projection_is_available_for_export_but_emits_no_source_output() {
+    let client = client();
+    let executor = executor(vec![response(200, json!({"paths":[]}))]);
+    let result = OneLakeReadHost {
+        client: &client,
+        executor: &executor,
+        limits: OneLakeLimits::default(),
+    }
+    .get(&path(), Some("paths"), false, pending())
+    .await
+    .unwrap();
+    assert_eq!(result.projected, json!([]));
+    assert!(result.output.is_none());
+    assert_eq!(result.metadata, json!({"paths":[]}));
+}
+
+#[tokio::test]
+async fn aggregate_metadata_bound_is_enforced_without_changing_complete_sdk_path_list_limits() {
+    let client = client();
+    let mut first = response(200, json!({"paths":[],"padding":"x".repeat(60)}));
+    first
+        .headers
+        .insert("x-ms-continuation".into(), "next".into());
+    let second = response(200, json!({"paths":[],"padding":"y".repeat(60)}));
+    let limits = OneLakeLimits {
+        max_response_bytes: std::num::NonZeroUsize::new(150).unwrap(),
+        ..OneLakeLimits::default()
+    };
+    let reads = executor(vec![first.clone(), second.clone()]);
+    assert_eq!(
+        client
+            .directory_metadata(&reads, &path(), limits, pending())
+            .await
+            .unwrap_err(),
+        OneLakeError::Limit
+    );
+    assert_eq!(reads.requests.lock().unwrap().len(), 2);
+    let reads = executor(vec![first, second]);
+    assert!(
+        client
+            .list(&reads, &path(), false, limits, pending())
+            .await
+            .unwrap()
+            .paths
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn source_terminal_201_metadata_does_not_silently_change_python_append_status_policy() {
+    let client = client();
+    let executor = executor(vec![
+        response(
+            200,
+            json!({"paths":[{"name":"first"}],"continuationToken":"next"}),
+        ),
+        response(201, json!({"paths":[{"name":"second"}]})),
+    ]);
+    let result = client
+        .directory_metadata(&executor, &path(), OneLakeLimits::default(), pending())
+        .await
+        .unwrap();
+    assert_eq!(result.pages_received, 2);
+    assert_eq!(
+        result.data,
+        json!({"paths":[{"name":"first"}],"continuationToken":"next"})
+    );
+}

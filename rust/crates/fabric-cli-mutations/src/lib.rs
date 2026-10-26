@@ -31,7 +31,7 @@ pub use create::{CapacitySelection, CreateOptions};
 pub use errors::operation_error_output;
 pub use execution::FabricMutationBackend;
 pub use moves::FolderMoveResult;
-pub use onelake_read::{OneLakeReadError, OneLakeReadHost, OneLakeReadResult};
+pub use onelake_read::{OneLakeGetResult, OneLakeReadError, OneLakeReadHost, OneLakeReadResult};
 pub use onelake_write::{
     OneLakeResourceKind, OneLakeWriteError, OneLakeWriteHost, OneLakeWriteResult,
     OneLakeWriteTarget,

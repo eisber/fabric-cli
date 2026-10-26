@@ -9,7 +9,7 @@ use azure_core::{
     http::{AsyncRawResponse, HttpClient, Method, Request, StatusCode, headers::Headers},
     time::OffsetDateTime,
 };
-use fabric_cli_mutations::OneLakeReadHost;
+use fabric_cli_mutations::{OneLakeReadHost, OneLakeReadResult};
 use fabric_sdk_http::{ExecutionFuture, ExecutionOptions, ExecutionTimer, HttpExecutor};
 use fabric_sdk_onelake::{OneLakeClient, OneLakeLimits, OneLakePath};
 use fabric_sdk_onelake_http::OneLakeHttpExecutor;
@@ -122,6 +122,7 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
         "item",
         input["path"].as_str().ok_or("missing path")?,
     )?;
+    let mut get_metadata = None;
     let result = match input["command"].as_str().ok_or("missing command")? {
         "ls" => {
             host.list(
@@ -133,9 +134,24 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
             .await
         }
         "exists" => host.exists(&path, pending()).await,
+        "get" => host
+            .get(
+                &path,
+                input["query"].as_str(),
+                input["deep"].as_bool().unwrap_or(false),
+                pending(),
+            )
+            .await
+            .map(|result| {
+                get_metadata = Some((result.metadata, result.projected));
+                OneLakeReadResult {
+                    output: result.output.unwrap_or_default(),
+                    show_headers: false,
+                }
+            }),
         _ => return Err("unsupported OneLake example command".into()),
     };
-    Ok(match result {
+    let mut output = match result {
         Ok(result) => json!({
             "requests": *network.requests.lock().unwrap(),
             "data": result.output.data,
@@ -150,7 +166,12 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
                 "data": null, "message": null, "show_headers": false, "error": output.error_code,
             })
         }
-    })
+    };
+    if let Some((metadata, projected)) = get_metadata {
+        output["metadata"] = metadata;
+        output["projected"] = projected;
+    }
+    Ok(output)
 }
 
 #[tokio::main(flavor = "current_thread")]

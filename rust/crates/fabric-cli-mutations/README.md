@@ -112,10 +112,20 @@ credentials, cancellation and other execution failures remain typed errors.
 Malformed/absent path lists explicitly follow the SDK safety boundary rather
 than Python's success-shaped fallback.
 
-General OneLake GET metadata, item-root enumeration, hidden-resource resolution,
-and shortcut metadata/target orchestration remain separate backlog
+Item-root enumeration, hidden-resource resolution, filesystem export and main-host
+composition remain separate backlog
 items. HTTP errors beyond the source's standard 401/403/404 diagnostics retain
 the SDK's sanitized message; full storage-body diagnostics are not claimed.
+
+OneLake directory GET returns source metadata plus the existing query projection.
+It retains the raw local path (unlike LS/EXISTS), removes only the source's
+capitalized `ContinuationToken`, supports default/deep path inventory and normal
+query/scalar semantics, and suppresses falsey output exactly as the source helper
+does. `OneLakeGetResult::projected` remains available even when falsey so a
+separately owned filesystem exporter does not lose the actual projected value.
+LS and GET select the same source-compatible page-merge view, including terminal
+201 behavior and the source `total_pages` quirk. Actual page counts and finite
+aggregate metadata bounds are independent SDK evidence, not rewritten oracles.
 
 ## OneLake write composition
 

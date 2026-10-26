@@ -95,6 +95,17 @@ pub struct OneLakeReadResult {
     pub show_headers: bool,
 }
 
+/// Original metadata and source-projected GET output for a caller-owned renderer.
+#[derive(Clone, Debug)]
+pub struct OneLakeGetResult {
+    /// Actual source-compatible metadata, available for separately owned export.
+    pub metadata: Value,
+    /// Actual projection, including falsey values for a separately owned exporter.
+    pub projected: Value,
+    /// Output is absent when the source query returns a falsey result.
+    pub output: Option<OutputInput>,
+}
+
 /// Thin OneLake `ls`/`exists` composition, not a new parser or command namespace.
 ///
 /// A caller can pass `fabric_sdk_onelake_http::OneLakeHttpExecutor` from its own
@@ -109,6 +120,50 @@ pub struct OneLakeReadHost<'a> {
 }
 
 impl OneLakeReadHost<'_> {
+    /// Compose the OneLake directory-metadata GET branch and existing query layer.
+    ///
+    /// Unlike LS/EXISTS, source GET retains the supplied local path rather than
+    /// removing Shortcut literals. It removes only `ContinuationToken` (capital C)
+    /// before projection. Missing/empty query inventories JSON paths at the
+    /// caller's depth, and falsey projections emit no output, as in Python.
+    ///
+    /// # Errors
+    /// Preserves SDK/query failures and bounds; filesystem output/export and
+    /// shortcut-specific metadata GET are separately owned composition branches.
+    pub async fn get(
+        &self,
+        path: &OneLakePath,
+        query: Option<&str>,
+        deep: bool,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<OneLakeGetResult, OneLakeReadError> {
+        let mut metadata = self
+            .client
+            .directory_metadata(self.executor, path, self.limits, cancelled)
+            .await?
+            .data;
+        metadata
+            .as_object_mut()
+            .ok_or(OneLakeError::InvalidResponse)?
+            .remove("ContinuationToken");
+        let data = fabric_cli_query::search_with_options(
+            &metadata,
+            query.unwrap_or(""),
+            fabric_cli_query::SearchOptions {
+                deep_traversal: deep,
+            },
+        )?;
+        let output = truthy(&data).then(|| OutputInput {
+            data: Some(data.clone()),
+            ..OutputInput::default()
+        });
+        Ok(OneLakeGetResult {
+            metadata,
+            projected: data,
+            output,
+        })
+    }
+
     /// List an item-relative OneLake directory, preserving source row/query rules.
     ///
     /// `.Shortcut` and `.shortcut` are removed everywhere in the local path, as
@@ -126,11 +181,16 @@ impl OneLakeReadHost<'_> {
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<OneLakeReadResult, OneLakeReadError> {
         let path = source_path(path)?;
-        let mut rows = self
+        let metadata = self
             .client
-            .list(self.executor, &path, false, self.limits, cancelled)
+            .directory_metadata(self.executor, &path, self.limits, cancelled)
             .await?
-            .paths;
+            .data;
+        let mut rows = metadata
+            .get("paths")
+            .and_then(Value::as_array)
+            .ok_or(OneLakeError::InvalidResponse)?
+            .clone();
         for row in &mut rows {
             let name = row
                 .get("name")
