@@ -210,6 +210,7 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
+    """Compare the original generic mutation traces with the offline consumer."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--probe", required=True)
     args = parser.parse_args()

@@ -10,6 +10,7 @@ import json
 import subprocess
 from collections import deque
 from types import SimpleNamespace
+from typing import Any
 from urllib.parse import parse_qsl, urlencode
 import jmespath
 
@@ -18,7 +19,7 @@ from operation_reference import functions
 from operation_reference import Headers
 
 
-def reference(case: dict) -> dict:
+def reference(case: dict[str, Any]) -> dict[str, Any]:
     """Use original functions with synthetic HTTP, UI and already-resolved context."""
     if case["command"] in ("get","roots") or len(case["replies"])>1:
         return get_reference(case)
@@ -27,7 +28,7 @@ def reference(case: dict) -> dict:
     replies = deque(case["replies"])
     constants = SimpleNamespace(INFO_EXISTS_TRUE="true", INFO_EXISTS_FALSE="false", ERROR_NOT_FOUND="NotFound")
 
-    def request(args: argparse.Namespace, **_) -> SimpleNamespace:
+    def request(args: argparse.Namespace, **_: Any) -> SimpleNamespace:
         path, _, query = args.uri.partition("?")
         uri = "https://onelake.dfs.fabric.microsoft.com/" + path.lstrip("/")
         if query:
@@ -43,7 +44,7 @@ def reference(case: dict) -> dict:
             raise CLIError("synthetic OneLake failure", code)
         return SimpleNamespace(status_code=reply["status"], text=json.dumps(reply["data"]))
 
-    def output(args, message=None, data=None, show_headers=False, **_):
+    def output(args: argparse.Namespace, message: str | None = None, data: Any = None, show_headers: bool = False, **_: Any) -> None:
         result.update(data=data, message=message, show_headers=show_headers)
 
     ui = SimpleNamespace(print_output_format=output)
@@ -67,7 +68,8 @@ def reference(case: dict) -> dict:
     return dict(requests=requests, **result)
 
 
-def get_reference(case):
+def get_reference(case: dict[str, Any]) -> dict[str, Any]:
+    """Run original source paging/GET/root/list helpers and query projection."""
     requests=[]
     replies=deque(case["replies"])
     result=dict(data=None,message=None,show_headers=False,error=None)
@@ -75,7 +77,7 @@ def get_reference(case):
     common=load("errors/common.py",{})
     const=SimpleNamespace(DEBUG=False)
     types=load("client/fab_api_types.py",dict(json=json,FabricCLIError=errors.FabricCLIError,ErrorMessages=SimpleNamespace(Common=common.CommonErrors),fab_constant=const))
-    def request(args,continuation_token=None):
+    def request(args: argparse.Namespace, continuation_token: str | None = None) -> Any:
         path,_,query=args.uri.partition("?")
         params=dict(parse_qsl(query,keep_blank_values=True))
         if continuation_token:params["continuationToken"]=continuation_token
@@ -91,7 +93,7 @@ def get_reference(case):
     ))
     api=load("client/fab_api_onelake.py",dict(fabric_api=SimpleNamespace(do_request=request)))
     original_query=load("utils/fab_jmespath.py",dict(json=json,jmespath=jmespath,FabricCLIError=errors.FabricCLIError,ErrorMessages=SimpleNamespace(Common=common.CommonErrors),fab_constant=SimpleNamespace(ERROR_INVALID_INPUT="InvalidInput")))
-    def search(data,query,deep=False):
+    def search(data: Any, query: str | None, deep: bool = False) -> Any:
         projected=original_query.search(data,query,deep)
         if case["command"]=="get":result["projected"]=projected
         return projected
@@ -107,7 +109,8 @@ def get_reference(case):
     else:
         args.long=case.get("long",False)
         util=functions("utils/fab_util.py",{"remove_dot_suffix","process_nargs"},{})
-        def output(args,data=None,show_headers=False,**_):result.update(data=data,show_headers=show_headers)
+        def output(args: argparse.Namespace, data: Any = None, show_headers: bool = False, **_: Any) -> None:
+            result.update(data=data,show_headers=show_headers)
         helpers=functions("utils/fab_cmd_ls_utils.py",{"update_entry_name_and_type","format_and_print_output"},dict(
             utils_ui=SimpleNamespace(print_output_format=output),utils_jmespath=SimpleNamespace(search=search),fab_util=SimpleNamespace(**util)
         ))
@@ -119,6 +122,7 @@ def get_reference(case):
 
 
 def main() -> None:
+    """Compare original OneLake read/query/paging traces with the Rust consumer."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--probe", required=True)
     args = parser.parse_args()

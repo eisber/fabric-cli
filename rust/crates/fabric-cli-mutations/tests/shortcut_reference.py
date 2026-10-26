@@ -14,6 +14,7 @@ import re
 import subprocess
 from collections import deque
 from types import SimpleNamespace
+from typing import Any
 from urllib.parse import parse_qsl, quote, urlencode
 from xml.sax.saxutils import escape
 import jmespath
@@ -23,7 +24,8 @@ from python_reference import PIN, load
 from operation_reference import functions
 
 
-def reference(case):
+def reference(case: dict[str, Any]) -> dict[str, Any]:
+    """Execute pinned shortcut handlers with synthetic context, I/O and UI."""
     replies = deque(case["replies"])
     requests, notices, prompts, outputs = [], [], [], []
     const = SimpleNamespace(**constants({
@@ -57,7 +59,7 @@ def reference(case):
         input=target_json,type=case.get("type","oneLake"),request_params={},
     )
 
-    def confirm(message="Are you sure?"):
+    def confirm(message: str = "Are you sure?") -> bool:
         prompts.append(message)
         return case.get("confirm",True)
 
@@ -68,7 +70,7 @@ def reference(case):
         print_output_format=lambda args,message=None,**_:outputs.append(message),
     )
 
-    def request(args,data=None,json=None):
+    def request(args: argparse.Namespace, data: Any = None, json: Any = None) -> SimpleNamespace:
         path, _, query = args.uri.partition("?")
         url = "https://api.fabric.microsoft.com/v1/" + quote(path,safe="/")
         if query:
@@ -109,7 +111,8 @@ def reference(case):
     return dict(requests=requests,notices=notices,prompts=prompts,outputs=outputs,error=failure)
 
 
-def main():
+def main() -> None:
+    """Compare original shortcut/query traces with the real Rust composition."""
     parser=argparse.ArgumentParser()
     parser.add_argument("--probe",required=True)
     args=parser.parse_args()

@@ -60,6 +60,7 @@ def constants(names: set[str]) -> dict[str, Any]:
 
 
 def reference(case: dict[str, Any]) -> dict[str, Any]:
+    """Execute original request/exception/decorator policy against synthetic I/O."""
     replies = deque(case["replies"])
     requests = []
     captured = {}
@@ -136,6 +137,7 @@ def reference(case: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
+    """Compare original Fabric/storage diagnostics and exits with Rust output."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--probe", required=True)
     args = parser.parse_args()

@@ -13,6 +13,7 @@ import re
 import subprocess
 from collections import deque
 from types import SimpleNamespace
+from typing import Any
 from urllib.parse import parse_qsl, quote, urlencode
 
 from error_reference import constants
@@ -20,7 +21,8 @@ from operation_reference import functions
 from python_reference import PIN, load
 
 
-def reference(case: dict) -> dict:
+def reference(case: dict[str, Any]) -> dict[str, Any]:
+    """Run unchanged source handlers against explicit synthetic collaborators."""
     requests, notices, prompts, outputs = [], [], [], []
     replies = deque(case["replies"])
     const = SimpleNamespace(**constants({
@@ -35,7 +37,7 @@ def reference(case: dict) -> dict:
     ))
 
     class Context:
-        def __init__(self, name, identifier, parent, kind):
+        def __init__(self, name: str, identifier: str | None, parent: Any, kind: Any) -> None:
             self.name = self.short_name = name
             self.id = identifier
             self.parent = parent
@@ -49,7 +51,7 @@ def reference(case: dict) -> dict:
             self.full_name = name
             self.type = types.FabricElementType.ONELAKE
 
-    def context(spec):
+    def context(spec: dict[str, Any]) -> Context:
         value = object.__new__(Context)
         value.name = value.short_name = spec["path"].rsplit("/", 1)[-1]
         value.id = None if spec.get("kind") == "undefined" else "resolved"
@@ -68,10 +70,10 @@ def reference(case: dict) -> dict:
         value.type = types.FabricElementType.ONELAKE
         return value
 
-    def notice(kind, message):
+    def notice(kind: str, message: str) -> None:
         notices.append(dict(kind=kind, message=message))
 
-    def confirm(message="Are you sure?"):
+    def confirm(message: str = "Are you sure?") -> bool:
         prompts.append(message)
         return case.get("confirm", True)
 
@@ -83,7 +85,7 @@ def reference(case: dict) -> dict:
         print_output_format=lambda args, message=None, **_:outputs.append(message),
     )
 
-    def request(args, data=None, **_):
+    def request(args: argparse.Namespace, data: bytes | None = None, **_: Any) -> SimpleNamespace:
         path, _, query = args.uri.partition("?")
         url = "https://onelake.dfs.fabric.microsoft.com/" + quote(path.lstrip("/"), safe="/")
         if query:
@@ -152,6 +154,7 @@ def reference(case: dict) -> dict:
 
 
 def main() -> None:
+    """Compare all original write/copy traces with the offline Rust consumer."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--probe", required=True)
     args = parser.parse_args()
@@ -212,7 +215,7 @@ def main() -> None:
 
 
 def types_writable(item_type: str) -> list[str]:
-    # Case construction only; expected validation/output is executed from original code.
+    """Construct cases only; expected validation/output runs original source."""
     return ["Libs", "Main"] if item_type == "SparkJobDefinition" else [] if item_type in ("SemanticModel", "KQLDatabase") else ["Files"]
 
 
