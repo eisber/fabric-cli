@@ -15,6 +15,12 @@ finite limits and cancellation future. Construction acquires no token and does
 no I/O. List execution uses the caller's runtime; no runtime, global logger,
 production transport, identity backend or ambient credential discovery is added.
 
+`WorkspaceClient::with_context(RequestContext)` additionally shares explicit
+endpoint routing and the caller's original credential `Arc`. LIST, primary GET,
+all optional metadata enrichments and active continuation checks use the same
+binding and shared authenticated execution. Existing `new` remains public-only.
+See the [endpoint API](../../docs/endpoint-context.md) for composition and limits.
+
 The implemented operation preserves ordered service fields/duplicates and
 unknown workspace types, validates nonterminal continuation origins, bounds
 page/item/response work, and returns typed incomplete errors with partial

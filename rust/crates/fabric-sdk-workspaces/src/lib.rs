@@ -12,7 +12,7 @@ pub mod models;
 pub mod mutations;
 pub mod workspaces;
 
-pub use fabric_core::{CredentialSelection, TokenCredential};
+pub use fabric_core::{CredentialSelection, RequestContext, TokenCredential};
 pub use metadata::{
     WorkspaceEnrichmentOutcome, WorkspaceMetadata, WorkspaceMetadataError,
     WorkspaceMetadataErrorKind, WorkspaceMetadataResult, WorkspaceMetadataStep, WorkspaceOmission,
@@ -30,27 +30,33 @@ pub use workspaces::{
 /// Selection metadata does not validate token claims or configure the provider.
 #[derive(Clone)]
 pub struct WorkspaceClient {
-    credential: Arc<dyn TokenCredential>,
-    selection: CredentialSelection,
+    context: RequestContext,
 }
 
 impl WorkspaceClient {
     /// Stores the caller's credential and selection without token acquisition or I/O.
     pub fn new(credential: Arc<dyn TokenCredential>, selection: CredentialSelection) -> Self {
-        Self {
-            credential,
-            selection,
-        }
+        Self::with_context(RequestContext::new(credential, selection))
+    }
+
+    /// Uses an explicit immutable endpoint and the caller's existing credential.
+    pub fn with_context(context: RequestContext) -> Self {
+        Self { context }
+    }
+
+    /// Returns the shared request configuration without acquiring credentials.
+    pub fn context(&self) -> &RequestContext {
+        &self.context
     }
 
     /// Returns the injected provider without acquiring a token.
     pub fn credential(&self) -> &Arc<dyn TokenCredential> {
-        &self.credential
+        self.context.credential()
     }
 
     /// Returns the explicit selection, without probing or reconfiguring the provider.
     pub fn selection(&self) -> &CredentialSelection {
-        &self.selection
+        self.context.selection()
     }
 }
 
@@ -58,7 +64,7 @@ impl fmt::Debug for WorkspaceClient {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WorkspaceClient")
             .field("credential", &"<injected>")
-            .field("selection", &self.selection)
+            .field("context", &self.context)
             .finish()
     }
 }

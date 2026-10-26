@@ -13,6 +13,7 @@ use azure_core::{
     http::{HttpClient, Method, Request, Url},
 };
 use fabric_sdk::{
+    EndpointBinding, ServiceOrigin,
     notebooks::{NotebookExecutionError, NotebookExecutor, NotebookRequest, NotebookResponse},
     workspaces::{WorkspaceExecutionError, WorkspaceExecutor, WorkspaceRequest, WorkspaceResponse},
 };
@@ -107,6 +108,7 @@ pub struct HttpExecutor {
     client: Arc<dyn HttpClient>,
     timer: Arc<dyn ExecutionTimer>,
     options: ExecutionOptions,
+    endpoint: EndpointBinding,
 }
 
 impl HttpExecutor {
@@ -126,10 +128,25 @@ impl HttpExecutor {
             client,
             timer,
             options,
+            endpoint: EndpointBinding::public(ServiceOrigin::Fabric),
         })
     }
 
-    /// Executes one bounded request against the fixed public Fabric HTTPS origin.
+    /// Selects a validated endpoint without changing execution or retry policy.
+    ///
+    /// Supply the same immutable binding used by the SDK request context.
+    /// Construction performs no I/O; an unconfigured executor remains public-only.
+    pub fn with_endpoint(mut self, endpoint: EndpointBinding) -> Self {
+        self.endpoint = endpoint;
+        self
+    }
+
+    /// Returns the selected endpoint used for pre-send origin checks.
+    pub fn endpoint(&self) -> &EndpointBinding {
+        &self.endpoint
+    }
+
+    /// Executes one bounded request against the selected Fabric HTTPS origin.
     ///
     /// This is the shared adapter seam for additional handwritten service
     /// families. The service client owns credential acquisition, endpoint
@@ -192,7 +209,15 @@ impl HttpExecutor {
         headers: &[(String, String)],
         limit: NonZeroUsize,
     ) -> Result<WorkspaceResponse, ExecutionError> {
-        origin.validate_url(url)?;
+        let public = EndpointBinding::public(origin);
+        let endpoint = if self.endpoint.origin() == origin {
+            &self.endpoint
+        } else {
+            &public
+        };
+        endpoint
+            .validate_url(url)
+            .map_err(|_| ExecutionError::InvalidInput)?;
         bound::validate_request(method, url, body, headers)?;
         Self::validate_token(token)?;
         let mut request = Self::authenticated_request(method, url, token, body);
@@ -224,15 +249,12 @@ impl HttpExecutor {
         body: &[u8],
         limit: NonZeroUsize,
     ) -> Result<WorkspaceResponse, ExecutionError> {
-        if url.scheme() != "https"
-            || url.host_str() != Some("api.fabric.microsoft.com")
-            || url.port_or_known_default() != Some(443)
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.fragment().is_some()
-        {
+        if self.endpoint.origin() != ServiceOrigin::Fabric {
             return Err(ExecutionError::InvalidInput);
         }
+        self.endpoint
+            .validate_url(url)
+            .map_err(|_| ExecutionError::InvalidInput)?;
         Self::validate_token(token)?;
         self.execute_request(Self::authenticated_request(method, url, token, body), limit)
             .await
