@@ -29,6 +29,14 @@ discovers credentials, starts a runtime, or reads global configuration.
 policy; `NoFiles` explicitly rejects file requests. Neither silently falls
 back to ambient filesystem access.
 
+Inline input/configuration and structured pipeline parameters use the existing
+checked JSON parser. Integer tokens outside the supported i64/u64 range are
+rejected before credentials or HTTP instead of being silently rounded to f64.
+Nested arrays/objects follow the same check; numeric-looking string contents
+and ordinary finite JSON keep their existing behavior. This is explicit safe
+rejection, not arbitrary-integer or non-finite Python JSON parity. Injected file
+readers still own parsing of file contents before returning a `Value`.
+
 `HttpJobExecutor` also implements the shared `OperationExecutor` trait. The
 same caller-owned executor can therefore compose `SharedJobOperations` without
 a new transport or polling loop. Cancellation is passed through SDK operations,
