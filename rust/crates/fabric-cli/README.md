@@ -3,10 +3,12 @@
 # Bounded read-command host
 
 `fabric-cli` composes the existing SDK facade, pure Fabric context resolver and
-JSON output library. It is not a production authentication or transport host.
+JSON output library. Default builds do not select authentication or transport.
 The `fab-rs` executable recognizes Python's `ls` (`dir`) and `get` names, paths,
-and flags, but returns sanitized `NotConfigured` errors for reads. Ordinary users
-cannot run live reads through this binary yet. Help/version need no host.
+and flags, but returns sanitized `NotConfigured` errors for reads unless built
+with the explicit `native-read` host. See
+[native setup, behavior and limitations](../../docs/native-read-host.md).
+Help/version need no host.
 
 The opt-in `windows-broker` feature adds experimental Windows authentication
 commands to the **same parser** without configuring read execution. It produces
@@ -34,8 +36,8 @@ policy. `None` and `Some("")` remain distinct parsed values. See the
 [argument matrix](../../docs/query-argument-compatibility.md) for option stops,
 precedence, path interaction and the independent source comparison.
 
-No runtime, clock, mutable global state, token discovery, Python/az/azd bridge,
-HTTP/TLS backend, file export, or production fixture mode is installed.
+The library installs no runtime, clock, mutable global state, token discovery,
+Python/az/azd bridge, HTTP/TLS backend, file export, or production fixture mode.
 Cancellation is a caller future. Dropping the operation drops SDK futures;
 partial pages never become successful command data. Writers are caller-owned;
 partial write failures propagate without fallback, retry, flush or success.
@@ -81,8 +83,7 @@ host opt-out, rejecting GET discovery and queries instead of faking success.
 
 Integration tests and the offline read probe now use the built-in provider
 after real SDK reads; additional inspection-callback and `NoQuery` tests retain
-the injected/disabled-provider contracts. The binary still requires a configured
-production host, independently of this completed query composition.
+the injected/disabled-provider contracts. The optional native host selects this same production query composition.
 
 Workspace metadata `get` calls `Client::get_workspace_metadata` using the existing
 workspace executor. It reads the primary object, managed private endpoints,
@@ -119,8 +120,8 @@ Malformed or unresolved graphs fail explicitly instead of hanging, dropping
 rows or silently reparenting them. These safety outcomes and the snapshot/request
 differences are not exact source parity. See the
 [folder-command matrix](../../docs/folder-command-compatibility.md) and its
-independent 59-case evidence. The binary does not automatically configure this
-wrapper or a production host.
+independent 59-case evidence. The optional native session selects this wrapper
+with the scalar-argument contract.
 
 ### Remaining command boundaries
 
@@ -130,10 +131,12 @@ sensitivity-label confirmation, connections, schedules, and environment/mirrorin
 augmentation are not ported here. Generic metadata is not advertised as a full
 item export. Python's unsupported GET item types are rejected.
 
-`--output`, `--verbose`, `--force`, text output,
+`--output`, `--verbose`, `--force`,
 OneLake/virtual collection commands, ambient home discovery,
 and local filesystem fallback fail explicitly. They are never silently ignored.
-Recognized binary read options still fail `NotConfigured` before host execution.
+Default/broker-only binary reads still fail `NotConfigured` before host execution.
+`ReadSession` additionally supports explicit bounded text through the shared
+renderer; complete Unicode terminal properties remain unavailable.
 
 Lookup is pure and caller-loaded; this slice does not recreate Python's TTL
 cache, cache-miss invalidation/retry or persistent/identity-bound context. Populate
@@ -154,5 +157,12 @@ the helper's requests and output does not establish full GET parity. See the
 [source-routing matrix](../../docs/specialized-get-compatibility.md).
 
 See [command compatibility](../../docs/read-command-compatibility.md).
+`session::ReadSession` loads complete metadata scopes asynchronously outside
+`Lookup` before composing the existing handlers. It accepts a credential-injected
+SDK, shared read executor, explicit current/home/tenant, time and configuration.
+Its `dispatch` returns the ordered multi-stream `TextPlan` for JSON or text;
+output-before-render-error remains explicit through the renderer's partial plan.
+This command-local session does not install a cache or alter existing host APIs.
+
 `examples/read_probe.rs` is a test subprocess harness over real SDK calls and an
 offline fake executor, not an executable runtime mode, bridge, or live backend.

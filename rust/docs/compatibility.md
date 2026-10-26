@@ -2,7 +2,7 @@
 
 # Rust compatibility and rollout backlog
 
-The Rust workspace is an offline scaffold. It does not provide Python CLI,
+The Rust workspace is an experimental staged port. It does not provide full Python CLI,
 MSAL, deployment, or complete cross-platform parity. The Python implementation
 continues to own the existing `fab` product contract.
 
@@ -17,6 +17,10 @@ embedded agent runtime, authentication command, deployment command or production
 read host in the default build. The separately opt-in Windows authentication
 slice is described below. Python-named `ls` (`dir`) and `get` are recognized; their public async
 library composition is described in [read-command compatibility](read-command-compatibility.md).
+The separate `native-read` feature now installs an explicitly configured Windows
+read host; the bootstrap table below continues to describe default builds.
+See [native host setup and limits](native-read-host.md) for supported composition,
+distinct failures and still-unexecuted live acceptance.
 
 | Invocation | Exit status | Standard output | Standard error |
 | --- | --- | --- | --- |

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Python-named arguments for the bounded JSON read preview.
+//! Python-named arguments for the bounded read preview.
 
 use clap::{Arg, ArgAction, Command, error::ErrorKind};
 use std::ffi::OsString;
@@ -42,7 +42,7 @@ pub struct ReadCommand {
     pub verbose: bool,
     /// Python `get --force`, recognized but not implemented.
     pub force: bool,
-    /// Explicit global output override; only JSON execution is implemented.
+    /// Explicit global output override; the selected host owns format support.
     pub output_format: Option<String>,
 }
 
@@ -81,6 +81,8 @@ pub fn command() -> Command {
         );
     #[cfg(feature = "windows-broker")]
     let command = auth::register(command);
+    #[cfg(feature = "native-read")]
+    let command = command.after_help("Native ls/get reads require FAB_RUST_TENANT, FAB_RUST_ACCOUNT and FAB_RUST_CLIENT_ID. Windows broker authentication is opt-in; reads are silent and never show sign-in UI. Use explicit auth login first when required. FAB_RUST_CONTEXT defaults to /; FAB_RUST_HOME is optional. No token input, credential fallback or deployment command is available.");
     command
         .subcommand(
             Command::new("ls")

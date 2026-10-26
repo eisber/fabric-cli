@@ -5,11 +5,12 @@
 
 #[cfg(feature = "windows-broker")]
 mod auth;
+#[cfg(feature = "native-read")]
+mod native_read;
 
-use fabric_cli::{
-    HostError,
-    parser::{INVALID_ARGUMENTS, Invocation, parse_args},
-};
+#[cfg(not(feature = "native-read"))]
+use fabric_cli::HostError;
+use fabric_cli::parser::{INVALID_ARGUMENTS, Invocation, parse_args};
 use serde::Serialize;
 use std::{
     io::{self, Write},
@@ -33,6 +34,9 @@ fn run() -> io::Result<ExitCode> {
             write!(io::stdout().lock(), "{text}")?;
             return Ok(ExitCode::SUCCESS);
         }
+        #[cfg(feature = "native-read")]
+        Ok(Invocation::Read(command)) => return native_read::run(&command),
+        #[cfg(not(feature = "native-read"))]
         Ok(Invocation::Read(_)) => (
             CommandError {
                 code: "NotConfigured",

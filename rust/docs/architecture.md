@@ -34,7 +34,8 @@ identity also depends on core, and `fabric-deploy` depends on `fabric-sdk`.
 The CLI read-command library now consumes the SDK facade, CLI context, CLI
 output and CLI query libraries. `PythonQuery` connects native evaluation and GET
 path discovery to the actual read host; no-query LS preserves source columns.
-Its test-only shared HTTP consumer uses `fabric-sdk-http`.
+Its offline consumers use `fabric-sdk-http`; the optional `native-read` binary
+selects that same executor and `fabric-sdk-transport/hyper-rustls`.
 An additive borrowed `FolderReadHost`, selected with `ReadHost::with_folders`,
 composes the same SDK, context, query and output layers for folder-aware LS.
 It preserves existing host struct literals and delegates other reads, including
@@ -44,7 +45,10 @@ folder graph and command-local snapshot boundaries are documented in the
 These read paths use allowed CLI-to-SDK/CLI edges, not identity implementation.
 The optional auth command separately selects `fabric-identity/windows-broker`;
 it never adds an SDK-to-identity edge or installs a read host.
-The binary recognizes reads but has no production read host.
+The default/broker-only binary recognizes reads but has no read host.
+The explicit `native-read` feature composes the runtime-neutral `ReadSession`,
+complete async metadata scopes, existing handlers and native broker/transport;
+see [native host boundaries](native-read-host.md).
 The initial five crates are not a fixed count or a maximum. Workspace membership
 uses `crates/*`, so a new crate directory does not require editing a central
 member list. Default members explicitly include safe crates and exclude the
@@ -294,8 +298,9 @@ feature; the executable dispatches them to auth without replacing read parsing.
 Read-host configuration/execution still belongs to callers, not login. Tests and
 CI compare existing source read/query behavior with broker enabled and disabled.
 
-`fab-rs` recognizes Python LS/dir/GET and returns typed `NotConfigured` until a
-host explicitly supplies credentials, transport, context and time. The public
+Default and broker-only `fab-rs` recognize Python LS/dir/GET and return typed
+`NotConfigured`. The optional native host explicitly supplies credentials,
+transport, context and time. The public
 `fabric_cli::ReadHost` runs real SDK reads on the caller's runtime, with pure
 lookup snapshots and caller-owned JSON writers. No-query LS works without query
 dependencies; generic metadata GET projects through the injected query boundary.
@@ -338,7 +343,7 @@ the caller's runtime. The explicitly selected `fabric-sdk-transport` uses
 Tokio time and I/O; it never creates a runtime. Tokio's `macros` and
 single-thread `rt` support remains available for offline consumers and tests.
 The CLI owns its single-thread Tokio runtime, signal handler and timeout only
-when the auth feature is enabled. Tokio's signal feature is selected by that
+when the auth or native-read feature is enabled. Tokio's signal feature is selected by that
 optional CLI dependency, not by default read/SDK consumers. A dedicated native
 STA thread is a WinRT/UI requirement, not an independent async runtime.
 

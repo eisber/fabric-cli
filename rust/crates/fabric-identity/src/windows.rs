@@ -34,6 +34,26 @@ pub struct WindowsCredential {
 }
 
 impl WindowsCredential {
+    /// Connect silently for a Fabric read, without requiring OneLake/ARM consent.
+    ///
+    /// Uses only the explicitly selected broker identity. Missing consent or
+    /// interaction-required fails; callers must invoke `login` separately to
+    /// authorize user-initiated UI. No alternate account or backend is attempted.
+    ///
+    /// # Errors
+    ///
+    /// Returns sanitized configuration, identity or broker failures.
+    pub async fn connect(options: EntraOptions) -> Result<Arc<Self>, BrokerError> {
+        let session = wam::acquire(
+            options.clone(),
+            None,
+            vec![TokenAudience::Fabric],
+            Interaction::Silent,
+        )
+        .await?;
+        Ok(Self::from_session(options, session))
+    }
+
     /// Acquires Fabric, OneLake and ARM tokens in Python login order.
     ///
     /// This is a live operation when explicitly invoked; allow interaction only
@@ -63,6 +83,10 @@ impl WindowsCredential {
             interaction,
         )
         .await?;
+        Ok(Self::from_session(options, session))
+    }
+
+    fn from_session(options: EntraOptions, session: wam::EntraSession) -> Arc<Self> {
         let account_id = session.account_id().to_owned();
         let metadata = session
             .into_tokens()
@@ -72,11 +96,11 @@ impl WindowsCredential {
                 expires_on: token.expires_on(),
             })
             .collect();
-        Ok(Arc::new(Self {
+        Arc::new(Self {
             options,
             account_id,
             metadata,
-        }))
+        })
     }
 
     /// Metadata from the successful login, not a new token or current status check.

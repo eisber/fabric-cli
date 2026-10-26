@@ -81,27 +81,32 @@ pub(crate) fn run(command: &AuthCommand) -> io::Result<ExitCode> {
 }
 
 #[cfg(windows)]
+pub(crate) fn broker_error(
+    error: fabric_identity::windows_broker::BrokerError,
+) -> (&'static str, String) {
+    use fabric_identity::windows_broker::BrokerError;
+    let code = match error {
+        BrokerError::InvalidConfiguration => "invalid_configuration",
+        BrokerError::InteractionRequired => "interaction_required",
+        BrokerError::Cancelled => "cancelled",
+        BrokerError::IdentityMismatch | BrokerError::AmbiguousAccount => "identity_mismatch",
+        BrokerError::InvalidResponse => "invalid_broker_response",
+        BrokerError::ProviderUnavailable => "broker_unavailable",
+        BrokerError::CompletionUnconfirmed { .. } => "completion_unconfirmed",
+        _ => "authentication_failed",
+    };
+    (code, error.to_string())
+}
+
+#[cfg(windows)]
 async fn execute(
     action: AuthAction,
     options: fabric_identity::LoginOptions,
     allow_interaction: bool,
 ) -> Result<Value, (&'static str, String)> {
-    use fabric_identity::{WindowsCredential, sign_out, windows_broker::BrokerError};
-    let map_error = |error: BrokerError| {
-        let code = match error {
-            BrokerError::InvalidConfiguration => "invalid_configuration",
-            BrokerError::InteractionRequired => "interaction_required",
-            BrokerError::Cancelled => "cancelled",
-            BrokerError::IdentityMismatch | BrokerError::AmbiguousAccount => "identity_mismatch",
-            BrokerError::InvalidResponse => "invalid_broker_response",
-            BrokerError::ProviderUnavailable => "broker_unavailable",
-            BrokerError::CompletionUnconfirmed { .. } => "completion_unconfirmed",
-            _ => "authentication_failed",
-        };
-        (code, error.to_string())
-    };
+    use fabric_identity::{WindowsCredential, sign_out};
     if action == AuthAction::Logout {
-        sign_out(options).await.map_err(map_error)?;
+        sign_out(options).await.map_err(broker_error)?;
         return Ok(
             json!({"logged_in": false, "signed_out": true, "scope": "application_on_this_device"}),
         );
@@ -110,7 +115,7 @@ async fn execute(
     let account = options.account().to_owned();
     let credential = WindowsCredential::login(options, allow_interaction)
         .await
-        .map_err(map_error)?;
+        .map_err(broker_error)?;
     let tokens: Vec<Value> = credential
         .metadata()
         .iter()

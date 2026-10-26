@@ -19,7 +19,9 @@ An explicit `windows-broker`
 feature adds experimental Windows `auth login`, `auth status`, and `auth logout`.
 It does not configure service read execution or replace its current parser/host.
 The CLI recognizes Python's `ls` (`dir`) and `get` names, but the binary returns
-typed `NotConfigured` until a production host is selected. Its
+typed `NotConfigured` in default and broker-only builds. Opting into
+`native-read` supplies an explicitly configured Windows read host; see
+[native read setup and limits](docs/native-read-host.md). Its
 [public async read-command library](crates/fabric-cli/README.md) composes real
 SDK reads, immutable context and JSON output using caller-injected dependencies.
 Default no-query LS works; GET/query output needs an injected projection provider.
@@ -30,7 +32,7 @@ through caller-injected SDK executors. The optional
 [native transport](crates/fabric-sdk-transport/README.md) supplies an Azure
 `HttpClient` and caller-runtime `TokioTimer`; its `hyper-rustls` backend must be
 selected explicitly. The SDK facade has no default HTTP/TLS backend, and no
-production read host or CLI deployment command is installed.
+default read host or CLI deployment command is installed.
 Azure CLI, Azure Developer CLI, Python and .NET are not runtime requirements.
 
 Generic workspace item LIST and single-item GET are available through the
@@ -48,7 +50,7 @@ and explicit SDK safety differences.
 The pure CLI-layer [JSON output](crates/fabric-cli-output/README.md) and
 [path/context](crates/fabric-cli-context/README.md) libraries now translate
 bounded Python behavior with independent source comparisons. The read-command
-library now consumes both; the binary still does not install a live read host.
+library now consumes both; `native-read` additionally composes the executable host.
 See [read-command compatibility](docs/read-command-compatibility.md).
 See their [output](docs/output-compatibility.md) and
 [context](docs/context-compatibility.md) matrices for unported behavior.

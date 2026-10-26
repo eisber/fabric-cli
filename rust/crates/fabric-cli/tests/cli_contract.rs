@@ -176,6 +176,7 @@ fn read_help_and_invalid_read_options_remain_distinct() {
         assert!(output.stderr.is_empty());
         assert!(String::from_utf8_lossy(&output.stdout).contains("--query"));
     }
+
     for args in [
         vec!["get"],
         vec!["ls", "--query"],
@@ -191,5 +192,58 @@ fn read_help_and_invalid_read_options_remain_distinct() {
         assert_eq!(output.status.code(), Some(2));
         assert!(output.stdout.is_empty());
         assert!(!String::from_utf8_lossy(&output.stderr).contains("must-not-be-echoed"));
+    }
+}
+
+#[cfg(feature = "native-read")]
+#[test]
+fn native_reads_have_a_real_host_but_invalid_selection_never_accesses_credentials() {
+    let output = Command::new(env!("CARGO_BIN_EXE_fab-rs"))
+        .env_clear()
+        .env("FAB_RUST_TENANT", "invalid-tenant")
+        .env("FAB_RUST_ACCOUNT", "must-not-be-echoed")
+        .env("FAB_RUST_CLIENT_ID", "invalid-client")
+        .args(["ls", "/"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let text = String::from_utf8(output.stderr).unwrap();
+    assert!(!text.contains("must-not-be-echoed"));
+    let error: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        error["error"]["code"],
+        if cfg!(windows) {
+            "invalid_configuration"
+        } else {
+            "unsupported"
+        }
+    );
+    assert_ne!(error["error"]["code"], "NotConfigured");
+}
+
+#[cfg(all(feature = "native-read", windows))]
+#[test]
+fn invalid_context_configuration_fails_before_native_access() {
+    for (name, value) in [
+        ("FAB_RUST_CONTEXT", "relative-path"),
+        ("FAB_RUST_HOME", ""),
+        ("FAB_RUST_HOME", "not-a-workspace"),
+        ("FAB_RUST_CLIENT_ID", ""),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fab-rs"))
+            .env_clear()
+            .env("FAB_RUST_TENANT", "11111111-2222-3333-4444-555555555555")
+            .env("FAB_RUST_ACCOUNT", "synthetic@example.test")
+            .env("FAB_RUST_CLIENT_ID", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+            .env(name, value)
+            .args(["ls", "/"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(error["error"]["code"], "invalid_configuration");
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("synthetic"));
     }
 }

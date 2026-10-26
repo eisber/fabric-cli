@@ -68,6 +68,8 @@ Existing crates retain
 documented unsafe blocks; its public API is safe Rust. Default consumers exclude
 that crate; opting in does not make a binary transitively unsafe-free. Coordinate
 shared interfaces and cross-layer changes with integration; do not add empty
-future modules or runtime loaders as scaffold shortcuts. `fab-rs` recognizes
-bounded read arguments but still requires a production host; its preview
+future modules or runtime loaders as scaffold shortcuts. Default/broker-only `fab-rs` recognizes
+bounded read arguments but still requires a read host. Explicit `native-read`
+builds provide the bounded Windows host described in `docs/native-read-host.md`;
+its preview
 help/version/error contracts are not proof of parity with Python `fab`.

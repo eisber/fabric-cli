@@ -347,6 +347,31 @@ jobs:
         run: |
           python -B tests/compatibility/jobs/reference.py
           cargo run --offline --locked -p fabric-cli-jobs --example offline_job
+      - name: Require opt-in native read host without authentication
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          cargo clippy --offline --locked -p fabric-cli --features native-read --all-targets -- -D warnings
+          cargo test --offline --locked -p fabric-cli -p fabric-identity --features fabric-cli/native-read
+          cargo build --offline --locked -p fabric-cli --examples --features native-read
+          suffix=""
+          if [[ "$RUNNER_OS" == Windows ]]; then suffix=".exe"; fi
+          python -B tests/compatibility/read_session/consumer.py --rust-probe "target/debug/examples/read_session_probe${suffix}"
+      - name: Require extended context and actual text output observations
+        if: >-
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-context') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-output')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          cargo run --quiet --offline --locked -p fabric-cli-context --example extended_resolve
+          python -B tests/compatibility/context/extended_reference.py
+          cargo run --quiet --offline --locked -p fabric-cli-output --example text_probe > "$RUNNER_TEMP/text-observations.json"
+          python -B tests/compatibility/output/text_reference.py --observed "$RUNNER_TEMP/text-observations.json"
       - name: Preserve read and query source comparisons with broker feature enabled
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
         env:
