@@ -25,24 +25,96 @@ const BOOL: &[&str] = &["false", "true"];
 
 /// Configuration keys from Python `core/fab_constant.py` at the pinned source.
 pub const SETTINGS: &[Setting] = &[
-    Setting { key: "cache_enabled", allowed: BOOL, default: Some("true") },
-    Setting { key: "context_persistence_enabled", allowed: BOOL, default: Some("false") },
-    Setting { key: "debug_enabled", allowed: BOOL, default: Some("false") },
-    Setting { key: "encryption_fallback_enabled", allowed: BOOL, default: Some("false") },
-    Setting { key: "job_cancel_ontimeout", allowed: BOOL, default: Some("true") },
-    Setting { key: "local_definition_labels", allowed: &[], default: None },
-    Setting { key: "output_item_sort_criteria", allowed: &["byname", "bytype"], default: Some("byname") },
-    Setting { key: "show_hidden", allowed: BOOL, default: Some("false") },
-    Setting { key: "default_az_subscription_id", allowed: &[], default: None },
-    Setting { key: "default_az_resource_group", allowed: &[], default: None },
-    Setting { key: "default_az_location", allowed: &[], default: None },
-    Setting { key: "default_az_admin", allowed: &[], default: None },
-    Setting { key: "default_capacity", allowed: &[], default: None },
-    Setting { key: "default_open_experience", allowed: &["fabric", "powerbi"], default: Some("fabric") },
-    Setting { key: "output_format", allowed: &["text", "json"], default: Some("text") },
-    Setting { key: "folder_listing_enabled", allowed: BOOL, default: Some("false") },
-    Setting { key: "workspace_private_links_enabled", allowed: BOOL, default: Some("false") },
-    Setting { key: "check_cli_version_updates", allowed: BOOL, default: Some("true") },
+    Setting {
+        key: "cache_enabled",
+        allowed: BOOL,
+        default: Some("true"),
+    },
+    Setting {
+        key: "context_persistence_enabled",
+        allowed: BOOL,
+        default: Some("false"),
+    },
+    Setting {
+        key: "debug_enabled",
+        allowed: BOOL,
+        default: Some("false"),
+    },
+    Setting {
+        key: "encryption_fallback_enabled",
+        allowed: BOOL,
+        default: Some("false"),
+    },
+    Setting {
+        key: "job_cancel_ontimeout",
+        allowed: BOOL,
+        default: Some("true"),
+    },
+    Setting {
+        key: "local_definition_labels",
+        allowed: &[],
+        default: None,
+    },
+    Setting {
+        key: "output_item_sort_criteria",
+        allowed: &["byname", "bytype"],
+        default: Some("byname"),
+    },
+    Setting {
+        key: "show_hidden",
+        allowed: BOOL,
+        default: Some("false"),
+    },
+    Setting {
+        key: "default_az_subscription_id",
+        allowed: &[],
+        default: None,
+    },
+    Setting {
+        key: "default_az_resource_group",
+        allowed: &[],
+        default: None,
+    },
+    Setting {
+        key: "default_az_location",
+        allowed: &[],
+        default: None,
+    },
+    Setting {
+        key: "default_az_admin",
+        allowed: &[],
+        default: None,
+    },
+    Setting {
+        key: "default_capacity",
+        allowed: &[],
+        default: None,
+    },
+    Setting {
+        key: "default_open_experience",
+        allowed: &["fabric", "powerbi"],
+        default: Some("fabric"),
+    },
+    Setting {
+        key: "output_format",
+        allowed: &["text", "json"],
+        default: Some("text"),
+    },
+    Setting {
+        key: "folder_listing_enabled",
+        allowed: BOOL,
+        default: Some("false"),
+    },
+    Setting {
+        key: "workspace_private_links_enabled",
+        allowed: BOOL,
+        default: Some("false"),
+    },
+    Setting {
+        key: "check_cli_version_updates",
+        allowed: BOOL,
+        default: Some("true"),
+    },
 ];
 
 /// File-backed non-secret CLI settings under an explicit caller-owned directory.
@@ -140,16 +212,33 @@ impl ConfigStore {
 
 fn pretty_json(value: &Value, depth: usize) -> Result<String, LocalError> {
     let rows = match value {
-        Value::Object(object) if !object.is_empty() => object.iter().map(|(key, value)| {
-            Ok(format!("{}: {}", json_dumps(&Value::String(key.clone()))?, pretty_json(value, depth + 1)?))
-        }).collect::<Result<Vec<_>, LocalError>>()?,
-        Value::Array(array) if !array.is_empty() => array.iter().map(|value| pretty_json(value, depth + 1))
+        Value::Object(object) if !object.is_empty() => object
+            .iter()
+            .map(|(key, value)| {
+                Ok(format!(
+                    "{}: {}",
+                    json_dumps(&Value::String(key.clone()))?,
+                    pretty_json(value, depth + 1)?
+                ))
+            })
+            .collect::<Result<Vec<_>, LocalError>>()?,
+        Value::Array(array) if !array.is_empty() => array
+            .iter()
+            .map(|value| pretty_json(value, depth + 1))
             .collect::<Result<Vec<_>, LocalError>>()?,
         _ => return Ok(json_dumps(value)?),
     };
-    let (open, close) = if value.is_object() { ('{', '}') } else { ('[', ']') };
+    let (open, close) = if value.is_object() {
+        ('{', '}')
+    } else {
+        ('[', ']')
+    };
     let indent = "    ".repeat(depth + 1);
-    Ok(format!("{open}\n{indent}{}\n{}{close}", rows.join(&format!(",\n{indent}")), "    ".repeat(depth)))
+    Ok(format!(
+        "{open}\n{indent}{}\n{}{close}",
+        rows.join(&format!(",\n{indent}")),
+        "    ".repeat(depth)
+    ))
 }
 
 pub(crate) fn setting(key: &str) -> Result<&'static Setting, LocalError> {
