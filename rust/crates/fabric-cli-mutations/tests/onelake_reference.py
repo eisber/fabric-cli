@@ -20,7 +20,7 @@ from operation_reference import Headers
 
 def reference(case: dict) -> dict:
     """Use original functions with synthetic HTTP, UI and already-resolved context."""
-    if case["command"]=="get" or len(case["replies"])>1:
+    if case["command"] in ("get","roots") or len(case["replies"])>1:
         return get_reference(case)
     requests = []
     result = dict(data=None, message=None, show_headers=False, error=None)
@@ -99,7 +99,7 @@ def get_reference(case):
         json=json,utils_jmespath=SimpleNamespace(search=search),
         utils_ui=SimpleNamespace(print_output_format=lambda args,data=None,**_:result.update(data=data)),
     ))
-    context=SimpleNamespace(local_path=case["path"],workspace=SimpleNamespace(id="workspace"),item=SimpleNamespace(id="item"))
+    context=SimpleNamespace(local_path=case["path"],workspace=SimpleNamespace(id="workspace"),item=SimpleNamespace(id="item"),path_id="/workspace/item")
     args=argparse.Namespace(query=case.get("query"),output=None,deep_traversal=case.get("deep",False))
     if case["command"]=="get":
         metadata=load("commands/fs/get/fab_fs_get_onelake.py",dict(json=json,os=__import__("os"),onelake_api=api,utils_get=utils_get)).onelake_resource(context,args)
@@ -111,7 +111,9 @@ def get_reference(case):
         helpers=functions("utils/fab_cmd_ls_utils.py",{"update_entry_name_and_type","format_and_print_output"},dict(
             utils_ui=SimpleNamespace(print_output_format=output),utils_jmespath=SimpleNamespace(search=search),fab_util=SimpleNamespace(**util)
         ))
-        load("commands/fs/ls/fab_fs_ls_onelake.py",dict(json=json,onelake_api=api,utils=SimpleNamespace(**util),utils_ls=SimpleNamespace(**helpers))).list_onelake(context,args)
+        source_ls=load("commands/fs/ls/fab_fs_ls_onelake.py",dict(json=json,onelake_api=api,utils=SimpleNamespace(**util),utils_ls=SimpleNamespace(**helpers)))
+        if case["command"]=="roots":source_ls.list_item_folders(context,args)
+        else:source_ls.list_onelake(context,args)
     if replies:raise AssertionError("Unused source GET pages")
     return dict(requests=requests,**result)
 
@@ -159,6 +161,20 @@ def main() -> None:
         cases.append(dict(command="get",path="Files/kept.Shortcut",query=".",replies=replies))
         cases.append(dict(command="ls",path="Files",long=True,replies=replies))
     cases.append(dict(command="get",path="Files",query="paths[?unknown == `false`]",replies=[dict(status=200,data=first)]))
+    root_rows=[
+        {"name":"item/Files","permissions":"rwx","lastModified":"synthetic","future":True},
+        {"name":"item/Tables/ignored-third","isDirectory":True},
+        {"name":"/item/Files"},
+        {"name":"PlainRoot"},
+        {"name":"item/"},
+    ]
+    for long in [False,True]:
+        for query in [None,".","[].name","length(@)"]:
+            cases.append(dict(command="roots",path="",long=long,query=query,replies=[dict(status=200,data={"paths":root_rows})]))
+    cases.append(dict(command="roots",path="",long=True,replies=[
+        dict(status=200,data={"paths":[root_rows[0]],"continuationToken":"root-next"}),
+        dict(status=200,data={"paths":[root_rows[1]]}),
+    ]))
     expected = [reference(case) for case in cases]
     run = subprocess.run([args.probe], input="".join(json.dumps(case) + "\n" for case in cases),
                          text=True, encoding="utf-8", capture_output=True, check=True)

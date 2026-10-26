@@ -134,6 +134,16 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
             .await
         }
         "exists" => host.exists(&path, pending()).await,
+        "roots" => {
+            host.list_item_roots(
+                "workspace",
+                "item",
+                input["long"].as_bool().unwrap_or(false),
+                input["query"].as_str(),
+                pending(),
+            )
+            .await
+        }
         "get" => host
             .get(
                 &path,

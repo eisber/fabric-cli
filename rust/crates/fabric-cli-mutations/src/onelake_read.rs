@@ -120,6 +120,58 @@ pub struct OneLakeReadHost<'a> {
 }
 
 impl OneLakeReadHost<'_> {
+    /// Compose the source item's root-folder LS branch with exact route/columns.
+    ///
+    /// Root names use the source's second slash-separated component, not the
+    /// directory-child name/type logic. Queries still run before column filtering.
+    ///
+    /// # Errors
+    /// Preserves explicit SDK/query/metadata bounds; context command support is
+    /// selected by the existing main hierarchy host, not rediscovered here.
+    pub async fn list_item_roots(
+        &self,
+        workspace: &str,
+        item: &str,
+        long: bool,
+        query: Option<&str>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<OneLakeReadResult, OneLakeReadError> {
+        let metadata = self
+            .client
+            .item_roots(self.executor, workspace, item, self.limits, cancelled)
+            .await?
+            .data;
+        let mut rows = metadata
+            .get("paths")
+            .and_then(Value::as_array)
+            .ok_or(OneLakeError::InvalidResponse)?
+            .clone();
+        for row in &mut rows {
+            let name = row
+                .get("name")
+                .and_then(Value::as_str)
+                .ok_or(OneLakeError::InvalidResponse)?;
+            let name = if name.contains('/') {
+                name.split('/').nth(1).unwrap_or("")
+            } else {
+                name
+            };
+            row["name"] = name.to_owned().into();
+        }
+        let columns: &[&str] = if long {
+            &["permissions", "lastModified", "name"]
+        } else {
+            &["name"]
+        };
+        Ok(OneLakeReadResult {
+            output: OutputInput {
+                data: Some(project_rows(rows, columns, query)?),
+                ..OutputInput::default()
+            },
+            show_headers: long,
+        })
+    }
+
     /// Compose the OneLake directory-metadata GET branch and existing query layer.
     ///
     /// Unlike LS/EXISTS, source GET retains the supplied local path rather than
@@ -211,31 +263,12 @@ impl OneLakeReadHost<'_> {
             row["name"] = name.into();
             row["type"] = kind.into();
         }
-        let data = if let Some(query) = query.filter(|query| !query.is_empty()) {
-            fabric_cli_query::search(&Value::Array(rows), query)?
+        let columns: &[&str] = if long {
+            &["permissions", "lastModified", "name", "type"]
         } else {
-            let columns: &[&str] = if long {
-                &["permissions", "lastModified", "name", "type"]
-            } else {
-                &["name"]
-            };
-            Value::Array(
-                rows.into_iter()
-                    .map(|row| {
-                        Value::Object(
-                            columns
-                                .iter()
-                                .filter_map(|key| {
-                                    row.get(*key)
-                                        .cloned()
-                                        .map(|value| ((*key).to_owned(), value))
-                                })
-                                .collect(),
-                        )
-                    })
-                    .collect(),
-            )
+            &["name"]
         };
+        let data = project_rows(rows, columns, query)?;
         Ok(OneLakeReadResult {
             output: OutputInput {
                 data: Some(data),
@@ -270,6 +303,32 @@ impl OneLakeReadHost<'_> {
             show_headers: false,
         })
     }
+}
+
+fn project_rows(
+    rows: Vec<Value>,
+    columns: &[&str],
+    query: Option<&str>,
+) -> Result<Value, QueryError> {
+    if let Some(query) = query.filter(|query| !query.is_empty()) {
+        return fabric_cli_query::search(&Value::Array(rows), query);
+    }
+    Ok(Value::Array(
+        rows.into_iter()
+            .map(|row| {
+                Value::Object(
+                    columns
+                        .iter()
+                        .filter_map(|key| {
+                            row.get(*key)
+                                .cloned()
+                                .map(|value| ((*key).to_owned(), value))
+                        })
+                        .collect(),
+                )
+            })
+            .collect(),
+    ))
 }
 
 fn source_path(path: &OneLakePath) -> Result<OneLakePath, OneLakeError> {

@@ -292,6 +292,12 @@ struct DirectoryCollection {
     metadata: Option<Value>,
 }
 
+#[derive(Clone, Copy)]
+struct DirectoryCapture {
+    metadata: bool,
+    item_root: bool,
+}
+
 /// A focused client with no dependency on CLI, deployment or identity backends.
 #[derive(Clone)]
 pub struct OneLakeClient {
@@ -334,7 +340,17 @@ impl OneLakeClient {
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<OneLakeList, OneLakeError> {
         let result = self
-            .collect_directory(executor, path, recursive, limits, false, cancelled)
+            .collect_directory(
+                executor,
+                path,
+                recursive,
+                limits,
+                DirectoryCapture {
+                    metadata: false,
+                    item_root: false,
+                },
+                cancelled,
+            )
             .await?;
         Ok(OneLakeList {
             paths: result.paths,
@@ -360,7 +376,53 @@ impl OneLakeClient {
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<OneLakeDirectoryMetadata, OneLakeError> {
         let result = self
-            .collect_directory(executor, path, false, limits, true, cancelled)
+            .collect_directory(
+                executor,
+                path,
+                false,
+                limits,
+                DirectoryCapture {
+                    metadata: true,
+                    item_root: false,
+                },
+                cancelled,
+            )
+            .await?;
+        Ok(OneLakeDirectoryMetadata {
+            data: result.metadata.ok_or(OneLakeError::InvalidResponse)?,
+            pages_received: result.pages_received,
+        })
+    }
+
+    /// Enumerate an item's OneLake roots through the source item-path route.
+    ///
+    /// This uses `/{workspace}/{item}/?recursive=false&resource=filesystem`,
+    /// without the different workspace-directory query/shortcut-metadata flags.
+    /// Source-compatible metadata paging and aggregate bounds are reused.
+    ///
+    /// # Errors
+    /// Returns explicit identifier, credential, service, traversal and bound errors.
+    pub async fn item_roots(
+        &self,
+        executor: &dyn OneLakeExecutor,
+        workspace: &str,
+        item: &str,
+        limits: OneLakeLimits,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<OneLakeDirectoryMetadata, OneLakeError> {
+        let path = OneLakePath::new(workspace, item, "")?;
+        let result = self
+            .collect_directory(
+                executor,
+                &path,
+                false,
+                limits,
+                DirectoryCapture {
+                    metadata: true,
+                    item_root: true,
+                },
+                cancelled,
+            )
             .await?;
         Ok(OneLakeDirectoryMetadata {
             data: result.metadata.ok_or(OneLakeError::InvalidResponse)?,
@@ -374,7 +436,7 @@ impl OneLakeClient {
         path: &OneLakePath,
         recursive: bool,
         limits: OneLakeLimits,
-        capture: bool,
+        capture: DirectoryCapture,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<DirectoryCollection, OneLakeError> {
         let mut cancelled = pin!(cancelled);
@@ -384,18 +446,30 @@ impl OneLakeClient {
         let mut metadata = Vec::new();
         let mut captured_bytes = 0_usize;
         for page in 1..=limits.max_pages.get() {
-            let mut url = Url::parse(ORIGIN).map_err(|_| OneLakeError::InvalidInput)?;
-            url.set_path(&format!("/{}/", path.workspace));
-            let directory = if path.relative.is_empty() {
-                format!("{}/", path.item)
+            let mut url = if capture.item_root {
+                let mut url = path.url()?;
+                url.path_segments_mut()
+                    .map_err(|_| OneLakeError::InvalidInput)?
+                    .push("");
+                url.query_pairs_mut()
+                    .append_pair("recursive", "false")
+                    .append_pair("resource", "filesystem");
+                url
             } else {
-                format!("{}/{}", path.item, path.relative)
+                let mut url = Url::parse(ORIGIN).map_err(|_| OneLakeError::InvalidInput)?;
+                url.set_path(&format!("/{}/", path.workspace));
+                let directory = if path.relative.is_empty() {
+                    format!("{}/", path.item)
+                } else {
+                    format!("{}/{}", path.item, path.relative)
+                };
+                url.query_pairs_mut()
+                    .append_pair("recursive", if recursive { "true" } else { "false" })
+                    .append_pair("resource", "filesystem")
+                    .append_pair("directory", &directory)
+                    .append_pair("getShortcutMetadata", "true");
+                url
             };
-            url.query_pairs_mut()
-                .append_pair("recursive", if recursive { "true" } else { "false" })
-                .append_pair("resource", "filesystem")
-                .append_pair("directory", &directory)
-                .append_pair("getShortcutMetadata", "true");
             if let Some(token) = &continuation {
                 url.query_pairs_mut()
                     .append_pair("continuationToken", token);
@@ -433,7 +507,7 @@ impl OneLakeClient {
                     _ => return Err(OneLakeError::InvalidResponse),
                 },
             };
-            if capture {
+            if capture.metadata {
                 captured_bytes = captured_bytes
                     .checked_add(response.body.len())
                     .ok_or(OneLakeError::Limit)?;
@@ -446,7 +520,7 @@ impl OneLakeClient {
                 return Ok(DirectoryCollection {
                     paths,
                     pages_received: page,
-                    metadata: if capture {
+                    metadata: if capture.metadata {
                         Some(merge_metadata(metadata, limits.max_response_bytes)?)
                     } else {
                         None

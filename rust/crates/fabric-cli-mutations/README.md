@@ -112,7 +112,7 @@ credentials, cancellation and other execution failures remain typed errors.
 Malformed/absent path lists explicitly follow the SDK safety boundary rather
 than Python's success-shaped fallback.
 
-Item-root enumeration, hidden-resource resolution, filesystem export and main-host
+Hidden-resource resolution, filesystem export and main-host
 composition remain separate backlog
 items. HTTP errors beyond the source's standard 401/403/404 diagnostics retain
 the SDK's sanitized message; full storage-body diagnostics are not claimed.
@@ -126,6 +126,10 @@ separately owned filesystem exporter does not lose the actual projected value.
 LS and GET select the same source-compatible page-merge view, including terminal
 201 behavior and the source `total_pages` quirk. Actual page counts and finite
 aggregate metadata bounds are independent SDK evidence, not rewritten oracles.
+`list_item_roots` uses the distinct item-path route, not a workspace-directory
+query. It preserves Python's second slash-separated name component, short/long
+column order and query-before-projection rule without stamping directory-child
+types. It reuses the same SDK collection loop and CLI projection helper.
 
 ## OneLake write composition
 

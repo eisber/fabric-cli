@@ -25,7 +25,7 @@ not central parser/front-door integration or live parity.
 | assign/unassign | Capacity SDK endpoints and CLI confirmation/linkage checks; primary metadata only | Domain branch, central dispatch |
 | start/stop | Mirrored-database POST status/action routes, state/force/prompt checks, source stop-substring quirk | Capacity ARM branch, central dispatch |
 | ln/mklink | Shortcut create/JSON/resolved-target, remove and SET CLI consumers over Fabric SDK/shared operation policy; SDK metadata GET | GET/export command projection, context/front-door composition |
-| OneLake | SDK reads/source metadata/storage mutations/shortcut metadata over concrete shared HTTP; CLI `ls`/`get`/`exists` projections, directory create, DFS remove/rename/copy/upload and shortcut helpers | Item-root/hidden resolution, local filesystem/export and central dispatch |
+| OneLake | SDK item roots/reads/source metadata/storage mutations/shortcut metadata over concrete shared HTTP; CLI item-root and directory `ls`/`get`/`exists`, directory create, DFS remove/rename/copy/upload and shortcut helpers | Hidden resolution, local filesystem/export and central dispatch |
 
 `ResourceOutcome::Accepted` is never completion evidence. Python's acceptance
 messages/cache eviction are preserved independently. `WaitForResult` may succeed

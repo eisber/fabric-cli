@@ -23,6 +23,7 @@ The caller creates `OneLakeClient` from an `Arc<dyn TokenCredential>` and explic
 | `client.read_file(executor,path,limits,cancelled)` | Same single GET | Exact bytes and same-response headers for file copy |
 | `client.properties(executor,path,limits,cancelled)` | HEAD at the same file URL | Exact response headers |
 | `client.directory_metadata(executor,path,limits,cancelled)` | Same workspace-directory GET route as list | Source first-page metadata, merged list fields and actual page count |
+| `client.item_roots(executor,workspace,item,limits,cancelled)` | GET `/{workspace}/{item}/?recursive=false&resource=filesystem` | Item-root metadata using the same bounded source-compatible collection policy |
 
 The encoded query preserves directory values; query spelling/order and source
 `continuationToken` spelling are explicit. Unlike source string concatenation,
@@ -59,9 +60,9 @@ page. Malformed merge fields/tokens stay typed failures, not coerced success.
 
 The synthetic consumer exercises `_delta_log` listing/JSON bytes as the public
 table dependency seam. Table schema parsing, Delta interpretation, load and
-maintenance orchestration remain with the table owner. The special item-root
-listing route and table mutation semantics remain
-unported. No live parity is established.
+maintenance orchestration remain with the table owner. The item-root route is
+implemented separately from workspace-directory queries; table mutation semantics
+and main-host hierarchy integration remain separate gates. No live parity is established.
 
 ## Storage writes
 

@@ -346,6 +346,37 @@ async fn aggregate_metadata_bound_is_enforced_without_changing_complete_sdk_path
 }
 
 #[tokio::test]
+async fn item_roots_use_the_item_path_route_and_distinct_source_name_projection() {
+    let client = client();
+    let executor = executor(vec![response(
+        200,
+        json!({"paths":[
+            {"name":"item/Files/third","permissions":"r","lastModified":"synthetic","isDirectory":true},
+            {"name":"/item/Tables"},
+        ]}),
+    )]);
+    let result = OneLakeReadHost {
+        client: &client,
+        executor: &executor,
+        limits: OneLakeLimits::default(),
+    }
+    .list_item_roots("workspace", "item", true, None, pending())
+    .await
+    .unwrap();
+    assert_eq!(
+        result.output.data,
+        Some(
+            json!([{"permissions":"r","lastModified":"synthetic","name":"Files"},{"name":"item"}])
+        )
+    );
+    assert_eq!(
+        executor.requests.lock().unwrap()[0],
+        "https://onelake.dfs.fabric.microsoft.com/workspace/item/?recursive=false&resource=filesystem"
+    );
+    assert!(result.show_headers);
+}
+
+#[tokio::test]
 async fn source_terminal_201_metadata_does_not_silently_change_python_append_status_policy() {
     let client = client();
     let executor = executor(vec![
