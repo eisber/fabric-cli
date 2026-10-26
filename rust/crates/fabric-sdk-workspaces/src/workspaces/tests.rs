@@ -13,11 +13,12 @@ use fabric_core::CredentialSelection;
 use serde_json::{Value, json};
 use std::{
     collections::VecDeque,
-    future::{pending, ready},
+    future::{pending, poll_fn, ready},
     sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
+    task::Poll,
 };
 
 const TEST_TOKEN: &str = "offline-test-only-not-a-real-token";
