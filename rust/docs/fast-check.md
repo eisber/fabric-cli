@@ -49,12 +49,13 @@ node rust\scripts\rust-fast-check.cjs publish --source <released-product-40hex> 
 ```
 
 The command verifies the existing `eisber` push URL is exactly the owner fork,
-creates a new branch/worktree at the source, replays the single CI-only
-automation commit, records source/lane, verifies the entire product-to-CI delta,
+creates a new branch/worktree at the source, replays the CI-only
+automation commit series, records source/lane, verifies the entire product-to-CI delta,
 commits and performs a non-force push. It replays the patch rather than merging
 the automation's historical base: released candidates may diverge before later
 product fixes, which must not leak into a CI-only composition. If the source
-already contains that commit, only the candidate record changes.
+already contains that series, only the candidate record changes. Each commit is
+checked against the finite CI file allowlist; merge commits are rejected.
 A patch conflict stops for human resolution;
 there is no reset, deletion, automatic conflict resolution or branch overwrite.
 A receipt is written before pushing. If interrupted or uncertain, inspect the

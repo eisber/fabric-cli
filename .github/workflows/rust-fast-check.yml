@@ -25,8 +25,6 @@ jobs:
     env:
       CARGO_BUILD_JOBS: "1"
       RUST_TEST_THREADS: "1"
-      CARGO_TARGET_DIR: ${{ runner.temp }}/rust-fast-target
-      FAST_RECEIPTS: ${{ runner.temp }}/rust-fast-receipts
       PYTHONUTF8: "1"
       PYTHONDONTWRITEBYTECODE: "1"
       INPUT_LANE: ${{ inputs.lane }}
@@ -42,7 +40,12 @@ jobs:
           persist-credentials: false
       - name: Record immutable source, selection, toolchain and lock
         id: identity
-        run: node scripts/rust-fast-check.cjs prepare
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/rust-fast-target
+          FAST_RECEIPTS: ${{ runner.temp }}/rust-fast-receipts
+        run: |
+          printf 'CARGO_TARGET_DIR=%s\nFAST_RECEIPTS=%s\n' "$CARGO_TARGET_DIR" "$FAST_RECEIPTS" >> "$GITHUB_ENV"
+          node scripts/rust-fast-check.cjs prepare
       - name: Test automation contracts without building Rust
         run: node --test scripts/rust-fast-check.test.cjs
       - name: Check formatting

@@ -233,9 +233,16 @@ function publish(args) {
   requireThat(git(['remote', 'get-url', '--push', 'eisber']) === 'https://github.com/eisber/fabric-cli.git',
     'Existing eisber push remote must be exactly the owner fork');
   requireThat(git(['ls-remote', '--heads', 'eisber', `refs/heads/${branch}`]) === '', 'Validation branch already exists; inspect existing receipt');
-  const parents = git(['rev-list', '--parents', '-n', '1', automation]).split(' ');
-  requireThat(parents.length === 2, 'Automation must be one non-merge CI-only commit');
-  ciDelta(git(['diff', '--name-only', parents[1], automation]).split('\n').filter(Boolean));
+  const automationSource = JSON.parse(git(['show', `${automation}:.github/rust-fast-candidate.json`])).source;
+  requireThat(sha(automationSource), 'Automation source must be a full immutable SHA');
+  git(['merge-base', '--is-ancestor', automationSource, automation]);
+  requireThat(git(['rev-list', '--merges', `${automationSource}..${automation}`]) === '',
+    'Automation must be a non-merge CI-only commit series');
+  const commits = git(['rev-list', '--reverse', `${automationSource}..${automation}`]).split('\n').filter(Boolean);
+  requireThat(commits.length > 0, 'Automation has no CI commits');
+  for (const commit of commits) {
+    ciDelta(git(['diff-tree', '--no-commit-id', '--name-only', '-r', commit]).split('\n').filter(Boolean));
+  }
   const active = JSON.parse(command('gh', ['api', '--method', 'GET',
     `repos/${REPO}/actions/runs`, '-f', 'per_page=100'])).workflow_runs;
   requireThat(!active.some(run => run.path === '.github/workflows/rust-fast-check.yml' &&
@@ -245,7 +252,7 @@ function publish(args) {
   const at = argv => command('git', argv, opts['--worktree']);
   // Replay only the CI patch: merging its older base could import product fixes.
   const contained = at(['merge-base', source, automation]) === automation;
-  if (!contained) at(['cherry-pick', '--no-commit', automation]);
+  if (!contained) at(['cherry-pick', '--no-commit', ...commits]);
   write(path.join(opts['--worktree'], '.github/rust-fast-candidate.json'), {source, lane: opts['--lane']});
   at(['add', '.github/rust-fast-candidate.json']);
   ciDelta(at(['diff', '--cached', '--name-only', source]).split('\n').filter(Boolean));

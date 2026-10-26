@@ -4,6 +4,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const {sha, lane, ciDelta, select, plan, execute, options, requireFastPass} = require('./rust-fast-check.cjs');
 
 test('only full source IDs and finite lanes are accepted', () => {
@@ -97,5 +99,19 @@ test('full dispatch requires real fast success at the combined immutable head', 
   for (const patch of [{head_sha: receipt.source}, {status: 'in_progress'},
     {conclusion: 'failure'}, {conclusion: 'skipped'}, {path: '.github/workflows/rust-ci.yml'}]) {
     assert.throws(() => requireFastPass(receipt, {...run, ...patch}));
+  }
+});
+
+test('workflow limits runner context to steps and retains pinned bounded push gate', () => {
+  const workflow = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/rust-fast-check.yml'), 'utf8');
+  const beforeSteps = workflow.split('    steps:')[0];
+  assert.ok(!beforeSteps.includes('runner.temp'));
+  assert.ok(workflow.includes('branches: ["validation/rust-fast-*"]'));
+  assert.ok(workflow.includes('timeout-minutes: 15'));
+  assert.ok(workflow.includes('ref: ${{ github.sha }}'));
+  assert.ok(workflow.includes('persist-credentials: false'));
+  assert.ok(workflow.includes('"$GITHUB_ENV"'));
+  for (const action of workflow.matchAll(/uses: ([^\s]+)/g)) {
+    assert.match(action[1], /@[a-f0-9]{40}$/);
   }
 });
