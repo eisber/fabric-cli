@@ -5,11 +5,22 @@
 //!
 //! A single string/number implementation preserves ordered JSON, ASCII escaping,
 //! and default/pretty layout. Inputs are already JSON-domain values: i64/u64 and
-//! finite f64 numbers, not arbitrary Python runtime objects or integers. No I/O,
-//! runtime, environment, authentication or CLI dependency is present.
+//! finite f64 numbers. Additive caller-owned [`PythonValue`] encoding also supports
+//! validated wide integers, nonfinite f64 and surrogate-preserving codepoints.
+//! Neither path handles arbitrary Python runtime objects. No I/O, runtime,
+//! environment, authentication or CLI dependency is present.
 
 use serde_json::Value;
-use std::fmt::Write;
+
+mod native;
+mod view;
+
+pub use native::{
+    DecimalInteger, LimitKind, MAX_DECIMAL_DIGITS, MAX_NATIVE_DEPTH, MAX_NATIVE_NODES,
+    MAX_NATIVE_OUTPUT_BYTES, MAX_STRING_CODEPOINTS, PythonDict, PythonString, PythonValue,
+    PythonValueError,
+};
+use view::{Node, Number, Text, ValueRef};
 
 /// Layout corresponding to Python `json.dumps` options.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -131,13 +142,121 @@ pub fn encode_unicode(value: &Value, format: Format) -> String {
 /// Unicode scalar strings. Arbitrary integers, nonfinite Python values and lone
 /// surrogates require a separate lossless native-value contract, not this API.
 pub fn encode_with_options(value: &Value, options: Options) -> String {
-    let mut output = String::new();
+    encode_inner(ValueRef::Json(value), options, None)
+        .expect("serde_json strings contain scalar values; legacy encoding has no native limits")
+}
+
+/// Encode caller-owned Python values with Python's ASCII/`allow_nan=True` defaults.
+///
+/// Arbitrary decimal integers, nonfinite f64 and individual surrogate codepoints
+/// retain their identity. Nonfinite values emit `NaN`, `Infinity`, `-Infinity`.
+/// This is deliberately additive: existing `serde_json::Value` APIs stay finite.
+///
+/// The same recursive string/number/layout engine serves both contracts.
+/// Native limits are explicit safety exceptions, not claims about Python's
+/// configurable integer limits or recursion/environment settings.
+///
+/// ```
+/// use fabric_core_json::{DecimalInteger, Format, PythonValue, encode_python};
+///
+/// let value = PythonValue::List(vec![
+///     PythonValue::Integer(DecimalInteger::parse("18446744073709551616")?),
+///     PythonValue::Float(f64::INFINITY),
+/// ]);
+/// assert_eq!(encode_python(&value, Format::Default)?, "[18446744073709551616, Infinity]");
+/// assert!(value.try_to_json().is_err()); // Never round or substitute null.
+/// # Ok::<(), fabric_core_json::PythonValueError>(())
+/// ```
+pub fn encode_python(value: &PythonValue, format: Format) -> Result<String, PythonValueError> {
+    encode_python_with_options(
+        value,
+        Options {
+            format,
+            ..Options::default()
+        },
+    )
+}
+
+/// Encode Python values with explicit layout and Unicode policy.
+///
+/// With `ensure_ascii=false`, any surrogate codepoint returns
+/// [`PythonValueError::Surrogate`] instead of repairing/combining codepoints
+/// or returning replacement UTF-8. Python may return such a non-UTF-8 string;
+/// this Rust API returns only valid UTF-8 or a typed error.
+///
+/// Limits: [`MAX_NATIVE_DEPTH`], [`MAX_NATIVE_NODES`] and
+/// [`MAX_NATIVE_OUTPUT_BYTES`]. Constructor limits additionally apply to strings,
+/// dictionaries and integers. No service parser or ambient state is accessed.
+pub fn encode_python_with_options(
+    value: &PythonValue,
+    options: Options,
+) -> Result<String, PythonValueError> {
+    encode_inner(ValueRef::Python(value), options, Some(Budget::default()))
+}
+
+#[derive(Default)]
+struct Budget {
+    nodes: usize,
+}
+
+struct Output {
+    text: String,
+    budget: Option<Budget>,
+}
+
+impl Output {
+    fn push(&mut self, text: &str) -> Result<(), PythonValueError> {
+        if self.budget.is_some()
+            && text.len() > MAX_NATIVE_OUTPUT_BYTES.saturating_sub(self.text.len())
+        {
+            return Err(PythonValueError::Limit {
+                kind: LimitKind::OutputBytes,
+                maximum: MAX_NATIVE_OUTPUT_BYTES,
+            });
+        }
+        self.text.push_str(text);
+        Ok(())
+    }
+
+    fn character(&mut self, character: char) -> Result<(), PythonValueError> {
+        self.push(character.encode_utf8(&mut [0; 4]))
+    }
+
+    fn enter(&mut self, depth: usize) -> Result<(), PythonValueError> {
+        if let Some(budget) = &mut self.budget {
+            if depth > MAX_NATIVE_DEPTH {
+                return Err(PythonValueError::Limit {
+                    kind: LimitKind::Depth,
+                    maximum: MAX_NATIVE_DEPTH,
+                });
+            }
+            if budget.nodes == MAX_NATIVE_NODES {
+                return Err(PythonValueError::Limit {
+                    kind: LimitKind::Nodes,
+                    maximum: MAX_NATIVE_NODES,
+                });
+            }
+            budget.nodes += 1;
+        }
+        Ok(())
+    }
+}
+
+fn encode_inner(
+    value: ValueRef<'_>,
+    options: Options,
+    budget: Option<Budget>,
+) -> Result<String, PythonValueError> {
+    let mut output = Output {
+        text: String::new(),
+        budget,
+    };
     let width = match options.format {
         Format::Default => None,
         Format::Pretty(indent) => Some(indent.width()),
     };
-    write_value(value, width, 0, options.ensure_ascii, &mut output);
-    output
+    write_value(value, width, 0, options.ensure_ascii, &mut output)?;
+    Ok(output.text)
 }
 
 /// Encode raw data like Python `json.dumps(data)` with default options.
@@ -147,41 +266,64 @@ pub fn json_dumps(value: &Value) -> String {
     encode(value, Format::Default)
 }
 
-fn padding(output: &mut String, width: usize, depth: usize) {
-    output.extend(std::iter::repeat_n(' ', width * depth));
+fn padding(output: &mut Output, width: usize, depth: usize) -> Result<(), PythonValueError> {
+    output.push(&" ".repeat(width * depth))
 }
 
-fn string(value: &str, ensure_ascii: bool, output: &mut String) {
-    output.push('"');
-    for c in value.chars() {
-        match c {
-            '"' => output.push_str("\\\""),
-            '\\' => output.push_str("\\\\"),
-            '\u{08}' => output.push_str("\\b"),
-            '\u{0c}' => output.push_str("\\f"),
-            '\n' => output.push_str("\\n"),
-            '\r' => output.push_str("\\r"),
-            '\t' => output.push_str("\\t"),
-            ' '..='~' => output.push(c),
-            _ if !ensure_ascii && c >= '\u{20}' => output.push(c),
+fn string(
+    value: Text<'_>,
+    ensure_ascii: bool,
+    output: &mut Output,
+) -> Result<(), PythonValueError> {
+    output.character('"')?;
+    for (index, point) in value.points().enumerate() {
+        match point {
+            0x22 => output.push("\\\"")?,
+            0x5c => output.push("\\\\")?,
+            0x08 => output.push("\\b")?,
+            0x0c => output.push("\\f")?,
+            0x0a => output.push("\\n")?,
+            0x0d => output.push("\\r")?,
+            0x09 => output.push("\\t")?,
+            0x20..=0x7e => output.character(char::from_u32(point).expect("ASCII scalar"))?,
+            _ if !ensure_ascii && point >= 0x20 => {
+                let character = char::from_u32(point).ok_or(PythonValueError::Surrogate {
+                    index,
+                    codepoint: point,
+                })?;
+                output.character(character)?;
+            }
             _ => {
-                for unit in c.encode_utf16(&mut [0; 2]) {
-                    write!(output, "\\u{unit:04x}").expect("writing to String cannot fail");
+                if point <= 0xffff {
+                    output.push(&format!("\\u{point:04x}"))?;
+                } else {
+                    let adjusted = point - 0x10000;
+                    output.push(&format!(
+                        "\\u{:04x}\\u{:04x}",
+                        0xd800 + (adjusted >> 10),
+                        0xdc00 + (adjusted & 0x3ff)
+                    ))?;
                 }
             }
         }
     }
-    output.push('"');
+    output.character('"')
 }
 
-fn number(value: &serde_json::Number, output: &mut String) {
-    if !value.is_f64() {
-        write!(output, "{value}").expect("writing to String cannot fail");
-        return;
-    }
+fn number(value: Number<'_>, output: &mut Output) -> Result<(), PythonValueError> {
+    let text = match value {
+        Number::Json(value) if !value.is_f64() => return output.push(&value.to_string()),
+        Number::Json(value) => value.to_string(),
+        Number::Integer(value) => return output.push(value.as_str()),
+        Number::Float(value) if value.is_nan() => return output.push("NaN"),
+        Number::Float(value) if value == f64::INFINITY => return output.push("Infinity"),
+        Number::Float(value) if value == f64::NEG_INFINITY => return output.push("-Infinity"),
+        Number::Float(value) => serde_json::Number::from_f64(value)
+            .expect("nonfinite values handled explicitly")
+            .to_string(),
+    };
     // serde_json's locked shortest-roundtrip formatter uses ties-to-even.
     // Rust's standard float formatter differs at exact decimal midpoints.
-    let text = value.to_string();
     let (sign, magnitude) = text
         .strip_prefix('-')
         .map_or(("", text.as_str()), |magnitude| ("-", magnitude));
@@ -193,94 +335,100 @@ fn number(value: &serde_json::Number, output: &mut String) {
     });
     let point = mantissa.find('.').unwrap_or(mantissa.len()) as i32;
     let digits: String = mantissa.chars().filter(|&c| c != '.').collect();
-    output.push_str(sign);
+    output.push(sign)?;
     let Some(first) = digits.find(|c| c != '0') else {
-        output.push_str("0.0");
-        return;
+        return output.push("0.0");
     };
     let exponent = exponent + point - first as i32 - 1;
     let digits = digits[first..].trim_end_matches('0');
     if !(-4..16).contains(&exponent) {
-        output.push_str(&digits[..1]);
+        output.push(&digits[..1])?;
         if digits.len() > 1 {
-            output.push('.');
-            output.push_str(&digits[1..]);
+            output.character('.')?;
+            output.push(&digits[1..])?;
         }
-        write!(output, "e{exponent:+03}").expect("writing to String cannot fail");
+        output.push(&format!("e{exponent:+03}"))?;
     } else if exponent < 0 {
-        output.push_str("0.");
-        output.extend(std::iter::repeat_n('0', (-exponent - 1) as usize));
-        output.push_str(digits);
+        output.push("0.")?;
+        output.push(&"0".repeat((-exponent - 1) as usize))?;
+        output.push(digits)?;
     } else {
         let point = exponent as usize + 1;
         if point >= digits.len() {
-            output.push_str(digits);
-            output.extend(std::iter::repeat_n('0', point - digits.len()));
-            output.push_str(".0");
+            output.push(digits)?;
+            output.push(&"0".repeat(point - digits.len()))?;
+            output.push(".0")?;
         } else {
-            output.push_str(&digits[..point]);
-            output.push('.');
-            output.push_str(&digits[point..]);
+            output.push(&digits[..point])?;
+            output.character('.')?;
+            output.push(&digits[point..])?;
         }
     }
+    Ok(())
 }
 
 fn write_value(
-    value: &Value,
+    value: ValueRef<'_>,
     width: Option<usize>,
     depth: usize,
     ensure_ascii: bool,
-    output: &mut String,
-) {
-    match value {
-        Value::Null => output.push_str("null"),
-        Value::Bool(true) => output.push_str("true"),
-        Value::Bool(false) => output.push_str("false"),
-        Value::Number(value) => number(value, output),
-        Value::String(value) => string(value, ensure_ascii, output),
-        Value::Array(values) => {
-            output.push('[');
-            for (index, value) in values.iter().enumerate() {
+    output: &mut Output,
+) -> Result<(), PythonValueError> {
+    output.enter(depth)?;
+    match value.node() {
+        Node::None => output.push("null")?,
+        Node::Bool(true) => output.push("true")?,
+        Node::Bool(false) => output.push("false")?,
+        Node::Number(value) => number(value, output)?,
+        Node::String(value) => string(value, ensure_ascii, output)?,
+        Node::List(values) => {
+            output.character('[')?;
+            let mut populated = false;
+            for (index, value) in values.enumerate() {
+                populated = true;
                 if index > 0 {
-                    output.push(',');
+                    output.character(',')?;
                     if width.is_none() {
-                        output.push(' ');
+                        output.character(' ')?;
                     }
                 }
                 if let Some(width) = width {
-                    output.push('\n');
-                    padding(output, width, depth + 1);
+                    output.character('\n')?;
+                    padding(output, width, depth + 1)?;
                 }
-                write_value(value, width, depth + 1, ensure_ascii, output);
+                write_value(value, width, depth + 1, ensure_ascii, output)?;
             }
-            if let Some(width) = width.filter(|_| !values.is_empty()) {
-                output.push('\n');
-                padding(output, width, depth);
+            if let Some(width) = width.filter(|_| populated) {
+                output.character('\n')?;
+                padding(output, width, depth)?;
             }
-            output.push(']');
+            output.character(']')?;
         }
-        Value::Object(values) => {
-            output.push('{');
-            for (index, (key, value)) in values.iter().enumerate() {
+        Node::Dict(values) => {
+            output.character('{')?;
+            let mut populated = false;
+            for (index, (key, value)) in values.enumerate() {
+                populated = true;
                 if index > 0 {
-                    output.push(',');
+                    output.character(',')?;
                     if width.is_none() {
-                        output.push(' ');
+                        output.character(' ')?;
                     }
                 }
                 if let Some(width) = width {
-                    output.push('\n');
-                    padding(output, width, depth + 1);
+                    output.character('\n')?;
+                    padding(output, width, depth + 1)?;
                 }
-                string(key, ensure_ascii, output);
-                output.push_str(": ");
-                write_value(value, width, depth + 1, ensure_ascii, output);
+                string(key, ensure_ascii, output)?;
+                output.push(": ")?;
+                write_value(value, width, depth + 1, ensure_ascii, output)?;
             }
-            if let Some(width) = width.filter(|_| !values.is_empty()) {
-                output.push('\n');
-                padding(output, width, depth);
+            if let Some(width) = width.filter(|_| populated) {
+                output.character('\n')?;
+                padding(output, width, depth)?;
             }
-            output.push('}');
+            output.character('}')?;
         }
     }
+    Ok(())
 }
