@@ -417,6 +417,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-cli-local"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fabric-cli-output",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "fabric-cli-mutations"
 version = "0.1.0"
 dependencies = [
