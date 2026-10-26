@@ -1,0 +1,35 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-cli-transfer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Caller-composed definition transfer command adapters"
+
+[package.metadata.fabric]
+layer = "cli"
+
+[dependencies]
+clap.workspace = true
+fabric-cli-context.workspace = true
+fabric-cli-output.workspace = true
+fabric-cli-mutations.workspace = true
+fabric-deploy.workspace = true
+fabric-sdk.workspace = true
+fabric-sdk-operations.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+azure_core.workspace = true
+base64.workspace = true
+fabric-sdk-http.workspace = true
+fabric-sdk-workspaces.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

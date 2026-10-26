@@ -11,6 +11,118 @@ branch remains intact; references to it in dated evidence are historical.
 
 ## Read-command, query and folder integration
 
+### October 27 merge-tree G: immutable family source union
+
+`validation/rust-merge-tree-g-ad43ba8d` starts at exact
+`b3d7daac62068b73f2b34bc8d1e4295bc0bcdb27` and selects only released Rust
+deltas from C `ce325bc2935f818623149b5a685e3607e6788739` and F
+`26e433821ca684c72e36bceb136648490e58e34b`. No worker ancestry is merged.
+The inherited `8ad4c703bdd6738189f59318a04cab297b6c4381` Python branch
+remains separate and untouched; every non-Rust file matches the exact base.
+The independent Python oracle remains
+`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`, with old expectations unchanged.
+
+The local/access and resource/transfer paths are disjoint. Their final crate
+trees remain byte-identical to original-owner releases:
+
+| Family | Original-owner release | Source selection |
+| --- | --- | --- |
+| Local | `27b01af956bf16aa4ece82ecb87eb0b322ce9411` | C local crate |
+| Access | `2b48992607a78cb09ddf1fe904d3c6c7acd4d039` | C resources crate and access docs |
+| Resource | `a7d043d4753ec23f86a9e1fdaf4d7a502c31adec` | F mutations crate |
+| Definition transfer | `47715d9589e728aa2e586f36be4a05ec1d31b418` | F transfer crate |
+
+Only the Cargo and documentation unions need integration-owned edits. The
+manifest retains both safe default members and all three new local paths.
+The lock retains the exact local and transfer package records, both family
+Clap edges, and all 218 external registry blocks in their original order.
+External versions and features, SDK/core/output/HTTP/auth, the single central
+main/parser/Invocation/runtime/session/native-read implementation, existing
+job/read regressions and protected oracles are unchanged.
+
+The C and F API ledgers below remain authoritative descriptions of the
+released interfaces. In particular, preserve explicit local state/effects and
+`pwd` stderr; run label list-local before credentials; use
+`AccessOutput::write_to`; keep resource mutation and OneLake write result/error
+types distinct; and retain transfer completed paths, actual create IDs,
+deferred import cache effects, original operation uncertainty and stream-write
+errors. No new namespace, runtime, HTTP engine or credential fallback is added.
+
+G is **source-ready only**, not Linux-validated, mounted coverage, or shared
+publication readiness. The static source/blob/manifest/lock/whitespace checks
+and exact immutable/provider head are recorded in
+`rust/merge-tree/20261027/G.json`. No heavy build or second installer is run.
+Merged-head Linux proof must use the existing capped validator through the
+authorized parent/root relay and its preserved current budget. Component
+receipts below do not prove this union. Access's three native failures remain
+original-owner debt; corrected local and transfer native results are pending.
+No registered-test count is represented as passing.
+
+ACL export, access skill binding, full config-driven transfer deploy, REPL/batch,
+Windows/macOS and actual identity/platform acceptance remain explicit gaps.
+Credential or data-safety defects block the affected release, not merely a
+platform-debt note. The final executable successor may take central custody
+only after J explicitly releases an immutable source-ready result; idle is
+not release. G launches at most the finite authorized H successor after the
+join claim succeeds. Only the root publishes `feature/rust`; no PR, release or
+live Fabric action is part of this source handoff.
+
+### October 27 merge-tree F: resource and transfer source composition
+
+`validation/rust-merge-tree-f-dff9ad93` composes only the released D resource
+delta through `a7d043d4753ec23f86a9e1fdaf4d7a502c31adec` and E transfer delta
+through `47715d9589e728aa2e586f36be4a05ec1d31b418` onto exact shared
+`b3d7daac62068b73f2b34bc8d1e4295bc0bcdb27`. Both source branches fork at
+`91e7523ea978c67ca183abaea04500e323c27eb3`; their unrelated ancestry is not
+merged. The inherited newer Python branch remains separate. The exact
+source-to-integration commit/blob ledger and provider head are recorded in
+workstream document `rust/merge-tree/20261027/F.json`.
+
+The resource API is
+`fabric_cli_mutations::frontdoor::{resource_subcommands, command_from_matches,
+ResourceCommand, ResourceContext, ResourceConfig, ResourceHost}`.
+`ResourceHost::execute` returns existing mutation output/cache/operation
+evidence. Select `ResourceTransferHost` and injected `ResourceFiles` for storage
+`cp`/`mv`; preserve the separate `OneLakeWriteResult`/`OneLakeWriteError`
+create/append/flush and partial-effect evidence. These are eleven bounded
+family-adapter leaves, not eleven new mounted executable paths. See the
+[resource host contract](../crates/fabric-cli-mutations/src/frontdoor/README.md)
+for unsupported branches and source argument limitations.
+
+The transfer API is
+`fabric_cli_transfer::{transfer_subcommands, command_from_matches,
+TransferCommand, TransferHost, TransferMetadata, TransferFiles, TransferUi}`.
+It delegates export, recursive bulk export and import to existing
+`fabric_deploy::definitions`. Preserve `TransferResult` file progress and
+deferred import cache effects, original `TransferError` operation uncertainty,
+and shared `render_result`/`render_error`/`write_result` stream failures.
+`LocalTransferFiles` requires an explicit stable local root. Full config-driven
+`deploy` remains an explicit `NotSupported` gap, not a fourth happy leaf.
+See the [transfer contract](../crates/fabric-cli-transfer/README.md).
+
+Cargo composition adds the safe transfer default member, its centralized local
+path declarations and package block, and the resource crate's existing Clap
+dependency. All 218 external registry blocks and external dependency features
+must remain unchanged. No central main/parser/Invocation/runtime/session,
+native-read, SDK/core/output/HTTP/auth implementation, Python product or old
+oracle is changed. Existing job/read base history remains intact.
+
+This is a **source-composed candidate, not merged-head validation or shared
+publication readiness**. The D source has actual Linux format/check/strict
+Clippy, 87 Rust tests and 37 resource plus six storage source/native comparisons
+at its own SHA. E's recorded Linux format pass is followed by all-target
+`E0599` failures at `tests/commands.rs:507,569,950` (`Body::as_bytes`) on
+`1788f245d24927b32211094a4904153b641d0807`. The original owner's released
+`47715d9589e728aa2e586f36be4a05ec1d31b418` changes only that test consumer to
+match `Body::Bytes`, retaining exact request-byte assertions and explicitly
+rejecting unexpected streaming bodies. The correction is included, but its
+actual Linux result is pending; 19 registered tests are not a passing count.
+Original owners supply immutable repairs. The existing capped validator must
+check the exact merged head through
+the root relay; no local heavy-build lease is implied. Neither family is mounted
+in the executable here, and Windows/macOS, live authentication and full
+deployment remain unproven. Only the root publishes `feature/rust`.
+
 ### October 27 merge-tree C: local and access source composition
 
 The integration-only branch `validation/rust-merge-tree-c-local-access-1302934`

@@ -32,6 +32,7 @@ default-members = [
     "crates/fabric-cli-resources",
     "crates/fabric-cli-storage-files",
     "crates/fabric-cli-local",
+    "crates/fabric-cli-transfer",
 ]
 resolver = "3"
 
@@ -59,6 +60,8 @@ fabric-sdk-catalog = { path = "crates/fabric-sdk-catalog" }
 fabric-cli-resources = { path = "crates/fabric-cli-resources" }
 fabric-cli-storage-files = { path = "crates/fabric-cli-storage-files" }
 fabric-cli-local = { path = "crates/fabric-cli-local" }
+fabric-cli-transfer = { path = "crates/fabric-cli-transfer" }
+fabric-deploy = { path = "crates/fabric-deploy" }
 fabric-sdk = { path = "crates/fabric-sdk" }
 fabric-sdk-workspaces = { path = "crates/fabric-sdk-workspaces" }
 fabric-sdk-items = { path = "crates/fabric-sdk-items" }

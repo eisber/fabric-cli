@@ -19,6 +19,11 @@ generic mutations share one bounded request/poll/result implementation, not a
 second HTTP/retry/LRO stack. Direct SDK consumers can pass `OperationSession`
 without depending on this CLI crate.
 
+The additive [`frontdoor`](src/frontdoor/README.md) module supplies root Clap
+registrations, typed conversion and runtime-neutral composition for the first
+five resource leaves. It reuses these handlers; central parser/runtime mounting
+and unsupported resource branches remain explicit integration work.
+
 The original Python files are `commands/fs/fab_fs_exists.py`,
 `commands/fs/{mkdir,rm,set}/fab_fs_*_{workspace,item,folder}.py`,
 `utils/fab_cmd_{mkdir,set,rm}_utils.py`, `utils/fab_jmespath.py`,

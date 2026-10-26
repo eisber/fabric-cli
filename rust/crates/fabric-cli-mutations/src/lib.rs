@@ -3,12 +3,14 @@
 
 //! Python-named resource command handlers with caller-owned UI and operations.
 //!
-//! No parser, identity discovery, ambient cache, runtime or transport is installed.
+//! No process entry point, identity discovery, ambient cache, runtime or transport
+//! is installed. The additive [`frontdoor`] module provides family registration.
 //! See the README for the exact source pin and the intentionally incomplete matrix.
 
 mod create;
 mod errors;
 mod execution;
+pub mod frontdoor;
 mod lifecycle;
 mod moves;
 mod onelake_read;
