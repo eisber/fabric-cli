@@ -222,6 +222,81 @@ async fn blocked_set_and_delete_retain_exact_source_alias_diagnostics_before_rea
 }
 
 #[tokio::test]
+async fn sql_backup_retention_uses_source_bool_float_truncation_and_unicode_nd_conversion() {
+    for (value, expected) in [
+        (json!(true), 1),
+        (json!(false), 0),
+        (json!(-3.9), -3),
+        (json!(" +١_٢ "), 12),
+        (json!("𝟙𝟚"), 12),
+    ] {
+        let mut operations = Operations {
+            responses: VecDeque::from([completed(201, Some(json!({"id":"created"})))]),
+            ..Operations::default()
+        };
+        let mut ui = Ui::default();
+        let mut metadata = Metadata::default();
+        MutationHost {
+            operations: &mut operations,
+            ui: &mut ui,
+            metadata: &mut metadata,
+        }
+        .create(
+            &item("SQLDatabase", None),
+            &options(json!({"creationMode":"New","backupRetentionDays":value})),
+        )
+        .await
+        .unwrap();
+        let days =
+            &operations.requests[0].2.as_ref().unwrap()["creationPayload"]["backupRetentionDays"];
+        assert_eq!(days.as_i64(), Some(expected));
+        assert!(!days.as_number().unwrap().is_f64());
+    }
+}
+
+#[tokio::test]
+async fn kql_parameter_types_preserve_short_circuit_and_raw_explicit_references() {
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let mut operations = Operations {
+        responses: VecDeque::from([completed(201, Some(json!({"id":"created"})))]),
+        ..Operations::default()
+    };
+    MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(
+        &item("KQLDatabase", None),
+        &options(
+            json!({"eventhouseId":true,"dbType":"shortcut","clusterUri":1,"databaseName":true}),
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        operations.requests[0].2.as_ref().unwrap()["creationPayload"],
+        json!({"databaseType":"Shortcut","parentEventhouseItemId":true,"sourceClusterUri":1,"sourceDatabaseName":true})
+    );
+    let mut operations = Operations::default();
+    let error = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(
+        &item("KQLDatabase", None),
+        &options(json!({"eventhouseId":"present","dbType":false})),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.code, "UnexpectedError");
+    assert_eq!(error.message, "'bool' object has no attribute 'lower'");
+    assert!(operations.requests.is_empty());
+}
+
+#[tokio::test]
 async fn create_workspace_preserves_lowercase_unknown_params_and_none_capacity_omission() {
     for (capacity, expected) in [
         (

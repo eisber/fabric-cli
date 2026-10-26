@@ -189,7 +189,7 @@ impl MutationHost<'_> {
             );
             params.remove("displayname");
             params.remove("type");
-            let dependency = dependency_for(item_type.as_str(), &params);
+            let dependency = dependency_for(item_type.as_str(), &params)?;
             let mut dependency_id = None;
             if let Some((kind, warning)) = dependency {
                 self.ui.notice(NoticeKind::Warning, warning);
@@ -304,27 +304,25 @@ impl MutationHost<'_> {
 fn dependency_for(
     item_type: &str,
     params: &Map<String, Value>,
-) -> Option<(&'static str, &'static str)> {
+) -> Result<Option<(&'static str, &'static str)>, MutationError> {
     let has = |key: &str| params.get(key).is_some_and(truthy);
-    let text = |key: &str, default: &str| {
-        params
-            .get(key)
-            .and_then(Value::as_str)
-            .unwrap_or(default)
-            .to_lowercase()
-    };
-    match item_type {
-        "KQLDatabase"
-            if !(has("eventhouseid")
-                && (text("dbtype", "readwrite") == "readwrite"
-                    || (text("dbtype", "readwrite") == "shortcut"
-                        && has("clusteruri")
-                        && has("databasename")))) =>
-        {
-            Some((
-                "Eventhouse",
-                "EventHouse not provided in params. Creating one first",
-            ))
+    Ok(match item_type {
+        "KQLDatabase" => {
+            let explicit = if has("eventhouseid") {
+                let kind = lower_parameter(params, "dbtype", "readwrite")?;
+                kind == "readwrite"
+                    || (kind == "shortcut" && has("clusteruri") && has("databasename"))
+            } else {
+                false
+            };
+            if explicit {
+                None
+            } else {
+                Some((
+                    "Eventhouse",
+                    "EventHouse not provided in params. Creating one first",
+                ))
+            }
         }
         "DigitalTwinBuilderFlow" if !has("digitaltwinbuilderid") => Some((
             "DigitalTwinBuilder",
@@ -335,6 +333,18 @@ fn dependency_for(
             "Semantic Model not provided in params. Creating one first",
         )),
         _ => None,
+    })
+}
+
+fn lower_parameter(
+    params: &Map<String, Value>,
+    key: &str,
+    default: &str,
+) -> Result<String, MutationError> {
+    match params.get(key) {
+        None => Ok(default.to_owned()),
+        Some(Value::String(value)) => Ok(value.to_lowercase()),
+        Some(value) => Err(crate::templates::source_attribute(value, "lower")),
     }
 }
 
@@ -467,14 +477,15 @@ fn add_item_payload(
     dependency: Option<&Value>,
     payload: &mut Value,
 ) -> Result<(), MutationError> {
-    let text = |key: &str| params.get(key).and_then(Value::as_str).unwrap_or("");
     match item_type {
-        "Lakehouse" if text("enableschemas").eq_ignore_ascii_case("true") => {
-            payload["creationPayload"] = json!({"enableSchemas": true});
+        "Lakehouse" => {
+            if lower_parameter(params, "enableschemas", "false")? == "true" {
+                payload["creationPayload"] = json!({"enableSchemas": true});
+            }
         }
         "Warehouse" => {
             payload["creationPayload"] = json!({
-                "defaultCollation": if text("enablecaseinsensitive").eq_ignore_ascii_case("true") {
+                "defaultCollation": if lower_parameter(params,"enablecaseinsensitive","false")?=="true" {
                     "Latin1_General_100_CI_AS_KS_WS_SC_UTF8"
                 } else {
                     "Latin1_General_100_BIN2_UTF8"
@@ -482,23 +493,16 @@ fn add_item_payload(
             });
         }
         "KQLDatabase" => {
-            let eventhouse = text("eventhouseid");
-            let db_type = text("dbtype");
-            if dependency_for(item_type, params).is_some() {
+            if dependency_for(item_type, params)?.is_some() {
                 payload["creationPayload"] = json!({"databaseType":"ReadWrite","parentEventhouseItemId":dependency.cloned().unwrap_or(Value::Null)});
-            } else if !params.contains_key("dbtype") || db_type.eq_ignore_ascii_case("readwrite") {
-                payload["creationPayload"] = json!({
-                    "databaseType": "ReadWrite", "parentEventhouseItemId": eventhouse,
-                });
-            } else if db_type.eq_ignore_ascii_case("shortcut")
-                && !text("clusteruri").is_empty()
-                && !text("databasename").is_empty()
-            {
-                payload["creationPayload"] = json!({
-                    "databaseType": "Shortcut", "parentEventhouseItemId": eventhouse,
-                    "sourceClusterUri": text("clusteruri"),
-                    "sourceDatabaseName": text("databasename"),
-                });
+            } else {
+                let kind = lower_parameter(params, "dbtype", "readwrite")?;
+                payload["creationPayload"] = if kind == "readwrite" {
+                    json!({"databaseType":"ReadWrite","parentEventhouseItemId":params["eventhouseid"]})
+                } else {
+                    json!({"databaseType":"Shortcut","parentEventhouseItemId":params["eventhouseid"],
+                        "sourceClusterUri":params["clusteruri"],"sourceDatabaseName":params["databasename"]})
+                };
             }
         }
         "DigitalTwinBuilderFlow" => {

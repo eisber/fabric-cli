@@ -193,7 +193,7 @@ fn parameter_type(name: &str) -> MutationError {
     )
 }
 
-fn source_attribute(value: &Value, attribute: &str) -> MutationError {
+pub(crate) fn source_attribute(value: &Value, attribute: &str) -> MutationError {
     let kind = match value {
         Value::Null => "NoneType",
         Value::Bool(_) => "bool",

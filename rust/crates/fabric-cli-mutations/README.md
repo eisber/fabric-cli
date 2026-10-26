@@ -94,6 +94,18 @@ ordering across confirmation, query and response-status variants. Definition SET
 aliases/codecs remain a separate dependency; finite JSON safety rejections stay
 explicit rather than being mislabeled as path failures.
 
+Typed creation values are not silently coerced to empty strings.
+Lakehouse/Warehouse flags retain source string-method failures; KQL preserves
+short-circuit validation and raw truthy dependency/cluster/database values.
+SQL backup retention applies source boolean-to-integer conversion and float
+truncation, and accepts Unicode decimal digits (Nd), signs and legal underscores
+within the existing i64/u64 domain. The decimal table is pinned to the development
+Python 3.13 Unicode 15.1 oracle and checked for every decimal block; superscripts
+and other numeric characters remain rejected. Other Python Unicode versions are
+not implicitly certified. Original `str`/container formatting is reused for error
+messages, without a new serializer. `tests/creation_value_reference.py` checks
+these value/error branches at the actual command request boundary.
+
 Report creation embeds all seven original parts and changes only the
 `definition.pbir` dataset reference when the explicit/dependent SemanticModel ID
 is truthy. A missing ID after accepted or incomplete dependency creation retains
