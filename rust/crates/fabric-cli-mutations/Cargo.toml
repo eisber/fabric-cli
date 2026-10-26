@@ -15,6 +15,7 @@ layer = "cli"
 
 [dependencies]
 azure_core.workspace = true
+clap.workspace = true
 fabric-cli-context.workspace = true
 fabric-cli-output.workspace = true
 fabric-cli-query.workspace = true

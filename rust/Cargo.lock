@@ -423,6 +423,7 @@ dependencies = [
  "async-trait",
  "azure_core",
  "base64 0.22.1",
+ "clap",
  "fabric-cli-context",
  "fabric-cli-output",
  "fabric-cli-query",
