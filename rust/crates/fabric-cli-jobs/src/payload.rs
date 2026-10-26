@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 use crate::{JobCommand, ScheduleArgs, parser::invalid};
-use fabric_cli_output::CommandError;
+use fabric_cli_output::{CommandError, parse_data};
 use fabric_sdk_jobs::JobType;
 use serde_json::{Map, Value, json};
 
@@ -32,7 +32,7 @@ pub fn json_input(tokens: &[String], files: &dyn JsonInput) -> Result<Value, Com
     let joined = tokens.join(" ");
     let normalized = joined.trim_matches(['\'', '"']);
     if normalized.starts_with('{') && normalized.ends_with('}') {
-        serde_json::from_str(&normalized.replace('\'', "\""))
+        parse_data(&normalized.replace('\'', "\""))
             .map_err(|_| CommandError::unexpected(Some("Invalid JSON content".into())))
     } else {
         files.read_json(normalized)
@@ -202,7 +202,7 @@ fn parameter_value(kind: &str, raw: &str, job_type: JobType) -> Result<Value, Co
                 .ok_or_else(|| not_runnable("Non-finite JSON parameters are unsupported"))
         }
         "array" | "object" if job_type == JobType::Pipeline => {
-            serde_json::from_str(raw).map_err(|_| not_runnable("Invalid JSON parameter value"))
+            parse_data(raw).map_err(|_| not_runnable("Invalid JSON parameter value"))
         }
         _ => Err(not_runnable(format!(
             "Invalid parameter type: {kind}. Supported types: {}.",
