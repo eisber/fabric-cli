@@ -115,6 +115,188 @@ fn options(params: Value) -> CreateOptions {
 }
 
 #[tokio::test]
+async fn rejected_creation_type_precedes_help_existing_id_and_all_io() {
+    for params in [json!({}), json!({"run":"true"})] {
+        let mut operations = Operations::default();
+        let mut ui = Ui::default();
+        let mut metadata = Metadata::default();
+        let error = MutationHost {
+            operations: &mut operations,
+            ui: &mut ui,
+            metadata: &mut metadata,
+        }
+        .create(&item("OrgApp", Some("existing")), &options(params))
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, "UnsupportedCommand");
+        assert_eq!(error.message, "not supported for command 'mkdir'");
+        assert!(operations.requests.is_empty());
+        assert!(ui.notices.is_empty());
+        assert_eq!(metadata.reads, 0);
+    }
+}
+
+#[tokio::test]
+async fn creation_parameters_lowercase_keys_in_objects_nested_inside_arrays_without_mutating_options()
+ {
+    let mut operations = Operations {
+        responses: VecDeque::from([completed(201, Some(json!({"id":"created"})))]),
+        ..Operations::default()
+    };
+    let options = options(json!({"run":"true","CUSTOM":[{"UPPER":[{"DeepKey":1}]}]}));
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(&workspace(None), &options)
+    .await
+    .unwrap();
+    assert_eq!(
+        operations.requests[0].2.as_ref().unwrap()["custom"],
+        json!([{"upper":[{"deepkey":1}]}])
+    );
+    assert_eq!(options.params["CUSTOM"], json!([{"UPPER":[{"DeepKey":1}]}]));
+}
+
+#[tokio::test]
+async fn item_metadata_path_failure_keeps_source_wrapper_without_changing_pure_helper() {
+    let query = "properties.missing.child";
+    let mut operations = Operations::default();
+    let mut ui = Ui::default();
+    let mut metadata = Metadata {
+        data: json!({"properties":{}}),
+        ..Metadata::default()
+    };
+    let error = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .set(&item("Notebook", Some("id")), query, "new", true)
+    .await
+    .unwrap_err();
+    assert_eq!(error.code, "InvalidQuery");
+    assert_eq!(
+        error.message,
+        "Invalid query. Either 'properties.missing.child' is not a valid query or the item does not contain the specified path"
+    );
+    assert_eq!(metadata.reads, 1);
+    assert!(operations.requests.is_empty());
+    assert_eq!(ui.notices.len(), 1);
+    assert_eq!(
+        fabric_cli_mutations::update_fabric_element(json!({"properties":{}}), query, "new")
+            .unwrap_err()
+            .message,
+        "Invalid set query"
+    );
+}
+
+#[tokio::test]
+async fn blocked_set_and_delete_retain_exact_source_alias_diagnostics_before_reads_or_prompts() {
+    let mut operations = Operations::default();
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let mut host = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    };
+    let element = item("OrgApp", Some("id"));
+    let set = host
+        .set(&element, "invalid", "new", false)
+        .await
+        .unwrap_err();
+    let remove = host
+        .remove_with_options(&element, false, true)
+        .await
+        .unwrap_err();
+    assert_eq!(set.message, "not supported for command 'set'");
+    assert_eq!(remove.message, "not supported for command 'del'");
+    assert!(operations.requests.is_empty());
+    assert!(ui.prompts.is_empty());
+    assert!(ui.notices.is_empty());
+    assert_eq!(metadata.reads, 0);
+}
+
+#[tokio::test]
+async fn sql_backup_retention_uses_source_bool_float_truncation_and_unicode_nd_conversion() {
+    for (value, expected) in [
+        (json!(true), 1),
+        (json!(false), 0),
+        (json!(-3.9), -3),
+        (json!(" +١_٢ "), 12),
+        (json!("𝟙𝟚"), 12),
+    ] {
+        let mut operations = Operations {
+            responses: VecDeque::from([completed(201, Some(json!({"id":"created"})))]),
+            ..Operations::default()
+        };
+        let mut ui = Ui::default();
+        let mut metadata = Metadata::default();
+        MutationHost {
+            operations: &mut operations,
+            ui: &mut ui,
+            metadata: &mut metadata,
+        }
+        .create(
+            &item("SQLDatabase", None),
+            &options(json!({"creationMode":"New","backupRetentionDays":value})),
+        )
+        .await
+        .unwrap();
+        let days =
+            &operations.requests[0].2.as_ref().unwrap()["creationPayload"]["backupRetentionDays"];
+        assert_eq!(days.as_i64(), Some(expected));
+        assert!(!days.as_number().unwrap().is_f64());
+    }
+}
+
+#[tokio::test]
+async fn kql_parameter_types_preserve_short_circuit_and_raw_explicit_references() {
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let mut operations = Operations {
+        responses: VecDeque::from([completed(201, Some(json!({"id":"created"})))]),
+        ..Operations::default()
+    };
+    MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(
+        &item("KQLDatabase", None),
+        &options(
+            json!({"eventhouseId":true,"dbType":"shortcut","clusterUri":1,"databaseName":true}),
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        operations.requests[0].2.as_ref().unwrap()["creationPayload"],
+        json!({"databaseType":"Shortcut","parentEventhouseItemId":true,"sourceClusterUri":1,"sourceDatabaseName":true})
+    );
+    let mut operations = Operations::default();
+    let error = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(
+        &item("KQLDatabase", None),
+        &options(json!({"eventhouseId":"present","dbType":false})),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.code, "UnexpectedError");
+    assert_eq!(error.message, "'bool' object has no attribute 'lower'");
+    assert!(operations.requests.is_empty());
+}
+
+#[tokio::test]
 async fn create_workspace_preserves_lowercase_unknown_params_and_none_capacity_omission() {
     for (capacity, expected) in [
         (
@@ -706,14 +888,335 @@ async fn payload_errors_keep_source_progress_order_and_required_params_precede_p
 }
 
 #[tokio::test]
-async fn unported_definition_encoding_values_fail_explicitly_without_a_payload_request() {
+async fn translated_definition_encoding_preserves_original_escaped_unicode_payload_bytes() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let mut operations = Operations {
+        responses: VecDeque::from([completed(201, Some(json!({"id":"mounted"})))]),
+        ..Operations::default()
+    };
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let result = MutationHost { operations: &mut operations, ui: &mut ui, metadata: &mut metadata }
+        .create(&item("MountedDataFactory", None), &options(json!({
+            "subscriptionId":"subscription", "resourceGroup":"non-ascii-\u{65e5}", "factoryName":"factory",
+        }))).await.unwrap();
+    let definition = operations.requests[0].2.as_ref().unwrap();
+    let encoded = definition["definition"]["parts"][0]["payload"]
+        .as_str()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8(STANDARD.decode(encoded).unwrap()).unwrap(),
+        "{\"dataFactoryResourceId\": \"/subscriptions/subscription/resourceGroups/non-ascii-\\u65e5/providers/Microsoft.DataFactory/factories/factory\"}"
+    );
+    assert_eq!(
+        result.outputs[0].message.as_deref(),
+        Some("'Thing.MountedDataFactory' created")
+    );
+}
+
+#[tokio::test]
+async fn malformed_dynamic_mirror_parameters_fail_before_dispatch_not_as_empty_definition() {
+    for params in [
+        json!({"mirrorType":true}),
+        json!({"mirrorType":"snowflake","mountedTables":["schema.table"]}),
+        json!({"mirrorType":"snowflake","mountedTables":"missing"}),
+        json!({"mirrorType":"snowflake","mountedTables":"too.many.parts"}),
+        json!({"mirrorType":"snowflake","mountedTables":"ok.table,"}),
+    ] {
+        let mut operations = Operations::default();
+        let mut ui = Ui::default();
+        let mut metadata = Metadata::default();
+        let error = MutationHost {
+            operations: &mut operations,
+            ui: &mut ui,
+            metadata: &mut metadata,
+        }
+        .create(&item("MirroredDatabase", None), &options(params))
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, "UnexpectedError");
+        assert!(operations.requests.is_empty());
+        assert!(error.creation.is_none());
+    }
+}
+
+#[tokio::test]
+async fn failed_report_root_keeps_semantic_model_effects_and_no_false_root_success() {
+    let mut operations = Operations {
+        responses: VecDeque::from([
+            completed(201, Some(json!({"id":"semantic-model"}))),
+            Err(ResourceError::input()),
+        ]),
+        ..Operations::default()
+    };
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let error = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(&item("Report", None), &options(json!({"run":"true"})))
+    .await
+    .unwrap_err();
+    let evidence = error.creation.unwrap();
+    assert_eq!(evidence.responses.len(), 1);
+    assert_eq!(evidence.batch_names, ["Thing_auto.SemanticModel"]);
+    assert!(
+        matches!(&evidence.effects[..],[CacheEffect::Created{target,..}] if target.name()=="Thing_auto.SemanticModel")
+    );
+    assert_eq!(operations.requests.len(), 2);
+    assert!(
+        operations.requests[1].2.as_ref().unwrap()["definition"]["parts"]
+            .as_array()
+            .unwrap()
+            .len()
+            == 7
+    );
+}
+
+#[tokio::test]
+async fn within_workspace_folder_move_keeps_source_count_and_only_completed_200_cache_effect() {
+    let parent = folder(Some("parent"));
+    let source = Element::child("Child", Some("child".into()), NodeKind::Folder, parent).unwrap();
+    for (response, effect) in [
+        (
+            ResourceOutcome::Completed {
+                status: 200,
+                data: None,
+            },
+            true,
+        ),
+        (
+            ResourceOutcome::Accepted {
+                operation_id: Some("operation".into()),
+            },
+            false,
+        ),
+    ] {
+        let mut operations = Operations {
+            responses: VecDeque::from([Ok(response.clone())]),
+            ..Operations::default()
+        };
+        let mut ui = Ui::default();
+        let mut metadata = Metadata::default();
+        let result = MutationHost {
+            operations: &mut operations,
+            ui: &mut ui,
+            metadata: &mut metadata,
+        }
+        .move_folder(&source, &workspace(Some("ws")))
+        .await
+        .unwrap();
+        assert_eq!(result.moved_count, 1);
+        assert_eq!(result.result.outcome, Some(response));
+        assert_eq!(result.result.effects.len(), usize::from(effect));
+        if effect {
+            assert!(
+                matches!(&result.result.effects[0],CacheEffect::MovedFolder { target,.. } if target.id()==Some("child"))
+            );
+        }
+        assert_eq!(operations.requests[0].2, Some(json!({})));
+        assert!(ui.prompts.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn same_parent_folder_move_is_noop_and_cross_workspace_stays_definition_interface_gap() {
+    let source = folder(Some("folder"));
     let mut operations = Operations::default();
     let mut ui = Ui::default();
     let mut metadata = Metadata::default();
-    let error = MutationHost { operations: &mut operations, ui: &mut ui, metadata: &mut metadata }
-        .create(&item("MountedDataFactory", None), &options(json!({
-            "subscriptionId":"subscription", "resourceGroup":"non-ascii-\u{65e5}", "factoryName":"factory",
-        }))).await.unwrap_err();
-    assert_eq!(error.code, "NotSupported");
+    let mut host = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    };
+    let result = host
+        .move_folder(&source, source.parent().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(result.moved_count, 0);
+    assert!(result.result.outcome.is_none());
+    let different = Element::child(
+        "Other",
+        Some("other".into()),
+        NodeKind::Workspace(WorkspaceType::Workspace),
+        Element::tenant("Tenant", "tenant"),
+    )
+    .unwrap();
+    assert_eq!(
+        host.move_folder(&source, &different)
+            .await
+            .unwrap_err()
+            .code,
+        "NotSupported"
+    );
     assert!(operations.requests.is_empty());
+}
+
+#[tokio::test]
+async fn kql_dependency_is_created_with_same_parent_and_source_batch_cache_order() {
+    let workspace = workspace(Some("ws"));
+    let folder =
+        Element::child("Nested", Some("folder".into()), NodeKind::Folder, workspace).unwrap();
+    let target = Element::child(
+        "Database",
+        None,
+        NodeKind::Item(ItemType::parse("KQLDatabase").unwrap()),
+        folder,
+    )
+    .unwrap();
+    let mut operations = Operations {
+        responses: VecDeque::from([
+            completed(201, Some(json!({"id":"eventhouse"}))),
+            completed(201, Some(json!({"id":"database"}))),
+        ]),
+        ..Operations::default()
+    };
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let result = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(
+        &target,
+        &options(json!({"run":"true","description":"shared"})),
+    )
+    .await
+    .unwrap();
+    assert_eq!(operations.requests[0].1, "/v1/workspaces/ws/eventhouses");
+    assert_eq!(
+        operations.requests[0].2,
+        Some(
+            json!({"displayName":"Database_auto","type":"Eventhouse","folderId":"folder","description":"shared"})
+        )
+    );
+    assert_eq!(
+        operations.requests[1].2.as_ref().unwrap()["creationPayload"],
+        json!({"databaseType":"ReadWrite","parentEventhouseItemId":"eventhouse"})
+    );
+    assert_eq!(
+        result.outputs[0].message.as_deref(),
+        Some("'Database_auto.Eventhouse' and 'Database.KQLDatabase' created")
+    );
+    assert_eq!(
+        result.outputs[0].data,
+        Some(json!([{"id":"eventhouse"},{"id":"database"}]))
+    );
+    assert_eq!(result.effects.len(), 2);
+    assert_eq!(result.creation.unwrap().responses.len(), 2);
+}
+
+#[tokio::test]
+async fn failed_root_creation_retains_actual_dependency_and_never_rolls_it_back_or_replays() {
+    let mut failure = ResourceError::input();
+    failure.code = "Forbidden".into();
+    failure.status = Some(403);
+    failure.mutation_may_have_occurred = true;
+    let mut operations = Operations {
+        responses: VecDeque::from([completed(201, Some(json!({"id":"builder"}))), Err(failure)]),
+        ..Operations::default()
+    };
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let error = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(
+        &item("DigitalTwinBuilderFlow", None),
+        &options(json!({"run":"true"})),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.code, "Forbidden");
+    let evidence = error.creation.unwrap();
+    assert_eq!(
+        evidence.responses,
+        [ResourceOutcome::Completed {
+            status: 201,
+            data: Some(json!({"id":"builder"}))
+        }]
+    );
+    assert!(
+        matches!(&evidence.effects[..],[CacheEffect::Created {target,..}] if target.name()=="Thing_auto.DigitalTwinBuilder")
+    );
+    assert!(error.operation.unwrap().mutation_may_have_occurred);
+    assert_eq!(operations.requests.len(), 2);
+}
+
+#[tokio::test]
+async fn accepted_dependency_keeps_null_parent_id_and_original_single_name_batch_oddity() {
+    let mut operations = Operations {
+        responses: VecDeque::from([
+            Ok(ResourceOutcome::Accepted {
+                operation_id: Some("pending".into()),
+            }),
+            completed(201, Some(json!({"id":"database"}))),
+        ]),
+        ..Operations::default()
+    };
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let result = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(&item("KQLDatabase", None), &options(json!({"run":"true"})))
+    .await
+    .unwrap();
+    assert!(
+        operations.requests[1].2.as_ref().unwrap()["creationPayload"]["parentEventhouseItemId"]
+            .is_null()
+    );
+    assert_eq!(
+        result.outputs[0].message.as_deref(),
+        Some("'' and 'Thing.KQLDatabase' created")
+    );
+    let evidence = result.creation.unwrap();
+    assert!(
+        matches!(&evidence.responses[0],ResourceOutcome::Accepted { operation_id:Some(id) } if id=="pending")
+    );
+    assert_eq!(evidence.effects.len(), 1);
+}
+
+#[tokio::test]
+async fn accepted_root_emits_no_consolidated_success_but_retains_prior_dependency_cache_work() {
+    let mut operations = Operations {
+        responses: VecDeque::from([
+            completed(201, Some(json!({"id":"builder"}))),
+            Ok(ResourceOutcome::Accepted {
+                operation_id: Some("root-pending".into()),
+            }),
+        ]),
+        ..Operations::default()
+    };
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let result = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .create(
+        &item("DigitalTwinBuilderFlow", None),
+        &options(json!({"run":"true"})),
+    )
+    .await
+    .unwrap();
+    assert!(result.outputs.is_empty());
+    assert_eq!(result.effects.len(), 1);
+    assert!(matches!(
+        result.outcome,
+        Some(ResourceOutcome::Accepted { .. })
+    ));
+    assert_eq!(
+        result.creation.unwrap().batch_items,
+        [json!({"id":"builder"})]
+    );
 }

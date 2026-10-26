@@ -54,7 +54,7 @@ pub(crate) fn source_message(error: &ResourceError) -> Result<String, ()> {
     Ok(error.message.clone())
 }
 
-fn python_repr(value: &Value) -> Result<String, ()> {
+pub(crate) fn python_repr(value: &Value) -> Result<String, ()> {
     Ok(match value {
         Value::Null => "None".into(),
         Value::Bool(true) => "True".into(),

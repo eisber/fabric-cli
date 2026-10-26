@@ -424,6 +424,8 @@ dependencies = [
  "fabric-sdk-folders",
  "fabric-sdk-http",
  "fabric-sdk-items",
+ "fabric-sdk-onelake",
+ "fabric-sdk-onelake-http",
  "fabric-sdk-operations",
  "fabric-sdk-workspaces",
  "jpx-core",
@@ -596,6 +598,21 @@ dependencies = [
  "async-trait",
  "azure_core",
  "fabric-core",
+ "fabric-sdk-workspaces",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-sdk-onelake-http"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "azure_core",
+ "fabric-core",
+ "fabric-sdk-http",
+ "fabric-sdk-onelake",
+ "futures-util",
  "serde_json",
  "tokio",
 ]

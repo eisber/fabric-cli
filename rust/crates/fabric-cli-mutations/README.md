@@ -49,11 +49,105 @@ The original Python files are `commands/fs/fab_fs_exists.py`,
 
 The entire assigned generic-verb family remains backlog until actual front-door
 integration and independent request/output contracts cover all resources/options.
-This bounded slice does not include tenant/workspace bulk selection, definition
-SET, Report/SemanticModel/MirroredDatabase templates, automatic dependent-item
-creation, hidden administrative resource branches, OneLake CLI composition,
-copy/move, shortcuts, capacity ARM lifecycle or domain assignment commands.
+This bounded slice does not include definition SET, hidden administrative resource
+branches, general main-host OneLake context
+composition, Fabric definition copy/move, shortcuts, capacity ARM lifecycle or
+domain assignment commands.
 Those branches must not be routed to successful-looking generic fallbacks.
+
+## Non-force workspace and tenant removal
+
+`RemovalHost` composes a complete caller-owned `RemovalCatalog`, explicit
+`RemovalSort`, the existing UI plus `RemovalUi::select`, and real focused
+SDK/shared Fabric operations. Non-force workspace rm removes only selected
+supported items, never the workspace itself. A folder may be displayed as
+selectable but is excluded from the source's actual Item-only delete list.
+Force reads/counts the underlying catalog first, while tenant force does not
+skip workspace multi-select/confirmation. Known source rejected item types are
+filtered before sorting; failed catalog discovery is not coerced into empty.
+
+Case-sensitive workspace sorting, short-name/type item sorting, hard-delete
+queries, verbose/silent per-operation output and 200/201/202 counter/cache rules
+are preserved. The source non-force bulk helper prints an item `deleted` message
+even after headerless acceptance; `RemovalResult.responses` retains the actual
+Accepted state separately. `RemovalError.partial` keeps prior outputs, counts,
+responses and cache effects if a later mutation fails, without a false final
+summary, retry or rollback. Main catalog/selection/context integration remains
+separately owned; the public offline consumer uses actual shared HTTP.
+
+## Dynamic creation definitions
+
+Creation support checks run before help/duplicate/payload work, preserving the
+original command boundary even for empty params on a rejected item type.
+Source parameter keys are lowercased recursively through both objects and arrays
+without mutating caller-owned options. `tests/creation_policy_reference.py`
+compares every pinned item type's support, help/duplicate priority and collection
+dispatch, source status behavior, required-value distinctions and nested request
+values. This is a bounded policy matrix, not proof of every option or main-host
+dispatch.
+
+Item metadata SET keeps the original command wrapper's missing/scalar/index path
+diagnostic without changing the separately exported pure helper's errors.
+`tests/metadata_set_reference.py` compares every original item type's SET policy,
+rejected delete alias diagnostics, and metadata read/prompt/progress/PATCH/cache
+ordering across confirmation, query and response-status variants. Definition SET
+aliases/codecs remain a separate dependency; finite JSON safety rejections stay
+explicit rather than being mislabeled as path failures.
+
+Typed creation values are not silently coerced to empty strings.
+Lakehouse/Warehouse flags retain source string-method failures; KQL preserves
+short-circuit validation and raw truthy dependency/cluster/database values.
+SQL backup retention applies source boolean-to-integer conversion and float
+truncation, and accepts Unicode decimal digits (Nd), signs and legal underscores
+within the existing i64/u64 domain. The decimal table is pinned to the development
+Python 3.13 Unicode 15.1 oracle and checked for every decimal block; superscripts
+and other numeric characters remain rejected. Other Python Unicode versions are
+not implicitly certified. Original `str`/container formatting is reused for error
+messages, without a new serializer. `tests/creation_value_reference.py` checks
+these value/error branches at the actual command request boundary.
+
+Report creation embeds all seven original parts and changes only the
+`definition.pbir` dataset reference when the explicit/dependent SemanticModel ID
+is truthy. A missing ID after accepted or incomplete dependency creation retains
+the original by-path bytes, not an invented successful reference. Previously
+created dependency outputs/cache evidence survive a failed root request.
+
+MirroredDatabase supports the original Azure SQL, SQL MI, Snowflake and Cosmos DB
+templates, preserving connection/database/default-schema/mounted-table insertion
+order, the Azure SQL warning, and the unknown-type fallback: it dynamically
+modifies the GenericMirror template, rather than rejecting or silently using the
+unchanged raw bytes. GenericMirror itself retains raw bytes and ignores those
+parameters. Empty schema/table names and whitespace are not normalized.
+Malformed separator counts or non-string split/lower inputs retain the source
+outer handler's `UnexpectedError` code/message before sending a definition
+request, rather than silently dropping malformed entries or normalizing input.
+
+MountedDataFactory preserves original f-string handling for the finite JSON
+domain, including booleans/numbers/containers, escapes and Unicode. Modified
+definition JSON uses the shared `fabric-cli-output::json_dumps`, not a second
+serializer. Dynamic definitions and encoded bytes are compared with the original
+Python helpers through `tests/dynamic_creation_reference.py`; templates are
+verified against pinned Git blobs, not generated expected Rust data.
+
+KQLDatabase and DigitalTwinBuilderFlow now create their source-dependent
+Eventhouse/DigitalTwinBuilder in the same parent before dispatching the root
+create. They retain inherited params/description, fallback conditions, progress/
+warnings, null parent references when a dependency only returns acceptance or no
+ID, and the source consolidated batch message/data/cache order. SemanticModel and
+GenericMirror definitions embed byte-verified pinned data, not runtime Python
+files. Unknown dependency cache/workspace effects are not fabricated.
+
+`CreationEvidence` records actual responses, confirmed cache effects and completed
+batch rows/names; it is available on the result and on a later `MutationError`.
+Accepted dependencies/root responses never become completed artifacts. A failed
+root does not trigger invented rollback/replay or lose the earlier dependency.
+The source's unusual single-name batch output after an accepted dependency is
+retained independently of completion evidence.
+
+`tests/branch_ledger.py` inventories the exact pinned functions/if/match/loops/
+failure branches and command-support/rejection entries, including separate helper
+ownership/dependencies. Its unreconciled rows remain backlog; a candidate test
+reference or existing command name is not marked as full branch verification.
 
 SQLDatabase creation includes New, Restore and RestoreDeletedDatabase modes,
 source required-parameter failures, default `ById`, optional collation and signed/
@@ -94,6 +188,114 @@ SDK consumers must not depend on this CLI helper. It returns the already-normali
 output input rather than constructing a second `CommandError`: double
 normalization would incorrectly replace Python's intentional empty message after
 stripping a source message consisting only of periods.
+
+## OneLake read dependencies
+
+`OneLakeReadHost` composes `OneLakeClient` and an injected `OneLakeExecutor` for
+the OneLake `ls` and `exists` branches, using the real shared HTTP adapter in its
+offline executable consumer. It returns existing `OutputInput` and the source's
+`show_headers` flag; it does not edit the separately owned front door.
+LS mutates names/types before applying the existing query evaluator, or projects
+the source columns in order for short/long output. Page/service row order and
+duplicates are preserved. `.Shortcut` and `.shortcut` are removed from all local
+path occurrences exactly as pinned Python does; string `"false"` remains truthy.
+EXISTS sends the source directory-list request: a complete empty listing is
+`"true"`, a real 404 is `"false"`, and permissions, malformed/incomplete data,
+credentials, cancellation and other execution failures remain typed errors.
+Malformed/absent path lists explicitly follow the SDK safety boundary rather
+than Python's success-shaped fallback.
+
+Hidden-resource resolution, filesystem export and main-host
+composition remain separate backlog
+items. Storage JSON errors preserve the source 401/403 header precedence and 404
+diagnostic, otherwise the nested body code/message, default/error parsing and
+request/time token-removal behavior. Raw SDK error data is retained independently
+of explicitly rendered messages; the SDK Display remains sanitized. The original
+HTTP/exception/decorator comparison includes Unicode whitespace, repeated and
+empty metadata prefixes, period-only messages and code-selected authorization
+exits. Additional text-mode RequestId/Time adornments remain with the main host.
+
+OneLake directory GET returns source metadata plus the existing query projection.
+It retains the raw local path (unlike LS/EXISTS), removes only the source's
+capitalized `ContinuationToken`, supports default/deep path inventory and normal
+query/scalar semantics, and suppresses falsey output exactly as the source helper
+does. `OneLakeGetResult::projected` remains available even when falsey so a
+separately owned filesystem exporter does not lose the actual projected value.
+LS and GET select the same source-compatible page-merge view, including terminal
+201 behavior and the source `total_pages` quirk. Actual page counts and finite
+aggregate metadata bounds are independent SDK evidence, not rewritten oracles.
+`list_item_roots` uses the distinct item-path route, not a workspace-directory
+query. It preserves Python's second slash-separated name component, short/long
+column order and query-before-projection rule without stamping directory-child
+types. It reuses the same SDK collection loop and CLI projection helper.
+
+## OneLake write composition
+
+`OneLakeWriteHost` consumes explicit `OneLakeWriteTarget` metadata rather than
+adding a second context resolver. Directory mkdir, file/directory rm, Lakehouse
+Files rename, a caller-read local-byte upload helper and nonrecursive
+OneLake-to-OneLake file copy execute through the same focused SDK/shared HTTP.
+The source writable-root matrix, params-only help, confirmation/force notices,
+query/header spelling, binary media types/byte positions, source-empty checks
+and output spelling/order are retained. The rename source header deliberately
+has no added leading slash, matching the original helper's ID-path extraction.
+
+File copy uses headers and bytes from the actual source GET, not an extra HEAD.
+Directory/shortcut destinations append the original file name; directory/table/
+shortcut sources reject recursive copy. The upload helper takes actual bytes
+from a caller-owned filesystem host: local filesystem discovery, reads/writes
+and path-error orchestration are not claimed as implemented by that helper.
+Shortcut removal is selected through the separate Fabric shortcut host, never
+a recursive DFS delete fallback.
+
+`OneLakeWriteResult` retains actual accepted/completed response or upload-stage
+evidence independently of source messages. In particular, Python's `Done` after
+successful append/flush requests is retained even if those responses are 202;
+their `Accepted` states are not rewritten as completed storage effects. Failed
+later stages preserve mutation uncertainty and previously received stages without
+printing Done, replaying a write or inventing rollback/cleanup.
+
+## Shortcut commands
+
+`OneLakeShortcutHost` uses the Fabric operation policy for shortcut create/remove;
+it never routes metadata through DFS or a storage token. The existing context
+host supplies `ShortcutCreateDestination` and either a resolved OneLake target
+or argparse-style JSON tokens. LN preserves prompt-before-validation, source
+Lakehouse/root/suffix/name checks, extension stripping, exclusive input/type
+rules, quote normalization and `GenerateUniqueName` only when forced.
+Shortcut removal preserves force/verbose behavior and actual acceptance.
+Shortcut SET reads before confirmation, reuses the same full-element replacement
+implementation, removes service-only `target.type` and uses OverwriteOnly when
+the name is unchanged. A rename uses Abort creation followed by forced/silent
+deletion of the original. `ShortcutUpdateResult` keeps those two responses
+independent; `ShortcutUpdateError` retains a prior creation response when a later
+delete fails. No rollback, replay or success-shaped failure fallback is added.
+
+The original-source consumer executes the pinned ln/API/name/JSON/delete helper
+bodies and compares actual CLI/SDK/shared-HTTP request payloads, encoded routes,
+notices, prompts, output and validation errors. SET additionally executes the
+original query/mutation helper using development-only `jmespath==1.0.1`, already
+pinned by the independent compatibility requirements. It is not a shipped Rust
+dependency; restore it into an isolated development environment only if missing.
+Context resolution and metadata GET/export command projection remain separate backlog;
+the SDK metadata GET itself is implemented and exercised.
+
+The source rename sequence proceeds to delete the old shortcut even when the
+new create returned headerless 202 acceptance. This observed behavior is preserved
+separately from actual completion evidence and recorded for independent safety
+review; it is not silently fixed or used to authorize any live operation.
+
+## Within-workspace folder moves
+
+`MutationHost::move_folder` consumes the real focused folder SDK move endpoint.
+It preserves source same-parent no-op, workspace-root omission of targetFolderId,
+no extra prompt, and status-200-only message/cache update. The explicit
+`CacheEffect::MovedFolder` is applied by the existing main cache/context host.
+`FolderMoveResult` keeps the source's move count separate from actual operation
+evidence: the source increments after dispatch even for headerless 202, but that
+count is not reported here as a completed service mutation.
+Cross-workspace folder copy/move and bulk/item definition orchestration remain
+explicit gaps; this helper does not invent a deployment bridge.
 The original-Python comparison executes pinned request/handler functions; its
 wait flag comes from the original `do_request` assignment, not from whether an
 individual handler explicitly assigned `args.wait`.

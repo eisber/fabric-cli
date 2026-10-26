@@ -11,6 +11,59 @@ branch remains intact; references to it in dated evidence are historical.
 
 ## Read-command, query and folder integration
 
+### October 26 resource-library integration candidate
+
+The isolated integration branch
+`dev/marcozo/resource-integration-exact61d-1302851` starts at exact
+`61d77e330be8a13cbd5033713f1f2badcecfce60`. It preserves the inherited
+`8ad4c703bdd6738189f59318a04cab297b6c4381` checkout separately; Python behavior
+and template comparisons remain pinned to
+`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
+
+The candidate applies the twelve released OneLake/resource extensions
+`05d18f2` through `e47e74c`, followed by `6151041`, `c22dd98`, `7690755`,
+`713501b`, `059ce49`, `c441271`, `de2739f`, `4badbaa`, `2269502` and `5596edb`.
+The latter sequence's released evidence-only prerequisite `1545bbe` is retained
+in the `c441271` ledger-context reconciliation. The resulting resource/OneLake
+crates, shared-operation crate and workspace mutation implementation are
+byte-identical to the released `5596edb` files. The existing `ef17b80` shared
+HTTP prerequisite and `2c44a99` definition encoder are not applied twice.
+The single core JSON encoder and its CLI wrapper remain unchanged.
+
+Only local workspace dependencies are added; all 218 previous registry lockfile
+blocks are unchanged. Main, parser, native-read, `ReadSession`, original
+compatibility expectations and Python files are untouched. Newer Python drift
+is excluded, not adopted as a new oracle. Raw embedded templates deliberately
+retain the pinned source bytes, including trailing blank lines.
+
+The exact candidate `3c81cadb46db1808ba9dd19700fc96b3a96e7582` passed the
+resumed Windows x64 integration checks under the reviewed gate v2. All fifteen
+original-source comparisons passed **2,228 cases**, including request ordering,
+output/errors, partial effects and template bytes. Coupled Rust tests passed
+333 cases including doctests; the separate native-read feature CLI run passed
+98 cases. These overlapping run denominators are not unique branch totals.
+Global formatting, focused all-target strict Clippy and actual public consumer
+examples passed. The mutex was released normally after 807.69 acquired seconds.
+
+Earlier heavy-process guard refusals remain preserved, not upgraded to success.
+The session handoff retains the exact source-to-integration commit map, receipts
+and bounded validation script. This library checkpoint is released for
+coordinator review/adoption, not a publication, three-platform native CI,
+new executable-routing or whole-family completion claim. CI must also exercise
+the new OneLake, creation, removal, SET, preflight and continuation comparisons,
+not only the three historical resource comparison commands.
+
+The follow-up CI-only checkpoint requires all fifteen comparisons through
+`tests/compatibility/run_resource_parity.py` on each selected native runner.
+It validates every built probe before exporting only the pinned `cf67fd52`
+payload directory into a private temporary directory. Export, missing probes,
+failed comparisons and timeouts fail closed; five runner guards cover the
+orchestration separately from unchanged source expectations. Resource-only
+selections restore the existing pinned oracle dependencies, including changes
+confined to `fabric-sdk-onelake-http`. Shared JSON checks also compare actual
+Unicode-preserving bytes and run their independent guards. Product crates,
+manifests, lockfile, existing expectations and native matrix are unchanged.
+
 ### Resource consumers and one shared operation engine
 
 The coordinator reviewed and applied seven released Rust-only commits, in order:
