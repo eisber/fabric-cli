@@ -474,7 +474,11 @@ dependencies = [
  "azure_core",
  "base64 0.22.1",
  "fabric-core",
+ "fabric-core-json",
  "fabric-sdk",
+ "fabric-sdk-http",
+ "fabric-sdk-operations",
+ "fabric-sdk-workspaces",
  "serde_json",
  "tokio",
 ]
