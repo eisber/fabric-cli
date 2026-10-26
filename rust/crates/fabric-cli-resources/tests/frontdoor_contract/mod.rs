@@ -184,6 +184,33 @@ fn composed_schema_preserves_aliases_cardinality_quotes_and_command_value_collis
     assert!(AccessCommand::from_matches(&matches).unwrap().is_none());
 }
 
+#[test]
+fn family_composes_with_a_central_global_output_override() {
+    let root = clap::Command::new("central").arg(
+        clap::Arg::new("output_format")
+            .long("output_format")
+            .global(true)
+            .value_parser(["json", "text"]),
+    );
+    let matches = register(root)
+        .try_get_matches_from([
+            "central",
+            "acl",
+            "ls",
+            "Workspace.Workspace",
+            "--output_format",
+            "json",
+        ])
+        .unwrap();
+    assert_eq!(
+        AccessCommand::from_matches(&matches)
+            .unwrap()
+            .unwrap()
+            .output_format,
+        Some(OutputFormat::Json),
+    );
+}
+
 #[tokio::test]
 async fn five_read_leaves_parse_execute_and_render_unchanged_python_stream_fixtures() {
     let fixture: Value = serde_json::from_str(include_str!(
