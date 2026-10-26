@@ -420,6 +420,7 @@ dependencies = [
 name = "fabric-cli-output"
 version = "0.1.0"
 dependencies = [
+ "fabric-core-json",
  "serde",
  "serde_json",
  "thiserror",
@@ -442,6 +443,13 @@ version = "0.1.0"
 dependencies = [
  "azure_core",
  "thiserror",
+]
+
+[[package]]
+name = "fabric-core-json"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

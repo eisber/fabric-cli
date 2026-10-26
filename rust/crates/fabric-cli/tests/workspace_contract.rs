@@ -56,6 +56,9 @@ fn validate_packages(packages: &[Value]) -> Result<(), String> {
             .ok_or("workspace package is missing its name")?;
         let layer = Layer::parse(&package["metadata"]["fabric"]["layer"])
             .ok_or_else(|| format!("{name}: missing or unknown package.metadata.fabric.layer"))?;
+        if name == "fabric-core-json" && layer != Layer::Core {
+            return Err("fabric-core-json: reviewed JSON encoder must remain core".to_owned());
+        }
         if layers.insert(name, layer).is_some() {
             return Err(format!("duplicate workspace crate name: {name}"));
         }
@@ -79,6 +82,10 @@ fn validate_packages(packages: &[Value]) -> Result<(), String> {
                 .ok_or_else(|| format!("{name}: dependency is missing its name"))?;
             if let Some(&target_layer) = layers.get(target)
                 && !source_layer.allows(target_layer)
+                && !(source_layer == Layer::Cli
+                    && target_layer == Layer::Core
+                    && name == "fabric-cli-output"
+                    && target == "fabric-core-json")
             {
                 return Err(format!("forbidden internal edge: {name} -> {target}"));
             }
@@ -250,6 +257,52 @@ fn dependency_policy_covers_every_layer_direction() {
                 "{source_name} -> {target_name}"
             );
         }
+    }
+}
+
+#[test]
+fn reviewed_output_json_edge_is_not_a_general_cli_to_core_permission() {
+    assert_eq!(
+        validate_packages(&[
+            package("fabric-cli-output", "cli", &["fabric-core-json"]),
+            package("fabric-core-json", "core", &[]),
+        ]),
+        Ok(())
+    );
+    for (source, target) in [
+        ("other-cli", "fabric-core-json"),
+        ("fabric-cli-output", "other-core"),
+    ] {
+        assert_eq!(
+            validate_packages(&[
+                package(source, "cli", &[target]),
+                package(target, "core", &[]),
+            ]),
+            Err(format!("forbidden internal edge: {source} -> {target}"))
+        );
+    }
+    for target_layer in ["identity", "sdk", "deploy", "cli"] {
+        assert_eq!(
+            validate_packages(&[
+                package("fabric-cli-output", "cli", &["fabric-core-json"]),
+                package("fabric-core-json", target_layer, &[]),
+            ]),
+            Err("fabric-core-json: reviewed JSON encoder must remain core".to_owned())
+        );
+    }
+}
+
+#[test]
+fn reviewed_json_core_cannot_hide_a_forbidden_transitive_edge() {
+    for target_layer in ["identity", "deploy", "cli"] {
+        assert_eq!(
+            validate_packages(&[
+                package("fabric-cli-output", "cli", &["fabric-core-json"]),
+                package("fabric-core-json", "core", &["implementation"]),
+                package("implementation", target_layer, &[]),
+            ]),
+            Err("forbidden internal edge: fabric-core-json -> implementation".to_owned())
+        );
     }
 }
 
