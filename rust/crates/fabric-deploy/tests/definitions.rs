@@ -225,7 +225,10 @@ impl DefinitionFileSystem for Files {
     fn preflight(&mut self, _: &Path, _: &[DefinitionFile]) -> io::Result<()> {
         self.calls.push("preflight");
         if self.fail_preflight {
-            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "synthetic preflight failure"));
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "synthetic preflight failure",
+            ));
         }
         Ok(())
     }
@@ -468,15 +471,34 @@ async fn source_get_then_post_exports_real_local_files_and_keeps_raw_copy_defini
 async fn copy_reads_omit_format_and_preserve_notebook_outputs_and_metadata_order() {
     let raw = definition(&[("notebook.ipynb", br#"{"cells":[{"outputs":[1]}]}"#)]);
     let harness = Harness::new([
-        reply(200, r#"{"description":"first","displayName":"old","id":"source"}"#, &[]),
-        reply(200, &format!(r#"{{"displayName":"overridden","definition":{}}}"#, raw["definition"]), &[]),
+        reply(
+            200,
+            r#"{"description":"first","displayName":"old","id":"source"}"#,
+            &[],
+        ),
+        reply(
+            200,
+            &format!(
+                r#"{{"displayName":"overridden","definition":{}}}"#,
+                raw["definition"]
+            ),
+            &[],
+        ),
     ]);
     let read = read_copy_definition(&mut harness.session(pending()), target("Notebook"))
-        .await.unwrap();
+        .await
+        .unwrap();
     assert_eq!(read.item["definition"], raw["definition"]);
     assert_eq!(read.item["displayName"], "overridden");
-    assert_eq!(read.item.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(),
-        ["description", "displayName", "id", "definition"]);
+    assert_eq!(
+        read.item
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["description", "displayName", "id", "definition"]
+    );
     let requests = harness.http.requests.lock().unwrap();
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[0].method(), Method::Get);
@@ -526,15 +548,33 @@ async fn get_definition_acceptance_uses_shared_poll_and_actual_result_once() {
 async fn failed_definition_operation_retains_handle_and_dispatch_evidence() {
     let location = format!("https://api.fabric.microsoft.com/v1/operations/{OPERATION}");
     let harness = Harness::new([
-        reply(202, "", &[("Location", &location), ("x-ms-operation-id", OPERATION), ("Retry-After", "0")]),
-        reply(200, r#"{"status":"Failed","error":{"errorCode":"Synthetic","message":"private diagnostic"}}"#, &[]),
+        reply(
+            202,
+            "",
+            &[
+                ("Location", &location),
+                ("x-ms-operation-id", OPERATION),
+                ("Retry-After", "0"),
+            ],
+        ),
+        reply(
+            200,
+            r#"{"status":"Failed","error":{"errorCode":"Synthetic","message":"private diagnostic"}}"#,
+            &[],
+        ),
     ]);
     let error = read_definition(&mut harness.session(pending()), target("Report"), None)
-        .await.unwrap_err();
-    let Kind::Operation(operation) = error.kind else { panic!("expected shared operation failure"); };
+        .await
+        .unwrap_err();
+    let Kind::Operation(operation) = error.kind else {
+        panic!("expected shared operation failure");
+    };
     assert_eq!(operation.operation_id.as_deref(), Some(OPERATION));
     assert!(operation.mutation_may_have_occurred);
-    assert!(matches!(operation.kind, OperationErrorKind::OperationFailed { .. }));
+    assert!(matches!(
+        operation.kind,
+        OperationErrorKind::OperationFailed { .. }
+    ));
     assert!(!operation.to_string().contains("private diagnostic"));
     assert_eq!(harness.http.requests.lock().unwrap().len(), 2);
 }
@@ -845,8 +885,18 @@ async fn empty_definition_still_creates_context_item_directory() {
     ]);
     let directory = Directory::new();
     let mut filesystem = LocalDefinitionFileSystem::new(DefinitionLimits::default());
-    let result = export_item(&mut harness.session(pending()), &mut filesystem, target("Report"),
-        "Empty.Report", &directory.0, None, true, DefinitionLimits::default()).await.unwrap();
+    let result = export_item(
+        &mut harness.session(pending()),
+        &mut filesystem,
+        target("Report"),
+        "Empty.Report",
+        &directory.0,
+        None,
+        true,
+        DefinitionLimits::default(),
+    )
+    .await
+    .unwrap();
     assert!(result.completed_paths.is_empty());
     assert!(directory.0.join("Empty.Report").is_dir());
 }
@@ -855,9 +905,22 @@ async fn empty_definition_still_creates_context_item_directory() {
 async fn preflight_failure_performs_no_directory_creation_or_file_write() {
     let raw = definition(&[("a.txt", b"source")]);
     let harness = Harness::new([reply(200, "{}", &[]), reply(200, &raw.to_string(), &[])]);
-    let mut files = Files { fail_preflight: true, ..Files::default() };
-    let error = export_item(&mut harness.session(pending()), &mut files, target("Report"),
-        "Name.Report", Path::new("unused"), None, true, DefinitionLimits::default()).await.unwrap_err();
+    let mut files = Files {
+        fail_preflight: true,
+        ..Files::default()
+    };
+    let error = export_item(
+        &mut harness.session(pending()),
+        &mut files,
+        target("Report"),
+        "Name.Report",
+        Path::new("unused"),
+        None,
+        true,
+        DefinitionLimits::default(),
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(error.kind, Kind::FileSystem(_)));
     assert!(error.completed_paths.is_empty());
     assert_eq!(error.incomplete_path, None);
@@ -870,11 +933,32 @@ async fn cancellation_after_last_write_retains_written_file_without_reporting_co
     let harness = Harness::new([reply(200, "{}", &[]), reply(200, &raw.to_string(), &[])]);
     let cancel = Arc::new(AtomicBool::new(false));
     let signal = cancel.clone();
-    let cancellation = poll_fn(move |_| if signal.load(Ordering::SeqCst) { Poll::Ready(()) } else { Poll::Pending });
-    let mut files = Files { cancel_after: Some(cancel), ..Files::default() };
-    let error = export_item(&mut harness.session(cancellation), &mut files, target("Report"),
-        "Name.Report", Path::new("unused"), None, true, DefinitionLimits::default()).await.unwrap_err();
-    assert!(matches!(error.kind, Kind::Operation(operation) if operation.kind == OperationErrorKind::Cancelled));
+    let cancellation = poll_fn(move |_| {
+        if signal.load(Ordering::SeqCst) {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    });
+    let mut files = Files {
+        cancel_after: Some(cancel),
+        ..Files::default()
+    };
+    let error = export_item(
+        &mut harness.session(cancellation),
+        &mut files,
+        target("Report"),
+        "Name.Report",
+        Path::new("unused"),
+        None,
+        true,
+        DefinitionLimits::default(),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(error.kind, Kind::Operation(operation) if operation.kind == OperationErrorKind::Cancelled)
+    );
     assert_eq!(error.completed_paths, ["Name.Report/last.txt"]);
     assert_eq!(files.written, ["Name.Report/last.txt"]);
 }
@@ -884,9 +968,16 @@ fn local_adapter_checks_empty_directory_alias_and_parent_before_creation() {
     let directory = Directory::new();
     fs::create_dir(directory.0.join("existing.Report")).unwrap();
     let mut filesystem = LocalDefinitionFileSystem::new(DefinitionLimits::default());
-    assert!(filesystem.create_directory(&directory.0, "EXISTING.Report").is_err());
+    assert!(
+        filesystem
+            .create_directory(&directory.0, "EXISTING.Report")
+            .is_err()
+    );
     fs::write(directory.0.join("blocked"), b"file").unwrap();
-    let file = DefinitionFile { path: "blocked/child/part.txt".into(), bytes: b"source".to_vec() };
+    let file = DefinitionFile {
+        path: "blocked/child/part.txt".into(),
+        bytes: b"source".to_vec(),
+    };
     assert!(filesystem.write(&directory.0, &file).is_err());
     assert_eq!(fs::read(directory.0.join("blocked")).unwrap(), b"file");
 }
@@ -898,5 +989,10 @@ fn repeated_exact_part_path_preserves_source_overwrite_order_but_parent_case_ali
     assert_eq!(files[0].bytes, b"first");
     assert_eq!(files[1].bytes, b"second");
     let raw = definition(&[("folder/a.txt", b"a"), ("FOLDER/b.txt", b"b")]);
-    assert!(matches!(decode_export_files(&raw, false, DefinitionLimits::default()).unwrap_err().kind, Kind::Collision));
+    assert!(matches!(
+        decode_export_files(&raw, false, DefinitionLimits::default())
+            .unwrap_err()
+            .kind,
+        Kind::Collision
+    ));
 }

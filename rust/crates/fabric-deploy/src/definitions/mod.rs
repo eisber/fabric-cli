@@ -420,7 +420,8 @@ async fn execute<E: OperationExecutor>(
     if response.status == 202 {
         return Err(DefinitionErrorKind::Operation(Box::new(
             session.evidence(OperationErrorKind::InvalidResponse),
-        )).into());
+        ))
+        .into());
     }
     Ok(response.body)
 }
