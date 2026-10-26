@@ -29,7 +29,7 @@ use windows::{
     },
     core::w,
 };
-use windows_future::{AsyncStatus, IAsyncOperation};
+use windows_future::{AsyncStatus, IAsyncAction, IAsyncOperation};
 
 /// A native response that deliberately does not expose credentials through Debug.
 ///
@@ -57,6 +57,54 @@ impl fmt::Debug for BrokerResponse {
 /// operation terminates. This future never blocks the caller's async executor.
 pub struct BrokerRequest {
     inner: RequestFuture<BrokerResponse>,
+}
+
+/// Awaitable native operation using a worker-owned WinRT apartment.
+///
+/// Dropping or cancelling requests cooperative cleanup and suppresses late success.
+pub struct NativeOperation<T> {
+    inner: RequestFuture<T>,
+}
+
+impl<T> NativeOperation<T> {
+    /// Requests cancellation; no alternate identity or backend is attempted.
+    pub fn cancel(&self) {
+        self.inner.0.cancel();
+    }
+}
+
+impl<T> Future for NativeOperation<T> {
+    type Output = Result<T, BrokerError>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.inner).poll(cx)
+    }
+}
+
+pub(crate) fn spawn<T: Send + 'static>(
+    work: impl FnOnce(&Shared<T>) -> Result<T, BrokerError> + Send + 'static,
+) -> NativeOperation<T> {
+    let shared = Shared::new();
+    let worker_shared = Arc::clone(&shared);
+    let spawned = thread::Builder::new()
+        .name("fabric-entra".into())
+        .spawn(move || {
+            worker_shared.attach_worker(thread::current());
+            let result = (|| {
+                if worker_shared.is_cancelled() {
+                    return Err(BrokerError::Cancelled);
+                }
+                let _apartment = Apartment::new()?;
+                work(&worker_shared)
+            })();
+            worker_shared.complete(result);
+        });
+    if spawned.is_err() {
+        shared.complete(Err(BrokerError::ThreadStart));
+    }
+    NativeOperation {
+        inner: RequestFuture(shared),
+    }
 }
 
 impl BrokerRequest {
@@ -108,7 +156,7 @@ pub fn request_interactive(request: WebTokenRequest, account: Option<WebAccount>
     }
 }
 
-fn native_error(stage: NativeStage, error: windows::core::Error) -> BrokerError {
+pub(crate) fn native_error(stage: NativeStage, error: windows::core::Error) -> BrokerError {
     BrokerError::Native {
         stage,
         code: error.code().0,
@@ -133,10 +181,10 @@ impl Drop for Apartment {
     }
 }
 
-struct ParentWindow(Option<HWND>);
+pub(crate) struct ParentWindow(Option<HWND>);
 
 impl ParentWindow {
-    fn new() -> Result<Self, BrokerError> {
+    pub(crate) fn new() -> Result<Self, BrokerError> {
         // SAFETY: STATIC is a system class, strings live through this call, and
         // no callback/data pointer is installed. The worker owns the returned HWND.
         let window = unsafe {
@@ -163,7 +211,7 @@ impl ParentWindow {
         self.0.expect("the parent window has not been closed")
     }
 
-    fn close(&mut self) -> Result<(), BrokerError> {
+    pub(crate) fn close(&mut self) -> Result<(), BrokerError> {
         if let Some(window) = self.0 {
             // SAFETY: This worker owns the HWND and closes it after native completion.
             unsafe { DestroyWindow(window) }
@@ -203,31 +251,91 @@ fn run_operation(
     shared: &Shared<BrokerResponse>,
     parent: &ParentWindow,
 ) -> Result<BrokerResponse, BrokerError> {
+    if shared.is_cancelled() {
+        return Err(BrokerError::Cancelled);
+    }
+    let operation = start_interactive(request, account, parent)?;
+    wait(operation, shared).map(BrokerResponse)
+}
+
+pub(crate) fn start_interactive(
+    request: WebTokenRequest,
+    account: Option<WebAccount>,
+    parent: &ParentWindow,
+) -> Result<IAsyncOperation<WebTokenRequestResult>, BrokerError> {
     let interop: IWebAuthenticationCoreManagerInterop = windows::core::factory::<
         WebAuthenticationCoreManager,
         IWebAuthenticationCoreManagerInterop,
     >()
     .map_err(|error| native_error(NativeStage::Factory, error))?;
-    if shared.is_cancelled() {
-        return Err(BrokerError::Cancelled);
-    }
     // SAFETY: The concrete result type supplies the documented IAsyncOperation IID.
     // Request/account are valid typed WinRT objects. The parent HWND and STA are
     // owned here and retained until native completion, even if the future is dropped.
-    let operation: IAsyncOperation<WebTokenRequestResult> = unsafe {
+    unsafe {
         if let Some(account) = &account {
             interop.RequestTokenWithWebAccountForWindowAsync(parent.handle(), &request, account)
         } else {
             interop.RequestTokenForWindowAsync(parent.handle(), &request)
         }
     }
-    .map_err(|error| native_error(NativeStage::Request, error))?;
+    .map_err(|error| native_error(NativeStage::Request, error))
+}
 
+pub(crate) trait Pending<T> {
+    fn completed(
+        &self,
+        callback: impl FnOnce(windows::core::Result<T>) + Send + 'static,
+    ) -> windows::core::Result<()>;
+    fn status(&self) -> windows::core::Result<AsyncStatus>;
+    fn results(&self) -> windows::core::Result<T>;
+    fn cancel(&self) -> windows::core::Result<()>;
+}
+
+impl<T: windows::core::RuntimeType + 'static> Pending<T> for IAsyncOperation<T> {
+    fn completed(
+        &self,
+        callback: impl FnOnce(windows::core::Result<T>) + Send + 'static,
+    ) -> windows::core::Result<()> {
+        self.when(callback)
+    }
+    fn status(&self) -> windows::core::Result<AsyncStatus> {
+        self.Status()
+    }
+    fn results(&self) -> windows::core::Result<T> {
+        self.GetResults()
+    }
+    fn cancel(&self) -> windows::core::Result<()> {
+        self.Cancel()
+    }
+}
+
+impl Pending<()> for IAsyncAction {
+    fn completed(
+        &self,
+        callback: impl FnOnce(windows::core::Result<()>) + Send + 'static,
+    ) -> windows::core::Result<()> {
+        self.when(callback)
+    }
+    fn status(&self) -> windows::core::Result<AsyncStatus> {
+        self.Status()
+    }
+    fn results(&self) -> windows::core::Result<()> {
+        self.GetResults()
+    }
+    fn cancel(&self) -> windows::core::Result<()> {
+        self.Cancel()
+    }
+}
+
+pub(crate) fn wait<T: Send + 'static, O>(
+    operation: impl Pending<T>,
+    shared: &Shared<O>,
+) -> Result<T, BrokerError> {
     let completed = Arc::new(Mutex::new(None));
     let callback_completed = Arc::clone(&completed);
     let worker = thread::current();
     let callback_error = operation
-        .when(move |result| {
+        .completed(move |result| {
             *callback_completed.lock().unwrap() = Some(result);
             worker.unpark();
         })
@@ -243,16 +351,16 @@ fn run_operation(
             break result.map_err(|error| native_error(NativeStage::Completion, error));
         }
         if callback_error.is_some()
-            && let Ok(status) = operation.Status()
+            && let Ok(status) = operation.status()
             && status != AsyncStatus::Started
         {
             break operation
-                .GetResults()
+                .results()
                 .map_err(|error| native_error(NativeStage::Completion, error));
         }
         if (shared.is_cancelled() || cleanup_error.is_some()) && !cancel_sent {
             cancel_sent = true;
-            if let Err(error) = operation.Cancel() {
+            if let Err(error) = operation.cancel() {
                 cleanup_error = Some(native_error(NativeStage::Cancellation, error));
             }
         }
@@ -280,7 +388,7 @@ fn run_operation(
     if shared.is_cancelled() {
         return Err(BrokerError::Cancelled);
     }
-    result.map(BrokerResponse)
+    result
 }
 
 #[cfg(test)]

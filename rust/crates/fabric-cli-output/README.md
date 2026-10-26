@@ -37,6 +37,17 @@ selection, stream handles, flushing, and process exit.
 
 ## Data and serialization contract
 
+`json_dumps(&Value)` encodes raw definition/data values with Python's **default
+no-indent** layout: comma-space/colon-space, ASCII escaping, insertion order,
+and no newline. It does not produce an envelope, wrap data, or omit falsey data.
+This differs from `Indent::Zero`, which remains pretty JSON with newlines.
+`examples/definition_json.rs` demonstrates this standalone public API; its
+independent source comparison is `definition_reference.py`. The existing numeric
+domain and unsupported-runtime exceptions below apply unchanged.
+Both layouts delegate to the single [core JSON encoder](../fabric-core-json/README.md);
+the CLI public types remain compatibility wrappers. SDK callers use that core
+crate directly, never depend on this CLI crate.
+
 - A list is retained, even when empty. `None`/JSON null, false, numeric zero,
   empty strings and empty objects omit `data`; other values become one-element
   lists. Nulls and falsey values *inside* lists are preserved.
@@ -96,9 +107,33 @@ The distinction between a failure envelope's `UnexpectedError` default and a
 Subcommands, headers, key/value/table flags, request IDs and verbose API details
 are excluded from JSON by the source UI branch. This API accepts only the
 already-selected error message/code, not SDK response parsing or decorated text.
-Text/table output, terminal fallback/encoding behavior, arbitrary indentation,
-query evaluation, configuration lookup and command routing are unsupported.
+These JSON APIs do not select text/table output; the separate pure text boundary
+is described below. Real terminal framework/encoding behavior, arbitrary indentation,
+query evaluation, configuration lookup and command routing remain unsupported.
 `RenderPlan::write_to` never flushes, closes, retries, prompts or logs.
 
 See the [source matrix](../../docs/output-compatibility.md) and
 [independent oracle](../../tests/compatibility/output/README.md).
+
+## Caller-injected text and tables
+
+`text::render` selects JSON or text through `OutputFormat` and separate
+`TextOptions`, leaving all existing JSON types/struct literals unchanged.
+`text::TextPlan` holds ordered records so the hidden separator can go to stderr
+while rows go to stdout. `write_to` preserves order, propagates the first I/O
+error, and never retries/flushes. `TextError::partial_output` retains source output
+before a later key/row render failure, for caller delivery before its error plan.
+
+Table/header/key-value routing, source width scaling/wrapping, priority
+truncation, Python-domain strings, success/notice/error display and
+Fabric/OneLake/Azure text-only decorations have pure public helpers. Help/version
+helpers take caller-provided strings and ordered categories, not a command
+registry. The standalone `text_probe` exercises these APIs against actual
+source definitions; no main/parser or family consumer is changed here.
+
+Callers inject terminal width, East Asian character width, TTY/color palette,
+newline and fallback policy. Unicode key/title and nested Python repr properties
+are injectable formatters; defaults explicitly reject unsupported Unicode
+properties rather than silently approximating them. This is not a terminal
+framework or a complete Unicode database. See the precise
+[text branch ledger and limits](../../docs/output-text-compatibility.md).

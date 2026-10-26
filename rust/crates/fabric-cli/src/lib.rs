@@ -4,13 +4,15 @@
 //! Bounded read-command composition over the real SDK, pure context and output.
 //!
 //! The host owns identity, transport, async runtime, immutable lookup metadata,
-//! configuration, time and streams. The executable does not configure these.
+//! configuration, time and streams. The opt-in `native-read` executable host
+//! supplies these explicitly; default builds never discover credentials.
 
 mod errors;
 mod folder_reads;
 pub mod parser;
 mod projection;
 mod reads;
+pub mod session;
 mod workspace_get;
 
 pub use folder_reads::FolderReadHost;

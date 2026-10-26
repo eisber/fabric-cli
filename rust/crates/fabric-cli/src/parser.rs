@@ -1,10 +1,15 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Python-named arguments for the bounded JSON read preview.
+//! Python-named arguments for the bounded read preview.
 
 use clap::{Arg, ArgAction, Command, error::ErrorKind};
 use std::ffi::OsString;
+
+#[cfg(feature = "windows-broker")]
+mod auth;
+#[cfg(feature = "windows-broker")]
+pub use auth::{AuthAction, AuthCommand};
 
 /// A supported read operation, not a new resource namespace.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -37,7 +42,7 @@ pub struct ReadCommand {
     pub verbose: bool,
     /// Python `get --force`, recognized but not implemented.
     pub force: bool,
-    /// Explicit global output override; only JSON execution is implemented.
+    /// Explicit global output override; the selected host owns format support.
     pub output_format: Option<String>,
 }
 
@@ -48,6 +53,9 @@ pub enum Invocation {
     Display(String),
     /// A command requiring explicitly supplied dependencies.
     Read(ReadCommand),
+    /// Explicit opt-in broker command; parsing never signs in.
+    #[cfg(feature = "windows-broker")]
+    Auth(AuthCommand),
 }
 
 /// Static diagnostic for invalid invocations; supplied values are never echoed.
@@ -58,7 +66,7 @@ pub const INVALID_ARGUMENTS: &str =
 ///
 /// Use [`parse_args`] for the source read-command lexical rules as well.
 pub fn command() -> Command {
-    Command::new("fab-rs")
+    let command = Command::new("fab-rs")
         .bin_name("fab-rs")
         .version(env!("CARGO_PKG_VERSION"))
         .about("Experimental bounded JSON reads for Microsoft Fabric")
@@ -70,7 +78,12 @@ pub fn command() -> Command {
                 .long("output_format")
                 .global(true)
                 .value_parser(["json", "text"]),
-        )
+        );
+    #[cfg(feature = "windows-broker")]
+    let command = auth::register(command);
+    #[cfg(feature = "native-read")]
+    let command = command.after_help("Native ls/get reads require FAB_RUST_TENANT, FAB_RUST_ACCOUNT and FAB_RUST_CLIENT_ID. Windows broker authentication is opt-in; reads are silent and never show sign-in UI. Use explicit auth login first when required. FAB_RUST_CONTEXT defaults to /; FAB_RUST_HOME is optional. No token input, credential fallback or deployment command is available.");
+    command
         .subcommand(
             Command::new("ls")
                 .visible_alias("dir")
@@ -78,8 +91,18 @@ pub fn command() -> Command {
                 .args_override_self(true)
                 .infer_long_args(true)
                 .arg(Arg::new("path").num_args(0..))
-                .arg(Arg::new("long").short('l').long("long").action(ArgAction::SetTrue))
-                .arg(Arg::new("all").short('a').long("all").action(ArgAction::SetTrue))
+                .arg(
+                    Arg::new("long")
+                        .short('l')
+                        .long("long")
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
+                    Arg::new("all")
+                        .short('a')
+                        .long("all")
+                        .action(ArgAction::SetTrue),
+                )
                 .arg(Arg::new("query").short('q').long("query")),
         )
         .subcommand(
@@ -90,8 +113,18 @@ pub fn command() -> Command {
                 .arg(Arg::new("path").num_args(1..).required(true))
                 .arg(Arg::new("query").short('q').long("query").num_args(1..))
                 .arg(Arg::new("output").short('o').long("output").num_args(1..))
-                .arg(Arg::new("verbose").short('v').long("verbose").action(ArgAction::SetTrue))
-                .arg(Arg::new("force").short('f').long("force").action(ArgAction::SetTrue)),
+                .arg(
+                    Arg::new("verbose")
+                        .short('v')
+                        .long("verbose")
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
+                    Arg::new("force")
+                        .short('f')
+                        .long("force")
+                        .action(ArgAction::SetTrue),
+                ),
         )
 }
 
@@ -118,6 +151,12 @@ where
     {
         return Ok(Invocation::Display(error.to_string()));
     }
+    #[cfg(feature = "windows-broker")]
+    if let Ok(matches) = parser.clone().try_get_matches_from(&args)
+        && matches.subcommand_name() == Some("auth")
+    {
+        return auth::parse(&matches).map(Invocation::Auth);
+    }
     let source_args = source_read_arguments(&parser, &args)?;
     let matches = match parser.try_get_matches_from(source_args) {
         Ok(matches) => matches,
@@ -137,6 +176,9 @@ where
             INVALID_ARGUMENTS,
         ));
     };
+    if !matches!(name, "ls" | "get") {
+        return Err(invalid_arguments());
+    }
     let list = name == "ls";
     let spelling = args
         .iter()

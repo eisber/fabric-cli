@@ -156,15 +156,20 @@ Optional source omissions have typed SDK observations; identity, cancellation,
 execution and safety-bound failures remain explicit command failures.
 The folder wrapper delegates workspace GET to the same implementation.
 
-Text output, `get --output/--verbose/--force`, folder/OneLake/virtual
-collection GET/LS and folder-listing configuration fail explicitly. No live
-Fabric calls, selected production HTTP/TLS/runtime, credentials, installation,
-release, or cross-platform parity is claimed.
+`get --output/--verbose/--force`, OneLake/virtual collection reads and folder
+GET fail explicitly. The additive folder wrapper implements folder-context LS
+and configured workspace folder presentation; the native session selects that
+wrapper. No live Fabric calls, installation, release or cross-platform parity
+is claimed. The optional host's bounded text and explicit HTTP/TLS/runtime/
+credential composition are documented separately below.
 
-## Executable host gap
+## Explicit opt-in executable host
 
-`fab-rs` recognizes LS/dir/GET but intentionally returns typed `NotConfigured`
-on stderr (exit 1) rather than acquiring credentials or inventing a timestamp,
-transport or context. Help/version still succeed on stdout. Invalid commands
-remain sanitized JSON errors on stderr (exit 2). A production host must be
-explicitly designed and reviewed before ordinary users can run live commands.
+Default and `windows-broker`-only `fab-rs` retain typed `NotConfigured` for reads
+on stderr (exit 1). The additive `native-read` feature supplies the explicitly
+configured Windows host over `ReadSession`, real SDK/shared HTTP, optional
+Hyper/Rustls, native silent broker credentials and PythonQuery/output.
+Missing/invalid configuration, unsupported platforms/providers/resources and
+service failures remain explicit. Help/version and malformed arguments never
+contact credentials. See [native host setup and limits](native-read-host.md);
+offline composition is not real sign-in or Fabric service proof.

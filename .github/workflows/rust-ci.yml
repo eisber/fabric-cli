@@ -223,6 +223,8 @@ jobs:
       - name: Set up the development-only Python oracle
         if: >-
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-core-json') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-output') ||
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-jobs') ||
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-jobs') ||
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-paging') ||
@@ -311,9 +313,26 @@ jobs:
             --query-probe "target/debug/examples/projection_output${suffix}" \
             --folder-probe "target/debug/examples/folder_read_probe${suffix}" \
             --artifacts "$RUNNER_TEMP/read-parity"
-      - name: Check optional broker and safe-code consumer without authenticating
-        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-identity')
+      - name: Require shared core and CLI JSON byte compatibility
+        if: >-
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-core-json') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-output')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
         run: |
+          cargo run --quiet --offline --locked -p fabric-core-json --example definition_json > "$RUNNER_TEMP/core-definition-json.json"
+          cargo run --quiet --offline --locked -p fabric-cli-output --example definition_json > "$RUNNER_TEMP/cli-definition-json.json"
+          cargo run --quiet --offline --locked -p fabric-cli-output --example compatibility_probe > "$RUNNER_TEMP/output-json.json"
+          python -B tests/compatibility/output/definition_reference.py --observed "$RUNNER_TEMP/core-definition-json.json"
+          python -B tests/compatibility/output/definition_reference.py --observed "$RUNNER_TEMP/cli-definition-json.json"
+          python -B tests/compatibility/output/reference.py --observed "$RUNNER_TEMP/output-json.json"
+          python -B -m unittest discover -s tests/compatibility/output -p test_reference.py -v
+      - name: Check optional broker and safe-code consumer without authenticating
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-identity') || contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
+        run: |
+          cargo clippy --offline --locked -p fabric-cli --all-targets --features windows-broker -- -D warnings
+          cargo test --offline --locked -p fabric-cli -p fabric-identity --features fabric-cli/windows-broker
           cargo clippy --offline --locked -p fabric-identity --all-targets --features windows-broker -- -D warnings
           cargo run --offline --locked -p fabric-identity --example safe_consumer --no-default-features
           cargo run --offline --locked -p fabric-identity --example safe_consumer --features windows-broker
@@ -328,6 +347,45 @@ jobs:
         run: |
           python -B tests/compatibility/jobs/reference.py
           cargo run --offline --locked -p fabric-cli-jobs --example offline_job
+      - name: Require opt-in native read host without authentication
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          cargo clippy --offline --locked -p fabric-cli --features native-read --all-targets -- -D warnings
+          cargo test --offline --locked -p fabric-cli -p fabric-identity --features fabric-cli/native-read
+          cargo build --offline --locked -p fabric-cli --examples --features native-read
+          suffix=""
+          if [[ "$RUNNER_OS" == Windows ]]; then suffix=".exe"; fi
+          python -B tests/compatibility/read_session/consumer.py --rust-probe "target/debug/examples/read_session_probe${suffix}"
+      - name: Require extended context and actual text output observations
+        if: >-
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-context') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-output')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          cargo run --quiet --offline --locked -p fabric-cli-context --example extended_resolve
+          python -B tests/compatibility/context/extended_reference.py
+          cargo run --quiet --offline --locked -p fabric-cli-output --example text_probe > "$RUNNER_TEMP/text-observations.json"
+          python -B tests/compatibility/output/text_reference.py --observed "$RUNNER_TEMP/text-observations.json"
+      - name: Preserve read and query source comparisons with broker feature enabled
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          cargo build --offline --locked -p fabric-cli -p fabric-cli-query --examples --features fabric-cli/windows-broker
+          suffix=""
+          if [[ "$RUNNER_OS" == Windows ]]; then suffix=".exe"; fi
+          python -B tests/compatibility/run_read_parity.py \
+            --read-probe "target/debug/examples/read_probe${suffix}" \
+            --query-probe "target/debug/examples/projection_output${suffix}" \
+            --folder-probe "target/debug/examples/folder_read_probe${suffix}" \
+            --artifacts "$RUNNER_TEMP/read-parity-windows-broker"
       - name: Run independent offline SDK example
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk')
         run: cargo run --offline --locked -p fabric-sdk --example injected_credentials

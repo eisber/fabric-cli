@@ -56,6 +56,9 @@ fn validate_packages(packages: &[Value]) -> Result<(), String> {
             .ok_or("workspace package is missing its name")?;
         let layer = Layer::parse(&package["metadata"]["fabric"]["layer"])
             .ok_or_else(|| format!("{name}: missing or unknown package.metadata.fabric.layer"))?;
+        if name == "fabric-core-json" && layer != Layer::Core {
+            return Err("fabric-core-json: reviewed JSON encoder must remain core".to_owned());
+        }
         if layers.insert(name, layer).is_some() {
             return Err(format!("duplicate workspace crate name: {name}"));
         }
@@ -79,6 +82,10 @@ fn validate_packages(packages: &[Value]) -> Result<(), String> {
                 .ok_or_else(|| format!("{name}: dependency is missing its name"))?;
             if let Some(&target_layer) = layers.get(target)
                 && !source_layer.allows(target_layer)
+                && !(source_layer == Layer::Cli
+                    && target_layer == Layer::Core
+                    && name == "fabric-cli-output"
+                    && target == "fabric-core-json")
             {
                 return Err(format!("forbidden internal edge: {name} -> {target}"));
             }
@@ -141,6 +148,12 @@ fn workspace_members_and_internal_edges_respect_library_boundaries() {
     for package in packages {
         let name = package["name"].as_str().unwrap();
         let manifest = std::fs::read_to_string(package["manifest_path"].as_str().unwrap()).unwrap();
+        if matches!(
+            name,
+            "fabric-cli" | "fabric-identity" | "fabric-sdk-transport"
+        ) {
+            assert_eq!(package["features"]["default"], json!([]));
+        }
         if name == "fabric-identity-windows" {
             assert!(!defaults.contains(package["id"].as_str().unwrap()));
             assert_eq!(package["metadata"]["fabric"]["layer"], "identity");
@@ -169,6 +182,9 @@ fn workspace_members_and_internal_edges_respect_library_boundaries() {
                 assert_eq!(name, "fabric-identity");
                 assert_eq!(dependency["optional"], true);
                 assert_eq!(dependency["target"], "cfg(windows)");
+            }
+            if name == "fabric-cli" && target == "fabric-identity" {
+                assert_eq!(dependency["optional"], true);
             }
             if target == "windows" || target == "windows-future" {
                 assert_eq!(name, "fabric-identity-windows");
@@ -250,6 +266,52 @@ fn dependency_policy_covers_every_layer_direction() {
                 "{source_name} -> {target_name}"
             );
         }
+    }
+}
+
+#[test]
+fn reviewed_output_json_edge_is_not_a_general_cli_to_core_permission() {
+    assert_eq!(
+        validate_packages(&[
+            package("fabric-cli-output", "cli", &["fabric-core-json"]),
+            package("fabric-core-json", "core", &[]),
+        ]),
+        Ok(())
+    );
+    for (source, target) in [
+        ("other-cli", "fabric-core-json"),
+        ("fabric-cli-output", "other-core"),
+    ] {
+        assert_eq!(
+            validate_packages(&[
+                package(source, "cli", &[target]),
+                package(target, "core", &[]),
+            ]),
+            Err(format!("forbidden internal edge: {source} -> {target}"))
+        );
+    }
+    for target_layer in ["identity", "sdk", "deploy", "cli"] {
+        assert_eq!(
+            validate_packages(&[
+                package("fabric-cli-output", "cli", &["fabric-core-json"]),
+                package("fabric-core-json", target_layer, &[]),
+            ]),
+            Err("fabric-core-json: reviewed JSON encoder must remain core".to_owned())
+        );
+    }
+}
+
+#[test]
+fn reviewed_json_core_cannot_hide_a_forbidden_transitive_edge() {
+    for target_layer in ["identity", "deploy", "cli"] {
+        assert_eq!(
+            validate_packages(&[
+                package("fabric-cli-output", "cli", &["fabric-core-json"]),
+                package("fabric-core-json", "core", &["implementation"]),
+                package("implementation", target_layer, &[]),
+            ]),
+            Err("forbidden internal edge: fabric-core-json -> implementation".to_owned())
+        );
     }
 }
 

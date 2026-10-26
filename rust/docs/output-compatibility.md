@@ -8,6 +8,10 @@ full Python CLI parity. The authoritative Python pin is
 verified by the independent oracle. No Python product files or old fixture
 baselines change. No consumer is wired into `fabric-cli/src/main.rs`.
 
+This page records the original JSON boundary. The additive
+[text/definition branch ledger](output-text-compatibility.md) records the later
+core encoder extraction and caller-injected text/table APIs with separate evidence.
+
 | Pinned Python source | Ported behavior | Synthetic source cases / evidence |
 | --- | --- | --- |
 | `core/fab_output.py`, `OutputResult` | Truthiness/list wrapping; omission vs empty; hidden string/string-enum sorting | absent/null/false/0/-0.0/empty dict/string/list; retained list; enum/string duplicates/empty/Unicode |
@@ -27,6 +31,19 @@ serializer and controlled headless print implementation, with LF checked
 explicitly. No existing fixture is regenerated, normalized or weakened.
 The Rust probe emits **observations**, never Python expected output.
 
+The shared `fabric-core-json` library now owns the single string, number and
+layout encoder. `fabric-cli-output` retains its public types and delegates to
+that core implementation; SDK callers can use raw default-layout
+`fabric_core_json::json_dumps` without a CLI dependency. The CLI's raw-data
+wrapper preserves its `Result<String, OutputError>` signature. This is distinct
+from envelope construction and from `indent=0`, which still emits newlines.
+Twelve additional hand-authored default-layout cases cover separators, insertion
+order, ASCII escaping and finite numeric boundaries. Native CI compares both
+actual core and CLI example output with Python's serializer and the pinned
+source helper, and preserves all 42 existing envelope comparisons. The exact
+reviewed output-to-JSON-core dependency is guarded by positive and negative
+architecture tests, not a general CLI-to-core permission.
+
 Byte equality is demonstrated on the finite numeric cases, not every possible
 f64 value or CPython dtoa tie. Arbitrary-size Python integers, non-standard
 NaN/Infinity literals and unsupported Python runtime objects lie outside the
@@ -42,8 +59,9 @@ serde_json's indexmap dependency closure; the lockfile records it explicitly.
 No framework, terminal, logging, time, runtime, HTTP or auth dependency is added.
 
 The library does not parse SDK errors, select or sanitize exception arguments,
-resolve command/context paths, discover config, evaluate JMESPath, render text or
-tables, or implement questionary/terminal fallback. The source's actual
+resolve command/context paths, discover config, evaluate JMESPath, or implement
+questionary. Text/table composition is separately implemented through injected
+policies, not part of this original JSON claim. The source's actual
 questionary behavior across platforms is not certified by a headless fake.
 The library never accesses an ambient clock, environment, mutable global, network,
 filesystem, subprocess or logger.

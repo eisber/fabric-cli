@@ -2,8 +2,8 @@
 
 # Identity requirements and evidence
 
-**Status: requirements and direct Windows broker investigation, not an
-authentication implementation or production backend selection. Baseline evidence
+**Status: requirements, direct Windows broker investigation and an experimental
+opt-in Windows login implementation, not a production support claim. Baseline evidence
 reviewed on October 22, 2026 (UTC); owner clarification and native Windows
 follow-up recorded on October 23, 2026 (UTC).**
 
@@ -38,6 +38,11 @@ unattended adapter, cache, browser launch, helper, credential chain, or token
 acquisition. Existing offline tests and source inspection are evidence of
 boundaries, not successful native authentication. No live authentication or
 platform-policy tests were executed for this document.
+
+The table labels and scaffold statements above describe the exact foundation
+checkpoint. Later owner-approved code adds experimental opt-in Windows login,
+documented below; it does not retroactively establish foundation parity or live
+MFA/policy validation.
 
 ## Pinned Python behavior
 
@@ -424,9 +429,34 @@ standard library or other dependencies. The consumer example compiles under
 See [architecture](architecture.md#optional-native-unsafe-boundary) for commands
 and the exact boundary. No dynamic DLL/C ABI or production login is implied.
 
+### Actual-login follow-up
+
+The owner subsequently requested an executable login, not only an interop probe.
+The Entra request/response field gap was resolved using historical official
+MSAL.NET 4.30.1 source (R25): `wam_compat=2.0`, explicit `authority`,
+`validateAuthority=yes`, `LoginHint`, response `Authority`, and
+`TokenExpiresOn` as seconds since 1601. This is released-source evidence,
+not an evergreen support contract. Malformed/missing/expired metadata, mismatched
+tenant/account, duplicate account matches and account-switch statuses fail.
+
+`fabric-cli/windows-broker` now enables user-invoked `auth login`, silent `auth
+status`, and app-scoped `auth logout`. `WindowsCredential` implements Azure
+`TokenCredential` and silently reacquires tokens for the pinned native account.
+Tokens are not parsed, printed or stored in local files. All three Python
+audiences must succeed before login reports success. The default build and
+metadata-only synchronous entry remain offline/unsupported.
+
+Manual command and registration prerequisites are in the
+[workspace README](../README.md#run-an-actual-windows-broker-login). No live
+authentication was executed while implementing/testing this slice. Required MFA
+support is the intended broker flow, not a claim that MFA has been demonstrated
+in a tenant. The response reports MFA evidence as `not_checked` and service access
+as unverified. Browser fallback, broader provider aliases/guest cases,
+multi-platform login and CAE/challenge handling are still outside this slice.
+
 ## Public reference register
 
-R1-R13 were initially read on **October 22, 2026 (UTC)**; R14-R24 were read on
+R1-R13 were initially read on **October 22, 2026 (UTC)**; R14-R25 were read on
 **October 23, 2026 (UTC)**. Learn revision identifiers are the page's returned
 source metadata, not assertions that a private documentation-source repository
 is publicly accessible. Public documentation is evidence of the named API or
@@ -458,3 +488,4 @@ library, not of this Rust product.
 | R22 | [Microsoft identity platform access tokens](https://learn.microsoft.com/en-us/entra/identity-platform/access-tokens), revision `5389cde10e56c2d65e380e7e047f702d2a940ee0`, updated July 17, 2026 | Clients must treat access tokens as opaque and use response metadata for expiry/scopes; no JWT-derived expiry shortcut |
 | R23 | [WinRT cancellation](https://learn.microsoft.com/en-us/uwp/api/windows.foundation.iasyncinfo.cancel?view=winrt-26100), revision `1a828f749c8ea13311d912420608e8d1e5b397de`, updated October 15, 2024 | Public cancellation method, not proof of complete cleanup or late-result race handling |
 | R24 | [MSAL authentication flows](https://learn.microsoft.com/en-us/entra/identity-platform/msal-authentication-flows), revision `a4be4ac419c4e857b1c4de7dee22c9f7e0c750f9`, updated June 15, 2026 | Interactive token acquisition includes MFA/consent; silent acquisition cannot prompt. Does not certify the proposed direct Rust WAM integration |
+| R25 | [Official MSAL.NET direct-WAM source, release 4.30.1](https://github.com/AzureAD/microsoft-authentication-library-for-dotnet/tree/0661b34a41255bfdd7980663572be0544578117e/src/client/Microsoft.Identity.Client/Platforms/Features/WamBroker) and [CoreHelpers](https://github.com/AzureAD/microsoft-authentication-library-for-dotnet/blob/0661b34a41255bfdd7980663572be0544578117e/src/client/Microsoft.Identity.Client/Utils/CoreHelpers.cs), commit `0661b34a41255bfdd7980663572be0544578117e`, inspected October 23, 2026 | AadPlugin/WamAdapters/provider factory define request/response fields; expiry uses seconds since 1601, not FILETIME ticks. Historical MIT-licensed implementation evidence; not current vendor certification of this Rust path |

@@ -1,12 +1,14 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Pure JSON output translation from Python `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
+//! Pure output translation from Python `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
 //!
 //! Callers supply timestamps and already-projected JSON, then inspect a [`RenderPlan`]
 //! or write it to caller-owned streams. No terminal, environment, clock, logger,
 //! dispatcher, SDK, or process-global state is accessed. See the crate README for
 //! the bounded numeric and Python-runtime compatibility contract.
+//! [`text`] separately exposes caller-injected text/table rendering and ordered
+//! mixed-stream plans without altering the existing JSON API.
 //!
 //! ```
 //! use fabric_cli_output::{Indent, OutputEnvelope, OutputInput, Timestamp, parse_data};
@@ -27,6 +29,7 @@
 //! ```
 
 mod encoding;
+pub mod text;
 
 use serde::Serialize;
 use serde_json::Value;
@@ -271,6 +274,21 @@ fn truthy(value: &Value) -> bool {
     }
 }
 
+/// Encode JSON-domain data like Python `json.dumps(data)` with default options.
+///
+/// This is a data/definition encoder, **not** an output envelope. It retains
+/// insertion order and ASCII escaping, uses `", "` and `": "` separators,
+/// performs no list wrapping, and appends no newline. Integer `indent=0` is a
+/// different pretty-printing mode; [`Indent::Zero`] deliberately does not select
+/// this layout. The same i64/u64/finite-f64 domain and numeric compatibility
+/// limits as the envelope serializer apply.
+///
+/// Use [`parse_data`] and [`finite_number`] at raw input boundaries so unsupported
+/// numbers fail before an upstream serde conversion can silently discard them.
+pub fn json_dumps(data: &Value) -> Result<String, OutputError> {
+    Ok(encoding::encode_default(data))
+}
+
 /// Parse strict JSON instead of silently coercing malformed or non-finite data.
 ///
 /// Unsupported Python objects, bytes, lone surrogates, and NaN/Infinity literals
@@ -332,16 +350,6 @@ pub enum Indent {
     /// `indent=4`, the product default.
     #[default]
     Four,
-}
-
-impl Indent {
-    pub(crate) fn width(self) -> usize {
-        match self {
-            Self::Zero => 0,
-            Self::Two => 2,
-            Self::Four => 4,
-        }
-    }
 }
 
 /// Destination stream, kept explicit instead of conflating failure with stderr.
