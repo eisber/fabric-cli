@@ -21,7 +21,8 @@ use fabric_cli_output::{
 use fabric_cli_transfer::{
     LocalTransferFiles, TransferCommand, TransferContext, TransferEvent, TransferFailure,
     TransferFiles, TransferFuture, TransferHost, TransferItem, TransferKind, TransferMetadata,
-    TransferUi, command_from_matches, render_result, transfer_subcommands, write_result,
+    TransferUi, command_from_matches, render_error, render_result, transfer_subcommands,
+    write_result,
 };
 use fabric_deploy::definitions::{CommandSupport, DefinitionErrorKind, DefinitionLimits};
 use fabric_sdk::{Audience, Client, CredentialSelection};
@@ -548,6 +549,12 @@ async fn import_create_and_update_match_source_exact_bodies_messages_and_cache()
         );
         assert_eq!(result.effects.len(), 1);
         assert_eq!(result.effects[0].item_id, case["effects"][0]);
+        assert!(
+            result
+                .excluded_paths
+                .iter()
+                .any(|path| path.ends_with("cache.abf"))
+        );
         let requests = harness.http.requests.lock().unwrap();
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].method(), Method::Post);
@@ -749,6 +756,7 @@ async fn ready_cancellation_precedes_metadata_and_does_not_read_or_mutate() {
             .await
             .is_err()
     );
+    assert_eq!(harness.metadata.calls.load(Ordering::SeqCst), 0);
     harness.no_requests();
 }
 
@@ -870,4 +878,225 @@ fn output_writer_failure_is_not_success() {
     )
     .unwrap();
     assert!(write_result(&plan, &mut FailedWriter, &mut Vec::new()).is_err());
+}
+
+#[tokio::test]
+async fn folder_bulk_uses_selective_request_and_strips_only_ancestors() {
+    let directory = Directory::new();
+    let original = context(true, true);
+    let parent = Element::child(
+        "Parent",
+        Some(OPERATION.into()),
+        NodeKind::Folder,
+        original.target.clone(),
+    )
+    .unwrap();
+    let folder =
+        Element::child("Selected", Some(OPERATION.into()), NodeKind::Folder, parent).unwrap();
+    let item = Element::child(
+        "Pipe",
+        Some(ITEM.into()),
+        NodeKind::Item(ItemType::parse("DataPipeline").unwrap()),
+        folder.clone(),
+    )
+    .unwrap();
+    let context = TransferContext {
+        target: folder,
+        items: vec![TransferItem {
+            element: item,
+            support: CommandSupport::Supported,
+        }],
+        selection_order: Vec::new(),
+    };
+    let mut parts = definition()["definition"]["parts"].clone();
+    parts[0]["path"] = json!("/Parent/Selected/Pipe.DataPipeline/pipeline-content.json");
+    let harness = Harness::new(context, vec![reply(200, json!({"definitionParts": parts}))]);
+    let command = parse(&[
+        "bulk-export",
+        "Demo.Workspace/Parent.Folder/Selected.Folder",
+        "-o",
+        "output",
+        "--recursive",
+        "-f",
+    ]);
+    let result = harness
+        .host(&mut directory.files())
+        .execute(&command, pending())
+        .await
+        .unwrap();
+    assert_eq!(
+        result.completed_paths,
+        ["Selected/Pipe.DataPipeline/pipeline-content.json"]
+    );
+    assert!(
+        directory
+            .0
+            .join("output")
+            .join("Selected")
+            .join("Pipe.DataPipeline")
+            .join("pipeline-content.json")
+            .is_file()
+    );
+    let requests = harness.http.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0].body().as_bytes().unwrap().as_ref(),
+        format!("{{\"items\": [{{\"id\": \"{ITEM}\"}}], \"mode\": \"Selective\"}}").as_bytes()
+    );
+}
+
+#[tokio::test]
+async fn workspace_partial_failure_retains_first_item_files_without_batch_success() {
+    let directory = Directory::new();
+    let mut ctx = context(true, true);
+    let second = Element::child(
+        "Other",
+        Some(OPERATION.into()),
+        NodeKind::Item(ItemType::parse("DataPipeline").unwrap()),
+        ctx.target.clone(),
+    )
+    .unwrap();
+    ctx.selection_order.push(second.name());
+    ctx.items.push(TransferItem {
+        element: second,
+        support: CommandSupport::Supported,
+    });
+    let harness = Harness::new(
+        ctx,
+        vec![
+            reply(200, json!({"id":ITEM})),
+            reply(200, definition()),
+            reply(200, json!({"id":OPERATION})),
+            reply(
+                200,
+                json!({"definition": {"parts": [{"path":"../escape.json","payload":"e30=","payloadType":"InlineBase64"}]}}),
+            ),
+        ],
+    );
+    let command = parse(&["export", "Demo.Workspace", "-o", "output", "-a", "-f"]);
+    let error = harness
+        .host(&mut directory.files())
+        .execute(&command, pending())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.completed_paths,
+        ["Pipe.DataPipeline/pipeline-content.json"]
+    );
+    assert_file(&directory.0, "export");
+    assert!(
+        !directory
+            .0
+            .join("output")
+            .join("Other.DataPipeline")
+            .exists()
+    );
+    assert_eq!(harness.http.requests.lock().unwrap().len(), 4);
+    let plan = render_error(
+        &error,
+        &command,
+        timestamp(),
+        OutputFormat::Json,
+        Presentation::default(),
+    )
+    .unwrap();
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    assert_eq!(write_result(&plan, &mut stdout, &mut stderr).unwrap(), 1);
+    assert!(stderr.is_empty());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&stdout).unwrap()["status"],
+        "Failure"
+    );
+}
+
+#[tokio::test]
+async fn invalid_format_and_missing_output_fail_without_credentials_or_writes() {
+    for (selector, output) in [
+        ("not-a-format", "output"),
+        ("default", "missing"),
+        ("default", "../escape"),
+    ] {
+        let directory = Directory::new();
+        let harness = Harness::new(context(false, true), Vec::new());
+        let command = parse(&[
+            "export",
+            "Demo.Workspace/Pipe.DataPipeline",
+            "-o",
+            output,
+            "--format",
+            selector,
+            "-f",
+        ]);
+        assert!(
+            harness
+                .host(&mut directory.files())
+                .execute(&command, pending())
+                .await
+                .is_err()
+        );
+        harness.no_requests();
+        assert!(
+            fs::read_dir(directory.0.join("output"))
+                .unwrap()
+                .next()
+                .is_none()
+        );
+    }
+}
+
+#[tokio::test]
+async fn explicit_json_override_controls_stream_even_with_text_configuration() {
+    let directory = Directory::new();
+    let harness = Harness::new(
+        context(false, true),
+        vec![reply(200, json!({"id":ITEM})), reply(200, definition())],
+    );
+    let command = parse(&[
+        "export",
+        "Demo.Workspace/Pipe.DataPipeline",
+        "-o",
+        "output",
+        "-f",
+        "--output_format",
+        "json",
+    ]);
+    let result = harness
+        .host(&mut directory.files())
+        .execute(&command, pending())
+        .await
+        .unwrap();
+    let plan = render_result(
+        &result,
+        &command,
+        timestamp(),
+        OutputFormat::Text,
+        Presentation::default(),
+        &ascii_width,
+    )
+    .unwrap();
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    write_result(&plan, &mut stdout, &mut stderr).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&stdout).unwrap()["command"],
+        "export"
+    );
+    assert!(stderr.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn linked_directory_and_file_are_rejected_without_following_them() {
+    use std::os::unix::fs::symlink;
+    let directory = Directory::new();
+    let mut files = directory.files();
+    let linked = directory.0.join("linked");
+    symlink(directory.0.join("input"), &linked).unwrap();
+    assert!(files.resolve_directory("linked").is_err());
+    let linked_file = directory.0.join("output").join("linked.json");
+    symlink(
+        directory.0.join("input").join("pipeline-content.json"),
+        &linked_file,
+    )
+    .unwrap();
+    assert!(files.is_empty(&directory.0.join("output")).is_err());
 }

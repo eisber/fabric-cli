@@ -129,8 +129,13 @@ pub struct TransferResult {
     pub key_value: bool,
     /// Fully written relative paths, retaining earlier workspace-item progress.
     pub completed_paths: Vec<String>,
-    /// Source cache changes; caller must apply these before rendering results.
+    /// Source cache changes, applied after successful result delivery.
+    ///
+    /// Source-silent overwrite declines still upsert. Output failure must not
+    /// silently apply deferred cache changes or trigger a mutation replay.
     pub effects: Vec<ImportCacheEffect>,
+    /// Source-excluded import cache paths retained by the released file loader.
+    pub excluded_paths: Vec<String>,
     /// A UI decline, not service cancellation or rollback.
     pub declined: bool,
 }
@@ -715,6 +720,7 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
                 target: item.clone(),
                 item_id: outcome.item_id,
             }],
+            excluded_paths: outcome.excluded_paths,
             ..TransferResult::default()
         })
     }
@@ -806,7 +812,8 @@ impl DefinitionFileSystem for NotifyingFiles<'_> {
 /// Render actual outputs using the existing shared JSON/text implementation.
 ///
 /// Immediate UI events have already been emitted. Cache effects remain the
-/// caller's responsibility, including when a subsequent output writer fails.
+/// caller's responsibility after successful delivery, as in the source handler.
+/// A writer failure retains the result for evidence but does not replay mutation.
 pub fn render_result(
     result: &TransferResult,
     command: &TransferCommand,
