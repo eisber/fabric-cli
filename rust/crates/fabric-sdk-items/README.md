@@ -9,6 +9,12 @@ deployment, CLI, Python runtime or HTTP/TLS backend dependency. Callers inject
 `CredentialSelection`, an `ItemExecutor` and cancellation. Construction performs
 no I/O. The caller must bind its credential to the selected account and tenant.
 
+`ItemClient::with_context(RequestContext)` additionally shares an explicit
+validated endpoint with workspace reads and the facade. Generic LIST/GET and
+specialized metadata routes use that binding for URL construction, authenticated
+execution and active continuation checks. Existing `new` retains public defaults.
+See the [endpoint API](../../docs/endpoint-context.md) for composition and limits.
+
 Use `ItemClient::list_items` and `ItemClient::get_item` directly, or the additive
 `fabric_sdk::Client::{list_items,get_item}` facade methods. For ordered metadata,
 use `ItemClient::get_item_metadata` for the unchanged generic route, or

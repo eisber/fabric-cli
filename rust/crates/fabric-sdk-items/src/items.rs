@@ -3,7 +3,9 @@
 
 use crate::{FabricServiceError, Item, ItemClient, ItemCollection, ItemMetadata, Page};
 use azure_core::{credentials::AccessToken, http::Url};
-use fabric_core::Audience;
+use fabric_core::{
+    Audience, AuthenticatedExecution, EndpointBinding, RequestError, ServiceOrigin, cancel_with,
+};
 use std::{
     collections::{BTreeMap, HashSet},
     fmt,
@@ -12,8 +14,6 @@ use std::{
     pin::{Pin, pin},
     task::Poll,
 };
-
-const ORIGIN: &str = "https://api.fabric.microsoft.com";
 
 /// A validated read-only item request. Debug excludes identifiers, query and token.
 pub struct ItemRequest<'a> {
@@ -49,7 +49,7 @@ impl fmt::Debug for ItemRequest<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ItemRequest")
             .field("method", &"GET")
-            .field("origin", &ORIGIN)
+            .field("host", &self.url.host_str())
             .field("token", &"<injected>")
             .field("max_response_bytes", &self.max_response_bytes)
             .finish()
@@ -299,7 +299,7 @@ impl ItemClient {
     ) -> Result<(), ItemErrorKind> {
         or_cancel(std::future::ready(()), cancelled.as_mut()).await?;
         self.validate_audience()?;
-        let base = item_url(workspace_id, None)?;
+        let base = item_url(self.context().endpoint(), workspace_id, None)?;
         let mut query = unique_query(options.query);
         let mut seen = HashSet::new();
         if let Some((_, token)) = query.iter().find(|(key, _)| key == "continuationToken")
@@ -336,7 +336,7 @@ impl ItemClient {
                 return Ok(());
             };
             if let Some(uri) = page.continuation_uri {
-                validate_continuation(&uri, base.path())?;
+                validate_continuation(&uri, base.path(), self.context().endpoint())?;
             }
             if !seen.insert(next.clone()) {
                 return Err(ItemErrorKind::RepeatedContinuation);
@@ -380,7 +380,7 @@ impl ItemClient {
         let mut cancelled = pin!(cancelled);
         self.get_one(
             executor,
-            || item_url(workspace_id, Some(item_id)),
+            || item_url(self.context().endpoint(), workspace_id, Some(item_id)),
             options,
             cancelled.as_mut(),
         )
@@ -407,7 +407,7 @@ impl ItemClient {
         let mut cancelled = pin!(cancelled);
         self.get_one(
             executor,
-            || item_url(workspace_id, Some(item_id)),
+            || item_url(self.context().endpoint(), workspace_id, Some(item_id)),
             options,
             cancelled.as_mut(),
         )
@@ -436,7 +436,14 @@ impl ItemClient {
         let mut cancelled = pin!(cancelled);
         self.get_one(
             executor,
-            || collection_url(workspace_id, collection.as_str(), Some(item_id)),
+            || {
+                collection_url(
+                    self.context().endpoint(),
+                    workspace_id,
+                    collection.as_str(),
+                    Some(item_id),
+                )
+            },
             options,
             cancelled.as_mut(),
         )
@@ -493,27 +500,26 @@ impl ItemClient {
         limit: NonZeroUsize,
         mut cancelled: Pin<&mut (impl Future<Output = ()> + Send)>,
     ) -> Result<ItemResponse, ItemErrorKind> {
-        let token = or_cancel(
-            self.credential()
-                .get_token(&[Audience::Fabric.scope()], None),
-            cancelled.as_mut(),
-        )
-        .await?
-        .map_err(|_| ItemErrorKind::Credential)?;
-        let response = or_cancel(
-            executor.execute(ItemRequest {
-                url,
-                token: &token,
-                max_response_bytes: limit,
-            }),
-            cancelled.as_mut(),
-        )
-        .await?
-        .map_err(|error| match error {
-            ItemExecutionError::ResponseLimit => ItemErrorKind::ResponseLimit,
-            error => ItemErrorKind::Execution(error),
-        })?;
-        or_cancel(std::future::ready(()), cancelled.as_mut()).await?;
+        let response = self
+            .context()
+            .authentication()
+            .execute(
+                ServiceOrigin::Fabric,
+                &url,
+                &mut ItemRead { executor, limit },
+                cancelled.as_mut(),
+            )
+            .await
+            .map_err(|error| match error {
+                RequestError::InvalidAudience => ItemErrorKind::InvalidAudience,
+                RequestError::InvalidEndpoint => ItemErrorKind::InvalidContinuation,
+                RequestError::Credential => ItemErrorKind::Credential,
+                RequestError::Cancelled => ItemErrorKind::Cancelled,
+                RequestError::Execution(ItemExecutionError::ResponseLimit) => {
+                    ItemErrorKind::ResponseLimit
+                }
+                RequestError::Execution(error) => ItemErrorKind::Execution(error),
+            })?;
         if response.body.len() > limit.get() {
             return Err(ItemErrorKind::ResponseLimit);
         }
@@ -525,25 +531,47 @@ impl ItemClient {
     }
 }
 
-async fn or_cancel<T>(
-    operation: impl Future<Output = T>,
-    mut cancelled: Pin<&mut (impl Future<Output = ()> + Send)>,
-) -> Result<T, ItemErrorKind> {
-    let mut operation = pin!(operation);
-    poll_fn(|cx| {
-        if cancelled.as_mut().poll(cx).is_ready() {
-            return Poll::Ready(Err(ItemErrorKind::Cancelled));
-        }
-        operation.as_mut().poll(cx).map(Ok)
-    })
-    .await
+struct ItemRead<'a> {
+    executor: &'a dyn ItemExecutor,
+    limit: NonZeroUsize,
 }
 
-fn item_url(workspace: &str, item: Option<&str>) -> Result<Url, ItemErrorKind> {
-    collection_url(workspace, "items", item)
+impl AuthenticatedExecution for ItemRead<'_> {
+    type Response = ItemResponse;
+    type Error = ItemExecutionError;
+
+    fn execute<'a>(
+        &'a mut self,
+        url: &'a Url,
+        token: &'a AccessToken,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'a>> {
+        self.executor.execute(ItemRequest {
+            url: url.clone(),
+            token,
+            max_response_bytes: self.limit,
+        })
+    }
+}
+
+async fn or_cancel<T>(
+    operation: impl Future<Output = T>,
+    cancelled: Pin<&mut (impl Future<Output = ()> + Send)>,
+) -> Result<T, ItemErrorKind> {
+    cancel_with(operation, cancelled)
+        .await
+        .map_err(|_| ItemErrorKind::Cancelled)
+}
+
+fn item_url(
+    endpoint: &EndpointBinding,
+    workspace: &str,
+    item: Option<&str>,
+) -> Result<Url, ItemErrorKind> {
+    collection_url(endpoint, workspace, "items", item)
 }
 
 fn collection_url(
+    endpoint: &EndpointBinding,
     workspace: &str,
     collection: &str,
     item: Option<&str>,
@@ -558,7 +586,7 @@ fn collection_url(
             return Err(ItemErrorKind::InvalidIdentifier);
         }
     }
-    let mut url = Url::parse(ORIGIN).map_err(|_| ItemErrorKind::InvalidIdentifier)?;
+    let mut url = endpoint.base_url();
     {
         let mut path = url
             .path_segments_mut()
@@ -651,21 +679,20 @@ fn service_failure(response: &ItemResponse) -> ItemErrorKind {
         headers: response.headers.clone(),
     }
 }
-fn validate_continuation(uri: &str, path: &str) -> Result<(), ItemErrorKind> {
+fn validate_continuation(
+    uri: &str,
+    path: &str,
+    endpoint: &EndpointBinding,
+) -> Result<(), ItemErrorKind> {
+    if uri.contains('\\') || uri.chars().any(char::is_control) {
+        return Err(ItemErrorKind::InvalidContinuation);
+    }
     let url = Url::parse(uri).map_err(|_| ItemErrorKind::InvalidContinuation)?;
     let raw_path = uri
         .split_once("://")
         .and_then(|(_, rest)| rest.find('/').map(|start| &rest[start..]))
         .and_then(|rest| rest.split(['?', '#']).next());
-    if url.scheme() != "https"
-        || url.host_str() != Some("api.fabric.microsoft.com")
-        || url.port_or_known_default() != Some(443)
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.fragment().is_some()
-        || url.path() != path
-        || raw_path != Some(path)
-    {
+    if endpoint.validate_url(&url).is_err() || url.path() != path || raw_path != Some(path) {
         return Err(ItemErrorKind::InvalidContinuation);
     }
     Ok(())

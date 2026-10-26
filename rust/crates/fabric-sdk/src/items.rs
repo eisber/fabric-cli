@@ -23,7 +23,7 @@ impl Client {
         options: ItemListOptions,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<ItemList, ItemListError> {
-        ItemClient::new(self.credential().clone(), self.selection().clone())
+        ItemClient::with_context(self.context().clone())
             .list_items(executor, workspace_id, options, cancelled)
             .await
     }
@@ -41,7 +41,7 @@ impl Client {
         options: ItemGetOptions,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Item, ItemError> {
-        ItemClient::new(self.credential().clone(), self.selection().clone())
+        ItemClient::with_context(self.context().clone())
             .get_item(executor, workspace_id, item_id, options, cancelled)
             .await
     }
@@ -59,7 +59,7 @@ impl Client {
         options: ItemGetOptions,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<ItemMetadata, ItemError> {
-        ItemClient::new(self.credential().clone(), self.selection().clone())
+        ItemClient::with_context(self.context().clone())
             .get_item_metadata(executor, workspace_id, item_id, options, cancelled)
             .await
     }
@@ -79,7 +79,7 @@ impl Client {
         options: ItemGetOptions,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<ItemMetadata, ItemError> {
-        ItemClient::new(self.credential().clone(), self.selection().clone())
+        ItemClient::with_context(self.context().clone())
             .get_item_metadata_from_collection(
                 executor,
                 workspace_id,
