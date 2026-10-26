@@ -18,6 +18,7 @@ azure_core.workspace = true
 clap.workspace = true
 fabric-cli-context.workspace = true
 fabric-cli-output.workspace = true
+fabric-cli-mutations.workspace = true
 fabric-sdk-jobs.workspace = true
 fabric-sdk-http.workspace = true
 fabric-sdk-operations.workspace = true

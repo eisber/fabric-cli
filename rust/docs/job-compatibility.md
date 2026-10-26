@@ -148,11 +148,25 @@ concrete bridge tests cover successful result retrieval, raw terminal errors,
 HTTP errors, bounds, transport loss, cancellation and no mutation replay.
 This is evidence for those cases, not closure of all shared integration gates.
 
-Operation-to-resource error-format conversion, hidden skill-header plumbing,
-wide/non-finite JSON representation and shared text/main-level exception
-projection still require coordinated shared interfaces. The SDK operation
-failure is retained losslessly; the legacy CLI error convenience projection
-does not yet promise the shared resource formatter's detailed operation output.
+The approved formatter increment adopts the narrow released
+`d7bb0678e6f49c314699dc4ecf84677272bb364a` delta without importing unrelated
+OneLake code. `OperationError::resource_error` supplies the existing borrowed
+SDK mapping; `fabric_cli_mutations::operation_error_output` supplies the existing
+CLI formatting policy. `JobHost::execute` now returns `JobCommandError`,
+retaining either the existing command failure or the original operation failure.
+Its envelope and JSON runners invoke the borrowed shared formatter directly,
+preserving raw dictionary/list/scalar/Unicode diagnostics, error-code/exit
+selection, cancellation classification, operation ID and mutation uncertainty.
+A message containing only periods becomes the intentional empty string and is
+not passed through `CommandError::new` a second time. This is a necessary public
+CLI return-type change for consumers that previously annotated `CommandError`.
+
+The new job-operation output corpus is checked against unchanged Python
+HTTP/exception/decorator bodies, independently of the native real shared-HTTP
+handler tests. The original 155 contracts and resumed branch expectations remain
+unchanged. This closes the generic-operation formatter row, not all job parity.
+Hidden skill-header plumbing, wide/non-finite JSON representation and shared
+text/main-level exception projection remain separately coordinated interfaces.
 
 Online validation is unexecuted. Account approval alone does not authorize
 job start/cancel/deletion. Exact tenant, client registration, disposable workspace,

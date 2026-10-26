@@ -33,9 +33,14 @@ back to ambient filesystem access.
 same caller-owned executor can therefore compose `SharedJobOperations` without
 a new transport or polling loop. Cancellation is passed through SDK operations,
 including the generic-operation bridge, rather than an outer race discarding
-the operation session's reconciliation evidence. The terminal/UI boundary still
-uses the shared command-error contract; lossless operation-to-resource formatter
-conversion is coordinated separately.
+the operation session's reconciliation evidence. `JobHost::execute` returns `JobCommandError`: ordinary command errors retain the
+existing `CommandError`, while the operation variant retains the original
+`OperationError`. Its borrowed `envelope` method and the JSON convenience runners
+reuse `fabric_cli_mutations::operation_error_output` directly. They do not create
+a second `CommandError` from already-normalized output, which would replace a
+source period-only message with an incorrect default after it became empty.
+The same-layer formatter dependency is CLI-only; the SDK remains independent of
+CLI implementations.
 
 The registration preserves `path`, `params`, `config` and `input` token
 cardinality, required IDs, signed timeout, positive polling interval, schedule
