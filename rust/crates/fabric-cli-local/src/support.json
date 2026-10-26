@@ -1,0 +1,760 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "elements": [
+    ".Folder",
+    ".AISkill",
+    ".ApacheAirflowJob",
+    ".Exploration",
+    ".RetailDataManager",
+    ".Healthcaredatasolution",
+    ".MetricSet",
+    ".OrgApp",
+    ".SustainabilityDataSolution",
+    ".CosmosDBDatabase",
+    ".Dashboard",
+    ".Datamart",
+    ".DataPipeline",
+    ".DigitalTwinBuilder",
+    ".DigitalTwinBuilderFlow",
+    ".Environment",
+    ".Eventhouse",
+    ".Eventstream",
+    ".GraphModel",
+    ".KQLDashboard",
+    ".KQLDatabase",
+    ".KQLQueryset",
+    ".Lakehouse",
+    ".Map",
+    ".MirroredWarehouse",
+    ".MirroredDatabase",
+    ".MLExperiment",
+    ".MLModel",
+    ".Notebook",
+    ".Ontology",
+    ".PaginatedReport",
+    ".Reflex",
+    ".Report",
+    ".SemanticModel",
+    ".SparkJobDefinition",
+    ".SQLEndpoint",
+    ".Warehouse",
+    ".CopyJob",
+    ".GraphQLApi",
+    ".GraphQuerySet",
+    ".UserDataFunction",
+    ".MountedDataFactory",
+    ".SQLDatabase",
+    ".Dataflow",
+    ".VariableLibrary",
+    ".SparkPool",
+    ".ManagedIdentity",
+    ".ManagedPrivateEndpoint",
+    ".ExternalDataShare",
+    ".Capacity",
+    ".Connection",
+    ".Gateway",
+    ".Domain",
+    ".Workspace"
+  ],
+  "policies": [
+    {
+      "command": "ls",
+      "supported_elements": [
+        "Tenant",
+        "Workspace",
+        "Folder",
+        "VirtualWorkspace",
+        "VirtualItemContainer",
+        "Onelake"
+      ],
+      "supported_items": [
+        "Lakehouse",
+        "SparkJobDefinition",
+        "Warehouse",
+        "KQLDatabase",
+        "MirroredDatabase",
+        "SemanticModel",
+        "Capacity",
+        "Domain",
+        "SparkPool",
+        "ManagedIdentity",
+        "ManagedPrivateEndpoint",
+        "ExternalDataShare",
+        "Connection",
+        "Gateway",
+        "SQLDatabase",
+        "CosmosDBDatabase",
+        "GraphQLApi"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "rm",
+      "supported_elements": [
+        "Tenant",
+        "Workspace",
+        "Item",
+        "Onelake",
+        "Folder"
+      ],
+      "supported_items": [
+        "SparkPool",
+        "Capacity",
+        "ManagedIdentity",
+        "ManagedPrivateEndpoint",
+        "Domain",
+        "Connection",
+        "Gateway",
+        "ExternalDataShare"
+      ],
+      "unsupported_items": [
+        "Dashboard",
+        "PaginatedReport",
+        "SQLEndpoint",
+        "MirroredWarehouse",
+        "Datamart",
+        "OrgApp",
+        "MetricSet",
+        "ApacheAirflowJob",
+        "Exploration",
+        "RetailDataManager",
+        "Healthcaredatasolution",
+        "SustainabilityDataSolution",
+        "AISkill"
+      ]
+    },
+    {
+      "command": "mv",
+      "supported_elements": [
+        "Workspace",
+        "Folder",
+        "Onelake"
+      ],
+      "supported_items": [
+        "Report",
+        "SparkJobDefinition",
+        "SemanticModel",
+        "Notebook",
+        "KQLDashboard",
+        "DataPipeline",
+        "KQLQueryset",
+        "MirroredDatabase",
+        "CosmosDBDatabase",
+        "Reflex",
+        "MountedDataFactory",
+        "CopyJob",
+        "VariableLibrary",
+        "GraphQLApi",
+        "Dataflow",
+        "SQLDatabase",
+        "UserDataFunction",
+        "Map",
+        "Environment"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "cp",
+      "supported_elements": [
+        "Workspace",
+        "Folder",
+        "Onelake",
+        "LocalPath"
+      ],
+      "supported_items": [
+        "Report",
+        "SparkJobDefinition",
+        "SemanticModel",
+        "Notebook",
+        "KQLDashboard",
+        "DataPipeline",
+        "KQLQueryset",
+        "MirroredDatabase",
+        "CosmosDBDatabase",
+        "Reflex",
+        "MountedDataFactory",
+        "CopyJob",
+        "VariableLibrary",
+        "GraphQLApi",
+        "Dataflow",
+        "SQLDatabase",
+        "UserDataFunction",
+        "Map",
+        "Environment"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "ln",
+      "supported_elements": [
+        "Onelake"
+      ],
+      "supported_items": [],
+      "unsupported_items": []
+    },
+    {
+      "command": "cd",
+      "supported_elements": [
+        "Tenant",
+        "Workspace",
+        "VirtualWorkspace",
+        "VirtualItemContainer",
+        "Item",
+        "Folder",
+        "VirtualItem",
+        "VirtualWorkspaceItem",
+        "Onelake"
+      ],
+      "supported_items": [],
+      "unsupported_items": []
+    },
+    {
+      "command": "exists",
+      "supported_elements": [
+        "Workspace",
+        "Item",
+        "Onelake",
+        "Folder"
+      ],
+      "supported_items": [
+        "SparkPool",
+        "Capacity",
+        "ManagedIdentity",
+        "ManagedPrivateEndpoint",
+        "Domain",
+        "Connection",
+        "Gateway",
+        "ExternalDataShare"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "export",
+      "supported_elements": [
+        "Workspace"
+      ],
+      "supported_items": [
+        "Report",
+        "SparkJobDefinition",
+        "SemanticModel",
+        "Notebook",
+        "KQLDashboard",
+        "DataPipeline",
+        "KQLQueryset",
+        "Eventhouse",
+        "KQLDatabase",
+        "MirroredDatabase",
+        "Reflex",
+        "Eventstream",
+        "MountedDataFactory",
+        "CopyJob",
+        "VariableLibrary",
+        "GraphQLApi",
+        "Dataflow",
+        "SQLDatabase",
+        "CosmosDBDatabase",
+        "DigitalTwinBuilder",
+        "DigitalTwinBuilderFlow",
+        "UserDataFunction",
+        "GraphQuerySet",
+        "Map",
+        "Lakehouse",
+        "Environment",
+        "GraphModel",
+        "Ontology"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "bulkexport",
+      "supported_elements": [
+        "Workspace",
+        "Folder"
+      ],
+      "supported_items": [
+        "Report",
+        "MLModel",
+        "MLExperiment",
+        "Environment",
+        "SparkJobDefinition",
+        "SemanticModel",
+        "Notebook",
+        "KQLDashboard",
+        "DataPipeline",
+        "KQLQueryset",
+        "Eventhouse",
+        "KQLDatabase",
+        "MirroredDatabase",
+        "Reflex",
+        "Eventstream",
+        "MountedDataFactory",
+        "CopyJob",
+        "VariableLibrary",
+        "GraphQLApi",
+        "Dataflow",
+        "SQLDatabase",
+        "CosmosDBDatabase",
+        "DigitalTwinBuilder",
+        "DigitalTwinBuilderFlow",
+        "UserDataFunction",
+        "GraphQuerySet",
+        "Map",
+        "Lakehouse",
+        "Ontology",
+        "GraphModel"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "import",
+      "supported_elements": [],
+      "supported_items": [
+        "Report",
+        "SparkJobDefinition",
+        "SemanticModel",
+        "Notebook",
+        "KQLDashboard",
+        "DataPipeline",
+        "KQLQueryset",
+        "Eventhouse",
+        "KQLDatabase",
+        "MirroredDatabase",
+        "Reflex",
+        "Eventstream",
+        "MountedDataFactory",
+        "Environment",
+        "CopyJob",
+        "VariableLibrary",
+        "GraphQLApi",
+        "Dataflow",
+        "SQLDatabase",
+        "CosmosDBDatabase",
+        "DigitalTwinBuilder",
+        "DigitalTwinBuilderFlow",
+        "UserDataFunction",
+        "Map",
+        "Lakehouse",
+        "Environment",
+        "GraphModel",
+        "Ontology"
+      ],
+      "unsupported_items": [
+        "GraphQuerySet"
+      ]
+    },
+    {
+      "command": "get",
+      "supported_elements": [
+        "Workspace",
+        "Item",
+        "Onelake",
+        "Folder"
+      ],
+      "supported_items": [
+        "SparkPool",
+        "Capacity",
+        "ManagedPrivateEndpoint",
+        "Domain",
+        "Connection",
+        "Gateway",
+        "ExternalDataShare",
+        "CosmosDBDatabase",
+        "UserDataFunction",
+        "GraphQuerySet"
+      ],
+      "unsupported_items": [
+        "Dashboard",
+        "PaginatedReport",
+        "SQLEndpoint",
+        "MirroredWarehouse",
+        "Datamart",
+        "OrgApp",
+        "MetricSet",
+        "ApacheAirflowJob",
+        "Exploration",
+        "RetailDataManager",
+        "Healthcaredatasolution",
+        "SustainabilityDataSolution",
+        "AISkill"
+      ]
+    },
+    {
+      "command": "set",
+      "supported_elements": [
+        "Workspace",
+        "Item",
+        "Onelake",
+        "Folder"
+      ],
+      "supported_items": [
+        "SparkPool",
+        "Capacity",
+        "Domain",
+        "Connection",
+        "Gateway"
+      ],
+      "unsupported_items": [
+        "Dashboard",
+        "PaginatedReport",
+        "SQLEndpoint",
+        "MirroredWarehouse",
+        "Datamart",
+        "OrgApp",
+        "MetricSet",
+        "ApacheAirflowJob",
+        "Exploration",
+        "RetailDataManager",
+        "Healthcaredatasolution",
+        "SustainabilityDataSolution",
+        "AISkill",
+        "GraphQuerySet"
+      ]
+    },
+    {
+      "command": "open",
+      "supported_elements": [
+        "Workspace",
+        "Item"
+      ],
+      "supported_items": [],
+      "unsupported_items": []
+    },
+    {
+      "command": "mkdir",
+      "supported_elements": [
+        "Workspace",
+        "Item",
+        "Onelake",
+        "Folder"
+      ],
+      "supported_items": [
+        "SparkPool",
+        "Capacity",
+        "ManagedIdentity",
+        "ManagedPrivateEndpoint",
+        "Domain",
+        "Connection",
+        "Gateway",
+        "ExternalDataShare"
+      ],
+      "unsupported_items": [
+        "Dashboard",
+        "PaginatedReport",
+        "SQLEndpoint",
+        "Datamart",
+        "MirroredWarehouse",
+        "OrgApp",
+        "MetricSet",
+        "ApacheAirflowJob",
+        "Exploration",
+        "RetailDataManager",
+        "Healthcaredatasolution",
+        "SustainabilityDataSolution",
+        "AISkill"
+      ]
+    },
+    {
+      "command": "start",
+      "supported_elements": [],
+      "supported_items": [
+        "Capacity",
+        "MirroredDatabase"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "stop",
+      "supported_elements": [],
+      "supported_items": [
+        "Capacity",
+        "MirroredDatabase"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "assign",
+      "supported_elements": [],
+      "supported_items": [
+        "Capacity",
+        "Domain"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "unassign",
+      "supported_elements": [],
+      "supported_items": [
+        "Capacity",
+        "Domain"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "acl ls",
+      "supported_elements": [
+        "Workspace",
+        "Item",
+        "Onelake"
+      ],
+      "supported_items": [
+        "Gateway",
+        "Connection"
+      ],
+      "unsupported_items": [
+        "SemanticModel",
+        "Environment",
+        "Dashboard"
+      ]
+    },
+    {
+      "command": "acl rm",
+      "supported_elements": [
+        "Workspace",
+        "Workspace"
+      ],
+      "supported_items": [
+        "Gateway",
+        "Connection"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "acl get",
+      "supported_elements": [
+        "Workspace",
+        "Item",
+        "Onelake"
+      ],
+      "supported_items": [
+        "Gateway",
+        "Connection"
+      ],
+      "unsupported_items": [
+        "SemanticModel",
+        "Environment",
+        "Dashboard"
+      ]
+    },
+    {
+      "command": "acl set",
+      "supported_elements": [
+        "Workspace",
+        "Workspace"
+      ],
+      "supported_items": [
+        "Gateway",
+        "Connection"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "job start",
+      "supported_elements": [],
+      "supported_items": [
+        "SparkJobDefinition",
+        "Notebook",
+        "DataPipeline",
+        "Lakehouse",
+        "GraphModel"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "job run",
+      "supported_elements": [],
+      "supported_items": [
+        "SparkJobDefinition",
+        "Notebook",
+        "DataPipeline",
+        "Lakehouse",
+        "GraphModel"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "job run-cancel",
+      "supported_elements": [],
+      "supported_items": [
+        "SparkJobDefinition",
+        "Notebook",
+        "DataPipeline",
+        "Lakehouse",
+        "GraphModel"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "job run-list",
+      "supported_elements": [],
+      "supported_items": [
+        "SparkJobDefinition",
+        "Notebook",
+        "DataPipeline",
+        "Lakehouse",
+        "GraphModel"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "job run-update",
+      "supported_elements": [],
+      "supported_items": [
+        "SparkJobDefinition",
+        "Notebook",
+        "DataPipeline",
+        "Lakehouse",
+        "GraphModel"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "job run-rm",
+      "supported_elements": [],
+      "supported_items": [
+        "SparkJobDefinition",
+        "Notebook",
+        "DataPipeline",
+        "Lakehouse",
+        "GraphModel"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "job run-sch",
+      "supported_elements": [],
+      "supported_items": [
+        "SparkJobDefinition",
+        "Notebook",
+        "DataPipeline",
+        "Lakehouse",
+        "GraphModel"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "job run-status",
+      "supported_elements": [],
+      "supported_items": [
+        "SparkJobDefinition",
+        "Notebook",
+        "DataPipeline",
+        "Lakehouse",
+        "GraphModel"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "label set",
+      "supported_elements": [
+        "Item"
+      ],
+      "supported_items": [],
+      "unsupported_items": [
+        "Warehouse",
+        "SQLEndpoint"
+      ]
+    },
+    {
+      "command": "label rm",
+      "supported_elements": [
+        "Item"
+      ],
+      "supported_items": [],
+      "unsupported_items": [
+        "Warehouse",
+        "SQLEndpoint"
+      ]
+    },
+    {
+      "command": "table load",
+      "supported_elements": [
+        "Onelake"
+      ],
+      "supported_items": [
+        "Lakehouse"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "table optimize",
+      "supported_elements": [
+        "Onelake"
+      ],
+      "supported_items": [
+        "Lakehouse"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "table schema",
+      "supported_elements": [
+        "Onelake"
+      ],
+      "supported_items": [
+        "Lakehouse",
+        "Lakehouse",
+        "Warehouse",
+        "KQLDatabase",
+        "MirroredDatabase",
+        "SemanticModel",
+        "SQLDatabase"
+      ],
+      "unsupported_items": []
+    },
+    {
+      "command": "table vacuum",
+      "supported_elements": [
+        "Onelake"
+      ],
+      "supported_items": [
+        "Lakehouse"
+      ],
+      "unsupported_items": []
+    }
+  ],
+  "uris": {
+    "AISkill": "aiskills",
+    "ApacheAirflowJob": "apacheairflowprojects",
+    "Exploration": "explorations",
+    "RetailDataManager": "retail-data-manager",
+    "Healthcaredatasolution": "health-data-manager",
+    "SustainabilityDataSolution": "sustainability-data-manager",
+    "MetricSet": "metricsets",
+    "OrgApp": "orgapps",
+    "CosmosDBDatabase": "cosmosdbdatabases",
+    "Dashboard": "dashboards",
+    "Datamart": "datamarts",
+    "DataPipeline": "pipelines",
+    "DigitalTwinBuilder": "digital-twin-builder",
+    "DigitalTwinBuilderFlow": "digital-twin-builder-flow",
+    "Environment": "sparkenvironments",
+    "Eventhouse": "eventhouses",
+    "Eventstream": "eventstreams",
+    "GraphModel": "graph",
+    "KQLDashboard": "kustodashboards",
+    "KQLDatabase": "databases",
+    "KQLQueryset": "queryworkbenches",
+    "Lakehouse": "lakehouses",
+    "Map": "maps",
+    "MirroredDatabase": "mirroreddatabases",
+    "MLExperiment": "mlexperiments",
+    "MLModel": "mlmodels",
+    "Notebook": "synapsenotebooks",
+    "Ontology": "ontologies",
+    "PaginatedReport": "rdlreports",
+    "Reflex": "reflexes",
+    "Report": "reports",
+    "SemanticModel": "datasets",
+    "SparkJobDefinition": "sparkjobdefinitions",
+    "SQLDatabase": "sqldatabases",
+    "SQLEndpoint": "lakewarehouses",
+    "Warehouse": "datawarehouses",
+    "CopyJob": "copyjobs",
+    "GraphQuerySet": "graph-queryset",
+    "UserDataFunction": "userdatafunctions",
+    "GraphQLApi": "graphql",
+    "MountedDataFactory": "mounteddatafactories",
+    "Dataflow": "dataflows-gen2",
+    "VariableLibrary": "variable-libraries"
+  }
+}

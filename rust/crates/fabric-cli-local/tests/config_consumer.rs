@@ -404,3 +404,16 @@ fn parser_rejects_bad_arity_and_shared_writer_propagates_failure() {
         .unwrap();
     assert!(plan.write_to(&mut BrokenWriter, &mut Vec::new()).is_err());
 }
+
+#[test]
+fn group_only_config_renders_source_help_successfully() {
+    let command = parse(&["consumer", "config"]);
+    assert_eq!(command, LocalCommand::ConfigHelp);
+    let mut host = Fixture::new();
+    let result = execute(&command, &host.store(), &mut host).unwrap();
+    let (stdout, stderr) = output(result, "config", OutputFormat::Json);
+    assert!(stderr.is_empty());
+    let text = String::from_utf8(stdout).unwrap();
+    assert!(text.starts_with("Manage CLI configuration. \n\nCommands:\n"));
+    assert!(text.contains("clear-cache: Clear the CLI cache."));
+}
