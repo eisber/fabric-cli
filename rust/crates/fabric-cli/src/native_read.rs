@@ -230,6 +230,7 @@ async fn execute(
         timestamp,
         config: fabric_cli::ReadConfig::default(),
     }
+    .with_source_operations(&executor)
     .dispatch(command, std::future::pending())
     .await;
     match result {

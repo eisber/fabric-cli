@@ -34,6 +34,7 @@ pub struct FabricOperation {
     url: Url,
     body: Vec<u8>,
     completion: CompletionPolicy,
+    source_read_operation_ids: bool,
 }
 
 impl FabricOperation {
@@ -75,6 +76,7 @@ impl FabricOperation {
             url,
             body,
             completion,
+            source_read_operation_ids: false,
         })
     }
 
@@ -89,12 +91,37 @@ impl FabricOperation {
             .transpose()
             .map_err(|_| OperationErrorKind::InvalidInput)?
             .unwrap_or_default();
-        Self::new(
-            operation.method(),
-            operation.path(),
+        let url = Url::parse(&format!("{ROOT}{}", operation.path()))
+            .map_err(|_| OperationErrorKind::InvalidInput)?;
+        if !valid_origin(&url) || !url.path().starts_with("/v1/") {
+            return Err(OperationErrorKind::InvalidInput);
+        }
+        Ok(Self {
+            method: operation.method(),
+            url,
             body,
-            operation.completion(),
-        )
+            completion: operation.completion(),
+            source_read_operation_ids: false,
+        })
+    }
+
+    /// Permit bounded opaque operation IDs for an explicit source-synchronous GET.
+    ///
+    /// Default operations, Notebook calls, mutations and external acceptance
+    /// reconciliation retain their GUID-only policy. This opt-in accepts at most
+    /// 256 ASCII letters, digits, hyphens or underscores in a single response ID;
+    /// fixed origins, response bounds and the existing shared poller are unchanged.
+    ///
+    /// # Errors
+    /// Rejects any method or completion policy except GET/PythonSynchronous.
+    pub fn with_source_read_operation_ids(mut self) -> Result<Self, OperationErrorKind> {
+        if self.method != ResourceMethod::Get
+            || self.completion != CompletionPolicy::PythonSynchronous
+        {
+            return Err(OperationErrorKind::InvalidInput);
+        }
+        self.source_read_operation_ids = true;
+        Ok(self)
     }
 }
 
@@ -252,6 +279,18 @@ pub struct OperationError {
     pub raw_service_error: Option<Box<serde_json::Value>>,
 }
 
+impl OperationError {
+    /// Project an owned resource-error view while retaining this original evidence.
+    ///
+    /// Uses the same mapping as the existing `ResourceOperations` implementation;
+    /// it neither formats raw service data nor invents an HTTP response/status.
+    /// The caller retains the typed kind, operation ID and uncertain-side-effect
+    /// evidence on this original error.
+    pub fn resource_error(&self) -> ResourceError {
+        resource_error(self.clone())
+    }
+}
+
 impl fmt::Display for OperationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Fabric operation failed or is incomplete; inspect classification and reconciliation evidence")
@@ -334,6 +373,24 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         &self.warnings
     }
 
+    /// Check the existing cancellation signal between caller-owned phases.
+    ///
+    /// A pending signal returns immediately. Observed cancellation stays latched,
+    /// so its completed future is never polled again. This performs no I/O or
+    /// credential work and does not change request budgets or mutation evidence.
+    ///
+    /// # Errors
+    /// Returns cancellation with the session's operation ID and uncertainty.
+    pub async fn check_cancelled(&mut self) -> Result<(), OperationError> {
+        Self::run(
+            &mut self.cancelled,
+            &mut self.cancelled_observed,
+            std::future::ready(()),
+        )
+        .await
+        .map_err(|kind| self.evidence(kind))
+    }
+
     /// Execute a validated operation and optionally reconcile its accepted state.
     ///
     /// # Errors
@@ -386,7 +443,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             if response.body.len() > self.limits.max_response_bytes.get() {
                 return Err(OperationErrorKind::Limit);
             }
-            self.resolve_accepted(response, completion).await
+            self.resolve_accepted(response, completion, false).await
         }
         .await;
         result.map_err(|kind| self.evidence(kind))
@@ -414,13 +471,19 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             ensure_source_status(&response, &[200, 201, 204], python)?;
             return Ok(response);
         }
-        self.resolve_accepted(response, operation.completion).await
+        self.resolve_accepted(
+            response,
+            operation.completion,
+            operation.source_read_operation_ids,
+        )
+        .await
     }
 
     async fn resolve_accepted(
         &mut self,
         mut response: OperationResponse,
         completion: CompletionPolicy,
+        source_read_operation_ids: bool,
     ) -> Result<OperationResponse, OperationErrorKind> {
         let python = completion == CompletionPolicy::PythonSynchronous;
         if completion == CompletionPolicy::ReturnAccepted {
@@ -435,14 +498,30 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         let mut original = python.then(|| response.clone());
         let id = if python {
             let location = header(&response, "Location")?.unwrap_or("");
-            let id = header(&response, "x-ms-operation-id")?.unwrap_or("");
+            let operation_id = header(&response, "x-ms-operation-id")?;
+            if source_read_operation_ids
+                && operation_id.is_some_and(|id| {
+                    id.is_empty()
+                        || id.len() > 256
+                        || !id
+                            .bytes()
+                            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+                })
+            {
+                return Err(OperationErrorKind::InvalidResponse);
+            }
+            let id = operation_id.unwrap_or("");
             if location.contains("/jobs/instances/") || (location.is_empty() && id.is_empty()) {
                 return Ok(response);
             }
             if !location.is_empty() {
                 validate_source_origin(location)?;
             }
-            if !id.is_empty() && !valid_id(id) {
+            if source_read_operation_ids {
+                if id.is_empty() {
+                    return Err(OperationErrorKind::InvalidResponse);
+                }
+            } else if !id.is_empty() && !valid_id(id) {
                 return Err(OperationErrorKind::InvalidResponse);
             }
             id.to_owned()

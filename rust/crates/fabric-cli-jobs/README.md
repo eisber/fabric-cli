@@ -29,6 +29,35 @@ discovers credentials, starts a runtime, or reads global configuration.
 policy; `NoFiles` explicitly rejects file requests. Neither silently falls
 back to ambient filesystem access.
 
+`HttpJobExecutor` also implements the shared `OperationExecutor` trait. The
+same caller-owned executor can therefore compose `SharedJobOperations` without
+a new transport or polling loop. Cancellation is passed through SDK operations,
+including the generic-operation bridge, rather than an outer race discarding
+the operation session's reconciliation evidence. `JobHost::execute` returns `JobCommandError`: ordinary command errors retain the
+existing `CommandError`, while the operation variant retains the original
+`OperationError`. Its borrowed `envelope` method and the JSON convenience runners
+reuse `fabric_cli_mutations::operation_error_output` directly. They do not create
+a second `CommandError` from already-normalized output, which would replace a
+source period-only message with an incorrect default after it became empty.
+The same-layer formatter dependency is CLI-only; the SDK remains independent of
+CLI implementations.
+
+`JobHost::execute` consumes the parsed `--skill` as an explicit command-local
+`JobRequestHeaders` value. It borrows scoped client/reconciler clones without
+changing the existing host struct fields or the caller's client. All eight
+leaves use it, including follow-up polling, pagination, timeout cancellation
+and generic-operation/result requests. An explicitly empty `--skill` emits no
+header. Concurrent or subsequent commands do not share mutable header state.
+The header-aware HTTP path calls the existing checked `execute_bound` with the
+fixed `PublicOrigin::Fabric`; it does not expand allowed origins or discover an
+audience from a URL. Default headerless calls retain `execute_fabric`.
+
+Hosts configuring `operations` with `--skill` use
+`SharedJobOperations::from_job_executor`. A custom executor/reconciler that
+cannot carry the selected header fails before any mutation rather than being
+silently substituted. SDK header syntax/bounds are explicit safety validation,
+not byte-for-byte Python Requests exception-message compatibility.
+
 The registration preserves `path`, `params`, `config` and `input` token
 cardinality, required IDs, signed timeout, positive polling interval, schedule
 choices, last repeated option, and source option abbreviation. Root batch/REPL,

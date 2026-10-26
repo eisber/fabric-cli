@@ -1,0 +1,312 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Rust preview binaries
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-preview-${{ github.run_id }}-${{ github.run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    name: Preview (${{ matrix.target }}, ${{ matrix.variant }})
+    if: github.repository == 'eisber/fabric-cli'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            architecture: X64
+            variant: default
+            features: ""
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            architecture: X64
+            variant: native-read
+            features: native-read
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            architecture: X64
+            variant: default
+            features: ""
+          - os: macos-15
+            target: aarch64-apple-darwin
+            architecture: ARM64
+            variant: default
+            features: ""
+    env:
+      CARGO_BUILD_JOBS: "1"
+      CARGO_INCREMENTAL: "0"
+      PREVIEW_TARGET: ${{ matrix.target }}
+      PREVIEW_ARCHITECTURE: ${{ matrix.architecture }}
+      PREVIEW_RUNNER: ${{ matrix.os }}
+      PREVIEW_VARIANT: ${{ matrix.variant }}
+      PREVIEW_FEATURES: ${{ matrix.features }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify immutable source, pinned toolchain and native host
+        id: identity
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const assert = require('node:assert/strict');
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const {execFileSync} = require('node:child_process');
+            const root = process.env.GITHUB_WORKSPACE;
+            const cwd = path.join(root, 'rust');
+            const run = (file, args, directory = cwd) =>
+              execFileSync(file, args, {cwd: directory, encoding: 'utf8', timeout: 120000}).trim();
+            const sha = run('git', ['rev-parse', 'HEAD'], root);
+            assert.match(sha, /^[a-f0-9]{40}$/);
+            assert.equal(sha, process.env.GITHUB_SHA);
+            assert.equal(sha, process.env.GITHUB_WORKFLOW_SHA,
+              'Dispatch must use the workflow and source from the same exact commit');
+            assert.equal(run('git', ['status', '--porcelain'], root), '');
+            const toolchain = fs.readFileSync(path.join(cwd, 'rust-toolchain.toml'), 'utf8')
+              .match(/^channel\s*=\s*"([^"]+)"$/m)?.[1];
+            assert.equal(toolchain, '1.99.1', 'Toolchain changes require preview contract review');
+            const rustc = run('rustc', ['--version', '--verbose']);
+            const cargo = run('cargo', ['--version']);
+            assert.match(rustc, /^rustc 1\.99\.1 /);
+            assert.match(cargo, /^cargo 1\.99\.1 /);
+            const host = rustc.match(/^host: (.+)$/m)?.[1];
+            assert.equal(host, process.env.PREVIEW_TARGET, 'Cross-compilation is not native proof');
+            assert.equal(process.env.RUNNER_ARCH, process.env.PREVIEW_ARCHITECTURE);
+            const variant = process.env.PREVIEW_VARIANT;
+            assert.ok(['default', 'native-read'].includes(variant));
+            assert.equal(process.env.PREVIEW_FEATURES, variant === 'default' ? '' : 'native-read');
+            if (variant === 'native-read') assert.equal(host, 'x86_64-pc-windows-msvc');
+            core.exportVariable('CARGO_TARGET_DIR',
+              path.join(process.env.RUNNER_TEMP, `rust-preview-target-${variant}`));
+            const artifact = `fab-rs-${sha}-${host}-${variant}-rust-${toolchain}` +
+              `-run-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`;
+            const identity = {sha, toolchain, rustc, cargo, host, artifact};
+            fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'preview-identity.json'),
+              JSON.stringify(identity));
+            core.setOutput('toolchain', toolchain);
+            core.setOutput('artifact', artifact);
+            core.info(`Verified ${artifact}`);
+            core.info(rustc);
+            core.info(cargo);
+
+      - name: Cache only locked dependency sources
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: rust-preview-v1-${{ steps.identity.outputs.toolchain }}-${{ matrix.target }}-${{ matrix.variant }}-${{ hashFiles('rust/Cargo.lock') }}
+
+      - name: Fetch locked dependencies and build one release executable offline
+        shell: bash
+        working-directory: rust
+        run: |
+          set -euo pipefail
+          cargo fetch --locked --target "$PREVIEW_TARGET"
+          features=()
+          if [[ -n "$PREVIEW_FEATURES" ]]; then
+            features=(--features "$PREVIEW_FEATURES")
+          fi
+          cargo build --offline --locked --release --target "$PREVIEW_TARGET" \
+            --package fabric-cli --bin fab-rs --no-default-features "${features[@]}"
+          git diff --exit-code -- Cargo.toml Cargo.lock rust-toolchain.toml
+
+      - name: Assemble allowlisted bundle and smoke-test copied executable
+        id: bundle
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const assert = require('node:assert/strict');
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const crypto = require('node:crypto');
+            const {spawnSync} = require('node:child_process');
+            const root = process.env.GITHUB_WORKSPACE;
+            const temp = process.env.RUNNER_TEMP;
+            const identity = JSON.parse(fs.readFileSync(path.join(temp, 'preview-identity.json')));
+            const variant = process.env.PREVIEW_VARIANT;
+            const native = variant === 'native-read';
+            const suffix = process.platform === 'win32' ? '.exe' : '';
+            const filename = `fab-rs-${variant}${suffix}`;
+            const bundle = fs.mkdtempSync(path.join(temp, 'rust-preview-bundle-'));
+            const executable = path.join(bundle, filename);
+            const built = path.join(process.env.CARGO_TARGET_DIR, identity.host, 'release', `fab-rs${suffix}`);
+            fs.copyFileSync(built, executable, fs.constants.COPYFILE_EXCL);
+            if (process.platform !== 'win32') fs.chmodSync(executable, 0o755);
+            const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
+            const hashFile = file => digest(fs.readFileSync(file));
+            assert.equal(hashFile(executable), hashFile(built));
+            const sandbox = fs.mkdtempSync(path.join(temp, 'rust-preview-smoke-'));
+            const home = path.join(sandbox, 'home');
+            fs.mkdirSync(home);
+            const env = {
+              HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: home, XDG_CACHE_HOME: home,
+              TEMP: sandbox, TMP: sandbox, TMPDIR: sandbox, NO_COLOR: '1',
+              PATH: '', NODE_V8_COVERAGE: ''
+            };
+            for (const name of ['SystemRoot', 'WINDIR']) {
+              if (process.env[name]) env[name] = process.env[name];
+            }
+            const version = fs.readFileSync(path.join(root, 'rust', 'Cargo.toml'), 'utf8')
+              .match(/^version\s*=\s*"([^"]+)"$/m)?.[1];
+            assert.ok(version, 'Workspace version must be present');
+            const invalid = {
+              error: {
+                code: 'invalid_arguments',
+                message: 'Only --help, --version, ls, dir, and get are recognized in this preview.'
+              }
+            };
+            const smoke = [];
+            for (const args of [
+              ['--help'], ['-h'], ['--version'], ['-V'], [], ['unknown-command'],
+              ['--not-a-flag'], ['--client-secret', 'must-not-be-echoed']
+            ]) {
+              const result = spawnSync(executable, args, {
+                cwd: sandbox, env, encoding: 'utf8', timeout: 10000,
+                maxBuffer: 1024 * 1024, windowsHide: true, shell: false
+              });
+              if (result.error) throw result.error;
+              assert.equal(result.signal, null);
+              const help = args[0] === '--help' || args[0] === '-h';
+              const showVersion = args[0] === '--version' || args[0] === '-V';
+              assert.equal(result.status, help || showVersion ? 0 : 2);
+              if (help || showVersion) {
+                assert.equal(result.stderr, '');
+                if (help) {
+                  assert.match(result.stdout, /Usage: fab-rs/);
+                  assert.ok(result.stdout.includes('--help'));
+                  assert.ok(result.stdout.includes('--version'));
+                } else {
+                  assert.equal(result.stdout, `fab-rs ${version}\n`);
+                }
+              } else {
+                assert.equal(result.stdout, '');
+                assert.ok(result.stderr.endsWith('\n'));
+                assert.deepEqual(JSON.parse(result.stderr), invalid);
+                assert.ok(!result.stderr.includes('must-not-be-echoed'));
+              }
+              smoke.push({
+                arguments: args, exit_code: result.status,
+                stdout_sha256: digest(result.stdout), stderr_sha256: digest(result.stderr)
+              });
+            }
+            assert.equal(hashFile(executable), hashFile(built), 'Smoke must not modify the executable');
+            const limitations = [
+              'Experimental unsigned preview; not the Python fab product or all 52 command leaves.',
+              'No live sign-in, WAM acquisition, service request, or clean-machine installation validated.',
+              'No cross-OS/architecture, musl, Windows ARM64, Intel macOS, signing or notarization support.',
+              'Not a stable Rust ABI, shared library, plugin, RPC, or drop-in SDK binary contract.',
+              'Hosted image labels and native linkers are not pinned; bit-for-bit rebuilds are not promised.',
+              native
+                ? 'Windows-only bounded read host plus opt-in broker commands; CI never invokes authentication.'
+                : 'Help/version/parser only: recognized reads have no configured host; no live command support.'
+            ];
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}` +
+              `/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            const manifest = {
+              schema_version: 1,
+              artifact_name: identity.artifact,
+              source: {
+                repository: process.env.GITHUB_REPOSITORY, commit: identity.sha,
+                workflow_ref: process.env.GITHUB_WORKFLOW_REF,
+                workflow_commit: process.env.GITHUB_WORKFLOW_SHA
+              },
+              build: {
+                target: identity.host, features: native ? ['native-read'] : [],
+                default_features: false, profile: 'release', toolchain: identity.toolchain,
+                rustc: identity.rustc, cargo: identity.cargo,
+                lockfile_sha256: hashFile(path.join(root, 'rust', 'Cargo.lock')),
+                runner: process.env.PREVIEW_RUNNER, os: process.env.RUNNER_OS,
+                architecture: process.env.RUNNER_ARCH,
+                image_os: process.env.ImageOS || null, image_version: process.env.ImageVersion || null
+              },
+              binary: {filename, sha256: hashFile(executable), bytes: fs.statSync(executable).size},
+              capabilities: {
+                variant, bounded_windows_read_host: native,
+                broker_commands_compiled: native, live_service_verified: false,
+                full_python_cli_parity: false
+              },
+              smoke: {environment: 'isolated-allowlist', cases: smoke},
+              limitations,
+              ci: {
+                run_url: runUrl, run_id: process.env.GITHUB_RUN_ID,
+                run_attempt: process.env.GITHUB_RUN_ATTEMPT
+              }
+            };
+            fs.writeFileSync(path.join(bundle, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
+            fs.copyFileSync(path.join(root, 'LICENSE'), path.join(bundle, 'LICENSE'));
+            const guide = fs.readFileSync(path.join(root, 'rust', 'docs', 'preview-builds.md'), 'utf8');
+            fs.writeFileSync(path.join(bundle, 'README.md'),
+              `# ${identity.artifact}\n\n` +
+              `Binary: ${filename}\nSource: ${identity.sha}\nTarget: ${identity.host}\n` +
+              `Features: ${variant}; defaults disabled\nToolchain: ${identity.toolchain}\n\n` +
+              limitations.map(value => `- ${value}`).join('\n') + '\n\n' + guide);
+            const files = [filename, 'manifest.json', 'LICENSE', 'README.md'].sort();
+            fs.writeFileSync(path.join(bundle, 'SHA256SUMS'),
+              files.map(file => `${hashFile(path.join(bundle, file))}  ${file}\n`).join(''));
+            assert.deepEqual(fs.readdirSync(bundle).sort(), [...files, 'SHA256SUMS'].sort());
+            for (const file of files) assert.ok(fs.statSync(path.join(bundle, file)).isFile());
+            core.setOutput('path', bundle);
+            core.setOutput('filename', filename);
+            await core.summary.addHeading('Rust preview bundle (not a release)')
+              .addTable([
+                [{data: 'Field', header: true}, {data: 'Value', header: true}],
+                ['Source / workflow commit', identity.sha],
+                ['Target / variant', `${identity.host} / ${variant}`],
+                ['Toolchain', identity.toolchain],
+                ['Binary SHA256', manifest.binary.sha256],
+                ['Copied-binary smoke', `${smoke.length} credential-cleared cases passed`],
+                ['Run', runUrl],
+                ['Download verification', 'Pending upload and independent download/hash/smoke receipts']
+              ]).write();
+
+      - name: Upload only the preview bundle
+        id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.identity.outputs.artifact }}
+          path: |
+            ${{ steps.bundle.outputs.path }}/${{ steps.bundle.outputs.filename }}
+            ${{ steps.bundle.outputs.path }}/manifest.json
+            ${{ steps.bundle.outputs.path }}/SHA256SUMS
+            ${{ steps.bundle.outputs.path }}/LICENSE
+            ${{ steps.bundle.outputs.path }}/README.md
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: false
+
+      - name: Record provider upload receipt
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        with:
+          script: |
+            const assert = require('node:assert/strict');
+            assert.match(process.env.ARTIFACT_ID || '', /^[1-9][0-9]*$/);
+            assert.ok(process.env.ARTIFACT_URL);
+            assert.ok(process.env.ARTIFACT_DIGEST);
+            await core.summary.addHeading('Provider upload receipt')
+              .addTable([
+                [{data: 'Field', header: true}, {data: 'Value', header: true}],
+                ['Artifact ID', process.env.ARTIFACT_ID],
+                ['Artifact URL', process.env.ARTIFACT_URL],
+                ['Artifact archive digest', process.env.ARTIFACT_DIGEST],
+                ['Retention', '7 days; access follows repository Actions permissions'],
+                ['Ready to download', 'Not certified until independent download/hash/smoke verification']
+              ]).write();

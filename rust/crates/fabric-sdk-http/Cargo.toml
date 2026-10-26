@@ -18,6 +18,8 @@ azure_core.workspace = true
 fabric-sdk.workspace = true
 fabric-sdk-items.workspace = true
 fabric-sdk-folders.workspace = true
+fabric-sdk-operations.workspace = true
+fabric-sdk-workspaces.workspace = true
 futures-util.workspace = true
 
 [dev-dependencies]

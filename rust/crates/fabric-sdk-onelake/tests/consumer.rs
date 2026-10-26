@@ -203,7 +203,8 @@ async fn forbidden_is_not_missing_and_only_real_404_is_missing() {
                 .unwrap_err(),
             OneLakeError::Http {
                 status,
-                code: Some("StorageError".into())
+                code: Some("StorageError".into()),
+                raw_service_error: None,
             }
         );
     }

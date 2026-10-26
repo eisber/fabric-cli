@@ -15,17 +15,17 @@ not central parser/front-door integration or live parity.
 | --- | --- | --- |
 | mkdir/create workspace | Parameter help, duplicate/capacity checks, lowercased payload, actual POST, output/cache effects | Central dispatch, live scope |
 | mkdir/create folder | Root/nested parent omission, optional description, POST, output/cache effects | Central dispatch |
-| mkdir/create item | Typed collection, generic metadata, folder ID, Lakehouse/Warehouse/Notebook payloads, MountedDataFactory ASCII identifier subset, SQLDatabase New/Restore/RestoreDeleted modes, explicit KQL/DTB parent paths, shared source-synchronous waiting | Templates/dependencies, Python-default definition JSON encoding, remaining type-specific options, central dispatch |
+| mkdir/create item | Typed collection, folder/description, Lakehouse/Warehouse/Notebook, SQL modes, raw and dynamic definition templates, Report/KQL/DTB explicit or automatic dependencies, shared Python-default JSON encoder and source batch/cache/partial evidence | Remaining type/option policy reconciliation, central dispatch |
 | set workspace | Enriched-read ordering, blocklist/simple path, top-level projection, separate Spark PATCH | Main enriched read adapter, central dispatch |
-| set item/folder | Prompt ordering, metadata PATCH, renamed cache/context effect | Definition seam and friendly Notebook aliases |
+| set item/folder/shortcut | Metadata PATCH/cache effects; shortcut read-before-confirmation, full definition update, target.type removal and create/delete rename evidence | Item definition seam and friendly Notebook aliases, central dispatch |
 | rm/del item/folder | Confirmation/force/hard, exact route/query, accepted/completed messages, cache effects | Central context transition |
-| rm/del workspace | Forced workspace DELETE only | Non-force item selection, bulk/tenant orchestration |
+| rm/del workspace/tenant | Force catalog/count/workspace deletion; non-force supported Item-only selection with sort/hard/cache/output rules; tenant selection/confirmation and accepted/partial evidence | Existing main catalog/UI/context integration and broader bulk/cross-workspace consumers |
 | exists workspace/item/folder | Truthy context ID; string message, no extra request | Central dispatch |
-| cp/copy, mv/move | SDK folder move endpoint only | Actual command orchestration and definition seam |
+| cp/copy, mv/move | Within-workspace folder move consumer with parent-cache/count/evidence rules; OneLake Lakehouse Files rename, nonrecursive remote file copy, caller-read local-byte upload helper | Fabric definition/cross-workspace/bulk orchestration and local filesystem orchestration |
 | assign/unassign | Capacity SDK endpoints and CLI confirmation/linkage checks; primary metadata only | Domain branch, central dispatch |
 | start/stop | Mirrored-database POST status/action routes, state/force/prompt checks, source stop-substring quirk | Capacity ARM branch, central dispatch |
-| ln/mklink | Not implemented | Shortcut command/SDK operations |
-| OneLake/hidden resource branches | Not part of first mutation slice | Dedicated focused SDK, context and CLI consumers |
+| ln/mklink | Shortcut create/JSON/resolved-target, remove and SET CLI consumers over Fabric SDK/shared operation policy; SDK metadata GET | GET/export command projection, context/front-door composition |
+| OneLake | SDK item roots/reads/source metadata/storage mutations/shortcut metadata over concrete shared HTTP; CLI item-root and directory `ls`/`get`/`exists`, directory create, DFS remove/rename/copy/upload and shortcut helpers | Hidden resolution, local filesystem/export and central dispatch |
 
 `ResourceOutcome::Accepted` is never completion evidence. Python's acceptance
 messages/cache eviction are preserved independently. `WaitForResult` may succeed

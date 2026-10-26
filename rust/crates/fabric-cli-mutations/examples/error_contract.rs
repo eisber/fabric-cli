@@ -8,15 +8,19 @@ use azure_core::{
     credentials::{AccessToken, TokenCredential, TokenRequestOptions},
     time::OffsetDateTime,
 };
-use fabric_cli_mutations::MutationError;
+use fabric_cli_mutations::{OneLakeReadError, operation_error_output};
 use fabric_cli_output::{Indent, OutputEnvelope, Timestamp};
+use fabric_sdk_onelake::{
+    OneLakeClient, OneLakeExecutionError, OneLakeExecutor, OneLakeLimits, OneLakeMethod,
+    OneLakePath, OneLakeRequest, OneLakeResponse,
+};
 use fabric_sdk_operations::{
-    Audience, OperationExecutionError, OperationExecutor, OperationLimits, OperationRequest,
-    OperationResponse, OperationSession,
+    Audience, FabricOperation, OperationExecutionError, OperationExecutor, OperationLimits,
+    OperationRequest, OperationResponse, OperationSession,
 };
 use fabric_sdk_workspaces::{
     CredentialSelection,
-    mutations::{CompletionPolicy, ResourceMethod, ResourceOperation, ResourceOperations},
+    mutations::{CompletionPolicy, ResourceMethod},
 };
 use serde_json::{Value, json};
 use std::{
@@ -29,7 +33,7 @@ use std::{
 };
 
 #[derive(Debug)]
-struct Credential;
+struct Credential(Audience);
 #[async_trait]
 impl TokenCredential for Credential {
     async fn get_token(
@@ -37,7 +41,7 @@ impl TokenCredential for Credential {
         scopes: &[&str],
         _: Option<TokenRequestOptions<'_>>,
     ) -> azure_core::Result<AccessToken> {
-        assert_eq!(scopes, ["https://api.fabric.microsoft.com/.default"]);
+        assert_eq!(scopes, [self.0.scope()]);
         Ok(AccessToken::new(
             "synthetic-error-contract-only",
             OffsetDateTime::UNIX_EPOCH,
@@ -79,6 +83,31 @@ impl OperationExecutor for Executor {
     }
 }
 
+impl OneLakeExecutor for Executor {
+    fn execute<'a>(
+        &'a self,
+        request: OneLakeRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<OneLakeResponse, OneLakeExecutionError>> + Send + 'a>>
+    {
+        assert_eq!(request.method(), OneLakeMethod::Get);
+        self.requests
+            .lock()
+            .unwrap()
+            .push(json!({"method":"get","url":request.url().as_str()}));
+        let response = self
+            .replies
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("unexpected storage error request");
+        Box::pin(std::future::ready(Ok(OneLakeResponse {
+            status: response.status,
+            body: response.body,
+            headers: response.headers,
+        })))
+    }
+}
+
 async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
     let mut replies = VecDeque::new();
     for reply in input["replies"].as_array().ok_or("missing replies")? {
@@ -114,7 +143,31 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
         replies: Arc::new(Mutex::new(replies)),
         requests: Arc::new(Mutex::new(Vec::new())),
     };
-    let credential = Credential;
+    if input["audience"] == "storage" {
+        let client = OneLakeClient::new(
+            Arc::new(Credential(Audience::OneLake)),
+            CredentialSelection::new("offline", "tenant", Audience::OneLake)?,
+        );
+        let error = client
+            .read(
+                &executor,
+                &OneLakePath::new("workspace", "item", "Files/error")?,
+                OneLakeLimits::default(),
+                pending(),
+            )
+            .await
+            .expect_err("storage error contract unexpectedly completed");
+        let plan = OutputEnvelope::new(
+            Timestamp::parse("2000-01-01T00:00:00Z")?,
+            OneLakeReadError::Sdk(error).output(),
+        )
+        .render(Indent::Four)?;
+        let payload: Value = serde_json::from_slice(&plan.payload)?;
+        return Ok(
+            json!({"code":payload["result"]["error_code"],"message":payload["result"]["message"],"exit":plan.exit_code,"requests":*executor.requests.lock().unwrap()}),
+        );
+    }
+    let credential = Credential(Audience::Fabric);
     let selection = CredentialSelection::new("offline", "tenant", Audience::Fabric)?;
     let mut session = OperationSession::new(
         &credential,
@@ -123,20 +176,23 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
         OperationLimits::default(),
         pending(),
     );
-    let error: MutationError = ResourceOperations::execute(
-        &mut session,
-        ResourceOperation::new(
-            ResourceMethod::Patch,
-            &["workspaces", "ws", "items", "item"],
-            Some(json!({})),
-            CompletionPolicy::PythonSynchronous,
-        )?,
+    let error = session
+        .execute(
+            FabricOperation::new(
+                ResourceMethod::Patch,
+                "/v1/workspaces/ws/items/item",
+                b"{}".to_vec(),
+                CompletionPolicy::PythonSynchronous,
+            )
+            .map_err(|_| "invalid operation")?,
+        )
+        .await
+        .expect_err("error contract unexpectedly completed");
+    let plan = OutputEnvelope::new(
+        Timestamp::parse("2000-01-01T00:00:00Z")?,
+        operation_error_output(&error),
     )
-    .await
-    .expect_err("error contract unexpectedly completed")
-    .into();
-    let plan = OutputEnvelope::new(Timestamp::parse("2000-01-01T00:00:00Z")?, error.output())
-        .render(Indent::Four)?;
+    .render(Indent::Four)?;
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     plan.write_to(&mut stdout, &mut stderr)?;
     assert!(stderr.is_empty());

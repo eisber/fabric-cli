@@ -148,6 +148,16 @@ impl ReadHost<'_> {
         command: &ReadCommand,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Option<OutputInput>, CommandError> {
+        self.execute_with_source_operations(command, None, cancelled)
+            .await
+    }
+
+    pub(crate) async fn execute_with_source_operations(
+        &self,
+        command: &ReadCommand,
+        operations: Option<&dyn fabric_sdk_operations::OperationExecutor>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<Option<OutputInput>, CommandError> {
         let mut cancelled = pin!(cancelled);
         let was_cancelled = poll_fn(|cx| Poll::Ready(cancelled.as_mut().poll(cx).is_ready())).await;
         if was_cancelled {
@@ -326,13 +336,9 @@ impl ReadHost<'_> {
                 (data, hidden)
             }
             (ReadKind::Get, NodeKind::Workspace(_)) => {
-                let Some(data) = self
-                    .workspace_get(&target, command, cancelled.as_mut())
-                    .await?
-                else {
-                    return Ok(None);
-                };
-                (data, None)
+                return self
+                    .workspace_get(&target, command, operations, cancelled.as_mut())
+                    .await;
             }
             (ReadKind::Get, NodeKind::Item(kind)) => {
                 if unsupported_get(kind) {

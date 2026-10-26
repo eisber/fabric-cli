@@ -1,0 +1,4085 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "leaves": [
+    {
+      "command": "acl get",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_acls_parser.py",
+      "line": 103,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-q",
+            "--query"
+          ],
+          "nargs": "+",
+          "required": false
+        },
+        {
+          "names": [
+            "-o",
+            "--output"
+          ],
+          "required": false
+        }
+      ],
+      "handler": "fabric_cli.commands.acls.fab_acls.get_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "acl ls",
+      "aliases": [
+        "acl dir"
+      ],
+      "source": "src/fabric_cli/parsers/fab_acls_parser.py",
+      "line": 40,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-l",
+            "--long"
+          ],
+          "required": false,
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "-q",
+            "--query"
+          ],
+          "required": false
+        }
+      ],
+      "handler": "fabric_cli.commands.acls.fab_acls.ls_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "acl rm",
+      "aliases": [
+        "acl del"
+      ],
+      "source": "src/fabric_cli/parsers/fab_acls_parser.py",
+      "line": 74,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-I",
+            "--identity"
+          ],
+          "required": true
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.acls.fab_acls.rm_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "acl set",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_acls_parser.py",
+      "line": 135,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-I",
+            "--identity"
+          ],
+          "required": true
+        },
+        {
+          "names": [
+            "-R",
+            "--role"
+          ],
+          "required": true
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.acls.fab_acls.set_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "api",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_api_parser.py",
+      "line": 21,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "endpoint"
+          ]
+        },
+        {
+          "names": [
+            "-X",
+            "--method"
+          ],
+          "required": false,
+          "default": "get",
+          "choices": [
+            "get",
+            "post",
+            "delete",
+            "put",
+            "patch"
+          ]
+        },
+        {
+          "names": [
+            "-i",
+            "--input"
+          ],
+          "nargs": "+",
+          "default": null
+        },
+        {
+          "names": [
+            "-A",
+            "--audience"
+          ],
+          "required": false,
+          "default": null,
+          "choices": [
+            "fabric",
+            "storage",
+            "azure",
+            "powerbi"
+          ]
+        },
+        {
+          "names": [
+            "-P",
+            "--params"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "-H",
+            "--headers"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "-q",
+            "--query"
+          ],
+          "nargs": "+",
+          "required": false
+        },
+        {
+          "names": [
+            "--show_headers"
+          ],
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.api.fab_api.request_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "find",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_find_parser.py",
+      "line": 45,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "search_text"
+          ]
+        },
+        {
+          "names": [
+            "-P",
+            "--params"
+          ],
+          "nargs": "?"
+        },
+        {
+          "names": [
+            "-l",
+            "--long"
+          ],
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "-q",
+            "--query"
+          ],
+          "nargs": "+"
+        }
+      ],
+      "handler": "find.find_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "label list-local",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_labels_parser.py",
+      "line": 81,
+      "registration": "register_parser",
+      "arguments": [],
+      "handler": "fabric_cli.commands.labels.fab_labels.listlocal_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "label rm",
+      "aliases": [
+        "label del"
+      ],
+      "source": "src/fabric_cli/parsers/fab_labels_parser.py",
+      "line": 62,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.labels.fab_labels.rm_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "label set",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_labels_parser.py",
+      "line": 38,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-n",
+            "--name"
+          ],
+          "required": true,
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.labels.fab_labels.set_command",
+      "kind": "leaf"
+    }
+  ],
+  "source_control_flow": [
+    {
+      "path": "src/fabric_cli/commands/acls/fab_acls.py",
+      "sha256": "66e3e01caf4bd5d4d2fc06101387680f96ac216d1ea7d48f3abf3ae73d692187",
+      "functions": [
+        {
+          "name": "ls_command",
+          "line": 17,
+          "end_line": 18,
+          "branches": []
+        },
+        {
+          "name": "rm_command",
+          "line": 23,
+          "end_line": 24,
+          "branches": []
+        },
+        {
+          "name": "get_command",
+          "line": 29,
+          "end_line": 30,
+          "branches": []
+        },
+        {
+          "name": "set_command",
+          "line": 35,
+          "end_line": 36,
+          "branches": []
+        },
+        {
+          "name": "_execute_command",
+          "line": 39,
+          "end_line": 42,
+          "branches": []
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/commands/acls/fab_acls_ls.py",
+      "sha256": "2cce91f39c03bf8730f0f8b2614715661fb0c094676974f4470e87a4e989165d",
+      "functions": [
+        {
+          "name": "exec_command",
+          "line": 27,
+          "end_line": 41,
+          "branches": [
+            {
+              "line": 28,
+              "kind": "If",
+              "predicate": "isinstance(context, Workspace)"
+            },
+            {
+              "line": 30,
+              "kind": "If",
+              "predicate": "isinstance(context, Item)"
+            },
+            {
+              "line": 33,
+              "kind": "If",
+              "predicate": "isinstance(context, VirtualWorkspaceItem)"
+            },
+            {
+              "line": 35,
+              "kind": "If",
+              "predicate": "isinstance(context, OneLakeItem) and context.item.item_type == ItemType.LAKEHOUSE"
+            }
+          ]
+        },
+        {
+          "name": "_ls_acls_workspace",
+          "line": 45,
+          "end_line": 92,
+          "branches": [
+            {
+              "line": 51,
+              "kind": "If",
+              "predicate": "response.status_code == 200"
+            },
+            {
+              "line": 55,
+              "kind": "If",
+              "predicate": "ws_acls"
+            },
+            {
+              "line": 58,
+              "kind": "For",
+              "predicate": "acl in ws_acls"
+            },
+            {
+              "line": 84,
+              "kind": "If",
+              "predicate": "show_all"
+            },
+            {
+              "line": 65,
+              "kind": "If",
+              "predicate": "user_details"
+            },
+            {
+              "line": 67,
+              "kind": "If",
+              "predicate": "service_principal_details"
+            },
+            {
+              "line": 69,
+              "kind": "If",
+              "predicate": "group_details"
+            }
+          ]
+        },
+        {
+          "name": "_ls_acls_vwitem",
+          "line": 96,
+          "end_line": 106,
+          "branches": [
+            {
+              "line": 97,
+              "kind": "Match",
+              "predicate": "item.item_type"
+            },
+            {
+              "line": 103,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(f\"Listing access controls is not supported for type '{str(item.item_type)}'\", fab_constant.ERROR_NOT_SUPPORTED)"
+            }
+          ]
+        },
+        {
+          "name": "_ls_acls_gateway",
+          "line": 109,
+          "end_line": 142,
+          "branches": [
+            {
+              "line": 114,
+              "kind": "If",
+              "predicate": "response.status_code == 200"
+            },
+            {
+              "line": 118,
+              "kind": "If",
+              "predicate": "access_details"
+            },
+            {
+              "line": 121,
+              "kind": "For",
+              "predicate": "acl in access_details"
+            },
+            {
+              "line": 134,
+              "kind": "If",
+              "predicate": "show_all"
+            }
+          ]
+        },
+        {
+          "name": "_ls_acls_connection",
+          "line": 145,
+          "end_line": 179,
+          "branches": [
+            {
+              "line": 151,
+              "kind": "If",
+              "predicate": "response.status_code == 200"
+            },
+            {
+              "line": 155,
+              "kind": "If",
+              "predicate": "access_details"
+            },
+            {
+              "line": 158,
+              "kind": "For",
+              "predicate": "acl in access_details"
+            },
+            {
+              "line": 171,
+              "kind": "If",
+              "predicate": "show_all"
+            }
+          ]
+        },
+        {
+          "name": "_ls_acls_item",
+          "line": 183,
+          "end_line": 230,
+          "branches": [
+            {
+              "line": 190,
+              "kind": "If",
+              "predicate": "response.status_code == 200"
+            },
+            {
+              "line": 194,
+              "kind": "If",
+              "predicate": "access_details"
+            },
+            {
+              "line": 197,
+              "kind": "For",
+              "predicate": "acl in access_details"
+            },
+            {
+              "line": 222,
+              "kind": "If",
+              "predicate": "show_all"
+            },
+            {
+              "line": 202,
+              "kind": "If",
+              "predicate": "'userDetails' in principal"
+            },
+            {
+              "line": 204,
+              "kind": "If",
+              "predicate": "'servicePrincipalDetails' in principal"
+            },
+            {
+              "line": 206,
+              "kind": "If",
+              "predicate": "'groupDetails' in principal"
+            }
+          ]
+        },
+        {
+          "name": "_ls_acls_onelake",
+          "line": 233,
+          "end_line": 315,
+          "branches": [
+            {
+              "line": 246,
+              "kind": "If",
+              "predicate": "response.status_code == 200"
+            },
+            {
+              "line": 301,
+              "kind": "ExceptHandler",
+              "predicate": "FabricAPIError"
+            },
+            {
+              "line": 250,
+              "kind": "If",
+              "predicate": "access_details"
+            },
+            {
+              "line": 253,
+              "kind": "For",
+              "predicate": "rbac in access_details"
+            },
+            {
+              "line": 292,
+              "kind": "If",
+              "predicate": "show_all"
+            },
+            {
+              "line": 302,
+              "kind": "If",
+              "predicate": "e.status_code == 'BadRequest'"
+            },
+            {
+              "line": 268,
+              "kind": "For",
+              "predicate": "member in microsoft_en_a_members"
+            },
+            {
+              "line": 280,
+              "kind": "For",
+              "predicate": "member in fabric_item_members"
+            },
+            {
+              "line": 315,
+              "kind": "Raise",
+              "predicate": "re-raise"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/commands/acls/fab_acls_get.py",
+      "sha256": "0359ad847bf7e48f96b5fb0f1016bd3f94c34f954bb27578f352d81feba42541",
+      "functions": [
+        {
+          "name": "exec_command",
+          "line": 30,
+          "end_line": 47,
+          "branches": [
+            {
+              "line": 31,
+              "kind": "If",
+              "predicate": "args.query"
+            },
+            {
+              "line": 34,
+              "kind": "If",
+              "predicate": "isinstance(context, Workspace)"
+            },
+            {
+              "line": 36,
+              "kind": "If",
+              "predicate": "isinstance(context, Item)"
+            },
+            {
+              "line": 39,
+              "kind": "If",
+              "predicate": "isinstance(context, VirtualWorkspaceItem)"
+            },
+            {
+              "line": 41,
+              "kind": "If",
+              "predicate": "isinstance(context, OneLakeItem) and context.item.item_type == ItemType.LAKEHOUSE"
+            }
+          ]
+        },
+        {
+          "name": "_get_acls_workspace",
+          "line": 51,
+          "end_line": 61,
+          "branches": [
+            {
+              "line": 55,
+              "kind": "If",
+              "predicate": "response.status_code == 200"
+            }
+          ]
+        },
+        {
+          "name": "_get_acls_virtual_ws_item",
+          "line": 65,
+          "end_line": 75,
+          "branches": [
+            {
+              "line": 66,
+              "kind": "Match",
+              "predicate": "item.item_type"
+            },
+            {
+              "line": 72,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(f\"Access control operations are not supported for type '{str(item.item_type)}'\", fab_constant.ERROR_NOT_SUPPORTED)"
+            }
+          ]
+        },
+        {
+          "name": "_get_acls_gateway",
+          "line": 78,
+          "end_line": 90,
+          "branches": [
+            {
+              "line": 84,
+              "kind": "If",
+              "predicate": "response.status_code == 200"
+            }
+          ]
+        },
+        {
+          "name": "_get_acls_connection",
+          "line": 93,
+          "end_line": 105,
+          "branches": [
+            {
+              "line": 99,
+              "kind": "If",
+              "predicate": "response.status_code == 200"
+            }
+          ]
+        },
+        {
+          "name": "_get_acls_item",
+          "line": 109,
+          "end_line": 124,
+          "branches": [
+            {
+              "line": 118,
+              "kind": "If",
+              "predicate": "response.status_code == 200"
+            }
+          ]
+        },
+        {
+          "name": "_get_acls_onelake",
+          "line": 127,
+          "end_line": 160,
+          "branches": [
+            {
+              "line": 139,
+              "kind": "If",
+              "predicate": "response.status_code == 200"
+            },
+            {
+              "line": 146,
+              "kind": "ExceptHandler",
+              "predicate": "FabricAPIError"
+            },
+            {
+              "line": 147,
+              "kind": "If",
+              "predicate": "e.status_code == 'BadRequest'"
+            },
+            {
+              "line": 160,
+              "kind": "Raise",
+              "predicate": "e"
+            }
+          ]
+        },
+        {
+          "name": "_process_query_and_export",
+          "line": 164,
+          "end_line": 174,
+          "branches": [
+            {
+              "line": 169,
+              "kind": "If",
+              "predicate": "args.output"
+            },
+            {
+              "line": 173,
+              "kind": "If",
+              "predicate": "json_path_response"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/commands/acls/fab_acls_set.py",
+      "sha256": "3b6e7e81eecf0d47ea183726128d1970bff6a9f3c866e7414c4cc680294fe414",
+      "functions": [
+        {
+          "name": "exec_command",
+          "line": 30,
+          "end_line": 45,
+          "branches": [
+            {
+              "line": 31,
+              "kind": "If",
+              "predicate": "isinstance(context, Workspace)"
+            },
+            {
+              "line": 34,
+              "kind": "If",
+              "predicate": "isinstance(context, VirtualWorkspaceItem)"
+            },
+            {
+              "line": 35,
+              "kind": "If",
+              "predicate": "context.item_type == VirtualWorkspaceItemType.CONNECTION"
+            },
+            {
+              "line": 38,
+              "kind": "If",
+              "predicate": "context.item_type == VirtualWorkspaceItemType.GATEWAY"
+            },
+            {
+              "line": 42,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(f\"Unsupported item type '{context.item_type}' for ACL setting\", fab_constant.ERROR_NOT_SUPPORTED)"
+            }
+          ]
+        },
+        {
+          "name": "_set_acls_workspace",
+          "line": 49,
+          "end_line": 69,
+          "branches": [
+            {
+              "line": 50,
+              "kind": "If",
+              "predicate": "args.force or utils_ui.prompt_confirm()"
+            },
+            {
+              "line": 56,
+              "kind": "If",
+              "predicate": "_try_update_acl_if_exists(response=response, identity=identity, args=args, acl_update_callback=api_workspaces.acl_update_to_workspace)"
+            }
+          ]
+        },
+        {
+          "name": "_set_acls_connection",
+          "line": 72,
+          "end_line": 92,
+          "branches": [
+            {
+              "line": 73,
+              "kind": "If",
+              "predicate": "args.force or utils_ui.prompt_confirm()"
+            },
+            {
+              "line": 79,
+              "kind": "If",
+              "predicate": "_try_update_acl_if_exists(response=response, identity=identity, args=args, acl_update_callback=api_connection.acl_update_for_connection)"
+            }
+          ]
+        },
+        {
+          "name": "_set_acls_gateway",
+          "line": 95,
+          "end_line": 115,
+          "branches": [
+            {
+              "line": 96,
+              "kind": "If",
+              "predicate": "args.force or utils_ui.prompt_confirm()"
+            },
+            {
+              "line": 102,
+              "kind": "If",
+              "predicate": "_try_update_acl_if_exists(response=response, identity=identity, args=args, acl_update_callback=api_gateway.acl_update_for_gateway)"
+            }
+          ]
+        },
+        {
+          "name": "_validate_role_by_type",
+          "line": 121,
+          "end_line": 149,
+          "branches": [
+            {
+              "line": 126,
+              "kind": "If",
+              "predicate": "not role"
+            },
+            {
+              "line": 131,
+              "kind": "If",
+              "predicate": "type == 'Workspace'"
+            },
+            {
+              "line": 127,
+              "kind": "Raise",
+              "predicate": "FabricCLIError('Role must be provided', fab_constant.ERROR_INVALID_INPUT)"
+            },
+            {
+              "line": 132,
+              "kind": "If",
+              "predicate": "role.lower() not in [r.lower() for r in WORKSPACE_ROLES]"
+            },
+            {
+              "line": 137,
+              "kind": "If",
+              "predicate": "type == 'Connection'"
+            },
+            {
+              "line": 133,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(f\"Invalid role '{role}' for workspace. Valid roles are: {', '.join(WORKSPACE_ROLES)}\", fab_constant.ERROR_INVALID_INPUT)"
+            },
+            {
+              "line": 138,
+              "kind": "If",
+              "predicate": "role.lower() not in [r.lower() for r in CONNECTION_ROLES]"
+            },
+            {
+              "line": 143,
+              "kind": "If",
+              "predicate": "type == 'Gateway'"
+            },
+            {
+              "line": 139,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(f\"Invalid role '{role}' for connection. Valid roles are: {', '.join(CONNECTION_ROLES)}\", fab_constant.ERROR_INVALID_INPUT)"
+            },
+            {
+              "line": 144,
+              "kind": "If",
+              "predicate": "role.lower() not in [r.lower() for r in GATEWAY_ROLES]"
+            },
+            {
+              "line": 145,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(f\"Invalid role '{role}' for gateway. Valid roles are: {', '.join(GATEWAY_ROLES)}\", fab_constant.ERROR_INVALID_INPUT)"
+            }
+          ]
+        },
+        {
+          "name": "_add_acl",
+          "line": 152,
+          "end_line": 177,
+          "branches": [
+            {
+              "line": 156,
+              "kind": "For",
+              "predicate": "principal_type in PRINCIPAL_TYPES"
+            },
+            {
+              "line": 173,
+              "kind": "If",
+              "predicate": "not success"
+            },
+            {
+              "line": 174,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(message=f\"'{identity}' identity not found\", status_code=fab_constant.ERROR_NOT_FOUND)"
+            },
+            {
+              "line": 166,
+              "kind": "If",
+              "predicate": "response.status_code in (200, 201)"
+            },
+            {
+              "line": 170,
+              "kind": "ExceptHandler",
+              "predicate": "Exception"
+            }
+          ]
+        },
+        {
+          "name": "_try_update_acl_if_exists",
+          "line": 180,
+          "end_line": 201,
+          "branches": [
+            {
+              "line": 184,
+              "kind": "If",
+              "predicate": "response.status_code in (200, 201)"
+            },
+            {
+              "line": 186,
+              "kind": "If",
+              "predicate": "list_acls"
+            },
+            {
+              "line": 187,
+              "kind": "If",
+              "predicate": "identity in list_acls"
+            },
+            {
+              "line": 191,
+              "kind": "If",
+              "predicate": "args.force or utils_ui.prompt_confirm('Overwrite?')"
+            },
+            {
+              "line": 196,
+              "kind": "If",
+              "predicate": "response.status_code in (200, 201)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/commands/acls/fab_acls_rm.py",
+      "sha256": "c6f811a7030a9ec675b5b7d9351b60f836318d5153bb0634df17fda88c17f01b",
+      "functions": [
+        {
+          "name": "exec_command",
+          "line": 20,
+          "end_line": 32,
+          "branches": [
+            {
+              "line": 21,
+              "kind": "If",
+              "predicate": "isinstance(context, Workspace)"
+            },
+            {
+              "line": 23,
+              "kind": "If",
+              "predicate": "isinstance(context, VirtualWorkspaceItem)"
+            },
+            {
+              "line": 24,
+              "kind": "If",
+              "predicate": "context.item_type == VirtualWorkspaceItemType.CONNECTION"
+            },
+            {
+              "line": 26,
+              "kind": "If",
+              "predicate": "context.item_type == VirtualWorkspaceItemType.GATEWAY"
+            },
+            {
+              "line": 29,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(f\"{context.item_type} not supported for command 'acl rm'\", constant.ERROR_UNSUPPORTED_COMMAND)"
+            }
+          ]
+        },
+        {
+          "name": "_rm_acls_workspace",
+          "line": 36,
+          "end_line": 50,
+          "branches": [
+            {
+              "line": 37,
+              "kind": "If",
+              "predicate": "args.force or utils_ui.prompt_confirm()"
+            }
+          ]
+        },
+        {
+          "name": "_rm_acls_connection",
+          "line": 54,
+          "end_line": 69,
+          "branches": [
+            {
+              "line": 55,
+              "kind": "If",
+              "predicate": "args.force or utils_ui.prompt_confirm()"
+            }
+          ]
+        },
+        {
+          "name": "_rm_acls_gateway",
+          "line": 73,
+          "end_line": 84,
+          "branches": [
+            {
+              "line": 74,
+              "kind": "If",
+              "predicate": "args.force or utils_ui.prompt_confirm()"
+            }
+          ]
+        },
+        {
+          "name": "_validate_identity",
+          "line": 88,
+          "end_line": 104,
+          "branches": [
+            {
+              "line": 89,
+              "kind": "For",
+              "predicate": "item in data['value']"
+            },
+            {
+              "line": 97,
+              "kind": "If",
+              "predicate": "upn == identity or spn_client_id == identity or object_id == identity or (group_name == identity)"
+            }
+          ]
+        },
+        {
+          "name": "_rm_acls_by_identity",
+          "line": 107,
+          "end_line": 125,
+          "branches": [
+            {
+              "line": 114,
+              "kind": "If",
+              "predicate": "is_valid_identity"
+            },
+            {
+              "line": 120,
+              "kind": "If",
+              "predicate": "response.status_code == 200"
+            },
+            {
+              "line": 123,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(f\"'{identity}' identity not found\", constant.ERROR_NOT_FOUND)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/commands/labels/fab_labels.py",
+      "sha256": "1855f06ff69d20bc92a47deb5d329f748affd530f7176debea95d755ef1c268a",
+      "functions": [
+        {
+          "name": "set_command",
+          "line": 18,
+          "end_line": 20,
+          "branches": []
+        },
+        {
+          "name": "rm_command",
+          "line": 25,
+          "end_line": 26,
+          "branches": []
+        },
+        {
+          "name": "listlocal_command",
+          "line": 31,
+          "end_line": 34,
+          "branches": [
+            {
+              "line": 33,
+              "kind": "If",
+              "predicate": "exists"
+            }
+          ]
+        },
+        {
+          "name": "_execute_command",
+          "line": 37,
+          "end_line": 42,
+          "branches": [
+            {
+              "line": 41,
+              "kind": "If",
+              "predicate": "exists"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/commands/labels/fab_labels_list_local.py",
+      "sha256": "8e9541428dde0a1d1b351304662a48c7efb3af02bd0ca041ec9f21396c49a46c",
+      "functions": [
+        {
+          "name": "exec_command",
+          "line": 13,
+          "end_line": 33,
+          "branches": [
+            {
+              "line": 17,
+              "kind": "ExceptHandler",
+              "predicate": "json.decoder.JSONDecodeError"
+            },
+            {
+              "line": 21,
+              "kind": "ExceptHandler",
+              "predicate": "Exception"
+            },
+            {
+              "line": 29,
+              "kind": "ExceptHandler",
+              "predicate": "Exception"
+            },
+            {
+              "line": 18,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.invalid_json_format(), fab_constant.ERROR_INVALID_JSON)"
+            },
+            {
+              "line": 22,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.file_or_directory_not_exists(), fab_constant.ERROR_INVALID_PATH)"
+            },
+            {
+              "line": 30,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Labels.invalid_entries_format(), fab_constant.ERROR_INVALID_ENTRIES_FORMAT)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/commands/labels/fab_labels_set.py",
+      "sha256": "6021fd0306ec74e5373a826683fb4e4d6b766188958d8ba9099fb0636f3cfcb6",
+      "functions": [
+        {
+          "name": "exec_command",
+          "line": 15,
+          "end_line": 17,
+          "branches": [
+            {
+              "line": 16,
+              "kind": "If",
+              "predicate": "isinstance(context, Item)"
+            }
+          ]
+        },
+        {
+          "name": "_set_label_item",
+          "line": 20,
+          "end_line": 49,
+          "branches": [
+            {
+              "line": 21,
+              "kind": "If",
+              "predicate": "args.force or utils_ui.prompt_confirm()"
+            },
+            {
+              "line": 26,
+              "kind": "If",
+              "predicate": "label_id is None"
+            },
+            {
+              "line": 43,
+              "kind": "If",
+              "predicate": "response.status_code == 403"
+            },
+            {
+              "line": 27,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(f\"Id not found for label '{args.name}'\", fab_constant.ERROR_INVALID_INPUT)"
+            },
+            {
+              "line": 44,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(f'Not sufficient permissions to perform this operation', fab_constant.ERROR_FORBIDDEN)"
+            },
+            {
+              "line": 48,
+              "kind": "If",
+              "predicate": "response.status_code == 200"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/commands/labels/fab_labels_rm.py",
+      "sha256": "b55e6dcdab71aad0dfd85f806150b90ffed370999bcdc4665114a9a22a058124",
+      "functions": [
+        {
+          "name": "exec_command",
+          "line": 14,
+          "end_line": 16,
+          "branches": [
+            {
+              "line": 15,
+              "kind": "If",
+              "predicate": "isinstance(context, Item)"
+            }
+          ]
+        },
+        {
+          "name": "_rm_label_item",
+          "line": 19,
+          "end_line": 35,
+          "branches": [
+            {
+              "line": 20,
+              "kind": "If",
+              "predicate": "args.force or utils_ui.prompt_confirm()"
+            },
+            {
+              "line": 29,
+              "kind": "If",
+              "predicate": "response.status_code == 403"
+            },
+            {
+              "line": 30,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(f'Not sufficient permissions to perform this operation', fab_constant.ERROR_FORBIDDEN)"
+            },
+            {
+              "line": 34,
+              "kind": "If",
+              "predicate": "response.status_code == 200"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/commands/find/fab_find.py",
+      "sha256": "803232ff4a4ec1183c41e5e9d09036d93966986129a20ed3f77030f9c51129f8",
+      "functions": [
+        {
+          "name": "_load_type_config",
+          "line": 23,
+          "end_line": 29,
+          "branches": []
+        },
+        {
+          "name": "find_command",
+          "line": 39,
+          "end_line": 54,
+          "branches": [
+            {
+              "line": 41,
+              "kind": "If",
+              "predicate": "args.query"
+            },
+            {
+              "line": 51,
+              "kind": "If",
+              "predicate": "is_interactive"
+            }
+          ]
+        },
+        {
+          "name": "_fetch_results",
+          "line": 57,
+          "end_line": 73,
+          "branches": []
+        },
+        {
+          "name": "_next_page_payload",
+          "line": 76,
+          "end_line": 78,
+          "branches": []
+        },
+        {
+          "name": "_print_search_summary",
+          "line": 81,
+          "end_line": 87,
+          "branches": [
+            {
+              "line": 83,
+              "kind": "IfExp",
+              "predicate": "count == 1"
+            },
+            {
+              "line": 84,
+              "kind": "IfExp",
+              "predicate": "has_more_pages"
+            }
+          ]
+        },
+        {
+          "name": "_display_page",
+          "line": 90,
+          "end_line": 102,
+          "branches": [
+            {
+              "line": 98,
+              "kind": "If",
+              "predicate": "display_items"
+            }
+          ]
+        },
+        {
+          "name": "_find_interactive",
+          "line": 105,
+          "end_line": 131,
+          "branches": [
+            {
+              "line": 114,
+              "kind": "While",
+              "predicate": "continuation_token is not None"
+            },
+            {
+              "line": 130,
+              "kind": "If",
+              "predicate": "total_count == 0"
+            },
+            {
+              "line": 115,
+              "kind": "If",
+              "predicate": "display_items"
+            },
+            {
+              "line": 119,
+              "kind": "ExceptHandler",
+              "predicate": "(KeyboardInterrupt, EOFError)"
+            }
+          ]
+        },
+        {
+          "name": "_find_commandline",
+          "line": 134,
+          "end_line": 154,
+          "branches": [
+            {
+              "line": 140,
+              "kind": "While",
+              "predicate": "continuation_token is not None"
+            },
+            {
+              "line": 145,
+              "kind": "If",
+              "predicate": "not all_items"
+            },
+            {
+              "line": 150,
+              "kind": "If",
+              "predicate": "not display_items"
+            }
+          ]
+        },
+        {
+          "name": "_build_search_payload",
+          "line": 157,
+          "end_line": 172,
+          "branches": [
+            {
+              "line": 163,
+              "kind": "If",
+              "predicate": "type_filter"
+            },
+            {
+              "line": 160,
+              "kind": "IfExp",
+              "predicate": "is_interactive"
+            },
+            {
+              "line": 166,
+              "kind": "IfExp",
+              "predicate": "op == 'eq'"
+            },
+            {
+              "line": 169,
+              "kind": "IfExp",
+              "predicate": "len(clauses) > 1"
+            }
+          ]
+        },
+        {
+          "name": "_parse_type_from_params",
+          "line": 175,
+          "end_line": 256,
+          "branches": [
+            {
+              "line": 187,
+              "kind": "If",
+              "predicate": "not params_str"
+            },
+            {
+              "line": 191,
+              "kind": "If",
+              "predicate": "isinstance(params_str, list)"
+            },
+            {
+              "line": 199,
+              "kind": "For",
+              "predicate": "(key, value) in params_dict.items()"
+            },
+            {
+              "line": 213,
+              "kind": "If",
+              "predicate": "not type_value"
+            },
+            {
+              "line": 217,
+              "kind": "If",
+              "predicate": "type_value.startswith('[') and type_value.endswith(']')"
+            },
+            {
+              "line": 233,
+              "kind": "For",
+              "predicate": "t in types"
+            },
+            {
+              "line": 204,
+              "kind": "If",
+              "predicate": "clean_key.lower() == 'type'"
+            },
+            {
+              "line": 220,
+              "kind": "If",
+              "predicate": "not types"
+            },
+            {
+              "line": 235,
+              "kind": "If",
+              "predicate": "t_lower in unsupported_lower and operator == 'eq'"
+            },
+            {
+              "line": 241,
+              "kind": "If",
+              "predicate": "t_lower not in all_types_lower"
+            },
+            {
+              "line": 208,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.unsupported_parameter(clean_key), fab_constant.ERROR_INVALID_INPUT)"
+            },
+            {
+              "line": 221,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Find.unrecognized_type('[]', ' Specify at least one item type.'), fab_constant.ERROR_INVALID_INPUT)"
+            },
+            {
+              "line": 237,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.type_not_supported(canonical), fab_constant.ERROR_UNSUPPORTED_ITEM_TYPE)"
+            },
+            {
+              "line": 250,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Find.unrecognized_type(t, hint), fab_constant.ERROR_INVALID_ITEM_TYPE)"
+            },
+            {
+              "line": 206,
+              "kind": "IfExp",
+              "predicate": "is_ne"
+            },
+            {
+              "line": 246,
+              "kind": "IfExp",
+              "predicate": "close"
+            }
+          ]
+        },
+        {
+          "name": "_parse_response",
+          "line": 259,
+          "end_line": 281,
+          "branches": [
+            {
+              "line": 274,
+              "kind": "If",
+              "predicate": "response.status_code == 200"
+            },
+            {
+              "line": 278,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Find.search_failed(data.get('message', response.text)), data.get('errorCode', fab_constant.ERROR_UNEXPECTED_ERROR))"
+            },
+            {
+              "line": 263,
+              "kind": "ExceptHandler",
+              "predicate": "json.JSONDecodeError"
+            },
+            {
+              "line": 264,
+              "kind": "If",
+              "predicate": "response.status_code == 200"
+            },
+            {
+              "line": 269,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Find.search_failed(response.text), fab_constant.ERROR_INVALID_JSON)"
+            },
+            {
+              "line": 265,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.invalid_json_format(), fab_constant.ERROR_INVALID_JSON)"
+            }
+          ]
+        },
+        {
+          "name": "_get_workspace_field",
+          "line": 284,
+          "end_line": 291,
+          "branches": [
+            {
+              "line": 287,
+              "kind": "If",
+              "predicate": "field == 'name'"
+            },
+            {
+              "line": 289,
+              "kind": "If",
+              "predicate": "field == 'id'"
+            }
+          ]
+        },
+        {
+          "name": "_prepare_display_items",
+          "line": 294,
+          "end_line": 332,
+          "branches": [
+            {
+              "line": 306,
+              "kind": "For",
+              "predicate": "item in items"
+            },
+            {
+              "line": 325,
+              "kind": "If",
+              "predicate": "getattr(args, 'query', None)"
+            },
+            {
+              "line": 307,
+              "kind": "If",
+              "predicate": "show_details"
+            },
+            {
+              "line": 321,
+              "kind": "If",
+              "predicate": "has_descriptions"
+            },
+            {
+              "line": 327,
+              "kind": "If",
+              "predicate": "not isinstance(query_result, list)"
+            },
+            {
+              "line": 331,
+              "kind": "IfExp",
+              "predicate": "not show_details"
+            }
+          ]
+        },
+        {
+          "name": "_display_items",
+          "line": 335,
+          "end_line": 347,
+          "branches": []
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/commands/api/fab_api.py",
+      "sha256": "4faf224b1abfad75357ffacd10761b23b0c948e4289ac1ed4e98261cc560788a",
+      "functions": [
+        {
+          "name": "request_command",
+          "line": 19,
+          "end_line": 27,
+          "branches": []
+        },
+        {
+          "name": "_build_key_value_pairs",
+          "line": 31,
+          "end_line": 42,
+          "branches": [
+            {
+              "line": 35,
+              "kind": "If",
+              "predicate": "input_str"
+            },
+            {
+              "line": 37,
+              "kind": "For",
+              "predicate": "pair in input_str.split(',')"
+            },
+            {
+              "line": 40,
+              "kind": "ExceptHandler",
+              "predicate": "ValueError"
+            },
+            {
+              "line": 41,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(error_message, fab_constant.ERROR_INVALID_INPUT)"
+            }
+          ]
+        },
+        {
+          "name": "_build_query_parameters",
+          "line": 45,
+          "end_line": 49,
+          "branches": []
+        },
+        {
+          "name": "_build_headers",
+          "line": 52,
+          "end_line": 56,
+          "branches": []
+        },
+        {
+          "name": "_parse_config_args",
+          "line": 59,
+          "end_line": 88,
+          "branches": [
+            {
+              "line": 61,
+              "kind": "If",
+              "predicate": "not args.input"
+            },
+            {
+              "line": 70,
+              "kind": "If",
+              "predicate": "normalized_content.startswith('{') and normalized_content.endswith('}')"
+            },
+            {
+              "line": 76,
+              "kind": "If",
+              "predicate": "path.exists() and path.is_file()"
+            },
+            {
+              "line": 82,
+              "kind": "ExceptHandler",
+              "predicate": "Exception"
+            },
+            {
+              "line": 77,
+              "kind": "If",
+              "predicate": "path.suffix == '.json'"
+            },
+            {
+              "line": 83,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.invalid_json_content(normalized_content, str(e)), fab_constant.ERROR_INVALID_JSON)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/commands/api/fab_api_request.py",
+      "sha256": "d0f4be6f832b349c38e7f0518643c08ab05c841c538643cff99ca7bb1439d083",
+      "functions": [
+        {
+          "name": "exec_command",
+          "line": 15,
+          "end_line": 45,
+          "branches": [
+            {
+              "line": 18,
+              "kind": "If",
+              "predicate": "args.input is not None"
+            },
+            {
+              "line": 33,
+              "kind": "If",
+              "predicate": "args.show_headers"
+            },
+            {
+              "line": 40,
+              "kind": "If",
+              "predicate": "query"
+            },
+            {
+              "line": 20,
+              "kind": "If",
+              "predicate": "args.file_path is not None"
+            },
+            {
+              "line": 36,
+              "kind": "IfExp",
+              "predicate": "response.text.strip()"
+            },
+            {
+              "line": 42,
+              "kind": "If",
+              "predicate": "payload_jmespath"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/client/fab_api_client.py",
+      "sha256": "d7d978f315921ec4559a2fcefc992435152758b74470d1d969006def088e8e0d",
+      "functions": [
+        {
+          "name": "_get_session",
+          "line": 39,
+          "end_line": 48,
+          "branches": [
+            {
+              "line": 42,
+              "kind": "If",
+              "predicate": "_shared_session is None"
+            }
+          ]
+        },
+        {
+          "name": "do_request",
+          "line": 51,
+          "end_line": 269,
+          "branches": [
+            {
+              "line": 70,
+              "kind": "If",
+              "predicate": "_params_from_uri"
+            },
+            {
+              "line": 76,
+              "kind": "If",
+              "predicate": "json_file is not None"
+            },
+            {
+              "line": 80,
+              "kind": "If",
+              "predicate": "audience_value == 'storage'"
+            },
+            {
+              "line": 100,
+              "kind": "If",
+              "predicate": "continuation_token"
+            },
+            {
+              "line": 105,
+              "kind": "If",
+              "predicate": "request_params"
+            },
+            {
+              "line": 125,
+              "kind": "If",
+              "predicate": "files is None"
+            },
+            {
+              "line": 128,
+              "kind": "If",
+              "predicate": "headers_value is not None"
+            },
+            {
+              "line": 138,
+              "kind": "If",
+              "predicate": "fabric_skill and audience_value in (None, 'fabric')"
+            },
+            {
+              "line": 69,
+              "kind": "IfExp",
+              "predicate": "len(args.uri.split('?')) > 1"
+            },
+            {
+              "line": 72,
+              "kind": "For",
+              "predicate": "_param in _params"
+            },
+            {
+              "line": 85,
+              "kind": "If",
+              "predicate": "audience_value == 'azure'"
+            },
+            {
+              "line": 129,
+              "kind": "If",
+              "predicate": "isinstance(args.headers, dict)"
+            },
+            {
+              "line": 150,
+              "kind": "If",
+              "predicate": "files is not None"
+            },
+            {
+              "line": 157,
+              "kind": "For",
+              "predicate": "attempt in range(retries_count + 1)"
+            },
+            {
+              "line": 259,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.max_retries_exceeded(retries_count), fab_constant.ERROR_MAX_RETRIES_EXCEEDED)"
+            },
+            {
+              "line": 264,
+              "kind": "ExceptHandler",
+              "predicate": "requests.RequestException"
+            },
+            {
+              "line": 88,
+              "kind": "If",
+              "predicate": "audience_value == 'powerbi'"
+            },
+            {
+              "line": 132,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.invalid_headers_format(), fab_constant.ERROR_INVALID_OPERATION)"
+            },
+            {
+              "line": 152,
+              "kind": "If",
+              "predicate": "json is not None"
+            },
+            {
+              "line": 176,
+              "kind": "If",
+              "predicate": "raw_response"
+            },
+            {
+              "line": 184,
+              "kind": "Match",
+              "predicate": "response.status_code"
+            },
+            {
+              "line": 266,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.unexpected_error(str(ex)), fab_constant.ERROR_UNEXPECTED_ERROR)"
+            },
+            {
+              "line": 154,
+              "kind": "If",
+              "predicate": "data is not None"
+            },
+            {
+              "line": 186,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.unauthorized(), api_error_code or fab_constant.ERROR_UNAUTHORIZED)"
+            },
+            {
+              "line": 191,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.forbidden(), api_error_code or fab_constant.ERROR_FORBIDDEN)"
+            },
+            {
+              "line": 196,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.resource_not_found(), fab_constant.ERROR_NOT_FOUND)"
+            },
+            {
+              "line": 241,
+              "kind": "If",
+              "predicate": "fab_constant.API_ENDPOINT_FABRIC in url or (hostname and hostname in url)"
+            },
+            {
+              "line": 249,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Client.unexpected_error_response(response.status_code, response.text), utils_errors.map_http_status_code_to_error_code(response.status_code))"
+            },
+            {
+              "line": 244,
+              "kind": "Raise",
+              "predicate": "FabricAPIError(response.text)"
+            },
+            {
+              "line": 245,
+              "kind": "If",
+              "predicate": "fab_constant.API_ENDPOINT_ONELAKE in url"
+            },
+            {
+              "line": 246,
+              "kind": "Raise",
+              "predicate": "OnelakeAPIError(response.text)"
+            },
+            {
+              "line": 247,
+              "kind": "If",
+              "predicate": "fab_constant.API_ENDPOINT_AZURE in url"
+            },
+            {
+              "line": 248,
+              "kind": "Raise",
+              "predicate": "AzureAPIError(response.text)"
+            }
+          ]
+        },
+        {
+          "name": "_handle_successful_response",
+          "line": 275,
+          "end_line": 303,
+          "branches": [
+            {
+              "line": 276,
+              "kind": "If",
+              "predicate": "fab_constant.DEBUG"
+            },
+            {
+              "line": 282,
+              "kind": "If",
+              "predicate": "'x-ms-continuation' in response.headers"
+            },
+            {
+              "line": 297,
+              "kind": "If",
+              "predicate": "_continuation_token"
+            },
+            {
+              "line": 299,
+              "kind": "If",
+              "predicate": "_continuation_token and _response.status_code == 200"
+            },
+            {
+              "line": 288,
+              "kind": "If",
+              "predicate": "response.text != '' and response.text != 'null'"
+            },
+            {
+              "line": 289,
+              "kind": "If",
+              "predicate": "'continuationToken' in response.text"
+            },
+            {
+              "line": 291,
+              "kind": "If",
+              "predicate": "_text and 'continuationToken' in _text"
+            }
+          ]
+        },
+        {
+          "name": "_build_user_agent",
+          "line": 306,
+          "end_line": 321,
+          "branches": [
+            {
+              "line": 318,
+              "kind": "If",
+              "predicate": "host_app"
+            }
+          ]
+        },
+        {
+          "name": "_get_host_app",
+          "line": 324,
+          "end_line": 353,
+          "branches": [
+            {
+              "line": 330,
+              "kind": "If",
+              "predicate": "not _host_app_in_env"
+            },
+            {
+              "line": 342,
+              "kind": "If",
+              "predicate": "not host_app_name"
+            },
+            {
+              "line": 351,
+              "kind": "If",
+              "predicate": "host_app_version and _HOST_APP_VERSION_RE.fullmatch(host_app_version)"
+            }
+          ]
+        },
+        {
+          "name": "_print_response_details",
+          "line": 356,
+          "end_line": 370,
+          "branches": [
+            {
+              "line": 367,
+              "kind": "ExceptHandler",
+              "predicate": "json.JSONDecodeError"
+            }
+          ]
+        },
+        {
+          "name": "_handle_fab_long_running_op",
+          "line": 373,
+          "end_line": 390,
+          "branches": [
+            {
+              "line": 377,
+              "kind": "If",
+              "predicate": "not location_header and (not operation_id)"
+            }
+          ]
+        },
+        {
+          "name": "_handle_azure_async_op",
+          "line": 393,
+          "end_line": 415,
+          "branches": [
+            {
+              "line": 395,
+              "kind": "If",
+              "predicate": "uri is None"
+            },
+            {
+              "line": 402,
+              "kind": "If",
+              "predicate": "uri is None or not fab_constant.API_ENDPOINT_AZURE in uri"
+            },
+            {
+              "line": 403,
+              "kind": "Raise",
+              "predicate": "AzureAPIError(response.text)"
+            }
+          ]
+        },
+        {
+          "name": "_poll_operation",
+          "line": 418,
+          "end_line": 492,
+          "branches": [
+            {
+              "line": 436,
+              "kind": "While",
+              "predicate": "True"
+            },
+            {
+              "line": 439,
+              "kind": "If",
+              "predicate": "response.status_code == 200"
+            },
+            {
+              "line": 440,
+              "kind": "If",
+              "predicate": "check_status"
+            },
+            {
+              "line": 482,
+              "kind": "If",
+              "predicate": "not check_status and response.status_code in [202, 201]"
+            },
+            {
+              "line": 444,
+              "kind": "If",
+              "predicate": "status == 'Succeeded' or status == 'Completed'"
+            },
+            {
+              "line": 486,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Client.unexpected_error_response(response.status_code, response.text), utils_errors.map_http_status_code_to_error_code(response.status_code))"
+            },
+            {
+              "line": 446,
+              "kind": "If",
+              "predicate": "scope == fab_constant.SCOPE_AZURE_DEFAULT"
+            },
+            {
+              "line": 458,
+              "kind": "If",
+              "predicate": "status == 'Failed'"
+            },
+            {
+              "line": 449,
+              "kind": "If",
+              "predicate": "scope == fab_constant.SCOPE_FABRIC_DEFAULT"
+            },
+            {
+              "line": 460,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.operation_failed(str(result_json.get('error'))), fab_constant.ERROR_OPERATION_FAILED)"
+            },
+            {
+              "line": 466,
+              "kind": "If",
+              "predicate": "status == 'Cancelled'"
+            },
+            {
+              "line": 451,
+              "kind": "If",
+              "predicate": "location_header"
+            },
+            {
+              "line": 468,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.operation_cancelled(str(result_json.get('error'))), fab_constant.ERROR_OPERATION_CANCELLED)"
+            }
+          ]
+        },
+        {
+          "name": "_fetch_operation_result",
+          "line": 495,
+          "end_line": 515,
+          "branches": [
+            {
+              "line": 499,
+              "kind": "If",
+              "predicate": "'operations/' in uri"
+            },
+            {
+              "line": 508,
+              "kind": "ExceptHandler",
+              "predicate": "FabricAPIError"
+            },
+            {
+              "line": 509,
+              "kind": "If",
+              "predicate": "e.status_code != 'OperationHasNoResult'"
+            },
+            {
+              "line": 510,
+              "kind": "Raise",
+              "predicate": "e"
+            }
+          ]
+        },
+        {
+          "name": "_log_operation_progress",
+          "line": 518,
+          "end_line": 526,
+          "branches": [
+            {
+              "line": 522,
+              "kind": "If",
+              "predicate": "percentage_complete is None"
+            }
+          ]
+        },
+        {
+          "name": "_transform_workspace_url_for_private_link_if_needed",
+          "line": 529,
+          "end_line": 579,
+          "branches": [
+            {
+              "line": 546,
+              "kind": "If",
+              "predicate": "hostname"
+            },
+            {
+              "line": 552,
+              "kind": "If",
+              "predicate": "not is_private_links_config_enabled or str(is_private_links_config_enabled).lower() != 'true'"
+            },
+            {
+              "line": 561,
+              "kind": "If",
+              "predicate": "is_onelake_api"
+            },
+            {
+              "line": 576,
+              "kind": "If",
+              "predicate": "not workspace_id"
+            },
+            {
+              "line": 564,
+              "kind": "If",
+              "predicate": "uri_segments and re.match(f'^{GUID_PATTERN_STR}$', uri_segments[0], re.IGNORECASE)"
+            },
+            {
+              "line": 568,
+              "kind": "If",
+              "predicate": "'admin/' in uri.lower()"
+            },
+            {
+              "line": 573,
+              "kind": "If",
+              "predicate": "match"
+            }
+          ]
+        },
+        {
+          "name": "_construct_private_link_url",
+          "line": 582,
+          "end_line": 611,
+          "branches": [
+            {
+              "line": 606,
+              "kind": "IfExp",
+              "predicate": "is_onelake_api"
+            }
+          ]
+        },
+        {
+          "name": "check_token_expired",
+          "line": 614,
+          "end_line": 622,
+          "branches": [
+            {
+              "line": 615,
+              "kind": "If",
+              "predicate": "response.status_code == 401"
+            },
+            {
+              "line": 618,
+              "kind": "If",
+              "predicate": "_text.get('errorCode', '') == 'TokenExpired'"
+            },
+            {
+              "line": 620,
+              "kind": "ExceptHandler",
+              "predicate": "json.JSONDecodeError"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/client/fab_api_types.py",
+      "sha256": "990708f777081bb07fdd80906bcd4e49f22f4f1af6e7cd522808a89ff3b34c40",
+      "functions": [
+        {
+          "name": "__init__",
+          "line": 19,
+          "end_line": 29,
+          "branches": []
+        },
+        {
+          "name": "append_text",
+          "line": 31,
+          "end_line": 49,
+          "branches": [
+            {
+              "line": 36,
+              "kind": "For",
+              "predicate": "(key, value) in original_text.items()"
+            },
+            {
+              "line": 45,
+              "kind": "ExceptHandler",
+              "predicate": "json.JSONDecodeError"
+            },
+            {
+              "line": 37,
+              "kind": "If",
+              "predicate": "isinstance(value, list) and key in new_text"
+            },
+            {
+              "line": 46,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.json_decode_error(str(e)), fab_constant.ERROR_INVALID_JSON)"
+            }
+          ]
+        },
+        {
+          "name": "json",
+          "line": 51,
+          "end_line": 52,
+          "branches": []
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/client/fab_api_workspace.py",
+      "sha256": "c2512eec29b12b60a29e013ff0a296833f86e59904c76418ef406e903eb49ab8",
+      "functions": [
+        {
+          "name": "create_workspace",
+          "line": 12,
+          "end_line": 22,
+          "branches": [
+            {
+              "line": 17,
+              "kind": "If",
+              "predicate": "payload is not None"
+            }
+          ]
+        },
+        {
+          "name": "list_workspaces",
+          "line": 25,
+          "end_line": 30,
+          "branches": []
+        },
+        {
+          "name": "ls_workspace_items",
+          "line": 33,
+          "end_line": 38,
+          "branches": []
+        },
+        {
+          "name": "ls_workspace_folders",
+          "line": 41,
+          "end_line": 46,
+          "branches": []
+        },
+        {
+          "name": "delete_workspace",
+          "line": 49,
+          "end_line": 56,
+          "branches": []
+        },
+        {
+          "name": "get_workspace",
+          "line": 59,
+          "end_line": 64,
+          "branches": []
+        },
+        {
+          "name": "update_workspace",
+          "line": 67,
+          "end_line": 72,
+          "branches": []
+        },
+        {
+          "name": "acl_list_from_workspace",
+          "line": 76,
+          "end_line": 81,
+          "branches": []
+        },
+        {
+          "name": "acl_delete_from_workspace",
+          "line": 84,
+          "end_line": 89,
+          "branches": []
+        },
+        {
+          "name": "acl_get_from_workspace",
+          "line": 92,
+          "end_line": 97,
+          "branches": []
+        },
+        {
+          "name": "acl_add_to_workspace",
+          "line": 100,
+          "end_line": 105,
+          "branches": []
+        },
+        {
+          "name": "acl_update_to_workspace",
+          "line": 108,
+          "end_line": 113,
+          "branches": []
+        },
+        {
+          "name": "get_workspace_spark_settings",
+          "line": 119,
+          "end_line": 124,
+          "branches": []
+        },
+        {
+          "name": "update_workspace_spark_settings",
+          "line": 127,
+          "end_line": 132,
+          "branches": []
+        },
+        {
+          "name": "ls_workspace_managed_private_endpoints",
+          "line": 138,
+          "end_line": 143,
+          "branches": []
+        },
+        {
+          "name": "ls_workspace_spark_pools",
+          "line": 149,
+          "end_line": 154,
+          "branches": []
+        },
+        {
+          "name": "assign_to_capacity",
+          "line": 160,
+          "end_line": 170,
+          "branches": []
+        },
+        {
+          "name": "unassign_from_capacity",
+          "line": 173,
+          "end_line": 182,
+          "branches": []
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/client/fab_api_item.py",
+      "sha256": "d0f257eb327f759bbdc468a8f9be1af4cce0116e7f4ee6f8e2536c10ca36d740",
+      "functions": [
+        {
+          "name": "create_item",
+          "line": 16,
+          "end_line": 33,
+          "branches": [
+            {
+              "line": 20,
+              "kind": "If",
+              "predicate": "item_uri"
+            },
+            {
+              "line": 28,
+              "kind": "If",
+              "predicate": "payload is not None"
+            }
+          ]
+        },
+        {
+          "name": "delete_item",
+          "line": 36,
+          "end_line": 55,
+          "branches": [
+            {
+              "line": 45,
+              "kind": "If",
+              "predicate": "not hasattr(args, 'uri') or not args.uri"
+            },
+            {
+              "line": 53,
+              "kind": "If",
+              "predicate": "operation is not None"
+            },
+            {
+              "line": 46,
+              "kind": "If",
+              "predicate": "item_uri"
+            },
+            {
+              "line": 51,
+              "kind": "IfExp",
+              "predicate": "override_method"
+            }
+          ]
+        },
+        {
+          "name": "get_item_withdefinition",
+          "line": 58,
+          "end_line": 81,
+          "branches": [
+            {
+              "line": 65,
+              "kind": "If",
+              "predicate": "isinstance(definition, dict)"
+            },
+            {
+              "line": 73,
+              "kind": "ExceptHandler",
+              "predicate": "FabricCLIError"
+            },
+            {
+              "line": 69,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Client.response_payload_not_dictionary(), fab_constant.ERROR_INVALID_DEFINITION_PAYLOAD)"
+            },
+            {
+              "line": 75,
+              "kind": "If",
+              "predicate": "ex.status_code == fab_constant.ERROR_UNAUTHORIZED or ex.status_code == fab_constant.ERROR_FORBIDDEN"
+            },
+            {
+              "line": 81,
+              "kind": "Raise",
+              "predicate": "ex"
+            }
+          ]
+        },
+        {
+          "name": "get_item",
+          "line": 84,
+          "end_line": 98,
+          "branches": [
+            {
+              "line": 88,
+              "kind": "If",
+              "predicate": "item_uri"
+            },
+            {
+              "line": 93,
+              "kind": "If",
+              "predicate": "ext_uri"
+            }
+          ]
+        },
+        {
+          "name": "get_item_definition",
+          "line": 101,
+          "end_line": 109,
+          "branches": [
+            {
+              "line": 104,
+              "kind": "If",
+              "predicate": "args.format"
+            }
+          ]
+        },
+        {
+          "name": "bulk_export_definitions",
+          "line": 112,
+          "end_line": 118,
+          "branches": []
+        },
+        {
+          "name": "update_item_definition",
+          "line": 121,
+          "end_line": 132,
+          "branches": [
+            {
+              "line": 125,
+              "kind": "If",
+              "predicate": "item_uri"
+            }
+          ]
+        },
+        {
+          "name": "update_item",
+          "line": 135,
+          "end_line": 152,
+          "branches": [
+            {
+              "line": 142,
+              "kind": "If",
+              "predicate": "item_uri"
+            },
+            {
+              "line": 147,
+              "kind": "If",
+              "predicate": "ext_uri"
+            }
+          ]
+        },
+        {
+          "name": "acl_list_from_item",
+          "line": 158,
+          "end_line": 162,
+          "branches": []
+        },
+        {
+          "name": "get_item_connections",
+          "line": 168,
+          "end_line": 173,
+          "branches": []
+        },
+        {
+          "name": "create_item_external_data_share",
+          "line": 179,
+          "end_line": 187,
+          "branches": []
+        },
+        {
+          "name": "get_item_external_data_share",
+          "line": 190,
+          "end_line": 197,
+          "branches": []
+        },
+        {
+          "name": "list_item_external_data_shares",
+          "line": 200,
+          "end_line": 205,
+          "branches": []
+        },
+        {
+          "name": "revoke_item_external_data_share",
+          "line": 208,
+          "end_line": 224,
+          "branches": []
+        },
+        {
+          "name": "environment_upload_staging_library",
+          "line": 230,
+          "end_line": 235,
+          "branches": []
+        },
+        {
+          "name": "environment_publish",
+          "line": 238,
+          "end_line": 243,
+          "branches": []
+        },
+        {
+          "name": "environment_delete_library_staging",
+          "line": 246,
+          "end_line": 253,
+          "branches": []
+        },
+        {
+          "name": "environment_get_publish_details",
+          "line": 256,
+          "end_line": 261,
+          "branches": []
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/client/fab_api_connection.py",
+      "sha256": "96f22b812c742bff153c508a6b81fa00c77de54af1bc4977049f77c6b6317026",
+      "functions": [
+        {
+          "name": "create_connection",
+          "line": 12,
+          "end_line": 17,
+          "branches": []
+        },
+        {
+          "name": "get_connection",
+          "line": 20,
+          "end_line": 25,
+          "branches": []
+        },
+        {
+          "name": "update_connection",
+          "line": 28,
+          "end_line": 33,
+          "branches": []
+        },
+        {
+          "name": "delete_connection",
+          "line": 36,
+          "end_line": 43,
+          "branches": []
+        },
+        {
+          "name": "list_connections",
+          "line": 46,
+          "end_line": 51,
+          "branches": []
+        },
+        {
+          "name": "list_supported_connection_types",
+          "line": 57,
+          "end_line": 62,
+          "branches": []
+        },
+        {
+          "name": "acl_list_from_connection",
+          "line": 68,
+          "end_line": 73,
+          "branches": []
+        },
+        {
+          "name": "acl_delete_from_connection",
+          "line": 76,
+          "end_line": 81,
+          "branches": []
+        },
+        {
+          "name": "acl_add_for_connection",
+          "line": 84,
+          "end_line": 89,
+          "branches": []
+        },
+        {
+          "name": "acl_update_for_connection",
+          "line": 92,
+          "end_line": 97,
+          "branches": []
+        },
+        {
+          "name": "acl_get_for_connection",
+          "line": 100,
+          "end_line": 105,
+          "branches": []
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/client/fab_api_gateway.py",
+      "sha256": "c6965f19021f4f7a077ef49ce000e131e0112bb6f0c2044d84d1282cdfa883ae",
+      "functions": [
+        {
+          "name": "create_gateway",
+          "line": 12,
+          "end_line": 17,
+          "branches": []
+        },
+        {
+          "name": "get_gateway",
+          "line": 20,
+          "end_line": 25,
+          "branches": []
+        },
+        {
+          "name": "update_gateway",
+          "line": 28,
+          "end_line": 33,
+          "branches": []
+        },
+        {
+          "name": "delete_gateway",
+          "line": 36,
+          "end_line": 43,
+          "branches": []
+        },
+        {
+          "name": "list_gateways",
+          "line": 46,
+          "end_line": 51,
+          "branches": []
+        },
+        {
+          "name": "acl_list_from_gateway",
+          "line": 60,
+          "end_line": 65,
+          "branches": []
+        },
+        {
+          "name": "acl_delete_from_gateway",
+          "line": 68,
+          "end_line": 73,
+          "branches": []
+        },
+        {
+          "name": "acl_add_for_gateway",
+          "line": 76,
+          "end_line": 81,
+          "branches": []
+        },
+        {
+          "name": "acl_update_for_gateway",
+          "line": 84,
+          "end_line": 89,
+          "branches": []
+        },
+        {
+          "name": "acl_get_for_gateway",
+          "line": 92,
+          "end_line": 97,
+          "branches": []
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/client/fab_api_onelake.py",
+      "sha256": "8cf93b787da2cdca62744a8acbf0fc4f19f5ae8e45d145d07bcc3b84e1397142",
+      "functions": [
+        {
+          "name": "delete_dir",
+          "line": 12,
+          "end_line": 20,
+          "branches": []
+        },
+        {
+          "name": "list_tables_files",
+          "line": 23,
+          "end_line": 29,
+          "branches": []
+        },
+        {
+          "name": "list_tables_files_recursive",
+          "line": 32,
+          "end_line": 38,
+          "branches": []
+        },
+        {
+          "name": "create_dir",
+          "line": 41,
+          "end_line": 49,
+          "branches": []
+        },
+        {
+          "name": "move_rename",
+          "line": 52,
+          "end_line": 59,
+          "branches": []
+        },
+        {
+          "name": "get",
+          "line": 62,
+          "end_line": 68,
+          "branches": []
+        },
+        {
+          "name": "get_properties",
+          "line": 71,
+          "end_line": 77,
+          "branches": []
+        },
+        {
+          "name": "read",
+          "line": 80,
+          "end_line": 86,
+          "branches": []
+        },
+        {
+          "name": "touch_file",
+          "line": 89,
+          "end_line": 95,
+          "branches": []
+        },
+        {
+          "name": "append_file",
+          "line": 98,
+          "end_line": 116,
+          "branches": [
+            {
+              "line": 109,
+              "kind": "IfExp",
+              "predicate": "content_length"
+            }
+          ]
+        },
+        {
+          "name": "flush_file",
+          "line": 119,
+          "end_line": 131,
+          "branches": []
+        },
+        {
+          "name": "acl_list_data_access_roles",
+          "line": 135,
+          "end_line": 140,
+          "branches": []
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/client/fab_api_labels.py",
+      "sha256": "73097f72dda468f1b0f739a503fe5b61855b8b455d3201886ad334f3776181dc",
+      "functions": [
+        {
+          "name": "set_sensi_labels",
+          "line": 10,
+          "end_line": 15,
+          "branches": []
+        },
+        {
+          "name": "remove_sensi_labels",
+          "line": 18,
+          "end_line": 23,
+          "branches": []
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/client/fab_api_catalog.py",
+      "sha256": "4b0ab9a2f9992f9107899d6a5c2bdabbc523c66759abb894b1e4ba88af2d058e",
+      "functions": [
+        {
+          "name": "search",
+          "line": 16,
+          "end_line": 46,
+          "branches": []
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/client/fab_api_domain.py",
+      "sha256": "194dfabb91f818159751d9e87533ef1df2b77fc04223b475187a5cceb2ab3804",
+      "functions": [
+        {
+          "name": "list_domains",
+          "line": 12,
+          "end_line": 17,
+          "branches": []
+        },
+        {
+          "name": "create_domain",
+          "line": 20,
+          "end_line": 25,
+          "branches": []
+        },
+        {
+          "name": "get_domain",
+          "line": 28,
+          "end_line": 33,
+          "branches": []
+        },
+        {
+          "name": "update_domain",
+          "line": 36,
+          "end_line": 41,
+          "branches": []
+        },
+        {
+          "name": "delete_domain",
+          "line": 44,
+          "end_line": 53,
+          "branches": []
+        },
+        {
+          "name": "assign_to_workspaces",
+          "line": 56,
+          "end_line": 66,
+          "branches": []
+        },
+        {
+          "name": "unassign_from_workspaces",
+          "line": 69,
+          "end_line": 81,
+          "branches": []
+        },
+        {
+          "name": "list_domain_workspaces",
+          "line": 84,
+          "end_line": 89,
+          "branches": []
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/client/fab_api_sparkpool.py",
+      "sha256": "5f5cbbee40e8f395b07db9f146735fb18686e59aafe46a3782a95e5ab9da11df",
+      "functions": [
+        {
+          "name": "create_spark_pool",
+          "line": 11,
+          "end_line": 14,
+          "branches": []
+        },
+        {
+          "name": "get_spark_pool",
+          "line": 17,
+          "end_line": 20,
+          "branches": []
+        },
+        {
+          "name": "update_spark_pool",
+          "line": 23,
+          "end_line": 26,
+          "branches": []
+        },
+        {
+          "name": "delete_spark_pool",
+          "line": 29,
+          "end_line": 38,
+          "branches": []
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/client/fab_api_managedprivateendpoint.py",
+      "sha256": "5a7e8a93f2f812f49ca8c7f46fc5ec090100ed85eb6b4997f27e56db802479c2",
+      "functions": [
+        {
+          "name": "create_managed_private_endpoint",
+          "line": 14,
+          "end_line": 17,
+          "branches": []
+        },
+        {
+          "name": "get_managed_private_endpoint",
+          "line": 20,
+          "end_line": 23,
+          "branches": []
+        },
+        {
+          "name": "delete_managed_private_endpoint",
+          "line": 26,
+          "end_line": 35,
+          "branches": []
+        },
+        {
+          "name": "list_private_endpoints_by_azure_resource",
+          "line": 41,
+          "end_line": 51,
+          "branches": []
+        },
+        {
+          "name": "approve_private_endpoint_connection",
+          "line": 54,
+          "end_line": 73,
+          "branches": []
+        },
+        {
+          "name": "get_managed_private_endpoint_azure",
+          "line": 76,
+          "end_line": 84,
+          "branches": []
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/utils/fab_cmd_label_utils.py",
+      "sha256": "4316ddb58a0751b641b5a8299bc4292e5f8eae89d053b89ed449a03ab2ede8cc",
+      "functions": [
+        {
+          "name": "read_labels_definition",
+          "line": 11,
+          "end_line": 17,
+          "branches": [
+            {
+              "line": 13,
+              "kind": "If",
+              "predicate": "not args.input"
+            }
+          ]
+        },
+        {
+          "name": "get_label_id_by_name",
+          "line": 20,
+          "end_line": 28,
+          "branches": [
+            {
+              "line": 24,
+              "kind": "For",
+              "predicate": "label in data.get('labels', [])"
+            },
+            {
+              "line": 25,
+              "kind": "If",
+              "predicate": "label.get('name') == args.name"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/utils/fab_cmd_ls_utils.py",
+      "sha256": "19233754657001a1246e0f2cc20c155d0de86a278fcbff5108af0a4526748f20",
+      "functions": [
+        {
+          "name": "sort_elements",
+          "line": 13,
+          "end_line": 20,
+          "branches": []
+        },
+        {
+          "name": "get_capacities_and_workspaces",
+          "line": 23,
+          "end_line": 30,
+          "branches": []
+        },
+        {
+          "name": "enrich_workspaces_with_details",
+          "line": 33,
+          "end_line": 44,
+          "branches": [
+            {
+              "line": 36,
+              "kind": "For",
+              "predicate": "workspace in sorted_workspaces"
+            },
+            {
+              "line": 38,
+              "kind": "If",
+              "predicate": "workspace_details"
+            }
+          ]
+        },
+        {
+          "name": "update_entry_name_and_type",
+          "line": 47,
+          "end_line": 58,
+          "branches": [
+            {
+              "line": 50,
+              "kind": "If",
+              "predicate": "entry.get('isShortcut')"
+            },
+            {
+              "line": 53,
+              "kind": "If",
+              "predicate": "entry.get('isDirectory')"
+            }
+          ]
+        },
+        {
+          "name": "get_domain_name_by_id",
+          "line": 61,
+          "end_line": 69,
+          "branches": [
+            {
+              "line": 64,
+              "kind": "If",
+              "predicate": "domain_id == None"
+            },
+            {
+              "line": 66,
+              "kind": "For",
+              "predicate": "domain in domains"
+            },
+            {
+              "line": 67,
+              "kind": "If",
+              "predicate": "domain.id == domain_id"
+            }
+          ]
+        },
+        {
+          "name": "format_and_print_output",
+          "line": 72,
+          "end_line": 88,
+          "branches": [
+            {
+              "line": 80,
+              "kind": "If",
+              "predicate": "getattr(args, 'query', None)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/utils/fab_jmespath.py",
+      "sha256": "6110bb32455926af7b2fa0f139777c27654ed062d6c58e9f958cb5d43dfe98e5",
+      "functions": [
+        {
+          "name": "search",
+          "line": 17,
+          "end_line": 35,
+          "branches": [
+            {
+              "line": 20,
+              "kind": "If",
+              "predicate": "not expression"
+            },
+            {
+              "line": 21,
+              "kind": "IfExp",
+              "predicate": "deep_traversal"
+            },
+            {
+              "line": 25,
+              "kind": "If",
+              "predicate": "'.' == expression"
+            },
+            {
+              "line": 28,
+              "kind": "If",
+              "predicate": "isinstance(result, (dict, list))"
+            },
+            {
+              "line": 31,
+              "kind": "ExceptHandler",
+              "predicate": "Exception"
+            },
+            {
+              "line": 32,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.invalid_jmespath_query(), fab_constant.ERROR_INVALID_INPUT)"
+            }
+          ]
+        },
+        {
+          "name": "replace",
+          "line": 38,
+          "end_line": 98,
+          "branches": [
+            {
+              "line": 47,
+              "kind": "If",
+              "predicate": "not expression"
+            },
+            {
+              "line": 54,
+              "kind": "For",
+              "predicate": "(i, part) in enumerate(parts)"
+            },
+            {
+              "line": 62,
+              "kind": "If",
+              "predicate": "len(parts) == 1"
+            },
+            {
+              "line": 78,
+              "kind": "If",
+              "predicate": "'*' in key"
+            },
+            {
+              "line": 82,
+              "kind": "If",
+              "predicate": "key.startswith('[') and key.endswith(']')"
+            },
+            {
+              "line": 48,
+              "kind": "Raise",
+              "predicate": "ValueError('The JMESPath expression cannot be empty')"
+            },
+            {
+              "line": 55,
+              "kind": "If",
+              "predicate": "'[' in part and ']' in part"
+            },
+            {
+              "line": 70,
+              "kind": "If",
+              "predicate": "'*' in parent_expr"
+            },
+            {
+              "line": 75,
+              "kind": "If",
+              "predicate": "parent is None"
+            },
+            {
+              "line": 79,
+              "kind": "Raise",
+              "predicate": "ValueError('Wildcards are not supported')"
+            },
+            {
+              "line": 84,
+              "kind": "If",
+              "predicate": "not isinstance(parent, list) or index >= len(parent)"
+            },
+            {
+              "line": 87,
+              "kind": "If",
+              "predicate": "'[' in key and ']' in key"
+            },
+            {
+              "line": 57,
+              "kind": "If",
+              "predicate": "'*' in index"
+            },
+            {
+              "line": 71,
+              "kind": "Raise",
+              "predicate": "ValueError('Wildcards are not supported in parent expressions')"
+            },
+            {
+              "line": 76,
+              "kind": "Raise",
+              "predicate": "ValueError(f\"Cannot locate parent for expression '{expression}'\")"
+            },
+            {
+              "line": 85,
+              "kind": "Raise",
+              "predicate": "IndexError(f\"Index out of range for '{key}'\")"
+            },
+            {
+              "line": 90,
+              "kind": "If",
+              "predicate": "not isinstance(parent, dict) or key not in parent"
+            },
+            {
+              "line": 94,
+              "kind": "If",
+              "predicate": "not isinstance(parent, dict)"
+            },
+            {
+              "line": 58,
+              "kind": "Raise",
+              "predicate": "ValueError('Wildcards are not supported in array indexing')"
+            },
+            {
+              "line": 91,
+              "kind": "Raise",
+              "predicate": "KeyError(f\"Key '{key}' not found in parent\")"
+            },
+            {
+              "line": 95,
+              "kind": "Raise",
+              "predicate": "ValueError(f\"Parent for '{key}' is not a dictionary\")"
+            }
+          ]
+        },
+        {
+          "name": "_get_json_paths",
+          "line": 102,
+          "end_line": 130,
+          "branches": [
+            {
+              "line": 105,
+              "kind": "If",
+              "predicate": "isinstance(json_obj, dict)"
+            },
+            {
+              "line": 107,
+              "kind": "For",
+              "predicate": "(key, value) in json_obj.items()"
+            },
+            {
+              "line": 115,
+              "kind": "If",
+              "predicate": "isinstance(json_obj, list)"
+            },
+            {
+              "line": 109,
+              "kind": "If",
+              "predicate": "depth < max_depth"
+            },
+            {
+              "line": 116,
+              "kind": "If",
+              "predicate": "not json_obj"
+            },
+            {
+              "line": 119,
+              "kind": "For",
+              "predicate": "(idx, value) in enumerate(json_obj)"
+            },
+            {
+              "line": 108,
+              "kind": "IfExp",
+              "predicate": "current_path"
+            },
+            {
+              "line": 121,
+              "kind": "If",
+              "predicate": "depth < max_depth"
+            }
+          ]
+        },
+        {
+          "name": "is_simple_path_expression",
+          "line": 133,
+          "end_line": 168,
+          "branches": [
+            {
+              "line": 167,
+              "kind": "ExceptHandler",
+              "predicate": "Exception"
+            }
+          ]
+        },
+        {
+          "name": "_is_simple_path_ast_tree",
+          "line": 171,
+          "end_line": 207,
+          "branches": [
+            {
+              "line": 185,
+              "kind": "If",
+              "predicate": "node_type == 'field'"
+            },
+            {
+              "line": 189,
+              "kind": "If",
+              "predicate": "node_type == 'index'"
+            },
+            {
+              "line": 195,
+              "kind": "If",
+              "predicate": "node_type == 'index_expression'"
+            },
+            {
+              "line": 201,
+              "kind": "If",
+              "predicate": "node_type == 'subexpression'"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/utils/fab_util.py",
+      "sha256": "b1facc2ca56501b74fd5e5ddc18a7c8e42d020cbd71549317b7a73948169db82",
+      "functions": [
+        {
+          "name": "is_valid_guid",
+          "line": 44,
+          "end_line": 53,
+          "branches": []
+        },
+        {
+          "name": "is_valid_iso8601_timestamp",
+          "line": 56,
+          "end_line": 72,
+          "branches": []
+        },
+        {
+          "name": "dumps",
+          "line": 76,
+          "end_line": 97,
+          "branches": [
+            {
+              "line": 91,
+              "kind": "If",
+              "predicate": "isinstance(o, (bytes, bytearray))"
+            },
+            {
+              "line": 93,
+              "kind": "Raise",
+              "predicate": "TypeError(f'Object of type {o.__class__.__name__} is not JSON serializable')"
+            }
+          ]
+        },
+        {
+          "name": "process_nargs",
+          "line": 101,
+          "end_line": 104,
+          "branches": [
+            {
+              "line": 102,
+              "kind": "If",
+              "predicate": "isinstance(arg, list)"
+            }
+          ]
+        },
+        {
+          "name": "remove_dot_suffix",
+          "line": 107,
+          "end_line": 108,
+          "branches": []
+        },
+        {
+          "name": "get_dict_from_params",
+          "line": 111,
+          "end_line": 152,
+          "branches": [
+            {
+              "line": 129,
+              "kind": "If",
+              "predicate": "params"
+            },
+            {
+              "line": 130,
+              "kind": "If",
+              "predicate": "isinstance(params, list)"
+            },
+            {
+              "line": 139,
+              "kind": "If",
+              "predicate": "not matches"
+            },
+            {
+              "line": 146,
+              "kind": "For",
+              "predicate": "param in matches"
+            },
+            {
+              "line": 140,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.invalid_parameter_format(norm_params), fab_constant.ERROR_INVALID_INPUT)"
+            }
+          ]
+        },
+        {
+          "name": "get_dict_from_parameter",
+          "line": 155,
+          "end_line": 173,
+          "branches": [
+            {
+              "line": 165,
+              "kind": "If",
+              "predicate": "max_depth != -1 and current_depth >= max_depth"
+            },
+            {
+              "line": 168,
+              "kind": "If",
+              "predicate": "'.' in param"
+            }
+          ]
+        },
+        {
+          "name": "try_get_json_value_from_string",
+          "line": 176,
+          "end_line": 191,
+          "branches": [
+            {
+              "line": 186,
+              "kind": "If",
+              "predicate": "value.strip().startswith('[{') and value.strip().endswith('}]')"
+            },
+            {
+              "line": 189,
+              "kind": "ExceptHandler",
+              "predicate": "json.JSONDecodeError"
+            }
+          ]
+        },
+        {
+          "name": "merge_dicts",
+          "line": 194,
+          "end_line": 209,
+          "branches": [
+            {
+              "line": 198,
+              "kind": "If",
+              "predicate": "not dict1"
+            },
+            {
+              "line": 200,
+              "kind": "If",
+              "predicate": "not dict2"
+            },
+            {
+              "line": 203,
+              "kind": "For",
+              "predicate": "(key, value) in dict2.items()"
+            },
+            {
+              "line": 204,
+              "kind": "If",
+              "predicate": "key in dict1 and isinstance(value, dict)"
+            }
+          ]
+        },
+        {
+          "name": "remove_keys_from_dict",
+          "line": 212,
+          "end_line": 216,
+          "branches": [
+            {
+              "line": 213,
+              "kind": "For",
+              "predicate": "key in keys"
+            },
+            {
+              "line": 214,
+              "kind": "If",
+              "predicate": "key in _dict.keys()"
+            }
+          ]
+        },
+        {
+          "name": "get_os_specific_command",
+          "line": 219,
+          "end_line": 223,
+          "branches": [
+            {
+              "line": 220,
+              "kind": "If",
+              "predicate": "platform.system() == 'Windows'"
+            }
+          ]
+        },
+        {
+          "name": "replace_bypath_to_byconnection",
+          "line": 226,
+          "end_line": 227,
+          "branches": []
+        },
+        {
+          "name": "get_capacity_settings",
+          "line": 230,
+          "end_line": 288,
+          "branches": [
+            {
+              "line": 261,
+              "kind": "If",
+              "predicate": "not az_subscription_id"
+            },
+            {
+              "line": 266,
+              "kind": "If",
+              "predicate": "not az_resource_group"
+            },
+            {
+              "line": 271,
+              "kind": "If",
+              "predicate": "not az_default_location"
+            },
+            {
+              "line": 276,
+              "kind": "If",
+              "predicate": "not az_default_admin"
+            },
+            {
+              "line": 262,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Config.azure_subscription_id_not_set(), fab_constant.ERROR_INVALID_INPUT)"
+            },
+            {
+              "line": 267,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Config.azure_resource_group_not_set(), fab_constant.ERROR_INVALID_INPUT)"
+            },
+            {
+              "line": 272,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Config.azure_location_not_set(), fab_constant.ERROR_INVALID_INPUT)"
+            },
+            {
+              "line": 277,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Config.azure_admin_not_set(), fab_constant.ERROR_INVALID_INPUT)"
+            }
+          ]
+        },
+        {
+          "name": "truncate_columns",
+          "line": 291,
+          "end_line": 349,
+          "branches": [
+            {
+              "line": 308,
+              "kind": "If",
+              "predicate": "not items"
+            },
+            {
+              "line": 320,
+              "kind": "For",
+              "predicate": "f in all_fields"
+            },
+            {
+              "line": 327,
+              "kind": "For",
+              "predicate": "col in columns_to_truncate"
+            },
+            {
+              "line": 336,
+              "kind": "For",
+              "predicate": "col in columns_to_truncate"
+            },
+            {
+              "line": 328,
+              "kind": "If",
+              "predicate": "col in col_widths and col_widths[col] > max_col_width"
+            },
+            {
+              "line": 337,
+              "kind": "If",
+              "predicate": "col not in col_widths"
+            },
+            {
+              "line": 341,
+              "kind": "If",
+              "predicate": "overflow <= 0"
+            },
+            {
+              "line": 346,
+              "kind": "For",
+              "predicate": "item in items"
+            },
+            {
+              "line": 330,
+              "kind": "For",
+              "predicate": "item in items"
+            },
+            {
+              "line": 348,
+              "kind": "If",
+              "predicate": "len(val) > max_col"
+            },
+            {
+              "line": 332,
+              "kind": "If",
+              "predicate": "len(val) > max_col_width"
+            }
+          ]
+        },
+        {
+          "name": "_default",
+          "line": 90,
+          "end_line": 95,
+          "branches": [
+            {
+              "line": 91,
+              "kind": "If",
+              "predicate": "isinstance(o, (bytes, bytearray))"
+            },
+            {
+              "line": 93,
+              "kind": "Raise",
+              "predicate": "TypeError(f'Object of type {o.__class__.__name__} is not JSON serializable')"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/utils/fab_storage.py",
+      "sha256": "8f63e97056c4c9d3c90da6c7a638fd90e1b103e83383686eafa4f9ceac40e3f9",
+      "functions": [
+        {
+          "name": "write_to_storage",
+          "line": 20,
+          "end_line": 32,
+          "branches": [
+            {
+              "line": 27,
+              "kind": "If",
+              "predicate": "export_path['type'] == 'lakehouse'"
+            },
+            {
+              "line": 29,
+              "kind": "If",
+              "predicate": "export_path['type'] == 'local'"
+            },
+            {
+              "line": 31,
+              "kind": "If",
+              "predicate": "export_path['type'] == 'sparkJobDefinition'"
+            }
+          ]
+        },
+        {
+          "name": "_write_to_local",
+          "line": 35,
+          "end_line": 74,
+          "branches": [
+            {
+              "line": 41,
+              "kind": "If",
+              "predicate": "not os.path.exists(file_dir)"
+            },
+            {
+              "line": 48,
+              "kind": "If",
+              "predicate": "is_binary"
+            },
+            {
+              "line": 73,
+              "kind": "ExceptHandler",
+              "predicate": "Exception"
+            },
+            {
+              "line": 52,
+              "kind": "If",
+              "predicate": "not export"
+            },
+            {
+              "line": 57,
+              "kind": "If",
+              "predicate": "is_json"
+            },
+            {
+              "line": 74,
+              "kind": "Raise",
+              "predicate": "IOError(f'Failed to write to local file: {e}')"
+            },
+            {
+              "line": 58,
+              "kind": "If",
+              "predicate": "not export"
+            },
+            {
+              "line": 62,
+              "kind": "If",
+              "predicate": "not export"
+            },
+            {
+              "line": 71,
+              "kind": "If",
+              "predicate": "not export"
+            },
+            {
+              "line": 67,
+              "kind": "IfExp",
+              "predicate": "isinstance(processed_data, str)"
+            }
+          ]
+        },
+        {
+          "name": "_write_to_lakehouse",
+          "line": 77,
+          "end_line": 99,
+          "branches": [
+            {
+              "line": 81,
+              "kind": "If",
+              "predicate": "is_json"
+            },
+            {
+              "line": 83,
+              "kind": "If",
+              "predicate": "not export"
+            },
+            {
+              "line": 92,
+              "kind": "If",
+              "predicate": "response.status_code == 201"
+            },
+            {
+              "line": 98,
+              "kind": "ExceptHandler",
+              "predicate": "Exception"
+            },
+            {
+              "line": 93,
+              "kind": "If",
+              "predicate": "len(data) > 0"
+            },
+            {
+              "line": 96,
+              "kind": "If",
+              "predicate": "not export"
+            },
+            {
+              "line": 99,
+              "kind": "Raise",
+              "predicate": "e"
+            }
+          ]
+        },
+        {
+          "name": "_write_to_sjd",
+          "line": 102,
+          "end_line": 123,
+          "branches": [
+            {
+              "line": 114,
+              "kind": "If",
+              "predicate": "response.status_code == 201"
+            },
+            {
+              "line": 119,
+              "kind": "ExceptHandler",
+              "predicate": "Exception"
+            },
+            {
+              "line": 117,
+              "kind": "If",
+              "predicate": "not export"
+            },
+            {
+              "line": 120,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.file_not_accessible(file_path), fab_constant.ERROR_INVALID_PATH)"
+            }
+          ]
+        },
+        {
+          "name": "_validate_json",
+          "line": 127,
+          "end_line": 136,
+          "branches": [
+            {
+              "line": 129,
+              "kind": "If",
+              "predicate": "isinstance(data, str)"
+            },
+            {
+              "line": 135,
+              "kind": "ExceptHandler",
+              "predicate": "json.JSONDecodeError"
+            },
+            {
+              "line": 131,
+              "kind": "If",
+              "predicate": "isinstance(data, (dict, list))"
+            }
+          ]
+        },
+        {
+          "name": "get_export_path",
+          "line": 139,
+          "end_line": 177,
+          "branches": [
+            {
+              "line": 157,
+              "kind": "If",
+              "predicate": "onelake_export_path and isinstance(onelake_export_path, OneLakeItem)"
+            },
+            {
+              "line": 145,
+              "kind": "ExceptHandler",
+              "predicate": "Exception"
+            },
+            {
+              "line": 161,
+              "kind": "If",
+              "predicate": "item_type != ItemType.LAKEHOUSE or not onelake_export_path.local_path.startswith('Files')"
+            },
+            {
+              "line": 174,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.only_supported_for_lakehouse_files(), fab_constant.ERROR_NOT_SUPPORTED)"
+            },
+            {
+              "line": 147,
+              "kind": "If",
+              "predicate": "output_path"
+            },
+            {
+              "line": 165,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.only_supported_for_lakehouse_files(), fab_constant.ERROR_NOT_SUPPORTED)"
+            },
+            {
+              "line": 149,
+              "kind": "If",
+              "predicate": "os.path.exists(expanded_path)"
+            },
+            {
+              "line": 152,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.no_such_file_or_directory(), fab_constant.ERROR_INVALID_PATH)"
+            }
+          ]
+        },
+        {
+          "name": "get_import_path",
+          "line": 180,
+          "end_line": 220,
+          "branches": [
+            {
+              "line": 198,
+              "kind": "If",
+              "predicate": "onelake_import_path and isinstance(onelake_import_path, OneLakeItem)"
+            },
+            {
+              "line": 215,
+              "kind": "If",
+              "predicate": "export_path is None"
+            },
+            {
+              "line": 187,
+              "kind": "ExceptHandler",
+              "predicate": "Exception"
+            },
+            {
+              "line": 202,
+              "kind": "If",
+              "predicate": "item_type != ItemType.LAKEHOUSE or not onelake_import_path.local_path.startswith('Files/')"
+            },
+            {
+              "line": 216,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.invalid_path(), fab_constant.ERROR_INVALID_PATH)"
+            },
+            {
+              "line": 190,
+              "kind": "If",
+              "predicate": "os.path.exists(expanded_path)"
+            },
+            {
+              "line": 206,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.only_supported_for_lakehouse_files(), fab_constant.ERROR_NOT_SUPPORTED)"
+            },
+            {
+              "line": 193,
+              "kind": "Raise",
+              "predicate": "FabricCLIError(ErrorMessages.Common.no_such_file_or_directory(), fab_constant.ERROR_INVALID_PATH)"
+            }
+          ]
+        },
+        {
+          "name": "do_output",
+          "line": 223,
+          "end_line": 236,
+          "branches": [
+            {
+              "line": 232,
+              "kind": "If",
+              "predicate": "is_json"
+            }
+          ]
+        },
+        {
+          "name": "_create_get_export_file_name",
+          "line": 239,
+          "end_line": 242,
+          "branches": []
+        }
+      ]
+    },
+    {
+      "path": "src/fabric_cli/core/fab_decorators.py",
+      "sha256": "57382685871aef398a8d55880857dcb680ffbbd27e9b6d4468633f3582224a76",
+      "functions": [
+        {
+          "name": "singleton",
+          "line": 20,
+          "end_line": 29,
+          "branches": [
+            {
+              "line": 25,
+              "kind": "If",
+              "predicate": "class_ not in instances"
+            }
+          ]
+        },
+        {
+          "name": "handle_exceptions",
+          "line": 32,
+          "end_line": 57,
+          "branches": [
+            {
+              "line": 43,
+              "kind": "ExceptHandler",
+              "predicate": "FabricCLIError"
+            },
+            {
+              "line": 50,
+              "kind": "If",
+              "predicate": "e.status_code == ERROR_UNAUTHORIZED"
+            }
+          ]
+        },
+        {
+          "name": "set_command_context",
+          "line": 60,
+          "end_line": 89,
+          "branches": [
+            {
+              "line": 77,
+              "kind": "If",
+              "predicate": "runtime_mode == FAB_MODE_INTERACTIVE or (runtime_mode == FAB_MODE_COMMANDLINE and fab_state_config.get_config(FAB_CONTEXT_PERSISTENCE_ENABLED) == 'true')"
+            }
+          ]
+        },
+        {
+          "name": "getinstance",
+          "line": 24,
+          "end_line": 27,
+          "branches": [
+            {
+              "line": 25,
+              "kind": "If",
+              "predicate": "class_ not in instances"
+            }
+          ]
+        },
+        {
+          "name": "decorator",
+          "line": 38,
+          "end_line": 55,
+          "branches": [
+            {
+              "line": 43,
+              "kind": "ExceptHandler",
+              "predicate": "FabricCLIError"
+            },
+            {
+              "line": 50,
+              "kind": "If",
+              "predicate": "e.status_code == ERROR_UNAUTHORIZED"
+            }
+          ]
+        },
+        {
+          "name": "decorator",
+          "line": 66,
+          "end_line": 87,
+          "branches": [
+            {
+              "line": 77,
+              "kind": "If",
+              "predicate": "runtime_mode == FAB_MODE_INTERACTIVE or (runtime_mode == FAB_MODE_COMMANDLINE and fab_state_config.get_config(FAB_CONTEXT_PERSISTENCE_ENABLED) == 'true')"
+            }
+          ]
+        },
+        {
+          "name": "wrapper",
+          "line": 40,
+          "end_line": 53,
+          "branches": [
+            {
+              "line": 43,
+              "kind": "ExceptHandler",
+              "predicate": "FabricCLIError"
+            },
+            {
+              "line": 50,
+              "kind": "If",
+              "predicate": "e.status_code == ERROR_UNAUTHORIZED"
+            }
+          ]
+        },
+        {
+          "name": "wrapper",
+          "line": 68,
+          "end_line": 85,
+          "branches": [
+            {
+              "line": 77,
+              "kind": "If",
+              "predicate": "runtime_mode == FAB_MODE_INTERACTIVE or (runtime_mode == FAB_MODE_COMMANDLINE and fab_state_config.get_config(FAB_CONTEXT_PERSISTENCE_ENABLED) == 'true')"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "source_support_matrix": "---\ncommands:\n  acl:\n    supported_elements:\n      - workspace\n    subcommands:\n      ls:\n        supported_elements:\n          - item\n          - onelake\n        supported_items:\n          - gateway\n          - connection\n        unsupported_items:\n          - semantic_model\n          - environment\n          - dashboard\n      get:\n        supported_elements:\n          - item\n          - onelake\n        supported_items:\n          - gateway\n          - connection\n        unsupported_items:\n          - semantic_model\n          - environment\n          - dashboard\n      rm:\n        supported_elements:\n          - workspace\n        supported_items:\n          - gateway\n          - connection\n      set:\n        supported_elements:\n          - workspace\n        supported_items:\n          - gateway\n          - connection\n  \n  job:\n    supported_items:\n      - spark_job_definition\n      - notebook\n      - data_pipeline\n      - lakehouse\n      - graph_model\n    subcommands:\n      run:\n      run_cancel:\n      run_list:\n      run_update:\n      run_sch:\n      run-rm:\n      run_status:\n      run_wait:\n  \n  label:\n    supported_elements:\n      - item\n    subcommands:\n      set:\n        unsupported_items:\n          - warehouse\n          - sql_endpoint\n      rm:\n        unsupported_items:\n          - warehouse\n          - sql_endpoint\n  \n  table:\n    supported_elements:\n      - onelake\n    supported_items:\n      - lakehouse\n    subcommands:\n      load:\n      optimize:\n      schema:\n        supported_items:\n          - lakehouse\n          - warehouse\n          - kql_database\n          - mirrored_database\n          - semantic_model\n          - sql_database\n      vacuum:\n  \n  fs:\n    subcommands:\n      ls:\n        supported_elements: \n          - tenant\n          - workspace\n          - folder\n          - virtual_workspace\n          - virtual_item_container\n          - onelake\n        supported_items:\n          - lakehouse\n          - spark_job_definition\n          - warehouse\n          - kql_database\n          - mirrored_database\n          - semantic_model\n          - capacity\n          - domain\n          - spark_pool\n          - managed_identity\n          - managed_private_endpoint\n          - external_data_share\n          - connection\n          - gateway\n          - sql_database\n          - cosmos_db_database\n          - graph_ql_api\n      rm:\n        supported_elements: \n          - tenant\n          - workspace\n          - item\n          - onelake # TODO only shortcuts\n          - folder\n        supported_items:\n          - spark_pool\n          - capacity\n          - managed_identity\n          - managed_private_endpoint\n          - domain\n          - connection\n          - gateway\n          - external_data_share\n        unsupported_items:\n          - dashboard\n          - paginated_report\n          - sql_endpoint\n          - mirrored_warehouse\n          - datamart  \n          - org_app\n          - metric_set\n          - apache_airflow_job\n          - exploration\n          - retail_data_manager\n          - healthcare_data_solution\n          - sustainability_data_solution\n          - ai_skill\n      mv:\n        supported_elements:\n          - workspace\n          - folder\n          - onelake\n        supported_items: # same as export\n          - report\n          - spark_job_definition\n          - semantic_model\n          - notebook\n          - kql_dashboard\n          - data_pipeline\n          - kql_queryset\n          # - eventhouse\n          # - kql_database\n          - mirrored_database\n          - cosmos_db_database\n          # - digital_twin_builder\n          # - digital_twin_builder_flow\n          - reflex\n          # - eventstream\n          - mounted_data_factory\n          - copy_job\n          - variable_library\n          - graph_ql_api\n          #- lakehouse # this is included just to support underlying /Files\n          - dataflow\n          - sql_database\n          - user_data_function\n          - map\n          - environment\n          # - graph_model\n          # - ontology\n      cp:\n        supported_elements:\n          - workspace\n          - folder\n          - onelake\n          - local_path\n        supported_items: # same as export\n          - report\n          - spark_job_definition\n          - semantic_model\n          - notebook\n          - kql_dashboard\n          - data_pipeline\n          - kql_queryset\n          # - eventhouse\n          # - kql_database\n          - mirrored_database\n          - cosmos_db_database\n          # - digital_twin_builder\n          # - digital_twin_builder_flow\n          - reflex\n          # - eventstream\n          - mounted_data_factory\n          - copy_job\n          - variable_library\n          - graph_ql_api\n          #- lakehouse # this is included just to support underlying /Files\n          - dataflow\n          - sql_database\n          - user_data_function\n          - map\n          - environment\n          # - graph_model\n          # - ontology\n      ln:\n        supported_elements:\n          - onelake\n      cd:\n        supported_elements:\n          - tenant\n          - workspace\n          - virtual_workspace\n          - virtual_item_container\n          - item\n          - folder\n          - virtual_item\n          - virtual_workspace_item\n          - onelake\n      exists:\n        supported_elements:\n          - workspace\n          - item\n          - onelake\n          - folder\n        supported_items:\n          - spark_pool\n          - capacity\n          - managed_identity\n          - managed_private_endpoint\n          - domain\n          - connection\n          - gateway\n          - external_data_share\n      export:\n        supported_elements:\n          - workspace\n        supported_items:\n          - report\n          - spark_job_definition\n          - semantic_model\n          - notebook\n          - kql_dashboard\n          - data_pipeline\n          - kql_queryset\n          - eventhouse\n          - kql_database\n          - mirrored_database\n          - reflex\n          - eventstream\n          - mounted_data_factory\n          - copy_job\n          - variable_library\n          - graph_ql_api\n          - dataflow\n          - sql_database\n          - cosmos_db_database\n          - digital_twin_builder\n          - digital_twin_builder_flow\n          - user_data_function\n          - graph_query_set\n          - map\n          - lakehouse\n          - environment\n          - graph_model\n          - ontology\n      import:\n        supported_items:\n          - report\n          - spark_job_definition\n          - semantic_model\n          - notebook\n          - kql_dashboard\n          - data_pipeline\n          - kql_queryset\n          - eventhouse\n          - kql_database\n          - mirrored_database\n          - reflex\n          - eventstream\n          - mounted_data_factory\n          - environment\n          - copy_job\n          - variable_library\n          - graph_ql_api\n          - dataflow\n          - sql_database\n          - cosmos_db_database\n          - digital_twin_builder\n          - digital_twin_builder_flow\n          - user_data_function\n          - map\n          - lakehouse\n          - environment\n          - graph_model\n          - ontology\n        unsupported_items:\n          - graph_query_set\n      get:\n        supported_elements:\n          - workspace\n          - item\n          - onelake \n          - folder\n        supported_items:\n          - sparkpool\n          - capacity\n          - managed_private_endpoint\n          - domain\n          - connection\n          - gateway\n          - external_data_share\n          - cosmos_db_database\n          - user_data_function\n          - graph_query_set\n        unsupported_items:\n          - dashboard\n          - paginated_report\n          - sql_endpoint\n          - mirrored_warehouse\n          - datamart\n          - org_app\n          - metric_set\n          - apache_airflow_job\n          - exploration\n          - retail_data_manager\n          - healthcare_data_solution\n          - sustainability_data_solution\n          - ai_skill\n      set:\n        supported_elements:\n          - workspace\n          - item\n          - onelake # TODO only shortcuts\n          - folder\n        supported_items:\n          - sparkpool\n          - capacity\n          - domain\n          - connection\n          - gateway\n        unsupported_items:\n          - dashboard\n          - paginated_report\n          - sql_endpoint\n          - mirrored_warehouse\n          - datamart\n          - org_app\n          - metric_set\n          - apache_airflow_job\n          - exploration\n          - retail_data_manager\n          - healthcare_data_solution\n          - sustainability_data_solution\n          - ai_skill\n          - graph_query_set\n      open:\n        supported_elements: \n          - workspace\n          - item\n      bulkexport:\n        supported_elements: \n          - workspace\n          - folder\n        supported_items:\n          - report\n          - ml_model\n          - ml_experiment\n          - environment\n          - spark_job_definition\n          - semantic_model\n          - notebook\n          - kql_dashboard\n          - data_pipeline\n          - kql_queryset\n          - eventhouse\n          - kql_database\n          - mirrored_database\n          - reflex\n          - eventstream\n          - mounted_data_factory\n          - copy_job\n          - variable_library\n          - graph_ql_api\n          - dataflow\n          - sql_database\n          - cosmos_db_database\n          - digital_twin_builder\n          - digital_twin_builder_flow\n          - user_data_function\n          - graph_query_set\n          - map\n          - lakehouse\n          - ontology\n          - graph_model\n      mkdir:\n        supported_elements: \n          - workspace\n          - item\n          - onelake\n          - folder\n        supported_items:\n          - spark_pool\n          - capacity\n          - managed_identity\n          - managed_private_endpoint\n          - domain\n          - connection\n          - gateway\n          - external_data_share\n        unsupported_items:\n          - dashboard\n          - paginated_report\n          - sql_endpoint\n          - datamart\n          - mirrored_warehouse\n          - org_app\n          - metric_set\n          - apache_airflow_job\n          - exploration\n          - retail_data_manager\n          - healthcare_data_solution\n          - sustainability_data_solution\n          - ai_skill\n      start:\n        supported_items:\n          - capacity\n          - mirrored_database\n      stop:\n        supported_items:\n          - capacity\n          - mirrored_database\n      assign:\n        supported_items:\n          - capacity\n          - domain\n      unassign:\n        supported_items:\n          - capacity\n          - domain\n",
+  "leaf_count": 9,
+  "modes": [
+    "cli",
+    "interactive",
+    "batch/REPL front-door composition"
+  ],
+  "status": "source branch denominator, not proof that every branch is implemented or tested",
+  "independent_fixtures": [
+    "cases.json",
+    "label_local.json",
+    "mutation_cases.json",
+    "mutation_edges.json",
+    "boundaries.json",
+    "../catalog/cases.json",
+    "../catalog/interactive_cases.json",
+    "../raw_api/cases.json"
+  ]
+}

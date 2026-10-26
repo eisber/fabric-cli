@@ -43,6 +43,14 @@ Thin composition adapters must not reproduce its retry or deadline policies.
 those adapters, without shadowing `NotebookExecutor::wait` or replacing a
 whole-job deadline. Zero delays do not start a sleep; excessive delays fail.
 
+`HttpExecutor` also implements `fabric_sdk_operations::OperationExecutor`.
+Its adapter only translates typed request/response/error fields and delegates
+to `execute_fabric` and `wait_for`. Credentials, cancellation, request budgets,
+accepted-operation evidence and polling remain in the existing
+`OperationSession`; no additional operation loop or timer is installed.
+The existing workspace, item, folder and Notebook executor interfaces and
+their strict status policies remain unchanged.
+
 ### Explicit public-origin adapter
 
 `execute_bound(PublicOrigin, method, url, token, body, headers, limit)` is a

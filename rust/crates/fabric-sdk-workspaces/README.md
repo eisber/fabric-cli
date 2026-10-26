@@ -32,6 +32,15 @@ literals remain unchanged. See the
 [source/consumer matrix](../../docs/workspace-get-compatibility.md) for API shape,
 source quirks, exact-versus-safety boundaries and independent offline evidence.
 
+`WorkspaceClient::enrich_workspace_metadata` accepts validated, completed
+`WorkspaceMetadata` from an explicit caller-owned primary operation. It runs
+the same optional enrichment loop without repeating primary GET. It does not
+accept an operation handle or interpret 202 as completed metadata; the existing
+`get_workspace_metadata` status, shape, cancellation and safety contracts remain
+unchanged. The facade exposes the same additive forwarding method. This focused
+crate still has no dependency on the shared operation engine or a concrete
+HTTP adapter, avoiding a reverse dependency cycle.
+
 ## Ownership and dependencies
 
 The crate belongs to the `sdk` layer. Its production dependencies are
@@ -69,6 +78,35 @@ credentials. Accepted responses remain distinct from completed responses, and
 errors retain operation-ID and uncertain-mutation evidence.
 See the [mutation matrix](../../docs/mutation-compatibility.md) for the pinned
 source, actual CLI consumers, omissions and integration gates.
+
+`ResourceOperation::with_continuation_token(&str)` is an explicit opt-in query
+attachment for a source command that reuses `args.request_params`. It neither
+records read state nor inherits tokens into unrelated operations, accounts,
+tenants, polls or future commands. The CLI command owner must provide actual
+last-dispatched read evidence, not a collection's next unconsumed token.
+`new`, `encoded`, ordinary `with_query`, bodies, completion and origin rules
+are unchanged. Empty token means no token override/addition, while existing
+query values still receive source dictionary/encoding treatment. Controls fail
+before dispatch.
+Existing query keys overwrite at their first insertion position; repeated token
+attachment replaces, never appends a duplicate. `with_hard_delete` still requires
+DELETE and defaults to the same exact route; query composition now retains other
+keys and overwrites `hardDelete` instead of introducing a second question mark.
+
+The opt-in source query path reuses Azure's existing URL query serializer and
+adjusts its two safe-character differences to Python `quote_plus`: spaces use
+`+`, star is `%2A`, tilde is `~`. Literal percent escapes stay opaque and are
+encoded exactly once. No copied percent-encoding loop, pager dependency (which
+would cycle back to this crate), runtime, or transport is added. Existing caller
+operation/request/response/cancellation bounds remain unchanged; no unsupported
+token-size guarantee is inferred. `ResourceOperation` debug omits its path.
+
+`fabric-sdk-operations/examples/continuation_query.rs` exercises the existing
+public `ResourceOperations`/`FabricOperation::from_resource` adapter with synthetic
+credentials/execution. Its development-only source comparison reuses the original
+Python source loaders and runs pinned `do_request` itself; this is not a shipped
+SDK-to-CLI dependency. Managed command-owned state and read observers are separate
+owners and remain incomplete until their paired consumers pass.
 
 ## Extraction validation
 

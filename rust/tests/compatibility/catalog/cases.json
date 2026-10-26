@@ -1,0 +1,951 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "name": "default",
+      "params": null,
+      "long": false,
+      "query": null,
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "Alpha",
+                "type": "Report",
+                "description": "Details",
+                "workspaceName": "flat",
+                "workspaceId": "flat-id",
+                "hierarchy": {
+                  "workspace": {
+                    "displayName": "Hierarchy",
+                    "id": "hierarchy-id"
+                  }
+                }
+              },
+              {
+                "id": "b",
+                "name": "Beta",
+                "type": "Lakehouse",
+                "workspaceName": "Flat"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "search": "needle",
+              "pageSize": 1000
+            }
+          }
+        ],
+        "data": [
+          {
+            "name": "Alpha",
+            "type": "Report",
+            "workspace": "Hierarchy",
+            "description": "Details"
+          },
+          {
+            "name": "Beta",
+            "type": "Lakehouse",
+            "workspace": "Flat",
+            "description": ""
+          }
+        ],
+        "diagnostics": [
+          "Searching...",
+          "",
+          "2 items found",
+          "",
+          ""
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "long",
+      "params": null,
+      "long": true,
+      "query": null,
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "Alpha",
+                "type": "Report",
+                "description": "Details",
+                "workspaceName": "flat",
+                "workspaceId": "flat-id",
+                "hierarchy": {
+                  "workspace": {
+                    "displayName": "Hierarchy",
+                    "id": "hierarchy-id"
+                  }
+                }
+              },
+              {
+                "id": "b",
+                "name": "Beta",
+                "type": "Lakehouse",
+                "workspaceName": "Flat"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "search": "needle",
+              "pageSize": 1000
+            }
+          }
+        ],
+        "data": [
+          {
+            "name": "Alpha",
+            "id": "a",
+            "type": "Report",
+            "workspace": "Hierarchy",
+            "workspace_id": "hierarchy-id",
+            "description": "Details"
+          },
+          {
+            "name": "Beta",
+            "id": "b",
+            "type": "Lakehouse",
+            "workspace": "Flat",
+            "workspace_id": null,
+            "description": ""
+          }
+        ],
+        "diagnostics": [
+          "Searching...",
+          "",
+          "2 items found",
+          "",
+          ""
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "eq",
+      "params": "type=report",
+      "long": false,
+      "query": null,
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "Alpha",
+                "type": "Report",
+                "description": "Details",
+                "workspaceName": "flat",
+                "workspaceId": "flat-id",
+                "hierarchy": {
+                  "workspace": {
+                    "displayName": "Hierarchy",
+                    "id": "hierarchy-id"
+                  }
+                }
+              },
+              {
+                "id": "b",
+                "name": "Beta",
+                "type": "Lakehouse",
+                "workspaceName": "Flat"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "search": "needle",
+              "pageSize": 1000,
+              "filter": "Type eq 'Report'"
+            }
+          }
+        ],
+        "data": [
+          {
+            "name": "Alpha",
+            "type": "Report",
+            "workspace": "Hierarchy",
+            "description": "Details"
+          },
+          {
+            "name": "Beta",
+            "type": "Lakehouse",
+            "workspace": "Flat",
+            "description": ""
+          }
+        ],
+        "diagnostics": [
+          "Searching...",
+          "",
+          "2 items found",
+          "",
+          ""
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "multiple",
+      "params": "type=[report,lakehouse]",
+      "long": false,
+      "query": null,
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "Alpha",
+                "type": "Report",
+                "description": "Details",
+                "workspaceName": "flat",
+                "workspaceId": "flat-id",
+                "hierarchy": {
+                  "workspace": {
+                    "displayName": "Hierarchy",
+                    "id": "hierarchy-id"
+                  }
+                }
+              },
+              {
+                "id": "b",
+                "name": "Beta",
+                "type": "Lakehouse",
+                "workspaceName": "Flat"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "search": "needle",
+              "pageSize": 1000,
+              "filter": "(Type eq 'Report' or Type eq 'Lakehouse')"
+            }
+          }
+        ],
+        "data": [
+          {
+            "name": "Alpha",
+            "type": "Report",
+            "workspace": "Hierarchy",
+            "description": "Details"
+          },
+          {
+            "name": "Beta",
+            "type": "Lakehouse",
+            "workspace": "Flat",
+            "description": ""
+          }
+        ],
+        "diagnostics": [
+          "Searching...",
+          "",
+          "2 items found",
+          "",
+          ""
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "ne",
+      "params": "type!=[Dashboard,Report]",
+      "long": false,
+      "query": null,
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "Alpha",
+                "type": "Report",
+                "description": "Details",
+                "workspaceName": "flat",
+                "workspaceId": "flat-id",
+                "hierarchy": {
+                  "workspace": {
+                    "displayName": "Hierarchy",
+                    "id": "hierarchy-id"
+                  }
+                }
+              },
+              {
+                "id": "b",
+                "name": "Beta",
+                "type": "Lakehouse",
+                "workspaceName": "Flat"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "search": "needle",
+              "pageSize": 1000,
+              "filter": "(Type ne 'Dashboard' and Type ne 'Report')"
+            }
+          }
+        ],
+        "data": [
+          {
+            "name": "Alpha",
+            "type": "Report",
+            "workspace": "Hierarchy",
+            "description": "Details"
+          },
+          {
+            "name": "Beta",
+            "type": "Lakehouse",
+            "workspace": "Flat",
+            "description": ""
+          }
+        ],
+        "diagnostics": [
+          "Searching...",
+          "",
+          "2 items found",
+          "",
+          ""
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "unsupported",
+      "params": "type=Dashboard",
+      "long": false,
+      "query": null,
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "Alpha",
+                "type": "Report",
+                "description": "Details",
+                "workspaceName": "flat",
+                "workspaceId": "flat-id",
+                "hierarchy": {
+                  "workspace": {
+                    "displayName": "Hierarchy",
+                    "id": "hierarchy-id"
+                  }
+                }
+              },
+              {
+                "id": "b",
+                "name": "Beta",
+                "type": "Lakehouse",
+                "workspaceName": "Flat"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [],
+        "data": null,
+        "diagnostics": [],
+        "error": {
+          "code": "UnsupportedItemType",
+          "message": "The type 'Dashboard' is not supported"
+        }
+      }
+    },
+    {
+      "name": "unknown",
+      "params": "type=NotAType",
+      "long": false,
+      "query": null,
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "Alpha",
+                "type": "Report",
+                "description": "Details",
+                "workspaceName": "flat",
+                "workspaceId": "flat-id",
+                "hierarchy": {
+                  "workspace": {
+                    "displayName": "Hierarchy",
+                    "id": "hierarchy-id"
+                  }
+                }
+              },
+              {
+                "id": "b",
+                "name": "Beta",
+                "type": "Lakehouse",
+                "workspaceName": "Flat"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [],
+        "data": null,
+        "diagnostics": [],
+        "error": {
+          "code": "InvalidItemType",
+          "message": "'NotAType' isn't a recognized item type. Run 'find --help' to see examples"
+        }
+      }
+    },
+    {
+      "name": "empty-types",
+      "params": "type=[]",
+      "long": false,
+      "query": null,
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "Alpha",
+                "type": "Report",
+                "description": "Details",
+                "workspaceName": "flat",
+                "workspaceId": "flat-id",
+                "hierarchy": {
+                  "workspace": {
+                    "displayName": "Hierarchy",
+                    "id": "hierarchy-id"
+                  }
+                }
+              },
+              {
+                "id": "b",
+                "name": "Beta",
+                "type": "Lakehouse",
+                "workspaceName": "Flat"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [],
+        "data": null,
+        "diagnostics": [],
+        "error": {
+          "code": "InvalidInput",
+          "message": "'[]' isn't a recognized item type. Specify at least one item type"
+        }
+      }
+    },
+    {
+      "name": "parameter",
+      "params": "other=value",
+      "long": false,
+      "query": null,
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "Alpha",
+                "type": "Report",
+                "description": "Details",
+                "workspaceName": "flat",
+                "workspaceId": "flat-id",
+                "hierarchy": {
+                  "workspace": {
+                    "displayName": "Hierarchy",
+                    "id": "hierarchy-id"
+                  }
+                }
+              },
+              {
+                "id": "b",
+                "name": "Beta",
+                "type": "Lakehouse",
+                "workspaceName": "Flat"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [],
+        "data": null,
+        "diagnostics": [],
+        "error": {
+          "code": "InvalidInput",
+          "message": "'other' isn't a supported parameter"
+        }
+      }
+    },
+    {
+      "name": "invalid-params",
+      "params": "invalid",
+      "long": false,
+      "query": null,
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "Alpha",
+                "type": "Report",
+                "description": "Details",
+                "workspaceName": "flat",
+                "workspaceId": "flat-id",
+                "hierarchy": {
+                  "workspace": {
+                    "displayName": "Hierarchy",
+                    "id": "hierarchy-id"
+                  }
+                }
+              },
+              {
+                "id": "b",
+                "name": "Beta",
+                "type": "Lakehouse",
+                "workspaceName": "Flat"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [],
+        "data": null,
+        "diagnostics": [],
+        "error": {
+          "code": "InvalidInput",
+          "message": "Invalid parameter format: 'invalid'. Use key=value or key!=value"
+        }
+      }
+    },
+    {
+      "name": "query-scalar",
+      "params": null,
+      "long": false,
+      "query": "length(@)",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "Alpha",
+                "type": "Report",
+                "description": "Details",
+                "workspaceName": "flat",
+                "workspaceId": "flat-id",
+                "hierarchy": {
+                  "workspace": {
+                    "displayName": "Hierarchy",
+                    "id": "hierarchy-id"
+                  }
+                }
+              },
+              {
+                "id": "b",
+                "name": "Beta",
+                "type": "Lakehouse",
+                "workspaceName": "Flat"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "search": "needle",
+              "pageSize": 1000
+            }
+          }
+        ],
+        "data": null,
+        "diagnostics": [
+          "Searching...",
+          "No items found."
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "query-empty",
+      "params": null,
+      "long": false,
+      "query": "[?name=='Missing']",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "Alpha",
+                "type": "Report",
+                "description": "Details",
+                "workspaceName": "flat",
+                "workspaceId": "flat-id",
+                "hierarchy": {
+                  "workspace": {
+                    "displayName": "Hierarchy",
+                    "id": "hierarchy-id"
+                  }
+                }
+              },
+              {
+                "id": "b",
+                "name": "Beta",
+                "type": "Lakehouse",
+                "workspaceName": "Flat"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "search": "needle",
+              "pageSize": 1000
+            }
+          }
+        ],
+        "data": null,
+        "diagnostics": [
+          "Searching...",
+          "No items found."
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "query",
+      "params": null,
+      "long": true,
+      "query": "[].{name:name,workspace:workspace}",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "Alpha",
+                "type": "Report",
+                "description": "Details",
+                "workspaceName": "flat",
+                "workspaceId": "flat-id",
+                "hierarchy": {
+                  "workspace": {
+                    "displayName": "Hierarchy",
+                    "id": "hierarchy-id"
+                  }
+                }
+              },
+              {
+                "id": "b",
+                "name": "Beta",
+                "type": "Lakehouse",
+                "workspaceName": "Flat"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "search": "needle",
+              "pageSize": 1000
+            }
+          }
+        ],
+        "data": [
+          {
+            "name": "Alpha",
+            "workspace": "Hierarchy"
+          },
+          {
+            "name": "Beta",
+            "workspace": "Flat"
+          }
+        ],
+        "diagnostics": [
+          "Searching...",
+          "",
+          "2 items found",
+          "",
+          ""
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "paged",
+      "params": "type=report",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a",
+                "displayName": "Alpha",
+                "type": "Report",
+                "description": "Details",
+                "workspaceName": "flat",
+                "workspaceId": "flat-id",
+                "hierarchy": {
+                  "workspace": {
+                    "displayName": "Hierarchy",
+                    "id": "hierarchy-id"
+                  }
+                }
+              }
+            ],
+            "continuationToken": "next"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "b",
+                "name": "Beta",
+                "type": "Lakehouse",
+                "workspaceName": "Flat"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "search": "needle",
+              "pageSize": 1000,
+              "filter": "Type eq 'Report'"
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "continuationToken": "next",
+              "pageSize": 1000
+            }
+          }
+        ],
+        "data": [
+          {
+            "name": "Alpha",
+            "type": "Report",
+            "workspace": "Hierarchy",
+            "description": "Details"
+          },
+          {
+            "name": "Beta",
+            "type": "Lakehouse",
+            "workspace": "Flat",
+            "description": ""
+          }
+        ],
+        "diagnostics": [
+          "Searching...",
+          "",
+          "2 items found",
+          "",
+          ""
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "empty",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": []
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "search": "needle",
+              "pageSize": 1000
+            }
+          }
+        ],
+        "data": null,
+        "diagnostics": [
+          "Searching...",
+          "No items found."
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "service-error",
+      "responses": [
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "InvalidSearch",
+            "message": "Bad search"
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search",
+            "body": {
+              "search": "needle",
+              "pageSize": 1000
+            }
+          }
+        ],
+        "data": null,
+        "diagnostics": [
+          "Searching..."
+        ],
+        "error": {
+          "code": "InvalidSearch",
+          "message": "Catalog search failed: Bad search"
+        }
+      }
+    }
+  ],
+  "hidden": [
+    {
+      "name": "connections",
+      "request": {
+        "method": "GET",
+        "url": "https://api.fabric.microsoft.com/v1/connections"
+      }
+    },
+    {
+      "name": "gateways",
+      "request": {
+        "method": "GET",
+        "url": "https://api.fabric.microsoft.com/v1/gateways"
+      }
+    },
+    {
+      "name": "domains",
+      "request": {
+        "method": "GET",
+        "url": "https://api.fabric.microsoft.com/v1/admin/domains"
+      }
+    },
+    {
+      "name": "connection-types",
+      "request": {
+        "method": "GET",
+        "url": "https://api.fabric.microsoft.com/v1/connections/supportedConnectionTypes"
+      }
+    },
+    {
+      "name": "spark-pools",
+      "request": {
+        "method": "GET",
+        "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/spark/pools"
+      }
+    },
+    {
+      "name": "private-endpoints",
+      "request": {
+        "method": "GET",
+        "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/managedPrivateEndpoints"
+      }
+    },
+    {
+      "name": "shares",
+      "request": {
+        "method": "GET",
+        "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/externalDataShares"
+      }
+    },
+    {
+      "name": "domain-workspaces",
+      "request": {
+        "method": "GET",
+        "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces"
+      }
+    }
+  ]
+}

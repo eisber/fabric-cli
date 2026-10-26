@@ -1,8 +1,23 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+use fabric_cli_output::OutputInput;
+use fabric_sdk_operations::OperationError;
 use fabric_sdk_workspaces::mutations::ResourceError;
 use serde_json::Value;
+
+/// Project a borrowed SDK operation failure through the existing Python CLI policy.
+///
+/// This pure same-layer integration seam is shared by resource and table/job CLI
+/// consumers. It does not log, perform I/O, consume the SDK error, fabricate an
+/// HTTP status or discard its operation/uncertainty evidence. Structured service
+/// data is intentionally rendered only at this explicit CLI boundary.
+///
+/// Existing source dictionary/list/scalar/Unicode formatting, period stripping,
+/// code selection and unsupported-JSON failure behavior are unchanged.
+pub fn operation_error_output(error: &OperationError) -> OutputInput {
+    crate::MutationError::from(error.resource_error()).output()
+}
 
 pub(crate) fn source_message(error: &ResourceError) -> Result<String, ()> {
     if let Some(status) = error.status
@@ -39,7 +54,7 @@ pub(crate) fn source_message(error: &ResourceError) -> Result<String, ()> {
     Ok(error.message.clone())
 }
 
-fn python_repr(value: &Value) -> Result<String, ()> {
+pub(crate) fn python_repr(value: &Value) -> Result<String, ()> {
     Ok(match value {
         Value::Null => "None".into(),
         Value::Bool(true) => "True".into(),

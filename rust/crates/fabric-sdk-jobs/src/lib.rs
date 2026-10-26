@@ -7,17 +7,22 @@
 //! `client/fab_api_jobs.py` and `utils/fab_cmd_job_utils.py`. Credentials,
 //! transport, asynchronous time and cancellation belong to the caller.
 
+mod headers;
+mod operations;
 use azure_core::{
     credentials::AccessToken,
     http::{Method, Url},
 };
 pub use fabric_core::{Audience, CredentialSelection, TokenCredential};
+pub use fabric_sdk_operations::OperationError;
 use fabric_sdk_paging::TokenPager;
 pub use fabric_sdk_paging::{PagedValues, PagingError, PagingErrorKind, PagingLimits};
 use fabric_sdk_workspaces::models::FabricServiceError;
 pub use fabric_sdk_workspaces::workspaces::{
     WorkspaceExecutionError as JobExecutionError, WorkspaceResponse as JobResponse,
 };
+pub use headers::JobRequestHeaders;
+pub use operations::SharedJobOperations;
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
@@ -40,6 +45,7 @@ pub struct JobRequest<'a> {
     token: &'a AccessToken,
     body: Vec<u8>,
     max_response_bytes: NonZeroUsize,
+    headers: JobRequestHeaders,
 }
 
 impl JobRequest<'_> {
@@ -63,6 +69,10 @@ impl JobRequest<'_> {
     pub fn max_response_bytes(&self) -> NonZeroUsize {
         self.max_response_bytes
     }
+    /// Validated caller-owned headers for this command, never ambient defaults.
+    pub fn headers(&self) -> &JobRequestHeaders {
+        &self.headers
+    }
 }
 
 impl fmt::Debug for JobRequest<'_> {
@@ -78,6 +88,13 @@ impl fmt::Debug for JobRequest<'_> {
 /// Use the shared HTTP engine for deadlines, read retries and response bounds;
 /// never replay mutations, follow redirects, select credentials or create a runtime.
 pub trait JobExecutor: Send + Sync {
+    /// Explicit header capability; existing executors accept only the empty contract.
+    ///
+    /// An implementation opting in must forward all supported fields through its
+    /// checked shared request path, never silently discard them.
+    fn supports_request_headers(&self, headers: &JobRequestHeaders) -> bool {
+        headers.is_empty()
+    }
     /// Execute one validated job request.
     fn execute<'a>(
         &'a self,
@@ -94,11 +111,38 @@ pub trait JobExecutor: Send + Sync {
 /// capability is needed only when a synchronous cancellation response identifies
 /// a generic operation instead of a job instance.
 pub trait JobOperationReconciler: Send + Sync {
+    /// Inspect the explicit header context; existing implementations have none.
+    fn request_headers(&self) -> JobRequestHeaders {
+        JobRequestHeaders::default()
+    }
+    /// Return a command-local reconciler preserving the selected request headers.
+    ///
+    /// Existing custom reconcilers fail explicitly rather than dropping a skill
+    /// during generic-operation follow-ups. The default path needs no scoping.
+    fn with_request_headers(
+        &self,
+        _headers: &JobRequestHeaders,
+    ) -> Result<Arc<dyn JobOperationReconciler>, JobError> {
+        Err(JobError::RequestHeadersUnsupported)
+    }
     /// Reconcile the accepted generic operation and retain its actual HTTP result.
     fn reconcile<'a>(
         &'a self,
         accepted: &'a JobResponse,
     ) -> JobFuture<'a, Result<JobResponse, JobError>>;
+
+    /// Reconcile with the command's cancellation signal.
+    ///
+    /// Implementations supporting operation evidence should override this method
+    /// so cancellation is recorded by the shared operation session before return.
+    /// The default preserves compatibility with existing custom reconcilers.
+    fn reconcile_with_cancellation<'a>(
+        &'a self,
+        accepted: &'a JobResponse,
+        cancelled: JobFuture<'a, ()>,
+    ) -> JobFuture<'a, Result<JobResponse, JobError>> {
+        Box::pin(cancellable(cancelled, self.reconcile(accepted)))
+    }
 }
 
 /// Pinned source job types; spelling and casing are service-significant.
@@ -347,6 +391,15 @@ impl Default for JobLimits {
 /// Typed failures; Display never includes tokens, URLs or raw provider diagnostics.
 #[derive(Debug, thiserror::Error)]
 pub enum JobError {
+    /// Caller supplied a skill header rejected before credentials or service I/O.
+    #[error("invalid job request headers")]
+    InvalidRequestHeaders,
+    /// An injected executor/reconciler did not opt into the requested headers.
+    #[error("the injected job executor or reconciler does not support request headers")]
+    RequestHeadersUnsupported,
+    /// Original shared-operation failure, including ID, raw diagnostics and uncertainty.
+    #[error(transparent)]
+    Operation(#[from] OperationError),
     /// The explicit selection is not Fabric.
     #[error("job operations require the Fabric audience")]
     InvalidAudience,
@@ -368,6 +421,8 @@ pub enum JobError {
         code: String,
         /// Structured service response, when valid.
         service_error: Option<Box<FabricServiceError>>,
+        /// Exact parsed service failure, including missing or future structured fields.
+        raw_service_error: Option<Box<Value>>,
         /// Original service headers.
         headers: BTreeMap<String, String>,
     },
@@ -409,6 +464,9 @@ pub enum JobError {
     /// Python rejects a negative sleep rather than silently using a default.
     #[error("sleep length must be non-negative")]
     InvalidSleep,
+    /// A syntactically valid service polling integer exceeds native duration bounds.
+    #[error("job polling interval exceeds the supported duration bound")]
+    PollingDelayLimit,
     /// Shared page collection failed with precise committed partial progress.
     #[error("job page collection failed")]
     Paging(Box<PagingError<JobError>>),
@@ -423,6 +481,7 @@ pub struct JobClient {
     selection: CredentialSelection,
     executor: Arc<dyn JobExecutor>,
     limits: JobLimits,
+    headers: JobRequestHeaders,
 }
 
 impl JobClient {
@@ -438,7 +497,30 @@ impl JobClient {
             selection,
             executor,
             limits,
+            headers: JobRequestHeaders::default(),
         }
+    }
+
+    /// Clone a command-local client with explicit validated request headers.
+    ///
+    /// The original client and its injected identity/executor remain unchanged.
+    /// Unsupported executor capability fails before credentials or mutation.
+    pub fn with_request_headers(&self, headers: JobRequestHeaders) -> Result<Self, JobError> {
+        if !self.executor.supports_request_headers(&headers) {
+            return Err(JobError::RequestHeadersUnsupported);
+        }
+        Ok(Self {
+            credential: self.credential.clone(),
+            selection: self.selection.clone(),
+            executor: self.executor.clone(),
+            limits: self.limits,
+            headers,
+        })
+    }
+
+    /// Inspect the explicit immutable request context, without identity acquisition.
+    pub fn request_headers(&self) -> &JobRequestHeaders {
+        &self.headers
     }
 
     async fn request(
@@ -485,6 +567,7 @@ impl JobClient {
                 token: &token,
                 body: bytes,
                 max_response_bytes,
+                headers: self.headers.clone(),
             })
             .await
             .map_err(JobError::Execution)?;
@@ -629,20 +712,20 @@ impl JobClient {
         operations: Option<&dyn JobOperationReconciler>,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Option<RunHandle>, JobError> {
-        cancellable(cancelled, async {
-            let mut handle = self.cancel(target, id, std::future::pending()).await?;
-            if handle.requires_operation_reconciliation() {
-                let operations = operations.ok_or(JobError::OperationReconcilerRequired)?;
-                let result = operations.reconcile(&handle.accepted).await?;
-                match result.status {
-                    200 | 201 | 204 => return Ok(None),
-                    202 => handle.accepted = result,
-                    status => return Err(JobError::UnexpectedStatus(status)),
-                }
+        let mut cancelled = pin!(cancelled);
+        let mut handle = self.cancel(target, id, cancelled.as_mut()).await?;
+        if handle.requires_operation_reconciliation() {
+            let operations = operations.ok_or(JobError::OperationReconcilerRequired)?;
+            let result = operations
+                .reconcile_with_cancellation(&handle.accepted, Box::pin(cancelled.as_mut()))
+                .await?;
+            match result.status {
+                200 | 201 | 204 => return Ok(None),
+                202 => handle.accepted = result,
+                status => return Err(JobError::UnexpectedStatus(status)),
             }
-            Ok(Some(handle))
-        })
-        .await
+        }
+        Ok(Some(handle))
     }
 
     /// Request remote cancellation once; acceptance is not terminal cancellation.
@@ -884,11 +967,35 @@ fn polling_interval(
     if let Some(custom) = custom {
         return Ok(custom);
     }
-    match header(headers, "retry-after").and_then(|v| v.trim().parse::<i64>().ok()) {
-        Some(value) if value < 0 => Err(JobError::InvalidSleep),
-        Some(value) => Ok(value as u64),
-        None => Ok(10),
+    let Some(value) = header(headers, "retry-after") else {
+        return Ok(10);
+    };
+    let value = value.trim();
+    let negative = value.starts_with('-');
+    let digits = value.strip_prefix(['+', '-']).unwrap_or(value);
+    let bytes = digits.as_bytes();
+    if bytes.is_empty()
+        || !bytes[0].is_ascii_digit()
+        || !bytes[bytes.len() - 1].is_ascii_digit()
+        || !bytes.iter().enumerate().all(|(i, b)| {
+            b.is_ascii_digit()
+                || (*b == b'_'
+                    && i > 0
+                    && bytes[i - 1].is_ascii_digit()
+                    && i + 1 < bytes.len()
+                    && bytes[i + 1].is_ascii_digit())
+        })
+    {
+        return Ok(10);
     }
+    let seconds = digits
+        .replace('_', "")
+        .parse::<u64>()
+        .map_err(|_| JobError::PollingDelayLimit)?;
+    if negative && seconds != 0 {
+        return Err(JobError::InvalidSleep);
+    }
+    Ok(seconds)
 }
 
 fn service_failure(response: &JobResponse) -> JobError {
@@ -914,6 +1021,7 @@ fn service_failure(response: &JobResponse) -> JobError {
     JobError::Http {
         status: response.status,
         code,
+        raw_service_error: body.clone().map(Box::new),
         service_error: body
             .and_then(|v| serde_json::from_value(v).ok())
             .map(Box::new),

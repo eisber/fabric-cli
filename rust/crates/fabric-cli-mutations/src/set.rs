@@ -56,7 +56,11 @@ impl MutationHost<'_> {
             Some(metadata) => metadata,
             None => self.metadata.read(element).await?,
         };
-        let mut payload = update_fabric_element(metadata, query, input)?;
+        let mut payload = update_fabric_element(metadata, query, input).map_err(|error| {
+            if matches!(element.kind(),NodeKind::Item(_)) && error.code=="InvalidQuery" {
+                MutationError::new("InvalidQuery",format!("Invalid query. Either '{query}' is not a valid query or the item does not contain the specified path"))
+            } else { error }
+        })?;
         self.ui.notice(
             NoticeKind::Progress,
             &format!("Setting new property for '{}'...", element.name()),
@@ -125,8 +129,6 @@ impl MutationHost<'_> {
 }
 
 fn validate_query(element: &Element, query: &str) -> Result<(), MutationError> {
-    let ast = jpx_core::parse(query).map_err(|_| invalid_query())?;
-    path(&ast)?;
     if matches!(element.kind(), NodeKind::Item(_)) {
         if !["displayName", "description", "properties", "definition"]
             .iter()
@@ -139,10 +141,10 @@ fn validate_query(element: &Element, query: &str) -> Result<(), MutationError> {
                 ),
             ));
         }
+        validate_simple_path(query)?;
     } else {
-        let mut blocked = vec!["id", "type", "workspaceId", "folderId"];
-        if matches!(element.kind(), NodeKind::Workspace(_)) {
-            blocked.extend([
+        let blocked: &[&str] = if matches!(element.kind(), NodeKind::Workspace(_)) {
+            &[
                 "capacityId",
                 "capacityRegion",
                 "apiEndpoint",
@@ -151,18 +153,44 @@ fn validate_query(element: &Element, query: &str) -> Result<(), MutationError> {
                 "workspaceIdentity",
                 "managedPrivateEndpoints",
                 "roleAssignments",
-            ]);
-        }
-        if blocked
-            .iter()
-            .any(|key| query == *key || query.starts_with(&format!("{key}.")))
-        {
-            return Err(MutationError::new(
-                "InvalidQuery",
-                format!("Query '{query}' is not supported for set"),
-            ));
-        }
+            ]
+        } else {
+            &[]
+        };
+        validate_metadata_query(query, blocked)?;
     }
+    Ok(())
+}
+
+pub(crate) fn validate_metadata_query(
+    query: &str,
+    additional: &[&str],
+) -> Result<(), MutationError> {
+    validate_simple_path(query)?;
+    if ["id", "type", "workspaceId", "folderId"]
+        .iter()
+        .chain(additional.iter())
+        .any(|key| query == *key || query.starts_with(&format!("{key}.")))
+    {
+        return Err(MutationError::new(
+            "InvalidQuery",
+            format!("Query '{query}' is not supported for set command"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_simple_path(query: &str) -> Result<(), MutationError> {
+    let invalid = || {
+        MutationError::new(
+            "InvalidQuery",
+            format!(
+                "Query '{query}' contains filters or wildcards which are not supported for set item command"
+            ),
+        )
+    };
+    let ast = jpx_core::parse(query).map_err(|_| invalid())?;
+    path(&ast).map_err(|_| invalid())?;
     Ok(())
 }
 
@@ -199,6 +227,23 @@ fn index(value: i32, length: usize) -> Result<usize, MutationError> {
 /// # Errors
 /// Missing/scalar parents, invalid indices or non-simple paths fail explicitly.
 pub fn update_fabric_element(
+    metadata: Value,
+    query: &str,
+    input: &str,
+) -> Result<Value, MutationError> {
+    let metadata = update_full_element(metadata, query, input)?;
+    let top = query.split('.').next().ok_or_else(invalid_query)?;
+    Ok(match metadata.get(top) {
+        Some(value) => {
+            let mut result = serde_json::Map::new();
+            result.insert(top.into(), value.clone());
+            Value::Object(result)
+        }
+        None => json!({}),
+    })
+}
+
+pub(crate) fn update_full_element(
     mut metadata: Value,
     query: &str,
     input: &str,
@@ -239,15 +284,7 @@ pub fn update_fabric_element(
             .ok_or_else(invalid_query)?
             .insert((*key).into(), input);
     }
-    let top = query.split('.').next().ok_or_else(invalid_query)?;
-    Ok(match metadata.get(top) {
-        Some(value) => {
-            let mut result = serde_json::Map::new();
-            result.insert(top.into(), value.clone());
-            Value::Object(result)
-        }
-        None => json!({}),
-    })
+    Ok(metadata)
 }
 
 fn input_value(input: &str) -> Result<Value, MutationError> {

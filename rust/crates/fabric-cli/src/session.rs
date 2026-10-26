@@ -15,6 +15,7 @@ use fabric_sdk::{
     Client, capacities::CapacityExecutor, folders::FolderExecutor, items::ItemExecutor,
     workspaces::WorkspaceExecutor,
 };
+use fabric_sdk_operations::OperationExecutor;
 use std::{future::Future, pin::pin, sync::Arc};
 
 /// The four existing read interfaces; no extra transport or execution policy.
@@ -48,7 +49,47 @@ pub struct ReadSession<'a> {
     pub config: ReadConfig,
 }
 
-impl ReadSession<'_> {
+/// Explicit source-synchronous workspace GET policy over the unchanged read session.
+///
+/// The borrowed operation executor supplies the same caller-owned HTTP/time
+/// policy; default sessions and custom four-trait read executors remain valid.
+/// Like the original read host, dispatch runs on the caller's thread; its
+/// synchronous lookup interface does not require `Sync` or promise a Send future.
+pub struct SourceOperationReadSession<'a, 'session> {
+    base: &'a ReadSession<'session>,
+    operations: &'a dyn OperationExecutor,
+}
+
+impl SourceOperationReadSession<'_, '_> {
+    /// Dispatch using source GET operation reconciliation before enrichment.
+    ///
+    /// Other read paths, discovery, projection and stream rendering are unchanged.
+    pub async fn dispatch(
+        &self,
+        command: &ReadCommand,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<TextPlan, text::TextError> {
+        self.base
+            .dispatch_with_source_operations(command, Some(self.operations), cancelled)
+            .await
+    }
+}
+
+impl<'session> ReadSession<'session> {
+    /// Select source-synchronous workspace GET without changing default contracts.
+    ///
+    /// Supply the same shared executor used for reads, with its existing timer.
+    /// This does not create a runtime, transport, credential provider or poller.
+    pub fn with_source_operations<'a>(
+        &'a self,
+        operations: &'a dyn OperationExecutor,
+    ) -> SourceOperationReadSession<'a, 'session> {
+        SourceOperationReadSession {
+            base: self,
+            operations,
+        }
+    }
+
     /// Execute a parsed read through real discovery, SDK, query and rendering.
     ///
     /// JSON remains the preview default. Explicit text uses the shared pure
@@ -63,9 +104,19 @@ impl ReadSession<'_> {
         command: &ReadCommand,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<TextPlan, text::TextError> {
+        self.dispatch_with_source_operations(command, None, cancelled)
+            .await
+    }
+
+    async fn dispatch_with_source_operations(
+        &self,
+        command: &ReadCommand,
+        operations: Option<&dyn OperationExecutor>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<TextPlan, text::TextError> {
         let format = OutputFormat::resolve(command.output_format.as_deref(), Some("json"))?;
         let mut cancelled = pin!(cancelled);
-        let result = self.execute(command, cancelled.as_mut()).await;
+        let result = self.execute(command, operations, cancelled.as_mut()).await;
         let envelope = match result {
             Ok(Some(input)) => OutputEnvelope::new(self.timestamp.clone(), input),
             Ok(None) => {
@@ -92,6 +143,7 @@ impl ReadSession<'_> {
     async fn execute(
         &self,
         command: &ReadCommand,
+        operations: Option<&dyn OperationExecutor>,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Option<fabric_cli_output::OutputInput>, CommandError> {
         if self.tenant.id() != Some(self.sdk.selection().tenant())
@@ -136,7 +188,7 @@ impl ReadSession<'_> {
         normalized.output_format = Some("json".into());
         host.with_folders(self.executor)
             .with_scalar_query()
-            .execute(&normalized, cancelled.as_mut())
+            .execute_with_source_operations(&normalized, operations, cancelled.as_mut())
             .await
     }
 }
