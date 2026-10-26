@@ -51,3 +51,14 @@ Failed/Cancelled structured, list, scalar, Unicode and null errors, HTTP
 authorization/code precedence and a period-only message that must stay empty
 after its first normalization. Original SDK reconciliation evidence remains
 inspectable after repeated output projections.
+
+`skill_headers.json` and `skill_headers_reference.py` execute the pinned
+`do_request` and every job API body with an explicitly injected synthetic
+context. They check header absence/empty truthiness, exact value preservation,
+Fabric-only audience selection, source precedence over an explicit raw header,
+wire routes/bodies and follow-up URLs. Existing source expectations are not
+rewritten. Native SDK/CLI tests add all eight leaves across the five source
+resource types and skill variants, shared HTTP reads/retries/pages/polls,
+generic-operation errors/results, concurrent isolation and capability/syntax
+rejection before mutation. The synthetic header consumer does not certify
+live-service acceptance or new credential/identity behavior.

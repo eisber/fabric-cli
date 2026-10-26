@@ -14,6 +14,30 @@ methods, bounded response allocation, token and exact request bytes.
 `JobResponse` and `JobExecutionError` reuse the existing workspace wire types;
 structured failures retain `FabricServiceError`.
 
+## Explicit request headers
+
+`JobRequestHeaders::with_skill(Some(value))` selects only the source
+`x-ms-fabric-skill` header. `None` and an empty value emit no header. It cannot
+override authentication, origin, audience or another header. Values are not
+discovered from environment variables or mutable global context, and Debug
+does not expose them. Controls, a leading ASCII space and values beyond the shared
+header-byte bound are rejected before credential acquisition or I/O.
+
+`JobClient::with_request_headers` returns an immutable command-scoped clone;
+existing `new` and endpoint APIs keep their signatures and empty default.
+`JobRequest::headers` exposes the explicit contract to an injected executor.
+Existing executors accept only empty headers unless they override
+`supports_request_headers` and actually forward the fields. A nonempty header
+on a legacy executor fails explicitly, never silently disappears.
+
+For a shared generic-operation reconciler that carries the same request
+context, use `SharedJobOperations::from_job_executor` with that job executor.
+It adapts the shared operation engine's validated requests through the same
+header-aware executor, without another LRO/retry/credential policy. The existing
+`SharedJobOperations::new` remains available for ordinary `OperationExecutor`
+implementations. Such a legacy reconciler must explicitly support command
+headers before a CLI command can select them.
+
 `JobTarget::new(workspace, item, JobType::TableMaintenance)` supports the table
 consumer without introducing another execution/polling implementation.
 `JobType` includes all five source job types, not just notebooks and pipelines.

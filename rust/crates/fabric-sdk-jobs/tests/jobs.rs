@@ -595,3 +595,53 @@ async fn additional_retry_after_integer_branches_preserve_wait_or_source_failure
         }
     }
 }
+
+#[test]
+fn explicit_skill_header_contract_is_bounded_redacted_and_old_executor_defaults_are_safe() {
+    use fabric_sdk_jobs::JobRequestHeaders;
+    for value in [None, Some("")] {
+        assert!(JobRequestHeaders::with_skill(value).unwrap().is_empty());
+    }
+    let headers = JobRequestHeaders::with_skill(Some("caller-skill")).unwrap();
+    assert_eq!(
+        headers.as_slice(),
+        &[("x-ms-fabric-skill".into(), "caller-skill".into())]
+    );
+    assert!(!format!("{headers:?}").contains("caller-skill"));
+    let maximum = 16 * 1024 - "x-ms-fabric-skill".len() - 4;
+    assert!(JobRequestHeaders::with_skill(Some(&"x".repeat(maximum))).is_ok());
+    assert!(matches!(
+        JobRequestHeaders::with_skill(Some(&"x".repeat(maximum + 1))),
+        Err(JobError::InvalidRequestHeaders)
+    ));
+    for value in ["bad\r\ninjection", "bad\t", "\u{7f}", " leading"] {
+        assert!(matches!(
+            JobRequestHeaders::with_skill(Some(value)),
+            Err(JobError::InvalidRequestHeaders)
+        ));
+    }
+}
+
+#[tokio::test]
+async fn old_executor_cannot_silently_drop_requested_headers_and_validation_does_not_acquire_tokens()
+ {
+    let credential = Arc::new(TestCredential::default());
+    let http = ScriptedHttp::new([]);
+    let service = client(
+        credential.clone(),
+        http.clone(),
+        Arc::new(TestTimer::default()),
+        JobLimits::default(),
+    );
+    let result = service.with_request_headers(
+        fabric_sdk_jobs::JobRequestHeaders::with_skill(Some("explicit")).unwrap(),
+    );
+    assert!(matches!(result, Err(JobError::RequestHeadersUnsupported)));
+    assert_eq!(credential.calls.load(Ordering::SeqCst), 0);
+    assert!(http.requests.lock().unwrap().is_empty());
+    let empty = service
+        .with_request_headers(fabric_sdk_jobs::JobRequestHeaders::default())
+        .unwrap();
+    assert!(empty.request_headers().is_empty());
+    assert!(service.request_headers().is_empty());
+}

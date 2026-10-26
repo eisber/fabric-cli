@@ -68,8 +68,12 @@ impl Harness {
             executor.clone(),
             JobLimits::default(),
         );
-        let operations =
-            SharedJobOperations::new(credential, selection, executor, OperationLimits::default());
+        let operations = SharedJobOperations::from_job_executor(
+            credential,
+            selection,
+            executor,
+            OperationLimits::default(),
+        );
         let workspace = Element::child(
             "demo",
             Some("ws".into()),
@@ -351,4 +355,50 @@ async fn direct_sdk_service_failure_retains_its_distinct_job_http_classification
     let requests = http.requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].method(), azure_core::http::Method::Get);
+}
+
+#[tokio::test]
+async fn skill_reaches_generic_operation_polling_without_erasing_errors_or_mutation_evidence() {
+    for timeout in [false, true] {
+        let h = Harness::new(
+            response(
+                200,
+                r#"{"status":"Failed","error":{"message":"source failure"}}"#,
+                &[],
+            ),
+            timeout,
+        );
+        let mut cmd = command(timeout);
+        cmd.skill = Some("job-lro".into());
+        let failure = h.host().execute(&cmd, pending()).await.unwrap_err();
+        let JobCommandError::Operation(ref error) = failure else {
+            panic!("lost operation evidence");
+        };
+        assert_eq!(error.operation_id.as_deref(), Some(OPERATION));
+        assert!(error.mutation_may_have_occurred);
+        assert_eq!(
+            error.raw_service_error.as_deref(),
+            Some(&json!({"message":"source failure"}))
+        );
+        let output = failure
+            .envelope(timestamp(), Some(cmd.command_path()))
+            .to_value()
+            .unwrap();
+        assert_eq!(output["result"]["error_code"], "LongRunningOperationFailed");
+        assert_eq!(
+            output["result"]["message"],
+            "The operation failed: {'message': 'source failure'}"
+        );
+        assert_request_path(&h, timeout);
+        for request in h.http.requests.lock().unwrap().iter() {
+            assert_eq!(
+                request
+                    .headers()
+                    .get_optional_str(&"x-ms-fabric-skill".into()),
+                Some("job-lro")
+            );
+        }
+        assert!(h.sdk.request_headers().is_empty());
+        assert!(h.operations.request_headers().is_empty());
+    }
 }

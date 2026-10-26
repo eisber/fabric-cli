@@ -64,9 +64,15 @@ host reader; no SDK/CLI library discovers ambient files.
 `--disable` storage are explicitly represented. Parser cardinality/required
 flags are checked against the unchanged full inventory.
 No job query option exists in the source inventory; this slice adds none.
-The hidden `--skill` value is retained in the typed command but rejected before
-I/O until coordinated host request-header plumbing exists; it is never silently
-accepted and discarded.
+The hidden `--skill` value now supplies only the explicitly caller-owned
+`x-ms-fabric-skill` header. Empty or absent values emit none, matching source
+truthiness. Immutable client/reconciler clones carry the selected context
+through all eight leaves, status polls, pages, timeout cancellation and generic
+operation/result retrieval. Existing host struct literals and default endpoint
+signatures remain valid. Legacy executors/reconcilers must opt in to header
+support or fail before mutation; they cannot silently discard the value.
+The actual HTTP adapter selects the existing checked `execute_bound` path with
+`PublicOrigin::Fabric`, not an inferred or arbitrary endpoint/audience.
 
 ## Preserved oddities, not redesigns
 
@@ -165,8 +171,14 @@ The new job-operation output corpus is checked against unchanged Python
 HTTP/exception/decorator bodies, independently of the native real shared-HTTP
 handler tests. The original 155 contracts and resumed branch expectations remain
 unchanged. This closes the generic-operation formatter row, not all job parity.
-Hidden skill-header plumbing, wide/non-finite JSON representation and shared
-text/main-level exception projection remain separately coordinated interfaces.
+The caller-injected skill-header path is implemented without a shared engine
+change; controls/a leading ASCII space and the shared 16 KiB header
+budget fail explicitly before credentials or HTTP. This validation timing/code
+is a bounded SDK safety distinction from Python Requests exception details.
+The header-aware shared request path also retains its existing finite URL/body
+bounds; headerless default calls retain their old executor path.
+Wide/non-finite JSON representation and shared text/main-level exception
+projection remain separately coordinated interfaces.
 
 Online validation is unexecuted. Account approval alone does not authorize
 job start/cancel/deletion. Exact tenant, client registration, disposable workspace,

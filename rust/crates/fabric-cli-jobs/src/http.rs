@@ -1,8 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use fabric_sdk_http::{ExecutionError, HttpExecutor};
-use fabric_sdk_jobs::{JobExecutionError, JobExecutor, JobFuture, JobRequest, JobResponse};
+use fabric_sdk_http::{ExecutionError, HttpExecutor, PublicOrigin};
+use fabric_sdk_jobs::{
+    JobExecutionError, JobExecutor, JobFuture, JobRequest, JobRequestHeaders, JobResponse,
+};
 use fabric_sdk_operations::{
     OperationExecutionError, OperationExecutor, OperationRequest, OperationResponse,
 };
@@ -25,17 +27,35 @@ impl HttpJobExecutor {
 }
 
 impl JobExecutor for HttpJobExecutor {
+    fn supports_request_headers(&self, _: &JobRequestHeaders) -> bool {
+        true
+    }
     fn execute<'a>(
         &'a self,
         request: JobRequest<'a>,
     ) -> JobFuture<'a, Result<JobResponse, JobExecutionError>> {
         Box::pin(async move {
+            if request.headers().is_empty() {
+                return self
+                    .http
+                    .execute_fabric(
+                        request.method(),
+                        request.url(),
+                        request.token(),
+                        request.body(),
+                        request.max_response_bytes(),
+                    )
+                    .await
+                    .map_err(map_error);
+            }
             self.http
-                .execute_fabric(
+                .execute_bound(
+                    PublicOrigin::Fabric,
                     request.method(),
                     request.url(),
                     request.token(),
                     request.body(),
+                    request.headers().as_slice(),
                     request.max_response_bytes(),
                 )
                 .await
