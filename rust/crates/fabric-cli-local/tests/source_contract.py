@@ -15,6 +15,8 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
+from typing import Any, Optional
+import unicodedata
 from unittest.mock import patch
 
 PIN = "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4"
@@ -116,6 +118,30 @@ def main() -> None:
         assert rows[0] == {"setting": "cache_enabled", "value": "true"}
         assert rows[-1] == {"setting": "check_cli_version_updates", "value": "true"}
         assert rows[5] == {"setting": "local_definition_labels", "value": ""}
+
+        table_lines: list[tuple[str, bool]] = []
+        table_globals = {
+            "Any": Any,
+            "Optional": Optional,
+            "shutil": SimpleNamespace(
+                get_terminal_size=lambda fallback: os.terminal_size((80, 24))
+            ),
+            "unicodedata": unicodedata,
+            "print_grey": lambda text, to_stderr=True: table_lines.append((text, to_stderr)),
+        }
+        for name in (
+            "_char_visual_width", "_get_visual_length", "get_visual_length",
+            "_wrap_text", "_format_unix_style_field", "_format_unix_style_entry",
+            "print_entries_unix_style",
+        ):
+            function("utils/fab_ui.py", name, table_globals)
+        table_globals["print_entries_unix_style"](rows, ["setting", "value"], header=True)
+        assert len(table_lines) == 20
+        assert all(not to_stderr for _, to_stderr in table_lines)
+        assert table_lines[0][0].split() == ["setting", "value"]
+        assert table_lines[1][0] == "-" * len(table_lines[0][0])
+        for (line, _), row in zip(table_lines[2:], rows):
+            assert line.split() == [cell for cell in (row["setting"], row["value"]) if cell]
 
         cache_names = (
             "_get_workspaces_from_cache", "_get_workspace_items_from_cache",

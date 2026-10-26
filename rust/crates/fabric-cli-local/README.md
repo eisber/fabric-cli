@@ -123,6 +123,10 @@ default file, not regenerated from Rust. Rust public consumers cover real
 set/get persistence, listing/defaults/order, cache mutation/sentinel preservation,
 named version, aliases/conversion, errors, migration, Unix permissions, and
 shared writer failures.
+The source table renderer is also executed directly with a fixed 80-column
+terminal: configuration headers remain lowercase `setting` and `value`,
+followed by a separator and all eighteen rows on stdout. The native consumer
+checks that same shape; title-casing is not a source table behavior.
 `navigation_source_contract.py` executes the six additional Python handlers with
 synthetic navigation state, isolated context persistence, fake identity metadata,
 browser capture and terminal capture. Native consumers cover all six through
