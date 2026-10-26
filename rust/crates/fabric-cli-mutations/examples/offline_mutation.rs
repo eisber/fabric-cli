@@ -53,24 +53,27 @@ impl ResourceOperations for Operations {
 struct Ui {
     confirmed: bool,
     notices: Vec<Value>,
+    prompts: Vec<String>,
 }
 
 impl MutationUi for Ui {
     fn notice(&mut self, kind: NoticeKind, text: &str) {
         self.notices.push(json!({"kind":match kind { NoticeKind::Progress=>"progress",NoticeKind::Warning=>"warning",NoticeKind::Help=>"help" },"message":text}));
     }
-    fn confirm<'a>(&'a mut self, _: &'a str) -> CommandFuture<'a, bool> {
+    fn confirm<'a>(&'a mut self, prompt: &'a str) -> CommandFuture<'a, bool> {
+        self.prompts.push(prompt.into());
         Box::pin(std::future::ready(self.confirmed))
     }
 }
 
-struct Metadata(Value);
+struct Metadata(Value, usize);
 
 impl MutationMetadata for Metadata {
     fn read<'a>(
         &'a mut self,
         _: &'a Arc<Element>,
     ) -> CommandFuture<'a, Result<Value, MutationError>> {
+        self.1 += 1;
         Box::pin(std::future::ready(Ok(self.0.clone())))
     }
 }
@@ -166,8 +169,9 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
     let mut ui = Ui {
         confirmed: input["confirm"].as_bool().unwrap_or(true),
         notices: Vec::new(),
+        prompts: Vec::new(),
     };
-    let mut metadata = Metadata(input["metadata"].clone());
+    let mut metadata = Metadata(input["metadata"].clone(), 0);
     let mut host = MutationHost {
         operations: &mut operations,
         ui: &mut ui,
@@ -264,6 +268,21 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
         fabric_cli_mutations::CacheEffect::Invalidate {target}=>json!({"action":"invalidate","workspace":target.workspace().and_then(|workspace|workspace.id().map(str::to_owned))}),
         _=>panic!("unexpected create cache effect"),
     }).collect::<Vec<_>>()).unwrap_or_default();
+    let set_cache = match &result {
+        Ok(result) => result
+            .effects
+            .iter()
+            .filter_map(|effect| match effect {
+                fabric_cli_mutations::CacheEffect::Renamed { name, .. } => Some(name.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        Err(_) => Vec::new(),
+    };
+    let error_message = result
+        .as_ref()
+        .err()
+        .and_then(|error| error.output().message);
     let mut output = match result {
         Ok(result) => json!({
             "requests": operations.requests,
@@ -286,7 +305,14 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
     }
     if input["capture_creation"] == true {
         output["cache"] = Value::Array(cache);
-        output["notices"] = Value::Array(ui.notices);
+        output["notices"] = Value::Array(ui.notices.clone());
+    }
+    if input["capture_set"] == true {
+        output["metadata_reads"] = json!(metadata.1);
+        output["prompts"] = json!(ui.prompts);
+        output["notices"] = json!(ui.notices);
+        output["renamed"] = json!(set_cache);
+        output["error_message"] = json!(error_message);
     }
     Ok(output)
 }

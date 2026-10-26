@@ -86,6 +86,14 @@ dispatch, source status behavior, required-value distinctions and nested request
 values. This is a bounded policy matrix, not proof of every option or main-host
 dispatch.
 
+Item metadata SET keeps the original command wrapper's missing/scalar/index path
+diagnostic without changing the separately exported pure helper's errors.
+`tests/metadata_set_reference.py` compares every original item type's SET policy,
+rejected delete alias diagnostics, and metadata read/prompt/progress/PATCH/cache
+ordering across confirmation, query and response-status variants. Definition SET
+aliases/codecs remain a separate dependency; finite JSON safety rejections stay
+explicit rather than being mislabeled as path failures.
+
 Report creation embeds all seven original parts and changes only the
 `definition.pbir` dataset reference when the explicit/dependent SemanticModel ID
 is truthy. A missing ID after accepted or incomplete dependency creation retains

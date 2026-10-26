@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import enum
+from functools import cache
 import json
 import os
 import subprocess
@@ -21,15 +22,16 @@ from python_reference import CLIError, PIN, load, reference
 from removal_reference import policy_classes
 
 
-def support_checker()->Any:
+@cache
+def support_checker(command:str="mkdir")->Any:
     """Execute original support conversion and hierarchy methods, never Rust lists."""
     constants=SimpleNamespace(ERROR_INVALID_ITEM_TYPE="InvalidItemType",ERROR_UNSUPPORTED_COMMAND="UnsupportedCommand")
     common=load("errors/common.py",{})
     hierarchy=load("errors/hierarchy.py",{})
     types=load("core/fab_types.py",dict(Enum=enum.Enum,auto=enum.auto,List=list,FabricCLIError=CLIError,
         fab_constant=constants,ErrorMessages=SimpleNamespace(Common=common.CommonErrors)))
-    gates=[row for row in support_rows() if row["command"]=="mkdir"]
-    dictionary={"commands":{"fs":{"subcommands":{"mkdir":{
+    gates=[row for row in support_rows() if row["command"]==command]
+    dictionary={"commands":{"fs":{"subcommands":{command:{
         key:[row["resource"] for row in gates if row["gate"]==key]
         for key in ("unsupported_items","supported_items","supported_elements")
     }}}}}
@@ -46,7 +48,7 @@ def support_checker()->Any:
         item=object.__new__(item_class)
         item.item_type=types.ItemType.from_string(kind)
         item.type=types.FabricElementType.ITEM
-        item.check_command_support(SimpleNamespace(name="FS_MKDIR",value="mkdir"))
+        item.check_command_support(SimpleNamespace(name=f"FS_{command.upper()}",value="del" if command=="rm" else command))
     return check
 
 

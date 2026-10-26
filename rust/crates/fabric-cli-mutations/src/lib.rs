@@ -405,7 +405,10 @@ fn check_item_support(element: &Element, set: bool) -> Result<(), MutationError>
         if blocked {
             return Err(MutationError::new(
                 "UnsupportedCommand",
-                format!("This command is not supported for {}", item_type.as_str()),
+                format!(
+                    "not supported for command '{}'",
+                    if set { "set" } else { "del" }
+                ),
             ));
         }
     }

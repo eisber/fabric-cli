@@ -162,6 +162,66 @@ async fn creation_parameters_lowercase_keys_in_objects_nested_inside_arrays_with
 }
 
 #[tokio::test]
+async fn item_metadata_path_failure_keeps_source_wrapper_without_changing_pure_helper() {
+    let query = "properties.missing.child";
+    let mut operations = Operations::default();
+    let mut ui = Ui::default();
+    let mut metadata = Metadata {
+        data: json!({"properties":{}}),
+        ..Metadata::default()
+    };
+    let error = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    }
+    .set(&item("Notebook", Some("id")), query, "new", true)
+    .await
+    .unwrap_err();
+    assert_eq!(error.code, "InvalidQuery");
+    assert_eq!(
+        error.message,
+        "Invalid query. Either 'properties.missing.child' is not a valid query or the item does not contain the specified path"
+    );
+    assert_eq!(metadata.reads, 1);
+    assert!(operations.requests.is_empty());
+    assert_eq!(ui.notices.len(), 1);
+    assert_eq!(
+        fabric_cli_mutations::update_fabric_element(json!({"properties":{}}), query, "new")
+            .unwrap_err()
+            .message,
+        "Invalid set query"
+    );
+}
+
+#[tokio::test]
+async fn blocked_set_and_delete_retain_exact_source_alias_diagnostics_before_reads_or_prompts() {
+    let mut operations = Operations::default();
+    let mut ui = Ui::default();
+    let mut metadata = Metadata::default();
+    let mut host = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    };
+    let element = item("OrgApp", Some("id"));
+    let set = host
+        .set(&element, "invalid", "new", false)
+        .await
+        .unwrap_err();
+    let remove = host
+        .remove_with_options(&element, false, true)
+        .await
+        .unwrap_err();
+    assert_eq!(set.message, "not supported for command 'set'");
+    assert_eq!(remove.message, "not supported for command 'del'");
+    assert!(operations.requests.is_empty());
+    assert!(ui.prompts.is_empty());
+    assert!(ui.notices.is_empty());
+    assert_eq!(metadata.reads, 0);
+}
+
+#[tokio::test]
 async fn create_workspace_preserves_lowercase_unknown_params_and_none_capacity_omission() {
     for (capacity, expected) in [
         (

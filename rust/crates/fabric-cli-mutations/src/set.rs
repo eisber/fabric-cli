@@ -56,7 +56,11 @@ impl MutationHost<'_> {
             Some(metadata) => metadata,
             None => self.metadata.read(element).await?,
         };
-        let mut payload = update_fabric_element(metadata, query, input)?;
+        let mut payload = update_fabric_element(metadata, query, input).map_err(|error| {
+            if matches!(element.kind(),NodeKind::Item(_)) && error.code=="InvalidQuery" {
+                MutationError::new("InvalidQuery",format!("Invalid query. Either '{query}' is not a valid query or the item does not contain the specified path"))
+            } else { error }
+        })?;
         self.ui.notice(
             NoticeKind::Progress,
             &format!("Setting new property for '{}'...", element.name()),
