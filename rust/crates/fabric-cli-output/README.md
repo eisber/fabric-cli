@@ -44,6 +44,9 @@ This differs from `Indent::Zero`, which remains pretty JSON with newlines.
 `examples/definition_json.rs` demonstrates this standalone public API; its
 independent source comparison is `definition_reference.py`. The existing numeric
 domain and unsupported-runtime exceptions below apply unchanged.
+Both layouts delegate to the single [core JSON encoder](../fabric-core-json/README.md);
+the CLI public types remain compatibility wrappers. SDK callers use that core
+crate directly, never depend on this CLI crate.
 
 - A list is retained, even when empty. `None`/JSON null, false, numeric zero,
   empty strings and empty objects omit `data`; other values become one-element

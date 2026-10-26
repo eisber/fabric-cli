@@ -349,16 +349,6 @@ pub enum Indent {
     Four,
 }
 
-impl Indent {
-    pub(crate) fn width(self) -> usize {
-        match self {
-            Self::Zero => 0,
-            Self::Two => 2,
-            Self::Four => 4,
-        }
-    }
-}
-
 /// Destination stream, kept explicit instead of conflating failure with stderr.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OutputStream {

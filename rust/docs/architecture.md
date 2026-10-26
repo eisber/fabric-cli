@@ -18,6 +18,16 @@ It is not a full port, release contract, or replacement for the Python product.
 | `deploy` (`fabric-deploy`) | Future native configuration, transforms, planning, publish/unpublish | `deploy`, `sdk`, `core` |
 | `cli` (`fabric-cli`) | Arguments, login UX, streams, exit codes, future library composition | `cli`, `identity`, `sdk`, `deploy` |
 
+One reviewed exception permits exactly `fabric-cli-output` (CLI) to depend on
+`fabric-core-json` (core). The latter is a pure ordered JSON encoder shared with
+SDK request-body and definition consumers: no CLI types, auth, transport, I/O,
+runtime or global state. CLI public output APIs remain wrappers over this single
+implementation. This is **not** blanket CLI-to-core permission: other CLI crates
+cannot depend on this core crate under the exception, output cannot depend on
+other core implementations, and the JSON core cannot acquire forbidden transitive
+identity/deploy/CLI dependencies. Architecture tests exercise the exact names
+and layers while retaining the unchanged generic five-by-five layer policy.
+
 The exercised SDK edges are `fabric-sdk -> fabric-sdk-workspaces`,
 `fabric-sdk -> fabric-core`, and `fabric-sdk-workspaces -> fabric-core`;
 identity also depends on core, and `fabric-deploy` depends on `fabric-sdk`.
