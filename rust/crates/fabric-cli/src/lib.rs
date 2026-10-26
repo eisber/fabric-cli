@@ -9,6 +9,7 @@
 
 mod errors;
 mod folder_reads;
+pub mod jobs;
 pub mod parser;
 mod projection;
 mod reads;

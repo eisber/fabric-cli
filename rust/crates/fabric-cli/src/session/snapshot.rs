@@ -45,7 +45,7 @@ fn scope(request: LookupRequest<'_>) -> Scope {
 }
 
 #[derive(Default)]
-pub(super) struct Snapshot {
+pub(crate) struct Snapshot {
     elements: Vec<Arc<Element>>,
     loaded: BTreeSet<Scope>,
     folders: BTreeMap<String, FolderGraph>,
@@ -64,7 +64,7 @@ impl Lookup for Snapshot {
 }
 
 impl Snapshot {
-    pub(super) async fn resolve(
+    pub(crate) async fn resolve(
         &mut self,
         session: &ReadSession<'_>,
         current: &Arc<Element>,

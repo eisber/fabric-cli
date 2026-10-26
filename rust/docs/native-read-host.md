@@ -9,6 +9,11 @@ plus the explicitly integrated context, text and Windows identity checkpoint
 This is a bounded executable host, not full `ls`/`get`, live-service, installation
 or cross-platform acceptance.
 
+The same explicitly selected host also composes bounded `job run-list` and
+`job run-status`; see [native job reads](native-job-reads.md) for their source
+branches, production/offline boundary and explicit remaining API gaps.
+No job mutation is registered.
+
 ## Selection and execution
 
 Default and `windows-broker`-only builds retain `NotConfigured` for reads.

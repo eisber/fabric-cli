@@ -27,8 +27,10 @@ clap.workspace = true
 fabric-cli-context.workspace = true
 fabric-cli-output.workspace = true
 fabric-cli-query.workspace = true
+fabric-cli-jobs.workspace = true
 fabric-cli-mutations.workspace = true
 fabric-sdk.workspace = true
+fabric-sdk-jobs.workspace = true
 fabric-sdk-operations.workspace = true
 fabric-sdk-workspaces.workspace = true
 fabric-sdk-http = { workspace = true, optional = true }
