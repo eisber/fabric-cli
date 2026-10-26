@@ -1,12 +1,14 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Pure JSON output translation from Python `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
+//! Pure output translation from Python `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
 //!
 //! Callers supply timestamps and already-projected JSON, then inspect a [`RenderPlan`]
 //! or write it to caller-owned streams. No terminal, environment, clock, logger,
 //! dispatcher, SDK, or process-global state is accessed. See the crate README for
 //! the bounded numeric and Python-runtime compatibility contract.
+//! [`text`] separately exposes caller-injected text/table rendering and ordered
+//! mixed-stream plans without altering the existing JSON API.
 //!
 //! ```
 //! use fabric_cli_output::{Indent, OutputEnvelope, OutputInput, Timestamp, parse_data};
@@ -27,6 +29,7 @@
 //! ```
 
 mod encoding;
+pub mod text;
 
 use serde::Serialize;
 use serde_json::Value;

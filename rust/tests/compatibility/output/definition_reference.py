@@ -24,7 +24,9 @@ def check(observations: Optional[list[dict[str, Any]]] = None) -> int:
         if expected != source["dumps"](case["data"]) or expected != case["expected"]:
             raise AssertionError(f"{case['name']}: source/handwritten bytes differ")
         if observations is not None:
-            if observations[index]["encoded"].encode("utf-8") != expected.encode("utf-8"):
+            if observations[index]["encoded"].encode("utf-8") != expected.encode(
+                "utf-8"
+            ):
                 raise AssertionError(f"{case['name']}: Rust/source bytes differ")
     return len(cases)
 

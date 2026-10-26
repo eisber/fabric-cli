@@ -8,6 +8,10 @@ full Python CLI parity. The authoritative Python pin is
 verified by the independent oracle. No Python product files or old fixture
 baselines change. No consumer is wired into `fabric-cli/src/main.rs`.
 
+This page records the original JSON boundary. The additive
+[text/definition branch ledger](output-text-compatibility.md) records the later
+core encoder extraction and caller-injected text/table APIs with separate evidence.
+
 | Pinned Python source | Ported behavior | Synthetic source cases / evidence |
 | --- | --- | --- |
 | `core/fab_output.py`, `OutputResult` | Truthiness/list wrapping; omission vs empty; hidden string/string-enum sorting | absent/null/false/0/-0.0/empty dict/string/list; retained list; enum/string duplicates/empty/Unicode |
@@ -42,8 +46,9 @@ serde_json's indexmap dependency closure; the lockfile records it explicitly.
 No framework, terminal, logging, time, runtime, HTTP or auth dependency is added.
 
 The library does not parse SDK errors, select or sanitize exception arguments,
-resolve command/context paths, discover config, evaluate JMESPath, render text or
-tables, or implement questionary/terminal fallback. The source's actual
+resolve command/context paths, discover config, evaluate JMESPath, or implement
+questionary. Text/table composition is separately implemented through injected
+policies, not part of this original JSON claim. The source's actual
 questionary behavior across platforms is not certified by a headless fake.
 The library never accesses an ambient clock, environment, mutable global, network,
 filesystem, subprocess or logger.
