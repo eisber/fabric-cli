@@ -42,3 +42,24 @@ unsupported objects and non-JSON NaN/bytes semantics remain explicit differences
 Writer failures run in standalone Rust consumer tests, including partial writes
 without a stderr fallback. See the [bounded matrix](../../../docs/output-compatibility.md)
 for source guarantees versus unsupported runtime/terminal behaviors.
+
+## Definition and text follow-ons
+
+`definition-cases.json` adds twelve raw no-indent JSON byte expectations.
+`definition_reference.py` compares real Python `json.dumps` and pinned
+`fab_util.dumps`, independently of both the core and CLI consumer examples.
+
+`text-cases.json` adds 83 cases; `text_reference.py` executes actual table,
+truncation, key/value, notice, text-error/decorations, help and version source.
+Error factories have separate immutable blob pins. Caller-injected private
+terminal width, style/TTY, newline, fallback and Unicode-provider examples are
+compared as complete stdout/stderr/error/exit observations. Partial output on
+failure is retained, not discarded. Existing JSON cases are not rewritten.
+`test_text_reference.py` catches stream/exit/payload mutations and rejects a
+compact-JSON replacement of the default-separator definition bytes.
+
+The first draft text oracle revealed the stderr hidden separator; the new
+uncommitted synthetic case was corrected to actual source, not Rust, and the
+implementation gained ordered mixed-stream plans. This correction does not
+change any prior golden. The helpers' Unicode/default/terminal limits remain
+explicit in the [text ledger](../../../docs/output-text-compatibility.md).
