@@ -7,7 +7,7 @@
 mod host;
 mod parser;
 
-pub use host::{AccessHost, AccessOutput, AccessTargets, ApiClients, render};
+pub use host::{AccessHost, AccessOutput, AccessTargets, ApiClients, execute_local, render};
 pub use parser::{
     AccessCommand, AccessKind, RawApiCommand, acl_subcommand, api_subcommand, find_subcommand,
     label_subcommand, register,

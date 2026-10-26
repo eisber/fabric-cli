@@ -2,6 +2,8 @@
 // Licensed under the MIT License.
 
 use super::*;
+mod mutations;
+mod raw;
 use fabric_cli_context::{Element, ItemType, NodeKind, WorkspaceType};
 use fabric_cli_output::text::{OutputFormat, ascii_width};
 use fabric_cli_resources::{
@@ -16,6 +18,26 @@ use std::{future::Future, io, path::PathBuf, pin::Pin};
 struct Targets {
     element: Arc<Element>,
     calls: AtomicUsize,
+}
+
+#[test]
+fn configured_local_leaf_requires_no_account_client_resolver_or_runtime() {
+    let definitions = Definitions::new(&json!([{"name":"Public","id":"offline-label"}]));
+    let command = parse(&["label", "list-local"]);
+    let value = fabric_cli_resources::frontdoor::execute_local(&command, Some(&definitions.0))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        value.data,
+        Some(json!([{"name":"Public","id":"offline-label"}]))
+    );
+    assert!(
+        fabric_cli_resources::frontdoor::execute_local(
+            &parse(&["find", "needle"]),
+            Some(&definitions.0),
+        )
+        .is_none()
+    );
 }
 
 impl AccessTargets for Targets {
@@ -84,6 +106,7 @@ fn host<'a>(api: &'a ApiClient, targets: &'a Targets) -> AccessHost<'a> {
         },
         targets,
         label_definitions: None,
+        confirmation: None,
         multipart_boundary: "offline-boundary",
         limits: Limits::default(),
         request_bounds: RequestBounds::default(),

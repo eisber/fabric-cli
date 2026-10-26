@@ -21,6 +21,8 @@ example demonstrates the same contract without depending on central declarations
 | --- | --- |
 | `acl ls`, `acl dir` | Path tokens, scalar query, long flag -> existing context support check, access SDK and source projection |
 | `acl get` | Path tokens, joined query -> existing collection query/path discovery |
+| `acl set`, `acl rm`, `acl del` | Identity, source role case and force -> existing workspace ACL mutation and injected confirmation |
+| `label set`, `label rm`, `label del` | Joined exact local name and force -> existing supported item label mutation and injected confirmation |
 | `label list-local` | Only the explicitly configured bounded definitions file; no target or credential lookup |
 | `find` | Search text, optional scalar params, joined query, long -> existing catalog session/pager and source projection |
 | `api` | Five source verbs, input/params/headers/query and show_headers -> existing bound request engine |
@@ -33,6 +35,12 @@ or falls back to another audience. Existing safe-header, origin, no-redirect,
 GET-retry-only, mutation uncertainty and response bounds remain authoritative.
 Raw API does not acquire paging or polling behavior.
 
+Call `execute_local(command, definitions)` **before** remote-host/account setup.
+It returns `Some(result)` only for `label list-local`, and reads only that
+explicit configured file. No account, vault, SDK client, resolver or runtime is
+required. The regular host also supports it, but does not require the central
+assembler to construct dummy credentials for a local-only operation.
+
 `AccessTargets` adapts the existing central async context/session resolver.
 The pure existing `Resolver` also implements it for caller-owned snapshots.
 Only existing workspace/item ACL support is claimed here; resource exclusions
@@ -40,6 +48,14 @@ are checked before the service request. Hidden/OneLake resolution is not invente
 ACL GET export is recognized but explicitly rejected before target/service I/O
 until an export host is bound. Hidden `--skill` is retained but rejected before
 I/O until a shared header binding exists, never silently ignored.
+
+`AccessHost::confirmation` borrows the existing asynchronous `Confirmation`.
+Missing confirmation capability fails explicitly; it never grants consent.
+An explicit force flag skips only questions. ACL item mutations and non-item
+labels fail support checks before requests; source label restrictions and local
+configuration requirements remain in the shared handler. ACL role validation,
+substring/PATCH selection, assignment-ID removal, finite principal probing and
+shared accepted-operation reconciliation are reused, not reimplemented.
 
 `frontdoor::render` selects the typed surface and optional output override, then
 uses the existing family JSON/text renderer. Warnings are returned for the caller
@@ -54,6 +70,14 @@ New parse-to-real-SDK/shared-HTTP/render consumers read the existing immutable
 outputs from native results. They cover all five mounted leaves, text/JSON,
 queries, method/URL/body/scope, missing capability, malformed collection,
 cancellation and writer failure. Four explicit raw audience bindings are tested.
+The four mutation leaves additionally consume the unchanged
+`access/mutation_cases.json`, preserving source request bodies, role case,
+prompts/declines, messages, diagnostics and warnings. The source fixture's
+injected `Resource` display name is replaced only with this consumer's explicit
+resolved `Workspace.Workspace` name. Success-stream framing comes from the
+unchanged generic success-message UI observation in `render_cases.json`, with
+the source-captured family/message substituted. No native golden is generated.
+All 17 raw API source cases now also execute through the public typed parser.
 
 Before native results, the validator runs the unchanged Python references:
 `tests/compatibility/access/reference.py`, `label_reference.py`,
