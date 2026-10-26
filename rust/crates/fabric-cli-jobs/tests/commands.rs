@@ -1634,3 +1634,117 @@ async fn explicit_empty_skill_clears_preconfigured_client_and_reconciler_context
     assert_eq!(sdk.request_headers(), &selected);
     assert_eq!(operations.request_headers(), selected);
 }
+
+#[tokio::test]
+async fn json_payloads_reject_lossy_integers_before_credentials_or_http() {
+    for (resource, option, content) in [
+        ("Notebook", "--input", r#"{"n":18446744073709551616}"#),
+        (
+            "DataPipeline",
+            "--input",
+            r#"{"nested":[{"n":18446744073709551616}]}"#,
+        ),
+        (
+            "Notebook",
+            "--config",
+            r#"{"nested":{"values":[-9223372036854775809]}}"#,
+        ),
+        ("DataPipeline", "--params", "n:array=[18446744073709551616]"),
+        (
+            "DataPipeline",
+            "--params",
+            r#"n:object={"nested":[{"n":18446744073709551616}]}"#,
+        ),
+        (
+            "DataPipeline",
+            "--params",
+            r#"n:array=[{"nested":{"n":-9223372036854775809}}]"#,
+        ),
+    ] {
+        for leaf in ["start", "run"] {
+            let h = Harness::resource(resource, []);
+            let credential = Arc::new(TestCredential::default());
+            let sdk = JobClient::new(
+                credential.clone(),
+                CredentialSelection::new("offline", "synthetic", Audience::Fabric).unwrap(),
+                Arc::new(HttpJobExecutor::new(
+                    HttpExecutor::new(h.http.clone(), h.timer.clone(), ExecutionOptions::default())
+                        .unwrap(),
+                )),
+                JobLimits::default(),
+            );
+            let mut host = h.host();
+            host.sdk = &sdk;
+            let path = format!("item.{resource}");
+            let command = parse(&[leaf, &path, option, content]);
+            let plan = host.dispatch_json(&command, pending()).await.unwrap();
+            assert_eq!(plan.exit_code, 1, "{leaf} {resource} {option}");
+            let output: Value = serde_json::from_slice(&plan.payload).unwrap();
+            assert_eq!(output["status"], "Failure");
+            assert_eq!(
+                output["result"]["error_code"],
+                if option == "--params" {
+                    "NotRunnable"
+                } else {
+                    "UnexpectedError"
+                }
+            );
+            assert_eq!(
+                output["result"]["message"],
+                if option == "--params" {
+                    "Invalid JSON parameter value"
+                } else {
+                    "Invalid JSON content"
+                }
+            );
+            assert_eq!(credential.calls.load(Ordering::SeqCst), 0);
+            assert!(h.http.requests.lock().unwrap().is_empty());
+        }
+    }
+}
+
+#[tokio::test]
+async fn checked_json_payloads_preserve_valid_boundaries_nested_values_and_numeric_strings() {
+    for (resource, option, content, expected) in [
+        (
+            "DataPipeline",
+            "--input",
+            r#"{"max":18446744073709551615,"min":-9223372036854775808,"nested":[true,null,1.25,{"text":"18446744073709551616"}]}"#,
+            json!({"max":u64::MAX,"min":i64::MIN,"nested":[true,null,1.25,{"text":"18446744073709551616"}]}),
+        ),
+        (
+            "Notebook",
+            "--config",
+            r#"{"nested":{"max":18446744073709551615,"min":-9223372036854775808,"text":"\"18446744073709551616\""}}"#,
+            json!({"configuration":{"nested":{"max":u64::MAX,"min":i64::MIN,"text":"\"18446744073709551616\""}}}),
+        ),
+        (
+            "DataPipeline",
+            "--params",
+            r#"a:array=[18446744073709551615,-9223372036854775808,{"text":"18446744073709551616"}]"#,
+            json!({"parameters":{"a":[u64::MAX,i64::MIN,{"text":"18446744073709551616"}]}}),
+        ),
+        (
+            "DataPipeline",
+            "--params",
+            r#"a:object={"values":[false,null,1.5],"text":"18446744073709551616"}"#,
+            json!({"parameters":{"a":{"values":[false,null,1.5],"text":"18446744073709551616"}}}),
+        ),
+    ] {
+        let h = Harness::resource(resource, [accepted()]);
+        let path = format!("item.{resource}");
+        let command = parse(&["start", &path, option, content]);
+        let plan = h.host().dispatch_json(&command, pending()).await.unwrap();
+        assert_eq!(plan.exit_code, 0, "{resource} {option}");
+        let requests = h.http.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method(), azure_core::http::Method::Post);
+        match requests[0].body() {
+            azure_core::http::Body::Bytes(bytes) => assert_eq!(
+                serde_json::from_slice::<Value>(bytes).unwrap(),
+                json!({"executionData":expected})
+            ),
+            _ => panic!("expected bounded request bytes"),
+        }
+    }
+}
