@@ -92,6 +92,30 @@ pub enum ResourceCommand {
         /// Bypass confirmation, not the linkage check.
         force: bool,
     },
+    /// Copy a source to a separately resolved destination.
+    Copy {
+        /// Source path and shared source arguments.
+        args: ResourceArgs,
+        /// Destination tokens selected by Python's two-positional allocation.
+        destination: Vec<String>,
+        /// Source force selection; OneLake copy has no confirmation prompt.
+        force: bool,
+        /// Requested recursive resource copy.
+        recursive: bool,
+        /// Block resource-name collisions in a different folder.
+        block_on_path_collision: bool,
+    },
+    /// Move a source to a separately resolved destination.
+    Move {
+        /// Source path and shared source arguments.
+        args: ResourceArgs,
+        /// Destination tokens selected by Python's two-positional allocation.
+        destination: Vec<String>,
+        /// Bypass the source confirmation.
+        force: bool,
+        /// Requested recursive resource move.
+        recursive: bool,
+    },
 }
 
 impl ResourceCommand {
@@ -107,6 +131,8 @@ impl ResourceCommand {
             Self::Stop { .. } => "stop",
             Self::Assign { .. } => "assign",
             Self::Unassign { .. } => "unassign",
+            Self::Copy { .. } => "cp",
+            Self::Move { .. } => "mv",
         }
     }
 
@@ -121,7 +147,9 @@ impl ResourceCommand {
             | Self::Start { args, .. }
             | Self::Stop { args, .. }
             | Self::Assign { args, .. }
-            | Self::Unassign { args, .. } => args,
+            | Self::Unassign { args, .. }
+            | Self::Copy { args, .. }
+            | Self::Move { args, .. } => args,
         }
     }
 }
@@ -139,10 +167,13 @@ fn tokens(name: &'static str) -> Arg {
 }
 
 fn leaf(name: &'static str) -> Command {
+    common(name).arg(Arg::new("path").required(true).num_args(1..))
+}
+
+fn common(name: &'static str) -> Command {
     Command::new(name)
         .args_override_self(true)
         .infer_long_args(true)
-        .arg(Arg::new("path").required(true).num_args(1..))
         .arg(
             Arg::new("output_format")
                 .long("output_format")
@@ -198,6 +229,17 @@ pub fn resource_subcommands() -> Vec<Command> {
         leaf("unassign")
             .arg(tokens("workspace").short('W').required(true))
             .arg(flag("force", Some('f'))),
+        common("cp")
+            .visible_alias("copy")
+            .arg(Arg::new("paths").required(true).num_args(2..))
+            .arg(flag("force", Some('f')))
+            .arg(flag("recursive", Some('r')))
+            .arg(flag("block_on_path_collision", None)),
+        common("mv")
+            .visible_alias("move")
+            .arg(Arg::new("paths").required(true).num_args(2..))
+            .arg(flag("force", Some('f')))
+            .arg(flag("recursive", Some('r'))),
     ]
 }
 
@@ -209,10 +251,21 @@ pub fn command_from_matches(root: &ArgMatches) -> Result<ResourceCommand, Mutati
     let (name, matches) = root
         .subcommand()
         .ok_or_else(|| invalid("A resource command is required"))?;
-    let args = ResourceArgs {
-        path: values(matches, "path")?
+    let (path, destination) = if matches!(name, "cp" | "copy" | "mv" | "move") {
+        let mut paths = values(matches, "paths")?
+            .ok_or_else(|| invalid("Source and destination paths are required"))?;
+        if paths.len() < 2 {
+            return Err(invalid("Source and destination paths are required"));
+        }
+        let destination = paths.pop().ok_or_else(|| invalid("Missing destination"))?;
+        (paths, Some(vec![destination]))
+    } else {
+        (values(matches, "path")?
             .filter(|tokens| !tokens.is_empty())
-            .ok_or_else(|| invalid("A resource path is required"))?,
+            .ok_or_else(|| invalid("A resource path is required"))?, None)
+    };
+    let args = ResourceArgs {
+        path,
         output_format: string(matches, "output_format")?,
         skill: string(matches, "skill")?,
     };
@@ -260,6 +313,19 @@ pub fn command_from_matches(root: &ArgMatches) -> Result<ResourceCommand, Mutati
             workspace: values(matches, "workspace")?
                 .ok_or_else(|| invalid("Missing unassignment workspace"))?,
             force: boolean(matches, "force")?,
+        }),
+        "cp" | "copy" => Ok(ResourceCommand::Copy {
+            args,
+            destination: destination.ok_or_else(|| invalid("Missing copy destination"))?,
+            force: boolean(matches, "force")?,
+            recursive: boolean(matches, "recursive")?,
+            block_on_path_collision: boolean(matches, "block_on_path_collision")?,
+        }),
+        "mv" | "move" => Ok(ResourceCommand::Move {
+            args,
+            destination: destination.ok_or_else(|| invalid("Missing move destination"))?,
+            force: boolean(matches, "force")?,
+            recursive: boolean(matches, "recursive")?,
         }),
         _ => Err(invalid("Unknown resource command")),
     }

@@ -13,6 +13,14 @@ Pass the root matches to `command_from_matches`, then execute the resulting
 `ResourceCommand` through `ResourceHost`. This crate does not edit or install
 the central `Invocation`, executable, runtime, session, or writer.
 
+Select `ResourceTransferHost` for `ResourceCommand::Copy`/`Move`. Its existing
+`OneLakeWriteHost` uses the caller's storage credential and shared executor;
+optional `ResourceFiles` supplies bounded local bytes. It returns the existing
+`OneLakeWriteResult`/`OneLakeWriteError`, retaining upload stages and partial
+mutation evidence instead of converting them into lossy Fabric outcomes.
+`ResourceHost::execute` rejects transfers explicitly when that capability has
+not been supplied. Neither host installs a second parser or HTTP engine.
+
 The host supplies `ResourceContext` over the existing command-local metadata
 snapshot and resolver, `MutationHost` with the **same** `ResourceOperations`
 session, UI and enriched metadata provider, and `ResourceConfig`. The context
@@ -41,6 +49,8 @@ never opens a terminal or swallows an output error.
 | `ln` (`mklink`) | Lakehouse shortcut from inline JSON, all registered target types and force conflict policy | `--target` needs lazy resolution after source prompt/validation |
 | `start`, `stop` | MirroredDatabase status/action requests through the existing lifecycle host; force retains state validation | Capacity ARM lifecycle and other item types |
 | `assign`, `unassign` | Selected Capacity and target workspace; source unassignment metadata/linkage check before confirmation | Domain assignment and non-workspace destinations |
+| `cp` (`copy`) | Nonrecursive OneLake file copy and caller-read local file upload through `ResourceTransferHost` | Fabric definition transfer/codec composition, recursive and collision-policy options, local destinations |
+| `mv` (`move`) | Source-supported Lakehouse Files rename through `ResourceTransferHost` | Fabric item/folder/workspace moves and recursive options |
 
 `--skill` is parsed but returns an explicit `NotSupported` error until shared
 resource request-header plumbing is available. It is never ignored. `--type`
@@ -55,10 +65,20 @@ preview rejects malformed/Unicode keys rather than emulating Python regex
 substring recovery. This stricter lexical boundary is not full argparse/regex
 parity. No protected oracle, source pin, or source expectations are rewritten.
 
-The first immutable microbatch contains five leaves. A separate additive
-increment registers the four lifecycle/assignment leaves above. `cp` and `mv`
-remain unregistered while their released folder-move and OneLake helpers are
-composed into a subsequent bounded adapter.
+The first immutable microbatch contains five leaves. Separate additive
+increments register four lifecycle/assignment leaves, then storage `cp`/`mv`.
+Each canonical leaf needs its own real handler invocation before being counted;
+registration or alias coverage alone does not establish integration.
+
+For two-path transfers, the first positional receives all but the final token,
+and the final token is the destination, matching source greedy allocation on
+ordinary happy invocations. Quoted paths containing spaces remain single argv
+tokens. Full option-interleaving/argparse lexical parity is not claimed. Use the
+registered long `--block_on_path_collision` spelling; Python's multi-character
+`-bpc` spelling is not implemented by this builder-only adapter. Recursive and
+collision-policy storage requests fail explicitly, rather than silently ignoring
+those options. OneLake file copy itself has no confirmation in Python; `--force`
+does not add or remove a prompt on that branch.
 
 ## Offline evidence
 
@@ -74,6 +94,15 @@ source handlers with independent synthetic inputs and compares actual Rust
 requests and outputs. Python is development-only; no ambient settings, token
 cache, certificate, live network, or Fabric resource is accessed.
 
+`examples/offline_resource_transfer.rs` additionally executes typed `cp`/`mv`
+through the real storage SDK/shared HTTP. Its tests retain exact bytes,
+read/create/append/flush ordering, rename headers, confirmation, accepted states,
+bounded injected local-file reads, partial upload failure, cancellation and
+explicit option gaps. `tests/transfer_frontdoor_reference.py` compares original
+registrations and OneLake handlers; its local happy case executes the original
+local-file handler with an isolated in-memory file before the original upload
+helpers. Neither harness uses user files.
+
 Run on the coordinator's authorized Linux worker:
 
 ```text
@@ -81,6 +110,9 @@ cargo test -p fabric-cli-mutations --example offline_resource_frontdoor --locked
 cargo build -p fabric-cli-mutations --example offline_resource_frontdoor --locked
 python crates/fabric-cli-mutations/tests/frontdoor_reference.py --probe target/debug/examples/offline_resource_frontdoor
 cargo clippy -p fabric-cli-mutations --all-targets --locked -- -D warnings
+cargo test -p fabric-cli-mutations --example offline_resource_transfer --locked
+cargo build -p fabric-cli-mutations --example offline_resource_transfer --locked
+python crates/fabric-cli-mutations/tests/transfer_frontdoor_reference.py --probe target/debug/examples/offline_resource_transfer
 ```
 
 Linux execution is the microbatch integration gate. Native Windows/macOS
