@@ -17,7 +17,7 @@ fn parse(args: &[&str]) -> JobReadCommand {
 }
 
 #[test]
-fn only_the_two_read_leaves_are_registered() {
+fn only_the_two_read_and_two_execution_leaves_are_registered() {
     let schema = fabric_cli::parser::command();
     let group = schema.find_subcommand("job").unwrap();
     assert_eq!(
@@ -25,16 +25,9 @@ fn only_the_two_read_leaves_are_registered() {
             .get_subcommands()
             .map(|leaf| leaf.get_name())
             .collect::<Vec<_>>(),
-        ["run-list", "run-status"]
+        ["start", "run", "run-list", "run-status"]
     );
-    for leaf in [
-        "start",
-        "run",
-        "run-cancel",
-        "run-sch",
-        "run-rm",
-        "run-update",
-    ] {
+    for leaf in ["run-cancel", "run-sch", "run-rm", "run-update"] {
         assert!(parse_args(["fab-rs", "job", leaf, "item.Notebook"]).is_err());
     }
 }

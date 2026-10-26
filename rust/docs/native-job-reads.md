@@ -5,9 +5,58 @@
 Python source: `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
 Released Rust prerequisite: `50eb337e696d5de8d49c65039ca9eff4ca3e0a60`,
 adopted by ordinary merge after preserving the original `9c396ce` draft.
-This adds only `job run-list` and `job run-status` to `fab-rs`. It does not
-register job submission, cancellation, execution or schedule mutations.
+The first slice added `job run-list` and `job run-status` to `fab-rs`.
+The next additive composition also registers `job start` and `job run` as
+described below. Cancellation and schedule mutation leaves remain unregistered.
 These are partial entry points, not complete Python commands or live proof.
+
+## Additive submission and synchronous execution
+
+The second microbatch mounts the released family's `start` and `run`
+registrations and typed conversion once. `Invocation::JobRun` preserves
+`-P/--params`, `-C/--config`, `-i/--input`, signed `--timeout`, positive
+`--polling_interval`, output selection and hidden skill selection. Other job
+leaves/options still fail during parsing; no placeholder handlers are registered.
+The existing read DTO and `JobReadSession` struct-literal API remain available.
+
+`JobSession` borrows the same `ReadSession`/command-local `Snapshot` and
+constructs the existing `JobClient`, `HttpJobExecutor` and
+`SharedJobOperations`. It injects the caller's `JsonInput`, `JobUi` and
+`JobConfig` into `JobHost`; it implements no submission, poll, timeout,
+reconciliation, retry or credential algorithm. The native host retains its
+single current-thread runtime, Ctrl+C and overall deadline, with silent explicit
+Windows credentials only. Linux/macOS credentials are still unsupported.
+Default/broker-only builds remain `NotConfigured` without credential discovery.
+
+The CLI supplies a reader for explicitly selected execution/configuration files.
+It rejects malformed/unsupported JSON through the existing lossless output
+parser. Native configuration currently uses the source default
+`cancel_on_timeout=true`; persisted Python/local-family configuration is not
+silently read or claimed supported. Offline callers inject both cancellation
+settings. Immediate grey/progress/warning events and failed/unknown raw status
+tables use the shared non-TTY renderer. Deferred async status hints are written
+after the result, preserving stream order. Writer errors remain failures.
+
+Accepted submission is not completion. `start` emits the accepted ID;
+`run` delegates real status polling, initial sleep, custom interval and timeout
+policy to the released handler. Local cancellation drops work without inventing
+rollback; a timeout cancellation message remains explicitly asynchronous.
+
+`job_execution_probe` injects only synthetic credentials, HTTP, time, files and
+UI into that production parser/session. The additive
+`tests/compatibility/job_execution/compare.py` freezes 38 observations from
+unchanged pinned Python parser/wrapper/payload/API/polling/UI functions before
+launching Rust. It compares both output formats, all five source resources,
+inline/file input, Notebook parameters/configuration, pipeline parameters and
+both timeout policies: streams, exits, ordered methods/URLs/bodies, scopes,
+file reads and waits. Existing read fixtures/oracles remain unchanged.
+These are offline cases, not a live job submission grant or full parity claim.
+
+The released family still needs a lossless raw-JSON input boundary for inline
+payloads and structured pipeline parameters. Direct `serde_json` decoding can
+round integers outside the supported JSON domain. This is a reported family
+API gap, not closed by the native file reader or response guard; no full
+input-domain compatibility is claimed by this candidate.
 
 ## Selection and composition
 

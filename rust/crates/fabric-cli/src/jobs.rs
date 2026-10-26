@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Runtime-neutral read-only job composition shared by native and offline hosts.
+//! Runtime-neutral job composition shared by native and offline hosts.
 
 use crate::{
     errors,
@@ -9,10 +9,11 @@ use crate::{
     session::{ReadSession, snapshot::Snapshot},
 };
 use fabric_cli_jobs::{
-    Confirmation, JobCommandError, JobConfig, JobEvent, JobHost, JobUi, NoFiles,
+    Confirmation, JobCommand, JobCommandError, JobConfig, JobEvent, JobHost, JobUi, JsonInput,
+    NoFiles,
 };
 use fabric_cli_output::{
-    CommandError, OutputEnvelope,
+    CommandError, OutputEnvelope, OutputStream,
     text::{self, OutputFormat, Presentation, TextOptions, TextPlan},
 };
 use fabric_sdk_jobs::{
@@ -44,8 +45,47 @@ impl JobReadSession<'_, '_> {
         command: &JobReadCommand,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<TextPlan, text::TextError> {
-        let format = OutputFormat::resolve(command.output_format.as_deref(), Some("json"))?;
         let family = command.family_command();
+        JobSession {
+            reads: self.reads,
+            jobs: Arc::clone(&self.jobs),
+            files: &NoFiles,
+            ui: &ReadOnlyUi,
+            config: JobConfig::default(),
+        }
+        .dispatch(&family, cancelled)
+        .await
+    }
+}
+
+/// Caller-owned job capabilities over the existing metadata and credential session.
+///
+/// The family owns execution, polling, timeout and request semantics. This host
+/// owns only metadata loading, file/UI capability injection and final rendering.
+pub struct JobSession<'a, 'session> {
+    /// Existing read dependencies, including the selected SDK credential.
+    pub reads: &'a ReadSession<'session>,
+    /// Job execution over the same caller-owned HTTP and time policies.
+    pub jobs: Arc<dyn JobExecutor>,
+    /// Explicit execution/configuration file reader.
+    pub files: &'a dyn JsonInput,
+    /// Immediate source events and confirmation, with caller-owned streams.
+    pub ui: &'a dyn JobUi,
+    /// Command-boundary configuration, including timeout cancellation.
+    pub config: JobConfig,
+}
+
+impl JobSession<'_, '_> {
+    /// Load context and invoke the released handler, retaining streams and exits.
+    ///
+    /// Immediate events go through `ui`; deferred hints are appended after the
+    /// final envelope. Dropping this future cancels local work, not remote jobs.
+    pub async fn dispatch(
+        &self,
+        command: &JobCommand,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<TextPlan, text::TextError> {
+        let format = OutputFormat::resolve(command.output_format.as_deref(), Some("json"))?;
         let mut cancelled = pin!(cancelled);
         let result = async {
             let reads = self.reads;
@@ -93,28 +133,22 @@ impl JobReadSession<'_, '_> {
                 lookup: &snapshot,
                 current,
                 home: reads.home.clone(),
-                files: &NoFiles,
-                ui: &ReadOnlyUi,
-                config: JobConfig::default(),
+                files: self.files,
+                ui: self.ui,
+                config: self.config,
                 timestamp: reads.timestamp.clone(),
             }
-            .execute(&family, cancelled.as_mut())
+            .execute(command, cancelled.as_mut())
             .await
         }
         .await;
-        let (envelope, headers, key_value) = match result {
-            Ok(Some(output)) => {
-                if !output.after_output.is_empty() {
-                    return Err(text::TextError::UnsupportedFormat(
-                        "Deferred events are not supported for job reads".into(),
-                    ));
-                }
-                (
-                    OutputEnvelope::new(self.reads.timestamp.clone(), output.input),
-                    output.show_headers,
-                    output.show_key_value_list,
-                )
-            }
+        let (envelope, headers, key_value, after) = match result {
+            Ok(Some(output)) => (
+                OutputEnvelope::new(self.reads.timestamp.clone(), output.input),
+                output.show_headers,
+                output.show_key_value_list,
+                output.after_output,
+            ),
             Ok(None) => {
                 return Ok(TextPlan {
                     records: Vec::new(),
@@ -122,12 +156,13 @@ impl JobReadSession<'_, '_> {
                 });
             }
             Err(error) => (
-                error.envelope(self.reads.timestamp.clone(), Some(family.command_path())),
+                error.envelope(self.reads.timestamp.clone(), Some(command.command_path())),
                 false,
                 false,
+                Vec::new(),
             ),
         };
-        text::render(
+        let mut plan = text::render(
             &envelope,
             format,
             &TextOptions {
@@ -137,7 +172,66 @@ impl JobReadSession<'_, '_> {
             },
             &text::ascii_width,
             Presentation::default(),
-        )
+        )?;
+        for event in after {
+            plan.records.extend(render_job_event(&event)?.records);
+        }
+        Ok(plan)
+    }
+}
+
+/// Render source job events with the same explicit non-TTY presentation as results.
+///
+/// Failed/unknown status tables remain raw stdout, including in JSON mode.
+pub fn render_job_event(event: &JobEvent) -> Result<TextPlan, text::TextError> {
+    let presentation = Presentation::default();
+    Ok(match event {
+        JobEvent::Grey(message) => text::render_line(
+            message,
+            text::Style::Grey,
+            OutputStream::Stderr,
+            presentation,
+        ),
+        JobEvent::Warning(message) | JobEvent::LogWarning(message) => {
+            text::render_notice(text::Notice::Warning(message), None, presentation)
+        }
+        JobEvent::Progress(message) => text::render_notice(
+            text::Notice::Progress {
+                text: message,
+                progress: None,
+            },
+            None,
+            presentation,
+        ),
+        JobEvent::Table(value) => {
+            let fields = value
+                .as_object()
+                .ok_or(text::TextError::InvalidTableEntries)?
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>();
+            text::render_table(value, &fields, true, 80, &text::ascii_width, presentation)?
+        }
+    })
+}
+
+/// Native file capability, reading only a file explicitly selected by the command.
+pub struct SelectedJobFiles;
+
+impl JsonInput for SelectedJobFiles {
+    fn read_json(&self, path: &str) -> Result<serde_json::Value, CommandError> {
+        let content = std::fs::read_to_string(path).map_err(|error| {
+            errors::error(
+                "NotRunnable",
+                format!("Invalid JSON content: {path}. Error: {error}"),
+            )
+        })?;
+        fabric_cli_output::parse_data(&content).map_err(|error| {
+            errors::error(
+                "NotRunnable",
+                format!("Invalid JSON content: {path}. Error: {error}"),
+            )
+        })
     }
 }
 

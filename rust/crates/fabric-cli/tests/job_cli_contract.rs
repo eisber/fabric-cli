@@ -25,6 +25,8 @@ fn invoke(args: &[&str], selectors: bool) -> Output {
 #[test]
 fn job_reads_never_discover_credentials_or_fabricate_success() {
     for args in [
+        vec!["job", "start", "Secret.Workspace/Book.Notebook"],
+        vec!["job", "run", "Secret.Workspace/Book.Notebook"],
         vec!["job", "run-list", "Secret.Workspace/Book.Notebook"],
         vec![
             "job",
@@ -45,6 +47,9 @@ fn job_reads_never_discover_credentials_or_fabricate_success() {
 #[test]
 fn malformed_job_arguments_precede_host_selection() {
     for args in [
+        vec!["job", "run", "Book.Notebook", "--polling_interval=0"],
+        vec!["job", "start", "Book.Notebook", "--timeout=10"],
+        vec!["job", "run", "Book.Notebook", "--token=must-not-be-echoed"],
         vec!["job", "run-status", "Book.Notebook"],
         vec![
             "job",

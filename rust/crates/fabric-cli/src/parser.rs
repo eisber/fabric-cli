@@ -7,7 +7,7 @@ use clap::{Arg, ArgAction, Command, error::ErrorKind};
 use std::ffi::OsString;
 
 mod jobs;
-pub use jobs::{JobReadCommand, JobReadKind};
+pub use jobs::{JobReadCommand, JobReadKind, JobRunCommand};
 
 #[cfg(feature = "windows-broker")]
 mod auth;
@@ -58,6 +58,8 @@ pub enum Invocation {
     Read(ReadCommand),
     /// Read-only job leaf; never submission, cancellation or schedule mutation.
     JobRead(JobReadCommand),
+    /// Submission or synchronous execution, using the same explicitly selected host.
+    JobRun(JobRunCommand),
     /// Explicit opt-in broker command; parsing never signs in.
     #[cfg(feature = "windows-broker")]
     Auth(AuthCommand),
@@ -87,7 +89,7 @@ pub fn command() -> Command {
     #[cfg(feature = "windows-broker")]
     let command = auth::register(command);
     #[cfg(feature = "native-read")]
-    let command = command.after_help("Native ls/get and job run-list/run-status reads require FAB_RUST_TENANT, FAB_RUST_ACCOUNT and FAB_RUST_CLIENT_ID. Windows broker authentication is opt-in; reads are silent and never show sign-in UI. Use explicit auth login first when required. FAB_RUST_CONTEXT defaults to /; FAB_RUST_HOME is optional. No token input, credential fallback, job mutation or deployment command is available.");
+    let command = command.after_help("Native ls/get and job start/run/run-list/run-status require FAB_RUST_TENANT, FAB_RUST_ACCOUNT and FAB_RUST_CLIENT_ID. Windows broker authentication is opt-in; credentials are silent and never show sign-in UI. Use explicit auth login first when required. FAB_RUST_CONTEXT defaults to /; FAB_RUST_HOME is optional. Job start/run submit work; run may cancel on timeout. No token input, credential fallback or deployment command is available.");
     command
         .subcommand(jobs::register())
         .subcommand(
@@ -183,11 +185,16 @@ where
         ));
     };
     if name == "job" {
-        let mut command = jobs::parse(values)?;
-        command.output_format = command
-            .output_format
+        let mut invocation = jobs::parse(values)?;
+        let output = match &mut invocation {
+            Invocation::JobRead(command) => &mut command.output_format,
+            Invocation::JobRun(command) => &mut command.output_format,
+            _ => return Err(invalid_arguments()),
+        };
+        *output = output
+            .take()
             .or_else(|| matches.get_one::<String>("output_format").cloned());
-        return Ok(Invocation::JobRead(command));
+        return Ok(invocation);
     }
     if !matches!(name, "ls" | "get") {
         return Err(invalid_arguments());
@@ -364,6 +371,8 @@ fn source_read_arguments(
                     .collect();
                 if max == 1 {
                     tokens[0].to_owned()
+                } else if name == "job" {
+                    tokens.join(" ")
                 } else {
                     fabric_cli_query::join_query_args(&tokens)
                 }
