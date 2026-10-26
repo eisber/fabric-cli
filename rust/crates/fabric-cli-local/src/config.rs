@@ -210,7 +210,7 @@ impl ConfigStore {
     }
 }
 
-fn pretty_json(value: &Value, depth: usize) -> Result<String, LocalError> {
+pub(crate) fn pretty_json(value: &Value, depth: usize) -> Result<String, LocalError> {
     let rows = match value {
         Value::Object(object) if !object.is_empty() => object
             .iter()

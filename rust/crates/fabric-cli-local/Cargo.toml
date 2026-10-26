@@ -15,7 +15,9 @@ layer = "cli"
 
 [dependencies]
 clap.workspace = true
+fabric-cli-context.workspace = true
 fabric-cli-output.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 
