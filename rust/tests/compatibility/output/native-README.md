@@ -133,10 +133,20 @@ Light formatting and patch checks are recorded separately from product tests.
 
 ### Required candidate checks
 
-Run from `rust/` with the pinned toolchain and locked dependencies. The existing
-workspace CI runs Cargo tests/lints and old JSON oracles, but **a generic green
-run alone does not prove execution of the new native Python oracle**. The
-coordinator must run/record the added source comparisons explicitly:
+Run from `rust/` with the pinned toolchain and locked dependencies. The additive
+CI hook runs `native_json`, the explicit `native_reference.py --encoding-only`
+comparison and `test_native_reference.py` guards in the existing shared core/CLI
+JSON stage. It retains the original envelope42 and Unicode18 comparisons and
+also runs text83 there, so a core-only selection cannot omit the text regression.
+Python setup already selects either core/output crate; the step runs on the
+existing Windows/Linux/macOS matrix with UTF-8 configuration. Generic Cargo
+tests alone are not native-oracle proof: the coordinator must record successful
+execution of that named CI stage at the exact candidate head.
+
+This CI hook is statically reviewed but **unexecuted** until a hosted run
+completes; adding it does not turn the candidate's pending validation green.
+The separate context/text stage and unrelated jobs/read stages are unchanged.
+Equivalent focused commands are:
 
 ```text
 cargo test --offline --locked -p fabric-core-json -p fabric-cli-output -- --test-threads=1
