@@ -1,0 +1,107 @@
+<!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
+
+# OneLake DFS operations
+
+This SDK-layer crate implements bounded directory listing, exact file-byte reads
+and HEAD properties, directory create/delete/rename and bounded file upload.
+It has no CLI, identity-backend, deployment or SDK-facade
+dependency. It installs no runtime, transport or retry/LRO policy.
+
+Source: Python `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`,
+`client/fab_api_onelake.py`, `client/fab_api_client.py`,
+`commands/fs/{ls,get}/fab_fs_*_onelake.py`.
+
+The caller creates `OneLakeClient` from an `Arc<dyn TokenCredential>` and explicit
+`CredentialSelection` with `Audience::OneLake`, then supplies `OneLakeExecutor`,
+`OneLakeLimits` and a cancellation future to each operation.
+
+| API | Fixed request | Result |
+| --- | --- | --- |
+| `OneLakePath::new(workspace,item,relative)` | No I/O; validates item-relative path | Explicit resource; no arbitrary URL |
+| `client.list(executor,path,recursive,limits,cancelled)` | GET `https://onelake.dfs.fabric.microsoft.com/{workspace}/?recursive=false&resource=filesystem&directory={item}/{relative}&getShortcutMetadata=true` | Raw path rows in page order, actual page count |
+| `client.read(executor,path,limits,cancelled)` | GET `https://onelake.dfs.fabric.microsoft.com/{workspace}/{item}/{relative}` | Exact bytes; empty is a valid file |
+| `client.read_file(executor,path,limits,cancelled)` | Same single GET | Exact bytes and same-response headers for file copy |
+| `client.properties(executor,path,limits,cancelled)` | HEAD at the same file URL | Exact response headers |
+| `client.directory_metadata(executor,path,limits,cancelled)` | Same workspace-directory GET route as list | Source first-page metadata, merged list fields and actual page count |
+| `client.item_roots(executor,workspace,item,limits,cancelled)` | GET `/{workspace}/{item}/?recursive=false&resource=filesystem` | Item-root metadata using the same bounded source-compatible collection policy |
+
+The encoded query preserves directory values; query spelling/order and source
+`continuationToken` spelling are explicit. Unlike source string concatenation,
+reserved characters are encoded as values, not interpreted as query injection.
+This is an explicit safety boundary, not byte-for-byte raw-URL parity.
+The storage token scope is `https://storage.azure.com/.default`, never the
+Fabric API scope. Selection is checked before token acquisition; the injected
+provider must already be bound to the selected account and tenant.
+
+`OneLakeRequest` exposes finite GET/HEAD/PUT/PATCH/DELETE methods, validated DFS URL,
+exact body/safe headers, injected token and streaming byte limit. The implemented
+[`OneLakeHttpExecutor`](../fabric-sdk-onelake-http/README.md) composes the existing
+shared HTTP engine through its explicit `PublicOrigin::OneLake` boundary.
+The Fabric-only origin guard is unchanged. Private-link/sovereign hosts are not
+selected implicitly.
+
+Listing retains unknown row fields, validates path rows, bounds pages/paths/bytes,
+detects repeated continuation tokens, and never reports partial data as complete.
+Malformed bodies or a 403 are not absence. HTTP status and storage header error
+codes are retained as data; display text is sanitized. Cancelled futures drop
+local request/credential work without claiming any completed response.
+HTTP failures also retain the parsed storage body in `raw_service_error`.
+SDK Display does not emit that provider data. CLI adapters explicitly select
+the source JSON diagnostic policy: standard 401/403 header precedence and 404,
+otherwise the nested storage code/message, without losing raw request/time data.
+
+Metadata GET and path enumeration share one collection loop. Header continuation
+takes precedence over body `continuationToken`; no service link is followed.
+The metadata projection retains first-page extra fields and Python's generic
+`ApiResponse.append_text` quirks: only a recursive result at status 200 merges,
+only list fields already present in the earlier page append, lower-case token
+fields are removed on merge, and `total_pages` is set to one rather than the
+actual page count. `pages_received` records the latter independently.
+Raw SDK path enumeration remains an explicitly complete ordered traversal;
+source CLI LS/GET select the source metadata merge view. Captured wire bytes and
+merged metadata are bounded in aggregate by `max_response_bytes`, not just per
+page. Malformed merge fields/tokens stay typed failures, not coerced success.
+
+The synthetic consumer exercises `_delta_log` listing/JSON bytes as the public
+table dependency seam. Table schema parsing, Delta interpretation, load and
+maintenance orchestration remain with the table owner. The item-root route is
+implemented separately from workspace-directory queries; table mutation semantics
+and main-host hierarchy integration remain separate gates. No live parity is established.
+
+## Storage writes
+
+`create_directory`, `delete_path`, `rename_path` and `upload_file` reuse the same
+credential/cancellation/executor path as reads. PUT/PATCH/DELETE are single-attempt
+through the shared HTTP adapter. No retry, cleanup, rollback or LRO stack is added.
+`OneLakeWriteOutcome` retains actual status, separating 202 acceptance from
+completed responses. `OneLakeMutationError` retains the underlying typed failure,
+possible side effects and previously received upload-stage responses.
+
+Directory create preserves trailing slash, `resource=directory` and
+`If-None-Match: *`; delete preserves `recursive=true`; rename preserves the
+source helper's `workspace/item/path` header without adding a leading slash.
+Upload follows Python's exact create-file (201 only) -> append at byte zero ->
+flush at content byte length sequence. Other create statuses do not trigger
+append/flush, and accepted intermediate responses remain explicitly recorded.
+
+File bodies default to a measured 4 MiB cap, checked before target creation; the
+shared transport's 4 MiB maximum remains authoritative even if a caller requests
+a larger SDK bound. Media types/header allocation are validated before file
+creation. Empty bytes are allowed at the SDK level; the CLI copy branches own
+their source-empty checks. Paths selecting an item root and non-ASCII rename
+headers fail explicitly as safety boundaries. The shared transport owns actual
+HTTP framing/Content-Length; framing headers cannot be overridden by callers.
+
+## Shortcut metadata
+
+`shortcuts::{ShortcutPath, ShortcutMutations, ShortcutConflictPolicy}` uses
+`ResourceOperations` over the Fabric API/audience. It does not reuse a storage
+token or the DFS executor. Create/update uses the source conflict-policy query;
+GET/DELETE encode actual folder/name segments with spaces/Unicode safely.
+`ResourceOperation::encoded` is an additive display-name builder, while the
+existing strict identifier/raw string path guards remain unchanged.
+`ResourceOperation::with_query` safely encodes query values, not arbitrary origins.
+The generic operation engine accepts the private validated descriptor, retains
+Python's synchronous policy and does not install a shortcut-specific poller.
+CLI ln/remove/SET orchestration is in `fabric-cli-mutations`; generic GET/export
+command composition and hierarchy/main-host integration remain separate backlog.

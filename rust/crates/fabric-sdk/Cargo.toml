@@ -1,0 +1,37 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-sdk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Fabric SDK facade with caller-injected Azure credentials"
+
+[package.metadata.fabric]
+layer = "sdk"
+
+[dependencies]
+azure_core.workspace = true
+base64.workspace = true
+fabric-core.workspace = true
+fabric-sdk-workspaces.workspace = true
+fabric-sdk-items.workspace = true
+fabric-sdk-capacities.workspace = true
+fabric-sdk-folders.workspace = true
+fabric-sdk-operations.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+tokio.workspace = true
+
+[[example]]
+name = "injected_credentials"
+test = true
+
+[lints]
+workspace = true

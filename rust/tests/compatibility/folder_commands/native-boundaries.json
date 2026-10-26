@@ -1,0 +1,175 @@
+{
+  "_copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "schema_version": 1,
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "integration_commit": "d9df14a6acf7fe3d80adf3bb74ee10ad0a7ac92f",
+  "original_cases_blob": "dab9f9628d48989a44e7270a577771b2a94df447",
+  "review": "Coordinator reviewed exactly these nine native-only assumptions against original source and existing contracts on 2026-10-25 (task message 4886). No original fixture, digest, Python expectation or product behavior change.",
+  "evidence": {
+    "item_errors": {
+      "commit": "d9df14a6acf7fe3d80adf3bb74ee10ad0a7ac92f",
+      "path": "rust/crates/fabric-cli/src/errors.rs",
+      "blob": "6492cabf7290610375002bac27651e3cd888099e",
+      "symbols": "cancelled; item",
+      "lines": "37-39,59-78"
+    },
+    "flat_reads": {
+      "commit": "d9df14a6acf7fe3d80adf3bb74ee10ad0a7ac92f",
+      "path": "rust/crates/fabric-cli/src/reads.rs",
+      "blob": "2786f4e35ebc901f99cf1509aec335edb364e3c7",
+      "symbols": "ReadHost::execute workspace List branch",
+      "lines": "245-315"
+    },
+    "source_parent_assignment": {
+      "commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+      "path": "src/fabric_cli/utils/fab_mem_store.py",
+      "blob": "0c78882f0f16187f461917da4cdd64ce13a6a1a6",
+      "symbols": "_get_workspace_items_from_api; get_folder",
+      "lines": "372-400,582-587"
+    },
+    "source_equality": {
+      "commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+      "path": "src/fabric_cli/core/hiearchy/fab_element.py",
+      "blob": "b3f82aacb100bd76c150ff42595283793db6bb0b",
+      "symbols": "FabricElement.__eq__",
+      "lines": "26-34"
+    }
+  },
+  "cases": [
+    {
+      "id": "workspace_flat_disabled",
+      "original_category": "exact",
+      "original_native_expected_sha256": "630baf9cc3fff4f33fe7b657ac5082836324974136b01558be6545eb23dac89c",
+      "category": "snapshot-difference",
+      "evidence": ["flat_reads", "source_parent_assignment"],
+      "reason": "The task preserves config=false workspace delegation. Existing native host makes one item request; Python also loads folders while assigning present folderId. Every output byte remains source-exact, but requests/scopes do not.",
+      "expected": {
+        "exit_code": 0, "command": "ls",
+        "result": {"data": [{"name": "Item.Notebook"}]},
+        "stderr": "",
+        "requests": ["items"],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]]
+      }
+    },
+    {
+      "id": "missing_items_value",
+      "original_category": "safety",
+      "original_native_expected_sha256": "1ce6f4ed33e664470bb6dd670e74584ac8a03c987d6f72c57c96910aabf4f716",
+      "category": "safety",
+      "evidence": ["item_errors"],
+      "reason": "Original native-only wording guessed item-list page; existing ItemErrorKind::InvalidResponse maps to invalid item response. Original Python UnexpectedError is retained.",
+      "expected": {
+        "exit_code": 1, "command": "ls",
+        "result": {"error_code": "InvalidResponse", "message": "Fabric returned an invalid item response"},
+        "stderr": "",
+        "requests": ["items"],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]]
+      }
+    },
+    {
+      "id": "malformed_items_json",
+      "original_category": "safety",
+      "original_native_expected_sha256": "1ce6f4ed33e664470bb6dd670e74584ac8a03c987d6f72c57c96910aabf4f716",
+      "category": "safety",
+      "evidence": ["item_errors"],
+      "reason": "Malformed JSON uses the same existing item InvalidResponse mapping. This corrects a native-only diagnostic guess, not original Python decoder expectations.",
+      "expected": {
+        "exit_code": 1, "command": "ls",
+        "result": {"error_code": "InvalidResponse", "message": "Fabric returned an invalid item response"},
+        "stderr": "",
+        "requests": ["items"],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]]
+      }
+    },
+    {
+      "id": "cancel_before",
+      "original_category": "safety",
+      "original_native_expected_sha256": "d9d25443bdff8a5cb9b72964f29cddc9a671bb634ec718abd71593d1ddae39f0",
+      "category": "safety",
+      "evidence": ["item_errors"],
+      "reason": "Existing precise cancellation mapping is LongRunningOperationCancelled, not the guessed generic ReadFailed. No credential or request is performed; source ordinary LS is still separately observed.",
+      "expected": {
+        "exit_code": 1, "command": "ls",
+        "result": {"error_code": "LongRunningOperationCancelled", "message": "Operation cancelled"},
+        "stderr": "",
+        "requests": [],
+        "scopes": []
+      }
+    },
+    {
+      "id": "item_count_limit",
+      "original_category": "safety",
+      "original_native_expected_sha256": "b70123590be291b5b0c31e095f60a9200ff7d877e40196f12926cb68c04ba078",
+      "category": "safety",
+      "evidence": ["item_errors"],
+      "reason": "Item LIST fails before folder loading. Existing generic item failure wording applies, not the original native-only guessed folder wording.",
+      "expected": {
+        "exit_code": 1, "command": "ls",
+        "result": {"error_code": "ReadFailed", "message": "Item operation did not complete"},
+        "stderr": "",
+        "requests": ["items"],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]]
+      }
+    },
+    {
+      "id": "item_response_bytes",
+      "original_category": "safety",
+      "original_native_expected_sha256": "b70123590be291b5b0c31e095f60a9200ff7d877e40196f12926cb68c04ba078",
+      "category": "safety",
+      "evidence": ["item_errors"],
+      "reason": "Streaming item body limit maps through existing item errors before any folder request. Original source output and safety classification are unchanged.",
+      "expected": {
+        "exit_code": 1, "command": "ls",
+        "result": {"error_code": "ReadFailed", "message": "Item operation did not complete"},
+        "stderr": "",
+        "requests": ["items"],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]]
+      }
+    },
+    {
+      "id": "item_page_limit",
+      "original_category": "safety",
+      "original_native_expected_sha256": "b70123590be291b5b0c31e095f60a9200ff7d877e40196f12926cb68c04ba078",
+      "category": "safety",
+      "evidence": ["item_errors"],
+      "reason": "Incomplete item traversal maps through existing item errors. Correcting native-only wording never permits partial rows as success.",
+      "expected": {
+        "exit_code": 1, "command": "ls",
+        "result": {"error_code": "ReadFailed", "message": "Item operation did not complete"},
+        "stderr": "",
+        "requests": ["items"],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]]
+      }
+    },
+    {
+      "id": "foreign_items_continuation",
+      "original_category": "safety",
+      "original_native_expected_sha256": "b70123590be291b5b0c31e095f60a9200ff7d877e40196f12926cb68c04ba078",
+      "category": "safety",
+      "evidence": ["item_errors"],
+      "reason": "Existing item continuation safety failure precedes folders and uses Item operation did not complete. Original Python continuation behavior remains independently asserted.",
+      "expected": {
+        "exit_code": 1, "command": "ls",
+        "result": {"error_code": "ReadFailed", "message": "Item operation did not complete"},
+        "stderr": "",
+        "requests": ["items"],
+        "scopes": [["https://api.fabric.microsoft.com/.default"]]
+      }
+    },
+    {
+      "id": "current_snapshot_name",
+      "original_category": "snapshot-difference",
+      "original_native_expected_sha256": "630baf9cc3fff4f33fe7b657ac5082836324974136b01558be6545eb23dac89c",
+      "category": "exact",
+      "evidence": ["source_equality", "source_parent_assignment"],
+      "reason": "Source equality compares names as well as IDs and parents. Both original Python expectation and native structural selection return empty data; the original native-only ID-based assumption was incorrect.",
+      "expected": {
+        "exit_code": 0, "command": "ls",
+        "result": {"data": []},
+        "stderr": "",
+        "requests": ["items", "folders?recursive=True"],
+        "scopes": [["https://api.fabric.microsoft.com/.default"], ["https://api.fabric.microsoft.com/.default"]]
+      }
+    }
+  ]
+}

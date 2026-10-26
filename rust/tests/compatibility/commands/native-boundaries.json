@@ -1,0 +1,123 @@
+{
+  "_copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "schema_version": 1,
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "attribution": "Separately hand-authored native safety/schema/unsupported expectations. These do not replace any protected Python expectation and are not source parity.",
+  "safety_exceptions": [
+    {
+      "id": "token_pagination",
+      "boundary": "InvalidContinuation is currently rendered as ReadFailed; native workspace paging rejects the foreign continuationUri before another request.",
+      "evidence": {
+        "python": "client/fab_api_client.py::_handle_successful_response follows continuationToken and ignores continuationUri; unchanged workspaces/cases.json expects three requests and successful sorted rows.",
+        "native": "fabric-sdk-workspaces workspace paging validates the active continuation URI; fabric-cli/src/errors.rs::workspace maps InvalidContinuation through the ReadFailed fallback."
+      },
+      "expected": {
+        "exit_code": 1,
+        "output": {"status": "Failure", "command": "ls", "result": {
+          "error_code": "ReadFailed", "message": "Workspace listing did not complete"
+        }},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces"]
+      }
+    },
+    {
+      "id": "missing_value",
+      "boundary": "Native typed malformed-page validation produces an explicit command-scoped InvalidResponse instead of Python's unexpected main error.",
+      "evidence": {
+        "python": "utils/fab_mem_store.py::_get_workspaces_from_api indexes data['value']; main.py::_handle_unexpected_error renders UnexpectedError without a command. The old expectation remains unchanged.",
+        "native": "fabric-sdk-workspaces rejects a page missing value; fabric-cli/src/errors.rs::workspace explicitly maps InvalidResponse."
+      },
+      "expected": {
+        "exit_code": 1,
+        "output": {"status": "Failure", "command": "ls", "result": {
+          "error_code": "InvalidResponse", "message": "Fabric returned an invalid workspace-list page"
+        }},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces"]
+      }
+    },
+    {
+      "id": "item_token_pagination",
+      "boundary": "The new item script also contains a foreign continuationUri; native item paging must reject it rather than replay the source's token-only traversal.",
+      "evidence": {
+        "python": "client/fab_api_client.py::_handle_successful_response ignores continuationUri; commands/cases.json independently expects two requests and successful sorted item rows.",
+        "native": "fabric-sdk-items/src/items.rs::validate_continuation checks trusted origin and exact collection path; fabric-cli/src/errors.rs::item maps InvalidContinuation through the ReadFailed fallback."
+      },
+      "expected": {
+        "exit_code": 1,
+        "output": {"status": "Failure", "command": "ls", "result": {
+          "error_code": "ReadFailed", "message": "Item operation did not complete"
+        }},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items"]
+      }
+    }
+  ],
+  "unsupported_projection": [
+    {
+      "id": "get_metadata_paths",
+      "boundary": "Actual NoQuery default GET failure, not a skipped case or a successful metadata comparison.",
+      "evidence": {
+        "python": "The protected source helper expectation remains the insertion-ordered path list from fab_jmespath.search(data, None).",
+        "native": "fabric-cli/src/projection.rs::NoQuery::project returns NotSupported after real generic SDK metadata GET succeeds."
+      },
+      "expected": {
+        "exit_code": 1,
+        "output": {"status": "Failure", "command": "get", "result": {
+          "error_code": "NotSupported",
+          "message": "Query projection and GET path discovery require a configured projection provider"
+        }},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items/item"]
+      }
+    },
+    {
+      "id": "get_metadata_depth",
+      "boundary": "Depth/array path discovery must also fail explicitly without the real provider; do not substitute raw metadata or expected paths.",
+      "evidence": {
+        "python": "The protected source helper expectation remains the depth-four path list including array indices.",
+        "native": "fabric-cli/src/projection.rs::NoQuery::project returns NotSupported after real generic SDK metadata GET succeeds."
+      },
+      "expected": {
+        "exit_code": 1,
+        "output": {"status": "Failure", "command": "get", "result": {
+          "error_code": "NotSupported",
+          "message": "Query projection and GET path discovery require a configured projection provider"
+        }},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items/lake"]
+      }
+    }
+  ],
+  "metadata_order": [
+    {
+      "id": "get_metadata_paths",
+      "boundary": "After real provider integration, typed SDK metadata serialization orders id/displayName first and BTreeMap extras alphabetically, unlike source response insertion order.",
+      "evidence": {
+        "python": "commands/cases.json keeps source order id, displayName, type, description, workspaceId, properties unchanged.",
+        "native": "fabric-sdk-items/src/models.rs::Item serializes id/display_name then flattened BTreeMap additional_fields; Rust workspace serde_json preserve_order retains that schema order and nested JSON order."
+      },
+      "expected": {
+        "exit_code": 0,
+        "output": {"status": "Success", "command": "get", "result": {"data": [
+          "id", "displayName", "description",
+          "properties.enabled", "properties.count", "properties.missing", "properties.emptyList",
+          "type", "workspaceId"
+        ]}},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items/item"]
+      }
+    },
+    {
+      "id": "get_metadata_depth",
+      "boundary": "Typed SDK extras put properties before type; the real provider must retain source depth-four/index traversal on that differently ordered metadata schema.",
+      "evidence": {
+        "python": "commands/cases.json keeps source order id, displayName, type, properties unchanged.",
+        "native": "fabric-sdk-items/src/models.rs::Item flattened BTreeMap sorts properties before type, without sorting the nested properties Value."
+      },
+      "expected": {
+        "exit_code": 0,
+        "output": {"status": "Success", "command": "get", "result": {"data": [
+          "id", "displayName",
+          "properties.a.b.c.d", "properties.rows[0].x", "properties.rows[1]", "properties.rows[2]",
+          "type"
+        ]}},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items/lake"]
+      }
+    }
+  ]
+}

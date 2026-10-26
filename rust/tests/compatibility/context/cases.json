@@ -1,0 +1,408 @@
+{
+  "schema_version": 1,
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "provenance": "Synthetic catalog and expectations hand-authored from pinned Python source; never generated from Rust or oracle output.",
+  "source_sha256": {
+    "src/fabric_cli/core/fab_handle_context.py": "2181706fea9e330b4fb9931e38437319d69665f55af8ea5af91a377b00424eae",
+    "src/fabric_cli/core/hiearchy/fab_element.py": "beea64ec1043156d32475333d974950dd8645f2aeddef0b2954ad917365e9575",
+    "src/fabric_cli/core/hiearchy/fab_tenant.py": "c9efd4468738a6cd8b77fc6b3108d362df3442717ffbd2426b89958329c71d8b",
+    "src/fabric_cli/core/hiearchy/fab_workspace.py": "75aa943e0859a7256bb53f55f015195d03df9dee2a34fcd3c467054af04afe6b",
+    "src/fabric_cli/core/hiearchy/fab_folder.py": "f55a68eb40ffc4c7fe56ad3768a4f275f32314ae07303b418cbbeaf2aab03324",
+    "src/fabric_cli/core/hiearchy/fab_base_item.py": "43344e9cbda8263c8d7f17d1bb9e69583a0d31606190b25b6d2e166e72a3fec8",
+    "src/fabric_cli/core/hiearchy/fab_item.py": "88ce918c2bd32620b50e44b6a5700bb413fc33e42dbd66958127de1143989949",
+    "src/fabric_cli/core/fab_types.py": "a613c525a9740204423108bb9c95aeb092d3db6baa92b3c1531d4b4d9f79218d",
+    "src/fabric_cli/core/fab_exceptions.py": "85826f456cc9f2bfd026950fc0338b04570cf56c571513f1cef1feac386db0dc",
+    "src/fabric_cli/core/fab_constant.py": "20dd87282310f0217b3f3724214c280c3dab123bec5f7fafa770e1c2c44bfff0",
+    "src/fabric_cli/errors/common.py": "f0af9183ba94b1ab89f6bd7afe1bca71538704afd5570e73b913fd45b2c1154d",
+    "src/fabric_cli/errors/hierarchy.py": "f43a9b4727e102a712fa9bc780db153a2136c4904458cbfe789e9c7e411c397c",
+    "src/fabric_cli/utils/fab_mem_store.py": "5f1bb375ca2e1da68c454de622b1f624f8187e73c8ef8db317f553bad9f12620"
+  },
+  "catalog": [
+    {"key":"tenant","kind":"Tenant","name":"Example","id":"tenant-id","parent":null},
+    {"key":"alpha","kind":"Workspace","name":"Alpha","id":"w-alpha","parent":"tenant","type":"Workspace"},
+    {"key":"beta","kind":"Workspace","name":"Beta","id":"w-beta","parent":"tenant","type":"Workspace"},
+    {"key":"home","kind":"Workspace","name":"Home","id":"w-home","parent":"tenant","type":"Personal"},
+    {"key":"slash_ws","kind":"Workspace","name":"Sales/West","id":"w-slash","parent":"tenant","type":"Workspace"},
+    {"key":"unicode_ws","kind":"Workspace","name":"工作区","id":"w-unicode","parent":"tenant","type":"Workspace"},
+    {"key":"alpha_duplicate","kind":"Workspace","name":"Alpha","id":"w-alpha-later","parent":"tenant","type":"Workspace"},
+    {"key":"team","kind":"Folder","name":"Team","id":"f-team","parent":"alpha"},
+    {"key":"nested","kind":"Folder","name":"Nested","id":"f-nested","parent":"team"},
+    {"key":"leaf","kind":"Folder","name":"Leaf","id":"f-leaf","parent":"nested"},
+    {"key":"team_duplicate","kind":"Folder","name":"Team","id":"f-team-later","parent":"alpha"},
+    {"key":"nested_root_duplicate","kind":"Folder","name":"Nested","id":"f-nested-root-later","parent":"alpha"},
+    {"key":"empty_folder","kind":"Folder","name":"","id":"f-empty","parent":"team"},
+    {"key":"slash_folder","kind":"Folder","name":"A/B","id":"f-slash","parent":"alpha"},
+    {"key":"unicode_folder","kind":"Folder","name":"团队","id":"f-unicode","parent":"alpha"},
+    {"key":"note","kind":"Item","name":"Note","id":"i-note","parent":"alpha","type":"Notebook"},
+    {"key":"note_duplicate","kind":"Item","name":"Note","id":"i-note-later","parent":"team","type":"Notebook"},
+    {"key":"nested_note","kind":"Item","name":"OnlyNested","id":"i-nested","parent":"nested","type":"Notebook"},
+    {"key":"budget","kind":"Item","name":"Budget","id":"i-budget","parent":"beta","type":"Report"},
+    {"key":"home_note","kind":"Item","name":"Note","id":"i-home-note","parent":"home","type":"Notebook"},
+    {"key":"empty_item","kind":"Item","name":"","id":"i-empty","parent":"team","type":"Notebook"},
+    {"key":"unicode_item","kind":"Item","name":"Café","id":"i-cafe","parent":"alpha","type":"Notebook"},
+    {"key":"slash_item","kind":"Item","name":"A/B","id":"i-slash","parent":"alpha","type":"Notebook"},
+    {"key":"lake","kind":"Item","name":"Valid_1","id":"i-lake","parent":"alpha","type":"Lakehouse"},
+    {"key":"plan","kind":"Item","name":"Quarterly Plan","id":"i-plan","parent":"alpha","type":"Notebook"},
+    {"key":"dotted","kind":"Item","name":"a.b","id":"i-dot","parent":"alpha","type":"Notebook"}
+  ],
+  "cases": [
+    {
+      "name":"root_ignores_current","input":"/","current":"nested","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/","path_id":"/","kind":"Tenant","name":"Example.Tenant","id":"tenant-id"},"lookups":[],"current_before":"nested","current_after":"nested"}
+    },
+    {
+      "name":"root_parent_special_case","input":"/..","current":"note","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/","path_id":"/","kind":"Tenant","name":"Example.Tenant","id":"tenant-id"},"lookups":[],"current_before":"note","current_after":"note"}
+    },
+    {
+      "name":"parent_clamps_at_tenant","input":"../../..","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/","path_id":"/","kind":"Tenant","name":"Example.Tenant","id":"tenant-id"},"lookups":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"absolute_parent_chain_clamps","input":"/../../../","current":"team","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/","path_id":"/","kind":"Tenant","name":"Example.Tenant","id":"tenant-id"},"lookups":[],"current_before":"team","current_after":"team"}
+    },
+    {
+      "name":"empty_scalar_keeps_current","input":"","current":"nested","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Team.Folder/Nested.Folder","path_id":"/w-alpha","kind":"Folder","name":"Nested.Folder","id":"f-nested"},"lookups":[],"current_before":"nested","current_after":"nested"}
+    },
+    {
+      "name":"empty_token_list_keeps_current","input":[],"current":"budget","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Beta.Workspace/Budget.Report","path_id":"/w-beta/i-budget","kind":"Item","name":"Budget.Report","id":"i-budget"},"lookups":[],"current_before":"budget","current_after":"budget"}
+    },
+    {
+      "name":"dot_keeps_item","input":".","current":"note","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Note.Notebook","path_id":"/w-alpha/i-note","kind":"Item","name":"Note.Notebook","id":"i-note"},"lookups":[],"current_before":"note","current_after":"note"}
+    },
+    {
+      "name":"relative_item_parent","input":"..","current":"note","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace","path_id":"/w-alpha","kind":"Workspace","name":"Alpha.Workspace","id":"w-alpha"},"lookups":[],"current_before":"note","current_after":"note"}
+    },
+    {
+      "name":"relative_folder_ancestor","input":"../../..","current":"nested","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/","path_id":"/","kind":"Tenant","name":"Example.Tenant","id":"tenant-id"},"lookups":[],"current_before":"nested","current_after":"nested"}
+    },
+    {
+      "name":"workspace_first_duplicate","input":"/Alpha.Workspace","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace","path_id":"/w-alpha","kind":"Workspace","name":"Alpha.Workspace","id":"w-alpha"},"lookups":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"}],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"workspace_suffix_canonicalization","input":"/Alpha.wOrKsPaCe","current":"beta","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace","path_id":"/w-alpha","kind":"Workspace","name":"Alpha.Workspace","id":"w-alpha"},"lookups":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"}],"current_before":"beta","current_after":"beta"}
+    },
+    {
+      "name":"personal_suffix_canonicalization","input":"/Home.pErSoNaL","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Home.Personal","path_id":"/w-home","kind":"Workspace","name":"Home.Personal","id":"w-home"},"lookups":[{"op":"workspace","parent":"/","name":"Home.Personal"}],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"workspace_display_case_is_exact","input":"/alpha.Workspace","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"error":{"code":"NotFound","message":"The Workspace 'alpha.Workspace' could not be found"},"lookups":[{"op":"workspace","parent":"/","name":"alpha.Workspace"}],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"bare_workspace_is_invalid","input":"/Alpha","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"error":{"code":"InvalidPath","message":"The path '/Alpha' is invalid"},"lookups":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"empty_workspace_display_is_invalid","input":"/.Workspace","current":"tenant","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"error":{"code":"InvalidPath","message":"The path '/.Workspace' is invalid"},"lookups":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"item_first_duplicate","input":"/Alpha.Workspace/Note.Notebook","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Note.Notebook","path_id":"/w-alpha/i-note","kind":"Item","name":"Note.Notebook","id":"i-note"},"lookups":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"},{"op":"item","parent":"/Alpha.Workspace","name":"Note.Notebook"}],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"item_suffix_canonicalization","input":"Note.nOtEbOoK","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Note.Notebook","path_id":"/w-alpha/i-note","kind":"Item","name":"Note.Notebook","id":"i-note"},"lookups":[{"op":"item","parent":"/Alpha.Workspace","name":"Note.Notebook"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"item_display_case_is_exact","input":"note.Notebook","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"error":{"code":"NotFound","message":"The Item 'note.Notebook' could not be found"},"lookups":[{"op":"item","parent":"/Alpha.Workspace","name":"note.Notebook"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"folder_first_duplicate_and_id_path","input":"Team.fOlDeR","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Team.Folder","path_id":"/w-alpha","kind":"Folder","name":"Team.Folder","id":"f-team"},"lookups":[{"op":"folder","parent":"/Alpha.Workspace","name":"Team.Folder"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"initial_folder_search_includes_nested","input":"Nested.Folder","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Nested.Folder","path_id":"/w-alpha","kind":"Folder","name":"Nested.Folder","id":"f-nested"},"lookups":[{"op":"folder","parent":"/Alpha.Workspace","name":"Nested.Folder"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"nested_folder_parent_match","input":"Nested.Folder/Leaf.Folder","current":"team","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Team.Folder/Nested.Folder/Leaf.Folder","path_id":"/w-alpha","kind":"Folder","name":"Leaf.Folder","id":"f-leaf"},"lookups":[{"op":"nested_folder","parent":"/Alpha.Workspace/Team.Folder","name":"Nested.Folder"},{"op":"nested_folder","parent":"/Alpha.Workspace/Team.Folder/Nested.Folder","name":"Leaf.Folder"}],"current_before":"team","current_after":"team"}
+    },
+    {
+      "name":"reparented_nested_alias_does_not_match_real_parent","input":"Nested.Folder/Leaf.Folder","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"error":{"code":"NotFound","message":"Folder 'Leaf.Folder' not found"},"lookups":[{"op":"folder","parent":"/Alpha.Workspace","name":"Nested.Folder"},{"op":"nested_folder","parent":"/Alpha.Workspace/Nested.Folder","name":"Leaf.Folder"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"folder_items_are_workspace_wide","input":"Note.Notebook","current":"nested","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Team.Folder/Nested.Folder/Note.Notebook","path_id":"/w-alpha/i-note","kind":"Item","name":"Note.Notebook","id":"i-note"},"lookups":[{"op":"item","parent":"/Alpha.Workspace","name":"Note.Notebook"}],"current_before":"nested","current_after":"nested"}
+    },
+    {
+      "name":"nested_item_can_be_found_from_workspace","input":"OnlyNested.Notebook","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/OnlyNested.Notebook","path_id":"/w-alpha/i-nested","kind":"Item","name":"OnlyNested.Notebook","id":"i-nested"},"lookups":[{"op":"item","parent":"/Alpha.Workspace","name":"OnlyNested.Notebook"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"relative_parent_then_workspace_wide_item","input":"../Note.Notebook","current":"nested","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Team.Folder/Note.Notebook","path_id":"/w-alpha/i-note","kind":"Item","name":"Note.Notebook","id":"i-note"},"lookups":[{"op":"item","parent":"/Alpha.Workspace","name":"Note.Notebook"}],"current_before":"nested","current_after":"nested"}
+    },
+    {
+      "name":"repeated_and_trailing_slashes","input":"//Alpha.Workspace///Team.Folder//","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Team.Folder","path_id":"/w-alpha","kind":"Folder","name":"Team.Folder","id":"f-team"},"lookups":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"},{"op":"folder","parent":"/Alpha.Workspace","name":"Team.Folder"}],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"dot_and_empty_relative_components","input":"././Note.Notebook///","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Note.Notebook","path_id":"/w-alpha/i-note","kind":"Item","name":"Note.Notebook","id":"i-note"},"lookups":[{"op":"item","parent":"/Alpha.Workspace","name":"Note.Notebook"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"escaped_workspace_slash","input":"/Sales\\/West.Workspace","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Sales\\/West.Workspace","path_id":"/w-slash","kind":"Workspace","name":"Sales/West.Workspace","id":"w-slash"},"lookups":[{"op":"workspace","parent":"/","name":"Sales/West.Workspace"}],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"two_backslashes_still_escape_slash","input":"/Sales\\\\/West.Workspace","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Sales\\/West.Workspace","path_id":"/w-slash","kind":"Workspace","name":"Sales/West.Workspace","id":"w-slash"},"lookups":[{"op":"workspace","parent":"/","name":"Sales/West.Workspace"}],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"all_backslashes_are_removed","input":"/Al\\pha.Workspace/No\\te.Notebook","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Note.Notebook","path_id":"/w-alpha/i-note","kind":"Item","name":"Note.Notebook","id":"i-note"},"lookups":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"},{"op":"item","parent":"/Alpha.Workspace","name":"Note.Notebook"}],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"escaped_folder_slash_is_not_reescaped_in_path","input":"A\\/B.Folder","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/A/B.Folder","path_id":"/w-alpha","kind":"Folder","name":"A/B.Folder","id":"f-slash"},"lookups":[{"op":"folder","parent":"/Alpha.Workspace","name":"A/B.Folder"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"escaped_item_slash_is_not_reescaped_in_path","input":"A\\/B.Notebook","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/A/B.Notebook","path_id":"/w-alpha/i-slash","kind":"Item","name":"A/B.Notebook","id":"i-slash"},"lookups":[{"op":"item","parent":"/Alpha.Workspace","name":"A/B.Notebook"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"trailing_escaped_slash_is_stripped_before_split","input":"Team.Folder\\/","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Team.Folder","path_id":"/w-alpha","kind":"Folder","name":"Team.Folder","id":"f-team"},"lookups":[{"op":"folder","parent":"/Alpha.Workspace","name":"Team.Folder"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"unicode_whitespace_is_stripped_per_component","input":"/\u2003Alpha.Workspace\u00a0/\u2009Note.Notebook\u3000","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Note.Notebook","path_id":"/w-alpha/i-note","kind":"Item","name":"Note.Notebook","id":"i-note"},"lookups":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"},{"op":"item","parent":"/Alpha.Workspace","name":"Note.Notebook"}],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"unicode_workspace_name","input":"/工作区.workspace","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/工作区.Workspace","path_id":"/w-unicode","kind":"Workspace","name":"工作区.Workspace","id":"w-unicode"},"lookups":[{"op":"workspace","parent":"/","name":"工作区.Workspace"}],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"unicode_folder_name","input":"团队.Folder","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/团队.Folder","path_id":"/w-alpha","kind":"Folder","name":"团队.Folder","id":"f-unicode"},"lookups":[{"op":"folder","parent":"/Alpha.Workspace","name":"团队.Folder"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"unicode_notebook_name","input":"Café.Notebook","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Café.Notebook","path_id":"/w-alpha/i-cafe","kind":"Item","name":"Café.Notebook","id":"i-cafe"},"lookups":[{"op":"item","parent":"/Alpha.Workspace","name":"Café.Notebook"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"zero_width_space_is_not_stripped","input":"\u200bNote.Notebook","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"error":{"code":"NotFound","message":"The Item '\u200bNote.Notebook' could not be found"},"lookups":[{"op":"item","parent":"/Alpha.Workspace","name":"\u200bNote.Notebook"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"multiple_tokens_join_with_space_and_strip_mixed_quotes","input":["\"/Alpha.Workspace/Quarterly","Plan.Notebook'"],"current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Quarterly Plan.Notebook","path_id":"/w-alpha/i-plan","kind":"Item","name":"Quarterly Plan.Notebook","id":"i-plan"},"lookups":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"},{"op":"item","parent":"/Alpha.Workspace","name":"Quarterly Plan.Notebook"}],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"token_array_extreme_repeated_quotes","input":["'\"/Alpha.Workspace/Note.Notebook\"'"],"current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Note.Notebook","path_id":"/w-alpha/i-note","kind":"Item","name":"Note.Notebook","id":"i-note"},"lookups":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"},{"op":"item","parent":"/Alpha.Workspace","name":"Note.Notebook"}],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"scalar_quotes_are_not_stripped","input":"'/Alpha.Workspace/Note.Notebook'","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"error":{"code":"InvalidPath","message":"The path '/'' is invalid"},"lookups":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"tokens_keep_internal_quotes","input":["Quarterly","'Plan'.Notebook"],"current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"error":{"code":"NotFound","message":"The Item 'Quarterly 'Plan'.Notebook' could not be found"},"lookups":[{"op":"item","parent":"/Alpha.Workspace","name":"Quarterly 'Plan'.Notebook"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"explicit_home_replaces_current","input":"~","current":"budget","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Home.Personal","path_id":"/w-home","kind":"Workspace","name":"Home.Personal","id":"w-home"},"lookups":[{"op":"workspace","parent":"/","name":"Home.Personal"}],"current_before":"budget","current_after":"budget"}
+    },
+    {
+      "name":"home_suffix_is_preserved","input":"~/Note.Notebook","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Home.Personal/Note.Notebook","path_id":"/w-home/i-home-note","kind":"Item","name":"Note.Notebook","id":"i-home-note"},"lookups":[{"op":"workspace","parent":"/","name":"Home.Personal"},{"op":"item","parent":"/Home.Personal","name":"Note.Notebook"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"home_can_be_explicit_regular_workspace","input":"~/Team.Folder","current":"tenant","home":"Alpha.Workspace","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Team.Folder","path_id":"/w-alpha","kind":"Folder","name":"Team.Folder","id":"f-team"},"lookups":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"},{"op":"folder","parent":"/Alpha.Workspace","name":"Team.Folder"}],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"tilde_prefix_without_slash_is_not_home","input":"~suffix","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"error":{"code":"InvalidPath","message":"The path '/~suffix' is invalid"},"lookups":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"three_dots_are_invalid","input":"...","current":"alpha","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"error":{"code":"InvalidPath","message":"The specified path is invalid"},"lookups":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"three_dot_prefix_is_invalid_even_with_suffix","input":"/Alpha.Workspace/...suffix.Notebook","current":"beta","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"error":{"code":"InvalidPath","message":"The specified path is invalid"},"lookups":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"}],"current_before":"beta","current_after":"beta"}
+    },
+    {
+      "name":"unknown_child_type_is_invalid_not_missing","input":"x.Unknown","current":"alpha","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"error":{"code":"InvalidPath","message":"The path '/Alpha.Workspace/x.Unknown' is invalid"},"lookups":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"item_name_preserves_earlier_dots","input":"a.b.Notebook","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/a.b.Notebook","path_id":"/w-alpha/i-dot","kind":"Item","name":"a.b.Notebook","id":"i-dot"},"lookups":[{"op":"item","parent":"/Alpha.Workspace","name":"a.b.Notebook"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"strict_lakehouse_accepts_ascii_underscore","input":"Valid_1.lAkEhOuSe","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Valid_1.Lakehouse","path_id":"/w-alpha/i-lake","kind":"Item","name":"Valid_1.Lakehouse","id":"i-lake"},"lookups":[{"op":"item","parent":"/Alpha.Workspace","name":"Valid_1.Lakehouse"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"strict_lakehouse_rejects_hyphen_without_lookup","input":"A-B.Lakehouse","current":"alpha","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"error":{"code":"Special characters not supported for this item type","message":"Lakehouse name 'A-B' contains unsupported special characters"},"lookups":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"strict_experiment_rejects_space","input":"bad name.MLExperiment","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"error":{"code":"Special characters not supported for this item type","message":"MLExperiment name 'bad name' contains unsupported special characters"},"lookups":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"strict_model_rejects_non_ascii","input":"é.MLModel","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"error":{"code":"Special characters not supported for this item type","message":"MLModel name 'é' contains unsupported special characters"},"lookups":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"strict_eventstream_rejects_dot","input":"a.b.Eventstream","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"error":{"code":"Special characters not supported for this item type","message":"Eventstream name 'a.b' contains unsupported special characters"},"lookups":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"notebook_hyphen_is_not_strict","input":"A-B.Notebook","current":"alpha","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/A-B.Notebook","path_id":"/w-alpha/None","kind":"Item","name":"A-B.Notebook","id":null},"lookups":[{"op":"item","parent":"/Alpha.Workspace","name":"A-B.Notebook"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"empty_item_name_accepted_in_folder","input":".Notebook","current":"team","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Team.Folder/.Notebook","path_id":"/w-alpha/i-empty","kind":"Item","name":".Notebook","id":"i-empty"},"lookups":[{"op":"item","parent":"/Alpha.Workspace","name":".Notebook"}],"current_before":"team","current_after":"team"}
+    },
+    {
+      "name":"empty_folder_name_accepted_in_folder","input":".Folder","current":"team","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Team.Folder/.Folder","path_id":"/w-alpha","kind":"Folder","name":".Folder","id":"f-empty"},"lookups":[{"op":"nested_folder","parent":"/Alpha.Workspace/Team.Folder","name":".Folder"}],"current_before":"team","current_after":"team"}
+    },
+    {
+      "name":"leading_dot_item_dispatch_differs_in_workspace","input":".Notebook","current":"alpha","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"error":{"code":"InvalidPath","message":"The path '/Alpha.Workspace/.Notebook' is invalid"},"lookups":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"leading_dot_folder_dispatch_differs_in_workspace","input":".Folder","current":"alpha","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"error":{"code":"InvalidPath","message":"The path '/Alpha.Workspace/.Folder' is invalid"},"lookups":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"missing_workspace_raises","input":"/Absent.Workspace","current":"team","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"error":{"code":"NotFound","message":"The Workspace 'Absent.Workspace' could not be found"},"lookups":[{"op":"workspace","parent":"/","name":"Absent.Workspace"}],"current_before":"team","current_after":"team"}
+    },
+    {
+      "name":"missing_workspace_suppresses_to_none_id","input":"/Absent.Workspace","current":"team","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"result":{"path":"/Absent.Workspace","path_id":"/None","kind":"Workspace","name":"Absent.Workspace","id":null},"lookups":[{"op":"workspace","parent":"/","name":"Absent.Workspace"}],"current_before":"team","current_after":"team"}
+    },
+    {
+      "name":"missing_workspace_child_still_raises","input":"/Absent.Workspace/Note.Notebook","current":"team","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"error":{"code":"NotFound","message":"The Workspace 'Absent.Workspace' could not be found"},"lookups":[{"op":"workspace","parent":"/","name":"Absent.Workspace"}],"current_before":"team","current_after":"team"}
+    },
+    {
+      "name":"missing_workspace_can_be_left_with_parent","input":"/Absent.Workspace/..","current":"team","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"result":{"path":"/","path_id":"/","kind":"Tenant","name":"Example.Tenant","id":"tenant-id"},"lookups":[{"op":"workspace","parent":"/","name":"Absent.Workspace"}],"current_before":"team","current_after":"team"}
+    },
+    {
+      "name":"missing_item_suppresses_to_none_id","input":"Absent.Notebook","current":"alpha","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Absent.Notebook","path_id":"/w-alpha/None","kind":"Item","name":"Absent.Notebook","id":null},"lookups":[{"op":"item","parent":"/Alpha.Workspace","name":"Absent.Notebook"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"missing_folder_suppresses_but_keeps_workspace_id_path","input":"Absent.Folder","current":"alpha","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Absent.Folder","path_id":"/w-alpha","kind":"Folder","name":"Absent.Folder","id":null},"lookups":[{"op":"folder","parent":"/Alpha.Workspace","name":"Absent.Folder"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"missing_folder_child_still_raises","input":"Absent.Folder/Note.Notebook","current":"alpha","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"error":{"code":"NotFound","message":"Folder 'Absent.Folder' not found"},"lookups":[{"op":"folder","parent":"/Alpha.Workspace","name":"Absent.Folder"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"missing_nested_folder_suppresses","input":"Absent.Folder","current":"team","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Team.Folder/Absent.Folder","path_id":"/w-alpha","kind":"Folder","name":"Absent.Folder","id":null},"lookups":[{"op":"nested_folder","parent":"/Alpha.Workspace/Team.Folder","name":"Absent.Folder"}],"current_before":"team","current_after":"team"}
+    },
+    {
+      "name":"missing_folder_can_be_left_without_traversal","input":"Absent.Folder/../Note.Notebook","current":"team","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Team.Folder/Note.Notebook","path_id":"/w-alpha/i-note","kind":"Item","name":"Note.Notebook","id":"i-note"},"lookups":[{"op":"nested_folder","parent":"/Alpha.Workspace/Team.Folder","name":"Absent.Folder"},{"op":"item","parent":"/Alpha.Workspace","name":"Note.Notebook"}],"current_before":"team","current_after":"team"}
+    },
+    {
+      "name":"lookup_forbidden_is_not_suppressed","input":"/Alpha.Workspace","current":"nested","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "failures":[{"op":"workspace","parent":"/","name":"Alpha.Workspace","error":{"code":"Forbidden","message":"Synthetic lookup denied."}}],
+      "expected":{"error":{"code":"Forbidden","message":"Synthetic lookup denied"},"lookups":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"}],"current_before":"nested","current_after":"nested"}
+    },
+    {
+      "name":"partial_lookup_failure_preserves_current","input":"/Alpha.Workspace/Team.Folder/Note.Notebook","current":"budget","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "failures":[{"op":"item","parent":"/Alpha.Workspace","name":"Note.Notebook","error":{"code":"PartialFailure","message":"Synthetic page two failed."}}],
+      "expected":{"error":{"code":"PartialFailure","message":"Synthetic page two failed"},"lookups":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"},{"op":"folder","parent":"/Alpha.Workspace","name":"Team.Folder"},{"op":"item","parent":"/Alpha.Workspace","name":"Note.Notebook"}],"current_before":"budget","current_after":"budget"}
+    },
+    {
+      "name":"injected_notfound_is_suppressed_only_at_lookup","input":"Note.Notebook","current":"alpha","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "failures":[{"op":"item","parent":"/Alpha.Workspace","name":"Note.Notebook","error":{"code":"NotFound","message":"Synthetic not found."}}],
+      "expected":{"result":{"path":"/Alpha.Workspace/Note.Notebook","path_id":"/w-alpha/None","kind":"Item","name":"Note.Notebook","id":null},"lookups":[{"op":"item","parent":"/Alpha.Workspace","name":"Note.Notebook"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"nested_lookup_failure_passes_through","input":"Nested.Folder","current":"team","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "failures":[{"op":"nested_folder","parent":"/Alpha.Workspace/Team.Folder","name":"Nested.Folder","error":{"code":"UnexpectedError","message":"Synthetic nested failure."}}],
+      "expected":{"error":{"code":"UnexpectedError","message":"Synthetic nested failure"},"lookups":[{"op":"nested_folder","parent":"/Alpha.Workspace/Team.Folder","name":"Nested.Folder"}],"current_before":"team","current_after":"team"}
+    },
+    {
+      "name":"kelvin_workspace_suffix_uses_unicode_lower","input":"/Alpha.Wor\u212aspace","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace","path_id":"/w-alpha","kind":"Workspace","name":"Alpha.Workspace","id":"w-alpha"},"lookups":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"}],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"kelvin_notebook_suffix_matches_ignorecase_ascii_range","input":"Note.NoteBoo\u212a","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Note.Notebook","path_id":"/w-alpha/i-note","kind":"Item","name":"Note.Notebook","id":"i-note"},"lookups":[{"op":"item","parent":"/Alpha.Workspace","name":"Note.Notebook"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"kelvin_in_strict_item_stem_is_not_ascii","input":"\u212a.Lakehouse","current":"alpha","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"error":{"code":"Special characters not supported for this item type","message":"Lakehouse name '\u212a' contains unsupported special characters"},"lookups":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"internal_newline_workspace_stem_fails_validation","input":"/Al\npha.Workspace","current":"tenant","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"error":{"code":"Invalid workspace name","message":"Invalid workspace name 'Al\npha.Workspace'"},"lookups":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"internal_newline_item_stem_fails_validation","input":"No\nte.Notebook","current":"alpha","home":"Home.Personal","raise_error":false,"supports_local_path":false,
+      "expected":{"error":{"code":"Invalid item name","message":"Invalid item name 'No\nte.Notebook'"},"lookups":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"internal_newline_folder_stem_keeps_original_suffix","input":"Te\nam.Folder","current":"alpha","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"error":{"code":"NotFound","message":"Folder 'Te\nam.Folder.Folder' not found"},"lookups":[{"op":"folder","parent":"/Alpha.Workspace","name":"Te\nam.Folder.Folder"}],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"python_information_separators_are_stripped","input":"/\u001cAlpha.Workspace\u001d/\u001eNote.Notebook\u001f","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Note.Notebook","path_id":"/w-alpha/i-note","kind":"Item","name":"Note.Notebook","id":"i-note"},"lookups":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"},{"op":"item","parent":"/Alpha.Workspace","name":"Note.Notebook"}],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"trailing_newline_is_stripped_before_name_validation","input":"/Alpha.Workspace/Note.Notebook\n","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/Note.Notebook","path_id":"/w-alpha/i-note","kind":"Item","name":"Note.Notebook","id":"i-note"},"lookups":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"},{"op":"item","parent":"/Alpha.Workspace","name":"Note.Notebook"}],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"local_fallback_deliberately_unsupported","input":"local.txt","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":true,
+      "expected":{"unsupported":"local_path_fallback"},
+      "source_behavior":"After InvalidPath/NotFound/NotSupported, source may inspect os.path.exists/os.access and construct LocalPath; not executed and not exact parity."
+    },
+    {
+      "name":"virtual_admin_workspace_deliberately_unsupported","input":"/.capacities","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"unsupported":"virtual_context"},
+      "source_behavior":"Tenant handler recognizes .capacities as a VirtualWorkspace with no lookup; virtual administrative hierarchy is outside the bounded slice."
+    },
+    {
+      "name":"virtual_admin_item_deliberately_unsupported","input":"/.capacities/Demo.Capacity","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"unsupported":"virtual_context"},
+      "source_behavior":"Source constructs a virtual workspace then resolves the capacity through its memory-store/API boundary; no virtual lookup is executed here."
+    },
+    {
+      "name":"external_share_deliberately_unsupported","input":"/Alpha.Workspace/.externaldatashares","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"unsupported":"external_sharing"},
+      "source_behavior":"Source constructs an external-data-share virtual item container and emits a tenant-setting warning; external sharing and logging are excluded."
+    },
+    {
+      "name":"onelake_deliberately_unsupported","input":"/Alpha.Workspace/Valid_1.Lakehouse/Files/a.txt","current":"tenant","home":"Home.Personal","raise_error":true,"supports_local_path":false,
+      "expected":{"unsupported":"onelake_traversal"},
+      "source_behavior":"Source checks item command support, constructs the Files OneLake node, then queries OneLake properties for a.txt; never executed by this offline bounded oracle."
+    },
+    {
+      "name":"ambient_home_discovery_deliberately_unsupported","input":"~/Note.Notebook","current":"tenant","home":null,"raise_error":true,"supports_local_path":false,
+      "expected":{"unsupported":"ambient_home_discovery"},
+      "source_behavior":"Uninjected source asks FabAuth for user identity and searches personal workspaces, or raises auth/personal-workspace errors; the bounded slice requires an explicit home name."
+    }
+  ]
+}

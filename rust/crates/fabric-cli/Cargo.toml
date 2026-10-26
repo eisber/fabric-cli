@@ -1,0 +1,52 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Bounded Fabric read-command composition with caller-owned dependencies"
+
+[package.metadata.fabric]
+layer = "cli"
+
+[[bin]]
+name = "fab-rs"
+path = "src/main.rs"
+
+[features]
+default = []
+windows-broker = ["dep:fabric-identity", "dep:tokio", "fabric-identity/windows-broker"]
+native-read = ["windows-broker", "dep:azure_core", "dep:fabric-sdk-http", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls"]
+
+[dependencies]
+clap.workspace = true
+fabric-cli-context.workspace = true
+fabric-cli-output.workspace = true
+fabric-cli-query.workspace = true
+fabric-cli-jobs.workspace = true
+fabric-cli-mutations.workspace = true
+fabric-sdk.workspace = true
+fabric-sdk-jobs.workspace = true
+fabric-sdk-operations.workspace = true
+fabric-sdk-workspaces.workspace = true
+fabric-sdk-http = { workspace = true, optional = true }
+fabric-sdk-transport = { workspace = true, optional = true }
+azure_core = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+fabric-identity = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["signal"] }
+thiserror.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+azure_core.workspace = true
+fabric-sdk-http.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

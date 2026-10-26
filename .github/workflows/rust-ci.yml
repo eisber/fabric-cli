@@ -1,0 +1,471 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Rust scaffold
+
+on:
+  pull_request:
+  push:
+    branches: [main, feature/rust]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Select affected crates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      run_native: ${{ steps.select.outputs.run_native }}
+      packages: ${{ steps.select.outputs.packages }}
+      package_args: ${{ steps.select.outputs.package_args }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Select changed crates and transitive consumers
+        id: select
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const assert = require('node:assert/strict');
+            const path = require('node:path');
+            const {execFileSync, spawnSync} = require('node:child_process');
+            const workflow = '.github/workflows/rust-ci.yml';
+            const documentation = /^rust\/(?:(?:docs|skills)\/.*\.md|(?:README|AGENTS)\.md|tests\/fixtures\/README\.md)$/;
+
+            function select(files, packages, forceReason) {
+              const all = reason => ({
+                names: packages.map(pkg => pkg.name).sort(),
+                reason
+              });
+              if (forceReason) return all(forceReason);
+              const affected = new Set();
+              for (const file of files) {
+                if (file === workflow) return all('Rust workflow changed');
+                if (!file.startsWith('rust/') || documentation.test(file)) continue;
+                if (/(^|\/)Cargo\.(toml|lock)$/.test(file)) {
+                  return all('Cargo manifest or lockfile changed');
+                }
+                const owner = packages
+                  .filter(pkg => file.startsWith(pkg.directory))
+                  .sort((a, b) => b.directory.length - a.directory.length)[0];
+                if (!owner) return all('Shared or unclassified Rust input changed');
+                affected.add(owner.name);
+              }
+              let expanded;
+              do {
+                expanded = false;
+                for (const pkg of packages) {
+                  if (!affected.has(pkg.name) && pkg.dependencies.some(name => affected.has(name))) {
+                    affected.add(pkg.name);
+                    expanded = true;
+                  }
+                }
+              } while (expanded);
+              return {
+                names: [...affected].sort(),
+                reason: affected.size ? 'Changed crates and transitive consumers' : 'No Rust build inputs changed'
+              };
+            }
+
+            const fixture = [
+              {name: 'fabric-core', directory: 'rust/crates/fabric-core/', dependencies: []},
+              {name: 'fabric-identity', directory: 'rust/crates/fabric-identity/', dependencies: ['fabric-core']},
+              {name: 'fabric-sdk', directory: 'rust/crates/fabric-sdk/', dependencies: ['fabric-core']},
+              {name: 'fabric-deploy', directory: 'rust/crates/fabric-deploy/', dependencies: []},
+              {name: 'fabric-cli', directory: 'rust/crates/fabric-cli/', dependencies: []}
+            ];
+            const allNames = fixture.map(pkg => pkg.name).sort();
+            assert.deepEqual(select(['rust/crates/fabric-identity/src/lib.rs'], fixture).names, ['fabric-identity']);
+            assert.deepEqual(select(['rust/crates/fabric-core/src/lib.rs'], fixture).names,
+              ['fabric-core', 'fabric-identity', 'fabric-sdk']);
+            const future = fixture.map(pkg => pkg.name === 'fabric-cli'
+              ? {...pkg, dependencies: ['fabric-identity']} : pkg);
+            assert.deepEqual(select(['rust/crates/fabric-core/src/lib.rs'], future).names,
+              ['fabric-cli', 'fabric-core', 'fabric-identity', 'fabric-sdk']);
+            assert.deepEqual(select(['rust/crates/fabric-identity/src/lib.rs'], future).names,
+              ['fabric-cli', 'fabric-identity']);
+            assert.deepEqual(select(['rust/docs/build-validation.md', 'src/fabric_cli/fab.py'], fixture).names, []);
+            assert.deepEqual(select(['rust/crates/fabric-cli/tests/cli_contract.rs'], fixture).names, ['fabric-cli']);
+            assert.deepEqual(select(['rust/crates/fabric-sdk/examples/injected_credentials.rs',
+              'rust/crates/fabric-identity/src/lib.rs'], fixture).names, ['fabric-identity', 'fabric-sdk']);
+            assert.deepEqual(select(['rust/crates/fabric-sdk/src/deleted.rs',
+              'rust/crates/fabric-deploy/src/renamed.rs'], fixture).names, ['fabric-deploy', 'fabric-sdk']);
+            assert.deepEqual(select(['rust/crates/fabric-identity/README.md'], fixture).names, ['fabric-identity']);
+            for (const file of [workflow, 'rust/Cargo.toml', 'rust/Cargo.lock', 'rust/rust-toolchain.toml',
+              'rust/rustfmt.toml', 'rust/tests/fixtures/workspaces-page.json',
+              'rust/crates/fabric-identity/Cargo.toml', 'rust/new-build-input',
+              'rust/docs/new-tool.rs', 'rust/crates/fabric-identity-extra/src/lib.rs']) {
+              assert.deepEqual(select([file], fixture).names, allNames);
+            }
+            assert.deepEqual(select([], fixture, 'Manual full validation').names, allNames);
+            const integrated = [
+              {name: 'fabric-core', directory: 'rust/crates/fabric-core/', dependencies: []},
+              {name: 'fabric-identity-windows', directory: 'rust/crates/fabric-identity-windows/', dependencies: []},
+              {name: 'fabric-identity', directory: 'rust/crates/fabric-identity/',
+                dependencies: ['fabric-core', 'fabric-identity-windows']},
+              {name: 'fabric-sdk-workspaces', directory: 'rust/crates/fabric-sdk-workspaces/',
+                dependencies: ['fabric-core']},
+              {name: 'fabric-sdk', directory: 'rust/crates/fabric-sdk/',
+                dependencies: ['fabric-core', 'fabric-sdk-workspaces']},
+              {name: 'fabric-deploy', directory: 'rust/crates/fabric-deploy/', dependencies: ['fabric-sdk']},
+              {name: 'fabric-cli', directory: 'rust/crates/fabric-cli/', dependencies: []}
+            ];
+            assert.deepEqual(select(['rust/crates/fabric-identity-windows/src/native.rs'], integrated).names,
+              ['fabric-identity', 'fabric-identity-windows']);
+            assert.deepEqual(select(['rust/crates/fabric-sdk-workspaces/src/workspaces.rs'], integrated).names,
+              ['fabric-deploy', 'fabric-sdk', 'fabric-sdk-workspaces']);
+            assert.deepEqual(select(['rust/crates/fabric-core/src/lib.rs'], integrated).names,
+              ['fabric-core', 'fabric-deploy', 'fabric-identity', 'fabric-sdk', 'fabric-sdk-workspaces']);
+            assert.deepEqual(select([workflow], integrated).names, integrated.map(pkg => pkg.name).sort());
+            core.info('Affected-crate selection assertions passed');
+
+            const root = process.env.GITHUB_WORKSPACE;
+            const git = args => execFileSync('git', args, {cwd: root, encoding: 'utf8'}).trim();
+            const head = git(['rev-parse', 'HEAD']);
+            let base;
+            let forceReason;
+            if (context.eventName === 'pull_request') {
+              base = context.payload.pull_request.base.sha;
+            } else if (context.eventName === 'push') {
+              base = context.payload.before;
+            } else {
+              forceReason = 'Manual full validation';
+            }
+            if (!forceReason) {
+              if (!/^[a-f0-9]{40}$/i.test(base || '') || /^0+$/.test(base)) {
+                forceReason = 'No usable diff base; full validation required';
+              } else {
+                const probe = spawnSync('git', ['cat-file', '-e', `${base}^{commit}`],
+                  {cwd: root, encoding: 'utf8'});
+                if (probe.error) throw probe.error;
+                if (probe.signal) throw new Error(`Git base probe terminated: ${probe.signal}`);
+                if (probe.status !== 0) {
+                  forceReason = 'Diff base unavailable locally; full validation required';
+                }
+              }
+            }
+            if (forceReason) core.info(forceReason);
+            const files = forceReason ? [] : execFileSync('git',
+              ['diff', '--name-only', '-z', '--no-renames', base, head],
+              {cwd: root, encoding: 'utf8'}).split('\0').filter(Boolean);
+            const needsMetadata = forceReason || files.some(file =>
+              file === workflow || (file.startsWith('rust/') && !documentation.test(file)));
+            let packages = [];
+            if (needsMetadata) {
+              const metadata = JSON.parse(execFileSync('cargo',
+                ['metadata', '--offline', '--locked', '--no-deps', '--format-version', '1'],
+                {cwd: path.join(root, 'rust'), encoding: 'utf8'}));
+              const members = new Set(metadata.workspace_members);
+              const local = metadata.packages.filter(pkg => members.has(pkg.id));
+              if (!local.length) throw new Error('Cargo returned no workspace members');
+              const byDirectory = new Map(local.map(pkg => [path.dirname(pkg.manifest_path), pkg.name]));
+              packages = local.map(pkg => {
+                if (!/^[a-z0-9][a-z0-9_-]*$/i.test(pkg.name)) {
+                  throw new Error(`Unsupported Cargo package name: ${pkg.name}`);
+                }
+                const directory = path.relative(root, path.dirname(pkg.manifest_path)).split(path.sep).join('/');
+                if (!directory.startsWith('rust/')) {
+                  throw new Error(`Workspace member outside rust/: ${pkg.name}`);
+                }
+                const dependencies = pkg.dependencies.filter(dep => dep.path).map(dep => {
+                  const name = byDirectory.get(path.resolve(dep.path));
+                  if (!name) throw new Error(`Non-workspace path dependency requires selector review: ${dep.name}`);
+                  return name;
+                });
+                return {name: pkg.name, directory: `${directory}/`, dependencies};
+              });
+            }
+            const result = select(files, packages, forceReason);
+            core.info(`${result.reason}: ${JSON.stringify(result.names)}`);
+            core.setOutput('run_native', result.names.length > 0 ? 'true' : 'false');
+            core.setOutput('packages', JSON.stringify(result.names));
+            core.setOutput('package_args', result.names.map(name => `--package ${name}`).join(' '));
+            await core.summary
+              .addHeading('Rust validation scope')
+              .addTable([
+                [{data: 'Input', header: true}, {data: 'Value', header: true}],
+                ['Checked-out head', head],
+                ['Diff base', base || 'Not applicable'],
+                ['Selection reason', result.reason],
+                ['Selected packages', result.names.join(', ') || 'None; native jobs skipped'],
+                ['Changed paths', String(files.length)]
+              ])
+              .write();
+
+  native:
+    name: Native checks (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.run_native == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      CARGO_PACKAGE_ARGS: ${{ needs.changes.outputs.package_args }}
+    defaults:
+      run:
+        working-directory: rust
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04, macos-15]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Set up the development-only Python oracle
+        if: >-
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-deploy') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-core-json') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-output') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-jobs') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-jobs') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-paging') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-mutations') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-operations') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake-http')
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Restore pinned oracle dependency
+        if: >-
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-mutations') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-operations') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake-http')
+        run: python -m pip install --disable-pip-version-check -r tests/compatibility/requirements.txt
+      - name: Use repository-pinned toolchain and record actual host
+        run: |
+          cargo --version
+          rustc --version --verbose
+          rustup show active-toolchain
+      - name: Restore locked dependencies
+        run: cargo fetch --locked
+      - name: Inspect workspace metadata
+        run: cargo metadata --locked --no-deps --format-version 1
+      - name: Check formatting
+        run: |
+          read -r -a packages <<< "$CARGO_PACKAGE_ARGS"
+          cargo fmt "${packages[@]}" -- --check
+      - name: Check all targets
+        run: |
+          read -r -a packages <<< "$CARGO_PACKAGE_ARGS"
+          cargo check --locked "${packages[@]}" --all-targets
+      - name: Lint all targets
+        run: |
+          read -r -a packages <<< "$CARGO_PACKAGE_ARGS"
+          cargo clippy --locked "${packages[@]}" --all-targets -- -D warnings
+      - name: Test offline contracts
+        run: |
+          read -r -a packages <<< "$CARGO_PACKAGE_ARGS"
+          cargo test --offline --locked "${packages[@]}"
+      - name: Test documentation
+        run: |
+          read -r -a packages <<< "$CARGO_PACKAGE_ARGS"
+          cargo test --offline --locked "${packages[@]}" --doc
+      - name: Validate the explicitly selected native transport
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-transport')
+        run: |
+          cargo check --offline --locked -p fabric-sdk-transport --no-default-features --lib
+          cargo clippy --offline --locked -p fabric-sdk-transport --features hyper-rustls --all-targets -- -D warnings
+          cargo test --offline --locked -p fabric-sdk-transport --features hyper-rustls
+          cargo run --offline --locked -p fabric-sdk-transport --features hyper-rustls --example sdk_consumer
+      - name: Require isolated default and opt-in transport dependency graphs
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-transport')
+        run: |
+          forbidden='^(hyper|hyper-util|hyper-rustls|rustls|rustls-platform-verifier|reqwest|native-tls|openssl|fabric-identity|fabric-identity-windows|fabric-cli|fabric-deploy) v'
+          for package in fabric-sdk fabric-sdk-transport; do
+            graph="$(cargo tree --offline --locked -p "$package" --no-default-features --edges normal --prefix none --format '{p}')"
+            printf '%s\n' "$graph"
+            if grep -Eq "$forbidden" <<< "$graph"; then
+              echo "::error::Default $package graph selected a backend or higher layer."
+              exit 1
+            fi
+          done
+          graph="$(cargo tree --offline --locked -p fabric-sdk-transport --features hyper-rustls --edges normal --prefix none --format '{p}')"
+          printf '%s\n' "$graph"
+          for package in hyper hyper-util hyper-rustls rustls; do
+            if ! grep -Eq "^${package} v" <<< "$graph"; then
+              echo "::error::Opt-in transport graph is missing $package."
+              exit 1
+            fi
+          done
+          if grep -Eq '^(reqwest|native-tls|openssl|fabric-identity|fabric-identity-windows|fabric-cli|fabric-deploy) v' <<< "$graph"; then
+            echo "::error::Opt-in transport selected an unrelated backend or higher layer."
+            exit 1
+          fi
+      - name: Compare executable read and query behavior against pinned Python
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          cargo build --offline --locked -p fabric-cli -p fabric-cli-query --examples
+          suffix=""
+          if [[ "$RUNNER_OS" == Windows ]]; then suffix=".exe"; fi
+          python -B -m unittest discover -s tests/compatibility -p test_run_read_parity.py -v
+          python -B -m unittest discover -s tests/compatibility/commands -p test_inventory.py -v
+          python -B tests/compatibility/run_read_parity.py \
+            --read-probe "target/debug/examples/read_probe${suffix}" \
+            --query-probe "target/debug/examples/projection_output${suffix}" \
+            --folder-probe "target/debug/examples/folder_read_probe${suffix}" \
+            --artifacts "$RUNNER_TEMP/read-parity"
+      - name: Require shared core and CLI JSON byte compatibility
+        if: >-
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-core-json') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-output')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          cargo run --quiet --offline --locked -p fabric-core-json --example definition_json > "$RUNNER_TEMP/core-definition-json.json"
+          cargo run --quiet --offline --locked -p fabric-cli-output --example definition_json > "$RUNNER_TEMP/cli-definition-json.json"
+          cargo run --quiet --offline --locked -p fabric-cli-output --example compatibility_probe > "$RUNNER_TEMP/output-json.json"
+          cargo run --quiet --offline --locked -p fabric-core-json --example unicode_json > "$RUNNER_TEMP/unicode-json.json"
+          python -B tests/compatibility/output/definition_reference.py --observed "$RUNNER_TEMP/core-definition-json.json"
+          python -B tests/compatibility/output/definition_reference.py --observed "$RUNNER_TEMP/cli-definition-json.json"
+          python -B tests/compatibility/output/reference.py --observed "$RUNNER_TEMP/output-json.json"
+          python -B tests/compatibility/output/unicode_reference.py --observed "$RUNNER_TEMP/unicode-json.json"
+          python -B -m unittest discover -s tests/compatibility/output -p test_reference.py -v
+          python -B -m unittest discover -s tests/compatibility/output -p test_unicode_reference.py -v
+      - name: Check optional broker and safe-code consumer without authenticating
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-identity') || contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
+        run: |
+          cargo clippy --offline --locked -p fabric-cli --all-targets --features windows-broker -- -D warnings
+          cargo test --offline --locked -p fabric-cli -p fabric-identity --features fabric-cli/windows-broker
+          cargo clippy --offline --locked -p fabric-identity --all-targets --features windows-broker -- -D warnings
+          cargo run --offline --locked -p fabric-identity --example safe_consumer --no-default-features
+          cargo run --offline --locked -p fabric-identity --example safe_consumer --features windows-broker
+      - name: Require pinned Python job contracts and actual offline job consumer
+        if: >-
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-jobs') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-jobs') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-paging')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python -B tests/compatibility/jobs/reference.py
+          python -B tests/compatibility/jobs/branches_reference.py
+          python -B tests/compatibility/jobs/operation_output_reference.py
+          python -B tests/compatibility/jobs/skill_headers_reference.py
+          cargo run --offline --locked -p fabric-cli-jobs --example offline_job
+      - name: Require released definition source receipts and native transfer consumers
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-deploy')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python -B -m unittest discover -s tests/compatibility -p test_run_definition_parity.py -v
+          python -B tests/compatibility/run_definition_parity.py --artifacts "$RUNNER_TEMP/definition-parity"
+          cargo test --offline --locked -p fabric-deploy --test definitions
+      - name: Require opt-in native read host without authentication
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          cargo clippy --offline --locked -p fabric-cli --features native-read --all-targets -- -D warnings
+          cargo test --offline --locked -p fabric-cli -p fabric-identity --features fabric-cli/native-read
+          cargo build --offline --locked -p fabric-cli --examples --features native-read
+          suffix=""
+          if [[ "$RUNNER_OS" == Windows ]]; then suffix=".exe"; fi
+          python -B tests/compatibility/read_session/consumer.py --rust-probe "target/debug/examples/read_session_probe${suffix}"
+          python -B tests/compatibility/job_reads/compare.py --probe "target/debug/examples/job_read_session_probe${suffix}"
+      - name: Require extended context and actual text output observations
+        if: >-
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-context') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-output')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          cargo run --quiet --offline --locked -p fabric-cli-context --example extended_resolve
+          python -B tests/compatibility/context/extended_reference.py
+          cargo run --quiet --offline --locked -p fabric-cli-output --example text_probe > "$RUNNER_TEMP/text-observations.json"
+          python -B tests/compatibility/output/text_reference.py --observed "$RUNNER_TEMP/text-observations.json"
+      - name: Preserve read and query source comparisons with broker feature enabled
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          cargo build --offline --locked -p fabric-cli -p fabric-cli-query --examples --features fabric-cli/windows-broker
+          suffix=""
+          if [[ "$RUNNER_OS" == Windows ]]; then suffix=".exe"; fi
+          python -B tests/compatibility/run_read_parity.py \
+            --read-probe "target/debug/examples/read_probe${suffix}" \
+            --query-probe "target/debug/examples/projection_output${suffix}" \
+            --folder-probe "target/debug/examples/folder_read_probe${suffix}" \
+            --artifacts "$RUNNER_TEMP/read-parity-windows-broker"
+      - name: Run independent offline SDK example
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk')
+        run: cargo run --offline --locked -p fabric-sdk --example injected_credentials
+      - name: Compare resource operations and errors with pinned Python consumers
+        if: >-
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-mutations') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-operations') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake-http')
+        timeout-minutes: 5
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          cargo build --offline --locked -p fabric-cli-mutations -p fabric-sdk-operations --examples
+          python -B -m unittest discover -s tests/compatibility -p test_run_resource_parity.py -v
+          python -B tests/compatibility/run_resource_parity.py \
+            --probes target/debug/examples \
+            --artifacts "$RUNNER_TEMP/resource-parity"
+      - name: Check CLI help
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
+        run: cargo run --offline --locked -p fabric-cli -- --help
+      - name: Check CLI version
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
+        run: cargo run --offline --locked -p fabric-cli -- --version
+      - name: Inspect SDK normal dependency closure
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk')
+        run: cargo tree --locked -p fabric-sdk --edges normal
+      - name: Inspect dependency features and duplicates
+        run: |
+          read -r -a packages <<< "$CARGO_PACKAGE_ARGS"
+          cargo tree --locked "${packages[@]}" --edges features
+          cargo tree --locked "${packages[@]}" --duplicates
+
+  validation:
+    name: Rust validation
+    if: always()
+    needs: [changes, native]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      SELECTION_RESULT: ${{ needs.changes.result }}
+      RUN_NATIVE: ${{ needs.changes.outputs.run_native }}
+      NATIVE_RESULT: ${{ needs.native.result }}
+    steps:
+      - name: Require successful selection and selected native checks
+        shell: bash
+        run: |
+          if [[ "$SELECTION_RESULT" != success ]]; then
+            echo "::error::Affected-crate selection did not succeed."
+            exit 1
+          fi
+          if [[ "$RUN_NATIVE" == true && "$NATIVE_RESULT" == success ]]; then
+            echo "Selected native checks passed."
+          elif [[ "$RUN_NATIVE" == false && "$NATIVE_RESULT" == skipped ]]; then
+            echo "No Rust build inputs changed; native checks were not required."
+          else
+            echo "::error::Selected native checks did not complete successfully."
+            exit 1
+          fi

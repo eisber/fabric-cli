@@ -1,0 +1,1082 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "metadata": [
+    {
+      "name": "domain-.-True",
+      "resource": "domain",
+      "query": ".",
+      "verbose": true,
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "id": "resource",
+            "displayName": "Primary",
+            "opaque": {
+              "z": 1,
+              "a": 2
+            }
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "workspace-a"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/resource"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/resource/workspaces"
+          }
+        ],
+        "value": {
+          "id": "resource",
+          "displayName": "Primary",
+          "opaque": {
+            "z": 1,
+            "a": 2
+          },
+          "domainWorkspaces": [
+            {
+              "id": "workspace-a"
+            }
+          ]
+        },
+        "data": {
+          "id": "resource",
+          "displayName": "Primary",
+          "opaque": {
+            "z": 1,
+            "a": 2
+          },
+          "domainWorkspaces": [
+            {
+              "id": "workspace-a"
+            }
+          ]
+        },
+        "warnings": [
+          "Requires Fabric administrator"
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "domain-paths-True",
+      "resource": "domain",
+      "query": null,
+      "verbose": true,
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "id": "resource",
+            "displayName": "Primary",
+            "opaque": {
+              "z": 1,
+              "a": 2
+            }
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "workspace-a"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/resource"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/resource/workspaces"
+          }
+        ],
+        "value": {
+          "id": "resource",
+          "displayName": "Primary",
+          "opaque": {
+            "z": 1,
+            "a": 2
+          },
+          "domainWorkspaces": [
+            {
+              "id": "workspace-a"
+            }
+          ]
+        },
+        "data": [
+          "id",
+          "displayName",
+          "opaque.z",
+          "opaque.a",
+          "domainWorkspaces[0].id"
+        ],
+        "warnings": [
+          "Requires Fabric administrator"
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "domain-.-False",
+      "resource": "domain",
+      "query": ".",
+      "verbose": false,
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "id": "resource",
+            "displayName": "Primary",
+            "opaque": {
+              "z": 1,
+              "a": 2
+            }
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "workspace-a"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/resource"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/resource/workspaces"
+          }
+        ],
+        "value": {
+          "id": "resource",
+          "displayName": "Primary",
+          "opaque": {
+            "z": 1,
+            "a": 2
+          },
+          "domainWorkspaces": [
+            {
+              "id": "workspace-a"
+            }
+          ]
+        },
+        "data": null,
+        "warnings": [
+          "Requires Fabric administrator"
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "connection-.-True",
+      "resource": "connection",
+      "query": ".",
+      "verbose": true,
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "id": "resource",
+            "displayName": "Primary",
+            "opaque": {
+              "z": 1,
+              "a": 2
+            }
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource"
+          }
+        ],
+        "value": {
+          "id": "resource",
+          "displayName": "Primary",
+          "opaque": {
+            "z": 1,
+            "a": 2
+          }
+        },
+        "data": {
+          "id": "resource",
+          "displayName": "Primary",
+          "opaque": {
+            "z": 1,
+            "a": 2
+          }
+        },
+        "warnings": [],
+        "error": null
+      }
+    },
+    {
+      "name": "connection-paths-True",
+      "resource": "connection",
+      "query": null,
+      "verbose": true,
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "id": "resource",
+            "displayName": "Primary",
+            "opaque": {
+              "z": 1,
+              "a": 2
+            }
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource"
+          }
+        ],
+        "value": {
+          "id": "resource",
+          "displayName": "Primary",
+          "opaque": {
+            "z": 1,
+            "a": 2
+          }
+        },
+        "data": [
+          "id",
+          "displayName",
+          "opaque.z",
+          "opaque.a"
+        ],
+        "warnings": [],
+        "error": null
+      }
+    },
+    {
+      "name": "connection-.-False",
+      "resource": "connection",
+      "query": ".",
+      "verbose": false,
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "id": "resource",
+            "displayName": "Primary",
+            "opaque": {
+              "z": 1,
+              "a": 2
+            }
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource"
+          }
+        ],
+        "value": {
+          "id": "resource",
+          "displayName": "Primary",
+          "opaque": {
+            "z": 1,
+            "a": 2
+          }
+        },
+        "data": null,
+        "warnings": [],
+        "error": null
+      }
+    },
+    {
+      "name": "gateway-.-True",
+      "resource": "gateway",
+      "query": ".",
+      "verbose": true,
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "id": "resource",
+            "displayName": "Primary",
+            "opaque": {
+              "z": 1,
+              "a": 2
+            }
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource"
+          }
+        ],
+        "value": {
+          "id": "resource",
+          "displayName": "Primary",
+          "opaque": {
+            "z": 1,
+            "a": 2
+          }
+        },
+        "data": {
+          "id": "resource",
+          "displayName": "Primary",
+          "opaque": {
+            "z": 1,
+            "a": 2
+          }
+        },
+        "warnings": [],
+        "error": null
+      }
+    },
+    {
+      "name": "gateway-paths-True",
+      "resource": "gateway",
+      "query": null,
+      "verbose": true,
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "id": "resource",
+            "displayName": "Primary",
+            "opaque": {
+              "z": 1,
+              "a": 2
+            }
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource"
+          }
+        ],
+        "value": {
+          "id": "resource",
+          "displayName": "Primary",
+          "opaque": {
+            "z": 1,
+            "a": 2
+          }
+        },
+        "data": [
+          "id",
+          "displayName",
+          "opaque.z",
+          "opaque.a"
+        ],
+        "warnings": [],
+        "error": null
+      }
+    },
+    {
+      "name": "gateway-.-False",
+      "resource": "gateway",
+      "query": ".",
+      "verbose": false,
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "id": "resource",
+            "displayName": "Primary",
+            "opaque": {
+              "z": 1,
+              "a": 2
+            }
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource"
+          }
+        ],
+        "value": {
+          "id": "resource",
+          "displayName": "Primary",
+          "opaque": {
+            "z": 1,
+            "a": 2
+          }
+        },
+        "data": null,
+        "warnings": [],
+        "error": null
+      }
+    },
+    {
+      "name": "membership-paged",
+      "resource": "domain",
+      "query": ".",
+      "verbose": true,
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "id": "resource",
+            "displayName": "Domain"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a"
+              }
+            ],
+            "continuationToken": " +/~"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "b"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/resource"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/resource/workspaces"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/resource/workspaces?continuationToken=+%2B%2F~"
+          }
+        ],
+        "value": {
+          "id": "resource",
+          "displayName": "Domain",
+          "domainWorkspaces": [
+            {
+              "id": "a"
+            },
+            {
+              "id": "b"
+            }
+          ]
+        },
+        "data": {
+          "id": "resource",
+          "displayName": "Domain",
+          "domainWorkspaces": [
+            {
+              "id": "a"
+            },
+            {
+              "id": "b"
+            }
+          ]
+        },
+        "warnings": [
+          "Requires Fabric administrator"
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "membership-denied",
+      "resource": "domain",
+      "query": ".",
+      "verbose": true,
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "id": "resource",
+            "displayName": "Domain"
+          }
+        },
+        {
+          "status": 403,
+          "body": {
+            "errorCode": "Forbidden",
+            "message": "denied"
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/resource"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/resource/workspaces"
+          }
+        ],
+        "value": {
+          "id": "resource",
+          "displayName": "Domain"
+        },
+        "data": {
+          "id": "resource",
+          "displayName": "Domain"
+        },
+        "warnings": [
+          "Requires Fabric administrator"
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "membership-malformed",
+      "resource": "domain",
+      "query": ".",
+      "verbose": true,
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "id": "resource",
+            "displayName": "Domain"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "not_value": []
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/resource"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/resource/workspaces"
+          }
+        ],
+        "value": {
+          "id": "resource",
+          "displayName": "Domain"
+        },
+        "data": {
+          "id": "resource",
+          "displayName": "Domain"
+        },
+        "warnings": [
+          "Requires Fabric administrator"
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "membership-empty",
+      "resource": "domain",
+      "query": ".",
+      "verbose": true,
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "id": "resource",
+            "displayName": "Domain"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": []
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/resource"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/resource/workspaces"
+          }
+        ],
+        "value": {
+          "id": "resource",
+          "displayName": "Domain",
+          "domainWorkspaces": []
+        },
+        "data": {
+          "id": "resource",
+          "displayName": "Domain",
+          "domainWorkspaces": []
+        },
+        "warnings": [
+          "Requires Fabric administrator"
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "domain-primary-error",
+      "resource": "domain",
+      "query": ".",
+      "verbose": true,
+      "replies": [
+        {
+          "status": 403,
+          "body": {
+            "errorCode": "Forbidden",
+            "message": "denied"
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/resource"
+          }
+        ],
+        "value": null,
+        "data": null,
+        "warnings": [
+          "Requires Fabric administrator"
+        ],
+        "error": {
+          "code": "Forbidden",
+          "message": "Access is forbidden. You do not have permission to access this resource"
+        }
+      }
+    },
+    {
+      "name": "connection-primary-error",
+      "resource": "connection",
+      "query": ".",
+      "verbose": true,
+      "replies": [
+        {
+          "status": 403,
+          "body": {
+            "errorCode": "Forbidden",
+            "message": "denied"
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource"
+          }
+        ],
+        "value": null,
+        "data": null,
+        "warnings": [],
+        "error": {
+          "code": "Forbidden",
+          "message": "Access is forbidden. You do not have permission to access this resource"
+        }
+      }
+    },
+    {
+      "name": "gateway-primary-error",
+      "resource": "gateway",
+      "query": ".",
+      "verbose": true,
+      "replies": [
+        {
+          "status": 403,
+          "body": {
+            "errorCode": "Forbidden",
+            "message": "denied"
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource"
+          }
+        ],
+        "value": null,
+        "data": null,
+        "warnings": [],
+        "error": {
+          "code": "Forbidden",
+          "message": "Access is forbidden. You do not have permission to access this resource"
+        }
+      }
+    }
+  ],
+  "names": [
+    {
+      "kind": "Domain",
+      "name": "Alpha.Domain",
+      "rows": [
+        {
+          "id": "first",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "second",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "other",
+          "displayName": "alpha"
+        }
+      ],
+      "id": "first",
+      "error": null
+    },
+    {
+      "kind": "Domain",
+      "name": "/Alpha.Domain/",
+      "rows": [
+        {
+          "id": "first",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "second",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "other",
+          "displayName": "alpha"
+        }
+      ],
+      "id": "first",
+      "error": null
+    },
+    {
+      "kind": "Domain",
+      "name": "alpha.Domain",
+      "rows": [
+        {
+          "id": "first",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "second",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "other",
+          "displayName": "alpha"
+        }
+      ],
+      "id": "other",
+      "error": null
+    },
+    {
+      "kind": "Domain",
+      "name": "Alpha",
+      "rows": [
+        {
+          "id": "first",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "second",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "other",
+          "displayName": "alpha"
+        }
+      ],
+      "id": null,
+      "error": {
+        "code": "NotFound",
+        "message": "The Domain 'Alpha' could not be found"
+      }
+    },
+    {
+      "kind": "Domain",
+      "name": "ALPHA.Domain",
+      "rows": [
+        {
+          "id": "first",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "second",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "other",
+          "displayName": "alpha"
+        }
+      ],
+      "id": null,
+      "error": {
+        "code": "NotFound",
+        "message": "The Domain 'ALPHA.Domain' could not be found"
+      }
+    },
+    {
+      "kind": "Connection",
+      "name": "Alpha.Connection",
+      "rows": [
+        {
+          "id": "first",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "second",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "other",
+          "displayName": "alpha"
+        }
+      ],
+      "id": "first",
+      "error": null
+    },
+    {
+      "kind": "Connection",
+      "name": "/Alpha.Connection/",
+      "rows": [
+        {
+          "id": "first",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "second",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "other",
+          "displayName": "alpha"
+        }
+      ],
+      "id": "first",
+      "error": null
+    },
+    {
+      "kind": "Connection",
+      "name": "alpha.Connection",
+      "rows": [
+        {
+          "id": "first",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "second",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "other",
+          "displayName": "alpha"
+        }
+      ],
+      "id": "other",
+      "error": null
+    },
+    {
+      "kind": "Connection",
+      "name": "Alpha",
+      "rows": [
+        {
+          "id": "first",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "second",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "other",
+          "displayName": "alpha"
+        }
+      ],
+      "id": null,
+      "error": {
+        "code": "NotFound",
+        "message": "The Connection 'Alpha' could not be found"
+      }
+    },
+    {
+      "kind": "Connection",
+      "name": "ALPHA.Connection",
+      "rows": [
+        {
+          "id": "first",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "second",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "other",
+          "displayName": "alpha"
+        }
+      ],
+      "id": null,
+      "error": {
+        "code": "NotFound",
+        "message": "The Connection 'ALPHA.Connection' could not be found"
+      }
+    },
+    {
+      "kind": "Gateway",
+      "name": "Alpha.Gateway",
+      "rows": [
+        {
+          "id": "first",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "second",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "other",
+          "displayName": "alpha"
+        }
+      ],
+      "id": "first",
+      "error": null
+    },
+    {
+      "kind": "Gateway",
+      "name": "/Alpha.Gateway/",
+      "rows": [
+        {
+          "id": "first",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "second",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "other",
+          "displayName": "alpha"
+        }
+      ],
+      "id": "first",
+      "error": null
+    },
+    {
+      "kind": "Gateway",
+      "name": "alpha.Gateway",
+      "rows": [
+        {
+          "id": "first",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "second",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "other",
+          "displayName": "alpha"
+        }
+      ],
+      "id": "other",
+      "error": null
+    },
+    {
+      "kind": "Gateway",
+      "name": "Alpha",
+      "rows": [
+        {
+          "id": "first",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "second",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "other",
+          "displayName": "alpha"
+        }
+      ],
+      "id": null,
+      "error": {
+        "code": "NotFound",
+        "message": "The Gateway 'Alpha' could not be found"
+      }
+    },
+    {
+      "kind": "Gateway",
+      "name": "ALPHA.Gateway",
+      "rows": [
+        {
+          "id": "first",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "second",
+          "displayName": "Alpha"
+        },
+        {
+          "id": "other",
+          "displayName": "alpha"
+        }
+      ],
+      "id": null,
+      "error": {
+        "code": "NotFound",
+        "message": "The Gateway 'ALPHA.Gateway' could not be found"
+      }
+    }
+  ]
+}

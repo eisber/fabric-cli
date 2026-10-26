@@ -1,0 +1,27 @@
+{
+  "_copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "workspace": {"id":"w","displayName":"W","type":"Workspace"},
+  "item": {"id":"n","displayName":"N","type":"Notebook"},
+  "items": {"value":[{"id":"n","displayName":"N","type":"Notebook"}]},
+  "folders": {"value":[{"id":"f","displayName":"F"}]},
+  "metadata": {"id":"n","displayName":"N","type":"Notebook","properties":{"label":"ok","count":2}},
+  "cases": [
+    {"id":"flat_absent","probe":"read","argv":["ls","--output_format","json"],"result":{"data":[{"name":"N.Notebook"}]}},
+    {"id":"flat_empty","probe":"read","argv":["ls","-q","","--output_format","json"],"result":{"data":[{"name":"N.Notebook"}]}},
+    {"id":"flat_scalar_quote","probe":"read","argv":["ls","-q","'name'","--output_format","json"],"result":{"data":["name"]}},
+    {"id":"flat_last_query","probe":"read","argv":["ls","-q","[broken","--query","[].name","--output_format","json"],"result":{"data":["N.Notebook"]}},
+    {"id":"workspace_absent","probe":"folder","argv":["ls","--output_format","json"],"result":{"data":[{"name":"F.Folder"},{"name":"N.Notebook"}]}},
+    {"id":"workspace_empty","probe":"folder","argv":["ls","-q","","--output_format","json"],"result":{"data":[{"name":"F.Folder"},{"name":"N.Notebook"}]}},
+    {"id":"workspace_filter","probe":"folder","argv":["ls","-l","-q","[?id != 'n'].{label:name,key:id}","--output_format","json"],"result":{"data":[{"label":"F.Folder","key":"f"}]}},
+    {"id":"folder_ignores_invalid","probe":"folder","folder_context":true,"argv":["ls","-a","-q","[broken","--output_format","json"],"result":{"data":[]}},
+    {"id":"folder_ignores_empty","probe":"folder","folder_context":true,"argv":["ls","-q","","--output_format","json"],"result":{"data":[]}},
+    {"id":"get_absent","probe":"both","get":true,"argv":["get",".","--output_format","json"],"result":{"data":["id","displayName","type","properties.label","properties.count"]}},
+    {"id":"get_empty","probe":"both","get":true,"argv":["get",".","-q","","--output_format","json"],"result":{"data":["id","displayName","type","properties.label","properties.count"]}},
+    {"id":"get_one_string","probe":"both","get":true,"argv":["get",".","-q","properties | keys(@)","--output_format","json"],"result":{"data":["label","count"]}},
+    {"id":"get_raw_tokens","probe":"both","get":true,"argv":["get",".","-q","properties","|","keys(@)","--output_format","json"],"result":{"data":["label","count"]}},
+    {"id":"get_quote_strip","probe":"both","get":true,"argv":["get",".","-q","'displayName'","--output_format","json"],"result":{"data":["N"]}},
+    {"id":"get_last_query","probe":"both","get":true,"argv":["get",".","-q","properties.label","-q","properties.count","--output_format","json"],"result":{"data":["2"]}},
+    {"id":"get_negative_syntax","probe":"both","get":true,"argv":["get",".","-q","-1","--output_format","json"],"exit_code":1,"result":{"error_code":"InvalidInput","message":"Invalid jmespath query (https://jmespath.org)"}}
+  ]
+}

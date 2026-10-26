@@ -1,0 +1,102 @@
+{
+  "python_source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "resources": {
+    "SparkJobDefinition": "sparkjob",
+    "Notebook": "RunNotebook",
+    "DataPipeline": "Pipeline",
+    "Lakehouse": "TableMaintenance",
+    "GraphModel": "refreshGraph"
+  },
+  "execution": [
+    {"name":"no-payload","job_type":"Pipeline","args":{},"expected":null},
+    {"name":"notebook-typed","job_type":"RunNotebook","args":{"params":["s:string='hi',n:int=12,f:float=1.5,b:bool=TRUE,z:bool=yes"]},"expected":{"parameters":{"s":{"type":"string","value":"hi"},"n":{"type":"int","value":12},"f":{"type":"float","value":1.5},"b":{"type":"bool","value":true},"z":{"type":"bool","value":false}}}},
+    {"name":"pipeline-json-and-secure","job_type":"Pipeline","args":{"params":["obj:object={\"x\":[1,2]},arr:array=[1,2],s:secureString='secret-free'"]},"expected":{"parameters":{"obj":{"x":[1,2]},"arr":[1,2],"s":"secret-free"}}},
+    {"name":"duplicates-last-value-first-position","job_type":"Pipeline","args":{"params":["a:int=1,b:int=2,a:int=3"]},"expected":{"parameters":{"a":3,"b":2}}},
+    {"name":"notebook-config-and-parameters","job_type":"RunNotebook","args":{"params":["n:int=4"],"config":["{'defaultLakehouse':","{'name':'demo'}}"]},"expected":{"parameters":{"n":{"type":"int","value":4}},"configuration":{"defaultLakehouse":{"name":"demo"}}}},
+    {"name":"spark-input","job_type":"sparkjob","args":{"input":["{'commandLineArguments':","'--demo'}"]},"expected":{"commandLineArguments":"--demo"}},
+    {"name":"lakehouse-input","job_type":"TableMaintenance","args":{"input":["{'tableName':'orders'}"]},"expected":{"tableName":"orders"}},
+    {"name":"graph-input","job_type":"refreshGraph","args":{"input":["{'mode':'full'}"]},"expected":{"mode":"full"}},
+    {"name":"input-params-conflict","job_type":"RunNotebook","args":{"input":["{}"],"params":["n:int=1"]},"error":"NotRunnable"},
+    {"name":"pipeline-config-rejected","job_type":"Pipeline","args":{"config":["{}"]},"error":"NotRunnable"},
+    {"name":"spark-params-rejected","job_type":"sparkjob","args":{"params":["n:int=1"]},"error":"NotRunnable"},
+    {"name":"notebook-array-rejected","job_type":"RunNotebook","args":{"params":["n:array=[1]"]},"error":"NotRunnable"},
+    {"name":"unanchored-prefix-source-quirk","job_type":"Pipeline","args":{"params":["garbage a:int=2"]},"expected":{"parameters":{"a":2}}},
+    {"name":"pipeline-array-type-not-enforced","job_type":"Pipeline","args":{"params":["a:array=7"]},"expected":{"parameters":{"a":7}}},
+    {"name":"invalid-integer-underscores","job_type":"Pipeline","args":{"params":["a:int=1__0"]},"error":"NotRunnable"}
+  ],
+  "schedules": [
+    {"name":"cron-disabled-default","args":{"type":"cron","interval":"10","start":"2024-11-15T09:00:00","end":"2024-12-15T10:00:00"},"expected":{"type":"Cron","interval":10,"startDateTime":"2024-11-15T09:00:00","endDateTime":"2024-12-15T10:00:00","localTimeZoneId":"UTC"}},
+    {"name":"daily","args":{"type":"daily","interval":"[10:00,16:00]","start":"2024-11-15T09:00:00","end":"2024-12-15T10:00:00"},"expected":{"type":"Daily","times":["10:00","16:00"],"startDateTime":"2024-11-15T09:00:00","endDateTime":"2024-12-15T10:00:00","localTimeZoneId":"UTC"}},
+    {"name":"weekly","args":{"type":"weekly","interval":"10:00,16:00","days":"Monday,Friday","start":"2024-11-15T09:00:00","end":"2024-12-15T10:00:00","enable":true},"expected":{"type":"Weekly","times":["10:00","16:00"],"weekdays":["Monday","Friday"],"startDateTime":"2024-11-15T09:00:00","endDateTime":"2024-12-15T10:00:00","localTimeZoneId":"UTC"}},
+    {"name":"source-regex-not-clock-validation","args":{"type":"daily","interval":"99:99suffix","start":"0000-99-99T99:99:99","end":"0000-99-99T99:99:99"},"expected":{"type":"Daily","times":["99:99suffix"],"startDateTime":"0000-99-99T99:99:99","endDateTime":"0000-99-99T99:99:99","localTimeZoneId":"UTC"}},
+    {"name":"full-input-envelope","args":{"input":["{'enabled':true,'configuration':{'type':'Cron','interval':20}}"]},"expected":{"enabled":true,"configuration":{"type":"Cron","interval":20}}},
+    {"name":"enable-only","args":{"enable":true},"expected":null},
+    {"name":"disable-only","update":true,"args":{"disable":false},"expected":null},
+    {"name":"no-schedule","args":{},"error":"NotRunnable"},
+    {"name":"weekly-days-required","args":{"type":"weekly","interval":"10:00","start":"2024-11-15T09:00:00","end":"2024-12-15T10:00:00"},"error":"NotRunnable"},
+    {"name":"partial-schedule","args":{"type":"cron"},"error":"NotRunnable"},
+    {"name":"negative-cron","args":{"type":"cron","interval":"-1","start":"2024-11-15T09:00:00","end":"2024-12-15T10:00:00"},"error":"NotRunnable"},
+    {"name":"weekly-case-sensitive","args":{"type":"weekly","interval":"10:00","days":"monday","start":"2024-11-15T09:00:00","end":"2024-12-15T10:00:00"},"error":"NotRunnable"},
+    {"name":"input-enable-conflict","args":{"input":["{'type':'Cron'}"],"enable":true},"error":"NotRunnable"},
+    {"name":"empty-object-input-is-supplied","args":{"input":["{}"]},"expected":{}}
+  ],
+  "wire": [
+    {"function":"run_on_demand_item_job","method":"post","uri":"workspaces/ws/items/item/jobs/instances?jobType=Pipeline","payload":"{\"executionData\":{\"parameters\":{\"n\":2}}}","status":202},
+    {"function":"get_item_job_instance","method":"get","uri":"workspaces/ws/items/item/jobs/instances/run","status":200},
+    {"function":"cancel_item_job_instance","method":"post","uri":"workspaces/ws/items/item/jobs/instances/run/cancel","status":202},
+    {"function":"create_item_schedule","method":"post","uri":"workspaces/ws/items/item/jobs/Pipeline/schedules","payload":"{\"configuration\":{\"type\":\"Cron\"},\"enabled\":false}","status":201},
+    {"function":"update_item_schedule","method":"patch","uri":"workspaces/ws/items/item/jobs/Pipeline/schedules/sch","payload":"{\"configuration\":{\"type\":\"Cron\"},\"enabled\":true}","status":200},
+    {"function":"get_item_schedule","method":"get","uri":"workspaces/ws/items/item/jobs/Pipeline/schedules/sch","status":200},
+    {"function":"list_item_schedules","method":"get","uri":"workspaces/ws/items/item/jobs/Pipeline/schedules","status":200},
+    {"function":"list_item_runs","method":"get","uri":"workspaces/ws/items/item/jobs/instances","status":200},
+    {"function":"remove_item_schedule","method":"delete","uri":"workspaces/ws/items/item/jobs/Pipeline/schedules/sch","status":200}
+  ],
+  "lro_routing": [
+    {"name":"job-location-bypasses-generic-lro","wait":true,"headers":{"Location":"https://api.fabric.microsoft.com/v1/workspaces/ws/items/item/jobs/instances/run"},"generic":false},
+    {"name":"no-operation-headers-remains-accepted","wait":true,"headers":{},"generic":false},
+    {"name":"operation-id-with-wait","wait":true,"headers":{"x-ms-operation-id":"operation"},"generic":true},
+    {"name":"operation-location-with-wait","wait":true,"headers":{"Location":"https://api.fabric.microsoft.com/v1/operations/operation"},"generic":true},
+    {"name":"async-cancel-does-not-reconcile-operation","wait":false,"headers":{"x-ms-operation-id":"operation"},"generic":false}
+  ],
+  "paging": [
+    {"name":"three-pages-opaque-token","pages":[{"body":{"value":[{"id":"one"}],"continuationToken":"a +&=%/~\u65e5","continuationUri":"https://api.fabric.microsoft.com/v1/workspaces/ws/items/item/jobs/instances"}},{"body":{"value":[{"id":"two"}],"continuationToken":"second"}},{"body":{"value":[{"id":"three"}],"continuationUri":"unused-invalid"}}],"queries":["","continuationToken=a+%2B%26%3D%25%2F~%E6%97%A5","continuationToken=second"],"expected":[{"id":"one"},{"id":"two"},{"id":"three"}],"pages_received":3,"source_total_pages":1},
+    {"name":"empty-header-suppresses-body-token","pages":[{"headers":{"x-ms-continuation":""},"body":{"value":[{"id":"one"}],"continuationToken":"must-not-follow","continuationUri":"unused-invalid"}}],"queries":[""],"expected":[{"id":"one"}],"pages_received":1},
+    {"name":"header-overrides-body-token","pages":[{"headers":{"x-ms-continuation":"header token"},"body":{"value":[{"id":"one"}],"continuationToken":"ignored"}},{"body":{"value":[{"id":"two"}]}}],"queries":["","continuationToken=header+token"],"expected":[{"id":"one"},{"id":"two"}],"pages_received":2,"source_total_pages":1},
+    {"name":"terminal-unused-object-uri","pages":[{"body":{"value":[],"continuationUri":{"future":"ignored"}}}],"queries":[""],"expected":[],"pages_received":1},
+    {"name":"falsey-numeric-token-is-terminal","pages":[{"body":{"value":[{"id":"one"}],"continuationToken":0,"continuationUri":"unused-invalid"}}],"queries":[""],"expected":[{"id":"one"}],"pages_received":1},
+    {"name":"duplicates-and-order-retained","pages":[{"body":{"value":[{"z":1,"id":"same"}],"continuationToken":"next"}},{"body":{"value":[{"z":1,"id":"same"}],"continuationToken":null}}],"queries":["","continuationToken=next"],"expected":[{"z":1,"id":"same"},{"z":1,"id":"same"}],"pages_received":2,"source_total_pages":1}
+  ],
+  "cli": [
+    {"name":"start-async","leaf":"start","responses":[{"status":202,"headers":{"Location":"https://api.fabric.microsoft.com/v1/workspaces/ws/items/item/jobs/instances/run"}}],"output":{"message":"Job instance 'run' created","data":{"id":"run"}}},
+    {"name":"run-completed","leaf":"run","responses":[{"status":202,"headers":{"Location":"https://api.fabric.microsoft.com/v1/workspaces/ws/items/item/jobs/instances/run"}},{"status":200,"body":{"id":"run","status":"Completed"}}],"output":{"message":"Job instance 'run' completed","data":{"id":"run"}},"output_command":"job run"},
+    {"name":"run-failed","leaf":"run","responses":[{"status":202,"headers":{"Location":"https://api.fabric.microsoft.com/v1/workspaces/ws/items/item/jobs/instances/run"}},{"status":200,"body":{"id":"run","status":"Failed"}}],"error":"JobFailed","table":true},
+    {"name":"run-unknown","leaf":"run","responses":[{"status":202,"headers":{"Location":"https://api.fabric.microsoft.com/v1/workspaces/ws/items/item/jobs/instances/run"}},{"status":200,"body":{"id":"run","status":"Future"}}],"table":true},
+    {"name":"timeout-cancel-default","leaf":"run","args":{"timeout":3},"responses":[{"status":202,"headers":{"Location":"https://api.fabric.microsoft.com/v1/workspaces/ws/items/item/jobs/instances/run"}},{"status":202}],"output":{"message":"Job instance 'run' cancelled (async)","data":{"id":"run"}}},
+    {"name":"timeout-keep-running","leaf":"run","args":{"timeout":3},"cancel_on_timeout":false,"responses":[{"status":202,"headers":{"Location":"https://api.fabric.microsoft.com/v1/workspaces/ws/items/item/jobs/instances/run"}}]},
+    {"name":"list-project-first-row","leaf":"run-list","responses":[{"status":200,"body":{"value":[{"id":"one","status":"Completed"},{"id":"two","extra":1}]}}],"output":{"data":[{"id":"one","status":"Completed"},{"id":"two"}]}},
+    {"name":"empty-schedules","leaf":"run-list","args":{"schedule":true},"responses":[{"status":200,"body":{"value":[]}}],"output":{"message":"No schedules found"}},
+    {"name":"cancel-async-no-id-data","leaf":"run-cancel","args":{"id":"run"},"responses":[{"status":202}],"output":{"message":"Job instance 'run' cancelled (async)"}},
+    {"name":"cancel-wait-no-envelope","leaf":"run-cancel","args":{"id":"run","wait":true},"responses":[{"status":202},{"status":200,"body":{"id":"run","status":"Cancelled"}}]},
+    {"name":"status-instance","leaf":"run-status","args":{"id":"run"},"responses":[{"status":200,"body":{"status":"InProgress","id":"run","extra":null}}],"output":{"data":{"status":"InProgress","id":"run","extra":null}}},
+    {"name":"status-schedule","leaf":"run-status","args":{"id":"sch","schedule":true},"responses":[{"status":200,"body":{"id":"sch","enabled":false,"configuration":{}}}],"output":{"data":{"id":"sch","enabled":false,"configuration":{}}}},
+    {"name":"create-cron-disabled","leaf":"run-sch","args":{"type":"cron","interval":"10","start":"2024-01-01T00:00:00","end":"2024-12-31T23:59:59"},"responses":[{"status":201,"body":{"id":"sch"}}],"output":{"message":"Job schedule 'sch' created"}},
+    {"name":"update-disable-only","leaf":"run-update","args":{"schedule_id":"sch","disable":false},"responses":[{"status":200,"body":{"id":"sch","enabled":true,"configuration":{"type":"Cron","interval":10}}},{"status":200,"body":{"id":"sch"}}],"output":{"message":"Job schedule sch updated"}},
+    {"name":"update-retains-enabled","leaf":"run-update","args":{"schedule_id":"sch","type":"daily","interval":"12:00","start":"2024-01-01T00:00:00","end":"2024-12-31T23:59:59"},"responses":[{"status":200,"body":{"id":"sch","enabled":true,"configuration":{}}},{"status":200,"body":{"id":"sch"}}],"output":{"message":"Job schedule sch updated"}},
+    {"name":"remove-declined","leaf":"run-rm","args":{"schedule_id":"sch"},"confirmed":false,"responses":[]},
+    {"name":"remove-confirmed","leaf":"run-rm","args":{"schedule_id":"sch"},"confirmed":true,"responses":[{"status":200}],"output":{"message":"Job schedule 'sch' removed"}},
+    {"name":"remove-forced","leaf":"run-rm","args":{"schedule_id":"sch","force":true},"responses":[{"status":200}],"output":{"message":"Job schedule 'sch' removed"}}
+  ],
+  "wait": [
+    {"name":"initial-sleep-then-complete","headers":{},"statuses":["Completed"],"waits":[10],"requests":1,"output":{"id":"run"}},
+    {"name":"in-progress-then-complete","headers":{"retry-after":"2"},"statuses":["NotStarted","InProgress","Completed"],"response_headers":{"retry-after":"3"},"waits":[2,3,3],"requests":3,"output":{"id":"run"}},
+    {"name":"cancelled-no-envelope","headers":{},"statuses":["Cancelled"],"waits":[10],"requests":1},
+    {"name":"deduped-no-envelope","headers":{},"statuses":["Deduped"],"waits":[10],"requests":1},
+    {"name":"failed-table-and-error","headers":{},"statuses":["Failed"],"waits":[10],"requests":1,"error":"JobFailed"},
+    {"name":"unknown-table-no-error","headers":{},"statuses":["FutureStatus"],"waits":[10],"requests":1},
+    {"name":"timeout-initial-cap-no-status-request","timeout":3,"headers":{},"statuses":[],"waits":[3],"requests":0,"error":"TimeoutError"},
+    {"name":"custom-overrides-malformed-header","custom":2,"headers":{"retry-after":"invalid"},"statuses":["InProgress","Completed"],"waits":[2,2],"requests":2,"output":{"id":"run"}},
+    {"name":"source-second-sleep-overshoots-timeout","timeout":12,"headers":{"retry-after":"10"},"statuses":["InProgress"],"waits":[10,10],"requests":1,"error":"TimeoutError"},
+    {"name":"invalid-header-falls-back","headers":{"retry-after":"not-an-int"},"statuses":["Completed"],"waits":[10],"requests":1,"output":{"id":"run"}},
+    {"name":"zero-timeout-no-status","timeout":0,"headers":{},"statuses":[],"waits":[0],"requests":0,"error":"TimeoutError"}
+  ]
+}
