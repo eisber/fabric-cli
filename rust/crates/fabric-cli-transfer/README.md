@@ -21,25 +21,27 @@ with request, stream, and file effects before counting these leaves.
    Convert its root matches with `command_from_matches`. Preserve Python's
    multi-character `-tenv` by normalizing it to `--target_env` in the central
    lexical adapter; do not install a second parser or a fake public option.
-1. Implement `TransferMetadata::resolve` with existing context/discovery and
+2. Implement `TransferMetadata::resolve` with existing context/discovery and
    source command-support policy. Import allows a missing destination item;
    export requires an existing item or workspace. Supply complete workspace
    items or recursive folder items, preserving source traversal and support
    outcomes. Workspace single export also needs configuration-sorted selection
    names. A partial page is not a complete snapshot.
-1. Construct `TransferHost` with the existing SDK `Client`, an injected
+3. Construct `TransferHost` with the existing SDK `Client`, an injected
    `OperationExecutor`, file policy, UI, finite limits, and explicit CLI mode.
    The executor delegates to the existing shared HTTP/time implementation.
    Execute with caller cancellation on the caller's runtime. Local file methods
    are synchronous; use an appropriate caller worker, not a blocking async
    service-discovery callback.
-1. Apply `ImportCacheEffect` values from successful results before presentation.
+4. Apply deferred `ImportCacheEffect` values after successful result delivery,
+   matching the source handler. If output fails, retain the result as completion
+   evidence but do not silently apply cache effects or replay the mutation.
    Use the actual returned create ID. A declined overwrite still returns the
    source existing-item cache upsert; an initial decline does not. Failures
    retain original operation IDs, uncertainty, possibly incomplete file paths,
    and earlier completed workspace-item writes. Never replay a mutation or a
    partial write on a generic failure.
-1. Route `TransferUi` warnings through existing warning/logging policy and grey
+5. Route `TransferUi` warnings through existing warning/logging policy and grey
    progress to stderr immediately. `render_result` and `render_error` use the
    shared JSON/text implementation, caller timestamp and terminal presentation.
    The command's explicit `--output_format` overrides the supplied configuration.
