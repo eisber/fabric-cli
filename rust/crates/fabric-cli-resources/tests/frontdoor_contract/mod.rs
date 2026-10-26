@@ -460,6 +460,12 @@ async fn unsupported_capabilities_cancellation_and_malformed_data_never_report_s
     assert!(wire.requests.lock().unwrap().is_empty());
     let command = parse(&["find", "needle", "--output_format", "json"]);
     let error = host.execute(&command, pending()).await.unwrap_err();
+    let expected_error = json!({
+        "timestamp": "2000-01-01T00:00:00Z",
+        "status": "Failure",
+        "command": "find",
+        "result": {"error_code":"UnexpectedError","message":"invalid response payload"},
+    });
     let presentation = FamilyPresentation::new(OutputFormat::Json, FamilySurface::Api);
     let output = render(
         &command,
@@ -471,8 +477,11 @@ async fn unsupported_capabilities_cancellation_and_malformed_data_never_report_s
     .unwrap();
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     assert_eq!(output.write_to(&mut stdout, &mut stderr).unwrap(), 1);
-    assert!(stdout.is_empty());
-    assert!(!stderr.is_empty());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&stdout).unwrap(),
+        expected_error
+    );
+    assert_eq!(stderr, b"Searching...\n");
 }
 
 struct BrokenWriter;

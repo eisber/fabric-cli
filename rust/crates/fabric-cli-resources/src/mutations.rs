@@ -101,6 +101,15 @@ fn validate_role(resource: &Resource, role: &str) -> Result<(), CommandError> {
     Ok(())
 }
 
+fn incomplete_mutation(status: u16) -> CommandError {
+    let error = ApiError::UnsupportedStatus(status);
+    CommandError::from(if status == 202 {
+        ApiError::MutationUncertain(Box::new(error))
+    } else {
+        error
+    })
+}
+
 /// Runs a complete source ACL write consumer, with explicitly injected prompts.
 /// Only a fully received HTTP 400 rejection advances principal probing; transport,
 /// auth, deadline, cancellation, 5xx and accepted writes are never hidden/replayed.
@@ -150,8 +159,7 @@ pub async fn mutate_acl(
                         .await
                         .map_err(|e| CommandError::from(e).with_context(&value))?;
                     if response.status == 202 {
-                        return Err(CommandError::from(ApiError::UnsupportedStatus(202))
-                            .with_context(&value));
+                        return Err(incomplete_mutation(202).with_context(&value));
                     }
                     if matches!(response.status, 200 | 201) {
                         value.message = Some("ACL updated".into());
@@ -181,10 +189,7 @@ pub async fn mutate_acl(
                         return Ok(value);
                     }
                     Ok(response) => {
-                        return Err(CommandError::from(ApiError::UnsupportedStatus(
-                            response.status,
-                        ))
-                        .with_context(&value));
+                        return Err(incomplete_mutation(response.status).with_context(&value));
                     }
                     Err(ApiError::Http { status: 400, .. }) => {}
                     Err(ApiError::Service { status: 400, .. }) => {}
@@ -244,9 +249,7 @@ pub async fn mutate_acl(
                 .await
                 .map_err(|e| CommandError::from(e).with_context(&value))?;
             if response.status == 202 {
-                return Err(
-                    CommandError::from(ApiError::UnsupportedStatus(202)).with_context(&value)
-                );
+                return Err(incomplete_mutation(202).with_context(&value));
             }
             if response.status == 200 {
                 value.message = Some("ACL removed".into());
@@ -329,9 +332,7 @@ pub async fn mutate_label(
                 .await
                 .map_err(|e| CommandError::from(e).with_context(&value))?;
             if response.status == 202 {
-                return Err(
-                    CommandError::from(ApiError::UnsupportedStatus(202)).with_context(&value)
-                );
+                return Err(incomplete_mutation(202).with_context(&value));
             }
             if response.status == 200 {
                 value.message = Some("Label set".into());
@@ -349,7 +350,7 @@ pub async fn mutate_label(
         .await
         .map_err(|e| CommandError::from(e).with_context(&value))?;
     if response.status == 202 {
-        return Err(CommandError::from(ApiError::UnsupportedStatus(202)).with_context(&value));
+        return Err(incomplete_mutation(202).with_context(&value));
     }
     if response.status == 200 {
         value.message = Some("Label removed".into());
