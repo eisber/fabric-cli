@@ -14,7 +14,8 @@ use azure_core::{
 use clap::Command;
 use fabric_cli_context::{
     Catalog, Element, HierarchyCatalog, HomeContext, ItemType, NodeKind, OneLakeProperties,
-    PathElement, PathInput, PathResolver, ResolveOptions, WorkspaceType,
+    PathElement, PathInput, PathKind, PathResolver, ResolveOptions, VirtualWorkspaceKind,
+    WorkspaceType,
 };
 use fabric_cli_mutations::{
     CacheEffect, CommandFuture, FabricMutationBackend, MutationError, MutationHost,
@@ -186,7 +187,7 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
         tenant.clone(),
     )?;
     let mut elements = vec![workspace.clone()];
-    if kind != "Workspace" {
+    if kind != "Workspace" && kind != "Capacity" {
         elements.push(Element::child(
             "Thing",
             input["id"].as_str().map(str::to_owned),
@@ -198,9 +199,19 @@ async fn probe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
             workspace,
         )?);
     }
+    let capacities = PathElement::child(
+        ".capacities", None,
+        PathKind::VirtualWorkspace(VirtualWorkspaceKind::Capacity),
+        PathElement::from_fabric(tenant.clone()),
+    )?;
+    let capacity = PathElement::child(
+        "Chosen", Some("cap".into()),
+        PathKind::VirtualWorkspaceItem(VirtualWorkspaceKind::Capacity),
+        capacities,
+    )?;
     let catalog = HierarchyCatalog::new(
         Catalog::new(elements),
-        Vec::new(),
+        vec![capacity],
         vec![(
             "ws/id/Files".into(),
             OneLakeProperties {
@@ -467,6 +478,63 @@ mod tests {
                 assert_eq!(trace["requests"].as_array().unwrap().len(), 1);
                 assert_eq!(trace["outputs"], json!([]));
                 assert_eq!(trace["effects"], json!([]));
+            }
+
+            #[tokio::test]
+            async fn lifecycle_and_assignment_leaves_use_released_sdk_routes_and_ordering() {
+                for (verb, state, action) in [
+                    ("start", "Stopped", "startMirroring"),
+                    ("stop", "Running", "stopMirroring"),
+                ] {
+                    let trace = probe(&json!({
+                        "argv":[verb,"Team.Workspace/Thing.MirroredDatabase","-f"],
+                        "kind":"MirroredDatabase","id":"id",
+                        "replies":[{"status":200,"data":{"status":state}},{"status":200}],
+                    })).await.unwrap();
+                    assert_eq!(trace["error"], Value::Null, "{trace}");
+                    assert_eq!(trace["requests"].as_array().unwrap().len(), 2);
+                    assert_eq!(trace["requests"][0]["url"], "https://api.fabric.microsoft.com/v1/workspaces/ws/mirroredDatabases/id/getMirroringStatus");
+                    assert_eq!(trace["requests"][1]["url"], format!("https://api.fabric.microsoft.com/v1/workspaces/ws/mirroredDatabases/id/{action}"));
+                    assert_eq!(trace["requests"][1]["payload"], Value::Null);
+                }
+                for verb in ["assign", "unassign"] {
+                    let replies = if verb == "assign" {
+                        json!([{"status":200}])
+                    } else {
+                        json!([{"status":200,"data":{"capacityId":"cap"}},{"status":200}])
+                    };
+                    let trace = probe(&json!({
+                        "argv":[verb,"/.capacities/Chosen.Capacity","-W","Team.Workspace","-f"],
+                        "kind":"Capacity","id":"cap","replies":replies,
+                    })).await.unwrap();
+                    assert_eq!(trace["error"], Value::Null, "{trace}");
+                    let requests = trace["requests"].as_array().unwrap();
+                    let final_request = requests.last().unwrap();
+                    assert_eq!(final_request["url"], format!("https://api.fabric.microsoft.com/v1/workspaces/ws/{}",
+                        if verb == "assign" { "assignToCapacity" } else { "unassignFromCapacity" }));
+                    assert_eq!(final_request["payload"], if verb == "assign" { json!({"capacityId":"cap"}) } else { Value::Null });
+                    assert_eq!(trace["resolutions"].as_array().unwrap().len(), 2);
+                    assert_eq!(trace["metadata_reads"], 0);
+                }
+            }
+
+            #[tokio::test]
+            async fn force_does_not_skip_mirroring_state_or_workspace_linkage_checks() {
+                let state = probe(&json!({
+                    "argv":["start","Team.Workspace/Thing.MirroredDatabase","-f"],
+                    "kind":"MirroredDatabase","id":"id",
+                    "replies":[{"status":200,"data":{"status":"Running"}}],
+                })).await.unwrap();
+                assert_eq!(state["error"]["code"], "AlreadyRunning");
+                assert_eq!(state["requests"].as_array().unwrap().len(), 1);
+                let linkage = probe(&json!({
+                    "argv":["unassign","/.capacities/Chosen.Capacity","-W","Team.Workspace","-f"],
+                    "kind":"Capacity","id":"cap",
+                    "replies":[{"status":200,"data":{"capacityId":"other"}}],
+                })).await.unwrap();
+                assert_eq!(linkage["error"]["code"], "InvalidInput");
+                assert_eq!(linkage["requests"].as_array().unwrap().len(), 1);
+                assert_eq!(linkage["prompts"], json!([]));
             }
         }
         let missing = probe(&json!({"argv":["rm","Team.Workspace/Thing.Notebook","-f"],"kind":"Notebook","replies":[]})).await.unwrap();

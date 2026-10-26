@@ -35,6 +35,10 @@ def source_parser() -> argparse.ArgumentParser:
             "register_rm_parser",
             "register_set_parser",
             "register_ln_parser",
+            "register_start_parser",
+            "register_stop_parser",
+            "register_assign_parser",
+            "register_unassign_parser",
         },
         {
             "fab_constant": Descriptions(),
@@ -46,7 +50,7 @@ def source_parser() -> argparse.ArgumentParser:
     globals_ = load("parsers/fab_global_params.py", {"argparse": argparse})
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name in ["exists", "mkdir", "rm", "set", "ln"]:
+    for name in ["exists", "mkdir", "rm", "set", "ln", "start", "stop", "assign", "unassign"]:
         namespace[f"register_{name}_parser"](subparsers)
     for child in set(subparsers.choices.values()):
         globals_.add_global_flags(child)
@@ -105,6 +109,12 @@ def expected(case: dict[str, Any], parser: argparse.ArgumentParser) -> dict[str,
             )
         )
     else:
+        original["responses"] = case["replies"]
+        if canonical in ("assign", "unassign"):
+            original.update(
+                kind="Workspace", id="ws",
+                capacity_id="cap", capacity_name="Chosen.Capacity",
+            )
         if canonical == "mkdir":
             helpers = functions(
                 "utils/fab_util.py",
@@ -230,6 +240,30 @@ def cases() -> list[dict[str, Any]]:
                 else [],
             )
         )
+    for verb, state in [("start", "Stopped"), ("stop", "Running")]:
+        for force, confirm in [(True, True), (False, True), (False, False)]:
+            result.append(
+                dict(
+                    argv=[verb, "Team.Workspace/Thing.MirroredDatabase"]
+                    + (["-f"] if force else []),
+                    kind="MirroredDatabase", id="id", confirm=confirm,
+                    replies=[dict(status=200, data={"status": state})]
+                    + ([dict(status=200)] if force or confirm else []),
+                )
+            )
+    for verb in ["assign", "unassign"]:
+        for force, confirm in [(True, True), (False, True), (False, False)]:
+            result.append(
+                dict(
+                    argv=[verb, "/.capacities/Chosen.Capacity", "-W", "Team.Workspace"]
+                    + (["-f"] if force else []),
+                    kind="Capacity", id="cap", confirm=confirm,
+                    replies=(
+                        [dict(status=200, data={"capacityId": "cap"})]
+                        if verb == "unassign" else []
+                    ) + ([dict(status=200)] if force or confirm else []),
+                )
+            )
     return result
 
 
@@ -265,7 +299,7 @@ def main() -> None:
                 raise AssertionError("Incorrect source command envelope")
     print(
         json.dumps(
-            dict(source=PIN, canonical_leaves=5, frontdoor_cases=len(inputs), result="passed")
+            dict(source=PIN, canonical_leaves=9, frontdoor_cases=len(inputs), result="passed")
         )
     )
 
