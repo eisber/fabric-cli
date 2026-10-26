@@ -1,12 +1,17 @@
 <!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
 
-# Native Notebook deployment
+# Native Notebook deployment and definition transfer
 
 This crate implements a bounded **single-Notebook** path, not the full Python
 `fab deploy` command. It loads real local files, performs supported native
 transforms, builds inline-base64 definition parts, discovers an existing
 Notebook by exact name/type, and creates or updates it through `fabric-sdk`.
 Asynchronous operations are polled to terminal state; accepted is not completed.
+
+The additive `definitions` module supplies generic ordered definition reads,
+caller-injected local export and raw copy/SET codec APIs. It is not the full
+export/import/deploy command family. See the
+[definition-transfer contract and remaining branches](../../docs/definition-transfer-compatibility.md).
 
 It has no Python/CLI subprocess bridge, credential discovery, global logger,
 mutable CLI context, prompts, or owned async runtime. It does not install a

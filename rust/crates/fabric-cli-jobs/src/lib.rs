@@ -24,13 +24,13 @@ use fabric_cli_output::{
     Timestamp,
 };
 use fabric_sdk_jobs::{
-    JobClient, JobError, JobOperationReconciler, JobState, JobStatus, JobTarget, JobType,
-    RunHandle, WaitOptions,
+    JobClient, JobError, JobOperationReconciler, JobRequestHeaders, JobState, JobStatus, JobTarget,
+    JobType, OperationError, RunHandle, WaitOptions,
 };
 use parser::invalid;
 use serde_json::{Value, json};
 use std::{
-    future::{Future, pending, poll_fn},
+    future::{Future, poll_fn},
     io::{self, Write},
     pin::{Pin, pin},
     sync::Arc,
@@ -77,6 +77,38 @@ pub struct JobOutput {
     pub show_key_value_list: bool,
     /// Source events emitted after the result has been written, not before it.
     pub after_output: Vec<JobEvent>,
+}
+
+/// A command failure retaining the original generic-operation reconciliation evidence.
+///
+/// Operation output is projected only when requested, through the borrowed shared
+/// CLI formatter. It is never normalized again through `CommandError::new`.
+#[derive(Debug)]
+pub enum JobCommandError {
+    /// Existing command/context/input/presentation failure.
+    Command(CommandError),
+    /// Original shared-operation classification, raw diagnostics, ID and uncertainty.
+    Operation(Box<OperationError>),
+}
+
+impl JobCommandError {
+    /// Build the source failure envelope without consuming reconciliation evidence.
+    pub fn envelope(&self, timestamp: Timestamp, command: Option<String>) -> OutputEnvelope {
+        match self {
+            Self::Command(error) => error.envelope(timestamp, command),
+            Self::Operation(error) => {
+                let mut output = fabric_cli_mutations::operation_error_output(error);
+                output.command = command;
+                OutputEnvelope::new(timestamp, output)
+            }
+        }
+    }
+}
+
+impl From<CommandError> for JobCommandError {
+    fn from(error: CommandError) -> Self {
+        Self::Command(error)
+    }
 }
 
 impl JobOutput {
@@ -156,20 +188,40 @@ impl JobHost<'_> {
         &self,
         command: &JobCommand,
         cancelled: impl Future<Output = ()> + Send,
-    ) -> Result<Option<JobOutput>, CommandError> {
+    ) -> Result<Option<JobOutput>, JobCommandError> {
         let mut cancelled = pin!(cancelled);
-        let mut work = pin!(self.execute_inner(command));
-        poll_fn(|cx| {
-            if cancelled.as_mut().poll(cx).is_ready() {
-                Poll::Ready(Err(command_error(
-                    "LongRunningOperationCancelled",
-                    "Operation cancelled",
-                )))
-            } else {
-                work.as_mut().poll(cx)
-            }
-        })
-        .await
+        if poll_fn(|cx| Poll::Ready(cancelled.as_mut().poll(cx).is_ready())).await {
+            return Err(
+                command_error("LongRunningOperationCancelled", "Operation cancelled").into(),
+            );
+        }
+        if command.skill.is_some() {
+            let headers = JobRequestHeaders::with_skill(command.skill.as_deref())
+                .map_err(|error| sdk_error(error, None))?;
+            let sdk = self
+                .sdk
+                .with_request_headers(headers.clone())
+                .map_err(|error| sdk_error(error, None))?;
+            let operations = self
+                .operations
+                .filter(|operations| !headers.is_empty() || operations.request_headers() != headers)
+                .map(|operations| operations.with_request_headers(&headers))
+                .transpose()
+                .map_err(|error| sdk_error(error, None))?;
+            let scoped = JobHost {
+                sdk: &sdk,
+                operations: operations.as_deref().or(self.operations),
+                lookup: self.lookup,
+                current: self.current.clone(),
+                home: self.home.clone(),
+                files: self.files,
+                ui: self.ui,
+                config: self.config,
+                timestamp: self.timestamp.clone(),
+            };
+            return scoped.execute_inner(command, cancelled.as_mut()).await;
+        }
+        self.execute_inner(command, cancelled.as_mut()).await
     }
 
     /// Execute and render through the existing Python JSON envelope implementation.
@@ -188,10 +240,10 @@ impl JobHost<'_> {
             .as_deref()
             .is_some_and(|value| value != "json")
         {
-            Err(command_error(
+            Err(JobCommandError::from(command_error(
                 "NotSupported",
                 "Text output requires the host's text renderer",
-            ))
+            )))
         } else {
             self.execute(command, cancelled).await
         };
@@ -225,10 +277,10 @@ impl JobHost<'_> {
             .as_deref()
             .is_some_and(|value| value != "json")
         {
-            Err(command_error(
+            Err(JobCommandError::from(command_error(
                 "NotSupported",
                 "Text output requires the host's text renderer",
-            ))
+            )))
         } else {
             self.execute(command, cancelled).await
         };
@@ -252,12 +304,15 @@ impl JobHost<'_> {
         Ok(plan.exit_code)
     }
 
-    async fn execute_inner(&self, command: &JobCommand) -> Result<Option<JobOutput>, CommandError> {
-        if command.skill.is_some() {
-            return Err(command_error(
-                "NotSupported",
-                "Fabric skill headers require coordinated host header plumbing",
-            ));
+    async fn execute_inner(
+        &self,
+        command: &JobCommand,
+        mut cancelled: std::pin::Pin<&mut (impl Future<Output = ()> + Send)>,
+    ) -> Result<Option<JobOutput>, JobCommandError> {
+        if poll_fn(|cx| Poll::Ready(cancelled.as_mut().poll(cx).is_ready())).await {
+            return Err(
+                command_error("LongRunningOperationCancelled", "Operation cancelled").into(),
+            );
         }
         let wait_options = WaitOptions {
             timeout: command.timeout,
@@ -269,7 +324,7 @@ impl JobHost<'_> {
                 .map_err(|e| sdk_error(e, command.id.as_deref()))?;
         }
         if command.path.is_empty() {
-            return Err(invalid("A job path is required"));
+            return Err(invalid("A job path is required").into());
         }
         let resolver = Resolver::new(self.lookup, self.current.clone(), self.home.clone());
         let tokens: Vec<_> = command.path.iter().map(String::as_str).collect();
@@ -327,11 +382,11 @@ impl JobHost<'_> {
                     } else {
                         "sync"
                     },
-                    context.short_name()
+                    context.name()
                 )))?;
                 let handle = self
                     .sdk
-                    .submit(&target, data, pending())
+                    .submit(&target, data, cancelled.as_mut())
                     .await
                     .map_err(|e| sdk_error(e, None))?;
                 if command.kind == JobKind::Start {
@@ -355,8 +410,14 @@ impl JobHost<'_> {
                         Some(timeout) => format!("\u{221f} Timeout: {timeout} seconds"),
                         None => "\u{221f} Timeout: no timeout specified".into(),
                     }))?;
-                    self.wait(&handle, wait_options, true, &command.command_path())
-                        .await
+                    self.wait(
+                        &handle,
+                        wait_options,
+                        true,
+                        &command.command_path(),
+                        cancelled.as_mut(),
+                    )
+                    .await
                 }
             }
             JobKind::Cancel => {
@@ -368,7 +429,7 @@ impl JobHost<'_> {
                 if command.wait {
                     let Some(handle) = self
                         .sdk
-                        .cancel_for_wait(&target, id, self.operations, pending())
+                        .cancel_for_wait(&target, id, self.operations, cancelled.as_mut())
                         .await
                         .map_err(|e| sdk_error(e, Some(id)))?
                     else {
@@ -379,11 +440,12 @@ impl JobHost<'_> {
                         WaitOptions::default(),
                         false,
                         &command.command_path(),
+                        cancelled.as_mut(),
                     )
                     .await
                 } else {
                     self.sdk
-                        .cancel(&target, id, pending())
+                        .cancel(&target, id, cancelled.as_mut())
                         .await
                         .map_err(|e| sdk_error(e, Some(id)))?;
                     let mut output = JobOutput::new(
@@ -402,12 +464,12 @@ impl JobHost<'_> {
                 let id = id()?;
                 let value = if command.schedule {
                     self.sdk
-                        .get_schedule(&target, id, pending())
+                        .get_schedule(&target, id, cancelled.as_mut())
                         .await
                         .map_err(|e| sdk_error(e, Some(id)))?
                 } else {
                     self.sdk
-                        .status(&target, id, pending())
+                        .status(&target, id, cancelled.as_mut())
                         .await
                         .map_err(|e| sdk_error(e, Some(id)))?
                         .into_value()
@@ -417,7 +479,7 @@ impl JobHost<'_> {
             JobKind::List => {
                 let values = self
                     .sdk
-                    .list(&target, command.schedule, pending())
+                    .list(&target, command.schedule, cancelled.as_mut())
                     .await
                     .map_err(|e| sdk_error(e, None))?
                     .value;
@@ -471,21 +533,23 @@ impl JobHost<'_> {
                 )?;
                 self.ui.emit(JobEvent::Grey(format!(
                     "Creating job schedule for '{}'...",
-                    context.short_name()
+                    context.name()
                 )))?;
                 let config = config.ok_or_else(|| {
                     CommandError::unexpected(Some(
                         "the JSON object must be str, bytes or bytearray, not NoneType".into(),
                     ))
                 })?;
-                let payload = payload::schedule_payload(config, command.schedule_args.enable)?;
+                let payload =
+                    payload::schedule_payload(config, json!(command.schedule_args.enable))?;
                 let value = self
                     .sdk
-                    .create_schedule(&target, &payload, pending())
+                    .create_schedule(&target, &payload, cancelled.as_mut())
                     .await
                     .map_err(|e| {
                         if matches!(&e, JobError::Http { code, .. } if code == "EntityConflict") {
                             command_error("NotSupported", "Only one schedule per item is supported")
+                                .into()
                         } else {
                             sdk_error(e, None)
                         }
@@ -510,21 +574,21 @@ impl JobHost<'_> {
                 )?;
                 let args = &command.schedule_args;
                 if args.enable && args.disable {
-                    return Err(invalid("You must specify one of --enable --disable"));
+                    return Err(invalid("You must specify one of --enable --disable").into());
                 }
                 let existing = self
                     .sdk
-                    .get_schedule(&target, id, pending())
+                    .get_schedule(&target, id, cancelled.as_mut())
                     .await
                     .map_err(|e| sdk_error(e, Some(id)))?;
                 let payload = if let Some(config) = config {
                     let enabled = if !args.enable && !args.disable {
                         existing
                             .get("enabled")
-                            .and_then(Value::as_bool)
+                            .cloned()
                             .ok_or_else(|| sdk_error(JobError::InvalidResponse, Some(id)))?
                     } else {
-                        args.enable
+                        json!(args.enable)
                     };
                     payload::schedule_payload(config, enabled)?
                 } else {
@@ -536,7 +600,7 @@ impl JobHost<'_> {
                 };
                 let value = self
                     .sdk
-                    .update_schedule(&target, id, &payload, pending())
+                    .update_schedule(&target, id, &payload, cancelled.as_mut())
                     .await
                     .map_err(|e| sdk_error(e, Some(id)))?;
                 Ok(Some(JobOutput::new(
@@ -553,7 +617,19 @@ impl JobHost<'_> {
                 let id = id()?;
                 if !command.force {
                     self.ui.emit(JobEvent::Warning(format!("You are about to delete schedule '{id}' from '{}'. This action cannot be undone.", context.name())))?;
-                    if !self.ui.confirm().await? {
+                    let mut confirmation = pin!(self.ui.confirm());
+                    let confirmed = poll_fn(|cx| {
+                        if cancelled.as_mut().poll(cx).is_ready() {
+                            Poll::Ready(Err(command_error(
+                                "LongRunningOperationCancelled",
+                                "Operation cancelled",
+                            )))
+                        } else {
+                            confirmation.as_mut().poll(cx)
+                        }
+                    })
+                    .await?;
+                    if !confirmed {
                         return Ok(None);
                     }
                 }
@@ -562,7 +638,7 @@ impl JobHost<'_> {
                     context.name()
                 )))?;
                 self.sdk
-                    .remove_schedule(&target, id, pending())
+                    .remove_schedule(&target, id, cancelled.as_mut())
                     .await
                     .map_err(|e| sdk_error(e, Some(id)))?;
                 Ok(Some(JobOutput::new(
@@ -581,7 +657,8 @@ impl JobHost<'_> {
         options: WaitOptions,
         timeout_policy: bool,
         command_path: &str,
-    ) -> Result<Option<JobOutput>, CommandError> {
+        mut cancelled: std::pin::Pin<&mut (impl Future<Output = ()> + Send)>,
+    ) -> Result<Option<JobOutput>, JobCommandError> {
         let mut observer_error = None;
         let ui = self.ui;
         let result = self
@@ -609,11 +686,11 @@ impl JobHost<'_> {
                         JobError::Observer
                     })
                 },
-                pending(),
+                cancelled.as_mut(),
             )
             .await;
         if let Some(error) = observer_error {
-            return Err(error);
+            return Err(error.into());
         }
         match result {
             Ok(status) => match status.state() {
@@ -652,7 +729,12 @@ impl JobHost<'_> {
                     self.ui.emit(JobEvent::Grey(format!("Cancelling job instance '{}' (timeout). To change this behaviour and continue running on timeout, set job_cancel_ontimeout config property to 'false'", handle.id())))?;
                     let cancelled = self
                         .sdk
-                        .cancel_for_wait(handle.target(), handle.id(), self.operations, pending())
+                        .cancel_for_wait(
+                            handle.target(),
+                            handle.id(),
+                            self.operations,
+                            cancelled.as_mut(),
+                        )
                         .await
                         .map_err(|e| sdk_error(e, Some(handle.id())))?;
                     if cancelled.is_none() {
@@ -683,11 +765,14 @@ fn command_error(code: &str, message: impl Into<String>) -> CommandError {
     CommandError::new(Some(message.into()), Some(code.into()))
 }
 
-fn sdk_error(error: JobError, id: Option<&str>) -> CommandError {
-    match error {
+fn sdk_error(error: JobError, id: Option<&str>) -> JobCommandError {
+    let error = match error {
+        JobError::InvalidRequestHeaders => invalid(error.to_string()),
+        JobError::RequestHeadersUnsupported => command_error("NotSupported", error.to_string()),
+        JobError::Operation(error) => return JobCommandError::Operation(Box::new(error)),
         JobError::OperationReconcilerRequired => command_error("NotSupported", error.to_string()),
         JobError::Paging(error) => match error.kind {
-            fabric_sdk_jobs::PagingErrorKind::Fetch(error) => sdk_error(error, id),
+            fabric_sdk_jobs::PagingErrorKind::Fetch(error) => return sdk_error(error, id),
             fabric_sdk_jobs::PagingErrorKind::Cancelled => {
                 command_error("LongRunningOperationCancelled", "Operation cancelled")
             }
@@ -697,6 +782,7 @@ fn sdk_error(error: JobError, id: Option<&str>) -> CommandError {
             status,
             code,
             service_error,
+            raw_service_error,
             ..
         } => {
             let message = match status {
@@ -705,8 +791,13 @@ fn sdk_error(error: JobError, id: Option<&str>) -> CommandError {
                     "Access is forbidden. You do not have permission to access this resource".into()
                 }
                 404 => "The requested resource could not be found".into(),
-                _ => service_error
-                    .map(|e| e.message)
+                _ => raw_service_error
+                    .as_deref()
+                    .and_then(|value| value.get("message"))
+                    .and_then(Value::as_str)
+                    .filter(|message| !message.is_empty())
+                    .map(str::to_owned)
+                    .or_else(|| service_error.map(|e| e.message))
                     .unwrap_or_else(|| "An error occurred while processing the operation".into()),
             };
             command_error(&code, message)
@@ -725,5 +816,6 @@ fn sdk_error(error: JobError, id: Option<&str>) -> CommandError {
             invalid(error.to_string())
         }
         _ => command_error("UnexpectedError", error.to_string()),
-    }
+    };
+    error.into()
 }

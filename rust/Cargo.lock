@@ -403,9 +403,12 @@ dependencies = [
  "azure_core",
  "clap",
  "fabric-cli-context",
+ "fabric-cli-mutations",
  "fabric-cli-output",
  "fabric-sdk-http",
  "fabric-sdk-jobs",
+ "fabric-sdk-operations",
+ "fabric-sdk-workspaces",
  "serde_json",
  "thiserror",
  "tokio",
@@ -455,6 +458,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-cli-resources"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "azure_core",
+ "fabric-cli-context",
+ "fabric-cli-output",
+ "fabric-cli-query",
+ "fabric-sdk-access",
+ "fabric-sdk-api",
+ "fabric-sdk-catalog",
+ "fabric-sdk-http",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-cli-storage-files"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "azure_core",
+ "fabric-cli-context",
+ "fabric-cli-mutations",
+ "fabric-cli-output",
+ "fabric-sdk-http",
+ "fabric-sdk-onelake",
+ "fabric-sdk-onelake-http",
+ "fabric-sdk-workspaces",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "fabric-core"
 version = "0.1.0"
 dependencies = [
@@ -477,7 +515,11 @@ dependencies = [
  "azure_core",
  "base64 0.22.1",
  "fabric-core",
+ "fabric-core-json",
  "fabric-sdk",
+ "fabric-sdk-http",
+ "fabric-sdk-operations",
+ "fabric-sdk-workspaces",
  "serde_json",
  "tokio",
 ]
@@ -521,6 +563,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-sdk-access"
+version = "0.1.0"
+dependencies = [
+ "azure_core",
+ "fabric-sdk-api",
+ "serde_json",
+]
+
+[[package]]
+name = "fabric-sdk-api"
+version = "0.1.0"
+dependencies = [
+ "azure_core",
+ "fabric-core",
+ "fabric-core-json",
+ "fabric-sdk-operations",
+ "fabric-sdk-paging",
+ "fabric-sdk-workspaces",
+ "futures-util",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "fabric-sdk-capacities"
 version = "0.1.0"
 dependencies = [
@@ -531,6 +597,15 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "fabric-sdk-catalog"
+version = "0.1.0"
+dependencies = [
+ "azure_core",
+ "fabric-sdk-api",
+ "serde_json",
 ]
 
 [[package]]
@@ -585,6 +660,7 @@ dependencies = [
  "azure_core",
  "fabric-core",
  "fabric-sdk-http",
+ "fabric-sdk-operations",
  "fabric-sdk-paging",
  "fabric-sdk-workspaces",
  "serde_json",

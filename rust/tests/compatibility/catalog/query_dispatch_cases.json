@@ -1,0 +1,846 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "uri": "admin/domains/domain/workspaces",
+      "initial": {
+        "filter": "all"
+      },
+      "pages": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a"
+              }
+            ],
+            "continuationToken": " +/*~\u96ea"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "b"
+              }
+            ]
+          }
+        }
+      ],
+      "followup": {
+        "uri": "admin/domains/domain/unassignWorkspaces",
+        "reset": "keep"
+      },
+      "name": "preexisting-multipage",
+      "expected": {
+        "read_requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all&continuationToken=+%2B%2F%2A~%E9%9B%AA"
+          }
+        ],
+        "error": null,
+        "source_state_after_read": {
+          "filter": "all",
+          "continuationToken": " +/*~\u96ea"
+        },
+        "last_dispatched_query": "filter=all&continuationToken=+%2B%2F%2A~%E9%9B%AA",
+        "last_dispatched_pairs": [
+          [
+            "filter",
+            "all"
+          ],
+          [
+            "continuationToken",
+            " +/*~\u96ea"
+          ]
+        ],
+        "followup_request": {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/unassignWorkspaces?filter=all&continuationToken=+%2B%2F%2A~%E9%9B%AA"
+        }
+      }
+    },
+    {
+      "uri": "admin/domains/domain/workspaces",
+      "initial": null,
+      "pages": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a"
+              }
+            ],
+            "continuationToken": " +/*~\u96ea"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "b"
+              }
+            ]
+          }
+        }
+      ],
+      "followup": {
+        "uri": "admin/domains/domain/unassignWorkspaces",
+        "reset": "keep"
+      },
+      "name": "absent-multipage",
+      "expected": {
+        "read_requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?continuationToken=+%2B%2F%2A~%E9%9B%AA"
+          }
+        ],
+        "error": null,
+        "source_state_after_read": null,
+        "last_dispatched_query": "continuationToken=+%2B%2F%2A~%E9%9B%AA",
+        "last_dispatched_pairs": [
+          [
+            "continuationToken",
+            " +/*~\u96ea"
+          ]
+        ],
+        "followup_request": {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/unassignWorkspaces"
+        }
+      }
+    },
+    {
+      "uri": "admin/domains/domain/workspaces",
+      "initial": {
+        "filter": "all"
+      },
+      "pages": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "b"
+              }
+            ]
+          }
+        }
+      ],
+      "followup": {
+        "uri": "admin/domains/domain/unassignWorkspaces",
+        "reset": "keep"
+      },
+      "name": "single-page",
+      "expected": {
+        "read_requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all"
+          }
+        ],
+        "error": null,
+        "source_state_after_read": {
+          "filter": "all"
+        },
+        "last_dispatched_query": "filter=all",
+        "last_dispatched_pairs": [
+          [
+            "filter",
+            "all"
+          ]
+        ],
+        "followup_request": {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/unassignWorkspaces?filter=all"
+        }
+      }
+    },
+    {
+      "uri": "admin/domains/domain/workspaces",
+      "initial": {
+        "filter": "all"
+      },
+      "pages": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a"
+              }
+            ],
+            "continuationToken": " +/*~\u96ea"
+          },
+          "headers": {
+            "x-ms-continuation": ""
+          }
+        }
+      ],
+      "followup": {
+        "uri": "admin/domains/domain/unassignWorkspaces",
+        "reset": "keep"
+      },
+      "name": "empty-header-stops-body-token",
+      "expected": {
+        "read_requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all"
+          }
+        ],
+        "error": null,
+        "source_state_after_read": {
+          "filter": "all"
+        },
+        "last_dispatched_query": "filter=all",
+        "last_dispatched_pairs": [
+          [
+            "filter",
+            "all"
+          ]
+        ],
+        "followup_request": {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/unassignWorkspaces?filter=all"
+        }
+      }
+    },
+    {
+      "uri": "admin/domains/domain/workspaces",
+      "initial": {
+        "filter": "all"
+      },
+      "pages": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a"
+              }
+            ],
+            "continuationToken": " +/*~\u96ea"
+          },
+          "headers": {
+            "X-MS-Continuation": "header +/*~"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "b"
+              }
+            ]
+          }
+        }
+      ],
+      "followup": {
+        "uri": "admin/domains/domain/unassignWorkspaces",
+        "reset": "keep"
+      },
+      "name": "header-token-before-body",
+      "expected": {
+        "read_requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all&continuationToken=header+%2B%2F%2A~"
+          }
+        ],
+        "error": null,
+        "source_state_after_read": {
+          "filter": "all",
+          "continuationToken": "header +/*~"
+        },
+        "last_dispatched_query": "filter=all&continuationToken=header+%2B%2F%2A~",
+        "last_dispatched_pairs": [
+          [
+            "filter",
+            "all"
+          ],
+          [
+            "continuationToken",
+            "header +/*~"
+          ]
+        ],
+        "followup_request": {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/unassignWorkspaces?filter=all&continuationToken=header+%2B%2F%2A~"
+        }
+      }
+    },
+    {
+      "uri": "admin/domains/domain/workspaces",
+      "initial": {
+        "filter": "all"
+      },
+      "pages": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a"
+              }
+            ],
+            "continuationToken": " +/*~\u96ea"
+          }
+        },
+        {
+          "status": 403,
+          "body": {
+            "errorCode": "Denied",
+            "message": "denied"
+          },
+          "headers": {
+            "x-ms-public-api-error-code": "Denied"
+          }
+        }
+      ],
+      "followup": null,
+      "name": "page-two-error",
+      "expected": {
+        "read_requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all&continuationToken=+%2B%2F%2A~%E9%9B%AA"
+          }
+        ],
+        "error": "Denied",
+        "source_state_after_read": {
+          "filter": "all",
+          "continuationToken": " +/*~\u96ea"
+        },
+        "last_dispatched_query": "filter=all&continuationToken=+%2B%2F%2A~%E9%9B%AA",
+        "last_dispatched_pairs": [
+          [
+            "filter",
+            "all"
+          ],
+          [
+            "continuationToken",
+            " +/*~\u96ea"
+          ]
+        ],
+        "followup_request": null
+      }
+    },
+    {
+      "uri": "admin/domains/domain/workspaces",
+      "initial": {
+        "filter": "all"
+      },
+      "pages": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a"
+              }
+            ],
+            "continuationToken": " +/*~\u96ea"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "b"
+              }
+            ]
+          }
+        }
+      ],
+      "followup": null,
+      "fail_credential_call": 2,
+      "name": "page-two-credential-error",
+      "expected": {
+        "read_requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all"
+          }
+        ],
+        "error": "Unauthorized",
+        "source_state_after_read": {
+          "filter": "all",
+          "continuationToken": " +/*~\u96ea"
+        },
+        "last_dispatched_query": "filter=all",
+        "last_dispatched_pairs": [
+          [
+            "filter",
+            "all"
+          ]
+        ],
+        "followup_request": null
+      }
+    },
+    {
+      "uri": "admin/domains/domain/workspaces",
+      "initial": {
+        "filter": "all"
+      },
+      "pages": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a"
+              }
+            ],
+            "continuationToken": " +/*~\u96ea"
+          }
+        },
+        {
+          "interrupt": true
+        }
+      ],
+      "followup": null,
+      "name": "page-two-interrupt",
+      "expected": {
+        "read_requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all&continuationToken=+%2B%2F%2A~%E9%9B%AA"
+          }
+        ],
+        "error": "Cancelled",
+        "source_state_after_read": {
+          "filter": "all",
+          "continuationToken": " +/*~\u96ea"
+        },
+        "last_dispatched_query": "filter=all&continuationToken=+%2B%2F%2A~%E9%9B%AA",
+        "last_dispatched_pairs": [
+          [
+            "filter",
+            "all"
+          ],
+          [
+            "continuationToken",
+            " +/*~\u96ea"
+          ]
+        ],
+        "followup_request": null
+      }
+    },
+    {
+      "uri": "admin/domains/domain/workspaces",
+      "initial": {
+        "filter": "all"
+      },
+      "pages": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a"
+              }
+            ],
+            "continuationToken": " +/*~\u96ea"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [],
+            "continuationToken": "last"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "b"
+              }
+            ]
+          }
+        }
+      ],
+      "followup": {
+        "uri": "admin/domains/domain/unassignWorkspaces",
+        "reset": "keep"
+      },
+      "name": "three-pages",
+      "expected": {
+        "read_requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all&continuationToken=+%2B%2F%2A~%E9%9B%AA"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all&continuationToken=last"
+          }
+        ],
+        "error": null,
+        "source_state_after_read": {
+          "filter": "all",
+          "continuationToken": "last"
+        },
+        "last_dispatched_query": "filter=all&continuationToken=last",
+        "last_dispatched_pairs": [
+          [
+            "filter",
+            "all"
+          ],
+          [
+            "continuationToken",
+            "last"
+          ]
+        ],
+        "followup_request": {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/unassignWorkspaces?filter=all&continuationToken=last"
+        }
+      }
+    },
+    {
+      "uri": "admin/domains/domain/workspaces?filter=uri&continuationToken=initial",
+      "initial": {
+        "filter": "all"
+      },
+      "pages": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a"
+              }
+            ],
+            "continuationToken": " +/*~\u96ea"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "b"
+              }
+            ]
+          }
+        }
+      ],
+      "followup": {
+        "uri": "admin/domains/domain/unassignWorkspaces?continuationToken=override +/*~",
+        "reset": "keep"
+      },
+      "name": "later-uri-overwrite",
+      "expected": {
+        "read_requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=uri&continuationToken=initial"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=uri&continuationToken=+%2B%2F%2A~%E9%9B%AA"
+          }
+        ],
+        "error": null,
+        "source_state_after_read": {
+          "filter": "uri",
+          "continuationToken": " +/*~\u96ea"
+        },
+        "last_dispatched_query": "filter=uri&continuationToken=+%2B%2F%2A~%E9%9B%AA",
+        "last_dispatched_pairs": [
+          [
+            "filter",
+            "uri"
+          ],
+          [
+            "continuationToken",
+            " +/*~\u96ea"
+          ]
+        ],
+        "followup_request": {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/unassignWorkspaces?filter=uri&continuationToken=override+%2B%2F%2A~"
+        }
+      }
+    },
+    {
+      "uri": "admin/domains/domain/workspaces",
+      "initial": {
+        "filter": "all"
+      },
+      "pages": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a"
+              }
+            ],
+            "continuationToken": " +/*~\u96ea"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "b"
+              }
+            ]
+          }
+        }
+      ],
+      "followup": {
+        "uri": "admin/domains/domain/unassignWorkspaces",
+        "reset": "clear"
+      },
+      "name": "query-cleared",
+      "expected": {
+        "read_requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all&continuationToken=+%2B%2F%2A~%E9%9B%AA"
+          }
+        ],
+        "error": null,
+        "source_state_after_read": {
+          "filter": "all",
+          "continuationToken": " +/*~\u96ea"
+        },
+        "last_dispatched_query": "filter=all&continuationToken=+%2B%2F%2A~%E9%9B%AA",
+        "last_dispatched_pairs": [
+          [
+            "filter",
+            "all"
+          ],
+          [
+            "continuationToken",
+            " +/*~\u96ea"
+          ]
+        ],
+        "followup_request": {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/unassignWorkspaces"
+        }
+      }
+    },
+    {
+      "uri": "admin/domains/domain/workspaces",
+      "initial": {
+        "filter": "all"
+      },
+      "pages": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a"
+              }
+            ],
+            "continuationToken": " +/*~\u96ea"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "b"
+              }
+            ]
+          }
+        }
+      ],
+      "followup": {
+        "uri": "admin/domains/domain/unassignWorkspaces",
+        "reset": "replace",
+        "params": {
+          "fresh": "value"
+        }
+      },
+      "name": "query-replaced",
+      "expected": {
+        "read_requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all&continuationToken=+%2B%2F%2A~%E9%9B%AA"
+          }
+        ],
+        "error": null,
+        "source_state_after_read": {
+          "filter": "all",
+          "continuationToken": " +/*~\u96ea"
+        },
+        "last_dispatched_query": "filter=all&continuationToken=+%2B%2F%2A~%E9%9B%AA",
+        "last_dispatched_pairs": [
+          [
+            "filter",
+            "all"
+          ],
+          [
+            "continuationToken",
+            " +/*~\u96ea"
+          ]
+        ],
+        "followup_request": {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/unassignWorkspaces?fresh=value"
+        }
+      }
+    },
+    {
+      "uri": "admin/domains/domain/workspaces",
+      "initial": {
+        "filter": "all"
+      },
+      "pages": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "a"
+              }
+            ],
+            "continuationToken": " +/*~\u96ea"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "b"
+              }
+            ]
+          }
+        }
+      ],
+      "followup": {
+        "uri": "admin/domains/domain/unassignWorkspaces",
+        "reset": "absent"
+      },
+      "name": "query-attribute-removed",
+      "expected": {
+        "read_requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all&continuationToken=+%2B%2F%2A~%E9%9B%AA"
+          }
+        ],
+        "error": null,
+        "source_state_after_read": {
+          "filter": "all",
+          "continuationToken": " +/*~\u96ea"
+        },
+        "last_dispatched_query": "filter=all&continuationToken=+%2B%2F%2A~%E9%9B%AA",
+        "last_dispatched_pairs": [
+          [
+            "filter",
+            "all"
+          ],
+          [
+            "continuationToken",
+            " +/*~\u96ea"
+          ]
+        ],
+        "followup_request": {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/unassignWorkspaces"
+        }
+      }
+    },
+    {
+      "uri": "admin/domains/domain/workspaces",
+      "initial": {
+        "filter": "all"
+      },
+      "pages": [
+        {
+          "status": 200,
+          "body": {
+            "value": [],
+            "continuationUri": "https://foreign.invalid/unused"
+          }
+        }
+      ],
+      "followup": {
+        "uri": "admin/domains/domain/unassignWorkspaces",
+        "reset": "keep"
+      },
+      "name": "terminal-unused-uri",
+      "expected": {
+        "read_requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/workspaces?filter=all"
+          }
+        ],
+        "error": null,
+        "source_state_after_read": {
+          "filter": "all"
+        },
+        "last_dispatched_query": "filter=all",
+        "last_dispatched_pairs": [
+          [
+            "filter",
+            "all"
+          ]
+        ],
+        "followup_request": {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/admin/domains/domain/unassignWorkspaces?filter=all"
+        }
+      }
+    }
+  ]
+}

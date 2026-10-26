@@ -1,0 +1,33 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-cli-resources"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Injected ACL, label and catalog command consumers"
+
+[package.metadata.fabric]
+layer = "cli"
+
+[dependencies]
+azure_core.workspace = true
+fabric-cli-output.workspace = true
+fabric-cli-query.workspace = true
+fabric-cli-context.workspace = true
+fabric-sdk-api.workspace = true
+fabric-sdk-access.workspace = true
+fabric-sdk-catalog.workspace = true
+fabric-sdk-http.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true
