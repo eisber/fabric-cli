@@ -4,6 +4,7 @@
 //! Actual root argv -> production config host -> real shared HTTP/file adapters.
 
 #![cfg(feature = "native-read")]
+#![deny(unnameable_test_items)]
 
 mod family_support;
 use fabric_cli::{deploy::DeployFailure, families::FamilyEvidence};

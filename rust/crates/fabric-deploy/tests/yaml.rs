@@ -3,6 +3,8 @@
 
 //! YAML syntax primitive is not assumed to implement PyYAML source semantics.
 
+#![deny(unnameable_test_items)]
+
 use fabric_deploy::{
     deployment_config::ConfigurationError,
     yaml::{YamlLimits, YamlPolicy, decode},

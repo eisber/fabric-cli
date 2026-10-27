@@ -3,6 +3,8 @@
 
 //! Synthetic caller-owned file snapshots; no ambient paths or service access.
 
+#![deny(unnameable_test_items)]
+
 use fabric_deploy::{
     definitions::{DefinitionEntry, DefinitionEntryKind, DefinitionImportFileSystem},
     deployment_config::ConfigurationError,

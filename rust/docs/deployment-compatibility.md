@@ -443,3 +443,23 @@ normalize native outputs. The existing typed unsupported boundary remains in
 effect for native regex/JSONPath. Any improvement to the later-capture slicing
 or root-path behavior needs a separate owner decision and unchanged independent
 source evidence.
+
+### Second hosted registration failure and prevention
+
+Hosted Linux run `40557934344`, job `122378892695`, used source
+`cf9ce0c75b33dc7f7deb81a86e8b667f231f9e9c` and separate CI head
+`da58ee153b60cf045b43a11f6552c3bbe293b5a3`. Default/native all-target checks
+passed, then default strict Clippy rejected a nested `#[test]` in
+`deploy_parameters.rs`: the optional-environment warning test was inside the
+invalid-parameter test and therefore never registered. Tests/docs did not run.
+This is a failed registration gate, not evidence that the warning behavior was
+tested successfully.
+
+The repair places that unchanged warning test at module scope. Each of the six
+new deployment integration-test crates now denies `unnameable_test_items`, as the
+existing definition consumer already does, so accidental nested tests fail during
+ordinary compilation rather than waiting for strict Clippy. A source inventory
+after formatting must show every declared test at module scope; the authorized
+native runner must also compare that inventory with actual `-- --list` output
+before reporting native test coverage. No assertion, oracle, lint waiver,
+production behavior or dependency is changed to repair this failure.

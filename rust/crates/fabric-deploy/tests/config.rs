@@ -3,6 +3,8 @@
 
 //! Additive immutable actual-source config consumers; old 44 fixtures unchanged.
 
+#![deny(unnameable_test_items)]
+
 use fabric_deploy::deployment_config::{ConfigurationError, DeploymentConfig};
 use serde_json::{Value, json};
 

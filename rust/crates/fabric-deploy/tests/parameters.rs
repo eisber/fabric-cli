@@ -3,6 +3,8 @@
 
 //! Actual source schema/transform expectations, captured before native rules.
 
+#![deny(unnameable_test_items)]
+
 use fabric_deploy::{
     deployment_config::{ConfigurationError, DeploymentConfig},
     parameters::LiteralParameters,
