@@ -208,3 +208,187 @@ async fn cancellation_before_reads_makes_no_http_requests() {
     assert_ne!(output.plan.exit_code, 0);
     assert!(host.requests().is_empty());
 }
+
+#[derive(Default)]
+struct Confirmation {
+    answer: bool,
+    questions: std::sync::Mutex<Vec<String>>,
+}
+
+impl fabric_cli_transfer::TransferUi for Confirmation {
+    fn emit(
+        &self,
+        _: fabric_cli_transfer::TransferEvent,
+    ) -> Result<(), fabric_cli_output::CommandError> {
+        panic!("this deploy case has no progress event");
+    }
+    fn confirm<'a>(
+        &'a self,
+        question: &'a str,
+    ) -> fabric_cli_transfer::TransferFuture<'a, Result<bool, fabric_cli_output::CommandError>>
+    {
+        self.questions.lock().unwrap().push(question.into());
+        Box::pin(async { Ok(self.answer) })
+    }
+    fn select<'a>(
+        &'a self,
+        _: &'a [String],
+    ) -> fabric_cli_transfer::TransferFuture<'a, Result<Vec<String>, fabric_cli_output::CommandError>>
+    {
+        panic!("deploy must not invoke import/export selection");
+    }
+}
+
+#[tokio::test]
+async fn source_confirmation_decline_is_silent_before_config_reads_and_force_never_prompts() {
+    let fixture: Value = serde_json::from_str(include_str!("deploy_wrapper_source.json")).unwrap();
+    let mut host = Harness::new();
+    let ui = Confirmation::default();
+    let output = host
+        .execute_with_ui(&["deploy", "--config", "missing.yml", "-tenv", "dev"], &ui)
+        .await;
+    assert_eq!(output.plan.exit_code, 0);
+    assert!(output.plan.records.is_empty());
+    assert!(
+        matches!(&output.evidence, FamilyEvidence::Deploy(Ok(result)) if result.declined && result.completed.is_empty())
+    );
+    assert_eq!(
+        ui.questions.lock().unwrap()[0],
+        fixture["wrappers"][0]["calls"][0][1].as_str().unwrap()
+    );
+    assert!(host.requests().is_empty());
+    assert!(host.credential.0.lock().unwrap().is_empty());
+
+    input(&host);
+    metadata(&host, false);
+    host.reply(201, json!({"id":ITEM}));
+    let output = host
+        .execute_with_ui(&["deploy", "--config", "deploy.yml", "-f"], &ui)
+        .await;
+    success(&output);
+    assert_eq!(ui.questions.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn config_override_and_untrusted_host_app_use_the_real_yaml_host() {
+    let mut host = Harness::new();
+    input(&host);
+    std::fs::write(host.root.join("deploy.yml"), format!(
+        "core:\n  workspace_id: {WORKSPACE}\n  repository_directory: repository\n  item_types_in_scope: [Notebook]\nunpublish:\n  skip: false\n"
+    )).unwrap();
+    metadata(&host, false);
+    host.reply(201, json!({"id":ITEM}));
+    let output = host
+        .execute(&[
+            "deploy",
+            "--config",
+            "deploy.yml",
+            "-f",
+            "-P",
+            "config_override={\"unpublish\":{\"skip\":true}},host_app=\"untrusted\"",
+        ])
+        .await;
+    success(&output);
+    assert_eq!(host.requests().len(), 3);
+}
+
+#[tokio::test]
+async fn complete_discovery_reads_later_page_before_update_selection() {
+    let mut host = Harness::new();
+    input(&host);
+    host.reply(200, json!({"id":WORKSPACE,"capacityId":"capacity"}));
+    host.reply(200, json!({"value":[],"continuationToken":"next+/="}));
+    host.reply(
+        200,
+        json!({"value":[{"id":ITEM,"displayName":"Book","type":"Notebook"}]}),
+    );
+    host.reply(200, Value::Null);
+    let output = host
+        .execute(&["deploy", "--config", "deploy.yml", "-f"])
+        .await;
+    success(&output);
+    let requests = host.requests();
+    assert!(
+        requests[2]["url"]
+            .as_str()
+            .unwrap()
+            .ends_with("continuationToken=next%2B%2F%3D")
+    );
+    assert!(
+        requests[3]["url"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!("/{ITEM}/updateDefinition?updateMetadata=True"))
+    );
+}
+
+#[tokio::test]
+async fn partial_failure_retains_first_actual_id_and_second_mutation_evidence() {
+    let mut host = Harness::new();
+    input(&host);
+    let second = host.root.join("repository").join("Other.Notebook");
+    std::fs::create_dir(&second).unwrap();
+    std::fs::write(
+        second.join(".platform"),
+        json!({
+            "metadata":{"type":"Notebook","displayName":"Other"},
+            "config":{"logicalId":"logical-other"},
+        })
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        second.join("notebook-content.py"),
+        "# Fabric notebook source\nprint('other')\n",
+    )
+    .unwrap();
+    metadata(&host, false);
+    host.reply(201, json!({"id":ITEM}));
+    host.reply(
+        500,
+        json!({"error":{"code":"SyntheticFailure","message":"synthetic"}}),
+    );
+    let output = host
+        .execute(&["deploy", "--config", "deploy.yml", "-f"])
+        .await;
+    assert_ne!(output.plan.exit_code, 0);
+    let requests = host.requests();
+    assert_eq!(requests.len(), 4);
+    assert!(
+        matches!(&output.evidence, FamilyEvidence::Deploy(Err(error))
+        if matches!(&error.failure, DeployFailure::Publish(error)
+        if error.completed.len() == 1 && error.completed[0].outcome.item_id == ITEM
+        && Some(error.completed[0].name.as_str()) == requests[2]["body"]["displayName"].as_str()
+        && error.current_item.as_deref() == requests[3]["body"]["displayName"].as_str()
+        && matches!(&error.failure, PublishFailure::Operation(error) if error.mutation_may_have_occurred)))
+    );
+    assert!(!requests.iter().any(|request| request["method"] == "DELETE"));
+}
+
+#[tokio::test]
+async fn caller_file_root_escape_and_duplicate_service_targets_fail_before_writes() {
+    let mut host = Harness::new();
+    let output = host
+        .execute(&["deploy", "--config", "../outside.yml", "-f"])
+        .await;
+    assert_ne!(output.plan.exit_code, 0);
+    assert!(host.requests().is_empty());
+    input(&host);
+    host.reply(200, json!({"id":WORKSPACE,"capacityId":"capacity"}));
+    host.reply(
+        200,
+        json!({"value":[
+            {"id":ITEM,"displayName":"Book","type":"Notebook"},
+            {"id":OPERATION,"displayName":"Book","type":"Notebook"},
+        ]}),
+    );
+    let output = host
+        .execute(&["deploy", "--config", "deploy.yml", "-f"])
+        .await;
+    assert_ne!(output.plan.exit_code, 0);
+    assert!(
+        host.requests()
+            .iter()
+            .all(|request| request["method"] == "GET")
+    );
+}

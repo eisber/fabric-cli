@@ -51,9 +51,17 @@ fn protected_parameter_duplicate_merge_and_unicode_boundaries_remain_distinct() 
         if case.get("expected").is_some() {
             assert_eq!(result.unwrap(), case["expected"], "{}", case["id"]);
         } else {
+            let error = result.unwrap_err();
             assert!(
-                matches!(result, Err(ConfigurationError::Invalid(_))),
+                matches!(error, ConfigurationError::Invalid(_)),
                 "{}",
+                case["id"]
+            );
+            assert!(
+                error
+                    .to_string()
+                    .contains(case["error"]["contains"].as_str().unwrap()),
+                "{}: {error}",
                 case["id"]
             );
         }
@@ -73,6 +81,30 @@ fn source_implicit_scalar_subset_and_quoted_spelling_are_not_yaml12_typing() {
             true, false, true, null, null, 10, 16, 80, "1e3", 1.0, "on", "012"
         ])
     );
+}
+
+#[test]
+fn additive_actual_pyyaml_scalar_cases_preserve_types_or_fail_explicit_domain() {
+    let fixture: Value = serde_json::from_str(include_str!("yaml_scalar_source.json")).unwrap();
+    assert_eq!(fixture["pyyaml"], "6.0.3");
+    let cases = fixture["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 57);
+    for case in cases {
+        let input = case["input"].as_str().unwrap();
+        let result = decode(input, YamlPolicy::Config, YamlLimits::default());
+        if case["unsupportedNativeDomain"] == true {
+            assert!(
+                matches!(result, Err(ConfigurationError::Unsupported(_))),
+                "{input}: {result:?}"
+            );
+        } else {
+            assert_eq!(
+                result.unwrap_or_else(|error| panic!("{input}: {error}")),
+                case["expected"],
+                "{input}"
+            );
+        }
+    }
 }
 
 #[test]

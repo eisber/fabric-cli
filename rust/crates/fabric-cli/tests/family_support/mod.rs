@@ -255,6 +255,20 @@ impl Harness {
         args: &[&str],
         cancelled: impl Future<Output = ()> + Send,
     ) -> FamilyOutput {
+        self.execute_with_capabilities(args, cancelled, &TransferUiCapture::default())
+            .await
+    }
+
+    pub async fn execute_with_ui(&mut self, args: &[&str], ui: &dyn TransferUi) -> FamilyOutput {
+        self.execute_with_capabilities(args, pending(), ui).await
+    }
+
+    async fn execute_with_capabilities(
+        &mut self,
+        args: &[&str],
+        cancelled: impl Future<Output = ()> + Send,
+        transfer_ui: &dyn TransferUi,
+    ) -> FamilyOutput {
         let invocation = parse_args(std::iter::once("fab-rs").chain(args.iter().copied())).unwrap();
         let sdk = Client::new(
             self.credential.clone(),
@@ -286,7 +300,6 @@ impl Harness {
         )
         .unwrap();
         let mut mutations = MutationUiCapture::default();
-        let transfer_ui = TransferUiCapture::default();
         let mut files =
             LocalTransferFiles::new(self.root.clone(), None, Default::default()).unwrap();
         let output = FamilySession {
@@ -297,7 +310,7 @@ impl Harness {
             local: &mut self.effects,
             mutations: &mut mutations,
             confirmation: None,
-            transfer_ui: &transfer_ui,
+            transfer_ui,
             transfer_files: Some(&mut files),
             resource_files: None,
         }

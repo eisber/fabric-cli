@@ -9,7 +9,7 @@
 use crate::deployment_config::ConfigurationError;
 use serde_json::{Map, Number, Value};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap},
     sync::Arc,
 };
 use yaml_rust2::{
@@ -202,6 +202,9 @@ pub fn decode(
     if reader.event()? != Event::DocumentEnd || reader.event()? != Event::StreamEnd {
         return Err(invalid("Expected exactly one YAML document"));
     }
+    if policy == YamlPolicy::Parameter {
+        parameter_duplicates(&node, limits)?;
+    }
     convert(
         &node,
         policy,
@@ -212,6 +215,107 @@ pub fn decode(
         },
         0,
     )
+}
+
+fn parameter_duplicates(root: &Arc<Node>, limits: YamlLimits) -> Result<(), ConfigurationError> {
+    let mut budget = Budget {
+        limits,
+        nodes: 0,
+        bytes: 0,
+    };
+    let mut stack = vec![(root.clone(), 0)];
+    let mut errors = Vec::new();
+    while let Some((node, depth)) = stack.pop() {
+        budget.visit(depth)?;
+        let Node::Mapping(entries) = node.as_ref() else {
+            continue;
+        };
+        let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+        let mut positions = HashMap::new();
+        for (key, value) in entries {
+            if merge_key(key) {
+                return Err(invalid(
+                    "could not determine a constructor for the tag 'tag:yaml.org,2002:merge'",
+                ));
+            }
+            let key = convert(key, YamlPolicy::Config, &mut budget, depth + 1)?;
+            let (identity, spelling) = match key {
+                Value::String(value) => (format!("s:{}", value.to_lowercase()), value),
+                Value::Bool(value) => (
+                    format!("n:{}", u8::from(value)),
+                    if value { "True" } else { "False" }.into(),
+                ),
+                Value::Number(value) => {
+                    let identity = value
+                        .as_f64()
+                        .filter(|_| value.is_f64())
+                        .filter(|value| value.fract() == 0.0)
+                        .map_or_else(|| value.to_string(), |value| format!("{value:.0}"));
+                    (format!("n:{identity}"), value.to_string())
+                }
+                Value::Null => ("null".into(), "None".into()),
+                _ => return Err(unsupported("complex YAML mapping key")),
+            };
+            if let Some(index) = positions.get(&identity).copied() {
+                let (_, variants): &mut (String, Vec<String>) = &mut groups[index];
+                variants.push(spelling);
+            } else {
+                positions.insert(identity.clone(), groups.len());
+                groups.push((identity, vec![spelling]));
+            }
+            match value.as_ref() {
+                Node::Mapping(_) => stack.push((value.clone(), depth + 1)),
+                Node::Sequence(children) => {
+                    for child in children {
+                        if matches!(child.as_ref(), Node::Mapping(_)) {
+                            stack.push((child.clone(), depth + 2));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        for (_, variants) in groups {
+            if variants.len() > 1 {
+                let unique: BTreeSet<_> = variants.iter().collect();
+                if unique.len() == 1 {
+                    errors.push(format!(
+                        "'{}' ({})",
+                        unique.first().expect("nonempty variants"),
+                        variants.len()
+                    ));
+                } else {
+                    let quoted = unique
+                        .into_iter()
+                        .map(|value| {
+                            let quote = if value.contains('\'') && !value.contains('"') {
+                                '"'
+                            } else {
+                                '\''
+                            };
+                            let escaped = value
+                                .replace('\\', "\\\\")
+                                .replace('\n', "\\n")
+                                .replace('\r', "\\r")
+                                .replace('\t', "\\t")
+                                .replace(quote, &format!("\\{quote}"));
+                            format!("{quote}{escaped}{quote}")
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    errors.push(format!("[{quoted}] ({})", variants.len()));
+                }
+            }
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(invalid(&format!(
+            "duplicate key(s) found: {}",
+            errors.join(", ")
+        )))
+    }
 }
 
 fn merge_key(node: &Node) -> bool {
@@ -239,7 +343,6 @@ fn convert(
         Node::Mapping(entries) => {
             let mut merged = Map::new();
             let mut direct = Vec::new();
-            let mut seen = HashSet::new();
             for (key, value) in entries {
                 if merge_key(key) {
                     if policy == YamlPolicy::Parameter {
@@ -272,16 +375,6 @@ fn convert(
                     continue;
                 }
                 let key = convert(key, policy, budget, depth + 1)?;
-                let identity = match &key {
-                    Value::String(value) => format!("s:{}", value.to_lowercase()),
-                    Value::Bool(value) => format!("n:{}", u8::from(*value)),
-                    Value::Number(value) => format!("n:{value}"),
-                    Value::Null => "null".into(),
-                    _ => return Err(unsupported("complex YAML mapping key")),
-                };
-                if policy == YamlPolicy::Parameter && !seen.insert(identity) {
-                    return Err(invalid("duplicate key(s) found in parameter YAML"));
-                }
                 direct.push((key, value));
             }
             for (key, value) in direct {

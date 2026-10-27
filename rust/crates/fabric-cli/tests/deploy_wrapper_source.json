@@ -1,0 +1,305 @@
+{
+  "source": "microsoft/fabric-cli@cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "hashes": {
+    "src/fabric_cli/utils/fab_util.py": "b1facc2ca56501b74fd5e5ddc18a7c8e42d020cbd71549317b7a73948169db82",
+    "src/fabric_cli/commands/fs/fab_fs_deploy.py": "e403657a1d87d704e8c8d36fcb4dbcf46f70387b41e757edc04583a9f6b724a7",
+    "src/fabric_cli/commands/fs/deploy/fab_fs_deploy_config_file.py": "7e328287db016f98b3918a2e89085d811ca301192856ba94764db9ba7f99f3cf"
+  },
+  "boundary": "Actual pinned max-depth-one parameter parser and deploy force/confirm/wrapper/JSON typing/host_app/finally lifecycle. All external capability callbacks are synthetic; no package, auth or service initialization.",
+  "parameters": [
+    {
+      "id": "empty",
+      "tokens": [],
+      "expected": {}
+    },
+    {
+      "id": "json-typing",
+      "tokens": [
+        "truth=true,count=12,unset=null,quoted=\"12\",plain=yes"
+      ],
+      "expected": {
+        "truth": true,
+        "count": 12,
+        "unset": null,
+        "quoted": "12",
+        "plain": "yes"
+      }
+    },
+    {
+      "id": "dotted-depth-one",
+      "tokens": [
+        "core.workspace_id=id,config_override={\"unpublish\":{\"skip\":true}}"
+      ],
+      "expected": {
+        "core.workspace_id": "id",
+        "config_override": {
+          "unpublish": {
+            "skip": true
+          }
+        }
+      }
+    },
+    {
+      "id": "backslash-normalization",
+      "tokens": [
+        "path=C:\\synthetic\\repo"
+      ],
+      "expected": {
+        "path": "C:syntheticrepo"
+      }
+    },
+    {
+      "id": "quoted-and-object",
+      "tokens": [
+        "config_override={\"core\":{\"item_types_in_scope\":[\"Notebook\"]}},host_app=\"untrusted\""
+      ],
+      "expected": {
+        "config_override": {
+          "core": {
+            "item_types_in_scope": [
+              "Notebook"
+            ]
+          }
+        },
+        "host_app": "untrusted"
+      }
+    },
+    {
+      "id": "last-exact-key",
+      "tokens": [
+        "count=1,count=2"
+      ],
+      "expected": {
+        "count": 2
+      }
+    },
+    {
+      "id": "comma-inside-quotes-source-regex-boundary",
+      "tokens": [
+        "text=\"first,count=2\""
+      ],
+      "expected": {
+        "text": "\"first",
+        "count": "2\""
+      }
+    },
+    {
+      "id": "comma-whitespace",
+      "tokens": [
+        "one=1,   two=2"
+      ],
+      "expected": {
+        "one": 1,
+        "two": 2
+      }
+    }
+  ],
+  "wrappers": [
+    {
+      "id": "decline",
+      "force": false,
+      "confirmed": false,
+      "bulk": false,
+      "serviceFailure": false,
+      "calls": [
+        [
+          "confirm",
+          "Are you sure you want to deploy to target environment 'dev' using the specified configuration file?"
+        ]
+      ],
+      "remainingFlags": [],
+      "error": null
+    },
+    {
+      "id": "confirm",
+      "force": false,
+      "confirmed": true,
+      "bulk": false,
+      "serviceFailure": false,
+      "calls": [
+        [
+          "confirm",
+          "Are you sure you want to deploy to target environment 'dev' using the specified configuration file?"
+        ],
+        [
+          "disable_file_logging"
+        ],
+        [
+          "append",
+          "disable_print_identity"
+        ],
+        [
+          "deploy",
+          {
+            "config_file_path": "synthetic.yml",
+            "environment": "dev",
+            "host_app": "ms-fabric-cli/0.1.0",
+            "config_override": {
+              "unpublish": {
+                "skip": true
+              }
+            }
+          }
+        ],
+        [
+          "output",
+          "Deployment completed successfully"
+        ]
+      ],
+      "remainingFlags": [
+        "disable_print_identity"
+      ],
+      "error": null
+    },
+    {
+      "id": "force",
+      "force": true,
+      "confirmed": false,
+      "bulk": false,
+      "serviceFailure": false,
+      "calls": [
+        [
+          "disable_file_logging"
+        ],
+        [
+          "append",
+          "disable_print_identity"
+        ],
+        [
+          "deploy",
+          {
+            "config_file_path": "synthetic.yml",
+            "environment": "dev",
+            "host_app": "ms-fabric-cli/0.1.0",
+            "config_override": {
+              "unpublish": {
+                "skip": true
+              }
+            }
+          }
+        ],
+        [
+          "output",
+          "Deployment completed successfully"
+        ]
+      ],
+      "remainingFlags": [
+        "disable_print_identity"
+      ],
+      "error": null
+    },
+    {
+      "id": "bulk-cleanup-success",
+      "force": true,
+      "confirmed": false,
+      "bulk": true,
+      "serviceFailure": false,
+      "calls": [
+        [
+          "disable_file_logging"
+        ],
+        [
+          "append",
+          "disable_print_identity"
+        ],
+        [
+          "append",
+          "enable_experimental_features"
+        ],
+        [
+          "append",
+          "enable_bulk_publish"
+        ],
+        [
+          "warning",
+          "Experimental bulk publish is enabled: items will be deployed in a single bulk import API call. This feature is experimental in fabric-cicd and may change or fail; omit the '--bulk_publish' flag to use standard per-item publish."
+        ],
+        [
+          "deploy",
+          {
+            "config_file_path": "synthetic.yml",
+            "environment": "dev",
+            "host_app": "ms-fabric-cli/0.1.0",
+            "config_override": {
+              "unpublish": {
+                "skip": true
+              }
+            }
+          }
+        ],
+        [
+          "output",
+          "Deployment completed successfully"
+        ],
+        [
+          "remove",
+          "enable_experimental_features"
+        ],
+        [
+          "remove",
+          "enable_bulk_publish"
+        ]
+      ],
+      "remainingFlags": [
+        "disable_print_identity"
+      ],
+      "error": null
+    },
+    {
+      "id": "bulk-cleanup-failure",
+      "force": true,
+      "confirmed": false,
+      "bulk": true,
+      "serviceFailure": true,
+      "calls": [
+        [
+          "disable_file_logging"
+        ],
+        [
+          "append",
+          "disable_print_identity"
+        ],
+        [
+          "append",
+          "enable_experimental_features"
+        ],
+        [
+          "append",
+          "enable_bulk_publish"
+        ],
+        [
+          "warning",
+          "Experimental bulk publish is enabled: items will be deployed in a single bulk import API call. This feature is experimental in fabric-cicd and may change or fail; omit the '--bulk_publish' flag to use standard per-item publish."
+        ],
+        [
+          "deploy",
+          {
+            "config_file_path": "synthetic.yml",
+            "environment": "dev",
+            "host_app": "ms-fabric-cli/0.1.0",
+            "config_override": {
+              "unpublish": {
+                "skip": true
+              }
+            }
+          }
+        ],
+        [
+          "remove",
+          "enable_experimental_features"
+        ],
+        [
+          "remove",
+          "enable_bulk_publish"
+        ]
+      ],
+      "remainingFlags": [
+        "disable_print_identity"
+      ],
+      "error": [
+        "Deployment failed: synthetic failure",
+        "DeploymentFailed"
+      ]
+    }
+  ]
+}

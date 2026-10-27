@@ -301,3 +301,44 @@ all field/type/behavior rows above, public native and root-argv proofs, failed/
 cancelled/partial/uncertain outcomes, precise platform evidence and independent
 source comparison. Neither one new happy vertical nor a command count closes
 that definition of done.
+
+### Locked candidate and additive wrapper/scalar proof
+
+The locked follow-up is
+`770197da9f3d3f7e93a6bb5c8589846ca8744367`, over source checkpoint
+`f360c47a7f074016ee91d92e1a852d12f433e8ce`. The integration owner explicitly
+approved `yaml-rust2 =0.10.4`, default features disabled, and the five exact new
+registry records (`arraydeque 0.5.1`, `foldhash 0.1.5`, `hashbrown 0.15.5`,
+`hashlink 0.10.0`, `yaml-rust2 0.10.4`). All original 218 registry versions,
+checksums, order and resolved dependency edges remain unchanged. Cargo requires
+exactly two approved spelling qualifications: existing `indexmap 2.14.2` names
+`hashbrown 0.17.1`, and existing `serde_json 1.0.154` names `foldhash 0.2.0`.
+The other 216 original registry records remain byte-identical.
+
+After restoring only the pinned missing oracle dependencies into the deployment
+session's private virtual environment, all 44 unchanged protected source cases
+passed on Windows x64, Python 3.13.15, PyYAML 6.0.3 and jsonpath-ng 1.9.1.
+The prior installed-jsonpath-ng-1.8.0 refusal remains evidence; no oracle guard,
+expectation or source pin changed. Twelve new config and two actual Notebook
+wire source captures also passed. These are Python/source results, not native
+Rust test results.
+
+`fabric-cli/tests/deploy_wrapper_reference.py` additionally captures eight
+max-depth-one/JSON-typing parameter cases and five actual wrapper lifecycle
+cases from exact Python source, with synthetic capability callbacks. They
+preserve the unexpected regex comma boundary inside quotes, backslash
+normalization, exact confirmation, forced/no-prompt behavior, trusted `host_app`
+override, and bulk-flag finally cleanup on success/failure. Bulk native
+publication itself remains unsupported; the source receipt is not a port claim.
+`fabric-deploy/tests/yaml_scalar_reference.py` captures 57 exact PyYAML scalar
+observations, retaining non-JSON type evidence and explicit unsupported domains.
+Both fixed receipts were captured before their native test expectations.
+
+The root-host tests additionally exercise confirmation decline before file
+reads/credentials, explicit force bypass, real config overrides, later discovery
+pages before update selection, partial sequential failure preserving the earlier
+actual item ID, and owned-file-root escape and duplicate-service-target failures.
+These are registered tests pending actual native compilation/execution, not an
+assertion that they passed. Direct per-file formatting can be used when the
+shared Windows host's `cargo fmt --all` command exceeds its command-line length;
+that OS error is not a formatting waiver.
