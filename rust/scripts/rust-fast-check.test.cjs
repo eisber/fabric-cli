@@ -107,6 +107,22 @@ test('native-values requires native and text observations without weakening orac
     '/target', '/receipts', () => false), /comparator is missing/);
 });
 
+test('SDK/value family cannot pull deferred CLI consumers back into compilation', () => {
+  const manifest = {lane: 'sdk-values', packages: [
+    'fabric-core', 'fabric-core-json', 'fabric-sdk', 'fabric-sdk-http',
+    'fabric-sdk-jobs', 'fabric-sdk-operations', 'fabric-sdk-onelake', 'fabric-cli-output',
+  ]};
+  const commands = plan('family', manifest, '/target', '/receipts', () => true);
+  for (const item of commands) {
+    for (const pkg of ['fabric-cli', 'fabric-cli-jobs', 'fabric-cli-mutations', 'fabric-deploy']) {
+      assert.ok(!item.args.includes(pkg));
+    }
+  }
+  assert.ok(commands.some(item => item.args.includes('tests/compatibility/jobs/reference.py')));
+  assert.ok(commands.some(item => item.args.includes('native_json')));
+  assert.ok(commands.some(item => item.args.includes('injected_credentials')));
+});
+
 test('command spy proves nonzero exits, spawn errors and signals stop subsequent work', () => {
   const commands = [{program: 'cargo', args: ['test']}, {program: 'cargo', args: ['run']}];
   for (const failure of [{status: 101}, {status: null, error: new Error('not installed')},

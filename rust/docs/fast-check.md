@@ -27,7 +27,10 @@ layer metadata. It explicitly defers central CLI, identity, deployment and their
 native platform gates; the receipt records this boundary. This lets endpoint
 and native-value candidates receive real checks independently of a known central
 CLI compile failure, without claiming that their CLI consumers passed. Existing
-lanes retain their broader consumer selection.
+lanes retain their broader consumer selection. The SDK/value family stage retains
+the independent job source comparisons but does not build CLI job or mutation
+probes; SDK unit/doctests and the facade's injected-credential example remain
+in scope.
 
 Each run executes workspace formatting, selected all-target offline checks and
 Clippy, single-thread tests and doctests, then actual family examples and pinned

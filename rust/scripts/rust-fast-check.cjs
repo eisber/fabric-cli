@@ -128,7 +128,9 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     for (const reference of ['reference', 'branches_reference', 'operation_output_reference', 'skill_headers_reference']) {
       commands.push(python(`tests/compatibility/jobs/${reference}.py`));
     }
-    commands.push(cargo('run', '--offline', '--locked', '-p', 'fabric-cli-jobs', '--example', 'offline_job'));
+    if (has('fabric-cli-jobs')) {
+      commands.push(cargo('run', '--offline', '--locked', '-p', 'fabric-cli-jobs', '--example', 'offline_job'));
+    }
   }
   if (has('fabric-core-json') || has('fabric-cli-output')) {
     observation('fabric-core-json', 'definition_json', 'definition_reference.py');
@@ -172,7 +174,8 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
   if (has('fabric-deploy')) {
     commands.push(python('tests/compatibility/run_definition_parity.py', '--artifacts', path.join(output, 'definition')));
   }
-  if (has('fabric-cli-mutations') || has('fabric-sdk-operations') || has('fabric-sdk-onelake') || has('fabric-sdk-onelake-http')) {
+  if (manifest.lane !== 'sdk-values' &&
+    (has('fabric-cli-mutations') || has('fabric-sdk-operations') || has('fabric-sdk-onelake') || has('fabric-sdk-onelake-http'))) {
     commands.push(cargo('build', '--offline', '--locked', '-p', 'fabric-cli-mutations',
       '-p', 'fabric-sdk-operations', '--examples'),
     python('tests/compatibility/run_resource_parity.py', '--probes', path.join(target, 'debug', 'examples'),
