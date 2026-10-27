@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "status": "pending",
-  "source_sha": "91e7523ea978c67ca183abaea04500e323c27eb3",
+  "source_sha": "b78d9654a37ca909036df54b8562e01fcfe8aa13",
   "correctness_receipt": "PENDING: worker must verify both help/version contracts before measuring",
   "endpoint_host": null,
   "environment": {
@@ -24,7 +24,7 @@
       "name": "rust",
       "executable": "/PENDING/private-target/release/fab-rs",
       "executable_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "source_sha": "91e7523ea978c67ca183abaea04500e323c27eb3",
+      "source_sha": "b78d9654a37ca909036df54b8562e01fcfe8aa13",
       "tool_version": "PENDING: verify rustc 1.99.1 and cargo --version",
       "target": "PENDING: rustc host/explicit target triple",
       "features": [],

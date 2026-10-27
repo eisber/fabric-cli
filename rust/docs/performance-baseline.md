@@ -2,19 +2,102 @@
 
 # CLI performance baseline
 
-**Measurement status: pending. No Rust-versus-Python startup or memory results
-have been measured by this lane.** Harness contract tests use synthetic child
-processes, not product benchmarks. There is no supported speedup claim or
-performance acceptance threshold.
+**Measured on October 27, 2026:** one bounded WSL Linux startup and memory
+comparison passed all 268 observations. This measures only `--help` and
+`--version`, not service latency, full CLI parity, or a general speedup.
+There is no performance acceptance threshold.
 
-The initial requested product baseline is Rust source
-`91e7523ea978c67ca183abaea04500e323c27eb3` and Python source
-`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`. These are **requested source pins,
-not tested performance SHAs**. If the coordinator selects a corrected Linux
-candidate, record its full SHA in both request source fields before execution.
-Do not silently substitute a branch tip or treat newly registered commands as
-working. Correctness and command delivery take priority over measurements;
-optimization is a separate, evidence-led decision.
+The measured sources are Rust
+`b78d9654a37ca909036df54b8562e01fcfe8aa13` and Python
+`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`. The optimized default-feature
+`fab-rs 0.1.0` ran directly; Python `fab 1.8.0` was installed non-editably from
+that source into a new private CPython 3.13.15 environment. All 276 installed
+product source/resource files matched the pinned source. All installed
+package/runtime files were hashed before and verified unchanged after the run.
+
+## Measured startup and memory
+
+| Target | Invocation | Wall median (ms) | Wall p95 (ms) | Peak RSS median (KiB) | Peak RSS p95 (KiB) | First observed (ms) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Rust | `--help` | 2.972 | 4.136 | 4,042 | 4,204 | 3.267 |
+| Rust | `--version` | 3.013 | 3.665 | 4,024 | 4,184 | 3.077 |
+| Python | `--help` | 1071.347 | 1369.381 | 46,728 | 46,800 | 1136.797 |
+| Python | `--version` | 1038.556 | 1127.125 | 46,684 | 46,844 | 1023.552 |
+
+Each target/invocation used three warmups and 30 new-process latency samples,
+then three additional warmups and 30 separate GNU time memory samples.
+Execution order alternated Python/Rust each round. p95 uses nearest rank.
+First observations, all warmups, failures and outliers are retained separately;
+there were zero measurement failures and no discarded outliers.
+
+**This is a warm-filesystem, bytecode-disabled clean-install scenario.**
+The newly installed Python environment contained zero `.pyc` files, and
+`PYTHONDONTWRITEBYTECODE=1` remained set. Do not extrapolate these figures to a
+precompiled Python installation, a cold cache, an authenticated user's
+configuration, or service-capable Rust features. Help content and versions
+differ between products and were reviewed independently, not forced to have
+identical bytes. Python version includes its release-notes URL and CRLF endings.
+
+The host was Ubuntu 24.04.4 LTS, WSL2 Linux 6.18.33.2, x86_64, glibc 2.39,
+Intel Xeon Platinum 8370C at 2.80 GHz, on native ext4. Cgroup readback enforced
+two CPU quota, 6 GiB RAM, zero swap and 128 tasks; 16 logical CPUs were visible,
+without fixed CPU affinity or governor control. Linux load averages before/after
+were `0.46 0.45 0.28` / `1.31 0.79 0.43`; Windows host contention was not fully
+controlled. Builds, installation, correctness checks and hashing warmed files
+and page caches. First observed does not mean cold-cache startup.
+
+## Measured distribution and runtime footprint
+
+| Artifact | Logical regular-file bytes | MiB | Convention |
+| --- | ---: | ---: | --- |
+| Rust default release binary | 2,619,344 | 2.498 | Default unstripped release profile; OS libraries excluded |
+| Python source-built wheel | 358,997 | 0.342 | Compressed wheel, not installed footprint |
+| Python product only, installed | 1,172,237 | 1.118 | Product package, distribution metadata and entry point only |
+| Python private venv and dependencies | 31,662,871 | 30.196 | 28 installed distributions; interpreter symlink not followed |
+| Managed CPython base runtime | 100,134,334 | 95.496 | Runtime and standard library, separately reported |
+| Python venv plus base runtime | 131,797,205 | 125.692 | Sum of disjoint trees, not incremental disk cost |
+
+Tree sizes count logical regular-file bytes with unique inodes within each tree,
+exclude directory blocks, and do not follow symlinks. The Python product-only
+row sums its installed files separately. Allocated-byte counts and per-file
+hashes are retained in the JSON report. Hardlinks can share external cache
+storage; no exclusive disk-saving claim is made. Neither tree includes OS
+shared-library storage.
+
+Rust used rustc/Cargo 1.99.1 and
+`cargo build --offline --locked --release -p fabric-cli --bin fab-rs --jobs 1`,
+without profile, LTO, strip or feature overrides. Its 165.404-second build is
+provenance, not a comparative startup/build speed metric. Binary SHA-256:
+`960eaba2dc1619a38619ab3d11a6b8bdd7ab24d1751920b8f6a627610605fd77`.
+Python interpreter SHA-256:
+`bb4d05c1f88e8568985e8704afe1822e82700a54bad9317c05c8eb96d3186701`.
+The dependency freeze, wheel hash, installed-file manifests, output contracts
+and raw measurements are retained in the integration owner's dated report.
+
+The canonical milestone at the measured Rust source was 43/52 bounded offline
+happy paths (82.69%) versus Python's 52-leaf source inventory. This is not full
+behavior equivalence or timings for 43 commands. Existing correctness evidence
+reported 770 workspace non-doc tests and nine doctests, with overlapping focused
+default/native suites; those are not speed metrics or additional unique cases.
+Offline LS/GET/job handler latency was **not measured**: a matched production
+timing boundary was not established, and unlike Rust probes/Python source
+comparators must not be compared as equivalent work. Live end-to-end,
+authentication, refresh and native Windows/macOS measurements remain unmeasured.
+
+The actual measurement receipt is run `609436b18a4b4c1cacdc510909b4a138`,
+SHA-256 `2c4e8050464db0126698f7a16f22b86577dcbe8a37765aeb2fa1a02dafa14e25`.
+The integration-owner handoff retains `performance-table.md`,
+`performance-table.json`, `perf-startup-receipt.json`, provenance, dependency
+freeze, independent correctness review, before/after file manifests and capped
+wrapper/cleanup receipts. One preparation expectation error (missing Python's
+second version line/CRLF) was corrected from pinned source before measurement;
+its failed receipt is retained. No product/oracle change or measurement retry
+was used to hide a failure.
+
+The committed request below remains a non-executable template. Future runs
+require fresh output/provenance checks and an explicit finite grant; these
+measurements do not grant continued execution. Correctness and command delivery
+take priority; optimization remains a separate evidence-led decision.
 
 ## First tier: offline process startup
 
