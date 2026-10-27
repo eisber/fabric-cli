@@ -168,7 +168,8 @@ test('timeout rescue changes only native Windows endpoint test bounds and no com
 });
 test('deploy preflight first runs actual library then native root consumer, never live deployment', () => {
   const manifest = {lane: 'deploy-mount', packages: ['fabric-deploy', 'fabric-cli']};
-  const commands = plan('test', manifest);
+  const commands = plan('test', manifest, '/target', '/receipts',
+    file => !file.endsWith('parameter_transforms.rs'));
   assert.deepEqual(commands.map(item => item.args), [
     ['test', '--offline', '--locked', '-p', 'fabric-deploy',
       '--test', 'config', '--test', 'repository', '--test', 'parameters', '--test', 'yaml',
