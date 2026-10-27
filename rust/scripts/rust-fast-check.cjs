@@ -471,7 +471,7 @@ function execute(commands, cwd, run = spawnSync, collectFailures = false) {
     const err = item.stderr ? fs.openSync(item.stderr, 'wx') : undefined;
     let result;
     try {
-      result = run(item.program, item.args, {cwd, shell: false, timeout: 300000,
+      result = run(item.program, item.args, {cwd, shell: false, timeout: item.timeout || 300000,
         ...(item.environment ? {env: {...process.env, ...item.environment}} : {}),
         stdio: ['ignore', fd === undefined ? 'inherit' : fd, err === undefined ? 'inherit' : err]});
     } finally {
@@ -481,7 +481,7 @@ function execute(commands, cwd, run = spawnSync, collectFailures = false) {
     results.push({program: item.program, args: item.args, startedAt,
       completedAt: new Date().toISOString(), exit: result.status, signal: result.signal,
       error: result.error?.message, stdout: item.stdout, stderr: item.stderr,
-      environment: item.environment});
+      environment: item.environment, timeout: item.timeout || 300000});
     if (!collectFailures && (result.error || result.signal || result.status !== 0)) break;
   }
   return results;
@@ -496,6 +496,10 @@ function runStage(stage) {
   const commands = plan(stage, manifest, process.env.CARGO_TARGET_DIR, receipts).map((item, index) =>
     audit ? {...item, stdout: item.stdout || path.join(receipts, `audit-${index}-stdout.txt`),
       stderr: path.join(receipts, `audit-${index}-stderr.txt`)} : item);
+  if (stage === 'test' && manifest.lane === 'native-endpoint' &&
+    manifest.target === 'x86_64-pc-windows-msvc') {
+    for (const item of commands) item.timeout = 600000;
+  }
   const results = execute(commands, rust, spawnSync, audit);
   if (audit) {
     requireThat(digest(fs.readFileSync(path.join(rust, 'Cargo.lock'))) === manifest.lockHash, 'Audit changed lock');

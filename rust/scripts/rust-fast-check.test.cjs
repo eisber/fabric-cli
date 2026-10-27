@@ -447,6 +447,12 @@ test('command spy proves nonzero exits, spawn errors and signals stop subsequent
     assert.notEqual(results[0].exit, 0);
   }
   assert.equal(execute(commands, '.', () => ({status: 0})).length, 2);
+  let actualTimeout;
+  execute([{program: 'cargo', args: ['test'], timeout: 600000}], '.', (program, args, opts) => {
+    actualTimeout = opts.timeout;
+    return {status: 0};
+  });
+  assert.equal(actualTimeout, 600000);
 });
 
 test('full dispatch requires real fast success at the combined immutable head', () => {
@@ -468,7 +474,7 @@ test('workflow limits runner context to steps and retains pinned bounded push ga
   assert.ok(workflow.includes("'refs/heads/validation/rust-fast-windows-'"));
   assert.ok(workflow.includes('["windows-2025"]'));
   assert.ok(workflow.includes('["ubuntu-24.04","windows-2025"]'));
-  assert.ok(workflow.includes('timeout-minutes: 15'));
+  assert.ok(workflow.includes("matrix.os == 'windows-2025' && 25 || 15"));
   assert.ok(workflow.includes('ref: ${{ github.sha }}'));
   assert.ok(workflow.includes('persist-credentials: false'));
   assert.ok(workflow.includes('"$GITHUB_ENV"'));

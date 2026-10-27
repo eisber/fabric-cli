@@ -214,6 +214,12 @@ default/native CLI/SDK regressions, doctests and existing source comparisons.
 This tests endpoint routing with synthetic caller-injected HTTP, not live MSIT
 credentials, access or workspace creation. Existing lanes still select only
 their documented single runner. Windows probe names retain their `.exe` suffix.
+The Windows endpoint lane has an explicitly bounded timeout rescue: its test
+commands allow 600 seconds each and its hosted job allows 25 minutes. Linux
+and other lanes retain their existing bounds. This retains every command and
+assertion; a timed-out command remains failed/unverified, not a passed test.
+Targeted Windows endpoint evidence is separate from the complete Windows
+regression gate and never silently certifies shared-branch acceptance.
 
 Ordinary preflight runs execute workspace formatting, selected all-target offline checks and
 Clippy, single-thread tests and doctests, then actual family examples and pinned

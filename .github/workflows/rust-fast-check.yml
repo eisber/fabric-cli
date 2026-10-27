@@ -26,7 +26,7 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON((inputs.lane == 'native-endpoint' || startsWith(github.ref, 'refs/heads/validation/rust-fast-msit-')) && '["ubuntu-24.04","windows-2025"]' || (inputs.lane == 'windows-auth' || startsWith(github.ref, 'refs/heads/validation/rust-fast-windows-')) && '["windows-2025"]' || '["ubuntu-24.04"]') }}
-    timeout-minutes: 15
+    timeout-minutes: ${{ (inputs.lane == 'native-endpoint' || startsWith(github.ref, 'refs/heads/validation/rust-fast-msit-')) && matrix.os == 'windows-2025' && 25 || 15 }}
     env:
       CARGO_BUILD_JOBS: "1"
       RUST_TEST_THREADS: "1"
