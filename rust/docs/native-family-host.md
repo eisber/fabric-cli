@@ -46,6 +46,9 @@ transfer behavior stays in its family library, including paging, reconciliation,
 partial writes and accepted-operation uncertainty.
 
 Family output retains original resource versus storage result/error types.
+Optional mutable confirmation and resource-file capabilities are reborrowed for
+each command; their caller-owned lifetimes do not extend command-local clients,
+settings or metadata snapshots.
 Transfer results retain completed files, actual create IDs and deferred import
 cache effects. Delivery failure is not completion and never replays an operation.
 An embedded host applies deferred import cache effects only after delivery.

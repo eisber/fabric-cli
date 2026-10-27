@@ -169,8 +169,8 @@ impl FamilySession<'_, '_> {
                     }
                     _ => None,
                 };
-                if let Some(path) = path {
-                    if let Err(error) = context
+                if let Some(path) = path
+                    && let Err(error) = context
                         .resolve(
                             self.reads,
                             self.http,
@@ -183,9 +183,8 @@ impl FamilySession<'_, '_> {
                             cancelled.as_mut(),
                         )
                         .await
-                    {
-                        return self.command_failure(error, invocation, format);
-                    }
+                {
+                    return self.command_failure(error, invocation, format);
                 }
                 let mut host = NavigationHost {
                     state: self.navigation,
@@ -215,8 +214,8 @@ impl FamilySession<'_, '_> {
                     | AccessKind::LabelChange { path, .. } => Some(path),
                     _ => None,
                 };
-                if let Some(path) = path {
-                    if let Err(error) = context
+                if let Some(path) = path
+                    && let Err(error) = context
                         .resolve(
                             self.reads,
                             self.http,
@@ -229,9 +228,8 @@ impl FamilySession<'_, '_> {
                             cancelled.as_mut(),
                         )
                         .await
-                    {
-                        return self.command_failure(error, invocation, format);
-                    }
+                {
+                    return self.command_failure(error, invocation, format);
                 }
                 let api = |audience| {
                     let selection = fabric_sdk::CredentialSelection::new(
@@ -337,8 +335,8 @@ impl FamilySession<'_, '_> {
                     | ResourceCommand::Unassign { workspace, .. } => Some(workspace),
                     _ => None,
                 };
-                if let Some(path) = other {
-                    if let Err(error) = context
+                if let Some(path) = other
+                    && let Err(error) = context
                         .resolve(
                             self.reads,
                             self.http,
@@ -354,9 +352,8 @@ impl FamilySession<'_, '_> {
                             cancelled.as_mut(),
                         )
                         .await
-                    {
-                        return self.command_failure(error, invocation, format);
-                    }
+                {
+                    return self.command_failure(error, invocation, format);
                 }
                 let resolver =
                     PathResolver::new(&context, current.clone(), self.reads.home.clone(), "ls")
@@ -422,13 +419,13 @@ impl FamilySession<'_, '_> {
                     Ok(result) => (result.outputs.clone(), result.show_headers),
                     Err(error) => {
                         let mut outputs = Vec::new();
-                        if let Some(creation) = &error.creation {
-                            if !creation.batch_items.is_empty() {
-                                outputs.push(OutputInput {
-                                    data: Some(Value::Array(creation.batch_items.clone())),
-                                    ..Default::default()
-                                });
-                            }
+                        if let Some(creation) = &error.creation
+                            && !creation.batch_items.is_empty()
+                        {
+                            outputs.push(OutputInput {
+                                data: Some(Value::Array(creation.batch_items.clone())),
+                                ..Default::default()
+                            });
                         }
                         outputs.push(error.output());
                         (outputs, false)

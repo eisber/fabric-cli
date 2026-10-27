@@ -207,7 +207,8 @@ async fn root_acl_read_and_mutation_leaves_preserve_requests_and_streams() {
         );
         host.reply(200, rows.clone());
         let output = host.execute(&["acl", leaf, "Demo.Workspace"]).await;
-        assert!(success(&output).contains("Alice"));
+        let stdout = success(&output);
+        assert!(stdout.contains("Alice"), "{leaf}: {stdout}");
         assert_eq!(host.requests().len(), 2);
         assert!(
             host.requests()[1]["url"]
@@ -478,7 +479,8 @@ async fn root_exists_and_mkdir_use_resolved_ids_and_real_post() {
         requests.last().unwrap()["url"]
             .as_str()
             .unwrap()
-            .ends_with("/workspaces/w/items")
+            .ends_with("/workspaces/w/items"),
+        "{requests:?}"
     );
     assert_eq!(requests.last().unwrap()["body"]["type"], "Notebook");
 }

@@ -284,8 +284,10 @@ impl Harness {
         .unwrap();
         assert!(
             self.http.replies.lock().unwrap().is_empty(),
-            "unused responses for {args:?}: {:?}",
-            self.http.requests.lock().unwrap()
+            "unused responses for {args:?}: {:?}; output: {:?}; evidence: {:?}",
+            self.http.requests.lock().unwrap(),
+            output.plan,
+            output.evidence
         );
         output
     }
