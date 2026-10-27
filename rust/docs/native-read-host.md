@@ -54,12 +54,33 @@ Ordinary SDK/path/query failures retain the existing command envelopes: JSON on
 stdout, Unauthorized exit 4 and other command failures exit 1.
 Writer and rendering failures never become successful results.
 
-The fixed REST origin is `https://api.fabric.microsoft.com`; TLS uses platform
-trust with no added roots. The host selects direct connections, **not** proxy
+The default REST origin remains `https://api.fabric.microsoft.com`.
+The optional `FAB_API_ENDPOINT_FABRIC` selector supplies a hostname, not a URL,
+using the shared [endpoint policy](endpoint-context.md). For example,
+`msitapi.fabric.microsoft.com` and `dailyapi.fabric.microsoft.com` select those
+exact HTTPS hosts while retaining the Fabric token scope
+`https://api.fabric.microsoft.com/.default`. Only the binary reads the selector;
+SDK libraries continue to accept explicit immutable configuration.
+An empty, non-Unicode or invalid hostname fails with sanitized
+`invalid_configuration` before identity selectors, credentials or network access.
+No arbitrary origin, public-host fallback or token-audience inference is added.
+Help/version and argument errors still precede endpoint configuration.
+
+The same binding configures SDK workspace/item reads, folder discovery,
+long-LS capacity enrichment, the shared HTTP executor and source-synchronous
+workspace GET initial/poll/result requests. Active continuation/result links
+cannot switch back to public or another Microsoft host. Non-public native
+endpoints currently support only `ls`/`dir`/`get`; other remote families fail
+explicitly with `NotSupported` before credentials instead of routing silently
+to their not-yet-migrated public defaults. Unset/public configuration preserves
+existing family behavior. This is not a migration of every SDK family or any
+new live-operation permission.
+
+TLS uses platform trust with no added roots. The host selects direct connections, **not** proxy
 environment discovery or a fallback backend. Redirect, retry, paging, byte/row
 limits and continuation-origin policy belong to the existing transport/shared
-executor/SDK. No duplicate policy is introduced. MSIT portal URLs do not establish
-a different REST hostname.
+executor/SDK. No duplicate policy is introduced. A portal URL is not an endpoint
+selector; the caller must explicitly supply the eligible REST hostname.
 
 ## Complete bounded composition
 

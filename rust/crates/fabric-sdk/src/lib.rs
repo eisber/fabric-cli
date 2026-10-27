@@ -39,8 +39,8 @@ impl Client {
 
     /// Uses explicit request configuration for context-enabled service methods.
     ///
-    /// Workspace and item reads share this binding. Other facade families retain
-    /// their documented public defaults until their separate migration.
+    /// Workspace, item, folder and capacity reads share this binding. Other
+    /// facade families retain public defaults until their separate migration.
     pub fn with_context(context: RequestContext) -> Self {
         Self { context }
     }

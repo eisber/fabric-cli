@@ -68,9 +68,8 @@ impl ReadHost<'_> {
                 .map_err(|_| {
                     errors::error("InvalidInput", "Invalid workspace request identifier")
                 })?;
-            let mut session = OperationSession::new(
-                self.sdk.credential().as_ref(),
-                self.sdk.selection(),
+            let mut session = OperationSession::with_context(
+                self.sdk.context(),
                 BorrowedOperations(operations),
                 OperationLimits::default(),
                 cancelled.as_mut(),

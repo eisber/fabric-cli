@@ -128,10 +128,28 @@ chain must remain on that selected host.
 | Shared operation session | Explicit-context initial, poll and result routing; unchanged existing poller | Additional family callers must choose `with_context` |
 | Resource operation path/query encoding | Relative route encoding has no service hostname dependency | No change to source query semantics |
 | Shared token pager | Caller-supplied collection remains the origin/route authority | Context-enabled callers supply a binding-built URL; no new pager |
-| Capacity and folder focused clients/facade | Existing public-only construction remains | Migrate request context and continuations in a separate bounded slice |
+| Capacity and folder focused clients/facade | Additive `with_context` shares the selected binding, fixed Fabric scope, authentication and continuation policy | No ARM capacity or mutation migration |
 | Notebook facade/deployment | Existing public-default composition remains | Adopt explicit operation context without changing Notebook policy |
 | OneLake focused SDK/HTTP, jobs, transfer, access and storage family adapters | Not migrated here | Coordinate released family changes and explicit binding adoption with their owners |
-| Native CLI environment configuration | Not implemented here | Central CLI owner maps all four hostname variables and injects contexts/executors |
+| Native CLI environment configuration | Binary maps `FAB_API_ENDPOINT_FABRIC` before credentials; SDK, HTTP and source workspace GET share the binding | Other three hostname selectors and non-read family migrations remain separate |
+
+The native-host follow-up starts at exact
+`03fab20577a1016178de227eac0ee178921bb8d0` and composes only the released
+endpoint/native-JSON delta through `0e09c580`. Folder reads and Fabric capacity
+listing additionally use `RequestContext` so discovery and long-LS enrichment
+cannot escape to a public-only client. Existing constructors keep public
+defaults; new clients use the same shared authenticated execution primitive,
+not another HTTP or paging engine. The source-synchronous workspace GET
+adapter now passes the SDK's context to `OperationSession::with_context`.
+
+`native_endpoint_configuration` adds subprocess contracts for invalid host
+validation before missing identity, accepted public/daily/MSIT selectors without
+credential discovery, parser/help precedence and explicit unsupported non-read
+families. `native_endpoint_reads` exercises the real `ReadSession` with injected
+HTTP/credentials for discovery, workspace/item/folder/capacity pages, specialized
+GET, operation poll/result and enrichment, fixed scopes and foreign-link
+rejection. These new source contracts require hosted execution at the exact
+composed head; the earlier SDK-only run is not proof of the native-host union.
 
 The additive external `fabric-sdk-http/tests/endpoint_context.rs` consumer
 exercises default/public, daily and MSIT workspace LIST/metadata GET, item LIST/GET,

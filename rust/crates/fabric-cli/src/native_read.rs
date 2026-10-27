@@ -7,6 +7,7 @@ use fabric_cli::{
     HostError,
     parser::{Invocation, JobMutationCommand, JobReadCommand, JobRunCommand, ReadCommand},
 };
+use fabric_sdk::{EndpointBinding, ServiceOrigin};
 use serde_json::json;
 use std::{
     io::{self, Write},
@@ -62,6 +63,22 @@ fn required(name: &str) -> Result<String, Failure> {
     }
 }
 
+fn selected_endpoint(value: Option<std::ffi::OsString>) -> Result<EndpointBinding, Failure> {
+    match value {
+        None => Ok(EndpointBinding::public(ServiceOrigin::Fabric)),
+        Some(value) => value
+            .to_str()
+            .and_then(|host| EndpointBinding::with_host(ServiceOrigin::Fabric, host).ok())
+            .ok_or_else(|| {
+                failure(
+                    "invalid_configuration",
+                    "Invalid Fabric endpoint hostname.",
+                    2,
+                )
+            }),
+    }
+}
+
 pub(crate) fn run(command: &ReadCommand) -> io::Result<ExitCode> {
     run_command(NativeCommand::Read(command))
 }
@@ -85,10 +102,20 @@ pub(crate) fn run_family(command: &Invocation) -> io::Result<ExitCode> {
 fn run_command(command: NativeCommand<'_>) -> io::Result<ExitCode> {
     let result = (|| {
         // Public selectors only, never token/secret environment inputs.
+        let endpoint = selected_endpoint(std::env::var_os("FAB_API_ENDPOINT_FABRIC"))?;
+        if endpoint != EndpointBinding::public(ServiceOrigin::Fabric)
+            && !matches!(command, NativeCommand::Read(_))
+        {
+            return Err(failure(
+                "NotSupported",
+                "Non-public Fabric endpoints currently support only ls and get.",
+                1,
+            ));
+        }
         let tenant = required("FAB_RUST_TENANT")?;
         let account = required("FAB_RUST_ACCOUNT")?;
         let client = required("FAB_RUST_CLIENT_ID")?;
-        run_selected(command, &tenant, &account, &client)
+        run_selected(command, &tenant, &account, &client, endpoint)
     })();
     match result {
         Ok(plan) => {
@@ -105,6 +132,7 @@ fn run_selected(
     _: &str,
     _: &str,
     _: &str,
+    _: EndpointBinding,
 ) -> Result<fabric_cli_output::text::TextPlan, Failure> {
     Err(failure(
         "unsupported",
@@ -113,12 +141,57 @@ fn run_selected(
     ))
 }
 
+#[cfg(test)]
+mod endpoint_tests {
+    use super::*;
+
+    #[test]
+    fn default_public_daily_and_msit_keep_one_fabric_scope() {
+        assert_eq!(
+            selected_endpoint(None).unwrap(),
+            EndpointBinding::public(ServiceOrigin::Fabric)
+        );
+        for host in [
+            "api.fabric.microsoft.com",
+            "dailyapi.fabric.microsoft.com",
+            "msitapi.fabric.microsoft.com",
+        ] {
+            let endpoint = selected_endpoint(Some(host.into())).unwrap();
+            assert_eq!(endpoint.host(), host);
+            assert_eq!(endpoint.origin(), ServiceOrigin::Fabric);
+            assert_eq!(
+                endpoint.audience().scope(),
+                "https://api.fabric.microsoft.com/.default"
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_endpoint_inputs_fail_without_echoing_the_host() {
+        for host in [
+            "",
+            "https://msitapi.fabric.microsoft.com",
+            "api.fabric.microsoft.com:443",
+            "api.fabric.microsoft.com/path",
+            "api.fabric.microsoft.com.example.test",
+            "unknown.example.test",
+            "user@api.fabric.microsoft.com",
+        ] {
+            let (code, message, exit) = selected_endpoint(Some(host.into())).unwrap_err();
+            assert_eq!(code, "invalid_configuration");
+            assert_eq!(message, "Invalid Fabric endpoint hostname.");
+            assert_eq!(exit, 2);
+        }
+    }
+}
+
 #[cfg(windows)]
 fn run_selected(
     command: NativeCommand<'_>,
     tenant: &str,
     account: &str,
     client: &str,
+    endpoint: EndpointBinding,
 ) -> Result<fabric_cli_output::text::TextPlan, Failure> {
     let options = fabric_identity::LoginOptions::new(tenant, client, account)
         .map_err(|e| failure("invalid_configuration", e.to_string(), 2))?;
@@ -174,7 +247,7 @@ fn run_selected(
             _ = tokio::time::sleep(std::time::Duration::from_secs(240)) => {
                 Err(failure("timed_out", "The read command deadline elapsed.", 1))
             },
-            result = execute(command, options, &current, home, restored) => result,
+            result = execute(command, options, &current, home, restored, endpoint) => result,
         }
     })
 }
@@ -203,10 +276,11 @@ async fn execute(
     current: &str,
     home: fabric_cli_context::HomeContext,
     restored: bool,
+    endpoint: EndpointBinding,
 ) -> Result<fabric_cli_output::text::TextPlan, Failure> {
     use fabric_cli::session::ReadSession;
     use fabric_cli_context::Element;
-    use fabric_sdk::{Audience, Client, CredentialSelection};
+    use fabric_sdk::{Audience, Client, CredentialSelection, RequestContext};
     use fabric_sdk_http::{ExecutionOptions, HttpExecutor};
     use fabric_sdk_transport::{
         NativeHttpClient, ProxyPolicy, TokioTimer, TransportOptions, TrustPolicy,
@@ -222,7 +296,11 @@ async fn execute(
             let (code, message) = crate::auth::broker_error(error);
             failure(code, message, 1)
         })?;
-    let sdk = Client::new(credential, selection);
+    let sdk = Client::with_context(RequestContext::with_endpoint(
+        credential,
+        selection,
+        endpoint.clone(),
+    ));
     let client = NativeHttpClient::new(TransportOptions {
         connect_timeout: Duration::from_secs(10),
         read_timeout: Duration::from_secs(30),
@@ -246,7 +324,8 @@ async fn execute(
         Arc::new(TokioTimer),
         ExecutionOptions::default(),
     )
-    .map_err(|_| failure("transport_failed", "The HTTP executor could not start.", 1))?;
+    .map_err(|_| failure("transport_failed", "The HTTP executor could not start.", 1))?
+    .with_endpoint(endpoint);
     let now = azure_core::time::OffsetDateTime::now_utc();
     let timestamp = fabric_cli_output::Timestamp::parse(format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:06}Z",

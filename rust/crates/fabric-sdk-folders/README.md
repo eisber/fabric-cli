@@ -17,6 +17,13 @@ Consumers inject `Arc<dyn azure_core::credentials::TokenCredential>` and
 provider to the selected account/tenant; selection does not verify token claims.
 Every page requests `https://api.fabric.microsoft.com/.default`.
 
+`FolderClient::new` retains the public Fabric default. The additive
+`FolderClient::with_context(RequestContext)` and facade methods reuse the same
+explicit binding as workspace/item reads. Initial requests and active
+continuations stay on that exact host; daily/MSIT routing never changes the
+Fabric scope. Supply the same binding to the shared HTTP executor. Validation
+precedes credentials, and no library reads endpoint environment variables.
+
 ```rust,no_run
 use fabric_sdk_folders::{FolderClient, FolderExecutor, FolderListOptions,
     FolderGetOptions, FolderQueryValue};

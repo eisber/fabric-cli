@@ -24,6 +24,13 @@ Construction acquires no token. Each page requests the existing Fabric
 `https://api.fabric.microsoft.com/.default` scope from that same provider.
 Selection does not configure the credential or verify its claims.
 
+`CapacityClient::new` retains the public Fabric default. The additive
+`CapacityClient::with_context(RequestContext)` and facade method share an explicit
+endpoint binding with workspace/item/folder reads and the HTTP executor. Initial
+and continuation requests stay on the selected host, including daily/MSIT,
+without changing the Fabric scope. Validation precedes credentials. This adds
+no environment discovery, ARM operations or new HTTP/paging policy.
+
 ```rust,no_run
 use fabric_sdk_capacities::{
     CapacityClient, CapacityExecutor, CapacityListError, CapacityListLimits,
@@ -93,9 +100,9 @@ These are existing SDK safety requirements, **not new parity waivers**:
   bytes per response. Exact terminal bounds succeed; another page or row/byte
   over the bound fails explicitly. Executors must bound response streaming,
   not just check after allocation.
-- Active continuation URIs must be HTTPS on the existing public Fabric
+- Active continuation URIs must be HTTPS on the explicitly selected Fabric
   origin/443, no user information or fragment, exact `/v1/capacities` path.
-  They are validated but never followed; the fixed endpoint and opaque token
+  They are validated but never followed; the selected endpoint and opaque token
   construct the next request. Terminal unused URIs are ignored. Repeated
   tokens fail instead of recursing forever.
 - Selected body tokens must be strings or null/absent. A present header

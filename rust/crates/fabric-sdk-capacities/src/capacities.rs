@@ -5,7 +5,10 @@
 
 use crate::{Capacity, CapacityClient, FabricServiceError, Page};
 use azure_core::{credentials::AccessToken, http::Url};
-use fabric_core::Audience;
+use fabric_core::{
+    Audience, AuthenticatedExecution, AuthenticatedFuture, EndpointBinding, RequestError,
+    ServiceOrigin,
+};
 pub use fabric_sdk_workspaces::{
     WorkspaceExecutionError as CapacityExecutionError, WorkspaceResponse as CapacityResponse,
 };
@@ -19,8 +22,6 @@ use std::{
     task::Poll,
 };
 
-const CAPACITIES_URL: &str = "https://api.fabric.microsoft.com/v1/capacities";
-
 /// A validated GET, with no arbitrary endpoint, headers, or auth scope.
 pub struct CapacityRequest<'a> {
     url: Url,
@@ -33,7 +34,7 @@ impl CapacityRequest<'_> {
     pub const fn method(&self) -> &'static str {
         "GET"
     }
-    /// Returns the fixed endpoint and encoded token; do not log the query.
+    /// Returns the selected endpoint and encoded token; do not log the query.
     pub fn url(&self) -> &Url {
         &self.url
     }
@@ -55,7 +56,7 @@ impl fmt::Debug for CapacityRequest<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CapacityRequest")
             .field("method", &"GET")
-            .field("endpoint", &CAPACITIES_URL)
+            .field("host", &self.url.host_str())
             .field("token", &"<injected>")
             .field("max_response_bytes", &self.max_response_bytes)
             .finish()
@@ -129,7 +130,7 @@ pub enum CapacityListErrorKind {
     UnsupportedStatus(u16),
     /// A page, row, or selected token was malformed.
     InvalidResponse,
-    /// An active continuation URI did not match the fixed endpoint.
+    /// An active continuation URI did not match the selected endpoint.
     InvalidContinuation,
     /// A token repeated, indicating a cycle.
     RepeatedContinuation,
@@ -228,7 +229,10 @@ impl CapacityClient {
         }
         let mut seen = HashSet::new();
         loop {
-            let mut url = Url::parse(CAPACITIES_URL)
+            let mut url = self
+                .context()
+                .endpoint()
+                .url("/v1/capacities")
                 .map_err(|_| CapacityListErrorKind::InvalidContinuation)?;
             if let Some(token) = &progress.next_token {
                 url.query_pairs_mut()
@@ -237,27 +241,28 @@ impl CapacityClient {
                 let query = url.query().unwrap().replace("%7E", "~").replace('*', "%2A");
                 url.set_query(Some(&query));
             }
-            let token = or_cancel(
-                self.credential()
-                    .get_token(&[Audience::Fabric.scope()], None),
-                cancelled.as_mut(),
-            )
-            .await?
-            .map_err(|_| CapacityListErrorKind::Credential)?;
-            let response = or_cancel(
-                executor.execute(CapacityRequest {
-                    url,
-                    token: &token,
-                    max_response_bytes: limits.max_response_bytes,
-                }),
-                cancelled.as_mut(),
-            )
-            .await?
-            .map_err(|error| match error {
-                CapacityExecutionError::ResponseLimit => CapacityListErrorKind::ResponseLimit,
-                error => CapacityListErrorKind::Execution(error),
-            })?;
-            or_cancel(std::future::ready(()), cancelled.as_mut()).await?;
+            let response = self
+                .context()
+                .execute(
+                    ServiceOrigin::Fabric,
+                    &url,
+                    &mut CapacityRead {
+                        executor,
+                        limit: limits.max_response_bytes,
+                    },
+                    cancelled.as_mut(),
+                )
+                .await
+                .map_err(|error| match error {
+                    RequestError::InvalidAudience => CapacityListErrorKind::InvalidAudience,
+                    RequestError::InvalidEndpoint => CapacityListErrorKind::InvalidContinuation,
+                    RequestError::Credential => CapacityListErrorKind::Credential,
+                    RequestError::Cancelled => CapacityListErrorKind::Cancelled,
+                    RequestError::Execution(CapacityExecutionError::ResponseLimit) => {
+                        CapacityListErrorKind::ResponseLimit
+                    }
+                    RequestError::Execution(error) => CapacityListErrorKind::Execution(error),
+                })?;
             if response.body.len() > limits.max_response_bytes.get() {
                 return Err(CapacityListErrorKind::ResponseLimit);
             }
@@ -294,7 +299,7 @@ impl CapacityClient {
                 return Ok(());
             };
             match uri {
-                Some(Value::String(uri)) => validate_continuation(&uri)?,
+                Some(Value::String(uri)) => validate_continuation(&uri, self.context().endpoint())?,
                 None | Some(Value::Null) => {}
                 _ => return Err(CapacityListErrorKind::InvalidContinuation),
             }
@@ -305,6 +310,28 @@ impl CapacityClient {
                 return Err(CapacityListErrorKind::PageLimit);
             }
         }
+    }
+}
+
+struct CapacityRead<'a> {
+    executor: &'a dyn CapacityExecutor,
+    limit: NonZeroUsize,
+}
+
+impl AuthenticatedExecution for CapacityRead<'_> {
+    type Response = CapacityResponse;
+    type Error = CapacityExecutionError;
+
+    fn execute<'a>(
+        &'a mut self,
+        url: &'a Url,
+        token: &'a AccessToken,
+    ) -> AuthenticatedFuture<'a, Self::Response, Self::Error> {
+        self.executor.execute(CapacityRequest {
+            url: url.clone(),
+            token,
+            max_response_bytes: self.limit,
+        })
     }
 }
 
@@ -360,16 +387,12 @@ fn service_failure(response: &CapacityResponse) -> CapacityListErrorKind {
     }
 }
 
-fn validate_continuation(uri: &str) -> Result<(), CapacityListErrorKind> {
+fn validate_continuation(
+    uri: &str,
+    endpoint: &EndpointBinding,
+) -> Result<(), CapacityListErrorKind> {
     let url = Url::parse(uri).map_err(|_| CapacityListErrorKind::InvalidContinuation)?;
-    if url.scheme() != "https"
-        || url.host_str() != Some("api.fabric.microsoft.com")
-        || url.port_or_known_default() != Some(443)
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.fragment().is_some()
-        || url.path() != "/v1/capacities"
-    {
+    if endpoint.validate_url(&url).is_err() || url.path() != "/v1/capacities" {
         return Err(CapacityListErrorKind::InvalidContinuation);
     }
     Ok(())
