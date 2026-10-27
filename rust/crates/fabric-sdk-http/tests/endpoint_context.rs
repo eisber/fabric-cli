@@ -137,7 +137,7 @@ async fn public_daily_and_msit_context_bind_workspace_item_paging_and_lro_wire_r
             response(
                 200,
                 &format!(
-                    r#"{{"value":[{{"id":"ws","displayName":"Workspace"}}],"continuationToken":"next+/=","continuationUri":"{root}/v1/workspaces?continuationToken=next"}}"#
+                    r#"{{"value":[{{"id":"ws","displayName":"Workspace","type":"Workspace"}}],"continuationToken":"next+/=","continuationUri":"{root}/v1/workspaces?continuationToken=next"}}"#
                 ),
                 &[],
             ),
@@ -177,6 +177,10 @@ async fn public_daily_and_msit_context_bind_workspace_item_paging_and_lro_wire_r
             .await
             .unwrap();
         assert_eq!(list.pages_received, 2);
+        assert_eq!(list.value.len(), 1);
+        assert_eq!(list.value[0].id, "ws");
+        assert_eq!(list.value[0].display_name, "Workspace");
+        assert_eq!(list.value[0].workspace_type, "Workspace");
         let metadata = facade
             .get_workspace_metadata(&http, "ws", WorkspaceListLimits::default(), pending())
             .await
