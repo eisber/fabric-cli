@@ -393,3 +393,21 @@ forbidden `unpublish.folder_exclude_regex`, `folder_path_to_include` and
 `shortcut_exclude_regex`. They must fail even with `unpublish.skip: true`;
 unpublication being disabled is not permission to silently ignore invalid
 source configuration. The native validator retains the exact source errors.
+
+### First hosted compiler receipt and narrow helper correction
+
+Hosted Linux run `40542574209`, job `122324567961`, used source
+`770197da9f3d3f7e93a6bb5c8589846ca8744367` and separate CI head
+`a168d31bda05465e773a28645c08db095757397e`. Default and explicit-native
+all-target compilation and default strict Clippy passed. Native strict Clippy
+failed because the new `deploy_mount` consumer imported the shared harness's
+unused read-metadata convenience methods. Tests, docs and source-comparison CI
+steps were not executed after that failure. This receipt does not validate later
+source heads or establish a native deploy happy path.
+
+The correction moves those three unchanged convenience methods into a metadata
+extension included only by the family/table consumers that use them. The
+deploy-only UI convenience method likewise lives only in its deploy consumer.
+The common harness still supplies the same injected capabilities and request
+assertions. No lint allowance, test expectation, production behavior, dependency
+or protected oracle changes to address this failure.

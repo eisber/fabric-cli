@@ -15,6 +15,17 @@ const WORKSPACE: &str = "11111111-1111-1111-1111-111111111111";
 const ITEM: &str = "22222222-2222-2222-2222-222222222222";
 const OPERATION: &str = "33333333-3333-3333-3333-333333333333";
 
+impl Harness {
+    async fn execute_with_ui(
+        &mut self,
+        args: &[&str],
+        ui: &dyn fabric_cli_transfer::TransferUi,
+    ) -> fabric_cli::families::FamilyOutput {
+        self.execute_with_capabilities(args, std::future::pending(), ui)
+            .await
+    }
+}
+
 fn input(host: &Harness) -> Value {
     let source: Value = serde_json::from_str(include_str!(
         "../../fabric-deploy/tests/publish_source.json"

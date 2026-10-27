@@ -230,22 +230,6 @@ impl Harness {
         ));
     }
 
-    pub fn metadata(&self, items: Value) {
-        self.metadata_with_id("w", items);
-    }
-
-    pub fn metadata_with_id(&self, workspace_id: &str, items: Value) {
-        self.reply(
-            200,
-            json!({"value":[{"id":workspace_id,"displayName":"Demo","type":"Workspace"}]}),
-        );
-        self.reply(200, json!({"value":items}));
-    }
-
-    pub fn item(&self, kind: &str) {
-        self.metadata(json!([{"id":"n","displayName":"Book","type":kind}]));
-    }
-
     pub async fn execute(&mut self, args: &[&str]) -> FamilyOutput {
         self.execute_with_cancelled(args, pending()).await
     }
@@ -259,11 +243,7 @@ impl Harness {
             .await
     }
 
-    pub async fn execute_with_ui(&mut self, args: &[&str], ui: &dyn TransferUi) -> FamilyOutput {
-        self.execute_with_capabilities(args, pending(), ui).await
-    }
-
-    async fn execute_with_capabilities(
+    pub(super) async fn execute_with_capabilities(
         &mut self,
         args: &[&str],
         cancelled: impl Future<Output = ()> + Send,
