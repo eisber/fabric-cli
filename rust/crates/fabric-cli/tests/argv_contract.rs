@@ -160,13 +160,11 @@ fn help_tokens_in_values_and_after_delimiter_are_not_rewritten() {
         };
         assert_eq!(read.query.as_deref(), Some("-help"));
     }
-    let Invocation::Read(read) = parse_args(["fab-rs", "ls", "--", "-help"]).unwrap()
-    else {
+    let Invocation::Read(read) = parse_args(["fab-rs", "ls", "--", "-help"]).unwrap() else {
         panic!("a positional value must not select help");
     };
     assert_eq!(read.path, ["-help"]);
-    let Invocation::Read(read) =
-        parse_args(["fab-rs", "get", ".", "--output=-help"]).unwrap()
+    let Invocation::Read(read) = parse_args(["fab-rs", "get", ".", "--output=-help"]).unwrap()
     else {
         panic!("an output value must not select help");
     };
