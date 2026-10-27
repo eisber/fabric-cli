@@ -287,6 +287,18 @@ fn operation(
         errors.push(format!("'{name}' section must be a dictionary"));
         return Map::new();
     }
+    if name == "unpublish" {
+        for field in ["folder_exclude_regex", "folder_path_to_include"] {
+            if section.get(field).is_some() {
+                errors.push(format!(
+                    "'{field}' field is not supported in 'unpublish' section"
+                ));
+            }
+        }
+        if section.get("shortcut_exclude_regex").is_some() {
+            errors.push("'unpublish.shortcut_exclude_regex' is not supported - shortcut exclusion is only available in the 'publish' section".into());
+        }
+    }
     let mut result = Map::new();
     for key in section_fields(name).expect("operation section") {
         if let Some(value) = section.get(key) {

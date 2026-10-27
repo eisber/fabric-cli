@@ -133,3 +133,22 @@ fn config_does_not_invent_parameter_file_autodiscovery() {
     let selected = DeploymentConfig::from_document(&config(), "N/A", None).unwrap();
     assert!(!selected.workspace.contains_key("parameter_file_path"));
 }
+
+#[test]
+fn source_forbidden_unpublish_fields_are_not_ignored_even_when_skipped() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("operation_section_source.json")).unwrap();
+    assert_eq!(fixture["cases"].as_array().unwrap().len(), 3);
+    for case in fixture["cases"].as_array().unwrap() {
+        let mut document = config();
+        document["unpublish"] = case["input"].clone();
+        let error = DeploymentConfig::from_document(&document, "dev", None).unwrap_err();
+        let ConfigurationError::Invalid(errors) = error else {
+            panic!("Expected source operation validation error");
+        };
+        assert_eq!(
+            serde_json::to_value(errors).unwrap(),
+            case["expectedErrors"]
+        );
+    }
+}

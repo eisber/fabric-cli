@@ -387,3 +387,9 @@ parameter schemas remain explicit unported branches. No new dependency is added
 for this literal follow-up. Future syntax primitives require the integration
 owner's exact dependency/feature decision and semantic proof, not an assumption
 that a similarly named Rust library matches Python.
+
+An additional three-case actual operation-validator receipt protects source-
+forbidden `unpublish.folder_exclude_regex`, `folder_path_to_include` and
+`shortcut_exclude_regex`. They must fail even with `unpublish.skip: true`;
+unpublication being disabled is not permission to silently ignore invalid
+source configuration. The native validator retains the exact source errors.
