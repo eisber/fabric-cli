@@ -16,6 +16,7 @@ const LANES = Object.freeze({
   'sdk-values': ['fabric-core', 'fabric-sdk', 'fabric-sdk-http', 'fabric-core-json', 'fabric-cli-output'],
   'cli-auth': ['fabric-cli', 'fabric-identity'],
   'cli-95': ['fabric-cli', 'fabric-cli-tables', 'fabric-sdk-tables', 'fabric-identity'],
+  'windows-auth': ['fabric-cli', 'fabric-identity', 'fabric-identity-windows'],
 });
 const CI_FILES = [
   '.github/workflows/rust-fast-check.yml', '.github/rust-fast-candidate.json',
@@ -37,6 +38,19 @@ function lane(value) {
   requireThat(Object.hasOwn(LANES, value), `Unknown lane: ${value}`);
   return value;
 }
+function runnerLane(selectedLane, target, ref) {
+  const windows = selectedLane === 'windows-auth';
+  requireThat(target === (windows ? 'x86_64-pc-windows-msvc' : 'x86_64-unknown-linux-gnu'),
+    `Lane ${selectedLane} requires its native ${windows ? 'Windows x64' : 'Linux x64'} runner`);
+  if (ref) requireThat(ref.startsWith('refs/heads/validation/rust-fast-windows-') === windows,
+    'Windows auth lane and validation/rust-fast-windows-* ref must agree');
+}
+function laneBranch(selectedLane, branch) {
+  requireThat(/^validation\/rust-fast-[a-z0-9][a-z0-9-]*$/.test(branch),
+    'Only a new validation/rust-fast-* branch is permitted');
+  requireThat(branch.startsWith('validation/rust-fast-windows-') === (selectedLane === 'windows-auth'),
+    'Windows auth lane requires its dedicated validation/rust-fast-windows-* namespace');
+}
 function command(program, args, cwd = root) {
   return execFileSync(program, args, {cwd, encoding: 'utf8', timeout: 120000}).trim();
 }
@@ -51,7 +65,10 @@ function ciDelta(files) {
 function select(metadata, selectedLane) {
   lane(selectedLane);
   const defaults = new Set(metadata.workspace_default_members);
-  const packages = metadata.packages.filter(pkg => defaults.has(pkg.id) &&
+  const members = new Set(metadata.workspace_members);
+  const packages = metadata.packages.filter(pkg =>
+    (defaults.has(pkg.id) || (selectedLane === 'windows-auth' &&
+      pkg.name === 'fabric-identity-windows' && members.has(pkg.id))) &&
     (selectedLane !== 'sdk-values' || pkg.name === 'fabric-cli-output' ||
       ['core', 'sdk'].includes(pkg.metadata?.fabric?.layer)));
   requireThat(packages.length > 0, 'No default workspace members');
@@ -86,7 +103,7 @@ function prepare() {
   const rustc = command('rustc', ['--version', '--verbose'], rust);
   const toolchain = command('rustup', ['show', 'active-toolchain'], rust);
   const target = rustc.match(/^host: (.+)$/m)?.[1];
-  requireThat(target === 'x86_64-unknown-linux-gnu', 'Fast preflight requires the native Linux runner');
+  runnerLane(selectedLane, target, process.env.GITHUB_REF);
   const lockHash = digest(fs.readFileSync(path.join(rust, 'Cargo.lock')));
   const features = {default: true, packages, family: selectedLane,
     nativeRead: packages.includes('fabric-cli') && selectedLane !== 'cli-auth',
@@ -96,7 +113,9 @@ function prepare() {
     transport: selectedLane === 'sdk-values' && packages.includes('fabric-sdk-transport')
       ? ['hyper-rustls'] : []};
   const fingerprint = digest(JSON.stringify({rustc, target, features, lockHash}));
-  const coverage = selectedLane === 'cli-95'
+  const coverage = selectedLane === 'windows-auth'
+    ? 'Native Windows x64 broker/native-read compile, reviewed pure auth/identity/lifecycle/hidden-window contracts only; no real authentication, token/cache access, MFA/CA, service proof or full platform acceptance'
+    : selectedLane === 'cli-95'
     ? 'Linux default/native CLI, table/auth root consumers and old mounted regressions only; canonical acceptance, real broker, native Windows/macOS and live platform gates remain separate'
     : selectedLane === 'cli-auth'
     ? 'Linux default CLI and opt-in auth parser/synthetic command boundary only; real broker, native Windows adapter/STA tests, root mounts and live acceptance deferred'
@@ -117,6 +136,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
   const has = name => manifest.packages.includes(name);
   const sdkValues = manifest.lane === 'sdk-values';
   const cliAuth = manifest.lane === 'cli-auth';
+  const windowsAuth = manifest.lane === 'windows-auth';
   const nativeTransport = sdkValues && has('fabric-sdk-transport');
   const observation = (pkg, example, reference, extra = []) => {
     const file = path.join(output, `${example}-${pkg}.json`);
@@ -127,7 +147,8 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
   if (stage === 'fetch') {
     commands.push(cargo('fetch', '--locked', '--target', manifest.target));
     if (has('fabric-cli')) {
-      for (const metadataTarget of ['x86_64-pc-windows-msvc', 'aarch64-apple-darwin']) {
+      for (const metadataTarget of ['x86_64-unknown-linux-gnu', 'x86_64-pc-windows-msvc', 'aarch64-apple-darwin']
+        .filter(value => value !== manifest.target)) {
         commands.push(cargo('fetch', '--locked', '--target', metadataTarget));
       }
     }
@@ -139,6 +160,8 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       commands.push(cargo('check', '--offline', '--locked', '-p', 'fabric-cli',
         '--features', cliAuth ? 'windows-broker' : 'native-read', '--all-targets'));
     }
+    if (windowsAuth) commands.push(cargo('check', '--offline', '--locked', '-p', 'fabric-cli',
+      '--features', 'windows-broker', '--all-targets'));
     if (nativeTransport) commands.push(cargo('check', '--offline', '--locked',
       '-p', 'fabric-sdk-transport', '--no-default-features', '--lib'));
     return commands;
@@ -149,11 +172,32 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       '-p', 'fabric-cli', '--features', 'windows-broker', '--all-targets', '--', '-D', 'warnings'));
     if (manifest.lane === 'cli-95') commands.push(cargo('clippy', '--offline', '--locked',
       '-p', 'fabric-cli', '--features', 'native-read', '--all-targets', '--', '-D', 'warnings'));
+    if (windowsAuth) {
+      for (const feature of ['windows-broker', 'native-read']) commands.push(cargo('clippy',
+        '--offline', '--locked', '-p', 'fabric-cli', '--features', feature,
+        '--all-targets', '--', '-D', 'warnings'));
+    }
     if (nativeTransport) commands.push(cargo('clippy', '--offline', '--locked',
       '-p', 'fabric-sdk-transport', '--features', 'hyper-rustls', '--all-targets', '--', '-D', 'warnings'));
     return commands;
   }
   if (stage === 'test') {
+    if (windowsAuth) return [
+      cargo('test', '--offline', '--locked', '-p', 'fabric-identity-windows', '--lib',
+        '--', '--test-threads=1'),
+      cargo('test', '--offline', '--locked', '-p', 'fabric-identity',
+        '--features', 'windows-broker', '--lib', '--', '--test-threads=1'),
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'windows-broker',
+        '--bin', 'fab-rs', '--', '--test-threads=1'),
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'windows-broker',
+        '--test', 'auth_commands', '--test', 'auth_arguments', '--test', 'cli_contract',
+        '--test', 'workspace_contract', '--', '--test-threads=1'),
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
+        '--bin', 'fab-rs', '--test', 'auth_commands', '--test', 'auth_arguments',
+        '--test', 'cli_contract', '--test', 'workspace_contract', '--', '--test-threads=1'),
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--no-default-features',
+        '--test', 'cli_contract', '--test', 'workspace_contract', '--', '--test-threads=1'),
+    ];
     if (manifest.lane === 'cli-95') return [
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
         '--test', 'auth_commands', '--test', 'auth_arguments', '--test', 'cli_contract',
@@ -186,6 +230,14 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     return commands;
   }
   requireThat(stage === 'family', `Unknown stage: ${stage}`);
+  if (windowsAuth) {
+    for (const file of ['crates/fabric-cli/tests/auth_commands.rs',
+      'crates/fabric-identity-windows/src/native.rs']) {
+      requireThat(exists(file), `Reviewed native offline auth consumer is missing: ${file}`);
+    }
+    return [cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
+      '--features', 'windows-broker', '--doc', '--', '--test-threads=1')];
+  }
   if (cliAuth) {
     requireThat(exists('crates/fabric-cli/tests/auth_commands.rs'),
       'Released offline auth command consumer is missing');
@@ -327,8 +379,7 @@ function publish(args) {
   const opts = options(args, ['--source', '--automation', '--lane', '--branch', '--worktree', '--receipt']);
   const source = opts['--source'], automation = opts['--automation'], branch = opts['--branch'];
   requireThat(sha(source) && sha(automation), 'Source and automation must be full immutable SHAs');
-  lane(opts['--lane']);
-  requireThat(/^validation\/rust-fast-[a-z0-9][a-z0-9-]*$/.test(branch), 'Only a new validation/rust-fast-* branch is permitted');
+  laneBranch(lane(opts['--lane']), branch);
   for (const name of ['--worktree', '--receipt']) requireThat(path.isAbsolute(opts[name]), `${name} must be absolute`);
   requireThat(!fs.existsSync(opts['--worktree']) && !fs.existsSync(opts['--receipt']), 'Never overwrite a worktree or receipt');
   requireThat(git(['remote', 'get-url', '--push', 'eisber']) === 'https://github.com/eisber/fabric-cli.git',
@@ -411,7 +462,7 @@ function main(args) {
   if (action === 'full') return full(rest);
   throw new Error('Use prepare, run <fmt|fetch|check|clippy|test|family>, finish, publish or full; see docs/fast-check.md');
 }
-module.exports = {LANES, CI_FILES, sha, lane, ciDelta, select, plan, execute, options, requireFastPass};
+module.exports = {LANES, CI_FILES, sha, lane, runnerLane, laneBranch, ciDelta, select, plan, execute, options, requireFastPass};
 if (require.main === module) {
   try { main(process.argv.slice(2)); }
   catch (error) { console.error(`Rust fast check: ${error.message}`); process.exitCode = 1; }

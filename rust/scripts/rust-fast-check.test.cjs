@@ -6,17 +6,74 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {sha, lane, ciDelta, select, plan, execute, options, requireFastPass} = require('./rust-fast-check.cjs');
+const {sha, lane, runnerLane, laneBranch, ciDelta, select, plan, execute, options, requireFastPass} = require('./rust-fast-check.cjs');
 
 test('only full source IDs and finite lanes are accepted', () => {
   assert.equal(sha('a'.repeat(40)), true);
   for (const value of ['abc123', '0'.repeat(40), '--upload-pack=x', 'a'.repeat(40) + ';echo']) {
     assert.equal(sha(value), false);
   }
-  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values', 'cli-auth', 'cli-95']) assert.equal(lane(value), value);
+  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values', 'cli-auth', 'cli-95', 'windows-auth']) assert.equal(lane(value), value);
   for (const value of ['__proto__', 'unknown', 'cli-jobs;echo']) assert.throws(() => lane(value));
   assert.throws(() => options(['--source', 'a', '--source', 'b'], ['--source']));
   assert.throws(() => options(['--command', 'echo'], ['--source']));
+});
+
+test('Windows native lane, host and dedicated validation namespace must agree', () => {
+  const ref = 'refs/heads/validation/rust-fast-windows-03fab';
+  runnerLane('windows-auth', 'x86_64-pc-windows-msvc', ref);
+  laneBranch('windows-auth', 'validation/rust-fast-windows-03fab');
+  for (const target of ['x86_64-unknown-linux-gnu', 'aarch64-pc-windows-msvc', 'aarch64-apple-darwin']) {
+    assert.throws(() => runnerLane('windows-auth', target, ref));
+  }
+  assert.throws(() => runnerLane('windows-auth', 'x86_64-pc-windows-msvc',
+    'refs/heads/validation/rust-fast-linux'));
+  assert.throws(() => runnerLane('cli-auth', 'x86_64-unknown-linux-gnu', ref));
+  assert.throws(() => laneBranch('windows-auth', 'validation/rust-fast-linux'));
+  assert.throws(() => laneBranch('cli-auth', 'validation/rust-fast-windows-03fab'));
+  assert.throws(() => laneBranch('windows-auth', 'feature/rust'));
+});
+
+test('only Windows auth explicitly selects the native identity crate outside defaults', () => {
+  const packages = [
+    {id: 'cli', name: 'fabric-cli', dependencies: []},
+    {id: 'identity', name: 'fabric-identity', dependencies: []},
+    {id: 'native', name: 'fabric-identity-windows', dependencies: []},
+  ];
+  const metadata = {packages, workspace_default_members: ['cli', 'identity'],
+    workspace_members: ['cli', 'identity', 'native']};
+  assert.deepEqual(select(metadata, 'windows-auth'),
+    ['fabric-cli', 'fabric-identity', 'fabric-identity-windows']);
+  assert.deepEqual(select(metadata, 'baseline'), ['fabric-cli', 'fabric-identity']);
+});
+
+test('native Windows plan invokes only finite reviewed library and CLI test contracts', () => {
+  const manifest = {lane: 'windows-auth', packages: [
+    'fabric-cli', 'fabric-identity', 'fabric-identity-windows',
+  ], target: 'x86_64-pc-windows-msvc'};
+  assert.equal(plan('fetch', manifest).length, 3);
+  const checks = plan('check', manifest);
+  assert.ok(checks.some(item => item.args.includes('windows-broker')));
+  assert.ok(checks.some(item => item.args.includes('native-read')));
+  assert.equal(plan('clippy', manifest).length, 3);
+  const tests = plan('test', manifest);
+  assert.equal(tests.length, 6);
+  assert.deepEqual(tests[0].args, [
+    'test', '--offline', '--locked', '-p', 'fabric-identity-windows', '--lib',
+    '--', '--test-threads=1',
+  ]);
+  assert.ok(tests[1].args.includes('--lib'));
+  assert.ok(tests[2].args.includes('--bin'));
+  for (const item of [...checks, ...plan('clippy', manifest), ...tests,
+    ...plan('family', manifest, 'C:\\target', 'C:\\receipts', () => true)]) {
+    assert.equal(item.program, 'cargo');
+    assert.ok(item.args.includes('--offline') && item.args.includes('--locked'));
+    for (const forbidden of ['run', 'login', 'logout', 'status', '--account', '--tenant', '--token']) {
+      assert.ok(!item.args.includes(forbidden));
+    }
+  }
+  assert.throws(() => plan('family', manifest, 'C:\\target', 'C:\\receipts', () => false),
+    /Reviewed native offline auth consumer is missing/);
 });
 
 test('CLI prefetch retains offline architecture checks for all declared metadata targets', () => {
@@ -259,6 +316,8 @@ test('workflow limits runner context to steps and retains pinned bounded push ga
   const beforeSteps = workflow.split('    steps:')[0];
   assert.ok(!beforeSteps.includes('runner.temp'));
   assert.ok(workflow.includes('branches: ["validation/rust-fast-*"]'));
+  assert.ok(workflow.includes("'refs/heads/validation/rust-fast-windows-'"));
+  assert.ok(workflow.includes("'windows-2025' || 'ubuntu-24.04'"));
   assert.ok(workflow.includes('timeout-minutes: 15'));
   assert.ok(workflow.includes('ref: ${{ github.sha }}'));
   assert.ok(workflow.includes('persist-credentials: false'));

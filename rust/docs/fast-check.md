@@ -75,6 +75,28 @@ platform code, install target toolchains, modify the lock, or weaken the oracle.
 The finite target set is fingerprinted. Fetch runs after cache restoration even
 on exact cache hits so a partial cache cannot become false offline coverage.
 
+The bounded `windows-auth` lane uses the existing fast workflow on
+`windows-2025`, selected only by the dedicated
+`validation/rust-fast-windows-*` push namespace or that explicit dispatch choice.
+The helper requires the matching lane, immutable candidate record, dedicated
+ref and actual `x86_64-pc-windows-msvc` host; other lanes remain Linux-only.
+Action pins, read-only permissions, private targets, command bounds and
+source-versus-CI-head receipts are unchanged. The optional native identity crate
+is selected explicitly for this lane, never added to ordinary default members.
+
+It compiles and strictly lints the default, `windows-broker` and `native-read`
+CLI graphs, then runs the existing native identity library tests, safe identity
+library tests, pure Windows CLI adapter binary tests, synthetic auth/parser/CLI/
+architecture contracts for both features, default CLI contracts and broker
+doctests. Reviewed native tests cover metadata/authority/expiry/status checks,
+synthetic request lifecycle and hidden parent-window creation/cleanup on an STA;
+they do not call account enumeration, valid-account login, sign-out or token
+acquisition. No `cargo run` or live CLI auth invocation is in the finite plan.
+This supplies direct native identity unit coverage that a CLI-only push may omit
+from the separate unchanged three-OS workflow. It does not prove WAM/MFA/CA,
+service access, all Windows behavior or canonical command acceptance. Read
+existing exact-source provider jobs before dispatching any additional backstop.
+
 Each run executes workspace formatting, selected all-target offline checks and
 Clippy, single-thread tests and doctests, then actual family examples and pinned
 source comparisons. Selected CLI default and `native-read` all-target compilation
