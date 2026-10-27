@@ -12,6 +12,18 @@ SDK endpoints and passing read fixtures alone do not establish command parity.
 
 ## Bootstrap CLI contract
 
+The recovered central composition additionally mounts the released local,
+resource, access and transfer argument schemas. Local execution uses an explicit
+absolute `FAB_RUST_CONFIG_ROOT`; `FAB_RUST_SESSION_ID` selects its navigation
+file (otherwise the current process ID is used). Configuration, root navigation,
+support descriptions, terminal clearing, extension warning and named version run
+without credentials. Named version does not create configuration. Metadata-backed
+navigation and remote families still require the native host; schema registration
+alone does not establish a successful command. The executable holds only
+command-local metadata snapshots, so `config clear-cache` has no persistent
+metadata cache to delete and never clears broker/configuration/context files.
+`label list-local` executes before identity setup using configured definitions.
+
 The temporary executable name is `fab-rs`, version `0.1.0`. There is no REPL,
 embedded agent runtime, authentication command, deployment command or production
 read host in the default build. The separately opt-in Windows authentication

@@ -20,7 +20,7 @@ path = "src/main.rs"
 [features]
 default = []
 windows-broker = ["dep:fabric-identity", "dep:tokio", "fabric-identity/windows-broker"]
-native-read = ["windows-broker", "dep:azure_core", "dep:fabric-sdk-http", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls"]
+native-read = ["windows-broker", "dep:fabric-sdk-http", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls"]
 
 [dependencies]
 clap.workspace = true
@@ -28,14 +28,21 @@ fabric-cli-context.workspace = true
 fabric-cli-output.workspace = true
 fabric-cli-query.workspace = true
 fabric-cli-jobs.workspace = true
+fabric-cli-local.workspace = true
 fabric-cli-mutations.workspace = true
+fabric-cli-resources.workspace = true
+fabric-cli-transfer.workspace = true
+fabric-deploy.workspace = true
+fabric-sdk-api.workspace = true
+fabric-sdk-onelake.workspace = true
+fabric-sdk-onelake-http.workspace = true
 fabric-sdk.workspace = true
 fabric-sdk-jobs.workspace = true
 fabric-sdk-operations.workspace = true
 fabric-sdk-workspaces.workspace = true
 fabric-sdk-http = { workspace = true, optional = true }
 fabric-sdk-transport = { workspace = true, optional = true }
-azure_core = { workspace = true, optional = true }
+azure_core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 fabric-identity = { workspace = true, optional = true }

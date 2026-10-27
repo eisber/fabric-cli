@@ -7,6 +7,7 @@
 mod auth;
 #[cfg(feature = "native-read")]
 mod native_read;
+mod local_host;
 
 #[cfg(not(feature = "native-read"))]
 use fabric_cli::HostError;
@@ -34,6 +35,19 @@ fn run() -> io::Result<ExitCode> {
             write!(io::stdout().lock(), "{text}")?;
             return Ok(ExitCode::SUCCESS);
         }
+        Ok(Invocation::Local(command)) => return local_host::run(&command),
+        Ok(Invocation::Access(command))
+            if matches!(command.kind, fabric_cli_resources::frontdoor::AccessKind::LabelListLocal) =>
+        {
+            return local_host::local_access(&command);
+        }
+        Ok(Invocation::Access(_) | Invocation::Resource(_) | Invocation::Transfer(_)) => (
+            CommandError {
+                code: "NotConfigured",
+                message: fabric_cli::HostError::NotConfigured.to_string(),
+            },
+            1,
+        ),
         #[cfg(feature = "native-read")]
         Ok(Invocation::Read(command)) => return native_read::run(&command),
         #[cfg(feature = "native-read")]

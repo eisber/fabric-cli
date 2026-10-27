@@ -10,6 +10,7 @@
 mod errors;
 mod folder_reads;
 pub mod jobs;
+pub mod local_commands;
 pub mod parser;
 mod projection;
 mod reads;

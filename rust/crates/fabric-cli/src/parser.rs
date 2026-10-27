@@ -50,7 +50,7 @@ pub struct ReadCommand {
 }
 
 /// A parse result with help/version separated from service execution.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum Invocation {
     /// Help/version text, written to stdout without configuring a host.
     Display(String),
@@ -62,6 +62,14 @@ pub enum Invocation {
     JobRun(JobRunCommand),
     /// Cancellation or schedule mutation through the same job session.
     JobMutation(JobMutationCommand),
+    /// Local settings and navigation with caller-owned state and effects.
+    Local(fabric_cli_local::LocalInvocation),
+    /// Released ACL, label, catalog and raw API family.
+    Access(fabric_cli_resources::frontdoor::AccessCommand),
+    /// Released resource mutations and OneLake transfers.
+    Resource(fabric_cli_mutations::frontdoor::ResourceCommand),
+    /// Released definition transfer family, including the explicit deploy gap.
+    Transfer(fabric_cli_transfer::TransferCommand),
     /// Explicit opt-in broker command; parsing never signs in.
     #[cfg(feature = "windows-broker")]
     Auth(AuthCommand),
@@ -92,6 +100,10 @@ pub fn command() -> Command {
     let command = auth::register(command);
     #[cfg(feature = "native-read")]
     let command = command.after_help("Native ls/get and all eight job leaves require FAB_RUST_TENANT, FAB_RUST_ACCOUNT and FAB_RUST_CLIENT_ID. Windows broker authentication is opt-in; credentials are silent and never show sign-in UI. Use explicit auth login first when required. FAB_RUST_CONTEXT defaults to /; FAB_RUST_HOME is optional. Job mutations change remote state; run may cancel on timeout. Native run-rm currently requires explicit --force; interactive confirmation requires an injected UI host. No token input, credential fallback or deployment command is available.");
+    let command = fabric_cli_resources::frontdoor::register(command)
+        .subcommands(fabric_cli_local::root_commands())
+        .subcommands(fabric_cli_mutations::frontdoor::resource_subcommands())
+        .subcommands(fabric_cli_transfer::transfer_subcommands());
     command
         .subcommand(jobs::register())
         .subcommand(
@@ -147,7 +159,17 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let mut args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let root = root_argument(&args);
+    if root.and_then(|index| args[index].to_str()) == Some("deploy") {
+        for token in &mut args[root.expect("selected root") + 1..] {
+            if token == "-tenv" {
+                *token = "--target_env".into();
+            } else if let Some(value) = token.to_str().and_then(|v| v.strip_prefix("-tenv=")) {
+                *token = format!("--target_env={value}").into();
+            }
+        }
+    }
     let mut parser = command();
     parser.build();
     if args
@@ -167,7 +189,14 @@ where
     {
         return auth::parse(&matches).map(Invocation::Auth);
     }
-    let source_args = source_read_arguments(&parser, &args)?;
+    let source_args = if matches!(
+        root.and_then(|index| args[index].to_str()),
+        Some("ls" | "dir" | "get" | "job")
+    ) {
+        source_read_arguments(&parser, &args)?
+    } else {
+        args.clone()
+    };
     let matches = match parser.try_get_matches_from(source_args) {
         Ok(matches) => matches,
         Err(error)
@@ -200,7 +229,7 @@ where
         return Ok(invocation);
     }
     if !matches!(name, "ls" | "get") {
-        return Err(invalid_arguments());
+        return family_invocation(&matches);
     }
     let list = name == "ls";
     let spelling = args
@@ -236,6 +265,45 @@ where
         force: !list && values.get_flag("force"),
         output_format: matches.get_one::<String>("output_format").cloned(),
     }))
+}
+
+fn root_argument(args: &[OsString]) -> Option<usize> {
+    let mut index = 1;
+    while index < args.len() {
+        let value = args[index].to_str()?;
+        if value == "--output_format" {
+            index += 2;
+        } else if value.starts_with("--output_format=") {
+            index += 1;
+        } else {
+            return Some(index);
+        }
+    }
+    None
+}
+
+fn family_invocation(matches: &clap::ArgMatches) -> Result<Invocation, clap::Error> {
+    if let Some(command) =
+        fabric_cli_local::from_matches(matches).map_err(|_| invalid_arguments())?
+    {
+        return Ok(Invocation::Local(command));
+    }
+    if let Some(command) =
+        fabric_cli_resources::frontdoor::AccessCommand::from_matches(matches)
+            .map_err(|_| invalid_arguments())?
+    {
+        return Ok(Invocation::Access(command));
+    }
+    match matches.subcommand_name() {
+        Some("export" | "bulk-export" | "import" | "deploy") => {
+            fabric_cli_transfer::command_from_matches(matches)
+                .map(Invocation::Transfer)
+                .map_err(|_| invalid_arguments())
+        }
+        _ => fabric_cli_mutations::frontdoor::command_from_matches(matches)
+            .map(Invocation::Resource)
+            .map_err(|_| invalid_arguments()),
+    }
 }
 
 fn invalid_arguments() -> clap::Error {
