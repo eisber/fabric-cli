@@ -131,6 +131,8 @@ test('deploy preflight first runs actual library then native root consumer, neve
   const operation = family.find(item => item.args.includes('crates/fabric-deploy/tests/operation_result_reference.py'));
   assert.ok(operation.args.includes('--cli-reference-root') && operation.args.includes('--cicd-reference-root'));
   assert.ok(!operation.args.includes('--reference-root'));
+  const scalar = family.find(item => item.args.includes('crates/fabric-deploy/tests/yaml_scalar_reference.py'));
+  assert.deepEqual(scalar.args, ['-B', 'crates/fabric-deploy/tests/yaml_scalar_reference.py']);
   for (const item of [...commands, ...family]) {
     assert.ok(!item.args.includes('run') && !item.args.includes('--config'));
   }
