@@ -101,8 +101,11 @@ fn navigation_persists_only_its_explicit_session_and_pwd_uses_stderr() {
     let pwd = invoke(&root.0, &["pwd"]);
     success(&pwd);
     assert!(pwd.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&pwd.stderr).contains("local_path"));
-    assert!(String::from_utf8_lossy(&pwd.stderr).contains(root.0.to_string_lossy().as_ref()));
+    let output: serde_json::Value = serde_json::from_slice(&pwd.stderr).unwrap();
+    assert_eq!(
+        output["result"]["data"][0]["local_path"],
+        root.0.to_string_lossy().as_ref(),
+    );
 }
 
 #[test]

@@ -8,6 +8,13 @@ checks their content identity and compiles unchanged selected function bodies.
 No product imports, authentication, network, real tempfiles or real sleeps are
 used. There is no recording/update mode and no Rust-generated expectation.
 
+`presentation_reference.py` additionally executes unchanged pinned output/UI
+definitions to verify the central consumer's status placement, singleton-data
+list wrapping and literal lowercase schema headers. These correct new central
+test assumptions, not the protected source oracle or product behavior. The
+existing `terminal-location-fetches-result` lifecycle case remains the authority
+for supplying a terminal Location when a test expects a result GET.
+
 `cases.json` contains 31 independently hand-authored load option, maintenance
 configuration and Delta schema cases. Both the Python source and native public
 consumers assert those expectations. The maintenance path executes the actual

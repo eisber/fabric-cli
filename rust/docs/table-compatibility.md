@@ -32,6 +32,17 @@ component passes below are not central candidate proof. Auth mounting,
 Windows/macOS execution, live Fabric, REPL/batch and full option/resource parity
 remain separate; the canonical target is 50/52, not whole-product 95% parity.
 
+The first hosted `8425b2d` preflight passed format, both all-target checks and
+strict Clippy graphs; its table contracts had seven passes and five failures.
+Those five new test assumptions disagreed with the pinned source: status is
+top-level, scalar result data is list-wrapped, table headers retain lowercase
+keys, and successful load reconciliation fetches a result only when the
+terminal response carries Location. The corrected central fixtures are checked
+against unchanged Python output/UI definitions by
+`tests/compatibility/tables/presentation_reference.py` and the existing
+terminal-Location lifecycle oracle. No protected oracle, production output or
+shared operation policy was changed to satisfy them.
+
 Python authority is `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
 The lane safely merged exact `cc908ce08617f92601aa2dd68622797ccbcde9e7`,
 then shared execution prerequisite `68e15d38bcc3df751b893414265876304a16a2f8`.

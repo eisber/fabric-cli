@@ -94,7 +94,14 @@ async fn root_table_load_uses_real_source_head_post_shared_operation_and_result(
     host.headers(200, Value::Null, &[("x-ms-resource-type", "file")]);
     host.headers(200, Value::Null, &[("x-ms-resource-type", "file")]);
     host.headers(202, Value::Null, &[("x-ms-operation-id", OP)]);
-    host.reply(200, json!({"status":"Succeeded"}));
+    host.headers(
+        200,
+        json!({"status":"Succeeded"}),
+        &[(
+            "Location",
+            &format!("https://api.fabric.microsoft.com/v1/operations/{OP}/result"),
+        )],
+    );
     host.reply(200, json!({}));
     let output = host
         .execute(&["table", "load", TABLE, "--file", FILE])
@@ -160,7 +167,7 @@ async fn maintenance(leaf: &str, extra: &[&str], expected: Value) {
     let (out, err) = streams(&output, 0);
     let value: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(value["command"], format!("table {leaf}"));
-    assert_eq!(value["result"]["data"], json!({"id":"run"}));
+    assert_eq!(value["result"]["data"], json!([{"id":"run"}]));
     assert_eq!(value["result"]["message"], "Job instance 'run' completed");
     assert!(err.starts_with(if leaf == "vacuum" {
         "Vacuuming"
@@ -252,7 +259,7 @@ async fn root_table_failed_shared_operation_retains_original_id_uncertainty_and_
         .await;
     let (out, _) = streams(&output, 1);
     assert_eq!(
-        serde_json::from_str::<Value>(&out).unwrap()["result"]["status"],
+        serde_json::from_str::<Value>(&out).unwrap()["status"],
         "Failure"
     );
     match &output.evidence {
@@ -331,7 +338,14 @@ async fn root_table_schema_text_uses_shared_headers_and_keeps_progress_on_stderr
         .execute(&["table", "schema", TABLE, "--output_format", "text"])
         .await;
     let (out, err) = streams(&output, 0);
-    assert!(out.contains("Name") && out.contains("Type") && out.contains("Nullable"));
+    assert_eq!(
+        out.lines()
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .collect::<Vec<_>>(),
+        ["name", "type", "nullable"],
+    );
     assert!(out.contains("id") && out.contains("long"));
     assert!(!out.contains("Getting schema"));
     assert_eq!(
