@@ -14,6 +14,7 @@ const LANES = Object.freeze({
   endpoint: ['fabric-core', 'fabric-sdk-http', 'fabric-sdk-items'],
   'native-values': ['fabric-core-json', 'fabric-cli-output', 'fabric-deploy'],
   'sdk-values': ['fabric-core', 'fabric-sdk', 'fabric-sdk-http', 'fabric-core-json', 'fabric-cli-output'],
+  'cli-auth': ['fabric-cli', 'fabric-identity'],
 });
 const CI_FILES = [
   '.github/workflows/rust-fast-check.yml', '.github/rust-fast-candidate.json',
@@ -87,13 +88,16 @@ function prepare() {
   requireThat(target === 'x86_64-unknown-linux-gnu', 'Fast preflight requires the native Linux runner');
   const lockHash = digest(fs.readFileSync(path.join(rust, 'Cargo.lock')));
   const features = {default: true, packages, family: selectedLane,
-    nativeRead: packages.includes('fabric-cli'),
+    nativeRead: packages.includes('fabric-cli') && selectedLane !== 'cli-auth',
+    windowsBroker: selectedLane === 'cli-auth',
     transport: selectedLane === 'sdk-values' && packages.includes('fabric-sdk-transport')
       ? ['hyper-rustls'] : []};
   const fingerprint = digest(JSON.stringify({rustc, target, features, lockHash}));
-  const coverage = selectedLane === 'sdk-values'
-    ? 'Core/SDK transitive consumers and CLI output only; central CLI, identity, deployment and native platform gates deferred'
-    : 'Selected default members and transitive consumers; complete native platform gates deferred';
+  const coverage = selectedLane === 'cli-auth'
+    ? 'Linux default CLI and opt-in auth parser/synthetic command boundary only; real broker, native Windows adapter/STA tests, root mounts and live acceptance deferred'
+    : selectedLane === 'sdk-values'
+      ? 'Core/SDK transitive consumers and CLI output only; central CLI, identity, deployment and native platform gates deferred'
+      : 'Selected default members and transitive consumers; complete native platform gates deferred';
   const manifest = {source: candidate.source, head, lane: selectedLane, packages, coverage,
     target, rustc, toolchain, features, lockHash, fingerprint, startedAt: new Date().toISOString()};
   write(path.join(receipts, 'manifest.json'), manifest);
@@ -107,6 +111,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
   const commands = [];
   const has = name => manifest.packages.includes(name);
   const sdkValues = manifest.lane === 'sdk-values';
+  const cliAuth = manifest.lane === 'cli-auth';
   const nativeTransport = sdkValues && has('fabric-sdk-transport');
   const observation = (pkg, example, reference, extra = []) => {
     const file = path.join(output, `${example}-${pkg}.json`);
@@ -119,7 +124,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     commands.push(cargo('check', '--offline', '--locked', ...packages, '--all-targets'));
     if (has('fabric-cli')) {
       commands.push(cargo('check', '--offline', '--locked', '-p', 'fabric-cli',
-        '--features', 'native-read', '--all-targets'));
+        '--features', cliAuth ? 'windows-broker' : 'native-read', '--all-targets'));
     }
     if (nativeTransport) commands.push(cargo('check', '--offline', '--locked',
       '-p', 'fabric-sdk-transport', '--no-default-features', '--lib'));
@@ -127,11 +132,22 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
   }
   if (stage === 'clippy') {
     commands.push(cargo('clippy', '--offline', '--locked', ...packages, '--all-targets', '--', '-D', 'warnings'));
+    if (cliAuth) commands.push(cargo('clippy', '--offline', '--locked',
+      '-p', 'fabric-cli', '--features', 'windows-broker', '--all-targets', '--', '-D', 'warnings'));
     if (nativeTransport) commands.push(cargo('clippy', '--offline', '--locked',
       '-p', 'fabric-sdk-transport', '--features', 'hyper-rustls', '--all-targets', '--', '-D', 'warnings'));
     return commands;
   }
   if (stage === 'test') {
+    if (cliAuth) return [
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'windows-broker',
+        '--test', 'auth_commands', '--test', 'auth_arguments', '--test', 'cli_contract',
+        '--test', 'workspace_contract', '--', '--test-threads=1'),
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'windows-broker',
+        '--bin', 'fab-rs', '--', '--test-threads=1'),
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--no-default-features',
+        '--', '--test-threads=1'),
+    ];
     if (sdkValues) {
       requireThat(has('fabric-sdk-http') && has('fabric-sdk-operations'),
         'SDK/value lane requires HTTP and operation endpoint consumers');
@@ -145,6 +161,12 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     return commands;
   }
   requireThat(stage === 'family', `Unknown stage: ${stage}`);
+  if (cliAuth) {
+    requireThat(exists('crates/fabric-cli/tests/auth_commands.rs'),
+      'Released offline auth command consumer is missing');
+    return [cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
+      '--features', 'windows-broker', '--doc', '--', '--test-threads=1')];
+  }
   if (has('fabric-cli-jobs') || has('fabric-sdk-jobs') || has('fabric-sdk-paging')) {
     for (const reference of ['reference', 'branches_reference', 'operation_output_reference', 'skill_headers_reference']) {
       commands.push(python(`tests/compatibility/jobs/${reference}.py`));

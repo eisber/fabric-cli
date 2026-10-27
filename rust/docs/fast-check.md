@@ -47,6 +47,18 @@ pins Requests 2.34.2/urllib3 2.8.0 to the HTTP oracle's documented initial
 execution. It does not modify the oracle, its expectations, shared requirements
 or product dependencies.
 
+The separate Linux-only `cli-auth` lane checks default CLI consumers and the
+opt-in `windows-broker` compile/strict-Clippy graph. It runs only the finite
+`auth_commands`, `auth_arguments`, `cli_contract` and `workspace_contract`
+integration targets, the CLI binary unit target, default-feature-free CLI
+regressions and broker-feature doctests. The command consumer substitutes a
+synthetic broker at the existing boundary; no valid-account login/logout,
+token acquisition, account discovery or native identity test is invoked.
+An off-Windows unsupported response or a zero-test Windows-gated binary target
+is not an authentication happy path. Native Windows adapter/STA contracts,
+central root mounts and live platform acceptance remain explicit debt, not
+three newly proven canonical commands.
+
 Each run executes workspace formatting, selected all-target offline checks and
 Clippy, single-thread tests and doctests, then actual family examples and pinned
 source comparisons. Selected CLI default and `native-read` all-target compilation

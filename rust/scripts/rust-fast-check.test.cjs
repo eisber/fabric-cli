@@ -13,10 +13,36 @@ test('only full source IDs and finite lanes are accepted', () => {
   for (const value of ['abc123', '0'.repeat(40), '--upload-pack=x', 'a'.repeat(40) + ';echo']) {
     assert.equal(sha(value), false);
   }
-  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values']) assert.equal(lane(value), value);
+  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values', 'cli-auth']) assert.equal(lane(value), value);
   for (const value of ['__proto__', 'unknown', 'cli-jobs;echo']) assert.throws(() => lane(value));
   assert.throws(() => options(['--source', 'a', '--source', 'b'], ['--source']));
   assert.throws(() => options(['--command', 'echo'], ['--source']));
+});
+
+test('auth lane executes finite synthetic contracts, never a real login or native identity run', () => {
+  const manifest = {lane: 'cli-auth', packages: ['fabric-cli', 'fabric-identity']};
+  const checks = plan('check', manifest);
+  assert.ok(checks[1].args.includes('windows-broker'));
+  assert.ok(plan('clippy', manifest)[1].args.includes('windows-broker'));
+  const tests = plan('test', manifest);
+  assert.equal(tests.length, 3);
+  for (const selector of ['auth_commands', 'auth_arguments', 'cli_contract', 'workspace_contract']) {
+    assert.ok(tests[0].args.includes(selector));
+  }
+  assert.ok(tests[1].args.includes('--bin') && tests[1].args.includes('fab-rs'));
+  assert.ok(tests[2].args.includes('--no-default-features'));
+  const family = plan('family', manifest, '/target', '/receipts', () => true);
+  assert.equal(family.length, 1);
+  assert.ok(family[0].args.includes('--doc'));
+  for (const item of [...checks, ...plan('clippy', manifest), ...tests, ...family]) {
+    assert.equal(item.program, 'cargo');
+    assert.ok(item.args.includes('--offline') && item.args.includes('--locked'));
+    for (const prohibited of ['run', 'login', 'logout', 'status', 'native-read', 'fabric-identity-windows']) {
+      assert.ok(!item.args.includes(prohibited));
+    }
+  }
+  assert.throws(() => plan('family', manifest, '/target', '/receipts', () => false),
+    /offline auth command consumer is missing/);
 });
 
 test('SDK/value lane retains in-boundary consumers without certifying central CLI', () => {
