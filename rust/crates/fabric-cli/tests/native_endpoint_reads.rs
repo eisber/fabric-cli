@@ -24,6 +24,7 @@ use fabric_sdk_http::{ExecutionFuture, ExecutionOptions, ExecutionTimer, HttpExe
 use serde_json::{Value, json};
 use std::{
     collections::VecDeque,
+    fmt,
     future::pending,
     sync::{Arc, Mutex},
     time::Duration,
@@ -36,11 +37,17 @@ const HOSTS: [&str; 3] = [
     "msitapi.fabric.microsoft.com",
 ];
 
-#[derive(Debug)]
 struct Wire {
     host: String,
     replies: Mutex<VecDeque<Reply>>,
     requests: Mutex<Vec<String>>,
+}
+
+impl fmt::Debug for Wire {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OfflineEndpointHttp")
+            .finish_non_exhaustive()
+    }
 }
 
 #[async_trait]
