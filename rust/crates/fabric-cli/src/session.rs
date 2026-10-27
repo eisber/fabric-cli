@@ -185,12 +185,16 @@ impl<'session> ReadSession<'session> {
         }
         let mut cancelled = pin!(cancelled);
         let mut snapshot = snapshot::Snapshot::default();
-        let current = snapshot
-            .resolve(self, &self.tenant, self.current_path, cancelled.as_mut())
-            .await?;
         // Keep the parser's exact token joining and quote trimming contract.
         let path = command.path.join(" ");
         let path = path.trim_matches(['\'', '"']);
+        let current = if path.starts_with('/') || path == "~" || path.starts_with("~/") {
+            Arc::clone(&self.tenant)
+        } else {
+            snapshot
+                .resolve(self, &self.tenant, self.current_path, cancelled.as_mut())
+                .await?
+        };
         snapshot
             .resolve(self, &current, path, cancelled.as_mut())
             .await?;
