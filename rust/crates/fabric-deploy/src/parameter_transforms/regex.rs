@@ -248,6 +248,19 @@ fn validate_tree(
 }
 
 fn translate(pattern: &str, ignore_case: bool) -> Result<String, TransformError> {
+    for (index, _) in pattern.match_indices("(?") {
+        let suffix = &pattern[index..];
+        if ![
+            "(?:", "(?=", "(?!", "(?<=", "(?<!", "(?P<", "(?P=", "(?>", "(?#",
+        ]
+        .iter()
+        .any(|prefix| suffix.starts_with(prefix))
+        {
+            return Err(TransformError::Unsupported(
+                "inline flags or non-Python regex group syntax",
+            ));
+        }
+    }
     let mut output = String::new();
     let mut characters = pattern.chars().peekable();
     let mut in_class = false;
@@ -256,6 +269,11 @@ fn translate(pattern: &str, ignore_case: bool) -> Result<String, TransformError>
             let escaped = characters
                 .next()
                 .ok_or_else(|| TransformError::Invalid(format!("Invalid regex '{pattern}'")))?;
+            if matches!(escaped, 'u' | 'x') && characters.peek() == Some(&'{') {
+                return Err(TransformError::Unsupported(
+                    "Rust-style braced regex escape",
+                ));
+            }
             let translated = match escaped {
                 'w' => {
                     if in_class {
@@ -276,7 +294,8 @@ fn translate(pattern: &str, ignore_case: bool) -> Result<String, TransformError>
                 }
                 'S' if !in_class => r"[^\t\n\r\x0b\x0c\x1c-\x1f\u{0085}\p{Z}]",
                 'Z' => r"\z",
-                'p' | 'P' | 'z' | 'K' | 'G' | 'g' | 'k' | 'h' | 'H' | 'e' | 'R' | 'W' | 'S' => {
+                'p' | 'P' | 'z' | 'K' | 'G' | 'g' | 'k' | 'h' | 'H' | 'e' | 'R' | 'W' | 'S'
+                | 'N' | 'b' | 'B' => {
                     return Err(TransformError::Unsupported(
                         "unproven regex escape/class semantics",
                     ));
@@ -304,6 +323,14 @@ fn translate(pattern: &str, ignore_case: bool) -> Result<String, TransformError>
                     break;
                 }
             }
+        } else if in_class
+            && ((matches!(character, '&' | '~' | '|' | '-')
+                && characters.peek() == Some(&character))
+                || character == '[')
+        {
+            return Err(TransformError::Unsupported(
+                "regex class set operations or nested classes",
+            ));
         } else if character == '[' {
             in_class = true;
             output.push(character);

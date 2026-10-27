@@ -641,3 +641,11 @@ cargo clippy --offline --locked -p fabric-deploy -p fabric-cli --all-targets --f
 
 Default/native full suites, old 50-command regressions, workspace/docs/platform
 proof and the remaining item/config/planning/unpublish ledger remain open.
+
+Self-review additionally keeps Rust-style named groups, braced hex/Unicode
+escapes, property escapes and class set operations outside the accepted regex
+domain. A parsing primitive accepting them is not proof that Python accepts or
+interprets them identically. Python word-boundary and named-character escapes
+also remain explicit unsupported until their Unicode semantics are proven.
+The syntax guard tests enforce refusal; they do not label every refused pattern
+invalid Python or establish equivalence for untested regex grammar.

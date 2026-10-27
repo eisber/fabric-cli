@@ -276,6 +276,22 @@ fn full_schema_still_rejects_leaf_boolean_flags_and_type_mixed_replacements() {
     ] {
         assert!(ParameterProgram::with_default_limits(&document, "dev").is_err());
     }
+    for pattern in [
+        r"(?<name>old)",
+        r"(\u{0061})",
+        r"(\x{61})",
+        r"(\p{L})",
+        r"([a&&b])",
+    ] {
+        let mut budget = TransformBudget::new(TransformLimits::default(), &|| false);
+        assert!(
+            matches!(
+                FindReplacement::compile(pattern, true, false, &mut budget),
+                Err(TransformError::Unsupported(_))
+            ),
+            "{pattern}"
+        );
+    }
 }
 
 #[test]
