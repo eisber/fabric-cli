@@ -272,7 +272,9 @@ impl FamilySession<'_, '_> {
                     },
                     targets: &resolver,
                     label_definitions: labels,
-                    confirmation: self.confirmation.as_deref_mut(),
+                    confirmation: self.confirmation.as_mut().map(|confirmation| {
+                        &mut **confirmation as &mut dyn fabric_cli_resources::Confirmation
+                    }),
                     multipart_boundary: "fabric-cli-native-multipart",
                     limits: Default::default(),
                     request_bounds: Default::default(),
@@ -375,7 +377,10 @@ impl FamilySession<'_, '_> {
                             read_limits: OneLakeLimits::default(),
                             write_limits: OneLakeWriteLimits::default(),
                         },
-                        files: self.resource_files.as_deref_mut(),
+                        files: self
+                            .resource_files
+                            .as_mut()
+                            .map(|files| &mut **files as &mut dyn ResourceFiles),
                     }
                     .execute(command, cancelled.as_mut())
                     .await;
