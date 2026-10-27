@@ -1,0 +1,11 @@
+{
+  "_copyright":"Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "source_commit":"cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases":[
+    {"id":"operation-failed-ordered-dict","initial":{"status":202,"headers":{"x-ms-operation-id":"op"}},"responses":[{"status":200,"body":{"status":"Failed","error":{"z":null,"a":[true,false,"x'y",1.0]}}}],"expected":{"error_code":"LongRunningOperationFailed","requests":["operations/op"],"waits":[10]},"expected_error_message":"The operation failed: {'z': None, 'a': [True, False, \"x'y\", 1.0]}"},
+    {"id":"operation-cancelled-list","initial":{"status":202,"headers":{"x-ms-operation-id":"op"}},"responses":[{"status":200,"body":{"status":"Cancelled","error":[1,"x'y",null]}}],"expected":{"error_code":"LongRunningOperationCancelled","requests":["operations/op"],"waits":[10]},"expected_error_message":"The operation was cancelled: [1, \"x'y\", None]"},
+    {"id":"operation-failed-null","initial":{"status":202,"headers":{"x-ms-operation-id":"op"}},"responses":[{"status":200,"body":{"status":"Failed","error":null}}],"expected":{"error_code":"LongRunningOperationFailed","requests":["operations/op"],"waits":[10]},"expected_error_message":"The operation failed: None"},
+    {"id":"operation-failed-string-periods","initial":{"status":202,"headers":{"x-ms-operation-id":"op"}},"responses":[{"status":200,"body":{"status":"Failed","error":"bad input..."}}],"expected":{"error_code":"LongRunningOperationFailed","requests":["operations/op"],"waits":[10]},"expected_error_message":"The operation failed: bad input"},
+    {"id":"poll-http-period-only-empty-normalized-message","initial":{"status":202,"headers":{"x-ms-operation-id":"op"}},"responses":[{"status":400,"body":{"message":"..."}}],"expected":{"error_code":"UnknownError","requests":["operations/op"],"waits":[10]},"expected_error_message":""}
+  ]
+}

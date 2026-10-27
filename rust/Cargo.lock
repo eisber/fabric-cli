@@ -379,6 +379,7 @@ dependencies = [
  "fabric-cli-output",
  "fabric-cli-query",
  "fabric-cli-resources",
+ "fabric-cli-tables",
  "fabric-cli-transfer",
  "fabric-deploy",
  "fabric-identity",
@@ -389,6 +390,7 @@ dependencies = [
  "fabric-sdk-onelake",
  "fabric-sdk-onelake-http",
  "fabric-sdk-operations",
+ "fabric-sdk-tables",
  "fabric-sdk-transport",
  "fabric-sdk-workspaces",
  "serde",
@@ -512,6 +514,28 @@ dependencies = [
  "fabric-sdk-onelake-http",
  "fabric-sdk-workspaces",
  "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-cli-tables"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "azure_core",
+ "clap",
+ "fabric-cli-context",
+ "fabric-cli-mutations",
+ "fabric-cli-output",
+ "fabric-sdk-http",
+ "fabric-sdk-jobs",
+ "fabric-sdk-onelake",
+ "fabric-sdk-onelake-http",
+ "fabric-sdk-operations",
+ "fabric-sdk-tables",
+ "fabric-sdk-workspaces",
+ "serde_json",
+ "thiserror",
  "tokio",
 ]
 
@@ -755,6 +779,23 @@ version = "0.1.0"
 dependencies = [
  "azure_core",
  "fabric-sdk-workspaces",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-sdk-tables"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "azure_core",
+ "fabric-core",
+ "fabric-core-json",
+ "fabric-sdk-http",
+ "fabric-sdk-jobs",
+ "fabric-sdk-onelake",
+ "fabric-sdk-onelake-http",
+ "fabric-sdk-operations",
  "serde_json",
  "tokio",
 ]

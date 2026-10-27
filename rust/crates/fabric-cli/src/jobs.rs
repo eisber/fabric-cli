@@ -237,7 +237,7 @@ impl JsonInput for SelectedJobFiles {
 
 struct ReadOnlyUi;
 
-struct CheckedJobExecutor(Arc<dyn JobExecutor>);
+pub(crate) struct CheckedJobExecutor(pub(crate) Arc<dyn JobExecutor>);
 
 impl JobExecutor for CheckedJobExecutor {
     fn supports_request_headers(&self, headers: &JobRequestHeaders) -> bool {

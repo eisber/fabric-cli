@@ -104,8 +104,12 @@ impl HttpClient for Http {
 
 struct Timer;
 impl ExecutionTimer for Timer {
-    fn sleep(&self, _: Duration) -> ExecutionFuture<'_, ()> {
-        Box::pin(pending())
+    fn sleep(&self, delay: Duration) -> ExecutionFuture<'_, ()> {
+        if delay == Duration::from_secs(240) {
+            Box::pin(pending())
+        } else {
+            Box::pin(async {})
+        }
     }
 }
 

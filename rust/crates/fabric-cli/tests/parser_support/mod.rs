@@ -40,7 +40,8 @@ pub fn observe(input: &Value) -> Option<Value> {
             | Invocation::Local(_)
             | Invocation::Access(_)
             | Invocation::Resource(_)
-            | Invocation::Transfer(_),
+            | Invocation::Transfer(_)
+            | Invocation::Table(_),
         ) => {
             json!({"error": true})
         }

@@ -3,7 +3,7 @@
 
 //! Central family composition over the existing command-local metadata session.
 
-mod context;
+pub(crate) mod context;
 
 use crate::{errors, parser::Invocation, session::ReadSession};
 use context::CommandContext;
@@ -56,6 +56,8 @@ pub enum FamilyEvidence {
     Storage(Result<OneLakeWriteResult, OneLakeWriteError>),
     /// Definition transfer retains original operation IDs and file progress.
     Transfer(Result<TransferResult, TransferError>),
+    /// Original table, storage, generic-operation and maintenance-job evidence.
+    Table(crate::tables::TableEvidence),
 }
 
 /// A rendered result is not yet a delivered result or an applied cache effect.
@@ -126,6 +128,15 @@ impl FamilySession<'_, '_> {
             }
         };
         let configured = settings.get("output_format").and_then(Value::as_str);
+        if let Invocation::Table(command) = invocation {
+            return crate::tables::TableSession {
+                reads: self.reads,
+                http: self.http,
+                settings: &settings,
+            }
+            .dispatch(command, cancelled.as_mut())
+            .await;
+        }
         let explicit = match invocation {
             Invocation::Local(command) => command.output_format.as_deref(),
             Invocation::Resource(command) => command.args().output_format.as_deref(),

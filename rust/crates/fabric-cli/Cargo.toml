@@ -32,6 +32,7 @@ fabric-cli-local.workspace = true
 fabric-cli-mutations.workspace = true
 fabric-cli-resources.workspace = true
 fabric-cli-transfer.workspace = true
+fabric-cli-tables.workspace = true
 fabric-deploy.workspace = true
 fabric-sdk-api.workspace = true
 fabric-sdk-onelake.workspace = true
@@ -39,6 +40,7 @@ fabric-sdk-onelake-http.workspace = true
 fabric-sdk.workspace = true
 fabric-sdk-jobs.workspace = true
 fabric-sdk-operations.workspace = true
+fabric-sdk-tables.workspace = true
 fabric-sdk-workspaces.workspace = true
 fabric-sdk-http = { workspace = true, optional = true }
 fabric-sdk-transport = { workspace = true, optional = true }

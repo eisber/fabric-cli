@@ -1,0 +1,45 @@
+{
+  "_copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "id": "default-file-wire-spaces",
+      "operation": "load",
+      "source_kind": "file",
+      "expected_body": "{\"pathType\": \"File\", \"relativePath\": \"Files/input.csv\", \"mode\": \"Overwrite\", \"formatOptions\": {\"format\": \"Csv\"}}"
+    },
+    {
+      "id": "csv-folder-append-wire-order",
+      "operation": "load",
+      "source_kind": "directory",
+      "mode": "append",
+      "format": "format=csv,header=true,delimiter=';'",
+      "extension": ".csv",
+      "expected_body": "{\"pathType\": \"Folder\", \"relativePath\": \"Files/input.csv\", \"mode\": \"Append\", \"formatOptions\": {\"format\": \"Csv\", \"header\": true, \"delimiter\": \";\"}, \"extension\": \".csv\", \"recursive\": true}"
+    },
+    {
+      "id": "unicode-source-and-delimiter-ascii-wire",
+      "operation": "load",
+      "source_kind": "file",
+      "source_path": "Files/\u00e9.csv",
+      "format": "format=csv,header=false,delimiter='\u754c'",
+      "extension": "\u00e9",
+      "expected_body": "{\"pathType\": \"File\", \"relativePath\": \"Files/\\u00e9.csv\", \"mode\": \"Overwrite\", \"formatOptions\": {\"format\": \"Csv\", \"header\": false, \"delimiter\": \"\\u754c\"}, \"extension\": \"\\u00e9\"}"
+    },
+    {
+      "id": "parquet-recursive-supplementary-source-wire",
+      "operation": "load",
+      "source_kind": "directory",
+      "source_path": "Files/\ud83d\ude00",
+      "format": "format=Parquet,header=true,delimiter=';'",
+      "expected_body": "{\"pathType\": \"Folder\", \"relativePath\": \"Files/\\ud83d\\ude00\", \"mode\": \"Overwrite\", \"formatOptions\": {\"format\": \"Parquet\"}, \"recursive\": true}"
+    },
+    {
+      "id": "csv-value-escaped-controls-and-quotes-wire",
+      "operation": "load",
+      "source_kind": "file",
+      "format": "format=csv,header='x\"y',delimiter='a\nb'",
+      "expected_body": "{\"pathType\": \"File\", \"relativePath\": \"Files/input.csv\", \"mode\": \"Overwrite\", \"formatOptions\": {\"format\": \"Csv\", \"header\": \"x\\\"y\", \"delimiter\": \"a\\nb\"}}"
+    }
+  ]
+}

@@ -70,6 +70,8 @@ pub enum Invocation {
     Resource(fabric_cli_mutations::frontdoor::ResourceCommand),
     /// Released definition transfer family, including the explicit deploy gap.
     Transfer(fabric_cli_transfer::TransferCommand),
+    /// Released TABLE handlers over the existing metadata/storage/job session.
+    Table(fabric_cli_tables::TableCommand),
     /// Explicit opt-in broker command; parsing never signs in.
     #[cfg(feature = "windows-broker")]
     Auth(AuthCommand),
@@ -105,6 +107,7 @@ pub fn command() -> Command {
         .subcommands(fabric_cli_mutations::frontdoor::resource_subcommands())
         .subcommands(fabric_cli_transfer::transfer_subcommands());
     command
+        .subcommand(fabric_cli_tables::command())
         .subcommand(jobs::register())
         .subcommand(
             Command::new("ls")
@@ -191,7 +194,7 @@ where
     }
     let source_args = if matches!(
         root.and_then(|index| args[index].to_str()),
-        Some("ls" | "dir" | "get" | "job")
+        Some("ls" | "dir" | "get" | "job" | "table")
     ) {
         source_read_arguments(&parser, &args)?
     } else {
@@ -283,6 +286,11 @@ fn root_argument(args: &[OsString]) -> Option<usize> {
 }
 
 fn family_invocation(matches: &clap::ArgMatches) -> Result<Invocation, clap::Error> {
+    if let Some(("table", group)) = matches.subcommand() {
+        return fabric_cli_tables::TableCommand::from_matches(group)
+            .map(Invocation::Table)
+            .ok_or_else(invalid_arguments);
+    }
     if let Some(command) =
         fabric_cli_local::from_matches(matches).map_err(|_| invalid_arguments())?
     {
@@ -319,7 +327,7 @@ fn source_read_arguments(
 ) -> Result<Vec<OsString>, clap::Error> {
     let Some(start) = args
         .iter()
-        .position(|arg| matches!(arg.to_str(), Some("ls" | "dir" | "get" | "job")))
+        .position(|arg| matches!(arg.to_str(), Some("ls" | "dir" | "get" | "job" | "table")))
     else {
         return Ok(args.to_vec());
     };
@@ -327,7 +335,7 @@ fn source_read_arguments(
     let schema = parser
         .find_subcommand(if name == "dir" { "ls" } else { name })
         .expect("bounded read schema");
-    let (schema, start) = if name == "job" {
+    let (schema, start) = if matches!(name, "job" | "table") {
         let Some(leaf) = args.get(start + 1).and_then(|arg| arg.to_str()) else {
             return Ok(args.to_vec());
         };

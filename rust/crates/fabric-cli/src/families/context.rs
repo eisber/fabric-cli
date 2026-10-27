@@ -30,7 +30,7 @@ enum Needed {
 }
 
 #[derive(Default)]
-pub(super) struct CommandContext {
+pub(crate) struct CommandContext {
     snapshot: Snapshot,
     capacities: Option<Vec<fabric_cli_local::Capacity>>,
     properties: BTreeMap<String, Option<OneLakeProperties>>,
@@ -113,12 +113,32 @@ impl HierarchyLookup for Loading<'_> {
 }
 
 impl CommandContext {
-    pub(super) async fn resolve(
+    pub(crate) async fn resolve(
         &mut self,
         reads: &ReadSession<'_>,
         http: &HttpExecutor,
         current: Arc<Element>,
         path: &str,
+        options: ResolveOptions,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<Arc<PathElement>, CommandError> {
+        self.resolve_path(
+            reads,
+            http,
+            PathElement::from_fabric(current),
+            PathInput::Scalar(path),
+            options,
+            cancelled,
+        )
+        .await
+    }
+
+    pub(crate) async fn resolve_path(
+        &mut self,
+        reads: &ReadSession<'_>,
+        http: &HttpExecutor,
+        current: Arc<PathElement>,
+        path: PathInput<'_>,
         options: ResolveOptions,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Arc<PathElement>, CommandError> {
@@ -136,14 +156,10 @@ impl CommandContext {
                     context: self,
                     needed: &needed,
                 };
-                let resolver = PathResolver::new(
-                    &loading,
-                    PathElement::from_fabric(current.clone()),
-                    reads.home.clone(),
-                    "ls",
-                )
-                .map_err(|error| errors::error(&error.code, error.message))?;
-                let result = resolver.resolve(PathInput::Scalar(path), options);
+                let resolver =
+                    PathResolver::new(&loading, current.clone(), reads.home.clone(), "ls")
+                        .map_err(|error| errors::error(&error.code, error.message))?;
+                let result = resolver.resolve(path, options);
                 (result, needed.into_inner())
             };
             match needed {

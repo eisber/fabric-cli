@@ -17,6 +17,8 @@ pub mod parser;
 mod projection;
 mod reads;
 pub mod session;
+#[cfg(feature = "native-read")]
+pub mod tables;
 mod workspace_get;
 
 pub use folder_reads::FolderReadHost;

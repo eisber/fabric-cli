@@ -1,0 +1,12 @@
+{
+  "_copyright":"Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "source_commit":"cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "unicode_version":"15.1.0",
+  "cases":[
+    {"id":"vacuum-arabic-decimal","operation":"vacuum","hours":"\u0661\u0668\u0662","expected":{"vacuumSettings":{"retentionPeriod":"7:14:00:00"},"tableName":"sales"}},
+    {"id":"vacuum-fullwidth-decimal","operation":"vacuum","hours":"\uff11\uff16\uff18","expected":{"vacuumSettings":{"retentionPeriod":"7:00:00:00"},"tableName":"sales"}},
+    {"id":"vacuum-supplementary-decimal","operation":"vacuum","hours":"\ud835\udfd9\ud835\udfde\ud835\udfe0","expected":{"vacuumSettings":{"retentionPeriod":"7:00:00:00"},"tableName":"sales"}},
+    {"id":"vacuum-mixed-decimal-separators","operation":"vacuum","hours":"-\u0967_\u096e\u0968","expected":{"vacuumSettings":{"retentionPeriod":"-8:10:00:00"},"tableName":"sales"}},
+    {"id":"vacuum-nondecimal-numeric-rejected","operation":"vacuum","hours":"\u00b2","error_code":"UnexpectedError"}
+  ]
+}

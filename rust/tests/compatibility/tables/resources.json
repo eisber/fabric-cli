@@ -1,0 +1,15 @@
+{
+  "_copyright":"Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "source_commit":"cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "boundary":"Already-resolved OneLakeItem; owner item root traversal/existence remains the context host",
+  "cases":[
+    {"item_type":"Lakehouse","table_check":true,"job_check":true,"job_type":"TableMaintenance"},
+    {"item_type":"Warehouse","table_check":true,"job_check":false},
+    {"item_type":"KQLDatabase","table_check":true,"job_check":false},
+    {"item_type":"MirroredDatabase","table_check":true,"job_check":false},
+    {"item_type":"SemanticModel","table_check":true,"job_check":false},
+    {"item_type":"SQLDatabase","table_check":true,"job_check":false},
+    {"item_type":"CosmosDBDatabase","table_check":true,"job_check":false},
+    {"item_type":"SparkJobDefinition","table_check":true,"job_check":true,"job_type":"sparkjob"}
+  ]
+}

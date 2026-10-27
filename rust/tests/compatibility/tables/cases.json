@@ -1,0 +1,234 @@
+{
+  "_copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "id": "single-quote-value-python-slice",
+      "operation": "load",
+      "format": "format=csv,delimiter='",
+      "expected": {
+        "pathType": "File", "relativePath": "Files/input.csv", "mode": "Overwrite",
+        "formatOptions": {"format": "Csv", "delimiter": ""}
+      }
+    },
+    {
+      "id": "schema-noniterable-json-is-unexpected",
+      "operation": "schema",
+      "logs": [{"name": "item/Tables/sales/_delta_log/00001.json", "text": "1"}],
+      "error_code": "UnexpectedError",
+      "expected_reads": ["ws/item/Tables/sales/_delta_log/00001.json"]
+    },
+    {
+      "id": "csv-default-file",
+      "operation": "load",
+      "source_kind": "file",
+      "expected": {
+        "pathType": "File", "relativePath": "Files/input.csv", "mode": "Overwrite",
+        "formatOptions": {"format": "Csv"}
+      }
+    },
+    {
+      "id": "folder-always-recursive",
+      "operation": "load",
+      "source_kind": "directory",
+      "extension": ".csv",
+      "mode": "append",
+      "expected": {
+        "pathType": "Folder", "relativePath": "Files/input.csv", "mode": "Append",
+        "formatOptions": {"format": "Csv"}, "extension": ".csv", "recursive": true
+      }
+    },
+    {
+      "id": "csv-explicit-options",
+      "operation": "load",
+      "format": "format=CSV,header=TRUE,delimiter=';'",
+      "expected": {
+        "pathType": "File", "relativePath": "Files/input.csv", "mode": "Overwrite",
+        "formatOptions": {"format": "Csv", "header": true, "delimiter": ";"}
+      }
+    },
+    {
+      "id": "parquet-ignores-csv-options",
+      "operation": "load",
+      "format": "format=pArQuEt,header=false,delimiter='|'",
+      "expected": {
+        "pathType": "File", "relativePath": "Files/input.csv", "mode": "Overwrite",
+        "formatOptions": {"format": "Parquet"}
+      }
+    },
+    {
+      "id": "duplicate-key-last-wins",
+      "operation": "load",
+      "format": "format=parquet,format=csv,header=no,header=false,,",
+      "expected": {
+        "pathType": "File", "relativePath": "Files/input.csv", "mode": "Overwrite",
+        "formatOptions": {"format": "Csv", "header": false}
+      }
+    },
+    {
+      "id": "delimiter-boolean-preserved",
+      "operation": "load",
+      "format": "format=csv,delimiter=true,header=1",
+      "expected": {
+        "pathType": "File", "relativePath": "Files/input.csv", "mode": "Overwrite",
+        "formatOptions": {"format": "Csv", "header": "1", "delimiter": true}
+      }
+    },
+    {
+      "id": "quoted-comma-is-not-csv",
+      "operation": "load",
+      "format": "format=csv,delimiter=','",
+      "error_code": "InvalidInput"
+    },
+    {
+      "id": "missing-equals",
+      "operation": "load",
+      "format": "csv",
+      "error_code": "InvalidInput"
+    },
+    {
+      "id": "unknown-format-key-case-sensitive",
+      "operation": "load",
+      "format": "format=csv,Header=true",
+      "error_code": "InvalidInput"
+    },
+    {
+      "id": "format-key-required-when-argument-present",
+      "operation": "load",
+      "format": "header=true",
+      "error_code": "UnknownError"
+    },
+    {
+      "id": "unsupported-format",
+      "operation": "load",
+      "format": "format=json",
+      "error_code": "UnknownError"
+    },
+    {
+      "id": "bool-format-python-unexpected",
+      "operation": "load",
+      "format": "format=true",
+      "error_code": "UnexpectedError"
+    },
+    {
+      "id": "empty-format-argument-is-default",
+      "operation": "load",
+      "format": "",
+      "extension": "",
+      "expected": {
+        "pathType": "File", "relativePath": "Files/input.csv", "mode": "Overwrite",
+        "formatOptions": {"format": "Csv"}
+      }
+    },
+    {
+      "id": "unrecognized-source-resource-type",
+      "operation": "load",
+      "source_kind": "unknown",
+      "error_code": "InvalidPath"
+    },
+    {
+      "id": "vacuum-default-seven-days",
+      "operation": "vacuum",
+      "hours": "168",
+      "expected": {"vacuumSettings": {"retentionPeriod": "7:00:00:00"}, "tableName": "sales"}
+    },
+    {
+      "id": "vacuum-partial-day-schema",
+      "operation": "vacuum",
+      "hours": "182",
+      "local_path": "Tables/dbo/sales",
+      "expected": {"vacuumSettings": {"retentionPeriod": "7:14:00:00"}, "tableName": "sales", "schemaName": "dbo"}
+    },
+    {
+      "id": "vacuum-zero-no-added-minimum",
+      "operation": "vacuum",
+      "hours": "0",
+      "expected": {"vacuumSettings": {"retentionPeriod": "0:00:00:00"}, "tableName": "sales"}
+    },
+    {
+      "id": "vacuum-negative-floor-division",
+      "operation": "vacuum",
+      "hours": "-1",
+      "expected": {"vacuumSettings": {"retentionPeriod": "-1:23:00:00"}, "tableName": "sales"}
+    },
+    {
+      "id": "vacuum-python-integer-separators",
+      "operation": "vacuum",
+      "hours": " +1_68 ",
+      "expected": {"vacuumSettings": {"retentionPeriod": "7:00:00:00"}, "tableName": "sales"}
+    },
+    {
+      "id": "vacuum-fraction-not-supported",
+      "operation": "vacuum",
+      "hours": "1.5",
+      "error_code": "UnexpectedError"
+    },
+    {
+      "id": "optimize-empty-settings",
+      "operation": "optimize",
+      "expected": {"optimizeSettings": {}, "tableName": "sales"}
+    },
+    {
+      "id": "optimize-vorder-and-zorder",
+      "operation": "optimize",
+      "vorder": true,
+      "zorder": " key, date ",
+      "local_path": "Tables/dbo/sales",
+      "expected": {"optimizeSettings": {"vOrder": true, "zOrderBy": ["key", "date"]}, "tableName": "sales", "schemaName": "dbo"}
+    },
+    {
+      "id": "optimize-empty-zorder-columns-retained",
+      "operation": "optimize",
+      "zorder": ",key,",
+      "expected": {"optimizeSettings": {"zOrderBy": ["", "key", ""]}, "tableName": "sales"}
+    },
+    {
+      "id": "schema-only-exactly-three-components",
+      "operation": "optimize",
+      "local_path": "Tables/nested/dbo/sales",
+      "expected": {"optimizeSettings": {}, "tableName": "sales"}
+    },
+    {
+      "id": "schema-reverse-lexicographic-first-metadata",
+      "operation": "schema",
+      "logs": [
+        {"name": "item/Tables/sales/_delta_log/00001.json", "text": "{\"metaData\":{\"schemaString\":\"{\\\"fields\\\":[{\\\"name\\\":\\\"old\\\",\\\"type\\\":\\\"string\\\"}]}\"}}"},
+        {"name": "item/Tables/sales/_delta_log/00002.json", "text": "{\"add\":{}}\n{\"metaData\":{\"schemaString\":\"{\\\"fields\\\":[{\\\"name\\\":\\\"new\\\",\\\"type\\\":\\\"long\\\",\\\"nullable\\\":true,\\\"metadata\\\":{}}]}\"}}"},
+        {"name": "item/Tables/sales/_delta_log/00003.checkpoint.parquet", "text": ""}
+      ],
+      "expected": [{"name": "new", "type": "long", "nullable": true, "metadata": {}}],
+      "expected_reads": ["ws/item/Tables/sales/_delta_log/00002.json"]
+    },
+    {
+      "id": "schema-falls-back-to-earlier-metadata",
+      "operation": "schema",
+      "logs": [
+        {"name": "item/Tables/sales/_delta_log/00001.json", "text": "{\"metaData\":{\"schemaString\":\"{\\\"fields\\\":[]}\"}}"},
+        {"name": "item/Tables/sales/_delta_log/00002.json", "text": "{\"add\":{}}"}
+      ],
+      "expected": [],
+      "expected_reads": ["ws/item/Tables/sales/_delta_log/00002.json", "ws/item/Tables/sales/_delta_log/00001.json"]
+    },
+    {
+      "id": "schema-no-json-logs",
+      "operation": "schema",
+      "logs": [{"name": "item/Tables/sales/_delta_log/00001.checkpoint.parquet", "text": ""}],
+      "error_code": "InvalidDeltaTable",
+      "expected_reads": []
+    },
+    {
+      "id": "schema-no-metadata",
+      "operation": "schema",
+      "logs": [{"name": "item/Tables/sales/_delta_log/00001.json", "text": "{\"add\":{}}"}],
+      "error_code": "InvalidDeltaTable",
+      "expected_reads": ["ws/item/Tables/sales/_delta_log/00001.json"]
+    },
+    {
+      "id": "schema-malformed-log-not-skipped",
+      "operation": "schema",
+      "logs": [{"name": "item/Tables/sales/_delta_log/00001.json", "text": "not json"}],
+      "error_code": "UnexpectedError",
+      "expected_reads": ["ws/item/Tables/sales/_delta_log/00001.json"]
+    }
+  ]
+}

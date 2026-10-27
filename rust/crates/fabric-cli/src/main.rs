@@ -51,13 +51,20 @@ fn run() -> io::Result<ExitCode> {
         }
         #[cfg(feature = "native-read")]
         Ok(
-            invocation
-            @ (Invocation::Access(_) | Invocation::Resource(_) | Invocation::Transfer(_)),
+            invocation @ (Invocation::Access(_)
+            | Invocation::Resource(_)
+            | Invocation::Transfer(_)
+            | Invocation::Table(_)),
         ) => {
             return native_read::run_family(&invocation);
         }
         #[cfg(not(feature = "native-read"))]
-        Ok(Invocation::Access(_) | Invocation::Resource(_) | Invocation::Transfer(_)) => (
+        Ok(
+            Invocation::Access(_)
+            | Invocation::Resource(_)
+            | Invocation::Transfer(_)
+            | Invocation::Table(_),
+        ) => (
             CommandError {
                 code: "NotConfigured",
                 message: fabric_cli::HostError::NotConfigured.to_string(),

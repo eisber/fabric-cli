@@ -1,0 +1,10 @@
+{
+  "_copyright":"Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "source_commit":"cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases":[
+    {"id":"operation-has-no-result-retains-original-success","initial":{"status":202,"headers":{"x-ms-operation-id":"op"}},"responses":[{"status":200,"body":{"status":"Succeeded"},"headers":{"Location":"https://api.fabric.microsoft.com/v1/operations/op/result"}},{"status":400,"body":{"errorCode":"OperationHasNoResult","message":"No result"}}],"expected":{"status":200,"requests":["operations/op","operations/op/result"],"waits":[10]}},
+    {"id":"operation-missing-status-keeps-polling","initial":{"status":202,"headers":{"x-ms-operation-id":"op"}},"responses":[{"status":200,"body":{}},{"status":200,"body":{"status":"Succeeded"}}],"expected":{"status":200,"requests":["operations/op","operations/op"],"waits":[10,10]}},
+    {"id":"operation-result201-completes","initial":{"status":202,"headers":{"x-ms-operation-id":"op"}},"responses":[{"status":200,"body":{"status":"Completed"},"headers":{"Location":"https://api.fabric.microsoft.com/v1/operations/op/result"}},{"status":201,"body":{"rows":1}}],"expected":{"status":201,"requests":["operations/op","operations/op/result"],"waits":[10]}},
+    {"id":"operation-result204-emits-no-final-output","initial":{"status":202,"headers":{"x-ms-operation-id":"op"}},"responses":[{"status":200,"body":{"status":"Succeeded"},"headers":{"Location":"https://api.fabric.microsoft.com/v1/operations/op/result"}},{"status":204}],"expected":{"status":204,"requests":["operations/op","operations/op/result"],"waits":[10]}}
+  ]
+}
