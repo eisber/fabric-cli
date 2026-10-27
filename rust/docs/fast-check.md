@@ -24,7 +24,12 @@ comparison. It records the probe hash separately from the claimed source pin.
 Missing fields, failed captures and expected baseline divergences remain
 failures, never passed coverage. Only these finite audit plans collect
 multiple failures; ordinary preflight remains fail-fast.
-Root-approved disjoint output, orchestration, wheelhouse and deploy hosted
+The explicit Linux `argv-audit` lane independently runs the default and
+`native-read` `fabric-cli/argv_contract` targets, preserving both raw streams
+and actual exits even if the first fails. Expected baseline failures remain
+failed tests and cannot satisfy the normal preflight or full-matrix gate.
+
+Root-approved disjoint output, orchestration, argv, wheelhouse and deploy hosted
 families may run concurrently; overlapping families and all other fast
 candidates retain the single-candidate guard. This grants no local build slot.
 
@@ -160,10 +165,15 @@ default and native CLI graph, then tests `fabric-deploy` before the actual
 targets (`config`, `repository`, `parameters`, `yaml`) and both CLI targets.
 Compare actual registered tests with the source inventory; listing a test
 does not prove it ran, and Cargo can stop before later binaries when one fails.
-The family stage checks nine unchanged source comparators against the pinned
+The family stage checks ten unchanged source comparators against the pinned
 public CICD/CLI source, then native-feature CLI doctests. Development-only
 PyYAML 6.0.3/jsonpath-ng 1.9.1 match the protected deployment oracle; the
 separate installed Python performance baseline is not modified.
+The operation-result comparator retains the real missing-`Location` failure
+and successful result-ID source observations; it never waives uncertainty or
+replays an accepted mutation. Registered test counts are source-dependent:
+the corrected operation-result slice has 43 registered cases, not the earlier
+42-case source inventory.
 Its consumer injects offline HTTP and uses
 temporary files; the finite plan never invokes a real `deploy` command or live
 publication. The receipt explicitly limits evidence to the library/root

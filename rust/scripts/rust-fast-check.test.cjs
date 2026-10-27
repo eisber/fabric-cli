@@ -13,10 +13,26 @@ test('only full source IDs and finite lanes are accepted', () => {
   for (const value of ['abc123', '0'.repeat(40), '--upload-pack=x', 'a'.repeat(40) + ';echo']) {
     assert.equal(sha(value), false);
   }
-  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values', 'cli-auth', 'cli-95', 'windows-auth', 'deploy-mount', 'native-endpoint', 'output-audit', 'orchestration-audit', 'windows-wheelhouse']) assert.equal(lane(value), value);
+  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values', 'cli-auth', 'cli-95', 'windows-auth', 'deploy-mount', 'native-endpoint', 'output-audit', 'orchestration-audit', 'argv-audit', 'windows-wheelhouse']) assert.equal(lane(value), value);
   for (const value of ['__proto__', 'unknown', 'cli-jobs;echo']) assert.throws(() => lane(value));
   assert.throws(() => options(['--source', 'a', '--source', 'b'], ['--source']));
   assert.throws(() => options(['--command', 'echo'], ['--source']));
+});
+
+test('argv baseline keeps independent default and native results without hiding either failure', () => {
+  const commands = plan('audit', {lane: 'argv-audit', packages: ['fabric-cli']});
+  assert.deepEqual(commands.map(item => item.args), [
+    ['test', '--offline', '--locked', '-p', 'fabric-cli',
+      '--test', 'argv_contract', '--', '--test-threads=1'],
+    ['test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
+      '--test', 'argv_contract', '--', '--test-threads=1'],
+  ]);
+  assert.deepEqual(execute(commands, '.', () => ({status: 101}), true).map(item => item.exit), [101, 101]);
+  laneBranch('argv-audit', 'validation/rust-fast-argv-exact');
+  assert.throws(() => laneBranch('baseline', 'validation/rust-fast-argv-exact'));
+  assert.throws(() => requireFastPass({lane: 'argv-audit'}, {}));
+  assert.equal(parallelCandidate('argv-audit', 'validation/rust-fast-deploy-exact'), true);
+  assert.equal(parallelCandidate('argv-audit', 'validation/rust-fast-argv-other'), false);
 });
 
 test('baseline audits run both finite output targets without granting full compatibility status', () => {
@@ -105,10 +121,11 @@ test('deploy preflight first runs actual library then native root consumer, neve
   ]);
   assert.ok(plan('clippy', manifest)[1].args.includes('native-read'));
   const family = plan('family', manifest, '/target', '/receipts', () => true);
-  assert.equal(family.length, 13);
+  assert.equal(family.length, 14);
   assert.ok(family.at(-1).args.includes('--doc'));
   assert.ok(family.some(item => item.args.includes('crates/fabric-deploy/tests/orchestration_reference.py')));
   assert.ok(family.some(item => item.args.includes('crates/fabric-cli/tests/deploy_wrapper_reference.py')));
+  assert.ok(family.some(item => item.args.includes('crates/fabric-deploy/tests/operation_result_reference.py')));
   for (const item of [...commands, ...family]) {
     assert.ok(!item.args.includes('run') && !item.args.includes('--config'));
   }

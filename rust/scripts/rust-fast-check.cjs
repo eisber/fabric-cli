@@ -21,6 +21,7 @@ const LANES = Object.freeze({
   'native-endpoint': ['fabric-cli', 'fabric-sdk', 'fabric-core', 'fabric-core-json', 'fabric-cli-output'],
   'output-audit': ['fabric-cli', 'fabric-cli-output'],
   'orchestration-audit': ['fabric-cli'],
+  'argv-audit': ['fabric-cli'],
   'windows-wheelhouse': [],
 });
 const CI_FILES = [
@@ -67,7 +68,7 @@ function laneBranch(selectedLane, branch) {
   requireThat(branch.startsWith('validation/rust-fast-msit-') === (selectedLane === 'native-endpoint'),
     'Native endpoint lane requires its dedicated validation/rust-fast-msit-* namespace');
   for (const [family, prefix] of [['windows-wheelhouse', 'wheelhouse'],
-    ['output-audit', 'output'], ['orchestration-audit', 'orchestration']]) {
+    ['output-audit', 'output'], ['orchestration-audit', 'orchestration'], ['argv-audit', 'argv']]) {
     requireThat(branch.startsWith(`validation/rust-fast-${prefix}-`) === (selectedLane === family),
       `${family} requires its dedicated immutable validation namespace`);
   }
@@ -174,13 +175,19 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       python(`tests/compatibility/output/${reference}`, ...extra, '--observed', file));
   };
   if (stage === 'audit') {
-    requireThat(['output-audit', 'orchestration-audit'].includes(manifest.lane),
+    requireThat(['output-audit', 'orchestration-audit', 'argv-audit'].includes(manifest.lane),
       'Independent failure collection is restricted to explicit audit lanes');
     if (manifest.lane === 'output-audit') return [
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli-output',
         '--test', 'output_audit', '--', '--test-threads=1'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
         '--test', 'output_contract_audit', '--', '--test-threads=1'),
+    ];
+    if (manifest.lane === 'argv-audit') return [
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
+        '--test', 'argv_contract', '--', '--test-threads=1'),
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
+        '--test', 'argv_contract', '--', '--test-threads=1'),
     ];
     const capture = 'tests/compatibility/orchestration/capture.py';
     const probe = path.join(target, 'debug', 'examples', 'read_session_probe');
@@ -305,7 +312,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     const cicd = '5ca096c00a9a878c646c59fe537b883eba951329';
     const references = ['config_reference', 'yaml_scalar_reference', 'config_warning_reference',
       'orchestration_reference', 'operation_section_reference', 'literal_parameter_reference',
-      'literal_parameter_payload_reference', 'transform_adapter_reference'];
+      'literal_parameter_payload_reference', 'transform_adapter_reference', 'operation_result_reference'];
     return [
       {program: 'git', args: ['init', source]},
       {program: 'git', args: ['-C', source, 'fetch', '--depth=1',
@@ -446,7 +453,7 @@ function runStage(stage) {
     'Hosted preflight must use one Cargo job and one test thread');
   requireThat(process.env.CARGO_TARGET_DIR && path.isAbsolute(process.env.CARGO_TARGET_DIR),
     'An absolute private CARGO_TARGET_DIR is required');
-  const audit = stage === 'audit' && ['output-audit', 'orchestration-audit'].includes(manifest.lane);
+  const audit = stage === 'audit' && ['output-audit', 'orchestration-audit', 'argv-audit'].includes(manifest.lane);
   const commands = plan(stage, manifest, process.env.CARGO_TARGET_DIR, receipts).map((item, index) =>
     audit ? {...item, stdout: item.stdout || path.join(receipts, `audit-${index}-stdout.txt`),
       stderr: path.join(receipts, `audit-${index}-stderr.txt`)} : item);
@@ -489,7 +496,7 @@ function options(args, allowed) {
 }
 function parallelCandidate(selectedLane, branch) {
   const families = {'output-audit': 'output', 'orchestration-audit': 'orchestration',
-    'windows-wheelhouse': 'wheelhouse', 'deploy-mount': 'deploy'};
+    'argv-audit': 'argv', 'windows-wheelhouse': 'wheelhouse', 'deploy-mount': 'deploy'};
   const current = Object.entries(families).find(([, prefix]) =>
     branch?.startsWith(`validation/rust-fast-${prefix}-`))?.[0];
   return Object.hasOwn(families, selectedLane) && current !== undefined && current !== selectedLane;
@@ -576,7 +583,7 @@ function full(args) {
   console.log('Full batch requested at exact immutable CI head; read provider jobs before claiming coverage');
 }
 function requireFastPass(receipt, run) {
-  requireThat(!['output-audit', 'orchestration-audit', 'windows-wheelhouse'].includes(receipt.lane),
+  requireThat(!['output-audit', 'orchestration-audit', 'argv-audit', 'windows-wheelhouse'].includes(receipt.lane),
     'Setup artifacts and independent audits are never full compatibility gates');
   requireThat(run.head_sha === receipt.head && run.path === '.github/workflows/rust-fast-check.yml' &&
     run.status === 'completed' && run.conclusion === 'success', 'Exact combined head has not passed fast preflight');
