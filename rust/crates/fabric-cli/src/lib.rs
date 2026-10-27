@@ -7,6 +7,8 @@
 //! configuration, time and streams. The opt-in `native-read` executable host
 //! supplies these explicitly; default builds never discover credentials.
 
+#[cfg(feature = "windows-broker")]
+pub mod auth_commands;
 mod errors;
 #[cfg(feature = "native-read")]
 pub mod families;

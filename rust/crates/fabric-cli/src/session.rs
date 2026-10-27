@@ -18,6 +18,28 @@ use fabric_sdk::{
 use fabric_sdk_operations::OperationExecutor;
 use std::{future::Future, pin::pin, sync::Arc};
 
+/// Run a parsed root auth command through the same engine as the native adapter.
+///
+/// The caller binds the broker to its validated explicit account/tenant/client
+/// selection and supplies cancellation/time. This creates no runtime, performs
+/// no provider discovery and does not implement a replacement identity backend.
+#[cfg(feature = "windows-broker")]
+pub async fn run_auth(
+    command: &crate::parser::AuthCommand,
+    broker: &impl crate::auth_commands::Broker,
+    cancelled: impl Future<Output = std::io::Result<()>>,
+    deadline: impl Future<Output = ()>,
+) -> Result<serde_json::Value, crate::auth_commands::Failure> {
+    crate::auth_commands::run(
+        command.action,
+        command.allow_interaction,
+        broker,
+        cancelled,
+        deadline,
+    )
+    .await
+}
+
 /// The four existing read interfaces; no extra transport or execution policy.
 pub trait ReadExecutor:
     WorkspaceExecutor + ItemExecutor + FolderExecutor + CapacityExecutor
