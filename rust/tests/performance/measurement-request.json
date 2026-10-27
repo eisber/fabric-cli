@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "status": "pending",
+  "source_sha": "b78d9654a37ca909036df54b8562e01fcfe8aa13",
+  "correctness_receipt": "PENDING: worker must verify both help/version contracts before measuring",
+  "endpoint_host": null,
+  "environment": {
+    "os_release": "PENDING: actual Linux distribution and kernel",
+    "architecture": "PENDING: actual host architecture",
+    "cpu_model": "PENDING: CPU model and allocated CPU set",
+    "cpu_governor": "PENDING: observed governor or explicitly unavailable",
+    "background_load": "PENDING: contemporaneous host load and competing work",
+    "filesystem": "PENDING: native Linux filesystem, mount type and cache history",
+    "wsl": "PENDING: WSL/kernel version or not WSL",
+    "hard_caps": "PENDING: enforced/read-back <=2 CPU, <=6 GiB and <=128 tasks",
+    "mutex": "PENDING: existing shared validation mutex and coordinator grant reference"
+  },
+  "samples": 30,
+  "warmups": 3,
+  "process_timeout_seconds": 5,
+  "job_timeout_seconds": 600,
+  "targets": [
+    {
+      "name": "rust",
+      "executable": "/PENDING/private-target/release/fab-rs",
+      "executable_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "source_sha": "b78d9654a37ca909036df54b8562e01fcfe8aa13",
+      "tool_version": "PENDING: verify rustc 1.99.1 and cargo --version",
+      "target": "PENDING: rustc host/explicit target triple",
+      "features": [],
+      "package_mode": "cargo-release",
+      "native_backend": "none; default-feature startup only, no service/auth proof",
+      "provenance_receipt": "PENDING: exact source, clean diff, release build command/profile and executable hash",
+      "contracts": {
+        "--help": {
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "byte_count": 1
+        },
+        "--version": {
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "byte_count": 1
+        }
+      }
+    },
+    {
+      "name": "python",
+      "executable": "/PENDING/private-venv/bin/fab",
+      "executable_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "source_sha": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+      "tool_version": "PENDING: verify Python 3.13.15, ms-fabric-cli distribution and dependencies",
+      "target": "PENDING: installed interpreter OS/architecture",
+      "features": [],
+      "package_mode": "venv-installed",
+      "native_backend": "installed Python runtime/package included; no service/auth invocation",
+      "provenance_receipt": "PENDING: wheel/source install at pinned commit, package freeze, interpreter and installed-file hashes",
+      "contracts": {
+        "--help": {
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "byte_count": 1
+        },
+        "--version": {
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "byte_count": 1
+        }
+      }
+    }
+  ]
+}
