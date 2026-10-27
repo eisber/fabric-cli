@@ -209,3 +209,116 @@ async fn table_cancellation_text_is_an_error_and_json_remains_a_failure() {
         assert!(host.requests().is_empty());
     }
 }
+
+#[test]
+fn job_endpoint_failure_after_metadata_retains_full_error_path() {
+    let plan = dispatch(
+        &[
+            "job",
+            "run-list",
+            "Demo.Workspace/Book.Notebook",
+            "--output_format",
+            "text",
+        ],
+        vec![
+            folder_support::reply(
+                json!({"value":[{"id":"w","displayName":"Demo","type":"Workspace"}]}),
+            ),
+            folder_support::reply(
+                json!({"value":[{"id":"n","displayName":"Book","type":"Notebook"}]}),
+            ),
+            Reply {
+                status: 401,
+                body: json!({"errorCode":"Unauthorized","message":"private"}),
+                headers: Default::default(),
+            },
+        ],
+        pending(),
+    );
+    assert_capture(&plan, "job-text-service");
+}
+
+#[tokio::test]
+async fn family_predispatch_failure_uses_error_text_without_mutation() {
+    let mut host = family_support::Harness::new();
+    host.reply(401, json!({"errorCode":"Unauthorized","message":"private"}));
+    let output = host
+        .execute(&["exists", "Demo.Workspace", "--output_format", "text"])
+        .await;
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    assert_eq!(output.write_to(&mut stdout, &mut stderr).unwrap(), 4);
+    assert_eq!(stdout, b"x exists: [Unauthorized] Access is unauthorized\n");
+    assert!(stderr.is_empty());
+    assert_eq!(host.requests().len(), 1);
+    assert_eq!(host.requests()[0]["method"], "GET");
+}
+
+#[tokio::test]
+async fn resource_failure_retains_typed_evidence_and_does_not_replay_on_writer_failure() {
+    let mut host = family_support::Harness::new();
+    host.metadata(json!([]));
+    host.reply(401, json!({"errorCode":"Unauthorized","message":"private"}));
+    let output = host
+        .execute(&[
+            "mkdir",
+            "Demo.Workspace/Book.Notebook",
+            "--output_format",
+            "text",
+        ])
+        .await;
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    assert_eq!(output.write_to(&mut stdout, &mut stderr).unwrap(), 4);
+    assert_eq!(stdout, b"x mkdir: [Unauthorized] Access is unauthorized\n");
+    assert!(stderr.is_empty());
+    assert!(matches!(
+        &output.evidence,
+        fabric_cli::families::FamilyEvidence::Resource(Err(_))
+    ));
+    let requests = host.requests();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[2]["method"], "POST");
+    assert!(
+        output
+            .write_to(&mut family_support::BrokenWriter, &mut stderr)
+            .is_err()
+    );
+    assert!(stderr.is_empty());
+    assert_eq!(host.requests(), requests);
+}
+
+#[tokio::test]
+async fn table_schema_failure_keeps_prior_stderr_diagnostics_before_error_text() {
+    let mut host = family_support::Harness::new();
+    host.item("Lakehouse");
+    host.headers(200, Value::Null, &[("x-ms-resource-type", "directory")]);
+    host.reply(200, json!({"paths":[]}));
+    let output = host
+        .execute(&[
+            "table",
+            "schema",
+            "Demo.Workspace/Book.Lakehouse/Tables/sales",
+            "--output_format",
+            "text",
+        ])
+        .await;
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    assert_eq!(output.write_to(&mut stdout, &mut stderr).unwrap(), 1);
+    let expected = captures();
+    let expected = expected["observations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|capture| capture["name"] == "table-text-error")
+        .unwrap();
+    assert_eq!(stdout, expected["stdout"].as_str().unwrap().as_bytes());
+    assert_eq!(stderr, b"Getting schema for 'sales' table...\n");
+    assert_eq!(
+        output.plan.records[0].stream,
+        fabric_cli_output::OutputStream::Stderr,
+    );
+    assert_eq!(
+        output.plan.records.last().unwrap().stream,
+        fabric_cli_output::OutputStream::Stdout,
+    );
+    assert_eq!(host.requests().len(), 4);
+}

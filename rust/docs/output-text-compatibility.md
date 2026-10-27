@@ -38,6 +38,29 @@ terminal/command parity.
 | `display_help`, `print_version` | Explicit caller-ordered categories/header/version; no namespace/registry ownership | default/custom/empty categories, empty-command error and partial intro, exact version lines |
 | raw plain/grey/Fabric helpers | Explicit style/stream `render_line` boundary | grey stderr, Fabric color, plain fallback |
 
+## Failure-envelope presentation
+
+`text::render` routes a Failure envelope through the existing `render_error`
+path before applying success data, table, hidden-item or message formatting.
+Read, job, table, local and resource consumers therefore retain the `x` marker,
+full error command path and `[code]` on stdout. Exact `Unauthorized` exits 4;
+other command failures exit 1. Already-normalized message/code fields are not
+passed through `CommandError::new` again: empty normalized messages, final
+periods and operation/OneLake details remain unchanged.
+
+JSON rendering still uses the original envelope serializer before text routing.
+Successful text options and source-silent results remain unchanged. Table
+diagnostics retain their earlier stderr records, and caller-owned writers still
+propagate the first typed I/O error without fallback, flush or operation replay.
+The separate auth/bootstrap stderr schemas and correct access-family error
+renderer are not rewritten.
+
+The additive frozen Python captures and `output_audit`/`output_contract_audit`
+tests cover the presentation regression and its consumers. Their presence is
+not a claim of native execution or full command parity. Empty GET suppression,
+config success command naming, format defaults and Unicode providers remain
+separate compatibility boundaries.
+
 ## Explicit boundaries still requiring completion
 
 This slice does not certify full text parity. Unicode width is injected as the
