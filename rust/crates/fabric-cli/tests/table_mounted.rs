@@ -273,3 +273,118 @@ async fn root_table_failed_shared_operation_retains_original_id_uncertainty_and_
         1
     );
 }
+
+#[tokio::test]
+async fn root_table_load_literal_wire_cases_match_independent_pinned_source_fixtures() {
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/tables/wire.json"
+    ))
+    .unwrap();
+    for case in cases["cases"].as_array().unwrap() {
+        let mut host = Harness::new();
+        target(&host);
+        let kind = case["source_kind"].as_str().unwrap();
+        host.headers(200, Value::Null, &[("x-ms-resource-type", kind)]);
+        host.headers(200, Value::Null, &[("x-ms-resource-type", kind)]);
+        host.reply(200, Value::Null);
+        let source = format!(
+            "Demo.Workspace/Book.Lakehouse/{}",
+            case["source_path"].as_str().unwrap_or("Files/input.csv"),
+        );
+        let mut args = vec![
+            "table".to_owned(),
+            "load".to_owned(),
+            TABLE.to_owned(),
+            "--file".to_owned(),
+            source,
+        ];
+        for key in ["mode", "format", "extension"] {
+            if let Some(value) = case[key].as_str() {
+                args.push(format!("--{key}={value}"));
+            }
+        }
+        let output = host
+            .execute(&args.iter().map(String::as_str).collect::<Vec<_>>())
+            .await;
+        streams(&output, 0);
+        let requests = host.requests();
+        assert_eq!(requests.len(), 6, "{}", case["id"]);
+        assert_eq!(
+            requests[5]["raw_body"], case["expected_body"],
+            "{}",
+            case["id"]
+        );
+        assert_eq!(requests[5]["method"], "POST");
+    }
+}
+
+#[tokio::test]
+async fn root_table_schema_text_uses_shared_headers_and_keeps_progress_on_stderr() {
+    let mut host = Harness::new();
+    target(&host);
+    host.reply(
+        200,
+        json!({"paths":[{"name":"n/Tables/sales/_delta_log/00001.json"}]}),
+    );
+    host.reply(200, json!({"metaData":{"schemaString":"{\"fields\":[{\"name\":\"id\",\"type\":\"long\",\"nullable\":false}]}"}}));
+    let output = host
+        .execute(&["table", "schema", TABLE, "--output_format", "text"])
+        .await;
+    let (out, err) = streams(&output, 0);
+    assert!(out.contains("Name") && out.contains("Type") && out.contains("Nullable"));
+    assert!(out.contains("id") && out.contains("long"));
+    assert!(!out.contains("Getting schema"));
+    assert_eq!(
+        err,
+        "Getting schema for 'sales' table...\nSchema extracted successfully\n"
+    );
+}
+
+#[tokio::test]
+async fn root_table_schema_rejects_wide_integers_after_source_extraction_without_coercion() {
+    let mut host = Harness::new();
+    target(&host);
+    host.reply(
+        200,
+        json!({"paths":[{"name":"n/Tables/sales/_delta_log/00001.json"}]}),
+    );
+    host.reply(200, json!({"metaData":{"schemaString":"{\"fields\":[{\"metadata\":{\"wide\":18446744073709551616}}]}"}}));
+    let output = host.execute(&["table", "schema", TABLE]).await;
+    let (out, err) = streams(&output, 1);
+    assert_eq!(
+        serde_json::from_str::<Value>(&out).unwrap()["result"]["error_code"],
+        "InvalidJson"
+    );
+    assert!(err.ends_with("Schema extracted successfully\n"));
+}
+
+#[tokio::test]
+async fn root_table_vacuum_malformed_integer_is_explicit_and_never_submits() {
+    let mut host = Harness::new();
+    target(&host);
+    let output = host
+        .execute(&["table", "vacuum", TABLE, "--retain_n_hours", "1.5"])
+        .await;
+    let (out, err) = streams(&output, 1);
+    assert_eq!(
+        serde_json::from_str::<Value>(&out).unwrap()["result"]["error_code"],
+        "UnexpectedError"
+    );
+    assert!(err.is_empty());
+    assert_eq!(host.requests().len(), 3);
+}
+
+#[tokio::test]
+async fn root_table_local_cancellation_has_no_http_mutation_or_success() {
+    let mut host = Harness::new();
+    let output = host
+        .execute_with_cancelled(&["table", "optimize", TABLE], std::future::ready(()))
+        .await;
+    let (out, err) = streams(&output, 1);
+    assert_eq!(
+        serde_json::from_str::<Value>(&out).unwrap()["result"]["error_code"],
+        "LongRunningOperationCancelled"
+    );
+    assert!(err.is_empty());
+    assert!(host.requests().is_empty());
+}

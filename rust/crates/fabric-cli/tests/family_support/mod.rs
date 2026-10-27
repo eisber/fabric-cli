@@ -25,7 +25,7 @@ use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, VecDeque},
     fs,
-    future::pending,
+    future::{Future, pending},
     io,
     path::PathBuf,
     sync::{
@@ -76,8 +76,12 @@ impl HttpClient for Http {
             }
             _ => panic!("unexpected streaming family request"),
         };
+        let raw_body = match request.body() {
+            Body::Bytes(bytes) => String::from_utf8(bytes.to_vec()).unwrap(),
+            _ => panic!("unexpected streaming family request"),
+        };
         self.requests.lock().unwrap().push(json!({
-            "method": request.method().to_string(), "url": request.url().as_str(), "body": body,
+            "method": request.method().to_string(), "url": request.url().as_str(), "body": body, "raw_body": raw_body,
         }));
         let (status, body, supplied) = self
             .replies
@@ -243,6 +247,14 @@ impl Harness {
     }
 
     pub async fn execute(&mut self, args: &[&str]) -> FamilyOutput {
+        self.execute_with_cancelled(args, pending()).await
+    }
+
+    pub async fn execute_with_cancelled(
+        &mut self,
+        args: &[&str],
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> FamilyOutput {
         let invocation = parse_args(std::iter::once("fab-rs").chain(args.iter().copied())).unwrap();
         let sdk = Client::new(
             self.credential.clone(),
@@ -289,7 +301,7 @@ impl Harness {
             transfer_files: Some(&mut files),
             resource_files: None,
         }
-        .dispatch(&invocation, pending())
+        .dispatch(&invocation, cancelled)
         .await
         .unwrap();
         assert!(

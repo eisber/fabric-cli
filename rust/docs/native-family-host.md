@@ -3,7 +3,7 @@
 # Central family composition
 
 The experimental `fab-rs` root parser mounts the released local/configuration,
-resource, access/catalog/raw API and definition-transfer command schemas alongside
+resource, access/catalog/raw API, TABLE and definition-transfer command schemas alongside
 the existing read, job and optional authentication commands. These are the Python
 names from source `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`, not new namespaces.
 Registration is not a successful command or live-service acceptance.
@@ -53,6 +53,22 @@ Transfer results retain completed files, actual create IDs and deferred import
 cache effects. Delivery failure is not completion and never replays an operation.
 An embedded host applies deferred import cache effects only after delivery.
 
+TABLE delegates to `TableSession`, the existing context snapshot/resolver,
+OneLake HTTP reads/properties, shared Fabric load reconciliation and generic
+maintenance jobs. It retains original table/operation failures, observed IDs,
+mutation uncertainty and warnings separately from output delivery. A bare 202
+prints only the started message; cancellation and failed delivery never replay
+the POST or imply rollback. Shared text output retains schema headers, job
+key/value output and source progress on stderr. See the
+[TABLE matrix](table-compatibility.md) for precise source and validation limits.
+
+The optional authentication adapter and offline consumers use the same public
+`session::run_auth`/`auth_commands` path. Its injected boundary delegates the
+existing whole-login/sign-out operation, not a second broker engine. Offline
+metadata/selection/stream proof does not establish native WAM, MFA, Conditional
+Access or cross-platform authentication; see
+[auth command evidence](auth-command-evidence.md).
+
 The native definition file adapter uses the explicitly selected OS working
 directory as its stable owned root. Paths outside that root fail rather than
 silently expanding filesystem authority. Native confirmation and workspace export
@@ -67,7 +83,7 @@ folder transfer metadata, virtual resources other than capacity, local-file
 resource copy, workspace removal selection and folder SET metadata are not
 implemented by this central adapter. These fail explicitly. Workspace SET uses
 the existing typed metadata API; it does not claim the source-synchronous
-workspace GET accepted-operation branch. REPL/batch, table commands and native
+workspace GET accepted-operation branch. REPL/batch and native
 Windows/macOS/live-service acceptance remain separate work.
 
 `local_mounted` executes actual subprocess contracts with isolated configuration
@@ -76,3 +92,8 @@ central production session and shared HTTP adapter, asserting requests,
 audiences, output/writer failures, file contents and uncertainty. Existing read,
 job, family source comparisons and architecture contracts remain required.
 Their presence and the 52-leaf inventory are not a measured passing percentage.
+`table_mounted` adds real root TABLE HTTP, literal source request bytes, output,
+malformed-value, cancellation and uncertainty contracts. `auth_commands` passes
+root auth arguments through the shared production session with injected
+credential effects and time. Only actual exact-head passing receipts may add
+their canonical leaves to the numerator; test registration alone adds none.
