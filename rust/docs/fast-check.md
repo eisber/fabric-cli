@@ -189,6 +189,12 @@ and successful result-ID source observations; it never waives uncertainty or
 replays an accepted mutation. Registered test counts are source-dependent:
 the corrected operation-result slice has 43 registered cases, not the earlier
 42-case source inventory.
+When the released source includes `parameter_transforms`, that target runs
+first within the test stage and is included in the registration inventory.
+Its additional immutable `transform_program_reference.py` comparator also runs.
+New syntax source and dependency pins must be supplied by the owning lane;
+earlier literal-only gate results do not validate new parser dependencies or
+increase the runtime test count of an uncompiled candidate.
 The isolated pinned CICD reference checkout uses repository-local
 `core.autocrlf=true`: its immutable source receipts hash the original Windows
 checkout's CRLF bytes. This setting applies only to the private reference
@@ -226,6 +232,14 @@ and other lanes retain their existing bounds. This retains every command and
 assertion; a timed-out command remains failed/unverified, not a passed test.
 Targeted Windows endpoint evidence is separate from the complete Windows
 regression gate and never silently certifies shared-branch acceptance.
+The actual timeout rescue
+[run 40572621694](https://github.com/eisber/fabric-cli/actions/runs/40572621694)
+passed all 49 finite commands on **each** host at product source
+`c7eb7e83f8dcebfc1d9d0fe94edbdc332a35df60` and combined CI head
+`682564bd5785b7922e9c6842493b87d44f4bf5e9`, including each final source/lock
+check. The earlier 300-second timeout remains failed evidence. These complete
+offline passes do not certify live authentication, service permissions, macOS,
+or a later assembled source.
 
 Ordinary preflight runs execute workspace formatting, selected all-target offline checks and
 Clippy, single-thread tests and doctests, then actual family examples and pinned
