@@ -1,0 +1,500 @@
+{
+  "source": "microsoft/fabric-cicd@5ca096c00a9a878c646c59fe537b883eba951329",
+  "sourceHashes": {
+    "constants.py": "9db94078b1152f137b0c44a60626460575280455642a81d8a932035b251c9535",
+    "_common\\_exceptions.py": "22cc6ce5ca4dcf209c1d7c1c056c1c2b40cdc8ca397d36c9c68d108d0c89440e",
+    "_common\\_check_utils.py": "f60444e11a5f3424b5afb63cc4b69c7cd68a2fd4aff268913061e96c4000f39c",
+    "_common\\_config_utils.py": "acdb203d4db08687c438c811598f696c7aed69674c3e3d42b81a3ad627396f2f",
+    "_parameter\\_parameter.py": "32d603cfaf2b891194a5ea170dcd952d3c492a8420a3df0595ce84c682b07daf",
+    "_parameter\\_utils.py": "2d8b79c6d7d737595b346da0466790308e46b9cbed46bfaf1b3cde8a189e69d6",
+    "fabric_workspace.py": "10bae33f95026065fc22d558dc02b8ee17929cac77fa0dde298cc4d41ac7a890"
+  },
+  "dependencies": {
+    "PyYAML": "6.0.3",
+    "jsonpath-ng": "1.9.1"
+  },
+  "boundary": "Actual pinned FabricWorkspace._replace_parameters, Python re and jsonpath_ng.ext path-mutation leaves. Leaf-only null/empty/regex-bool inputs are not full parameter-schema acceptance claims. Native adapters remain deferred/unimplemented.",
+  "cases": [
+    {
+      "id": "unicode-capture",
+      "operation": "parameters",
+      "input": "id=caf\u00e9; id=\u03b1\u03b2;",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "id=(\\w+);",
+            "is_regex": true,
+            "replace_value": {
+              "dev": "new"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "value": "id=new; id=new;"
+      },
+      "calls": []
+    },
+    {
+      "id": "unicode-ignore-case",
+      "operation": "parameters",
+      "input": "I i \u0130 \u0131 S s \u017f K k \u212a",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "(i|s|k)",
+            "is_regex": true,
+            "replace_value": {
+              "dev": "\\1$1"
+            },
+            "ignore_case": true
+          }
+        ]
+      },
+      "expected": {
+        "value": "\\1$1 \\1$1 \\1$1 \\1$1 \\1$1 \\1$1 \\1$1 \\1$1 \\1$1 \\1$1"
+      },
+      "calls": []
+    },
+    {
+      "id": "one-capture-lookbehind",
+      "operation": "parameters",
+      "input": "id=old; skip=old;",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "(?<=id=)(?P<value>\\w+)(?=;)",
+            "is_regex": true,
+            "replace_value": {
+              "dev": "new"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "value": "id=new; skip=old;"
+      },
+      "calls": []
+    },
+    {
+      "id": "pattern-backreference",
+      "operation": "parameters",
+      "input": "aa ab aa",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "(?P<value>a)(?P=value)",
+            "is_regex": true,
+            "replace_value": {
+              "dev": "x"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "value": "xa ab xa"
+      },
+      "calls": []
+    },
+    {
+      "id": "optional-first-missing",
+      "operation": "parameters",
+      "input": "id=; id=x;",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "id=(x)?;",
+            "is_regex": true,
+            "replace_value": {
+              "dev": "new"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "error": {
+          "type": "InputError",
+          "message": "Regex pattern 'id=(x)?;' captured an empty value."
+        }
+      },
+      "calls": []
+    },
+    {
+      "id": "optional-later-missing",
+      "operation": "parameters",
+      "input": "id=x; id=;",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "id=(x)?;",
+            "is_regex": true,
+            "replace_value": {
+              "dev": "new"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "value": "id=new; newid=;"
+      },
+      "calls": []
+    },
+    {
+      "id": "nested-noncapturing",
+      "operation": "parameters",
+      "input": "prefixoldsuffix prefixoldsuffix",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "(?:prefix)(old)(?:suffix)",
+            "is_regex": true,
+            "replace_value": {
+              "dev": "\\g<1>"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "value": "prefix\\g<1>suffix prefix\\g<1>suffix"
+      },
+      "calls": []
+    },
+    {
+      "id": "inline-ignore-case",
+      "operation": "parameters",
+      "input": "Old OLD old",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "(?i)(old)",
+            "is_regex": true,
+            "replace_value": {
+              "dev": "$literal"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "error": {
+          "type": "ParsingError",
+          "message": "Invalid dynamic replacement variable format: '$literal'. Expected '$items.type.name.$attribute', '$workspace.$id', '$workspace.$name', '$workspace.$name_encoded', '$workspace.<name>.$id', or '$workspace.<name>.$items.<type>.<name>.$attribute'"
+        }
+      },
+      "calls": []
+    },
+    {
+      "id": "filtered-invalid-regex",
+      "operation": "parameters",
+      "input": "unchanged",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "(",
+            "is_regex": true,
+            "replace_value": {
+              "dev": "new"
+            },
+            "item_type": "Report"
+          }
+        ]
+      },
+      "expected": {
+        "error": {
+          "type": "InputError",
+          "message": "Invalid regex '(': missing ), unterminated subpattern at position 0"
+        }
+      },
+      "calls": []
+    },
+    {
+      "id": "filtered-two-captures",
+      "operation": "parameters",
+      "input": "ab",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "(a)(b)",
+            "is_regex": true,
+            "replace_value": {
+              "dev": "new"
+            },
+            "item_type": "Report"
+          }
+        ]
+      },
+      "expected": {
+        "error": {
+          "type": "InputError",
+          "message": "Regex pattern '(a)(b)' must contain exactly one capturing group."
+        }
+      },
+      "calls": []
+    },
+    {
+      "id": "zero-width-whole-match",
+      "operation": "parameters",
+      "input": "xx",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "(?=(x))",
+            "is_regex": true,
+            "replace_value": {
+              "dev": "y"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "value": "yxyx"
+      },
+      "calls": []
+    },
+    {
+      "id": "dollar-absolute-end",
+      "operation": "parameters",
+      "input": "old\n",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "(old)$",
+            "is_regex": true,
+            "replace_value": {
+              "dev": "new"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "value": "new\n"
+      },
+      "calls": []
+    },
+    {
+      "id": "numeric-filter-type-coercion",
+      "operation": "key_value",
+      "input": "{\"items\":[{\"n\":1,\"value\":\"a\"},{\"n\":true,\"value\":\"b\"},{\"n\":\"1\",\"value\":\"c\"}]}",
+      "parameter": {
+        "find_key": "$.items[?(@.n == 1)].value",
+        "replace_value": {
+          "dev": "new"
+        }
+      },
+      "expected": {
+        "value": "{\"items\": [{\"n\": 1, \"value\": \"new\"}, {\"n\": true, \"value\": \"new\"}, {\"n\": \"1\", \"value\": \"new\"}]}"
+      },
+      "calls": []
+    },
+    {
+      "id": "filter-missing-field",
+      "operation": "key_value",
+      "input": "{\"items\":[{\"value\":\"missing\"},{\"n\":2,\"value\":\"two\"},{\"n\":\"3\",\"value\":\"string\"}]}",
+      "parameter": {
+        "find_key": "$.items[?(@.n >= 2)].value",
+        "replace_value": {
+          "dev": "new"
+        }
+      },
+      "expected": {
+        "value": "{\"items\": [{\"value\": \"missing\"}, {\"n\": 2, \"value\": \"new\"}, {\"n\": \"3\", \"value\": \"new\"}]}"
+      },
+      "calls": []
+    },
+    {
+      "id": "bracket-property-special-characters",
+      "operation": "key_value",
+      "input": "{\"a/b\":{\"x.y\":\"old\",\"~\":\"keep\"}}",
+      "parameter": {
+        "find_key": "$['a/b']['x.y']",
+        "replace_value": {
+          "dev": {
+            "enabled": false
+          }
+        }
+      },
+      "expected": {
+        "value": "{\"a/b\": {\"x.y\": {\"enabled\": false}, \"~\": \"keep\"}}"
+      },
+      "calls": []
+    },
+    {
+      "id": "negative-index",
+      "operation": "key_value",
+      "input": "{\"items\":[1,2,3]}",
+      "parameter": {
+        "find_key": "$.items[-1]",
+        "replace_value": {
+          "dev": 7
+        }
+      },
+      "expected": {
+        "value": "{\"items\": [1, 2, 7]}"
+      },
+      "calls": []
+    },
+    {
+      "id": "slice-step",
+      "operation": "key_value",
+      "input": "{\"items\":[0,1,2,3,4]}",
+      "parameter": {
+        "find_key": "$.items[::2]",
+        "replace_value": {
+          "dev": 9
+        }
+      },
+      "expected": {
+        "value": "{\"items\": [9, 1, 9, 3, 9]}"
+      },
+      "calls": []
+    },
+    {
+      "id": "recursive-nested-array",
+      "operation": "key_value",
+      "input": "{\"id\":\"root\",\"rows\":[{\"id\":\"a\"},{\"child\":{\"id\":\"b\"}}]}",
+      "parameter": {
+        "find_key": "$..id",
+        "replace_value": {
+          "dev": "new"
+        }
+      },
+      "expected": {
+        "value": "{\"id\": \"new\", \"rows\": [{\"id\": \"new\"}, {\"child\": {\"id\": \"new\"}}]}"
+      },
+      "calls": []
+    },
+    {
+      "id": "wildcard-object-order",
+      "operation": "key_value",
+      "input": "{\"z\":{\"value\":1},\"a\":{\"value\":2}}",
+      "parameter": {
+        "find_key": "$.*.value",
+        "replace_value": {
+          "dev": "new"
+        }
+      },
+      "expected": {
+        "value": "{\"z\": {\"value\": \"new\"}, \"a\": {\"value\": \"new\"}}"
+      },
+      "calls": []
+    },
+    {
+      "id": "no-path-created",
+      "operation": "key_value",
+      "input": "{ \"a\": 1 }\r\n",
+      "parameter": {
+        "find_key": "$.missing.child",
+        "replace_value": {
+          "dev": "new"
+        }
+      },
+      "expected": {
+        "value": "{ \"a\": 1 }\r\n"
+      },
+      "calls": []
+    },
+    {
+      "id": "leaf-null-replacement",
+      "operation": "key_value",
+      "input": "{\"a\":1}",
+      "parameter": {
+        "find_key": "$.a",
+        "replace_value": {
+          "dev": null
+        }
+      },
+      "expected": {
+        "value": "{\"a\": null}"
+      },
+      "calls": []
+    },
+    {
+      "id": "leaf-empty-string-replacement",
+      "operation": "key_value",
+      "input": "{\"a\":1}",
+      "parameter": {
+        "find_key": "$.a",
+        "replace_value": {
+          "dev": ""
+        }
+      },
+      "expected": {
+        "value": "{\"a\": \"\"}"
+      },
+      "calls": []
+    },
+    {
+      "id": "json-root-replacement",
+      "operation": "key_value",
+      "input": "{\"a\":1}",
+      "parameter": {
+        "find_key": "$",
+        "replace_value": {
+          "dev": {
+            "b": 2
+          }
+        }
+      },
+      "expected": {
+        "value": "{\"a\": 1}"
+      },
+      "calls": []
+    },
+    {
+      "id": "invalid-relative-path",
+      "operation": "key_value",
+      "input": "{\"a\":1}",
+      "parameter": {
+        "find_key": "$.[",
+        "replace_value": {
+          "dev": "new"
+        }
+      },
+      "expected": {
+        "error": {
+          "type": "JsonPathParserError",
+          "message": "Parse error near the end of string!"
+        }
+      },
+      "calls": []
+    },
+    {
+      "id": "key-value-before-find-and-multiple-rule-order",
+      "operation": "parameters",
+      "input": "{\"value\":\"source\",\"second\":\"source\"}",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "middle",
+            "replace_value": {
+              "dev": "final"
+            }
+          },
+          {
+            "find_value": "final",
+            "replace_value": {
+              "dev": "last"
+            }
+          }
+        ],
+        "key_value_replace": [
+          {
+            "find_key": "$.value",
+            "replace_value": {
+              "dev": "middle"
+            }
+          },
+          {
+            "find_key": "$.second",
+            "replace_value": {
+              "dev": "middle"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "value": "{\"value\": \"last\", \"second\": \"last\"}"
+      },
+      "calls": []
+    }
+  ]
+}

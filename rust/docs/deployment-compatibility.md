@@ -411,3 +411,35 @@ deploy-only UI convenience method likewise lives only in its deploy consumer.
 The common harness still supplies the same injected capabilities and request
 assertions. No lint allowance, test expectation, production behavior, dependency
 or protected oracle changes to address this failure.
+
+### Deferred transform adapters: independent source observations
+
+The parser dependencies for regex/JSONPath remain deferred until the existing
+vertical passes native tests and strict Clippy. No manifest or registry records
+are added for this investigation. The additive
+`transform_adapter_reference.py` captures 25 further immutable observations from
+the exact pinned original leaves using the protected oracle's pinned
+dependencies. This is source-only inventory, not native adapter acceptance.
+
+Important observations to preserve or explicitly fail before enabling a branch:
+
+- Python regex replacement changes only capture 1 within each complete match.
+  Pattern backreferences are evaluated, but replacement `\1`, `$1` and `\g<1>`
+  remain literal. An optional first capture that does not participate fails;
+  a later nonparticipating capture follows Python's `-1` slicing behavior and can
+  duplicate match text. Unicode ignore-case includes `I/i/İ/ı`, `S/s/ſ` and
+  `K/k/K`, not just ASCII case folding.
+- `jsonpath_ng.ext` numeric filter comparisons can coerce `"1"` and treat
+  `true` as equal to `1`. A missing path does not create data or reformat the
+  original bytes. A root-path match can set `replacement_made` and trigger JSON
+  re-emission without replacing the root value. Object traversal/emission order
+  and typed replacement values remain significant.
+- The transform leaf accepts null/empty replacement values or boolean regex
+  flags that full parameter schema validation rejects. Leaf proof must never be
+  mislabeled as acceptance of those full configured parameter files.
+
+These are observed source semantics, not an instruction to repair upstream or
+normalize native outputs. The existing typed unsupported boundary remains in
+effect for native regex/JSONPath. Any improvement to the later-capture slicing
+or root-path behavior needs a separate owner decision and unchanged independent
+source evidence.
