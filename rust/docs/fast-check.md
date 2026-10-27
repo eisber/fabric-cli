@@ -24,6 +24,9 @@ comparison. It records the probe hash separately from the claimed source pin.
 Missing fields, failed captures and expected baseline divergences remain
 failures, never passed coverage. Only these finite audit plans collect
 multiple failures; ordinary preflight remains fail-fast.
+Root-approved disjoint output, orchestration, wheelhouse and deploy hosted
+families may run concurrently; overlapping families and all other fast
+candidates retain the single-candidate guard. This grants no local build slot.
 
 The dedicated `windows-wheelhouse` setup lane performs no Rust build,
 authentication or service requests. It uses normal verified PyPI TLS on

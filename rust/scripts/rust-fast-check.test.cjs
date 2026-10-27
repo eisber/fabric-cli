@@ -94,14 +94,21 @@ test('deploy preflight first runs actual library then native root consumer, neve
   const manifest = {lane: 'deploy-mount', packages: ['fabric-deploy', 'fabric-cli']};
   const commands = plan('test', manifest);
   assert.deepEqual(commands.map(item => item.args), [
+    ['test', '--offline', '--locked', '-p', 'fabric-deploy',
+      '--test', 'config', '--test', 'repository', '--test', 'parameters', '--test', 'yaml',
+      '--', '--list'],
+    ['test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
+      '--test', 'deploy_parameters', '--test', 'deploy_mount', '--', '--list'],
     ['test', '--offline', '--locked', '-p', 'fabric-deploy', '--', '--test-threads=1'],
     ['test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
-      '--test', 'deploy_mount', '--', '--test-threads=1'],
+      '--test', 'deploy_parameters', '--test', 'deploy_mount', '--', '--test-threads=1'],
   ]);
   assert.ok(plan('clippy', manifest)[1].args.includes('native-read'));
   const family = plan('family', manifest, '/target', '/receipts', () => true);
-  assert.equal(family.length, 1);
-  assert.ok(family[0].args.includes('--doc'));
+  assert.equal(family.length, 13);
+  assert.ok(family.at(-1).args.includes('--doc'));
+  assert.ok(family.some(item => item.args.includes('crates/fabric-deploy/tests/orchestration_reference.py')));
+  assert.ok(family.some(item => item.args.includes('crates/fabric-cli/tests/deploy_wrapper_reference.py')));
   for (const item of [...commands, ...family]) {
     assert.ok(!item.args.includes('run') && !item.args.includes('--config'));
   }

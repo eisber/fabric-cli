@@ -4,3 +4,5 @@
 -r ../tests/compatibility/requirements.txt
 requests==2.34.2
 urllib3==2.8.0
+PyYAML==6.0.3
+jsonpath-ng==1.9.1

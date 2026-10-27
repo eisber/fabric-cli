@@ -241,9 +241,14 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       cargo('test', '--offline', '--locked', ...packages, '--doc', '--', '--test-threads=1'),
     ];
     if (manifest.lane === 'deploy-mount') return [
+      cargo('test', '--offline', '--locked', '-p', 'fabric-deploy',
+        '--test', 'config', '--test', 'repository', '--test', 'parameters', '--test', 'yaml',
+        '--', '--list'),
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
+        '--test', 'deploy_parameters', '--test', 'deploy_mount', '--', '--list'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-deploy', '--', '--test-threads=1'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
-        '--test', 'deploy_mount', '--', '--test-threads=1'),
+        '--test', 'deploy_parameters', '--test', 'deploy_mount', '--', '--test-threads=1'),
     ];
     if (windowsAuth) return [
       cargo('test', '--offline', '--locked', '-p', 'fabric-identity-windows', '--lib',
@@ -296,8 +301,22 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
   if (manifest.lane === 'deploy-mount') {
     requireThat(exists('crates/fabric-cli/tests/deploy_mount.rs'),
       'Released offline deployment root consumer is missing');
-    return [cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
-      '--features', 'native-read', '--doc', '--', '--test-threads=1')];
+    const source = path.join(output, 'cicd-source');
+    const cicd = '5ca096c00a9a878c646c59fe537b883eba951329';
+    const references = ['config_reference', 'yaml_scalar_reference', 'config_warning_reference',
+      'orchestration_reference', 'operation_section_reference', 'literal_parameter_reference',
+      'literal_parameter_payload_reference', 'transform_adapter_reference'];
+    return [
+      {program: 'git', args: ['init', source]},
+      {program: 'git', args: ['-C', source, 'fetch', '--depth=1',
+        'https://github.com/microsoft/fabric-cicd.git', cicd]},
+      {program: 'git', args: ['-C', source, 'checkout', '--detach', cicd]},
+      ...references.map(name => python(`crates/fabric-deploy/tests/${name}.py`,
+        '--reference-root', source)),
+      python('crates/fabric-cli/tests/deploy_wrapper_reference.py', '--reference-root', root),
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
+        '--features', 'native-read', '--doc', '--', '--test-threads=1'),
+    ];
   }
   if (windowsAuth) {
     for (const file of ['crates/fabric-cli/tests/auth_commands.rs',
