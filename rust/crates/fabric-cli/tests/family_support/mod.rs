@@ -56,9 +56,11 @@ impl TokenCredential for Credential {
     }
 }
 
+type Reply = (u16, Value, BTreeMap<String, String>);
+
 #[derive(Debug)]
 pub struct Http {
-    pub replies: Mutex<VecDeque<(u16, Value, BTreeMap<String, String>)>>,
+    pub replies: Mutex<VecDeque<Reply>>,
     pub requests: Mutex<Vec<Value>>,
 }
 
@@ -221,9 +223,13 @@ impl Harness {
     }
 
     pub fn metadata(&self, items: Value) {
+        self.metadata_with_id("w", items);
+    }
+
+    pub fn metadata_with_id(&self, workspace_id: &str, items: Value) {
         self.reply(
             200,
-            json!({"value":[{"id":"w","displayName":"Demo","type":"Workspace"}]}),
+            json!({"value":[{"id":workspace_id,"displayName":"Demo","type":"Workspace"}]}),
         );
         self.reply(200, json!({"value":items}));
     }

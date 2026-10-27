@@ -10,6 +10,10 @@ use fabric_cli::families::FamilyEvidence;
 use family_support::{Harness, success};
 use serde_json::json;
 
+const WORKSPACE: &str = "11111111-1111-1111-1111-111111111111";
+const ITEM: &str = "22222222-2222-2222-2222-222222222222";
+const CREATED: &str = "33333333-3333-3333-3333-333333333333";
+
 #[tokio::test]
 async fn root_shortcut_uses_real_storage_properties_and_existing_shortcut_post() {
     let mut host = Harness::new();
@@ -105,14 +109,17 @@ async fn root_export_and_bulk_export_write_real_definition_files() {
     for bulk in [false, true] {
         let mut host = Harness::new();
         std::fs::create_dir(host.root.join("output")).unwrap();
-        host.item("DataPipeline");
+        host.metadata_with_id(
+            WORKSPACE,
+            json!([{"id":ITEM,"displayName":"Book","type":"DataPipeline"}]),
+        );
         if bulk {
             host.reply(200, json!({
                 "definitionParts":[{"path":"/Book.DataPipeline/pipeline-content.json", "payload":"eyJuYW1lIjoic3ludGhldGljIn0=", "payloadType":"InlineBase64"}],
-                "itemDefinitionsIndex":[{"id":"n","rootPath":"/Book.DataPipeline"}],
+                "itemDefinitionsIndex":[{"id":ITEM,"rootPath":"/Book.DataPipeline"}],
             }));
         } else {
-            host.reply(200, json!({"id":"n"}));
+            host.reply(200, json!({"id":ITEM}));
             host.reply(200, json!({"definition":{"parts":[{
                 "path":"pipeline-content.json","payload":"eyJuYW1lIjoic3ludGhldGljIn0=","payloadType":"InlineBase64",
             }]}}));
@@ -167,8 +174,8 @@ async fn root_import_preserves_actual_create_id_and_deferred_cache_after_failed_
         b"must be excluded",
     )
     .unwrap();
-    host.metadata(json!([]));
-    host.reply(201, json!({"id":"actual-created"}));
+    host.metadata_with_id(WORKSPACE, json!([]));
+    host.reply(201, json!({"id":CREATED}));
     let output = host
         .execute(&[
             "import",
@@ -186,7 +193,7 @@ async fn root_import_preserves_actual_create_id_and_deferred_cache_after_failed_
     );
     assert!(
         matches!(&output.evidence, FamilyEvidence::Transfer(Ok(result))
-        if result.effects.len() == 1 && result.effects[0].item_id == "actual-created"
+        if result.effects.len() == 1 && result.effects[0].item_id == CREATED
         && result.excluded_paths.iter().any(|path| path.ends_with("cache.abf")))
     );
     assert_eq!(host.requests().len(), 3);
@@ -206,9 +213,22 @@ async fn root_acl_read_and_mutation_leaves_preserve_requests_and_streams() {
             json!({"value":[{"id":"w","displayName":"Demo","type":"Workspace"}]}),
         );
         host.reply(200, rows.clone());
-        let output = host.execute(&["acl", leaf, "Demo.Workspace"]).await;
+        let output = if leaf == "get" {
+            host.execute(&["acl", leaf, "Demo.Workspace", "-q", "."])
+                .await
+        } else {
+            host.execute(&["acl", leaf, "Demo.Workspace"]).await
+        };
         let stdout = success(&output);
-        assert!(stdout.contains("Alice"), "{leaf}: {stdout}");
+        let envelope: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(
+            envelope["result"]["data"],
+            if leaf == "get" {
+                rows["value"].clone()
+            } else {
+                json!([{"acl":"Admin","identity":"alice@example.test","type":"User"}])
+            }
+        );
         assert_eq!(host.requests().len(), 2);
         assert!(
             host.requests()[1]["url"]
@@ -427,6 +447,12 @@ async fn root_assign_unassign_resolve_real_capacity_and_workspace_ids() {
 #[tokio::test]
 async fn root_access_headerless_accepted_response_retains_uncertainty_without_replay() {
     let mut host = Harness::new();
+    let definitions = host.root.join("labels.json");
+    std::fs::write(&definitions, br#"{"labels":[]}"#).unwrap();
+    let store = fabric_cli_local::ConfigStore::new(&host.root);
+    let mut settings = store.read().unwrap();
+    settings.insert("local_definition_labels".into(), json!(definitions));
+    store.write(&settings).unwrap();
     host.item("Notebook");
     host.reply(202, serde_json::Value::Null);
     let output = host
@@ -479,7 +505,7 @@ async fn root_exists_and_mkdir_use_resolved_ids_and_real_post() {
         requests.last().unwrap()["url"]
             .as_str()
             .unwrap()
-            .ends_with("/workspaces/w/items"),
+            .ends_with("/workspaces/w/notebooks"),
         "{requests:?}"
     );
     assert_eq!(requests.last().unwrap()["body"]["type"], "Notebook");
