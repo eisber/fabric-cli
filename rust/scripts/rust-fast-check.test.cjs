@@ -13,10 +13,46 @@ test('only full source IDs and finite lanes are accepted', () => {
   for (const value of ['abc123', '0'.repeat(40), '--upload-pack=x', 'a'.repeat(40) + ';echo']) {
     assert.equal(sha(value), false);
   }
-  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values', 'cli-auth']) assert.equal(lane(value), value);
+  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values', 'cli-auth', 'cli-95']) assert.equal(lane(value), value);
   for (const value of ['__proto__', 'unknown', 'cli-jobs;echo']) assert.throws(() => lane(value));
   assert.throws(() => options(['--source', 'a', '--source', 'b'], ['--source']));
   assert.throws(() => options(['--command', 'echo'], ['--source']));
+});
+
+test('CLI prefetch retains offline architecture checks for all declared metadata targets', () => {
+  const target = 'x86_64-unknown-linux-gnu';
+  const manifest = {lane: 'cli-auth', packages: ['fabric-cli'], target};
+  assert.deepEqual(plan('fetch', manifest).map(item => item.args), [
+    ['fetch', '--locked', '--target', target],
+    ['fetch', '--locked', '--target', 'x86_64-pc-windows-msvc'],
+    ['fetch', '--locked', '--target', 'aarch64-apple-darwin'],
+  ]);
+  assert.deepEqual(plan('fetch', {...manifest, packages: ['fabric-sdk-http']}).map(item => item.args),
+    [['fetch', '--locked', '--target', target]]);
+  const workflow = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/rust-fast-check.yml'), 'utf8');
+  assert.ok(!workflow.includes("if: steps.cache.outputs.cache-hit != 'true'"));
+});
+
+test('combined CLI lane includes auth/table roots and keeps original default/native regressions', () => {
+  const manifest = {lane: 'cli-95', packages: [
+    'fabric-cli', 'fabric-cli-tables', 'fabric-sdk-tables', 'fabric-identity',
+  ]};
+  assert.ok(plan('check', manifest)[1].args.includes('native-read'));
+  assert.ok(plan('clippy', manifest)[1].args.includes('native-read'));
+  const commands = plan('test', manifest);
+  for (const target of ['auth_commands', 'auth_arguments', 'cli_contract', 'workspace_contract',
+    'table_mounted', 'family_mounts', 'local_mounted']) {
+    assert.ok(commands[0].args.includes(target));
+  }
+  assert.ok(commands[1].args.includes('fabric-cli-tables'));
+  assert.ok(!commands[1].args.includes('--features'));
+  assert.ok(commands[2].args.includes('native-read'));
+  assert.ok(commands[3].args.includes('--doc'));
+  const family = plan('family', manifest, '/target', '/receipts', () => true);
+  assert.ok(family.some(item => item.args.includes('tests/compatibility/job_reads/compare.py')));
+  assert.ok(family.some(item => item.args.includes('tests/compatibility/read_session/consumer.py')));
+  assert.throws(() => plan('family', manifest, '/target', '/receipts', () => false),
+    /combined CLI consumer is missing/);
 });
 
 test('auth lane executes finite synthetic contracts, never a real login or native identity run', () => {

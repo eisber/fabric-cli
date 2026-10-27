@@ -59,6 +59,22 @@ is not an authentication happy path. Native Windows adapter/STA contracts,
 central root mounts and live platform acceptance remain explicit debt, not
 three newly proven canonical commands.
 
+The Linux `cli-95` lane adds the released table packages and explicit actual
+root auth/table, family and local consumers. Default selected regressions,
+complete native-read CLI regressions, doctests and the unchanged read/job source
+comparators still run. Its name is a requested milestone, not proof of a
+canonical command count, native Windows broker behavior or live acceptance.
+
+All CLI lanes restore locked registry dependencies for the native Linux target
+and the Windows x64/macOS ARM64 metadata targets before offline checks. The
+unchanged architecture contract invokes `cargo tree --offline --locked` for
+those targets even on Linux; fetching only native Linux dependencies caused
+run `40517626784` to fail on missing `windows 0.62.2` after its six auth
+command tests passed. This restoration does not cross-compile or execute native
+platform code, install target toolchains, modify the lock, or weaken the oracle.
+The finite target set is fingerprinted. Fetch runs after cache restoration even
+on exact cache hits so a partial cache cannot become false offline coverage.
+
 Each run executes workspace formatting, selected all-target offline checks and
 Clippy, single-thread tests and doctests, then actual family examples and pinned
 source comparisons. Selected CLI default and `native-read` all-target compilation

@@ -15,6 +15,7 @@ const LANES = Object.freeze({
   'native-values': ['fabric-core-json', 'fabric-cli-output', 'fabric-deploy'],
   'sdk-values': ['fabric-core', 'fabric-sdk', 'fabric-sdk-http', 'fabric-core-json', 'fabric-cli-output'],
   'cli-auth': ['fabric-cli', 'fabric-identity'],
+  'cli-95': ['fabric-cli', 'fabric-cli-tables', 'fabric-sdk-tables', 'fabric-identity'],
 });
 const CI_FILES = [
   '.github/workflows/rust-fast-check.yml', '.github/rust-fast-candidate.json',
@@ -89,11 +90,15 @@ function prepare() {
   const lockHash = digest(fs.readFileSync(path.join(rust, 'Cargo.lock')));
   const features = {default: true, packages, family: selectedLane,
     nativeRead: packages.includes('fabric-cli') && selectedLane !== 'cli-auth',
-    windowsBroker: selectedLane === 'cli-auth',
+    windowsBroker: packages.includes('fabric-cli'),
+    metadataGraphTargets: packages.includes('fabric-cli')
+      ? ['x86_64-pc-windows-msvc', 'aarch64-apple-darwin'] : [],
     transport: selectedLane === 'sdk-values' && packages.includes('fabric-sdk-transport')
       ? ['hyper-rustls'] : []};
   const fingerprint = digest(JSON.stringify({rustc, target, features, lockHash}));
-  const coverage = selectedLane === 'cli-auth'
+  const coverage = selectedLane === 'cli-95'
+    ? 'Linux default/native CLI, table/auth root consumers and old mounted regressions only; canonical acceptance, real broker, native Windows/macOS and live platform gates remain separate'
+    : selectedLane === 'cli-auth'
     ? 'Linux default CLI and opt-in auth parser/synthetic command boundary only; real broker, native Windows adapter/STA tests, root mounts and live acceptance deferred'
     : selectedLane === 'sdk-values'
       ? 'Core/SDK transitive consumers and CLI output only; central CLI, identity, deployment and native platform gates deferred'
@@ -119,7 +124,15 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       python(`tests/compatibility/output/${reference}`, ...extra, '--observed', file));
   };
   if (stage === 'fmt') return [cargo('fmt', '--all', '--', '--check')];
-  if (stage === 'fetch') return [cargo('fetch', '--locked', '--target', manifest.target)];
+  if (stage === 'fetch') {
+    commands.push(cargo('fetch', '--locked', '--target', manifest.target));
+    if (has('fabric-cli')) {
+      for (const metadataTarget of ['x86_64-pc-windows-msvc', 'aarch64-apple-darwin']) {
+        commands.push(cargo('fetch', '--locked', '--target', metadataTarget));
+      }
+    }
+    return commands;
+  }
   if (stage === 'check') {
     commands.push(cargo('check', '--offline', '--locked', ...packages, '--all-targets'));
     if (has('fabric-cli')) {
@@ -134,11 +147,23 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     commands.push(cargo('clippy', '--offline', '--locked', ...packages, '--all-targets', '--', '-D', 'warnings'));
     if (cliAuth) commands.push(cargo('clippy', '--offline', '--locked',
       '-p', 'fabric-cli', '--features', 'windows-broker', '--all-targets', '--', '-D', 'warnings'));
+    if (manifest.lane === 'cli-95') commands.push(cargo('clippy', '--offline', '--locked',
+      '-p', 'fabric-cli', '--features', 'native-read', '--all-targets', '--', '-D', 'warnings'));
     if (nativeTransport) commands.push(cargo('clippy', '--offline', '--locked',
       '-p', 'fabric-sdk-transport', '--features', 'hyper-rustls', '--all-targets', '--', '-D', 'warnings'));
     return commands;
   }
   if (stage === 'test') {
+    if (manifest.lane === 'cli-95') return [
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
+        '--test', 'auth_commands', '--test', 'auth_arguments', '--test', 'cli_contract',
+        '--test', 'workspace_contract', '--test', 'table_mounted', '--test', 'family_mounts',
+        '--test', 'local_mounted', '--', '--test-threads=1'),
+      cargo('test', '--offline', '--locked', ...packages, '--', '--test-threads=1'),
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
+        '--', '--test-threads=1'),
+      cargo('test', '--offline', '--locked', ...packages, '--doc', '--', '--test-threads=1'),
+    ];
     if (cliAuth) return [
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'windows-broker',
         '--test', 'auth_commands', '--test', 'auth_arguments', '--test', 'cli_contract',
@@ -166,6 +191,12 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       'Released offline auth command consumer is missing');
     return [cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
       '--features', 'windows-broker', '--doc', '--', '--test-threads=1')];
+  }
+  if (manifest.lane === 'cli-95') {
+    for (const file of ['crates/fabric-cli/tests/table_mounted.rs',
+      'crates/fabric-cli/tests/auth_commands.rs']) {
+      requireThat(exists(file), `Released combined CLI consumer is missing: ${file}`);
+    }
   }
   if (has('fabric-cli-jobs') || has('fabric-sdk-jobs') || has('fabric-sdk-paging')) {
     for (const reference of ['reference', 'branches_reference', 'operation_output_reference', 'skill_headers_reference']) {

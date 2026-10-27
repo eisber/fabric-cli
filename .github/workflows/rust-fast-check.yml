@@ -11,7 +11,7 @@ on:
       lane:
         description: Bounded offline validation family
         type: choice
-        options: [baseline, cli-jobs, endpoint, native-values, sdk-values, cli-auth]
+        options: [baseline, cli-jobs, endpoint, native-values, sdk-values, cli-auth, cli-95]
         default: baseline
 
 permissions:
@@ -67,8 +67,7 @@ jobs:
           key: rust-fast-v1-${{ steps.identity.outputs.fingerprint }}-${{ github.sha }}
           restore-keys: |
             rust-fast-v1-${{ steps.identity.outputs.fingerprint }}-
-      - name: Fetch locked dependencies on cache miss
-        if: steps.cache.outputs.cache-hit != 'true'
+      - name: Restore locked native and required metadata-graph dependencies
         run: node scripts/rust-fast-check.cjs run fetch
       - name: Compile selected default and explicit feature targets before tests
         run: node scripts/rust-fast-check.cjs run check
