@@ -101,11 +101,12 @@ fn navigation_persists_only_its_explicit_session_and_pwd_uses_stderr() {
     let pwd = invoke(&root.0, &["pwd"]);
     success(&pwd);
     assert!(pwd.stdout.is_empty());
-    let output: serde_json::Value = serde_json::from_slice(&pwd.stderr).unwrap();
-    assert_eq!(
-        output["result"]["data"][0]["local_path"],
-        root.0.to_string_lossy().as_ref(),
-    );
+    let stderr = std::str::from_utf8(&pwd.stderr).unwrap();
+    let data = stderr
+        .strip_prefix("! Command context path: root\n")
+        .expect("restored context warning must precede pwd data");
+    let output: serde_json::Value = serde_json::from_str(data).unwrap();
+    assert_eq!(output["local_path"], root.0.to_string_lossy().as_ref(),);
 }
 
 #[test]
