@@ -468,6 +468,13 @@ function options(args, allowed) {
   for (const name of allowed) requireThat(result[name], `Missing ${name}`);
   return result;
 }
+function parallelCandidate(selectedLane, branch) {
+  const families = {'output-audit': 'output', 'orchestration-audit': 'orchestration',
+    'windows-wheelhouse': 'wheelhouse', 'deploy-mount': 'deploy'};
+  const current = Object.entries(families).find(([, prefix]) =>
+    branch?.startsWith(`validation/rust-fast-${prefix}-`))?.[0];
+  return Object.hasOwn(families, selectedLane) && current !== undefined && current !== selectedLane;
+}
 function publish(args) {
   const opts = options(args, ['--source', '--automation', '--lane', '--branch', '--worktree', '--receipt']);
   const source = opts['--source'], automation = opts['--automation'], branch = opts['--branch'];
@@ -491,8 +498,9 @@ function publish(args) {
   const active = JSON.parse(command('gh', ['api', '--method', 'GET',
     `repos/${REPO}/actions/runs`, '-f', 'per_page=100'])).workflow_runs;
   requireThat(!active.some(run => run.path === '.github/workflows/rust-fast-check.yml' &&
-    run.status !== 'completed' && run.head_branch?.startsWith('validation/rust-fast-')),
-    'Another fast candidate is ongoing; finish it before publishing another');
+    run.status !== 'completed' && run.head_branch?.startsWith('validation/rust-fast-') &&
+    !parallelCandidate(opts['--lane'], run.head_branch)),
+    'An overlapping fast candidate is ongoing; finish it before publishing another');
   git(['worktree', 'add', '-b', branch, opts['--worktree'], source]);
   const at = argv => command('git', argv, opts['--worktree']);
   // Replay only the CI patch: merging its older base could import product fixes.
@@ -557,7 +565,7 @@ function main(args) {
   if (action === 'full') return full(rest);
   throw new Error('Use prepare, run <fmt|fetch|check|clippy|test|family>, finish, publish or full; see docs/fast-check.md');
 }
-module.exports = {LANES, CI_FILES, sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, select, plan, execute, options, requireFastPass};
+module.exports = {LANES, CI_FILES, sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, select, plan, execute, options, requireFastPass, parallelCandidate};
 if (require.main === module) {
   try { main(process.argv.slice(2)); }
   catch (error) { console.error(`Rust fast check: ${error.message}`); process.exitCode = 1; }

@@ -6,7 +6,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, select, plan, execute, options, requireFastPass} = require('./rust-fast-check.cjs');
+const {sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, select, plan, execute, options, requireFastPass, parallelCandidate} = require('./rust-fast-check.cjs');
 
 test('only full source IDs and finite lanes are accepted', () => {
   assert.equal(sha('a'.repeat(40)), true);
@@ -58,6 +58,16 @@ test('orchestration evidence retains source capture, guards, exact probe build a
   assert.ok(commands[3].stdout.endsWith('orchestration-native.json'));
 });
 
+test('only separately approved disjoint hosted families may publish concurrently', () => {
+  assert.equal(parallelCandidate('windows-wheelhouse', 'validation/rust-fast-output-exact'), true);
+  assert.equal(parallelCandidate('deploy-mount', 'validation/rust-fast-orchestration-exact'), true);
+  for (const [family, branch] of [
+    ['output-audit', 'validation/rust-fast-output-other'],
+    ['baseline', 'validation/rust-fast-wheelhouse-exact'],
+    ['windows-wheelhouse', 'validation/rust-fast-msit-exact'],
+    ['deploy-mount', 'feature/rust'],
+  ]) assert.equal(parallelCandidate(family, branch), false);
+});
 test('native endpoint union checks both actual hosts with first-failure native selectors', () => {
   const ref = 'refs/heads/validation/rust-fast-msit-exact';
   laneBranch('native-endpoint', 'validation/rust-fast-msit-exact');
