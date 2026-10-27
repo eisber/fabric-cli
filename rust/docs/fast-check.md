@@ -24,6 +24,12 @@ comparison. It records the probe hash separately from the claimed source pin.
 Missing fields, failed captures and expected baseline divergences remain
 failures, never passed coverage. Only these finite audit plans collect
 multiple failures; ordinary preflight remains fail-fast.
+The `request015-audit` repair lane adds the exact `read_session` and
+`source_operations` targets, then retains all 18 observations and a separate
+REQ-015 capture. Its after-check requires successful source/native exits,
+one identical workspace request and credential scope, unchanged source context,
+and the expected workspace name despite a stale current path. It records
+renderer byte equality separately and never claims the other 17 cases match.
 The explicit Linux `argv-audit` lane independently runs the default and
 `native-read` `fabric-cli/argv_contract` targets, preserving both raw streams
 and actual exits even if the first fails. Expected baseline failures remain

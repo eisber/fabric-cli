@@ -6,14 +6,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, select, plan, execute, options, requireFastPass, parallelCandidate, commandTimeout} = require('./rust-fast-check.cjs');
+const {sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, select, plan, execute, options, requireFastPass, parallelCandidate, commandTimeout, verifyRequest015} = require('./rust-fast-check.cjs');
 
 test('only full source IDs and finite lanes are accepted', () => {
   assert.equal(sha('a'.repeat(40)), true);
   for (const value of ['abc123', '0'.repeat(40), '--upload-pack=x', 'a'.repeat(40) + ';echo']) {
     assert.equal(sha(value), false);
   }
-  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values', 'cli-auth', 'cli-95', 'windows-auth', 'deploy-mount', 'native-endpoint', 'output-audit', 'orchestration-audit', 'argv-audit', 'argv-repair', 'windows-wheelhouse']) assert.equal(lane(value), value);
+  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values', 'cli-auth', 'cli-95', 'windows-auth', 'deploy-mount', 'native-endpoint', 'output-audit', 'orchestration-audit', 'request015-audit', 'argv-audit', 'argv-repair', 'windows-wheelhouse']) assert.equal(lane(value), value);
   for (const value of ['__proto__', 'unknown', 'cli-jobs;echo']) assert.throws(() => lane(value));
   assert.throws(() => options(['--source', 'a', '--source', 'b'], ['--source']));
   assert.throws(() => options(['--command', 'echo'], ['--source']));
@@ -95,6 +95,35 @@ test('orchestration evidence retains source capture, guards, exact probe build a
   assert.ok(commands[3].stdout.endsWith('orchestration-native.json'));
 });
 
+test('REQ015 repair checks only released stale-root semantics and rejects missing actual evidence', () => {
+  const commands = plan('audit', {lane: 'request015-audit', source: 'a'.repeat(40),
+    packages: ['fabric-cli']}, '/target', '/receipts');
+  assert.equal(commands.length, 6);
+  assert.ok(commands[0].args.includes('read_session') && commands[0].args.includes('source_operations'));
+  assert.ok(commands.at(-1).args.includes('REQ-015'));
+  laneBranch('request015-audit', 'validation/rust-fast-request-exact');
+  assert.throws(() => requireFastPass({lane: 'request015-audit'}, {}));
+  const render = data => JSON.stringify({command: 'ls', status: 'Success', result: {data}});
+  const side = {exit: 0, stderr: '', requests: ['https://api.fabric.microsoft.com/v1/workspaces'],
+    scopes: [['https://api.fabric.microsoft.com/.default']]};
+  const capture = {rust_execution: 'actual-run', observations: [{
+    id: 'REQ-015', fixture: {current: '/Gone.Workspace'},
+    python: {...side, current_before: '/Gone.Workspace', current_after: '/Gone.Workspace',
+      stdout: render([{name: 'Demo.Workspace'}])},
+    rust: {...side, stdout: render(['Demo.Workspace'])},
+  }]};
+  assert.equal(verifyRequest015(capture).exitRequestsScopesAndNames, 'passed');
+  assert.equal(verifyRequest015(capture).byteEquality, false);
+  for (const field of ['exit', 'stderr', 'requests', 'scopes', 'stdout']) {
+    const broken = structuredClone(capture);
+    delete broken.observations[0].rust[field];
+    assert.throws(() => verifyRequest015(broken));
+  }
+  const failed = structuredClone(capture);
+  failed.observations[0].rust.exit = 1;
+  assert.throws(() => verifyRequest015(failed));
+});
+
 test('only separately approved disjoint hosted families may publish concurrently', () => {
   assert.equal(parallelCandidate('windows-wheelhouse', 'validation/rust-fast-output-exact'), true);
   assert.equal(parallelCandidate('deploy-mount', 'validation/rust-fast-orchestration-exact'), true);
@@ -151,7 +180,8 @@ test('deploy preflight first runs actual library then native root consumer, neve
       '--test', 'deploy_parameters', '--test', 'deploy_mount', '--', '--test-threads=1'],
   ]);
   assert.ok(plan('clippy', manifest)[1].args.includes('native-read'));
-  const family = plan('family', manifest, '/target', '/receipts', () => true);
+  const family = plan('family', manifest, '/target', '/receipts',
+    file => !file.endsWith('transform_program_reference.py'));
   assert.equal(family.length, 15);
   assert.ok(family.some(item => item.program === 'git' &&
     item.args.slice(-4).join(' ') === 'config --local core.autocrlf true'));
@@ -171,6 +201,15 @@ test('deploy preflight first runs actual library then native root consumer, neve
     /Released offline deployment root consumer is missing/);
 });
 
+test('released parameter transform target runs first and retains its source comparator', () => {
+  const manifest = {lane: 'deploy-mount', packages: ['fabric-deploy', 'fabric-cli']};
+  const tests = plan('test', manifest, '/target', '/receipts', () => true);
+  assert.equal(tests[0].args[0], 'test');
+  assert.ok(tests[0].args.includes('parameter_transforms'));
+  assert.ok(tests[1].args.includes('parameter_transforms') && tests[1].args.includes('--list'));
+  const family = plan('family', manifest, '/target', '/receipts', () => true);
+  assert.ok(family.some(item => item.args.includes('crates/fabric-deploy/tests/transform_program_reference.py')));
+});
 test('Windows native lane, host and dedicated validation namespace must agree', () => {
   const ref = 'refs/heads/validation/rust-fast-windows-03fab';
   runnerLane('windows-auth', 'x86_64-pc-windows-msvc', ref);

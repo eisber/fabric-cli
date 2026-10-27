@@ -22,6 +22,7 @@ const LANES = Object.freeze({
   'native-endpoint': ['fabric-cli', 'fabric-sdk', 'fabric-core', 'fabric-core-json', 'fabric-cli-output'],
   'output-audit': ['fabric-cli', 'fabric-cli-output'],
   'orchestration-audit': ['fabric-cli'],
+  'request015-audit': ['fabric-cli'],
   'argv-audit': ['fabric-cli'],
   'argv-repair': ['fabric-cli'],
   'windows-wheelhouse': [],
@@ -71,7 +72,7 @@ function laneBranch(selectedLane, branch) {
     'Native endpoint lane requires its dedicated validation/rust-fast-msit-* namespace');
   for (const [family, prefix] of [['windows-wheelhouse', 'wheelhouse'],
     ['output-audit', 'output'], ['orchestration-audit', 'orchestration'], ['argv-audit', 'argv'],
-    ['argv-repair', 'argvfix']]) {
+    ['argv-repair', 'argvfix'], ['request015-audit', 'request']]) {
     requireThat(branch.startsWith(`validation/rust-fast-${prefix}-`) === (selectedLane === family),
       `${family} requires its dedicated immutable validation namespace`);
   }
@@ -178,7 +179,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       python(`tests/compatibility/output/${reference}`, ...extra, '--observed', file));
   };
   if (stage === 'audit') {
-    requireThat(['output-audit', 'orchestration-audit', 'argv-audit', 'argv-repair'].includes(manifest.lane),
+    requireThat(['output-audit', 'orchestration-audit', 'request015-audit', 'argv-audit', 'argv-repair'].includes(manifest.lane),
       'Independent failure collection is restricted to explicit audit lanes');
     if (manifest.lane === 'output-audit') return [
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli-output',
@@ -224,7 +225,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     }
     const capture = 'tests/compatibility/orchestration/capture.py';
     const probe = path.join(target, 'debug', 'examples', 'read_session_probe');
-    return [
+    const captures = [
       {...python(capture), stdout: path.join(output, 'orchestration-python.json')},
       python('-m', 'unittest', 'discover', '-s', 'tests/compatibility/orchestration',
         '-p', 'test_capture.py', '-v'),
@@ -232,6 +233,14 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       {...python(capture, '--rust-probe', probe, '--rust-pin', manifest.source),
         stdout: path.join(output, 'orchestration-native.json')},
     ];
+    if (manifest.lane === 'request015-audit') return [
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--test', 'read_session',
+        '--test', 'source_operations', '--', '--test-threads=1'),
+      ...captures,
+      {...python(capture, '--rust-probe', probe, '--rust-pin', manifest.source, '--case', 'REQ-015'),
+        stdout: path.join(output, 'request015-native.json')},
+    ];
+    return captures;
   }
   if (stage === 'fmt') return [cargo('fmt', '--all', '--', '--check')];
   if (stage === 'fetch') {
@@ -281,8 +290,13 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       cargo('test', '--offline', '--locked', ...packages, '--doc', '--', '--test-threads=1'),
     ];
     if (manifest.lane === 'deploy-mount') return [
+      ...(exists('crates/fabric-deploy/tests/parameter_transforms.rs') ? [
+        cargo('test', '--offline', '--locked', '-p', 'fabric-deploy',
+          '--test', 'parameter_transforms', '--', '--test-threads=1'),
+      ] : []),
       cargo('test', '--offline', '--locked', '-p', 'fabric-deploy',
         '--test', 'config', '--test', 'repository', '--test', 'parameters', '--test', 'yaml',
+        ...(exists('crates/fabric-deploy/tests/parameter_transforms.rs') ? ['--test', 'parameter_transforms'] : []),
         '--', '--list'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
         '--test', 'deploy_parameters', '--test', 'deploy_mount', '--', '--list'),
@@ -346,6 +360,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     const references = ['config_reference', 'config_warning_reference',
       'orchestration_reference', 'operation_section_reference', 'literal_parameter_reference',
       'literal_parameter_payload_reference', 'transform_adapter_reference'];
+    if (exists('crates/fabric-deploy/tests/transform_program_reference.py')) references.push('transform_program_reference');
     return [
       {program: 'git', args: ['init', source]},
       {program: 'git', args: ['-C', source, 'config', '--local', 'core.autocrlf', 'true']},
@@ -490,13 +505,40 @@ function commandTimeout(stage, manifest) {
   return stage === 'test' && manifest.lane === 'native-endpoint' &&
     manifest.target === 'x86_64-pc-windows-msvc' ? 600000 : 300000;
 }
+function verifyRequest015(capture) {
+  requireThat(capture.rust_execution === 'actual-run' && capture.observations?.length === 1,
+    'REQ-015 requires one actual source/native observation');
+  const row = capture.observations[0];
+  requireThat(row.id === 'REQ-015' && row.fixture?.current === '/Gone.Workspace',
+    'REQ-015 must retain the stale current workspace fixture');
+  const url = 'https://api.fabric.microsoft.com/v1/workspaces';
+  const scopes = [['https://api.fabric.microsoft.com/.default']];
+  for (const side of ['python', 'rust']) {
+    const observation = row[side];
+    requireThat(observation?.exit === 0 && observation.stderr === '' &&
+      JSON.stringify(observation.requests) === JSON.stringify([url]) &&
+      JSON.stringify(observation.scopes) === JSON.stringify(scopes),
+    `REQ-015 ${side} exit, request or credential-scope mismatch`);
+    const rendered = JSON.parse(observation.stdout);
+    requireThat(rendered.status === 'Success' && rendered.command === 'ls' &&
+      Array.isArray(rendered.result?.data), `REQ-015 ${side} did not render a successful listing`);
+    const names = rendered.result.data.map(value => typeof value === 'string' ? value : value.name);
+    requireThat(JSON.stringify(names) === JSON.stringify(['Demo.Workspace']),
+      `REQ-015 ${side} listing content differs`);
+  }
+  requireThat(row.python.current_before === '/Gone.Workspace' &&
+    row.python.current_after === '/Gone.Workspace', 'REQ-015 source context changed');
+  return {id: 'REQ-015', exitRequestsScopesAndNames: 'passed',
+    byteEquality: row.python.stdout === row.rust.stdout,
+    scope: 'Only absolute root must ignore stale current path; raw renderer differences and other17cases remain explicit'};
+}
 function runStage(stage) {
   const manifest = JSON.parse(fs.readFileSync(path.join(receipts, 'manifest.json')));
   requireThat(process.env.CARGO_BUILD_JOBS === '1' && process.env.RUST_TEST_THREADS === '1',
     'Hosted preflight must use one Cargo job and one test thread');
   requireThat(process.env.CARGO_TARGET_DIR && path.isAbsolute(process.env.CARGO_TARGET_DIR),
     'An absolute private CARGO_TARGET_DIR is required');
-  const audit = stage === 'audit' && ['output-audit', 'orchestration-audit', 'argv-audit', 'argv-repair'].includes(manifest.lane);
+  const audit = stage === 'audit' && ['output-audit', 'orchestration-audit', 'request015-audit', 'argv-audit', 'argv-repair'].includes(manifest.lane);
   const commands = plan(stage, manifest, process.env.CARGO_TARGET_DIR, receipts).map((item, index) =>
     audit ? {...item, stdout: item.stdout || path.join(receipts, `audit-${index}-stdout.txt`),
       stderr: path.join(receipts, `audit-${index}-stderr.txt`)} : item);
@@ -507,12 +549,16 @@ function runStage(stage) {
     requireThat(git(['status', '--porcelain', '--untracked-files=all']) === '', 'Audit changed checkout');
   }
   const probe = path.join(process.env.CARGO_TARGET_DIR, 'debug', 'examples', 'read_session_probe');
-  const probeHash = audit && manifest.lane === 'orchestration-audit' && fs.existsSync(probe)
+  const probeHash = audit && ['orchestration-audit', 'request015-audit'].includes(manifest.lane) && fs.existsSync(probe)
     ? digest(fs.readFileSync(probe)) : undefined;
   write(path.join(receipts, `${stage}.json`), {head: manifest.head, source: manifest.source, results,
     probeSha256: probeHash});
   requireThat(results.length === commands.length && results.every(result =>
     result.exit === 0 && !result.signal && !result.error), `${stage} failed; product owner fix required, no automatic retry`);
+  if (audit && manifest.lane === 'request015-audit') {
+    write(path.join(receipts, 'request015-checked.json'),
+      verifyRequest015(JSON.parse(fs.readFileSync(path.join(receipts, 'request015-native.json')))));
+  }
 }
 function finish() {
   const manifest = JSON.parse(fs.readFileSync(path.join(receipts, 'manifest.json')));
@@ -540,7 +586,7 @@ function options(args, allowed) {
 }
 function parallelCandidate(selectedLane, branch) {
   const families = {'output-audit': 'output', 'orchestration-audit': 'orchestration',
-    'argv-audit': 'argv', 'argv-repair': 'argvfix', 'native-endpoint': 'msit',
+    'argv-audit': 'argv', 'argv-repair': 'argvfix', 'request015-audit': 'request', 'native-endpoint': 'msit',
     'windows-wheelhouse': 'wheelhouse', 'deploy-mount': 'deploy'};
   const current = Object.entries(families).find(([, prefix]) =>
     branch?.startsWith(`validation/rust-fast-${prefix}-`))?.[0];
@@ -657,7 +703,7 @@ function full(args) {
   console.log('Full batch requested at exact immutable CI head; read provider jobs before claiming coverage');
 }
 function requireFastPass(receipt, run) {
-  requireThat(!['output-audit', 'orchestration-audit', 'argv-audit', 'argv-repair', 'windows-wheelhouse'].includes(receipt.lane),
+  requireThat(!['output-audit', 'orchestration-audit', 'request015-audit', 'argv-audit', 'argv-repair', 'windows-wheelhouse'].includes(receipt.lane),
     'Setup artifacts and independent audits are never full compatibility gates');
   requireThat(run.head_sha === receipt.head && run.path === '.github/workflows/rust-fast-check.yml' &&
     run.status === 'completed' && run.conclusion === 'success', 'Exact combined head has not passed fast preflight');
@@ -672,7 +718,7 @@ function main(args) {
   if (action === 'full') return full(rest);
   throw new Error('Use prepare, run <fmt|fetch|check|clippy|test|family>, finish, publish or full; see docs/fast-check.md');
 }
-module.exports = {LANES, CI_FILES, sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, select, plan, execute, options, requireFastPass, parallelCandidate, commandTimeout};
+module.exports = {LANES, CI_FILES, sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, select, plan, execute, options, requireFastPass, parallelCandidate, commandTimeout, verifyRequest015};
 if (require.main === module) {
   try { main(process.argv.slice(2)); }
   catch (error) { console.error(`Rust fast check: ${error.message}`); process.exitCode = 1; }

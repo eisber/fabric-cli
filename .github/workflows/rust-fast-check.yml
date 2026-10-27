@@ -11,7 +11,7 @@ on:
       lane:
         description: Bounded offline validation family
         type: choice
-        options: [baseline, cli-jobs, endpoint, native-values, sdk-values, cli-auth, cli-95, windows-auth, deploy-mount, native-endpoint, output-audit, orchestration-audit, argv-audit, argv-repair, windows-wheelhouse]
+        options: [baseline, cli-jobs, endpoint, native-values, sdk-values, cli-auth, cli-95, windows-auth, deploy-mount, native-endpoint, output-audit, orchestration-audit, request015-audit, argv-audit, argv-repair, windows-wheelhouse]
         default: baseline
 
 permissions:
@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   preflight:
-    if: ${{ inputs.lane != 'windows-wheelhouse' && inputs.lane != 'output-audit' && inputs.lane != 'orchestration-audit' && inputs.lane != 'argv-audit' && inputs.lane != 'argv-repair' && !startsWith(github.ref, 'refs/heads/validation/rust-fast-wheelhouse-') && !startsWith(github.ref, 'refs/heads/validation/rust-fast-output-') && !startsWith(github.ref, 'refs/heads/validation/rust-fast-orchestration-') && !startsWith(github.ref, 'refs/heads/validation/rust-fast-argv-') && !startsWith(github.ref, 'refs/heads/validation/rust-fast-argvfix-') }}
+    if: ${{ inputs.lane != 'windows-wheelhouse' && inputs.lane != 'output-audit' && inputs.lane != 'orchestration-audit' && inputs.lane != 'request015-audit' && inputs.lane != 'argv-audit' && inputs.lane != 'argv-repair' && !startsWith(github.ref, 'refs/heads/validation/rust-fast-wheelhouse-') && !startsWith(github.ref, 'refs/heads/validation/rust-fast-output-') && !startsWith(github.ref, 'refs/heads/validation/rust-fast-orchestration-') && !startsWith(github.ref, 'refs/heads/validation/rust-fast-request-') && !startsWith(github.ref, 'refs/heads/validation/rust-fast-argv-') && !startsWith(github.ref, 'refs/heads/validation/rust-fast-argvfix-') }}
     name: Bounded preflight (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -95,7 +95,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   audit:
-    if: ${{ inputs.lane == 'output-audit' || inputs.lane == 'orchestration-audit' || inputs.lane == 'argv-audit' || inputs.lane == 'argv-repair' || startsWith(github.ref, 'refs/heads/validation/rust-fast-output-') || startsWith(github.ref, 'refs/heads/validation/rust-fast-orchestration-') || startsWith(github.ref, 'refs/heads/validation/rust-fast-argv-') || startsWith(github.ref, 'refs/heads/validation/rust-fast-argvfix-') }}
+    if: ${{ inputs.lane == 'output-audit' || inputs.lane == 'orchestration-audit' || inputs.lane == 'request015-audit' || inputs.lane == 'argv-audit' || inputs.lane == 'argv-repair' || startsWith(github.ref, 'refs/heads/validation/rust-fast-output-') || startsWith(github.ref, 'refs/heads/validation/rust-fast-orchestration-') || startsWith(github.ref, 'refs/heads/validation/rust-fast-request-') || startsWith(github.ref, 'refs/heads/validation/rust-fast-argv-') || startsWith(github.ref, 'refs/heads/validation/rust-fast-argvfix-') }}
     name: Independent baseline observations (not a compatibility gate)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
