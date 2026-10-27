@@ -11,7 +11,7 @@ on:
       lane:
         description: Bounded offline validation family
         type: choice
-        options: [baseline, cli-jobs, endpoint, native-values, sdk-values, cli-auth, cli-95, windows-auth, deploy-mount]
+        options: [baseline, cli-jobs, endpoint, native-values, sdk-values, cli-auth, cli-95, windows-auth, deploy-mount, native-endpoint]
         default: baseline
 
 permissions:
@@ -19,8 +19,12 @@ permissions:
 
 jobs:
   preflight:
-    name: ${{ (inputs.lane == 'windows-auth' || startsWith(github.ref, 'refs/heads/validation/rust-fast-windows-')) && 'Windows offline auth preflight' || 'Linux fast preflight' }}
-    runs-on: ${{ (inputs.lane == 'windows-auth' || startsWith(github.ref, 'refs/heads/validation/rust-fast-windows-')) && 'windows-2025' || 'ubuntu-24.04' }}
+    name: Bounded preflight (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON((inputs.lane == 'native-endpoint' || startsWith(github.ref, 'refs/heads/validation/rust-fast-msit-')) && '["ubuntu-24.04","windows-2025"]' || (inputs.lane == 'windows-auth' || startsWith(github.ref, 'refs/heads/validation/rust-fast-windows-')) && '["windows-2025"]' || '["ubuntu-24.04"]') }}
     timeout-minutes: 15
     env:
       CARGO_BUILD_JOBS: "1"
@@ -85,7 +89,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: rust-fast-receipts-${{ github.sha }}
+          name: rust-fast-receipts-${{ matrix.os }}-${{ github.sha }}
           path: ${{ runner.temp }}/rust-fast-receipts/*.json
           if-no-files-found: error
           retention-days: 7

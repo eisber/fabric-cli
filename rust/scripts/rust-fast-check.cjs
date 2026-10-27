@@ -18,6 +18,7 @@ const LANES = Object.freeze({
   'cli-95': ['fabric-cli', 'fabric-cli-tables', 'fabric-sdk-tables', 'fabric-identity'],
   'windows-auth': ['fabric-cli', 'fabric-identity', 'fabric-identity-windows'],
   'deploy-mount': ['fabric-deploy', 'fabric-cli'],
+  'native-endpoint': ['fabric-cli', 'fabric-sdk', 'fabric-core', 'fabric-core-json', 'fabric-cli-output'],
 });
 const CI_FILES = [
   '.github/workflows/rust-fast-check.yml', '.github/rust-fast-candidate.json',
@@ -40,6 +41,13 @@ function lane(value) {
   return value;
 }
 function runnerLane(selectedLane, target, ref) {
+  if (selectedLane === 'native-endpoint') {
+    requireThat(['x86_64-pc-windows-msvc', 'x86_64-unknown-linux-gnu'].includes(target),
+      'Native endpoint checks require an actual Windows or Linux x64 host');
+    if (ref) requireThat(ref.startsWith('refs/heads/validation/rust-fast-msit-'),
+      'Native endpoint lane requires its dedicated immutable validation ref');
+    return;
+  }
   const windows = selectedLane === 'windows-auth';
   requireThat(target === (windows ? 'x86_64-pc-windows-msvc' : 'x86_64-unknown-linux-gnu'),
     `Lane ${selectedLane} requires its native ${windows ? 'Windows x64' : 'Linux x64'} runner`);
@@ -51,6 +59,8 @@ function laneBranch(selectedLane, branch) {
     'Only a new validation/rust-fast-* branch is permitted');
   requireThat(branch.startsWith('validation/rust-fast-windows-') === (selectedLane === 'windows-auth'),
     'Windows auth lane requires its dedicated validation/rust-fast-windows-* namespace');
+  requireThat(branch.startsWith('validation/rust-fast-msit-') === (selectedLane === 'native-endpoint'),
+    'Native endpoint lane requires its dedicated validation/rust-fast-msit-* namespace');
 }
 function metadataTargets(target) {
   return ['x86_64-unknown-linux-gnu', 'x86_64-pc-windows-msvc', 'aarch64-apple-darwin']
@@ -117,7 +127,9 @@ function prepare() {
     transport: selectedLane === 'sdk-values' && packages.includes('fabric-sdk-transport')
       ? ['hyper-rustls'] : []};
   const fingerprint = digest(JSON.stringify({rustc, target, features, lockHash}));
-  const coverage = selectedLane === 'deploy-mount'
+  const coverage = selectedLane === 'native-endpoint'
+    ? 'Exact native endpoint union, default/native CLI and affected SDK/source contracts on this actual host; no live auth/network, MSIT permission, deployment or platform acceptance inferred'
+    : selectedLane === 'deploy-mount'
     ? 'Linux deploy library and actual native-feature root deploy_mount contracts only; no live deployment, whole configuration parity, canonical acceptance or native platform proof'
     : selectedLane === 'windows-auth'
     ? 'Native Windows x64 broker/native-read compile, reviewed pure auth/identity/lifecycle/hidden-window contracts only; no real authentication, token/cache access, MFA/CA, service proof or full platform acceptance'
@@ -175,7 +187,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     commands.push(cargo('clippy', '--offline', '--locked', ...packages, '--all-targets', '--', '-D', 'warnings'));
     if (cliAuth) commands.push(cargo('clippy', '--offline', '--locked',
       '-p', 'fabric-cli', '--features', 'windows-broker', '--all-targets', '--', '-D', 'warnings'));
-    if (['cli-95', 'deploy-mount'].includes(manifest.lane)) commands.push(cargo('clippy', '--offline', '--locked',
+    if (['cli-95', 'deploy-mount', 'native-endpoint'].includes(manifest.lane)) commands.push(cargo('clippy', '--offline', '--locked',
       '-p', 'fabric-cli', '--features', 'native-read', '--all-targets', '--', '-D', 'warnings'));
     if (windowsAuth) {
       for (const feature of ['windows-broker', 'native-read']) commands.push(cargo('clippy',
@@ -187,6 +199,15 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     return commands;
   }
   if (stage === 'test') {
+    if (manifest.lane === 'native-endpoint') return [
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
+        '--bin', 'fab-rs', '--test', 'native_endpoint_configuration', '--test', 'native_endpoint_reads',
+        '--test', 'read_session', '--test', 'source_operations', '--', '--test-threads=1'),
+      cargo('test', '--offline', '--locked', ...packages, '--', '--test-threads=1'),
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
+        '--', '--test-threads=1'),
+      cargo('test', '--offline', '--locked', ...packages, '--doc', '--', '--test-threads=1'),
+    ];
     if (manifest.lane === 'deploy-mount') return [
       cargo('test', '--offline', '--locked', '-p', 'fabric-deploy', '--', '--test-threads=1'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
@@ -302,23 +323,34 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     '-p', 'fabric-sdk-transport', '--features', 'hyper-rustls', '--example', 'sdk_consumer'));
   if (has('fabric-cli')) {
     const probes = path.join(target, 'debug', 'examples');
+    const executable = name => path.join(probes,
+      `${name}${manifest.target === 'x86_64-pc-windows-msvc' ? '.exe' : ''}`);
     commands.push(cargo('build', '--offline', '--locked', '-p', 'fabric-cli', '-p', 'fabric-cli-query', '--examples'),
       python('tests/compatibility/run_read_parity.py',
-        '--read-probe', path.join(probes, 'read_probe'),
-        '--query-probe', path.join(probes, 'projection_output'),
-        '--folder-probe', path.join(probes, 'folder_read_probe'), '--artifacts', path.join(output, 'read')),
+        '--read-probe', executable('read_probe'),
+        '--query-probe', executable('projection_output'),
+        '--folder-probe', executable('folder_read_probe'), '--artifacts', path.join(output, 'read')),
       cargo('clippy', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
         '--all-targets', '--', '-D', 'warnings'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '-p', 'fabric-identity',
         '--features', 'fabric-cli/native-read', '--', '--test-threads=1'),
       cargo('build', '--offline', '--locked', '-p', 'fabric-cli', '--examples', '--features', 'native-read'),
       python('tests/compatibility/read_session/consumer.py',
-        '--rust-probe', path.join(probes, 'read_session_probe')));
+        '--rust-probe', executable('read_session_probe')));
     if (exists('tests/compatibility/job_reads/compare.py')) {
       commands.push(python('tests/compatibility/job_reads/compare.py',
-        '--probe', path.join(probes, 'job_read_session_probe')));
+        '--probe', executable('job_read_session_probe')));
     } else {
       requireThat(manifest.lane !== 'cli-jobs', 'Released CLI job comparator is missing');
+    }
+    if (manifest.lane === 'native-endpoint') {
+      for (const [area, test] of [['folders', 'test_reference.py'],
+        ['capacities', 'test_capacity_reference.py']]) {
+        commands.push(python(`tests/compatibility/${area}/reference.py`, '--check'),
+          python('-m', 'unittest', 'discover', '-s', `tests/compatibility/${area}`, '-p', test, '-v'));
+      }
+      commands.push(cargo('test', '--offline', '--locked', '-p', 'fabric-sdk-http',
+        '-p', 'fabric-sdk-operations', '--test', 'endpoint_context', '--', '--test-threads=1'));
     }
   }
   if (has('fabric-deploy')) {

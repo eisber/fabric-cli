@@ -131,6 +131,15 @@ consumer, not broad configuration parity, whole-workspace regression, canonical
 acceptance or native Windows/macOS deployment proof. Source-owner fixes require
 a newly selected immutable source, never oracle weakening or unchanged retries.
 
+The `native-endpoint` lane uses `validation/rust-fast-msit-*` and runs the same
+immutable candidate on Linux x64 and Windows x64, with fail-fast disabled between
+hosts and separate host-labeled artifacts. Native endpoint configuration/read,
+ReadSession and source-operation contracts run first, followed by affected
+default/native CLI/SDK regressions, doctests and existing source comparisons.
+This tests endpoint routing with synthetic caller-injected HTTP, not live MSIT
+credentials, access or workspace creation. Existing lanes still select only
+their documented single runner. Windows probe names retain their `.exe` suffix.
+
 Each run executes workspace formatting, selected all-target offline checks and
 Clippy, single-thread tests and doctests, then actual family examples and pinned
 source comparisons. Selected CLI default and `native-read` all-target compilation

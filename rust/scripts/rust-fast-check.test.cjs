@@ -13,10 +13,32 @@ test('only full source IDs and finite lanes are accepted', () => {
   for (const value of ['abc123', '0'.repeat(40), '--upload-pack=x', 'a'.repeat(40) + ';echo']) {
     assert.equal(sha(value), false);
   }
-  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values', 'cli-auth', 'cli-95', 'windows-auth', 'deploy-mount']) assert.equal(lane(value), value);
+  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values', 'cli-auth', 'cli-95', 'windows-auth', 'deploy-mount', 'native-endpoint']) assert.equal(lane(value), value);
   for (const value of ['__proto__', 'unknown', 'cli-jobs;echo']) assert.throws(() => lane(value));
   assert.throws(() => options(['--source', 'a', '--source', 'b'], ['--source']));
   assert.throws(() => options(['--command', 'echo'], ['--source']));
+});
+
+test('native endpoint union checks both actual hosts with first-failure native selectors', () => {
+  const ref = 'refs/heads/validation/rust-fast-msit-exact';
+  laneBranch('native-endpoint', 'validation/rust-fast-msit-exact');
+  for (const target of ['x86_64-pc-windows-msvc', 'x86_64-unknown-linux-gnu']) {
+    runnerLane('native-endpoint', target, ref);
+  }
+  assert.throws(() => runnerLane('native-endpoint', 'aarch64-apple-darwin', ref));
+  assert.throws(() => laneBranch('native-endpoint', 'validation/rust-fast-other'));
+  const manifest = {lane: 'native-endpoint', target: 'x86_64-pc-windows-msvc',
+    packages: ['fabric-cli', 'fabric-sdk', 'fabric-core-json', 'fabric-cli-output']};
+  const commands = plan('test', manifest);
+  for (const selector of ['native_endpoint_configuration', 'native_endpoint_reads',
+    'read_session', 'source_operations']) assert.ok(commands[0].args.includes(selector));
+  assert.ok(commands[1].args.includes('fabric-sdk'));
+  assert.ok(commands[2].args.includes('native-read'));
+  assert.ok(commands[3].args.includes('--doc'));
+  const family = plan('family', manifest, 'D:\\target', 'D:\\receipts', () => true);
+  assert.ok(family.some(item => item.args.some(value => value.endsWith('read_session_probe.exe'))));
+  assert.ok(family.some(item => item.args.includes('tests/compatibility/folders/reference.py')));
+  assert.ok(family.some(item => item.args.includes('native_json')));
 });
 
 test('deploy preflight first runs actual library then native root consumer, never live deployment', () => {
@@ -342,7 +364,8 @@ test('workflow limits runner context to steps and retains pinned bounded push ga
   assert.ok(!beforeSteps.includes('runner.temp'));
   assert.ok(workflow.includes('branches: ["validation/rust-fast-*"]'));
   assert.ok(workflow.includes("'refs/heads/validation/rust-fast-windows-'"));
-  assert.ok(workflow.includes("'windows-2025' || 'ubuntu-24.04'"));
+  assert.ok(workflow.includes('["windows-2025"]'));
+  assert.ok(workflow.includes('["ubuntu-24.04","windows-2025"]'));
   assert.ok(workflow.includes('timeout-minutes: 15'));
   assert.ok(workflow.includes('ref: ${{ github.sha }}'));
   assert.ok(workflow.includes('persist-credentials: false'));
