@@ -176,7 +176,16 @@ fn configuration_stays_credential_free_with_a_persisted_remote_context() {
     success(&invoke(&root.0, &["config", "get", "output_format"]));
     let pwd = invoke(&root.0, &["pwd"]);
     assert!(!pwd.status.success());
-    assert!(String::from_utf8_lossy(&pwd.stderr).contains("NotConfigured"));
+    if cfg!(feature = "native-read") {
+        assert!(pwd.stdout.is_empty());
+        assert!(String::from_utf8_lossy(&pwd.stderr).contains("NotConfigured"));
+    } else {
+        assert!(pwd.stderr.is_empty());
+        let envelope: serde_json::Value = serde_json::from_slice(&pwd.stdout).unwrap();
+        assert_eq!(envelope["status"], "Failure");
+        assert_eq!(envelope["command"], "pwd");
+        assert_eq!(envelope["result"]["error_code"], "NotConfigured");
+    }
 }
 
 #[test]
