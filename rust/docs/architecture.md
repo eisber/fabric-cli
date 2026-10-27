@@ -56,6 +56,14 @@ existing read metadata session and delegates to released `fabric-cli-jobs` and
 guard reuses the existing output parser before SDK decoding, never adding an
 SDK-to-CLI dependency or changing default SDK consumers.
 See [bounded job reads](native-job-reads.md) for the incomplete source branches.
+The additive `JobSession` shares that metadata/credential composition for
+`job start` and `job run`, injecting files, immediate UI and configuration into
+the existing `JobHost`. The family retains all execution/polling/timeout logic;
+the central CLI adds no SDK engine or runtime.
+The same composition mounts cancellation and all three schedule mutations through
+`Invocation::JobMutation`, with shared generic-operation reconciliation and
+explicit injected confirmation. Native non-forced removal remains unsupported,
+not an implicit yes or blocking library prompt.
 The initial five crates are not a fixed count or a maximum. Workspace membership
 uses `crates/*`, so a new crate directory does not require editing a central
 member list. Default members explicitly include safe crates and exclude the

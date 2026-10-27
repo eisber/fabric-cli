@@ -9,10 +9,12 @@ plus the explicitly integrated context, text and Windows identity checkpoint
 This is a bounded executable host, not full `ls`/`get`, live-service, installation
 or cross-platform acceptance.
 
-The same explicitly selected host also composes bounded `job run-list` and
-`job run-status`; see [native job reads](native-job-reads.md) for their source
-branches, production/offline boundary and explicit remaining API gaps.
-No job mutation is registered.
+The same explicitly selected host also composes all eight source `job` leaves;
+see [native job composition](native-job-reads.md) for their bounded branches,
+production/offline boundary and explicit remaining API gaps. Mutations use
+the released `JobHost` with the same credential, metadata and runtime setup.
+Interactive removal confirmation requires an injected UI; native removal
+currently requires explicit `--force`, never implicit consent.
 
 ## Selection and execution
 

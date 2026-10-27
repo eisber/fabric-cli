@@ -17,7 +17,7 @@ fn parse(args: &[&str]) -> JobReadCommand {
 }
 
 #[test]
-fn only_the_two_read_leaves_are_registered() {
+fn all_eight_source_leaves_are_registered_once() {
     let schema = fabric_cli::parser::command();
     let group = schema.find_subcommand("job").unwrap();
     assert_eq!(
@@ -25,16 +25,18 @@ fn only_the_two_read_leaves_are_registered() {
             .get_subcommands()
             .map(|leaf| leaf.get_name())
             .collect::<Vec<_>>(),
-        ["run-list", "run-status"]
+        [
+            "start",
+            "run",
+            "run-list",
+            "run-cancel",
+            "run-status",
+            "run-sch",
+            "run-update",
+            "run-rm"
+        ]
     );
-    for leaf in [
-        "start",
-        "run",
-        "run-cancel",
-        "run-sch",
-        "run-rm",
-        "run-update",
-    ] {
+    for leaf in ["run-cancel", "run-rm", "run-update"] {
         assert!(parse_args(["fab-rs", "job", leaf, "item.Notebook"]).is_err());
     }
 }
@@ -91,7 +93,7 @@ fn empty_values_are_present_and_source_variadic_path_is_not_resumed() {
 }
 
 #[test]
-fn job_help_does_not_select_a_host_or_advertise_mutations() {
+fn job_help_does_not_select_a_host() {
     for args in [
         vec!["job", "--help"],
         vec!["job", "run-list", "--help"],

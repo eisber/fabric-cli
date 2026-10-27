@@ -38,8 +38,17 @@ fn run() -> io::Result<ExitCode> {
         Ok(Invocation::Read(command)) => return native_read::run(&command),
         #[cfg(feature = "native-read")]
         Ok(Invocation::JobRead(command)) => return native_read::run_job(&command),
+        #[cfg(feature = "native-read")]
+        Ok(Invocation::JobRun(command)) => return native_read::run_job_execution(&command),
+        #[cfg(feature = "native-read")]
+        Ok(Invocation::JobMutation(command)) => return native_read::run_job_mutation(&command),
         #[cfg(not(feature = "native-read"))]
-        Ok(Invocation::Read(_) | Invocation::JobRead(_)) => (
+        Ok(
+            Invocation::Read(_)
+            | Invocation::JobRead(_)
+            | Invocation::JobRun(_)
+            | Invocation::JobMutation(_),
+        ) => (
             CommandError {
                 code: "NotConfigured",
                 message: HostError::NotConfigured.to_string(),

@@ -5,7 +5,7 @@
 
 use fabric_cli::{
     HostError,
-    parser::{JobReadCommand, ReadCommand},
+    parser::{JobMutationCommand, JobReadCommand, JobRunCommand, ReadCommand},
 };
 use serde_json::json;
 use std::{
@@ -26,6 +26,8 @@ type Failure = (&'static str, String, u8);
 enum NativeCommand<'a> {
     Read(&'a ReadCommand),
     Job(&'a JobReadCommand),
+    JobExecution(&'a JobRunCommand),
+    JobMutation(&'a JobMutationCommand),
 }
 
 fn failure(code: &'static str, message: impl Into<String>, exit: u8) -> Failure {
@@ -65,6 +67,14 @@ pub(crate) fn run(command: &ReadCommand) -> io::Result<ExitCode> {
 
 pub(crate) fn run_job(command: &JobReadCommand) -> io::Result<ExitCode> {
     run_command(NativeCommand::Job(command))
+}
+
+pub(crate) fn run_job_execution(command: &JobRunCommand) -> io::Result<ExitCode> {
+    run_command(NativeCommand::JobExecution(command))
+}
+
+pub(crate) fn run_job_mutation(command: &JobMutationCommand) -> io::Result<ExitCode> {
+    run_command(NativeCommand::JobMutation(command))
 }
 
 fn run_command(command: NativeCommand<'_>) -> io::Result<ExitCode> {
@@ -128,15 +138,19 @@ fn run_selected(
             1,
         ));
     }
-    if let NativeCommand::Job(command) = command {
-        fabric_sdk_jobs::JobRequestHeaders::with_skill(command.skill.as_deref()).map_err(|_| {
-            failure(
-                "invalid_arguments",
-                "Invalid job request header selection.",
-                2,
-            )
-        })?;
-    }
+    let skill = match command {
+        NativeCommand::Read(_) => None,
+        NativeCommand::Job(command) => command.skill.as_deref(),
+        NativeCommand::JobExecution(command) => command.skill.as_deref(),
+        NativeCommand::JobMutation(command) => command.skill.as_deref(),
+    };
+    fabric_sdk_jobs::JobRequestHeaders::with_skill(skill).map_err(|_| {
+        failure(
+            "invalid_arguments",
+            "Invalid job request header selection.",
+            2,
+        )
+    })?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -280,6 +294,12 @@ async fn execute(
             .dispatch(command, std::future::pending())
             .await
         }
+        NativeCommand::JobExecution(command) => {
+            execute_job(&session, &executor, &command.family_command()).await
+        }
+        NativeCommand::JobMutation(command) => {
+            execute_job(&session, &executor, &command.family_command()).await
+        }
     };
     match result {
         Ok(plan) => Ok(plan),
@@ -294,6 +314,57 @@ async fn execute(
             }
             Err(failure("render_failed", error.to_string(), 1))
         }
+    }
+}
+
+#[cfg(windows)]
+async fn execute_job(
+    session: &fabric_cli::session::ReadSession<'_>,
+    executor: &fabric_sdk_http::HttpExecutor,
+    command: &fabric_cli_jobs::JobCommand,
+) -> Result<fabric_cli_output::text::TextPlan, fabric_cli_output::text::TextError> {
+    fabric_cli::jobs::JobSession {
+        reads: session,
+        jobs: std::sync::Arc::new(fabric_cli_jobs::HttpJobExecutor::new(executor.clone())),
+        files: &fabric_cli::jobs::SelectedJobFiles,
+        ui: &NativeJobUi,
+        config: fabric_cli_jobs::JobConfig::default(),
+    }
+    .dispatch(command, std::future::pending())
+    .await
+}
+
+#[cfg(windows)]
+struct NativeJobUi;
+
+#[cfg(windows)]
+impl fabric_cli_jobs::JobUi for NativeJobUi {
+    fn emit(
+        &self,
+        event: fabric_cli_jobs::JobEvent,
+    ) -> Result<(), fabric_cli_output::CommandError> {
+        let plan = fabric_cli::jobs::render_job_event(&event).map_err(|error| {
+            fabric_cli_output::CommandError::new(
+                Some(error.to_string()),
+                Some("UnexpectedError".into()),
+            )
+        })?;
+        plan.write_to(&mut io::stdout().lock(), &mut io::stderr().lock())
+            .map_err(|_| {
+                fabric_cli_output::CommandError::new(
+                    Some("Writing job output failed".into()),
+                    Some("UnexpectedError".into()),
+                )
+            })
+    }
+
+    fn confirm(&self) -> fabric_cli_jobs::Confirmation<'_> {
+        Box::pin(async {
+            Err(fabric_cli_output::CommandError::new(
+                Some("Native interactive confirmation is not supported; select --force explicitly or inject a confirmation UI".into()),
+                Some("NotSupported".into()),
+            ))
+        })
     }
 }
 
