@@ -3,7 +3,7 @@
 
 //! Pinned Python argv contrasts; no ambient identity, configuration or network.
 
-use fabric_cli::parser::{Invocation, parse_args};
+use fabric_cli::parser::{Invocation, invalid_arguments_message, parse_args};
 use std::process::{Command, Output};
 
 fn invoke(args: &[&str], invalid_selectors: bool) -> Output {
@@ -213,4 +213,40 @@ fn root_help_lists_only_registered_feature_gated_commands() {
             .any(|line| line.trim_start().starts_with("auth ")),
         cfg!(feature = "windows-broker")
     );
+}
+
+#[test]
+fn malformed_group_options_never_turn_into_default_help() {
+    for group in ["job", "acl", "label", "config"] {
+        diagnostic(&[group, "--bad=argv-private-marker"]);
+        diagnostic(&[group, "--output_format=argv-private-marker"]);
+    }
+}
+
+#[test]
+fn diagnostic_context_is_untrusted_even_for_missing_arguments() {
+    use clap::error::{ContextKind, ContextValue, ErrorKind};
+
+    for kind in [
+        ErrorKind::MissingRequiredArgument,
+        ErrorKind::InvalidValue,
+        ErrorKind::ValueValidation,
+    ] {
+        let mut error = clap::Error::raw(kind, "argv-private-marker");
+        error.insert(
+            ContextKind::InvalidArg,
+            ContextValue::Strings(vec!["argv-private-marker".into(), "<path>...".into()]),
+        );
+        error.insert(
+            ContextKind::InvalidValue,
+            ContextValue::String("argv-private-marker".into()),
+        );
+        error.insert(
+            ContextKind::Suggested,
+            ContextValue::String("argv-private-marker".into()),
+        );
+        let message = invalid_arguments_message(&error);
+        assert!(message.contains("path"), "{message}");
+        assert!(!message.contains("argv-private-marker"), "{message}");
+    }
 }

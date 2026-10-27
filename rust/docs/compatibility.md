@@ -45,7 +45,8 @@ UI hosts also exercise confirmation, decline and cancellation.
 
 | Invocation | Exit status | Standard output | Standard error |
 | --- | --- | --- | --- |
-| `--help`, `-h` | 0 | Human-readable help | Empty |
+| `--help`, `-h`, source `-help` flag | 0 | Human-readable help | Empty |
+| Bare `job`, `acl`, `label`, `config` groups | 0 | Registered group help, without host or configuration access | Empty |
 | `--version`, `-V` | 0 | `fab-rs 0.1.0` plus newline | Empty |
 | `ls`, `dir`, valid `get` arguments | 1 | Empty | Sanitized `NotConfigured` JSON plus newline |
 | No arguments, unknown commands or flags, `auth login`, `deploy` | 2 | Empty | One JSON error object plus newline |
@@ -54,8 +55,25 @@ UI hosts also exercise confirmation, decline and cancellation.
 Invalid invocations use this exact data shape and never include supplied values:
 
 ```json
-{"error":{"code":"invalid_arguments","message":"Only --help, --version, ls, dir, and get are recognized in this preview."}}
+{"error":{"code":"invalid_arguments","message":"Invalid arguments. Run fab-rs --help for available commands and usage."}}
 ```
+
+Missing required arguments and option values name only registered schema labels,
+for example `<path>...` or `--id <id>`, with an actionable help instruction.
+Rejected values, supplied paths, raw parser diagnostics and suggestions are never
+copied into this envelope. Unknown commands/options use the truthful generic
+fallback above; the available command list comes from the registered help schema,
+including feature-gated authentication rather than a separate hardcoded list.
+The exact source `-help` spelling is recognized only where the schema accepts a
+help flag, not inside attached option values, quoted query text or positional
+data after `--`. Existing help/version parser precedence and validation remain.
+
+These bounded argv repairs translate Python
+`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`; their independent capture is documented
+in [argv source evidence](../tests/compatibility/argv_review/README.md).
+The original Python warning may echo invalid input; sanitized JSON, stderr and
+exit 2 remain an intentional Rust exception. Availability of group/legacy help
+does not claim complete Python/Rich terminal or help-byte parity.
 
 Agents may rely on exit status, stream separation, and that error shape in
 this bootstrap. Help text is for people, not a parsing interface. No successful
@@ -89,8 +107,8 @@ invalid values and credentials are not echoed. Off Windows, commands return
 | Invalid arguments/configuration | Exit 2, sanitized JSON error on stderr; no broker access |
 | `--help` / subcommand help | Exit 0, help on stdout without authentication |
 
-Both feature configurations preserve the current read preview's static
-invalid-arguments message/schema above. Authentication registration is additive
+Both feature configurations preserve the invalid-arguments envelope, streams,
+exit status and sanitization above. Authentication registration is additive
 to the shared parser, not a replacement parser or an implicit read host.
 Read-only `--output_format` is rejected for auth rather than silently ignored.
 Errors retain numeric native
