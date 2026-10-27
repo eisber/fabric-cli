@@ -19,11 +19,16 @@ const LANES = Object.freeze({
   'windows-auth': ['fabric-cli', 'fabric-identity', 'fabric-identity-windows'],
   'deploy-mount': ['fabric-deploy', 'fabric-cli'],
   'native-endpoint': ['fabric-cli', 'fabric-sdk', 'fabric-core', 'fabric-core-json', 'fabric-cli-output'],
+  'output-audit': ['fabric-cli', 'fabric-cli-output'],
+  'orchestration-audit': ['fabric-cli'],
+  'windows-wheelhouse': [],
 });
 const CI_FILES = [
   '.github/workflows/rust-fast-check.yml', '.github/rust-fast-candidate.json',
   'rust/scripts/rust-fast-check.cjs', 'rust/scripts/rust-fast-check.test.cjs',
   'rust/scripts/rust-fast-requirements.txt',
+  'rust/scripts/rust-fast-wheelhouse.py', 'rust/scripts/test_rust_fast_wheelhouse.py',
+  'rust/scripts/rust-fast-windows-constraints.txt',
   'rust/docs/fast-check.md', 'rust/docs/build-validation.md',
   'rust/tests/performance/startup.py', 'rust/tests/performance/test_startup.py',
   'rust/tests/performance/measurement-request.json', 'rust/docs/performance-baseline.md',
@@ -61,6 +66,11 @@ function laneBranch(selectedLane, branch) {
     'Windows auth lane requires its dedicated validation/rust-fast-windows-* namespace');
   requireThat(branch.startsWith('validation/rust-fast-msit-') === (selectedLane === 'native-endpoint'),
     'Native endpoint lane requires its dedicated validation/rust-fast-msit-* namespace');
+  for (const [family, prefix] of [['windows-wheelhouse', 'wheelhouse'],
+    ['output-audit', 'output'], ['orchestration-audit', 'orchestration']]) {
+    requireThat(branch.startsWith(`validation/rust-fast-${prefix}-`) === (selectedLane === family),
+      `${family} requires its dedicated immutable validation namespace`);
+  }
 }
 function metadataTargets(target) {
   return ['x86_64-unknown-linux-gnu', 'x86_64-pc-windows-msvc', 'aarch64-apple-darwin']
@@ -127,7 +137,9 @@ function prepare() {
     transport: selectedLane === 'sdk-values' && packages.includes('fabric-sdk-transport')
       ? ['hyper-rustls'] : []};
   const fingerprint = digest(JSON.stringify({rustc, target, features, lockHash}));
-  const coverage = selectedLane === 'native-endpoint'
+  const coverage = selectedLane.endsWith('-audit')
+    ? 'Independent baseline observations only; every finite command attempted and each exit retained, expected divergences remain failures; no compatibility gate or live proof'
+    : selectedLane === 'native-endpoint'
     ? 'Exact native endpoint union, default/native CLI and affected SDK/source contracts on this actual host; no live auth/network, MSIT permission, deployment or platform acceptance inferred'
     : selectedLane === 'deploy-mount'
     ? 'Linux deploy library and actual native-feature root deploy_mount contracts only; no live deployment, whole configuration parity, canonical acceptance or native platform proof'
@@ -161,6 +173,26 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     commands.push({...cargo('run', '--quiet', '--offline', '--locked', '-p', pkg, '--example', example), stdout: file},
       python(`tests/compatibility/output/${reference}`, ...extra, '--observed', file));
   };
+  if (stage === 'audit') {
+    requireThat(['output-audit', 'orchestration-audit'].includes(manifest.lane),
+      'Independent failure collection is restricted to explicit audit lanes');
+    if (manifest.lane === 'output-audit') return [
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli-output',
+        '--test', 'output_audit', '--', '--test-threads=1'),
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
+        '--test', 'output_contract_audit', '--', '--test-threads=1'),
+    ];
+    const capture = 'tests/compatibility/orchestration/capture.py';
+    const probe = path.join(target, 'debug', 'examples', 'read_session_probe');
+    return [
+      {...python(capture), stdout: path.join(output, 'orchestration-python.json')},
+      python('-m', 'unittest', 'discover', '-s', 'tests/compatibility/orchestration',
+        '-p', 'test_capture.py', '-v'),
+      cargo('build', '--offline', '--locked', '-p', 'fabric-cli', '--example', 'read_session_probe'),
+      {...python(capture, '--rust-probe', probe, '--rust-pin', manifest.source),
+        stdout: path.join(output, 'orchestration-native.json')},
+    ];
+  }
   if (stage === 'fmt') return [cargo('fmt', '--all', '--', '--check')];
   if (stage === 'fetch') {
     commands.push(cargo('fetch', '--locked', '--target', manifest.target));
@@ -367,23 +399,25 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
   requireThat(commands.length > 0, 'Selected family has no executable consumer');
   return commands;
 }
-function execute(commands, cwd, run = spawnSync) {
+function execute(commands, cwd, run = spawnSync, collectFailures = false) {
   const results = [];
   for (const item of commands) {
     const startedAt = new Date().toISOString();
     console.log(`> ${item.program} ${item.args.join(' ')}`);
-    const fd = item.stdout ? fs.openSync(item.stdout, 'w') : undefined;
+    const fd = item.stdout ? fs.openSync(item.stdout, 'wx') : undefined;
+    const err = item.stderr ? fs.openSync(item.stderr, 'wx') : undefined;
     let result;
     try {
       result = run(item.program, item.args, {cwd, shell: false, timeout: 300000,
-        stdio: ['ignore', fd === undefined ? 'inherit' : fd, 'inherit']});
+        stdio: ['ignore', fd === undefined ? 'inherit' : fd, err === undefined ? 'inherit' : err]});
     } finally {
       if (fd !== undefined) fs.closeSync(fd);
+      if (err !== undefined) fs.closeSync(err);
     }
     results.push({program: item.program, args: item.args, startedAt,
       completedAt: new Date().toISOString(), exit: result.status, signal: result.signal,
-      error: result.error?.message});
-    if (result.error || result.signal || result.status !== 0) break;
+      error: result.error?.message, stdout: item.stdout, stderr: item.stderr});
+    if (!collectFailures && (result.error || result.signal || result.status !== 0)) break;
   }
   return results;
 }
@@ -393,9 +427,20 @@ function runStage(stage) {
     'Hosted preflight must use one Cargo job and one test thread');
   requireThat(process.env.CARGO_TARGET_DIR && path.isAbsolute(process.env.CARGO_TARGET_DIR),
     'An absolute private CARGO_TARGET_DIR is required');
-  const commands = plan(stage, manifest, process.env.CARGO_TARGET_DIR, receipts);
-  const results = execute(commands, rust);
-  write(path.join(receipts, `${stage}.json`), {head: manifest.head, source: manifest.source, results});
+  const audit = stage === 'audit' && ['output-audit', 'orchestration-audit'].includes(manifest.lane);
+  const commands = plan(stage, manifest, process.env.CARGO_TARGET_DIR, receipts).map((item, index) =>
+    audit ? {...item, stdout: item.stdout || path.join(receipts, `audit-${index}-stdout.txt`),
+      stderr: path.join(receipts, `audit-${index}-stderr.txt`)} : item);
+  const results = execute(commands, rust, spawnSync, audit);
+  if (audit) {
+    requireThat(digest(fs.readFileSync(path.join(rust, 'Cargo.lock'))) === manifest.lockHash, 'Audit changed lock');
+    requireThat(git(['status', '--porcelain', '--untracked-files=all']) === '', 'Audit changed checkout');
+  }
+  const probe = path.join(process.env.CARGO_TARGET_DIR, 'debug', 'examples', 'read_session_probe');
+  const probeHash = audit && manifest.lane === 'orchestration-audit' && fs.existsSync(probe)
+    ? digest(fs.readFileSync(probe)) : undefined;
+  write(path.join(receipts, `${stage}.json`), {head: manifest.head, source: manifest.source, results,
+    probeSha256: probeHash});
   requireThat(results.length === commands.length && results.every(result =>
     result.exit === 0 && !result.signal && !result.error), `${stage} failed; product owner fix required, no automatic retry`);
 }
@@ -498,6 +543,8 @@ function full(args) {
   console.log('Full batch requested at exact immutable CI head; read provider jobs before claiming coverage');
 }
 function requireFastPass(receipt, run) {
+  requireThat(!['output-audit', 'orchestration-audit', 'windows-wheelhouse'].includes(receipt.lane),
+    'Setup artifacts and independent audits are never full compatibility gates');
   requireThat(run.head_sha === receipt.head && run.path === '.github/workflows/rust-fast-check.yml' &&
     run.status === 'completed' && run.conclusion === 'success', 'Exact combined head has not passed fast preflight');
 }

@@ -13,6 +13,35 @@ validation uses the push trigger without editing that branch. Checkout uses the
 event's exact SHA, not a moving branch. The committed candidate record names the
 original product SHA separately from the combined CI-only head.
 
+The explicit Linux `output-audit` and `orchestration-audit` lanes collect
+independent baseline observations, not compatibility-gate passes. The output
+lane runs both `fabric-cli-output/output_audit` and the native-read CLI
+`output_contract_audit` targets even when the first fails. Each real exit and
+its separate stdout/stderr are retained; any failed command leaves the job
+failed. The orchestration lane captures all 18 Python cases, runs the source
+guards, builds the existing `read_session_probe`, and attempts the actual
+comparison. It records the probe hash separately from the claimed source pin.
+Missing fields, failed captures and expected baseline divergences remain
+failures, never passed coverage. Only these finite audit plans collect
+multiple failures; ordinary preflight remains fail-fast.
+
+The dedicated `windows-wheelhouse` setup lane performs no Rust build,
+authentication or service requests. It uses normal verified PyPI TLS on
+hosted Windows x64, builds the pure Python product from pinned source
+`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`, verifies packaged files against
+that source, and downloads the 28 exact dependency pins in
+`scripts/rust-fast-windows-constraints.txt`, including `pymsalruntime` 0.20.7.
+Each public wheel must match the non-yanked PyPI filename, size and SHA256.
+The artifact contains 29 distribution wheels, an exact hash-required offline
+requirements file, source/build provenance and preparation logs. A fresh
+temporary hosted venv must install offline and pass `pip check`; partial
+artifacts have a failed manifest and must not be installed. The newly built
+product wheel hash is recorded independently, not assumed byte-identical to
+an earlier Linux-built wheel. No trust bypass, feed change, product import or
+credential discovery is performed. Local use still requires independent
+resource authorization, artifact/provider verification and hash checks before
+installation. Setup and audit lanes cannot authorize full-matrix dispatch.
+
 The standard-library Node script uses the existing Cargo metadata pattern to
 select safe default members and transitive consumers. `baseline` checks all
 default members; `cli-jobs`, `endpoint`, and `native-values` have finite committed

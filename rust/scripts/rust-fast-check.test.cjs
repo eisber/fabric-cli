@@ -13,10 +13,49 @@ test('only full source IDs and finite lanes are accepted', () => {
   for (const value of ['abc123', '0'.repeat(40), '--upload-pack=x', 'a'.repeat(40) + ';echo']) {
     assert.equal(sha(value), false);
   }
-  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values', 'cli-auth', 'cli-95', 'windows-auth', 'deploy-mount', 'native-endpoint']) assert.equal(lane(value), value);
+  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values', 'cli-auth', 'cli-95', 'windows-auth', 'deploy-mount', 'native-endpoint', 'output-audit', 'orchestration-audit', 'windows-wheelhouse']) assert.equal(lane(value), value);
   for (const value of ['__proto__', 'unknown', 'cli-jobs;echo']) assert.throws(() => lane(value));
   assert.throws(() => options(['--source', 'a', '--source', 'b'], ['--source']));
   assert.throws(() => options(['--command', 'echo'], ['--source']));
+});
+
+test('baseline audits run both finite output targets without granting full compatibility status', () => {
+  const manifest = {lane: 'output-audit', packages: ['fabric-cli', 'fabric-cli-output']};
+  const commands = plan('audit', manifest);
+  assert.equal(commands.length, 2);
+  assert.ok(commands[0].args.includes('output_audit'));
+  assert.ok(commands[1].args.includes('output_contract_audit'));
+  assert.ok(commands[1].args.includes('native-read'));
+  const calls = [];
+  const results = execute(commands, '.', (program, args) => {
+    calls.push({program, args});
+    return {status: 101};
+  }, true);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(results.map(item => item.exit), [101, 101]);
+  assert.throws(() => plan('audit', {...manifest, lane: 'baseline'}));
+  assert.throws(() => requireFastPass({lane: 'output-audit'}, {}));
+  assert.throws(() => requireFastPass({lane: 'windows-wheelhouse'}, {}));
+  for (const [family, prefix] of [['windows-wheelhouse', 'wheelhouse'],
+    ['output-audit', 'output'], ['orchestration-audit', 'orchestration']]) {
+    laneBranch(family, `validation/rust-fast-${prefix}-exact`);
+    assert.throws(() => laneBranch(family, 'validation/rust-fast-other'));
+    assert.throws(() => laneBranch('baseline', `validation/rust-fast-${prefix}-exact`));
+  }
+});
+
+test('orchestration evidence retains source capture, guards, exact probe build and actual execution', () => {
+  const commands = plan('audit', {lane: 'orchestration-audit', source: 'a'.repeat(40), packages: ['fabric-cli']},
+    '/target', '/receipts');
+  assert.equal(commands.length, 4);
+  assert.ok(commands[0].args.includes('tests/compatibility/orchestration/capture.py'));
+  assert.ok(commands[0].stdout.endsWith('orchestration-python.json'));
+  assert.ok(commands[1].args.includes('test_capture.py'));
+  assert.ok(commands[2].args.includes('read_session_probe'));
+  assert.ok(commands[2].args.includes('--locked') && commands[2].args.includes('--offline'));
+  assert.ok(commands[3].args.includes('--rust-probe'));
+  assert.ok(commands[3].args.includes('a'.repeat(40)));
+  assert.ok(commands[3].stdout.endsWith('orchestration-native.json'));
 });
 
 test('native endpoint union checks both actual hosts with first-failure native selectors', () => {
