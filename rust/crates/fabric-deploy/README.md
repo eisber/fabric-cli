@@ -36,10 +36,15 @@ folder moves, features/constants, filters, bulk publication and unpublication
 fail explicitly before writes; they are not silently ignored or counted as a
 completed full deployment port. See the [field/type ledger](../../docs/deployment-compatibility.md#config-driven-checkpoint-october-27).
 
-This checkpoint is source-ready; native compilation and execution results must
-be recorded separately. New source-derived receipts cover twelve real config
-validator/settings cases and two actual Notebook publisher request bodies.
-Source captures, native test registration and a passing native run are distinct.
+The bounded source checkpoint `7970f9fc25a8fc4be4f3f66837b836fac459da3e`
+has actual Linux x64 compile/strict-Clippy evidence, 87 deployment integration
+tests plus one doctest, 16 production-root deploy tests and three CLI parameter
+tests passing. All 43 new test declarations were also verified in native
+registration. Source captures, test registration and passing execution are
+recorded separately in the [compatibility ledger](../../docs/deployment-compatibility.md#verified-bounded-linux-checkpoint).
+These bounded results are not full config/item-type/transform/unpublish parity,
+the complete command/workspace regression gates, other-platform proof or live
+deployment authorization.
 Further additive pinned source receipts cover wrapper/JSON typing, scalar
 resolution, skip orchestration, optional-environment warnings and literal
 parameter validation/transformed parts. Regex, ignore-case, filters, templates,

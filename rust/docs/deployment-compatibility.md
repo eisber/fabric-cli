@@ -503,3 +503,51 @@ are unchanged. No production transport, result fallback, UUID guard, polling or
 uncertainty policy is weakened. The mount registration inventory is now 16,
 making 43 declared tests across the six new crates; actual corrected-head native
 listing/execution still gates acceptance.
+
+### Verified bounded Linux checkpoint
+
+Source `7970f9fc25a8fc4be4f3f66837b836fac459da3e` passed hosted run
+`40567053818`, job `122411015632`, using separate CI head
+`06f93740b560ca09c5c17a943e30d6769447814b` on
+`x86_64-unknown-linux-gnu`, Rust 1.99.1
+(`58cf8f9c35b355199727627d07ae34a4e2846d67`). Provider comparison confirms
+the CI head's parent is the exact source checkpoint and its additional files are
+automation/documentation/performance harness only. Candidate production code,
+tests, oracle files and lock are unchanged. The source lock SHA-256 is
+`60ac2a3cb96513cd98dcc49d341ffced07159c16a58f50a7cd3e95f9610d1aa5`.
+
+The bounded receipts and actual log establish:
+
+| Selected gate | Actual result |
+| --- | --- |
+| Formatting and locked dependency restoration | Passed |
+| Selected default/native all-target compilation | Passed |
+| Selected default/native strict Clippy | Passed |
+| Six new test crates' native registration | All 43 unique names match the source inventory |
+| Deployment library integration tests | 87 passed, including existing definition and Notebook regressions |
+| Deployment library doctest | One passed |
+| Root deploy mount tests | All 16 passed, including actual create/update/result IDs and the missing-result negative case |
+| CLI parameter tests | All three passed, including the formerly nested warning test |
+| Selected pinned source comparisons | Passed: config 12, warnings 4, orchestration 5, operation sections 3, literal schema 10, literal parts 6, deferred transforms 25, scalars 57, operation result 2, wrapper parameters 8 and lifecycle 5 |
+| Native-feature CLI doctests | Command succeeded with zero registered tests; not additional coverage |
+
+Two intermediate runs on the same product source are preserved:
+`40565709558` failed a raw source-hash comparison because the separate CICD
+checkout had different text newline acquisition, and `40566377386` passed an
+unsupported argument to the scalar comparator. The CI owner corrected only
+source acquisition (`core.autocrlf=true`, matching the original raw-byte source
+receipt) and comparator command construction. No fixed source expectation,
+protected fixture or candidate file was regenerated or normalized. All bounded
+command exits in the final receipts are zero.
+
+The protected 44-case oracle and two original publisher-wire source cases were
+also rerun successfully in the private pinned Windows Python environment; they
+were not selected by this hosted family stage and are separate evidence.
+These results establish a bounded **offline config/literal-parameter-to-Notebook
+production-host vertical**, not full deployment parity. The old 50-command
+canonical gate, complete default/native CLI suites, whole workspace checks,
+other native platforms, live identity/service behavior and all remaining
+configuration/item-type/planning/unpublish rows are still separate requirements.
+The integration owner remains responsible for shared-branch publication and
+the next exact dependency/feature decision; this successful checkpoint does not
+authorize new regex/JSONPath packages or live deployment.
