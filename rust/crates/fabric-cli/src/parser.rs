@@ -216,9 +216,7 @@ where
         {
             return Ok(Invocation::Display(error.to_string()));
         }
-        Err(error)
-            if error.kind() == ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand =>
-        {
+        Err(error) if error.kind() == ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => {
             if let Some(group) = root
                 .and_then(|index| args[index].to_str())
                 .and_then(|name| parser.find_subcommand_mut(name))
@@ -237,12 +235,9 @@ where
         ));
     };
     if values.subcommand_name().is_none()
-        && let Some(group) = parser
-            .find_subcommand_mut(name)
-            .filter(|group| {
-                group.has_subcommands()
-                    && (group.is_arg_required_else_help_set() || name == "config")
-            })
+        && let Some(group) = parser.find_subcommand_mut(name).filter(|group| {
+            group.has_subcommands() && (group.is_arg_required_else_help_set() || name == "config")
+        })
     {
         return Ok(Invocation::Display(group.render_help().to_string()));
     }

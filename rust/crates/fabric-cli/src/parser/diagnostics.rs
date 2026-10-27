@@ -63,6 +63,9 @@ pub(super) fn missing_value(argument: &Arg) -> clap::Error {
         ContextKind::InvalidArg,
         ContextValue::String(argument.to_string()),
     );
-    error.insert(ContextKind::InvalidValue, ContextValue::String(String::new()));
+    error.insert(
+        ContextKind::InvalidValue,
+        ContextValue::String(String::new()),
+    );
     error
 }

@@ -160,13 +160,11 @@ fn help_tokens_in_values_and_after_delimiter_are_not_rewritten() {
         };
         assert_eq!(read.query.as_deref(), Some("-help"));
     }
-    let Invocation::Read(read) = parse_args(["fab-rs", "ls", "--", "-help"]).unwrap()
-    else {
+    let Invocation::Read(read) = parse_args(["fab-rs", "ls", "--", "-help"]).unwrap() else {
         panic!("a positional value must not select help");
     };
     assert_eq!(read.path, ["-help"]);
-    let Invocation::Read(read) =
-        parse_args(["fab-rs", "get", ".", "--output=-help"]).unwrap()
+    let Invocation::Read(read) = parse_args(["fab-rs", "get", ".", "--output=-help"]).unwrap()
     else {
         panic!("an output value must not select help");
     };
@@ -220,6 +218,35 @@ fn malformed_group_options_never_turn_into_default_help() {
     for group in ["job", "acl", "label", "config"] {
         diagnostic(&[group, "--bad=argv-private-marker"]);
         diagnostic(&[group, "--output_format=argv-private-marker"]);
+    }
+}
+
+#[test]
+fn configuration_help_bypasses_even_invalid_store_selection() {
+    for args in [
+        vec!["config"],
+        vec!["config", "--output_format=json"],
+        vec!["config", "-help"],
+    ] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_fab-rs"));
+        command.env_clear();
+        for key in ["SystemRoot", "WINDIR", "TEMP", "TMP"] {
+            if let Some(value) = std::env::var_os(key) {
+                command.env(key, value);
+            }
+        }
+        let output = command
+            .env("FAB_RUST_CONFIG_ROOT", "argv-private-marker-relative-root")
+            .env("FAB_RUST_SESSION_ID", "argv-private-marker-invalid-session")
+            .args(&args)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(0), "{args:?}: {output:?}");
+        assert!(output.stderr.is_empty(), "{args:?}: {output:?}");
+        let help = String::from_utf8(output.stdout).unwrap();
+        assert!(help.contains("Usage: fab-rs config"), "{help}");
+        assert!(help.contains("clear-cache"), "{help}");
+        assert!(!help.contains("argv-private-marker"), "{help}");
     }
 }
 
