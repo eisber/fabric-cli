@@ -85,11 +85,6 @@ impl Snapshot {
         self.load(session, scope, parent, cancelled).await
     }
 
-    #[cfg(feature = "native-read")]
-    pub(crate) fn elements(&self) -> &[Arc<Element>] {
-        &self.elements
-    }
-
     pub(crate) async fn resolve(
         &mut self,
         session: &ReadSession<'_>,

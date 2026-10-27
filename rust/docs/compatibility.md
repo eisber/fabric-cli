@@ -23,6 +23,9 @@ alone does not establish a successful command. The executable holds only
 command-local metadata snapshots, so `config clear-cache` has no persistent
 metadata cache to delete and never clears broker/configuration/context files.
 `label list-local` executes before identity setup using configured definitions.
+The optional shared-session remote composition and its bounded gaps are described
+in [central family composition](native-family-host.md). Actual root-handler,
+request, stream and file evidence, not schema counts, gates coverage claims.
 
 The temporary executable name is `fab-rs`, version `0.1.0`. There is no REPL,
 embedded agent runtime, authentication command, deployment command or production

@@ -122,7 +122,8 @@ fn run_selected(
 ) -> Result<fabric_cli_output::text::TextPlan, Failure> {
     let options = fabric_identity::LoginOptions::new(tenant, client, account)
         .map_err(|e| failure("invalid_configuration", e.to_string(), 2))?;
-    let current = optional_path("FAB_RUST_CONTEXT", "/")?;
+    let (current, restored) = crate::local_host::context_selection()
+        .map_err(|error| failure("invalid_configuration", error.to_string(), 2))?;
     let home = std::env::var("FAB_RUST_HOME").map_or_else(
         |e| match e {
             std::env::VarError::NotPresent => Ok(fabric_cli_context::HomeContext::Unspecified),
@@ -173,7 +174,7 @@ fn run_selected(
             _ = tokio::time::sleep(std::time::Duration::from_secs(240)) => {
                 Err(failure("timed_out", "The read command deadline elapsed.", 1))
             },
-            result = execute(command, options, &current, home) => result,
+            result = execute(command, options, &current, home, restored) => result,
         }
     })
 }
@@ -196,24 +197,12 @@ fn selected_home(value: String) -> Result<fabric_cli_context::HomeContext, Failu
 }
 
 #[cfg(windows)]
-fn optional_path(name: &str, default: &str) -> Result<String, Failure> {
-    match std::env::var(name) {
-        Ok(path) if path.starts_with('/') => Ok(path),
-        Err(std::env::VarError::NotPresent) => Ok(default.into()),
-        _ => Err(failure(
-            "invalid_configuration",
-            "The working context must be an absolute Fabric path.",
-            2,
-        )),
-    }
-}
-
-#[cfg(windows)]
 async fn execute(
     command: NativeCommand<'_>,
     options: fabric_identity::LoginOptions,
     current: &str,
     home: fabric_cli_context::HomeContext,
+    restored: bool,
 ) -> Result<fabric_cli_output::text::TextPlan, Failure> {
     use fabric_cli::session::ReadSession;
     use fabric_cli_context::Element;
@@ -309,7 +298,23 @@ async fn execute(
         NativeCommand::Family(command) => execute_family(&session, &executor, command).await,
     };
     match result {
-        Ok(plan) => Ok(plan),
+        Ok(mut plan) => {
+            if restored {
+                use fabric_cli_output::text::{self, Presentation};
+                let message = format!(
+                    "Command context path: {}",
+                    if current == "/" { "root" } else { current }
+                );
+                let mut warning = text::render_notice(
+                    text::Notice::Warning(&message),
+                    None,
+                    Presentation::default(),
+                );
+                warning.records.append(&mut plan.records);
+                plan.records = warning.records;
+            }
+            Ok(plan)
+        }
         Err(error) => {
             // Retain source output-before-error, rather than silently dropping it.
             if let Some(partial) = error.partial_output() {

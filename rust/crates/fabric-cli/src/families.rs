@@ -116,14 +116,28 @@ impl FamilySession<'_, '_> {
             return self.command_failure(
                 errors::error("InvalidInput", "Invalid selected read context"),
                 invocation,
+                OutputFormat::Json,
             );
         }
         let settings = match self.store.read() {
             Ok(settings) => settings,
-            Err(error) => return self.command_failure(error.command_error(), invocation),
+            Err(error) => {
+                return self.command_failure(error.command_error(), invocation, OutputFormat::Json);
+            }
         };
         let configured = settings.get("output_format").and_then(Value::as_str);
-        let format = OutputFormat::resolve(None, configured)?;
+        let explicit = match invocation {
+            Invocation::Local(command) => command.output_format.as_deref(),
+            Invocation::Resource(command) => command.args().output_format.as_deref(),
+            Invocation::Transfer(command) => command.output_format.as_deref(),
+            _ => None,
+        };
+        let format = match invocation {
+            Invocation::Access(command) if command.output_format.is_some() => {
+                command.output_format.expect("selected explicit format")
+            }
+            _ => OutputFormat::resolve(explicit, configured.or(Some("text")))?,
+        };
         let timestamp = self.reads.timestamp.clone();
         let mut context = CommandContext::default();
         let current = match context
@@ -138,12 +152,12 @@ impl FamilySession<'_, '_> {
             .await
         {
             Ok(current) => current,
-            Err(error) => return self.command_failure(error, invocation),
+            Err(error) => return self.command_failure(error, invocation, format),
         };
         match invocation {
             Invocation::Local(command) => {
                 if let Err(error) = self.navigation.change(self.store, current.clone(), false) {
-                    return self.command_failure(error.command_error(), invocation);
+                    return self.command_failure(error.command_error(), invocation, format);
                 }
                 let path = match &command.command {
                     fabric_cli_local::LocalCommand::ChangeDirectory { path }
@@ -170,7 +184,7 @@ impl FamilySession<'_, '_> {
                         )
                         .await
                     {
-                        return self.command_failure(error, invocation);
+                        return self.command_failure(error, invocation, format);
                     }
                 }
                 let mut host = NavigationHost {
@@ -184,7 +198,9 @@ impl FamilySession<'_, '_> {
                 ) {
                     Ok(plan) => plan,
                     Err(fabric_cli_local::LocalError::Text(error)) => return Err(error),
-                    Err(error) => return self.command_failure(error.command_error(), invocation),
+                    Err(error) => {
+                        return self.command_failure(error.command_error(), invocation, format);
+                    }
                 };
                 Ok(FamilyOutput {
                     plan,
@@ -214,7 +230,7 @@ impl FamilySession<'_, '_> {
                         )
                         .await
                     {
-                        return self.command_failure(error, invocation);
+                        return self.command_failure(error, invocation, format);
                     }
                 }
                 let api = |audience| {
@@ -310,7 +326,7 @@ impl FamilySession<'_, '_> {
                     )
                     .await
                 {
-                    return self.command_failure(error, invocation);
+                    return self.command_failure(error, invocation, format);
                 }
                 let other = match command {
                     ResourceCommand::Copy { destination, .. }
@@ -337,15 +353,13 @@ impl FamilySession<'_, '_> {
                         )
                         .await
                     {
-                        return self.command_failure(error, invocation);
+                        return self.command_failure(error, invocation, format);
                     }
                 }
                 let resolver =
                     PathResolver::new(&context, current.clone(), self.reads.home.clone(), "ls")
                         .map_err(|_| TextError::InvalidTableEntries)?;
                 let mut targets = ResourceTargets { resolver };
-                let format =
-                    OutputFormat::resolve(command.args().output_format.as_deref(), configured)?;
                 if matches!(
                     command,
                     ResourceCommand::Copy { .. } | ResourceCommand::Move { .. }
@@ -470,6 +484,7 @@ impl FamilySession<'_, '_> {
             _ => self.command_failure(
                 errors::unsupported("Expected a mounted family invocation"),
                 invocation,
+                format,
             ),
         }
     }
@@ -478,6 +493,7 @@ impl FamilySession<'_, '_> {
         &self,
         error: CommandError,
         invocation: &Invocation,
+        format: OutputFormat,
     ) -> Result<FamilyOutput, TextError> {
         let name = match invocation {
             Invocation::Local(command) => command.command.command_path(),
@@ -488,7 +504,7 @@ impl FamilySession<'_, '_> {
         };
         let plan = text::render(
             &error.envelope(self.reads.timestamp.clone(), Some(name.into())),
-            OutputFormat::Json,
+            format,
             &TextOptions::default(),
             &text::ascii_width,
             Presentation::default(),
@@ -525,7 +541,7 @@ fn render_outputs(
     };
     for mut output in outputs {
         output.command = Some(command.into());
-        let rendered = text::render(
+        let rendered = match text::render(
             &OutputEnvelope::new(timestamp.clone(), output),
             format,
             &TextOptions {
@@ -534,7 +550,18 @@ fn render_outputs(
             },
             &text::ascii_width,
             Presentation::default(),
-        )?;
+        ) {
+            Ok(rendered) => rendered,
+            Err(error) => {
+                if let Some(partial) = error.partial_output() {
+                    plan.records.extend(partial.records.clone());
+                }
+                return Err(TextError::AfterOutput {
+                    error: Box::new(error),
+                    partial: Box::new(plan),
+                });
+            }
+        };
         plan.records.extend(rendered.records);
         plan.exit_code = rendered.exit_code;
     }
@@ -586,8 +613,17 @@ impl MutationMetadata for Metadata<'_, '_> {
                     .get_workspace_metadata(self.reads.executor, id, Default::default(), pending())
                     .await
                     .map(|result| result.metadata.into_value())
-                    .map_err(|_| {
-                        MutationError::new("ReadFailed", "Workspace metadata did not complete")
+                    .map_err(|error| {
+                        use fabric_sdk::workspaces::WorkspaceMetadataErrorKind;
+                        match &error.kind {
+                            WorkspaceMetadataErrorKind::Read(kind) => {
+                                mutation_error(errors::workspace(kind), &self.reads.timestamp)
+                            }
+                            WorkspaceMetadataErrorKind::InvalidIdentifier => MutationError::new(
+                                "InvalidInput",
+                                "Invalid workspace request identifier",
+                            ),
+                        }
                     }),
                 NodeKind::Item(kind) => {
                     let workspace = element
@@ -720,9 +756,21 @@ impl TransferMetadata for TransferTargets<'_, '_> {
                         target.clone(),
                     )
                     .map_err(|error| errors::error(&error.code, error.message))?;
-                    let supported = support
-                        .check(&PathElement::from_fabric(element.clone()), kind.as_str())
-                        .is_ok();
+                    let policy = if kind == TransferKind::BulkExport {
+                        "bulkexport"
+                    } else {
+                        kind.as_str()
+                    };
+                    let supported =
+                        match support.check(&PathElement::from_fabric(element.clone()), policy) {
+                            Ok(()) => true,
+                            Err(fabric_cli_local::LocalError::Context(error))
+                                if error.code == "UnsupportedCommand" =>
+                            {
+                                false
+                            }
+                            Err(error) => return Err(error.command_error()),
+                        };
                     items.push(fabric_cli_transfer::TransferItem {
                         element,
                         support: if supported {

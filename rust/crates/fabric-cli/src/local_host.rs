@@ -81,11 +81,15 @@ impl LocalEffects for Effects {
 }
 
 fn execute(command: &LocalInvocation, timestamp: Timestamp) -> Result<TextPlan, LocalError> {
-    let store = if matches!(command.command, LocalCommand::Version) {
-        ConfigStore::new(std::env::current_dir()?)
-    } else {
-        store()?
-    };
+    if matches!(command.command, LocalCommand::Version) {
+        return fabric_cli::local_commands::dispatch(
+            command,
+            &ConfigStore::new(PathBuf::new()),
+            &mut Effects,
+            timestamp,
+        );
+    }
+    let store = store()?;
     let tenant = Element::tenant("", "");
     let lookup = HierarchyCatalog::new(Catalog::new(Vec::new()), Vec::new(), Vec::new());
     let mut state = NavigationState::new(
@@ -95,9 +99,20 @@ fn execute(command: &LocalInvocation, timestamp: Timestamp) -> Result<TextPlan, 
         session_id()?,
         true,
     )?;
-    if !matches!(command.command, LocalCommand::Version) {
-        state.restore(&store, &lookup)?;
+    let navigation = matches!(
+        &command.command,
+        LocalCommand::ChangeDirectory { .. }
+            | LocalCommand::PrintDirectory
+            | LocalCommand::Open { .. }
+    ) || matches!(&command.command, LocalCommand::Describe { path } if path.is_empty() || !path.join(" ").starts_with('.'));
+    if navigation && context_selection()?.0 != "/" {
+        return Err(LocalError::command(
+            "NotConfigured",
+            "This context requires the configured native metadata host",
+        ));
     }
+    let restored = navigation && state.restore(&store, &lookup)?;
+    let restored_path = state.current().path();
     let mut effects = Effects;
     let mut host = NavigationHost {
         state: &mut state,
@@ -105,7 +120,22 @@ fn execute(command: &LocalInvocation, timestamp: Timestamp) -> Result<TextPlan, 
         store: &store,
         effects: &mut effects,
     };
-    fabric_cli::local_commands::dispatch(command, &store, &mut host, timestamp)
+    let mut plan = fabric_cli::local_commands::dispatch(command, &store, &mut host, timestamp)?;
+    if restored {
+        let path = restored_path;
+        let message = format!(
+            "Command context path: {}",
+            if path == "/" { "root" } else { &path }
+        );
+        let mut warning = text::render_notice(
+            text::Notice::Warning(&message),
+            None,
+            Presentation::default(),
+        );
+        warning.records.append(&mut plan.records);
+        plan.records = warning.records;
+    }
+    Ok(plan)
 }
 
 pub(crate) fn session_id() -> Result<u32, LocalError> {
@@ -142,15 +172,58 @@ pub(crate) fn run(command: &LocalInvocation) -> io::Result<ExitCode> {
 
 #[cfg(feature = "native-read")]
 pub(crate) fn needs_remote(command: &LocalInvocation) -> bool {
+    let selected_remote = context_selection().is_ok_and(|(path, _)| path != "/");
     match &command.command {
         LocalCommand::Open { .. } => true,
-        LocalCommand::ChangeDirectory { path } => path.join(" ") != "/",
-        LocalCommand::Describe { path } => !path.is_empty() && !path.join(" ").starts_with('.'),
-        LocalCommand::ConfigSet { key, .. } => key.eq_ignore_ascii_case("default_capacity"),
-        LocalCommand::PrintDirectory => {
-            std::env::var("FAB_RUST_CONTEXT").is_ok_and(|path| path != "/")
+        LocalCommand::ChangeDirectory { path } => path.join(" ") != "/" || selected_remote,
+        LocalCommand::Describe { path } => {
+            (!path.is_empty() && !path.join(" ").starts_with('.'))
+                || (path.is_empty() && selected_remote)
         }
+        LocalCommand::ConfigSet { key, .. } => key.eq_ignore_ascii_case("default_capacity"),
+        LocalCommand::PrintDirectory => selected_remote,
         _ => false,
+    }
+}
+
+pub(crate) fn context_selection() -> Result<(String, bool), LocalError> {
+    match std::env::var("FAB_RUST_CONTEXT") {
+        Ok(path) if path.starts_with('/') => return Ok((path, false)),
+        Ok(_) | Err(std::env::VarError::NotUnicode(_)) => {
+            return Err(LocalError::command(
+                "InvalidInput",
+                "The working context must be an absolute Fabric path",
+            ));
+        }
+        Err(std::env::VarError::NotPresent) => {}
+    }
+    if std::env::var_os("FAB_RUST_CONFIG_ROOT").is_none() {
+        return Ok(("/".into(), false));
+    }
+    let store = store()?;
+    if store
+        .read()?
+        .get("context_persistence_enabled")
+        .and_then(serde_json::Value::as_str)
+        != Some("true")
+    {
+        return Ok(("/".into(), false));
+    }
+    let file = store.root().join(format!("context-{}.json", session_id()?));
+    let bytes = match std::fs::read(file) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(("/".into(), false)),
+        Err(error) => return Err(error.into()),
+    };
+    let value: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|_| LocalError::command("ContextLoadFailed", "Failed to load command context"))?;
+    match value.get("path").and_then(serde_json::Value::as_str) {
+        Some("") => Ok(("/".into(), false)),
+        Some(path) if path.starts_with('/') => Ok((path.into(), true)),
+        _ => Err(LocalError::command(
+            "ContextLoadFailed",
+            "Failed to load command context",
+        )),
     }
 }
 
@@ -164,9 +237,10 @@ pub(crate) fn local_access(
         let configured = settings
             .get("output_format")
             .and_then(serde_json::Value::as_str);
-        let format = command
-            .output_format
-            .unwrap_or(OutputFormat::resolve(None, configured)?);
+        let format = match command.output_format {
+            Some(format) => format,
+            None => OutputFormat::resolve(None, configured)?,
+        };
         let definitions = settings
             .get("local_definition_labels")
             .and_then(serde_json::Value::as_str)
