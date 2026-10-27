@@ -13,6 +13,8 @@ description = "Native Fabric deployment library boundary"
 [dependencies]
 base64.workspace = true
 yaml-rust2.workspace = true
+fancy-regex.workspace = true
+jsonpath-rust.workspace = true
 fabric-core-json.workspace = true
 fabric-sdk.workspace = true
 fabric-sdk-operations.workspace = true

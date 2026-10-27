@@ -70,6 +70,8 @@ pub enum ConfigurationError {
     Unsupported(String),
     /// Explicit finite input or traversal bound reached.
     Limit,
+    /// Original typed parameter syntax/domain/cancellation/resource failure.
+    Transform(Box<crate::parameter_transforms::TransformError>),
 }
 
 impl fmt::Display for ConfigurationError {
@@ -80,6 +82,7 @@ impl fmt::Display for ConfigurationError {
             }
             Self::Unsupported(branch) => write!(f, "Unported deployment branch: {branch}"),
             Self::Limit => f.write_str("Deployment configuration exceeded its bound"),
+            Self::Transform(error) => error.fmt(f),
         }
     }
 }
@@ -114,7 +117,7 @@ pub struct DeploymentConfig {
     pub environment: String,
     /// Source warning outcomes; the caller owns presentation and writer failures.
     pub warnings: Vec<EnvironmentWarning>,
-    parameters: Option<crate::parameters::LiteralParameters>,
+    parameters: Option<crate::parameter_transforms::ParameterProgram>,
 }
 
 fn invalid(message: impl Into<String>) -> ConfigurationError {
@@ -515,21 +518,44 @@ impl DeploymentConfig {
     /// # Errors
     /// Rejects absent configured paths and invalid/unported parameter schemas.
     pub fn resolve_parameters(&mut self, document: &Value) -> Result<(), ConfigurationError> {
+        self.resolve_parameters_controlled(
+            document,
+            &mut crate::parameter_transforms::TransformBudget::new(
+                crate::parameter_transforms::TransformLimits::default(),
+                &|| false,
+            ),
+        )
+    }
+
+    /// Resolve using a caller-owned finite syntax/work/deadline/cancellation budget.
+    ///
+    /// # Errors
+    /// Retains original transform errors and clears stale prior parameters even
+    /// when a second resolution is cancelled, invalid or outside the supported set.
+    pub fn resolve_parameters_controlled(
+        &mut self,
+        document: &Value,
+        budget: &mut crate::parameter_transforms::TransformBudget<'_>,
+    ) -> Result<(), ConfigurationError> {
         self.parameters = None;
         if !self.workspace.contains_key("parameter_file_path") {
             return Err(invalid(
                 "No parameter file was configured for this environment",
             ));
         }
-        self.parameters = Some(crate::parameters::LiteralParameters::from_document(
-            document,
-            &self.environment,
-        )?);
+        self.parameters = Some(
+            crate::parameter_transforms::ParameterProgram::from_document(
+                document,
+                &self.environment,
+                budget,
+            )
+            .map_err(|error| ConfigurationError::Transform(Box::new(error)))?,
+        );
         Ok(())
     }
 
     /// Explicitly validated source parameters, never an ambient auto-discovery.
-    pub fn parameters(&self) -> Option<&crate::parameters::LiteralParameters> {
+    pub fn parameters(&self) -> Option<&crate::parameter_transforms::ParameterProgram> {
         self.parameters.as_ref()
     }
 }

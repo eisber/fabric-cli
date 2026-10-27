@@ -97,11 +97,38 @@ impl NotebookPublishPlan {
         repository: NotebookRepository,
         deployed: &[Item],
     ) -> Result<Self, PublishError> {
+        Self::prepare_controlled(
+            config,
+            repository,
+            deployed,
+            crate::parameter_transforms::TransformLimits::default(),
+            &|| false,
+        )
+    }
+
+    /// Preflight with caller-selected transform bounds and synchronous cancellation.
+    ///
+    /// # Errors
+    /// Same target/preparation failures as [`Self::prepare`], retaining typed
+    /// transform cancellation/deadline/limit evidence before any mutation.
+    pub fn prepare_controlled(
+        config: &DeploymentConfig,
+        repository: NotebookRepository,
+        deployed: &[Item],
+        limits: crate::parameter_transforms::TransformLimits,
+        cancellation: &dyn crate::parameter_transforms::TransformCancellation,
+    ) -> Result<Self, PublishError> {
         let failure = |failure| PublishError {
             failure,
             completed: Vec::new(),
             current_item: None,
         };
+        let mut budget = crate::parameter_transforms::TransformBudget::new(limits, cancellation);
+        budget.checkpoint().map_err(|error| {
+            failure(PublishFailure::Notebook(DeploymentError::Transform(
+                Box::new(error),
+            )))
+        })?;
         config
             .require_notebook_publish()
             .map_err(|error| failure(PublishFailure::Configuration(error)))?;
@@ -118,6 +145,11 @@ impl NotebookPublishPlan {
         let mut selected = Vec::new();
         let mut logical_ids = Vec::new();
         for notebook in &repository.notebooks {
+            budget.checkpoint().map_err(|error| {
+                failure(PublishFailure::Notebook(DeploymentError::Transform(
+                    Box::new(error),
+                )))
+            })?;
             let mut matching = deployed.iter().filter(|item| {
                 item.item_type() == Some("Notebook") && item.display_name == notebook.name()
             });
@@ -151,21 +183,29 @@ impl NotebookPublishPlan {
         }
         let transforms = NotebookTransforms {
             logical_ids,
-            literals: config
-                .parameters()
-                .map_or_else(Vec::new, |parameters| parameters.literals().to_vec()),
+            literals: Vec::new(),
         };
         let mut items = Vec::new();
         for (notebook, existing_id) in repository.notebooks.into_iter().zip(selected) {
             let name = notebook.name().to_owned();
-            let prepared =
-                notebook
-                    .prepare(workspace, &transforms)
-                    .map_err(|error| PublishError {
-                        failure: PublishFailure::Notebook(error),
-                        completed: Vec::new(),
-                        current_item: Some(name.clone()),
-                    })?;
+            budget.checkpoint().map_err(|error| PublishError {
+                failure: PublishFailure::Notebook(DeploymentError::Transform(Box::new(error))),
+                completed: Vec::new(),
+                current_item: Some(name.clone()),
+            })?;
+            let prepared = config
+                .parameters()
+                .map_or_else(
+                    || notebook.prepare(workspace, &transforms),
+                    |program| {
+                        notebook.prepare_parameters(workspace, &transforms, program, &mut budget)
+                    },
+                )
+                .map_err(|error| PublishError {
+                    failure: PublishFailure::Notebook(error),
+                    completed: Vec::new(),
+                    current_item: Some(name.clone()),
+                })?;
             items.push(PlannedNotebook {
                 name,
                 logical_id: notebook.logical_id().to_owned(),

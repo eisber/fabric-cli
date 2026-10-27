@@ -602,7 +602,7 @@ async fn configured_yaml_literal_parameter_is_read_and_changes_the_actual_post_p
 async fn configured_parameter_duplicates_and_unsupported_regex_fail_before_http() {
     for contents in [
         "find_replace:\n- find_value: source\n  replace_value:\n    dev: target\n    DEV: duplicate\n",
-        "find_replace:\n- find_value: '(source)'\n  replace_value:\n    dev: target\n  is_regex: 'true'\n",
+        "find_replace:\n- find_value: '(?i)(source)'\n  replace_value:\n    dev: target\n  is_regex: 'true'\n",
     ] {
         let mut host = Harness::new();
         input(&host);
@@ -616,5 +616,92 @@ async fn configured_parameter_duplicates_and_unsupported_regex_fail_before_http(
         assert_ne!(output.plan.exit_code, 0);
         assert!(host.requests().is_empty());
         assert!(host.credential.0.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn configured_regex_jsonpath_programs_reach_actual_source_derived_post_parts() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../fabric-deploy/tests/transform_program_source.json"
+    ))
+    .unwrap();
+    assert_eq!(fixture["cases"].as_array().unwrap().len(), 4);
+    for case in fixture["cases"].as_array().unwrap() {
+        let mut host = Harness::new();
+        input(&host);
+        std::fs::write(
+            host.root
+                .join("repository")
+                .join("Book.Notebook")
+                .join("notebook-content.py"),
+            case["input"].as_str().unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            host.root.join("parameter.yml"),
+            serde_json::to_string(&case["parameters"]).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(host.root.join("deploy.yml"), format!(
+                "core:\n  workspace_id: {WORKSPACE}\n  repository_directory: repository\n  item_types_in_scope: [Notebook]\n  parameter: parameter.yml\nunpublish:\n  skip: true\n"
+            )).unwrap();
+        metadata(&host, false);
+        host.reply(201, json!({"id":ITEM}));
+        let output = host
+            .execute(&["deploy", "--config", "deploy.yml", "-tenv", "dev", "-f"])
+            .await;
+        success(&output);
+        assert_eq!(
+            host.requests()[2]["body"]["definition"]["parts"][1],
+            case["expectedPart"],
+            "{}",
+            case["id"]
+        );
+        assert_eq!(
+            host.requests()
+                .iter()
+                .filter(|request| request["method"] == "POST")
+                .count(),
+            1
+        );
+        assert!(
+            matches!(&output.evidence, FamilyEvidence::Deploy(Ok(result)) if result.completed[0].outcome.item_id == ITEM)
+        );
+    }
+}
+
+#[tokio::test]
+async fn malformed_capture_and_empty_first_match_never_dispatch_mutation() {
+    for (pattern, content, needs_discovery) in [("(a)(b)", "ab", false), ("id=(x*);", "id=;", true)]
+    {
+        let mut host = Harness::new();
+        input(&host);
+        std::fs::write(
+            host.root
+                .join("repository")
+                .join("Book.Notebook")
+                .join("notebook-content.py"),
+            content,
+        )
+        .unwrap();
+        std::fs::write(host.root.join("parameter.yml"), json!({
+                "find_replace":[{"find_value":pattern,"is_regex":"true","replace_value":{"dev":"new"}}],
+            }).to_string()).unwrap();
+        std::fs::write(host.root.join("deploy.yml"), format!(
+                "core:\n  workspace_id: {WORKSPACE}\n  repository_directory: repository\n  item_types_in_scope: [Notebook]\n  parameter: parameter.yml\nunpublish:\n  skip: true\n"
+            )).unwrap();
+        if needs_discovery {
+            metadata(&host, false);
+        }
+        let output = host
+            .execute(&["deploy", "--config", "deploy.yml", "-tenv", "dev", "-f"])
+            .await;
+        assert_ne!(output.plan.exit_code, 0);
+        assert!(
+            host.requests()
+                .iter()
+                .all(|request| request["method"] == "GET")
+        );
+        assert!(matches!(&output.evidence, FamilyEvidence::Deploy(Err(_))));
     }
 }

@@ -32,6 +32,23 @@ impl NotebookTransforms {
         workspace: &str,
         max_bytes: usize,
     ) -> Result<String, DeploymentError> {
+        let mut content = self.logical_content(content, max_bytes)?;
+        for (find, replacement) in &self.literals {
+            if find.is_empty() {
+                return Err(DeploymentError::InvalidInput);
+            }
+            if !replacement.is_empty() {
+                content = replace_bounded(&content, find, replacement, max_bytes)?;
+            }
+        }
+        replace_workspace_ids(&content, workspace, max_bytes)
+    }
+
+    pub(crate) fn logical_content(
+        &self,
+        content: &str,
+        max_bytes: usize,
+    ) -> Result<String, DeploymentError> {
         let mut content = content.to_owned();
         for (logical, deployed) in &self.logical_ids {
             if logical.is_empty() {
@@ -47,16 +64,7 @@ impl NotebookTransforms {
                 content = replace_bounded(&content, logical, deployed, max_bytes)?;
             }
         }
-        for (find, replacement) in &self.literals {
-            if find.is_empty() {
-                return Err(DeploymentError::InvalidInput);
-            }
-            // Pinned find/replace skips empty resolved replacement values.
-            if !replacement.is_empty() {
-                content = replace_bounded(&content, find, replacement, max_bytes)?;
-            }
-        }
-        replace_workspace_ids(&content, workspace, max_bytes)
+        Ok(content)
     }
 }
 
@@ -87,7 +95,7 @@ fn replace_bounded(
     Ok(result)
 }
 
-fn replace_workspace_ids(
+pub(crate) fn replace_workspace_ids(
     content: &str,
     workspace: &str,
     max_bytes: usize,

@@ -551,3 +551,93 @@ configuration/item-type/planning/unpublish rows are still separate requirements.
 The integration owner remains responsible for shared-branch publication and
 the next exact dependency/feature decision; this successful checkpoint does not
 authorize new regex/JSONPath packages or live deployment.
+
+## Bounded parameter adapter follow-up (pending native validation)
+
+After independently verifying the preceding native checkpoint, the integration
+owner approved `fancy-regex =0.16.2` with default features disabled and explicit
+`std,unicode`, and `jsonpath-rust =0.7.5` with default features disabled.
+They are centralized workspace dependencies inherited only by `fabric-deploy`.
+The approved decision is parsing primitives, **not Python regex or JSONPath
+equivalence**. The baseline 223 registry versions/checksums/order/resolved edges
+are preserved; 222 records remain literal matches and `yasna 0.6.0` only changes
+its dependency label to `bit-vec 0.9.1` to disambiguate the added `bit-vec 0.8.0`.
+
+The 13 exact additive records are `aho-corasick 1.1.5`, `bit-set 0.8.0`,
+`bit-vec 0.8.0`, `fancy-regex 0.16.2`, `jsonpath-rust 0.7.5`,
+`pest/pest_derive/pest_generator/pest_meta 2.9.2`, `regex 1.13.1`,
+`regex-automata 0.4.18`, `regex-syntax 0.8.11`, and `ucd-trie 0.1.7`.
+Their checksums are fixed in the additive lock delta. Although fancy-regex's
+direct `perf` feature is disabled, jsonpath-rust enables its transitive regex
+dependency's default/performance/Unicode features. The actual unified feature
+graph is recorded in the handoff; no blanket "performance features off" claim
+is made. Fetching followed actual manifest changes and an offline missing-cache
+failure; no old registry package was upgraded.
+
+### Engine and observable boundaries
+
+`fabric_deploy::parameter_transforms` supplies a shared `ParameterProgram`,
+`FindReplacement`, `JsonPathReplacement`, typed `TransformError`, and finite
+`TransformLimits`/`TransformBudget` with caller cancellation.
+`DeploymentConfig::resolve_parameters_controlled` and
+`NotebookPublishPlan::prepare_controlled` accept that explicit bounded preparation
+policy; convenience methods use documented finite defaults. Failed resolution
+still clears stale rules. The original literal-only API remains for existing
+bounded direct consumers; configured deployment now uses the full program.
+
+The same original Notebook codec supports `prepare_parameters`, retaining
+logical-ID processing, then all key/value rules, all find rules and default
+workspace-ID substitution. `.platform` bypasses parameterization.
+Public native consumers and root-argv commands use this same program and shared
+publisher. No HTTP, paging, LRO, retry, credential, runtime or serializer is
+duplicated. `ConfigurationError::Transform` and `DeploymentError::Transform`
+retain the original typed failure instead of turning resource/cancellation
+exhaustion into a missing match or successful partial deployment.
+
+| Branch | Written native behavior | Proof status and explicit limits |
+| --- | --- | --- |
+| Regex syntax/captures | Exactly one capture validated at compile time, including before excluded-filter execution; first empty/missing capture fails; later missing capture follows source negative slicing | Protected regex cases and additive source observations consumed; new native run pending |
+| Regex replacements | Capture 1 replaced inside each whole match; replacements remain literal, including backreference-looking text; named captures/lookbehind/pattern backreferences and zero-width cases supported | Source expectations unchanged; inline flags, advanced control/subroutines and unproven escape/class domains fail explicitly |
+| Unicode matching | Source-style word/digit/whitespace classes, case-insensitive literals with source lowercase no-match gate, extra dotted/dotless I handling | Source Unicode cases consumed; ignore-case ranges and complete Python Unicode-version equivalence remain unproven |
+| JSONPath selection | Parsed external AST, own bounded interpreter for concrete field/index/union/positive-step slice, wildcard, named recursive descent, simple current-path filters | Never uses CLI JMESPath or the crate's unbounded whole-result evaluator; preserves source path order and duplicates |
+| JSONPath comparisons | Simple comparisons preserve source string-to-int coercion and bool/number equality | Large/extended integer domains, compound/dynamic-right filters, expression functions, recursive wildcard and escaped path names remain explicit unsupported |
+| Mutation/emission | Only matched existing paths mutate; no matches or missing environment preserve exact bytes; typed replacements; source root-path re-emission quirk retained; shared Python JSON encoder | Negative single indices, ambiguous zero slice endpoints, overlapping ancestor/descendant updates and nested YAML emission remain unsupported |
+| YAML mutation | Existing bounded YAML reader, unchanged empty input, sorted flat scalar mapping emission with source quoting | Protected flat mapping/empty cases consumed; not complete PyYAML emission parity |
+| Full configured schema | Source string flags, same-type nonnull key/value replacements, nonempty string find replacements, key/value-before-find order | Filters, templates, dynamic metadata and item-specific schemas still fail preflight; leaf-only boolean flags/null replacements are not configured-file acceptance |
+| Finite preparation | Default 1 MiB content/output, 4 KiB pattern, depth 64, 100,000 visits/backtracks, 10,000 matches, 1 MiB delegated regex allocations, five-second boundary-checked preparation deadline | Caller cancellation and typed failures; regex search is bounded but not preemptively interrupted or hard real-time guaranteed; all preparation finishes before writes |
+
+### Independent new configured-program proof
+
+Before native expected outputs,
+`transform_program_reference.py` executed the actual pinned `Parameter`
+name/structure/per-section schema methods, `FabricWorkspace._replace_parameters`
+and original `File.base64_payload`. Its four immutable cases use source-valid
+string flags and capture exact transformed content and definition parts:
+capture-only literal backreferences, key/value-before-regex/literal order,
+case-insensitive literal matching, and typed numeric-filter mutation.
+The comparator passes against the unchanged source and exact pinned Python
+dependencies. These are additional independent expectations, not Rust-derived
+goldens or changes to the protected 44 fixtures.
+
+New public primitive/program tests consume the 18 protected transform cases,
+25 additive source observations, four full-schema cases, source no-op bytes,
+duplicate paths, and finite cancellation/deadline/visit/depth/match/output/
+backtracking failures. New production-root consumers assert actual POST parts
+against the four source-derived payloads and validate that invalid captures never
+dispatch a mutation. The older authored "all regex unsupported" negative input
+now uses explicitly unsupported inline flags; this is an intentional capability
+expansion with positive source-wire tests, not a protected-oracle rewrite.
+
+All of this follow-up is **written source pending its own native compile/test/
+strict-Clippy run**. The preceding 7970 results do not validate changed adapter
+code or added dependencies. Required next checks include:
+
+```text
+cargo test --offline --locked -p fabric-deploy --test parameter_transforms
+cargo test --offline --locked -p fabric-deploy
+cargo test --offline --locked -p fabric-cli --features native-read --test deploy_mount --test deploy_parameters
+cargo clippy --offline --locked -p fabric-deploy -p fabric-cli --all-targets --features native-read -- -D warnings
+```
+
+Default/native full suites, old 50-command regressions, workspace/docs/platform
+proof and the remaining item/config/planning/unpublish ledger remain open.

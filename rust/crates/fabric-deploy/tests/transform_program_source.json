@@ -1,0 +1,180 @@
+{
+  "source": "microsoft/fabric-cicd@5ca096c00a9a878c646c59fe537b883eba951329",
+  "sourceHashes": {
+    "constants.py": "9db94078b1152f137b0c44a60626460575280455642a81d8a932035b251c9535",
+    "_common\\_exceptions.py": "22cc6ce5ca4dcf209c1d7c1c056c1c2b40cdc8ca397d36c9c68d108d0c89440e",
+    "_common\\_check_utils.py": "f60444e11a5f3424b5afb63cc4b69c7cd68a2fd4aff268913061e96c4000f39c",
+    "_common\\_config_utils.py": "acdb203d4db08687c438c811598f696c7aed69674c3e3d42b81a3ad627396f2f",
+    "_parameter\\_parameter.py": "32d603cfaf2b891194a5ea170dcd952d3c492a8420a3df0595ce84c682b07daf",
+    "_parameter\\_utils.py": "2d8b79c6d7d737595b346da0466790308e46b9cbed46bfaf1b3cde8a189e69d6",
+    "fabric_workspace.py": "10bae33f95026065fc22d558dc02b8ee17929cac77fa0dde298cc4d41ac7a890"
+  },
+  "fileSourceSHA256": "e3355695912a04a588b6cc0a6b0568d373cdce13a903f5643e894dc0ed5010d8",
+  "dependencies": {
+    "PyYAML": "6.0.3",
+    "jsonpath-ng": "1.9.1"
+  },
+  "boundary": "Actual Parameter name/structure/per-section schema validation, unchanged FabricWorkspace._replace_parameters, and original File.base64_payload. No runtime/auth/service/metadata/constructor initialization. Source flags are strings, not leaf-only booleans.",
+  "cases": [
+    {
+      "id": "capture-literal-backreference",
+      "input": "id=old; id=older;",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "id=(\\w+);",
+            "is_regex": "true",
+            "replace_value": {
+              "dev": "\\1$1\\g<1>"
+            }
+          }
+        ]
+      },
+      "schemaSteps": [
+        [
+          true,
+          "Parameter names are valid"
+        ],
+        [
+          true,
+          "Parameter file structure is valid"
+        ],
+        [
+          true,
+          "find_replace parameter is valid"
+        ]
+      ],
+      "expected": "id=\\1$1\\g<1>; id=\\1$1\\g<1>;",
+      "expectedPart": {
+        "path": "notebook-content.py",
+        "payload": "aWQ9XDEkMVxnPDE+OyBpZD1cMSQxXGc8MT47",
+        "payloadType": "InlineBase64"
+      }
+    },
+    {
+      "id": "typed-jsonpath-before-regex-and-literal",
+      "input": "{\"value\":\"source\",\"id\":\"id=old;\"}",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "middle",
+            "replace_value": {
+              "dev": "final"
+            }
+          },
+          {
+            "find_value": "id=(\\w+);",
+            "is_regex": "true",
+            "replace_value": {
+              "dev": "new"
+            }
+          }
+        ],
+        "key_value_replace": [
+          {
+            "find_key": "$.value",
+            "replace_value": {
+              "dev": "middle"
+            }
+          }
+        ]
+      },
+      "schemaSteps": [
+        [
+          true,
+          "Parameter names are valid"
+        ],
+        [
+          true,
+          "Parameter file structure is valid"
+        ],
+        [
+          true,
+          "key_value_replace parameter is valid"
+        ],
+        [
+          true,
+          "find_replace parameter is valid"
+        ]
+      ],
+      "expected": "{\"value\": \"final\", \"id\": \"id=new;\"}",
+      "expectedPart": {
+        "path": "notebook-content.py",
+        "payload": "eyJ2YWx1ZSI6ICJmaW5hbCIsICJpZCI6ICJpZD1uZXc7In0=",
+        "payloadType": "InlineBase64"
+      }
+    },
+    {
+      "id": "literal-ignore-case",
+      "input": "A.B a.b axb",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "a.b",
+            "ignore_case": "true",
+            "replace_value": {
+              "dev": "\\1$new"
+            }
+          }
+        ]
+      },
+      "schemaSteps": [
+        [
+          true,
+          "Parameter names are valid"
+        ],
+        [
+          true,
+          "Parameter file structure is valid"
+        ],
+        [
+          true,
+          "find_replace parameter is valid"
+        ]
+      ],
+      "expected": "\\1$new \\1$new axb",
+      "expectedPart": {
+        "path": "notebook-content.py",
+        "payload": "XDEkbmV3IFwxJG5ldyBheGI=",
+        "payloadType": "InlineBase64"
+      }
+    },
+    {
+      "id": "typed-jsonpath-filter",
+      "input": "{\"items\":[{\"n\":1,\"value\":\"keep\"},{\"n\":\"2\",\"value\":\"change\"}]}",
+      "parameters": {
+        "key_value_replace": [
+          {
+            "find_key": "$.items[?(@.n >= 2)].value",
+            "replace_value": {
+              "dev": {
+                "enabled": false,
+                "count": 2
+              }
+            }
+          }
+        ]
+      },
+      "schemaSteps": [
+        [
+          true,
+          "Parameter names are valid"
+        ],
+        [
+          true,
+          "Parameter file structure is valid"
+        ],
+        [
+          true,
+          "key_value_replace parameter is valid"
+        ]
+      ],
+      "expected": "{\"items\": [{\"n\": 1, \"value\": \"keep\"}, {\"n\": \"2\", \"value\": {\"enabled\": false, \"count\": 2}}]}",
+      "expectedPart": {
+        "path": "notebook-content.py",
+        "payload": "eyJpdGVtcyI6IFt7Im4iOiAxLCAidmFsdWUiOiAia2VlcCJ9LCB7Im4iOiAiMiIsICJ2YWx1ZSI6IHsiZW5hYmxlZCI6IGZhbHNlLCAiY291bnQiOiAyfX1dfQ==",
+        "payloadType": "InlineBase64"
+      }
+    }
+  ]
+}
