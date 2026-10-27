@@ -505,7 +505,13 @@ function publish(args) {
   const at = argv => command('git', argv, opts['--worktree']);
   // Replay only the CI patch: merging its older base could import product fixes.
   const contained = at(['merge-base', source, automation]) === automation;
-  if (!contained) at(['cherry-pick', '--no-commit', ...commits]);
+  if (!contained && opts['--lane'] === 'windows-wheelhouse') {
+    // The pinned Python source predates rust/: only this setup lane needs snapshots.
+    const files = git(['ls-tree', '-r', '--name-only', automation, '--', ...CI_FILES])
+      .split('\n').filter(Boolean);
+    ciDelta(files);
+    at(['restore', '--source', automation, '--staged', '--worktree', '--', ...files]);
+  } else if (!contained) at(['cherry-pick', '--no-commit', ...commits]);
   write(path.join(opts['--worktree'], '.github/rust-fast-candidate.json'), {source, lane: opts['--lane']});
   at(['add', '.github/rust-fast-candidate.json']);
   ciDelta(at(['diff', '--cached', '--name-only', source]).split('\n').filter(Boolean));
