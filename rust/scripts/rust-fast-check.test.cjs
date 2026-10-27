@@ -121,7 +121,9 @@ test('deploy preflight first runs actual library then native root consumer, neve
   ]);
   assert.ok(plan('clippy', manifest)[1].args.includes('native-read'));
   const family = plan('family', manifest, '/target', '/receipts', () => true);
-  assert.equal(family.length, 14);
+  assert.equal(family.length, 15);
+  assert.ok(family.some(item => item.program === 'git' &&
+    item.args.slice(-4).join(' ') === 'config --local core.autocrlf true'));
   assert.ok(family.at(-1).args.includes('--doc'));
   assert.ok(family.some(item => item.args.includes('crates/fabric-deploy/tests/orchestration_reference.py')));
   assert.ok(family.some(item => item.args.includes('crates/fabric-cli/tests/deploy_wrapper_reference.py')));

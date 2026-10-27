@@ -174,6 +174,12 @@ and successful result-ID source observations; it never waives uncertainty or
 replays an accepted mutation. Registered test counts are source-dependent:
 the corrected operation-result slice has 43 registered cases, not the earlier
 42-case source inventory.
+The isolated pinned CICD reference checkout uses repository-local
+`core.autocrlf=true`: its immutable source receipts hash the original Windows
+checkout's CRLF bytes. This setting applies only to the private reference
+checkout, not the product checkout or global Git configuration. Comparisons
+still check the complete unchanged receipt, including hashes and behavior;
+neither newline-normalized assertions nor regenerated expectations are used.
 Its consumer injects offline HTTP and uses
 temporary files; the finite plan never invokes a real `deploy` command or live
 publication. The receipt explicitly limits evidence to the library/root

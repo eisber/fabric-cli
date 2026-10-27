@@ -315,6 +315,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       'literal_parameter_payload_reference', 'transform_adapter_reference'];
     return [
       {program: 'git', args: ['init', source]},
+      {program: 'git', args: ['-C', source, 'config', '--local', 'core.autocrlf', 'true']},
       {program: 'git', args: ['-C', source, 'fetch', '--depth=1',
         'https://github.com/microsoft/fabric-cicd.git', cicd]},
       {program: 'git', args: ['-C', source, 'checkout', '--detach', cicd]},
