@@ -486,6 +486,10 @@ function execute(commands, cwd, run = spawnSync, collectFailures = false) {
   }
   return results;
 }
+function commandTimeout(stage, manifest) {
+  return stage === 'test' && manifest.lane === 'native-endpoint' &&
+    manifest.target === 'x86_64-pc-windows-msvc' ? 600000 : 300000;
+}
 function runStage(stage) {
   const manifest = JSON.parse(fs.readFileSync(path.join(receipts, 'manifest.json')));
   requireThat(process.env.CARGO_BUILD_JOBS === '1' && process.env.RUST_TEST_THREADS === '1',
@@ -496,10 +500,7 @@ function runStage(stage) {
   const commands = plan(stage, manifest, process.env.CARGO_TARGET_DIR, receipts).map((item, index) =>
     audit ? {...item, stdout: item.stdout || path.join(receipts, `audit-${index}-stdout.txt`),
       stderr: path.join(receipts, `audit-${index}-stderr.txt`)} : item);
-  if (stage === 'test' && manifest.lane === 'native-endpoint' &&
-    manifest.target === 'x86_64-pc-windows-msvc') {
-    for (const item of commands) item.timeout = 600000;
-  }
+  for (const item of commands) item.timeout = commandTimeout(stage, manifest);
   const results = execute(commands, rust, spawnSync, audit);
   if (audit) {
     requireThat(digest(fs.readFileSync(path.join(rust, 'Cargo.lock'))) === manifest.lockHash, 'Audit changed lock');
@@ -671,7 +672,7 @@ function main(args) {
   if (action === 'full') return full(rest);
   throw new Error('Use prepare, run <fmt|fetch|check|clippy|test|family>, finish, publish or full; see docs/fast-check.md');
 }
-module.exports = {LANES, CI_FILES, sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, select, plan, execute, options, requireFastPass, parallelCandidate};
+module.exports = {LANES, CI_FILES, sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, select, plan, execute, options, requireFastPass, parallelCandidate, commandTimeout};
 if (require.main === module) {
   try { main(process.argv.slice(2)); }
   catch (error) { console.error(`Rust fast check: ${error.message}`); process.exitCode = 1; }

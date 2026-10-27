@@ -6,7 +6,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, select, plan, execute, options, requireFastPass, parallelCandidate} = require('./rust-fast-check.cjs');
+const {sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, select, plan, execute, options, requireFastPass, parallelCandidate, commandTimeout} = require('./rust-fast-check.cjs');
 
 test('only full source IDs and finite lanes are accepted', () => {
   assert.equal(sha('a'.repeat(40)), true);
@@ -128,6 +128,15 @@ test('native endpoint union checks both actual hosts with first-failure native s
   assert.ok(family.some(item => item.args.includes('native_json')));
 });
 
+test('timeout rescue changes only native Windows endpoint test bounds and no commands', () => {
+  const windows = {lane: 'native-endpoint', target: 'x86_64-pc-windows-msvc'};
+  assert.equal(commandTimeout('test', windows), 600000);
+  for (const stage of ['fmt', 'fetch', 'check', 'clippy', 'family', 'audit']) {
+    assert.equal(commandTimeout(stage, windows), 300000);
+  }
+  assert.equal(commandTimeout('test', {...windows, target: 'x86_64-unknown-linux-gnu'}), 300000);
+  assert.equal(commandTimeout('test', {...windows, lane: 'windows-auth'}), 300000);
+});
 test('deploy preflight first runs actual library then native root consumer, never live deployment', () => {
   const manifest = {lane: 'deploy-mount', packages: ['fabric-deploy', 'fabric-cli']};
   const commands = plan('test', manifest);
