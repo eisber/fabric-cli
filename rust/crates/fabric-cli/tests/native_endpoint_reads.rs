@@ -50,14 +50,20 @@ impl fmt::Debug for Wire {
     }
 }
 
+fn has_injected_authorization(headers: &Headers) -> bool {
+    headers
+        .get_str(&"authorization".into())
+        .is_ok_and(|value| value == concat!("Bearer ", "offline-command-test"))
+}
+
 #[async_trait]
 impl HttpClient for Wire {
     async fn execute_request(&self, request: &Request) -> azure_core::Result<AsyncRawResponse> {
         assert_eq!(request.method(), Method::Get);
         assert_eq!(request.url().host_str(), Some(self.host.as_str()));
-        assert_eq!(
-            request.headers().get_str(&"authorization".into()).unwrap(),
-            "******"
+        assert!(
+            has_injected_authorization(request.headers()),
+            "request authorization must match the injected offline credential"
         );
         self.requests
             .lock()
@@ -73,6 +79,35 @@ impl HttpClient for Wire {
             headers,
             serde_json::to_vec(&response.body).unwrap(),
         ))
+    }
+}
+
+#[tokio::test]
+async fn authorization_guard_uses_raw_accessor_and_rejects_missing_masked_or_foreign_values() {
+    use fabric_sdk::TokenCredential;
+
+    let credential = Credential::default();
+    let token = credential
+        .get_token(&[Audience::Fabric.scope()], None)
+        .await
+        .unwrap();
+    let mut headers = Headers::new();
+    assert!(!has_injected_authorization(&headers));
+    headers.insert("authorization", format!("Bearer {}", token.token.secret()));
+    assert!(has_injected_authorization(&headers));
+    assert!(!format!("{headers:?}").contains(token.token.secret()));
+    for rejected in [
+        "******",
+        "offline-command-test",
+        "Basic offline-command-test",
+        "Bearer different-offline-credential",
+        "Bearer offline-command-test ",
+    ] {
+        headers.insert("authorization", rejected);
+        assert!(
+            !has_injected_authorization(&headers),
+            "an altered synthetic authorization value must be rejected"
+        );
     }
 }
 
