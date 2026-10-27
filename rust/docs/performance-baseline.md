@@ -2,10 +2,11 @@
 
 # CLI performance baseline
 
-**Measured on October 27, 2026:** one bounded WSL Linux startup and memory
-comparison passed all 268 observations. This measures only `--help` and
-`--version`, not service latency, full CLI parity, or a general speedup.
-There is no performance acceptance threshold.
+**Measured on October 27, 2026:** the initial bounded WSL Linux comparison
+passed 268 observations. A separate precompiled-Python/local-command follow-up
+passed 536 observations, and instrumented offline GET consumers passed 102.
+These are distinct conditions and timing boundaries, not service latency,
+full CLI parity, or a general speedup. There is no performance acceptance threshold.
 
 The measured sources are Rust
 `b78d9654a37ca909036df54b8562e01fcfe8aa13` and Python
@@ -46,6 +47,96 @@ were `0.46 0.45 0.28` / `1.31 0.79 0.43`; Windows host contention was not fully
 controlled. Builds, installation, correctness checks and hashing warmed files
 and page caches. First observed does not mean cold-cache startup.
 
+## Precompiled Python and real local commands
+
+A separate private environment used the same pinned wheel, exact 28-distribution
+freeze and CPython 3.13.15, with a copied private runtime. Before measurement,
+`compileall` created 1,040 package and 1,037 runtime bytecode files; normal
+bytecode reads and writes were enabled. The original bytecode-disabled
+environment, runtime and raw receipt were left unchanged.
+
+| Target | Invocation | Wall median (ms) | Wall p95 (ms) | Peak RSS median (KiB) | Peak RSS p95 (KiB) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Rust | `--help` | 3.225 | 4.220 | 4,092 | 4,136 |
+| Rust | `--version` | 3.477 | 4.195 | 4,080 | 4,136 |
+| Rust | `config get debug_enabled --output_format text` | 2.963 | 3.627 | 3,940 | 3,952 |
+| Rust | `version` | 2.625 | 3.490 | 3,820 | 3,952 |
+| Python, precompiled | `--help` | 396.238 | 490.025 | 43,930 | 44,048 |
+| Python, precompiled | `--version` | 344.432 | 402.650 | 43,926 | 44,076 |
+| Python, precompiled | `config get debug_enabled --output_format text` | 330.908 | 382.842 | 45,592 | 45,720 |
+| Python, precompiled | `version` | 306.130 | 340.713 | 43,932 | 44,036 |
+
+These are actual installed executables, not imports or development probes.
+Both local commands ran offline with explicit isolated configuration, debug
+and context persistence disabled. Config-get printed the source-correct `false`
+value; named version printed the correct version and release-notes URL.
+Per-product LF/CRLF differences were retained and checked. Each case used three
+warmups and 30 new-process latency samples, then three more warmups and 30
+separate GNU time memory samples, alternating target order. All 536 observations
+passed, with first observations and outliers retained.
+
+The earlier approximately 1,071 ms Python help median is therefore **not a
+universal normal-install startup figure**. This precompiled condition measured
+approximately 396 ms on the same host class, but at a different time/load.
+Separate, untimed `-X importtime` diagnostics observed cumulative
+`fabric_cli.main` import times of about 1.134 s in the old condition and 0.439 s
+in the precompiled condition. Parser/find/API-client/Requests and
+questionary/prompt-toolkit import paths were present. Instrumentation affects
+timing and nested cumulative times overlap; these values are not a summable
+causal breakdown or optimization result.
+
+## Instrumented offline GET metadata
+
+| Instrumented path | Requests | Internal median (ms) | Internal p95 (ms) |
+| --- | ---: | ---: | ---: |
+| Rust root parser and `ReadSession` metadata branch | 3 | 0.974 | 2.035 |
+| Python installed parser and metadata helpers | 3 | 99.467 | 146.817 |
+| Python full outer GET handler, separately labeled | 5 | 95.527 | 118.231 |
+
+Each path used one retained first observation, three warmups and 30 measured
+new consumer processes. All 102 observations passed. The bounded metadata
+fixture used `get Demo.Workspace/Book.Notebook -q description --output_format json`:
+one workspace page, one item page and one specialized Notebook metadata GET,
+with identical request URIs, Fabric scopes and semantic JSON result. Exact
+product output bytes, including newline differences, were checked separately.
+No continuation, retry, live authentication or network delay was introduced.
+
+The Rust development consumer calls the unchanged production parser,
+`ReadSession`, SDK/shared executor, query and renderer with caller-injected test
+HTTP/credentials. The Python consumer calls the unchanged installed parser,
+workspace/item discovery SDK helpers,
+`get_item_with_definition(obtain_definition=False)`, query/output and
+`fab_api_client.do_request`, with synthetic auth/HTTP injected only in the
+development consumer. No product implementation or fixture flag was added.
+
+**This is not a matched full GET or installed-CLI comparison.** The unchanged
+Python outer `fab_fs_get.exec_command` makes two additional connections/schedules
+requests; its five-request observation is shown separately, never as equivalent
+Rust work. Internal timers exclude input framing, initial consumer imports and
+final protocol printing, but include fresh parser/context/mock setup and lazy
+imports. Adapter overhead differs. Do not infer a general language, engine,
+whole-command or service speedup from these rows. The fact that the separate
+five-request Python sample is slightly faster illustrates why unlike path/setup
+observations are not a causal comparison.
+
+GET process RSS is not reported as matched handler-only memory because the
+development consumers have different import/runtime/harness allocations.
+Outer probe process wall times are retained only as unmatched diagnostics.
+Full installed GET, credentials/refresh and live end-to-end latency remain
+unmeasured and unauthorized.
+
+The follow-up raw installed-command receipt is run
+`26a6e03d9a944fbcba76140e31b5d3e6`, SHA-256
+`10cae7d7c3f2229034fd5d7cf6dd20d631814f897f2d56907b1b8398dd3b55f8`.
+The GET receipt is run `39fada2c9a0d43b7b3ab2243c487e14f`, SHA-256
+`87ee4cdf25f985ee0a7f6a88f7530d338298a13586a99e6c7ca692f03e3d3b21`.
+Full tables, raw observations, exact consumers/build commands, bytecode counts,
+file hashes, independent correctness, untimed profiles and cleanup receipts are
+retained in the integration handoff as `performance-expanded.md` and
+`performance-expanded.json`. All tracked original/precompiled installed/runtime
+files were verified unchanged after execution; the Rust source checkout stayed
+clean. The finite execution slot was released.
+
 ## Measured distribution and runtime footprint
 
 | Artifact | Logical regular-file bytes | MiB | Convention |
@@ -79,10 +170,12 @@ happy paths (82.69%) versus Python's 52-leaf source inventory. This is not full
 behavior equivalence or timings for 43 commands. Existing correctness evidence
 reported 770 workspace non-doc tests and nine doctests, with overlapping focused
 default/native suites; those are not speed metrics or additional unique cases.
-Offline LS/GET/job handler latency was **not measured**: a matched production
-timing boundary was not established, and unlike Rust probes/Python source
-comparators must not be compared as equivalent work. Live end-to-end,
-authentication, refresh and native Windows/macOS measurements remain unmeasured.
+Full offline LS/GET/job handler latency was **not measured in the initial run**.
+The later bounded GET metadata observations above are a separate timing layer,
+not equivalent full outer handlers or installed CLI startup. Unlike Rust
+probes/Python source comparators must not be compared as equivalent full work.
+Live end-to-end, authentication, refresh and native Windows/macOS performance
+measurements remain unmeasured.
 
 The actual measurement receipt is run `609436b18a4b4c1cacdc510909b4a138`,
 SHA-256 `2c4e8050464db0126698f7a16f22b86577dcbe8a37765aeb2fa1a02dafa14e25`.
@@ -274,9 +367,10 @@ Return the actual receipt, provenance/output checks, cap/mutex evidence,
 commands/exit codes, full tested source SHAs and confirmation of cleanup.
 Publish numeric results only after verifying that evidence.
 
-## Later tiers (not implemented or authorized here)
+## Broader tiers (not measured or authorized by these completed runs)
 
-**Handler-boundary CPU/latency:** compare deterministic offline LS/GET/job
+**Broader handler-boundary CPU/latency:** beyond the bounded metadata observation
+above, compare deterministic offline LS/GET/job
 fixtures only through the actual production handler paths and injected HTTP
 and identity seams. Match payload, pagination/page count, serialized bytes,
 requests and time policy. Report different request counts or internal cache
