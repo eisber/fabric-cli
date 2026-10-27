@@ -86,6 +86,17 @@ impl fmt::Display for ConfigurationError {
 
 impl std::error::Error for ConfigurationError {}
 
+/// A source optional setting was skipped because its environment is absent.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnvironmentWarning {
+    /// Exact source field name, including its section.
+    pub field: String,
+    /// Requested environment, retaining case and whitespace.
+    pub environment: String,
+    /// Available environment keys in source mapping order.
+    pub available: Vec<String>,
+}
+
 /// A validated configuration with exact selected source environment values.
 #[derive(Clone, Debug)]
 pub struct DeploymentConfig {
@@ -101,6 +112,9 @@ pub struct DeploymentConfig {
     pub item_types: Vec<String>,
     /// Exact environment input, not a case-insensitive lookup.
     pub environment: String,
+    /// Source warning outcomes; the caller owns presentation and writer failures.
+    pub warnings: Vec<EnvironmentWarning>,
+    parameters: Option<crate::parameters::LiteralParameters>,
 }
 
 fn invalid(message: impl Into<String>) -> ConfigurationError {
@@ -407,6 +421,20 @@ impl DeploymentConfig {
                     .collect()
             })
             .unwrap_or_else(|| ITEM_TYPES.iter().map(|value| (*value).to_owned()).collect());
+        let warnings = ["item_types_in_scope", "parameter"]
+            .into_iter()
+            .filter_map(|field| {
+                document["core"]
+                    .get(field)
+                    .and_then(Value::as_object)
+                    .filter(|mapping| !mapping.contains_key(environment))
+                    .map(|mapping| EnvironmentWarning {
+                        field: format!("core.{field}"),
+                        environment: environment.into(),
+                        available: mapping.keys().cloned().collect(),
+                    })
+            })
+            .collect();
         Ok(Self {
             document,
             workspace,
@@ -414,6 +442,8 @@ impl DeploymentConfig {
             unpublish,
             item_types,
             environment: environment.into(),
+            warnings,
+            parameters: None,
         })
     }
 
@@ -429,7 +459,7 @@ impl DeploymentConfig {
         if self.workspace.contains_key("workspace_name") {
             return unsupported("core.workspace display-name resolution");
         }
-        if self.workspace.contains_key("parameter_file_path") {
+        if self.workspace.contains_key("parameter_file_path") && self.parameters.is_none() {
             return unsupported("core.parameter schema and transforms");
         }
         if self.unpublish.get("skip").and_then(Value::as_bool) != Some(true) {
@@ -463,5 +493,31 @@ impl DeploymentConfig {
             .get("skip")
             .and_then(Value::as_bool)
             .unwrap_or(false)
+    }
+
+    /// Bind an explicitly read and decoded parameter file to this configuration.
+    ///
+    /// Direct consumers must resolve configured parameters before planning;
+    /// an unresolved configured file never becomes success-shaped no-op input.
+    ///
+    /// # Errors
+    /// Rejects absent configured paths and invalid/unported parameter schemas.
+    pub fn resolve_parameters(&mut self, document: &Value) -> Result<(), ConfigurationError> {
+        self.parameters = None;
+        if !self.workspace.contains_key("parameter_file_path") {
+            return Err(invalid(
+                "No parameter file was configured for this environment",
+            ));
+        }
+        self.parameters = Some(crate::parameters::LiteralParameters::from_document(
+            document,
+            &self.environment,
+        )?);
+        Ok(())
+    }
+
+    /// Explicitly validated source parameters, never an ambient auto-discovery.
+    pub fn parameters(&self) -> Option<&crate::parameters::LiteralParameters> {
+        self.parameters.as_ref()
     }
 }

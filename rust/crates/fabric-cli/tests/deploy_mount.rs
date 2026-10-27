@@ -392,3 +392,142 @@ async fn caller_file_root_escape_and_duplicate_service_targets_fail_before_write
             .all(|request| request["method"] == "GET")
     );
 }
+
+#[tokio::test]
+async fn both_source_operations_skipped_do_not_discover_or_load_item_definitions() {
+    let source: Value = serde_json::from_str(include_str!(
+        "../../fabric-deploy/tests/orchestration_source.json"
+    ))
+    .unwrap();
+    assert_eq!(source["cases"][0]["id"], "both-skipped");
+    let mut host = Harness::new();
+    input(&host);
+    std::fs::write(
+        host.root
+            .join("repository")
+            .join("Book.Notebook")
+            .join(".platform"),
+        b"invalid",
+    )
+    .unwrap();
+    std::fs::write(host.root.join("deploy.yml"), format!(
+        "core:\n  workspace_id: {WORKSPACE}\n  repository_directory: repository\n  item_types_in_scope: [Notebook]\npublish:\n  skip: true\nunpublish:\n  skip: true\n"
+    )).unwrap();
+    let output = host
+        .execute(&["deploy", "--config", "deploy.yml", "-f"])
+        .await;
+    assert!(success(&output).contains(source["cases"][0]["result"]["message"].as_str().unwrap()));
+    assert!(
+        matches!(&output.evidence, FamilyEvidence::Deploy(Ok(result)) if !result.declined && result.completed.is_empty())
+    );
+    assert!(host.requests().is_empty());
+    assert!(host.credential.0.lock().unwrap().is_empty());
+}
+
+struct BrokenNotice;
+
+impl fabric_cli_transfer::TransferUi for BrokenNotice {
+    fn emit(
+        &self,
+        _: fabric_cli_transfer::TransferEvent,
+    ) -> Result<(), fabric_cli_output::CommandError> {
+        Err(fabric_cli_output::CommandError::new(
+            Some("Injected notice writer failure".into()),
+            Some("OutputFailed".into()),
+        ))
+    }
+    fn confirm<'a>(
+        &'a self,
+        _: &'a str,
+    ) -> fabric_cli_transfer::TransferFuture<'a, Result<bool, fabric_cli_output::CommandError>>
+    {
+        panic!("forced deploy must not prompt");
+    }
+    fn select<'a>(
+        &'a self,
+        _: &'a [String],
+    ) -> fabric_cli_transfer::TransferFuture<'a, Result<Vec<String>, fabric_cli_output::CommandError>>
+    {
+        panic!("deploy must not select import/export items");
+    }
+}
+
+#[tokio::test]
+async fn warning_writer_failure_is_explicit_before_credentials_or_mutations() {
+    let mut host = Harness::new();
+    input(&host);
+    std::fs::write(host.root.join("deploy.yml"), format!(
+        "core:\n  workspace_id: {WORKSPACE}\n  repository_directory: repository\n  item_types_in_scope: [Notebook]\n  parameter:\n    other: parameter.yml\nunpublish:\n  skip: true\n"
+    )).unwrap();
+    let output = host
+        .execute_with_ui(
+            &["deploy", "--config", "deploy.yml", "-tenv", "dev", "-f"],
+            &BrokenNotice,
+        )
+        .await;
+    assert_ne!(output.plan.exit_code, 0);
+    assert!(
+        matches!(&output.evidence, FamilyEvidence::Deploy(Err(error)) if matches!(&error.failure, DeployFailure::Command(_)))
+    );
+    assert!(host.requests().is_empty());
+    assert!(host.credential.0.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn configured_yaml_literal_parameter_is_read_and_changes_the_actual_post_part() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../fabric-deploy/tests/literal_parameter_payload_source.json"
+    ))
+    .unwrap();
+    let case = &fixture["cases"][0];
+    assert_eq!(case["id"], "literal");
+    let mut host = Harness::new();
+    input(&host);
+    std::fs::write(
+        host.root
+            .join("repository")
+            .join("Book.Notebook")
+            .join("notebook-content.py"),
+        case["input"].as_str().unwrap(),
+    )
+    .unwrap();
+    std::fs::write(
+        host.root.join("parameter.yml"),
+        "find_replace:\n- find_value: source\n  replace_value:\n    dev: target\n",
+    )
+    .unwrap();
+    std::fs::write(host.root.join("deploy.yml"), format!(
+        "core:\n  workspace_id: {WORKSPACE}\n  repository_directory: repository\n  item_types_in_scope: [Notebook]\n  parameter: parameter.yml\nunpublish:\n  skip: true\n"
+    )).unwrap();
+    metadata(&host, false);
+    host.reply(201, json!({"id":ITEM}));
+    let output = host
+        .execute(&["deploy", "--config", "deploy.yml", "-tenv", "dev", "-f"])
+        .await;
+    success(&output);
+    assert_eq!(
+        host.requests()[2]["body"]["definition"]["parts"][1],
+        case["expectedPart"]
+    );
+}
+
+#[tokio::test]
+async fn configured_parameter_duplicates_and_unsupported_regex_fail_before_http() {
+    for contents in [
+        "find_replace:\n- find_value: source\n  replace_value:\n    dev: target\n    DEV: duplicate\n",
+        "find_replace:\n- find_value: '(source)'\n  replace_value:\n    dev: target\n  is_regex: 'true'\n",
+    ] {
+        let mut host = Harness::new();
+        input(&host);
+        std::fs::write(host.root.join("parameter.yml"), contents).unwrap();
+        std::fs::write(host.root.join("deploy.yml"), format!(
+            "core:\n  workspace_id: {WORKSPACE}\n  repository_directory: repository\n  item_types_in_scope: [Notebook]\n  parameter: parameter.yml\nunpublish:\n  skip: true\n"
+        )).unwrap();
+        let output = host
+            .execute(&["deploy", "--config", "deploy.yml", "-tenv", "dev", "-f"])
+            .await;
+        assert_ne!(output.plan.exit_code, 0);
+        assert!(host.requests().is_empty());
+        assert!(host.credential.0.lock().unwrap().is_empty());
+    }
+}

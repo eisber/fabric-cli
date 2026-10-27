@@ -151,7 +151,9 @@ impl NotebookPublishPlan {
         }
         let transforms = NotebookTransforms {
             logical_ids,
-            literals: Vec::new(),
+            literals: config
+                .parameters()
+                .map_or_else(Vec::new, |parameters| parameters.literals().to_vec()),
         };
         let mut items = Vec::new();
         for (notebook, existing_id) in repository.notebooks.into_iter().zip(selected) {

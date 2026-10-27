@@ -22,7 +22,16 @@ adapter/credential/runtime. Config paths resolve relative to the explicit local
 root; repository paths resolve relative to the config directory. The first
 bounded config requires `core.workspace_id`, `core.repository_directory`,
 `core.item_types_in_scope: [Notebook]`, and explicit `unpublish.skip: true`.
-No parameter file is auto-discovered. Other processors, configured parameters,
+No parameter file is auto-discovered. Explicit `core.parameter` supports ordered
+case-sensitive literal `find_replace` rules with string-valued environment
+replacements, a sole case-insensitive `_ALL_` alias, and source string flags
+(`"false"`, not YAML booleans). Parameters are read relative to the config
+directory through the same confined file capability, validated before service
+work, and applied after logical IDs and before workspace IDs. Direct library
+consumers must call `DeploymentConfig::resolve_parameters` for a configured file;
+unresolved parameters fail preflight rather than disappearing.
+
+Other processors, nonliteral parameter branches,
 folder moves, features/constants, filters, bulk publication and unpublication
 fail explicitly before writes; they are not silently ignored or counted as a
 completed full deployment port. See the [field/type ledger](../../docs/deployment-compatibility.md#config-driven-checkpoint-october-27).
@@ -31,6 +40,11 @@ This checkpoint is source-ready; native compilation and execution results must
 be recorded separately. New source-derived receipts cover twelve real config
 validator/settings cases and two actual Notebook publisher request bodies.
 Source captures, native test registration and a passing native run are distinct.
+Further additive pinned source receipts cover wrapper/JSON typing, scalar
+resolution, skip orchestration, optional-environment warnings and literal
+parameter validation/transformed parts. Regex, ignore-case, filters, templates,
+dynamic variables and missing parameter-environment skip notices remain explicit
+unsupported branches; a literal subset does not establish full parameter parity.
 
 The additive `definitions` module supplies generic ordered definition reads,
 caller-injected local export and raw copy/SET codec APIs. It is not the full

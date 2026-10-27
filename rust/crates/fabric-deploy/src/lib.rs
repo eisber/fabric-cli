@@ -13,6 +13,7 @@ pub mod config;
 pub mod definitions;
 pub mod deployment_config;
 pub mod notebook;
+pub mod parameters;
 pub mod publish;
 pub mod repository;
 pub mod transforms;

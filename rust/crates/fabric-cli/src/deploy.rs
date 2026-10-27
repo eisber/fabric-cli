@@ -7,10 +7,13 @@ use fabric_cli_output::{
     CommandError, OutputEnvelope, OutputInput, OutputStatus, Timestamp,
     text::{self, OutputFormat, Presentation, TextError, TextOptions, TextPlan},
 };
-use fabric_cli_transfer::{TransferCommand, TransferFiles, TransferKind, TransferUi};
+use fabric_cli_transfer::{
+    TransferCommand, TransferEvent, TransferFiles, TransferKind, TransferUi,
+};
 use fabric_deploy::{
     deployment_config::{ConfigurationError, DeploymentConfig},
     notebook::DefinitionLimits,
+    parameters::ParameterNotice,
     publish::{PublishError, PublishFailure, PublishedItem, publish_repository},
     repository::{NotebookRepository, RepositoryError},
     yaml::{self, YamlLimits, YamlPolicy},
@@ -21,7 +24,7 @@ use serde_json::{Map, Value};
 use std::{
     fmt,
     future::{Future, poll_fn},
-    path::Path,
+    path::{Path, PathBuf},
     pin::pin,
     task::Poll,
 };
@@ -70,6 +73,53 @@ fn command(message: impl Into<String>) -> DeployError {
             Some("DeploymentFailed".into()),
         )),
     }
+}
+
+fn read_file(
+    files: &mut dyn TransferFiles,
+    path: &Path,
+    max_bytes: usize,
+) -> Result<(Vec<u8>, PathBuf), DeployError> {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| command("Invalid deployment input filename"))?;
+    let parent = path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let root = files
+        .resolve_directory(
+            parent
+                .to_str()
+                .ok_or_else(|| command("Deployment input path must be UTF-8"))?,
+        )
+        .map_err(|error| command(error.to_string()))?;
+    let bytes = files
+        .read(&root, name, max_bytes)
+        .map_err(|error| command(error.to_string()))?;
+    Ok((bytes, root))
+}
+
+/// Render a source environment warning with the existing Python-style formatter.
+///
+/// # Errors
+/// Retains shared formatting failures rather than silently dropping the notice.
+pub fn environment_warning(
+    warning: &fabric_deploy::deployment_config::EnvironmentWarning,
+) -> Result<String, TextError> {
+    let available = text::python_string(&Value::Array(
+        warning
+            .available
+            .iter()
+            .cloned()
+            .map(Value::String)
+            .collect(),
+    ))?;
+    Ok(format!(
+        "Environment '{}' not found in '{}'. Available environments: {available}. This setting will be skipped.",
+        warning.environment, warning.field
+    ))
 }
 
 /// Parse deploy's max-depth-one override tokens with JSON, never YAML typing.
@@ -219,26 +269,7 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
                 .as_deref()
                 .ok_or_else(|| command("Configuration path is required"))?,
         );
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or_else(|| command("Invalid configuration filename"))?;
-        let parent = path
-            .parent()
-            .filter(|path| !path.as_os_str().is_empty())
-            .unwrap_or(Path::new("."));
-        let config_root = self
-            .files
-            .resolve_directory(
-                parent
-                    .to_str()
-                    .ok_or_else(|| command("Configuration path must be UTF-8"))?,
-            )
-            .map_err(|error| command(error.to_string()))?;
-        let bytes = self
-            .files
-            .read(&config_root, name, self.yaml_limits.max_bytes)
-            .map_err(|error| command(error.to_string()))?;
+        let (bytes, config_root) = read_file(self.files, path, self.yaml_limits.max_bytes)?;
         let content =
             std::str::from_utf8(&bytes).map_err(|_| command("Configuration must be UTF-8"))?;
         let document =
@@ -247,11 +278,70 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
                     failure: DeployFailure::Configuration(error),
                 }
             })?;
-        let config =
+        let mut config =
             DeploymentConfig::from_document(&document, &args.target_env, overrides.as_ref())
                 .map_err(|error| DeployError {
                     failure: DeployFailure::Configuration(error),
                 })?;
+        for warning in &config.warnings {
+            let warning =
+                environment_warning(warning).map_err(|error| command(error.to_string()))?;
+            self.ui
+                .emit(TransferEvent::Warning(warning))
+                .map_err(|error| DeployError {
+                    failure: DeployFailure::Command(error),
+                })?;
+        }
+        if let Some(parameter) = config
+            .workspace
+            .get("parameter_file_path")
+            .and_then(Value::as_str)
+        {
+            let (bytes, _) = read_file(
+                self.files,
+                &config_root.join(parameter),
+                self.yaml_limits.max_bytes,
+            )?;
+            let content =
+                std::str::from_utf8(&bytes).map_err(|_| command("Parameter file must be UTF-8"))?;
+            let document = yaml::decode(content, YamlPolicy::Parameter, self.yaml_limits).map_err(
+                |error| DeployError {
+                    failure: DeployFailure::Configuration(error),
+                },
+            )?;
+            config
+                .resolve_parameters(&document)
+                .map_err(|error| DeployError {
+                    failure: DeployFailure::Configuration(error),
+                })?;
+            for notice in config
+                .parameters()
+                .expect("explicitly resolved parameter file")
+                .notices()
+            {
+                match notice {
+                    ParameterNotice::RegexIgnored => {
+                        self.ui.emit(TransferEvent::Warning(
+                            "The provided is_regex value is not set to 'true', regex matching will be ignored.".into(),
+                        )).map_err(|error| DeployError { failure: DeployFailure::Command(error) })?;
+                    }
+                    ParameterNotice::AllEnvironment { key, replacement } => {
+                        for message in [
+                            format!("Found the reserved environment key '{key}'"),
+                            format!(
+                                "The replace value: '{replacement}' will be applied for any target environment"
+                            ),
+                        ] {
+                            self.ui
+                                .emit(TransferEvent::Warning(message))
+                                .map_err(|error| DeployError {
+                                    failure: DeployFailure::Command(error),
+                                })?;
+                        }
+                    }
+                }
+            }
+        }
         config
             .require_notebook_publish()
             .map_err(|error| DeployError {
@@ -271,6 +361,9 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
                     .ok_or_else(|| command("Repository path must be UTF-8"))?,
             )
             .map_err(|error| command(error.to_string()))?;
+        if config.skip_publish() {
+            return Ok(DeployResult::default());
+        }
         let repository = NotebookRepository::discover(
             self.files,
             &repository_root,

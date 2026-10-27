@@ -38,4 +38,30 @@ fn unsupported_or_invalid_lexical_inputs_fail_explicitly() {
     ] {
         assert!(parameters(&[value.into()]).is_err(), "{value}");
     }
+
+    #[test]
+    fn optional_environment_warnings_match_actual_source_order_and_text() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../fabric-deploy/tests/config_warning_source.json"
+        ))
+        .unwrap();
+        assert_eq!(fixture["cases"].as_array().unwrap().len(), 4);
+        for case in fixture["cases"].as_array().unwrap() {
+            let config = fabric_deploy::deployment_config::DeploymentConfig::from_document(
+                &case["config"],
+                case["environment"].as_str().unwrap(),
+                None,
+            )
+            .unwrap();
+            let warnings: Vec<_> = config
+                .warnings
+                .iter()
+                .map(|warning| fabric_cli::deploy::environment_warning(warning).unwrap())
+                .collect();
+            assert_eq!(
+                serde_json::to_value(warnings).unwrap(),
+                case["expectedWarnings"]
+            );
+        }
+    }
 }

@@ -234,7 +234,7 @@ identity. User-supplied `host_app` cannot override those actual request headers.
 | `core.workspace_id` | Exact environment selection, GUID validation and ID precedence | Twelve new actual validator/helper cases; display-name `core.workspace` resolution remains unsupported |
 | `core.repository_directory` | Explicit config-directory-relative path through injected stable-root policy | Actual root-handler/file tests; parent traversal, unresolved aliases, ambient tilde/environment expansion remain explicit path-policy limits |
 | `core.item_types_in_scope` | Source-supported type validation; explicit Notebook publication scope | All other item processors fail preflight; omitted all-type scope does not become Notebook-only success |
-| `core.parameter` | No auto-discovery when absent; optional missing environment remains absent | Configured files fail explicitly; templates, dynamic variables, JSONPath/regex and type-specific parameters remain unported |
+| `core.parameter` | No auto-discovery when absent; optional missing config environment remains absent; explicit literal files use the same confined reads and publication transforms | Ten actual schema/transform plus six source payload cases; templates, filters, dynamic variables, JSONPath/regex, missing parameter-environment skip notices and type-specific parameters remain unported |
 | `publish.skip` | Source booleans and exact environment selection | No mutation when explicitly skipped |
 | `publish.exclude_regex`, `folder_exclude_regex`, `folder_path_to_include`, `items_to_include`, `shortcut_exclude_regex` | Recognized and rejected before writes | Source regex/feature-gating/filter semantics remain unported, not ignored |
 | `unpublish.skip` | Must explicitly resolve true in this bounded publisher | Source omission means unpublish, so omission fails preflight rather than silently pruning or reporting publish-only success |
@@ -342,3 +342,48 @@ These are registered tests pending actual native compilation/execution, not an
 assertion that they passed. Direct per-file formatting can be used when the
 shared Windows host's `cargo fmt --all` command exceeds its command-line length;
 that OS error is not a formatting waiver.
+
+Five further immutable actual `deploy_with_config` observations cover both
+operations skipped, publish-only/no parameter auto-discovery, default publish
+then unpublish, explicit parameter forwarding, and failure/feature-scope cleanup.
+The source constructs its workspace on the both-skipped branch but does not
+enumerate or load item definitions. The native host now preserves that boundary:
+it validates/resolves its explicit repository directory, then returns the source
+final message without discovery or definition reads when publication is skipped.
+It still rejects unsupported configuration before that branch.
+
+Four actual environment-validator observations capture optional-setting warnings
+in source field order. The library exposes typed `EnvironmentWarning` outcomes;
+the CLI uses its existing Python-style formatter and injected warning writer.
+A warning delivery failure fails explicitly before credential acquisition or
+service mutation. The source warnings do not authorize ignoring unsupported
+parameter fields or silently treating an incomplete scope as a full deployment.
+
+### Explicit literal parameter file follow-up
+
+The `parameters` module adds the source-valid literal-only `find_replace`
+schema. It validates every rule and replacement environment before publication,
+requires source string flags rather than YAML booleans, rejects mixed `_ALL_`
+mappings, preserves literal backreferences and ordered replacements, and uses the
+existing logical/literal/workspace transform sequence. A configured file must be
+explicitly decoded and resolved; a failed subsequent resolution clears the prior
+resolved rules. It cannot silently reuse stale rules or treat configured input
+as absent. Parameter diagnostics and reserved-alias/false-regex notices are
+caller-owned, not global logging or mutable SDK flags.
+
+`literal_parameter_reference.py` executes the real pinned `Parameter` schema
+methods and `FabricWorkspace._replace_parameters` for ten additive cases.
+`literal_parameter_payload_reference.py` subsequently executes the original
+`File.base64_payload` property for six valid source observations. Both receipts
+were captured before native expected outputs and require the protected oracle's
+exact PyYAML/jsonpath-ng versions. The root handler test reads an actual YAML
+parameter file and asserts that its changed POST definition part equals the
+source receipt; another rejects parameter duplicate keys and unsupported regex
+before credential/service work. These native tests remain pending execution.
+
+Full regex/ignore-case/JSONPath mutation, dynamic metadata, templates, file/item
+filters, missing parameter-environment skip notices and all item-specific
+parameter schemas remain explicit unported branches. No new dependency is added
+for this literal follow-up. Future syntax primitives require the integration
+owner's exact dependency/feature decision and semantic proof, not an assumption
+that a similarly named Rust library matches Python.
