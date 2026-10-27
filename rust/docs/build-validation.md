@@ -8,6 +8,10 @@ Read the [architecture](architecture.md), [compatibility boundaries](compatibili
 and [migration guidance](migration-guidance.md) before extending the matrix.
 The Python workflows and packaging are unchanged.
 
+The [bounded candidate preflight](fast-check.md) documents the separate Linux
+fast workflow, immutable product/CI receipts, and guarded native-dispatch relay.
+Fast success is not a replacement for the three native OS gates.
+
 ## Historical provider checkpoint
 
 Re-read on 2026-10-22 using GitHub's run metadata, job logs, and artifact API:
