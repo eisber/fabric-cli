@@ -59,6 +59,32 @@ test('native CLI compilation precedes lint, unit tests and family consumers', ()
   assert.equal(plan('check', {packages: ['fabric-sdk-http']}).length, 1);
 });
 
+test('SDK/value checks cover endpoint consumers and explicit native transport features', () => {
+  const manifest = {lane: 'sdk-values', packages: [
+    'fabric-core', 'fabric-sdk-http', 'fabric-sdk-operations', 'fabric-sdk-transport',
+  ]};
+  const checks = plan('check', manifest);
+  assert.deepEqual(checks[1].args, [
+    'check', '--offline', '--locked', '-p', 'fabric-sdk-transport', '--no-default-features', '--lib',
+  ]);
+  const lints = plan('clippy', manifest);
+  assert.ok(lints[1].args.includes('hyper-rustls'));
+  assert.ok(lints[1].args.includes('--all-targets'));
+  const tests = plan('test', manifest);
+  assert.deepEqual(tests[0].args, [
+    'test', '--offline', '--locked', '-p', 'fabric-sdk-http', '-p', 'fabric-sdk-operations',
+    '--test', 'endpoint_context', '--', '--test-threads=1',
+  ]);
+  assert.ok(tests.some(item => item.args.includes('--doc')));
+  assert.ok(tests.some(item => item.args.includes('hyper-rustls')));
+  for (const item of [...checks, ...lints, ...tests]) {
+    assert.ok(item.args.includes('--offline'));
+    assert.ok(item.args.includes('--locked'));
+  }
+  assert.throws(() => plan('test', {...manifest, packages: ['fabric-sdk-http']}),
+    /requires HTTP and operation endpoint consumers/);
+});
+
 test('selection retains transitive consumers and safe default scope', () => {
   const metadata = {
     workspace_default_members: ['core', 'http', 'items', 'cli'],
@@ -111,6 +137,7 @@ test('SDK/value family cannot pull deferred CLI consumers back into compilation'
   const manifest = {lane: 'sdk-values', packages: [
     'fabric-core', 'fabric-core-json', 'fabric-sdk', 'fabric-sdk-http',
     'fabric-sdk-jobs', 'fabric-sdk-operations', 'fabric-sdk-onelake', 'fabric-cli-output',
+    'fabric-sdk-transport',
   ]};
   const commands = plan('family', manifest, '/target', '/receipts', () => true);
   for (const item of commands) {
@@ -121,6 +148,19 @@ test('SDK/value family cannot pull deferred CLI consumers back into compilation'
   assert.ok(commands.some(item => item.args.includes('tests/compatibility/jobs/reference.py')));
   assert.ok(commands.some(item => item.args.includes('native_json')));
   assert.ok(commands.some(item => item.args.includes('injected_credentials')));
+  assert.ok(commands.some(item => item.args.includes('sdk_consumer') && item.args.includes('hyper-rustls')));
+  assert.ok(commands.some(item => item.args.includes('tests/compatibility/items/reference.py') &&
+    item.args.includes('--include-python-only')));
+  assert.ok(commands.some(item => item.args.includes('tests/compatibility/http/reference.py')));
+  assert.ok(commands.some(item => item.args.includes('test_text_reference.py')));
+});
+
+test('HTTP source oracle uses its documented pinned dependencies without altering shared requirements', () => {
+  const requirements = fs.readFileSync(path.join(__dirname, 'rust-fast-requirements.txt'), 'utf8');
+  assert.ok(requirements.includes('-r ../tests/compatibility/requirements.txt'));
+  assert.ok(requirements.includes('requests==2.34.2'));
+  assert.ok(requirements.includes('urllib3==2.8.0'));
+  ciDelta(['rust/scripts/rust-fast-requirements.txt']);
 });
 
 test('command spy proves nonzero exits, spawn errors and signals stop subsequent work', () => {

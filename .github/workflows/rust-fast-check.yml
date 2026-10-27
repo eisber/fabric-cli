@@ -70,14 +70,14 @@ jobs:
       - name: Fetch locked dependencies on cache miss
         if: steps.cache.outputs.cache-hit != 'true'
         run: node scripts/rust-fast-check.cjs run fetch
-      - name: Compile selected default and native CLI targets before tests
+      - name: Compile selected default and explicit feature targets before tests
         run: node scripts/rust-fast-check.cjs run check
       - name: Lint selected crates and all targets offline
         run: node scripts/rust-fast-check.cjs run clippy
       - name: Test selected offline contracts
         run: node scripts/rust-fast-check.cjs run test
       - name: Restore existing pinned oracle requirements
-        run: python -m pip install --disable-pip-version-check -r tests/compatibility/requirements.txt
+        run: python -m pip install --disable-pip-version-check -r scripts/rust-fast-requirements.txt
       - name: Execute selected family consumers and source comparisons
         run: node scripts/rust-fast-check.cjs run family
       - name: Require actual exits and unchanged source and lock

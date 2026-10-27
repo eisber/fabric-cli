@@ -18,6 +18,7 @@ const LANES = Object.freeze({
 const CI_FILES = [
   '.github/workflows/rust-fast-check.yml', '.github/rust-fast-candidate.json',
   'rust/scripts/rust-fast-check.cjs', 'rust/scripts/rust-fast-check.test.cjs',
+  'rust/scripts/rust-fast-requirements.txt',
   'rust/docs/fast-check.md', 'rust/docs/build-validation.md',
   'rust/tests/performance/startup.py', 'rust/tests/performance/test_startup.py',
   'rust/tests/performance/measurement-request.json', 'rust/docs/performance-baseline.md',
@@ -86,7 +87,9 @@ function prepare() {
   requireThat(target === 'x86_64-unknown-linux-gnu', 'Fast preflight requires the native Linux runner');
   const lockHash = digest(fs.readFileSync(path.join(rust, 'Cargo.lock')));
   const features = {default: true, packages, family: selectedLane,
-    nativeRead: packages.includes('fabric-cli')};
+    nativeRead: packages.includes('fabric-cli'),
+    transport: selectedLane === 'sdk-values' && packages.includes('fabric-sdk-transport')
+      ? ['hyper-rustls'] : []};
   const fingerprint = digest(JSON.stringify({rustc, target, features, lockHash}));
   const coverage = selectedLane === 'sdk-values'
     ? 'Core/SDK transitive consumers and CLI output only; central CLI, identity, deployment and native platform gates deferred'
@@ -103,6 +106,8 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
   const python = (...args) => ({program: 'python', args: ['-B', ...args]});
   const commands = [];
   const has = name => manifest.packages.includes(name);
+  const sdkValues = manifest.lane === 'sdk-values';
+  const nativeTransport = sdkValues && has('fabric-sdk-transport');
   const observation = (pkg, example, reference, extra = []) => {
     const file = path.join(output, `${example}-${pkg}.json`);
     commands.push({...cargo('run', '--quiet', '--offline', '--locked', '-p', pkg, '--example', example), stdout: file},
@@ -116,13 +121,29 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       commands.push(cargo('check', '--offline', '--locked', '-p', 'fabric-cli',
         '--features', 'native-read', '--all-targets'));
     }
+    if (nativeTransport) commands.push(cargo('check', '--offline', '--locked',
+      '-p', 'fabric-sdk-transport', '--no-default-features', '--lib'));
     return commands;
   }
-  if (stage === 'clippy') return [cargo('clippy', '--offline', '--locked', ...packages, '--all-targets', '--', '-D', 'warnings')];
-  if (stage === 'test') return [
-    cargo('test', '--offline', '--locked', ...packages, '--', '--test-threads=1'),
-    cargo('test', '--offline', '--locked', ...packages, '--doc', '--', '--test-threads=1'),
-  ];
+  if (stage === 'clippy') {
+    commands.push(cargo('clippy', '--offline', '--locked', ...packages, '--all-targets', '--', '-D', 'warnings'));
+    if (nativeTransport) commands.push(cargo('clippy', '--offline', '--locked',
+      '-p', 'fabric-sdk-transport', '--features', 'hyper-rustls', '--all-targets', '--', '-D', 'warnings'));
+    return commands;
+  }
+  if (stage === 'test') {
+    if (sdkValues) {
+      requireThat(has('fabric-sdk-http') && has('fabric-sdk-operations'),
+        'SDK/value lane requires HTTP and operation endpoint consumers');
+      commands.push(cargo('test', '--offline', '--locked', '-p', 'fabric-sdk-http',
+        '-p', 'fabric-sdk-operations', '--test', 'endpoint_context', '--', '--test-threads=1'));
+    }
+    commands.push(cargo('test', '--offline', '--locked', ...packages, '--', '--test-threads=1'),
+      cargo('test', '--offline', '--locked', ...packages, '--doc', '--', '--test-threads=1'));
+    if (nativeTransport) commands.push(cargo('test', '--offline', '--locked',
+      '-p', 'fabric-sdk-transport', '--features', 'hyper-rustls', '--', '--test-threads=1'));
+    return commands;
+  }
   requireThat(stage === 'family', `Unknown stage: ${stage}`);
   if (has('fabric-cli-jobs') || has('fabric-sdk-jobs') || has('fabric-sdk-paging')) {
     for (const reference of ['reference', 'branches_reference', 'operation_output_reference', 'skill_headers_reference']) {
@@ -138,7 +159,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     observation('fabric-cli-output', 'compatibility_probe', 'reference.py');
     observation('fabric-core-json', 'unicode_json', 'unicode_reference.py');
     observation('fabric-cli-output', 'text_probe', 'text_reference.py');
-    for (const test of ['test_reference.py', 'test_unicode_reference.py']) {
+    for (const test of ['test_reference.py', 'test_unicode_reference.py', 'test_text_reference.py']) {
       commands.push(python('-m', 'unittest', 'discover', '-s', 'tests/compatibility/output', '-p', test, '-v'));
     }
     if (exists('tests/compatibility/output/native_reference.py')) {
@@ -150,6 +171,14 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
         'Released native-values comparator is missing');
     }
   }
+  if (sdkValues) {
+    commands.push(python('tests/compatibility/items/reference.py', '--check', '--include-python-only'),
+      python('-m', 'unittest', 'discover', '-s', 'tests/compatibility/items',
+        '-p', 'test_reference.py', '-v'),
+      python('tests/compatibility/http/reference.py'));
+  }
+  if (nativeTransport) commands.push(cargo('run', '--offline', '--locked',
+    '-p', 'fabric-sdk-transport', '--features', 'hyper-rustls', '--example', 'sdk_consumer'));
   if (has('fabric-cli')) {
     const probes = path.join(target, 'debug', 'examples');
     commands.push(cargo('build', '--offline', '--locked', '-p', 'fabric-cli', '-p', 'fabric-cli-query', '--examples'),

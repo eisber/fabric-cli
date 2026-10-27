@@ -32,6 +32,21 @@ the independent job source comparisons but does not build CLI job or mutation
 probes; SDK unit/doctests and the facade's injected-credential example remain
 in scope.
 
+SDK/value checks explicitly include the default transport library and strict
+Clippy/tests for `fabric-sdk-transport/hyper-rustls`; the feature selection is
+part of the cache fingerprint. The HTTP and operation `endpoint_context`
+integration tests run first in the test stage, before the combined unit/doc
+suite, to expose selected-host, paging, LRO, cancellation and audience failures
+promptly. Family checks run the native transport and SDK injected-credential
+examples, independent item and HTTP source references, and all four existing
+output guard scripts, including text and native-value guards. These are finite
+commands in the reviewed helper, never shell copied from a source manifest.
+
+`scripts/rust-fast-requirements.txt` includes the shared oracle requirements and
+pins Requests 2.34.2/urllib3 2.8.0 to the HTTP oracle's documented initial
+execution. It does not modify the oracle, its expectations, shared requirements
+or product dependencies.
+
 Each run executes workspace formatting, selected all-target offline checks and
 Clippy, single-thread tests and doctests, then actual family examples and pinned
 source comparisons. Selected CLI default and `native-read` all-target compilation
