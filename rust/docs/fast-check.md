@@ -196,6 +196,16 @@ consumer, not broad configuration parity, whole-workspace regression, canonical
 acceptance or native Windows/macOS deployment proof. Source-owner fixes require
 a newly selected immutable source, never oracle weakening or unchanged retries.
 
+The actual Linux deployment preflight
+[run 40567053818](https://github.com/eisber/fabric-cli/actions/runs/40567053818)
+passed at source `7970f9fc25a8fc4be4f3f66837b836fac459da3e` and combined CI head
+`06f93740b560ca09c5c17a943e30d6769447814b`. All 27 finite command receipts
+match the plan and exit zero. The six target inventories register 43 tests,
+and all 43 execute successfully; the broader library invocation also retains
+older definition/operation tests and one doctest. All ten unchanged source
+comparators and the final source/lock check pass. This remains bounded Linux
+offline evidence, not native Windows/macOS or live deployment acceptance.
+
 The `native-endpoint` lane uses `validation/rust-fast-msit-*` and runs the same
 immutable candidate on Linux x64 and Windows x64, with fail-fast disabled between
 hosts and separate host-labeled artifacts. Native endpoint configuration/read,
