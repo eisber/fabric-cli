@@ -1,0 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+# Development-only oracle dependencies; never a shipped Rust dependency.
+-r ../tests/compatibility/requirements.txt
+requests==2.34.2
+urllib3==2.8.0
