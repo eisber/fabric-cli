@@ -68,12 +68,14 @@ The exact source `-help` spelling is recognized only where the schema accepts a
 help flag, not inside attached option values, quoted query text or positional
 data after `--`. Existing help/version parser precedence and validation remain.
 
-These bounded argv repairs translate Python
+These bounded diagnostic/group-help repairs and retained legacy-help behavior track Python
 `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`; their independent capture is documented
 in [argv source evidence](../tests/compatibility/argv_review/README.md).
 The original Python warning may echo invalid input; sanitized JSON, stderr and
 exit 2 remain an intentional Rust exception. Availability of group/legacy help
 does not claim complete Python/Rich terminal or help-byte parity.
+The actual default/native baseline already accepts `-help` and preserves its
+value/delimiter cases; no additional legacy-help rewriting is necessary.
 
 Agents may rely on exit status, stream separation, and that error shape in
 this bootstrap. Help text is for people, not a parsing interface. No successful

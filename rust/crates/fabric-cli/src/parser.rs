@@ -178,9 +178,6 @@ where
     }
     let mut parser = command();
     parser.build();
-    if let Some(help) = legacy_help(&parser, &args) {
-        return Ok(Invocation::Display(help));
-    }
     if args
         .iter()
         .any(|arg| matches!(arg.to_str(), Some("--help" | "-h" | "--version" | "-V")))
@@ -291,24 +288,6 @@ where
         force: !list && values.get_flag("force"),
         output_format: matches.get_one::<String>("output_format").cloned(),
     }))
-}
-
-fn legacy_help(parser: &Command, args: &[OsString]) -> Option<String> {
-    for (index, token) in args.iter().enumerate().skip(1) {
-        if token != "-help" {
-            continue;
-        }
-        // Let the schema decide whether this token is a flag, a value, or
-        // positional data after `--`. Never rewrite the actual value tokens.
-        let mut probe = args.to_vec();
-        probe[index] = "--help".into();
-        if let Err(error) = parser.clone().try_get_matches_from(probe)
-            && error.kind() == ErrorKind::DisplayHelp
-        {
-            return Some(error.to_string());
-        }
-    }
-    None
 }
 
 fn root_argument(args: &[OsString]) -> Option<usize> {
