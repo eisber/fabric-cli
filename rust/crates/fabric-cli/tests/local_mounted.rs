@@ -127,10 +127,13 @@ fn named_version_never_creates_configuration_and_desc_is_a_handler() {
 fn invalid_configuration_is_not_overwritten_or_hidden() {
     let root = Root::new();
     fs::write(root.0.join("config.json"), b"{broken").unwrap();
-    let result = invoke(&root.0, &["config", "ls"]);
+    let result = invoke(&root.0, &["config", "ls", "--output_format", "json"]);
     assert!(!result.status.success());
-    assert!(result.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&result.stderr).contains("InvalidJson"));
+    assert!(result.stderr.is_empty());
+    let envelope: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(envelope["status"], "Failure");
+    assert_eq!(envelope["command"], "config ls");
+    assert_eq!(envelope["result"]["error_code"], "InvalidJson");
     assert_eq!(fs::read(root.0.join("config.json")).unwrap(), b"{broken");
 }
 
