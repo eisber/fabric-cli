@@ -86,7 +86,9 @@ The SDK accepts hostname strings, **not URLs**, and performs no environment read
 
 `ServiceOrigin` is also reexported under the existing HTTP `PublicOrigin` name.
 Neither the request host nor an opaque token is used to infer an audience.
-Power BI deliberately retains Python's Fabric scope mapping.
+Power BI deliberately retains Python's Fabric scope mapping. Explicit Fabric
+bindings for `dailyapi.fabric.microsoft.com` and `msitapi.fabric.microsoft.com`
+both retain `https://api.fabric.microsoft.com/.default`.
 
 ## Safety and compatibility boundaries
 
@@ -132,7 +134,7 @@ chain must remain on that selected host.
 | Native CLI environment configuration | Not implemented here | Central CLI owner maps all four hostname variables and injects contexts/executors |
 
 The additive external `fabric-sdk-http/tests/endpoint_context.rs` consumer
-exercises default/public and daily workspace LIST/metadata GET, item LIST/GET,
+exercises default/public, daily and MSIT workspace LIST/metadata GET, item LIST/GET,
 continuation requests and actual operation result retrieval through the existing
 HTTP request adapter. It also covers all four explicit hostname configuration
 shapes, fixed scopes, shared credential identity and rejection before
