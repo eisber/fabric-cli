@@ -1,0 +1,176 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Rust fast check
+
+on:
+  push:
+    branches: ["validation/rust-fast-*"]
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: Bounded offline validation family
+        type: choice
+        options: [baseline, cli-jobs, endpoint, native-values, sdk-values, cli-auth, cli-95, windows-auth, deploy-mount, native-endpoint, output-audit, orchestration-audit, windows-wheelhouse]
+        default: baseline
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    if: ${{ inputs.lane != 'windows-wheelhouse' && inputs.lane != 'output-audit' && inputs.lane != 'orchestration-audit' && !startsWith(github.ref, 'refs/heads/validation/rust-fast-wheelhouse-') && !startsWith(github.ref, 'refs/heads/validation/rust-fast-output-') && !startsWith(github.ref, 'refs/heads/validation/rust-fast-orchestration-') }}
+    name: Bounded preflight (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON((inputs.lane == 'native-endpoint' || startsWith(github.ref, 'refs/heads/validation/rust-fast-msit-')) && '["ubuntu-24.04","windows-2025"]' || (inputs.lane == 'windows-auth' || startsWith(github.ref, 'refs/heads/validation/rust-fast-windows-')) && '["windows-2025"]' || '["ubuntu-24.04"]') }}
+    timeout-minutes: 15
+    env:
+      CARGO_BUILD_JOBS: "1"
+      RUST_TEST_THREADS: "1"
+      PYTHONUTF8: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      INPUT_LANE: ${{ inputs.lane }}
+    defaults:
+      run:
+        working-directory: rust
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Record immutable source, selection, toolchain and lock
+        id: identity
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/rust-fast-target
+          FAST_RECEIPTS: ${{ runner.temp }}/rust-fast-receipts
+        run: |
+          printf 'CARGO_TARGET_DIR=%s\nFAST_RECEIPTS=%s\n' "$CARGO_TARGET_DIR" "$FAST_RECEIPTS" >> "$GITHUB_ENV"
+          node scripts/rust-fast-check.cjs prepare
+      - name: Test automation contracts without building Rust
+        run: node --test scripts/rust-fast-check.test.cjs
+      - name: Set up existing development-only Python oracle
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Test synthetic performance harness contracts without measurements
+        run: python -B -m unittest discover -s tests/performance -p 'test_*.py' -v
+      - name: Check formatting
+        run: node scripts/rust-fast-check.cjs run fmt
+      - name: Restore isolated locked Cargo cache
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/rust-fast-target
+          key: rust-fast-v1-${{ steps.identity.outputs.fingerprint }}-${{ github.sha }}
+          restore-keys: |
+            rust-fast-v1-${{ steps.identity.outputs.fingerprint }}-
+      - name: Restore locked native and required metadata-graph dependencies
+        run: node scripts/rust-fast-check.cjs run fetch
+      - name: Compile selected default and explicit feature targets before tests
+        run: node scripts/rust-fast-check.cjs run check
+      - name: Lint selected crates and all targets offline
+        run: node scripts/rust-fast-check.cjs run clippy
+      - name: Test selected offline contracts
+        run: node scripts/rust-fast-check.cjs run test
+      - name: Restore existing pinned oracle requirements
+        run: python -m pip install --disable-pip-version-check -r scripts/rust-fast-requirements.txt
+      - name: Execute selected family consumers and source comparisons
+        run: node scripts/rust-fast-check.cjs run family
+      - name: Require actual exits and unchanged source and lock
+        run: node scripts/rust-fast-check.cjs finish
+      - name: Retain bounded command receipts only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-fast-receipts-${{ matrix.os }}-${{ github.sha }}
+          path: ${{ runner.temp }}/rust-fast-receipts/*.json
+          if-no-files-found: error
+          retention-days: 7
+  audit:
+    if: ${{ inputs.lane == 'output-audit' || inputs.lane == 'orchestration-audit' || startsWith(github.ref, 'refs/heads/validation/rust-fast-output-') || startsWith(github.ref, 'refs/heads/validation/rust-fast-orchestration-') }}
+    name: Independent baseline observations (not a compatibility gate)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CARGO_BUILD_JOBS: "1"
+      RUST_TEST_THREADS: "1"
+      PYTHONUTF8: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      INPUT_LANE: ${{ inputs.lane }}
+    defaults:
+      run:
+        working-directory: rust
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Record exact source and independent audit boundary
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/rust-audit-target
+          FAST_RECEIPTS: ${{ runner.temp }}/rust-audit-receipts
+        run: |
+          printf 'CARGO_TARGET_DIR=%s\nFAST_RECEIPTS=%s\n' "$CARGO_TARGET_DIR" "$FAST_RECEIPTS" >> "$GITHUB_ENV"
+          node scripts/rust-fast-check.cjs prepare
+      - name: Test automation contracts
+        run: node --test scripts/rust-fast-check.test.cjs
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Restore only the pinned development capture dependencies
+        run: python -m pip install --disable-pip-version-check -r tests/compatibility/requirements.txt
+      - name: Restore locked dependencies before independent observations
+        run: node scripts/rust-fast-check.cjs run fetch
+      - name: Execute every finite audit command and retain each actual exit
+        run: node scripts/rust-fast-check.cjs run audit
+      - name: Retain raw baseline evidence even when comparisons fail
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-audit-receipts-${{ github.sha }}
+          path: ${{ runner.temp }}/rust-audit-receipts/*
+          if-no-files-found: error
+          retention-days: 7
+  wheelhouse:
+    if: ${{ inputs.lane == 'windows-wheelhouse' || startsWith(github.ref, 'refs/heads/validation/rust-fast-wheelhouse-') }}
+    name: Pinned public Windows wheelhouse (no authentication)
+    runs-on: windows-2025
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          architecture: x64
+      - name: Test immutable wheelhouse and audit contracts without downloads
+        run: |
+          node --test rust/scripts/rust-fast-check.test.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -B -m unittest discover -s rust/scripts -p test_rust_fast_wheelhouse.py -v
+      - name: Prepare public hash-verified source wheel and Windows dependencies
+        run: python -B rust/scripts/rust-fast-wheelhouse.py --output "${{ runner.temp }}\rust-wheelhouse"
+      - name: Retain wheelhouse provenance and failed preparation evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-windows-wheelhouse-${{ github.sha }}
+          path: ${{ runner.temp }}/rust-wheelhouse
+          if-no-files-found: error
+          retention-days: 7
