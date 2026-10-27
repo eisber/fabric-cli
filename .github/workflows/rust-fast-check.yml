@@ -1,0 +1,92 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Rust fast check
+
+on:
+  push:
+    branches: ["validation/rust-fast-*"]
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: Bounded offline validation family
+        type: choice
+        options: [baseline, cli-jobs, endpoint, native-values, sdk-values]
+        default: baseline
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Linux fast preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CARGO_BUILD_JOBS: "1"
+      RUST_TEST_THREADS: "1"
+      PYTHONUTF8: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      INPUT_LANE: ${{ inputs.lane }}
+    defaults:
+      run:
+        working-directory: rust
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Record immutable source, selection, toolchain and lock
+        id: identity
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/rust-fast-target
+          FAST_RECEIPTS: ${{ runner.temp }}/rust-fast-receipts
+        run: |
+          printf 'CARGO_TARGET_DIR=%s\nFAST_RECEIPTS=%s\n' "$CARGO_TARGET_DIR" "$FAST_RECEIPTS" >> "$GITHUB_ENV"
+          node scripts/rust-fast-check.cjs prepare
+      - name: Test automation contracts without building Rust
+        run: node --test scripts/rust-fast-check.test.cjs
+      - name: Set up existing development-only Python oracle
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Test synthetic performance harness contracts without measurements
+        run: python -B -m unittest discover -s tests/performance -p 'test_*.py' -v
+      - name: Check formatting
+        run: node scripts/rust-fast-check.cjs run fmt
+      - name: Restore isolated locked Cargo cache
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/rust-fast-target
+          key: rust-fast-v1-${{ steps.identity.outputs.fingerprint }}-${{ github.sha }}
+          restore-keys: |
+            rust-fast-v1-${{ steps.identity.outputs.fingerprint }}-
+      - name: Fetch locked dependencies on cache miss
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: node scripts/rust-fast-check.cjs run fetch
+      - name: Compile selected default and native CLI targets before tests
+        run: node scripts/rust-fast-check.cjs run check
+      - name: Lint selected crates and all targets offline
+        run: node scripts/rust-fast-check.cjs run clippy
+      - name: Test selected offline contracts
+        run: node scripts/rust-fast-check.cjs run test
+      - name: Restore existing pinned oracle requirements
+        run: python -m pip install --disable-pip-version-check -r tests/compatibility/requirements.txt
+      - name: Execute selected family consumers and source comparisons
+        run: node scripts/rust-fast-check.cjs run family
+      - name: Require actual exits and unchanged source and lock
+        run: node scripts/rust-fast-check.cjs finish
+      - name: Retain bounded command receipts only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-fast-receipts-${{ github.sha }}
+          path: ${{ runner.temp }}/rust-fast-receipts/*.json
+          if-no-files-found: error
+          retention-days: 7
