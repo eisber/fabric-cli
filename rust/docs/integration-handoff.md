@@ -11,6 +11,53 @@ branch remains intact; references to it in dated evidence are historical.
 
 ## Read-command, query and folder integration
 
+### October 27 released endpoint and native-value source union
+
+`validation/rust-takeover-sdk-20261027` starts at exact
+`70df7a64fc9fb50d4e2632099573d5946ff0007d`. It selects the released endpoint
+and native-value implementation commits, not either worker's older product
+ancestry or the inherited newer Python branch:
+
+| Released source | Selected scope |
+| --- | --- |
+| `13427c5467c4a017adf6f79fa91aafe2c817e091` | Explicit core endpoint/request context, workspace/item reads, facade, shared HTTP and operation-session binding |
+| `b16e64e20f5524859416cce24026a06099a1b781` | Existing public workspace test URL |
+| `f7298fb518c97b35f767fc200f3f8d5bcdb63fb4` | Authorization-header Result assertion |
+| `61d4d3e029d72d151411e3ea8bc0728f898ba364` | Documented `AuthenticatedFuture` alias and consumers |
+| `9dacd11e9f08edd6cd59f6c6f6073f85acc14cb8` | Explicit imports for unchanged workspace cancellation assertions |
+| `83ebb385d2e983a3e07bac171b127eb0d6e1e276` | Shared additive native Python-value encoding and independent source oracle |
+| `3ed8004aa47e4e2cd0eebb18c29adbdc74a4a6a6` | Five additive commands in the existing shared JSON CI stage |
+
+The endpoint-owned core/SDK trees match released
+`04d58ec9fe5fc1ccf5d5b2e0638462967f693536` before the additive MSIT wire-test
+case; the JSON crate and new native oracle match released `3ed8004` exactly.
+The source-to-applied full-SHA map, final immutable/provider head, changed files
+and literal validation commands are recorded in workstream context
+`rust/takeovers/20261027/sdk.json`.
+
+Existing public constructors retain their signatures and public-cloud defaults.
+Explicit clients, HTTP execution, continuation checks and LRO polling/results
+must share the same binding. Daily and MSIT routing retain the Fabric token
+scope; the additive wire case asserts the complete request sequence and scope
+for all three hosts. CLI environment adoption remains the central owner's
+separate integration, not an SDK environment read. See the
+[endpoint contract](endpoint-context.md) for the partial-family migration matrix.
+
+The entire workspace manifest/lock, all 218 external registry records and
+dependency features, Python product, central CLI/parser/native/session, current
+checked job-payload guard, Unicode encoder, cancellation behavior, raw templates
+and old expectations are preserved. No dirty capacity/table/resource drafts,
+new authentication backend or SDK-to-CLI dependency are adopted.
+
+This is **source-ready, not exact-head native-validated**. Static source/blob,
+scope, lock and whitespace checks are distinct from Cargo execution. This
+Windows session has no Cargo, rustfmt or Python on PATH and no local heavy-build
+lease; no toolchain is installed and no shared builder is started. Earlier
+component CI, including any old macOS fixture failure, is not proof for this
+union. The root relays the exact checkpoint and focused default SDK/native-value
+checks to the existing hosted CI owner. No PR, shared-branch publication, live
+authentication, service operation or release is authorized by this handoff.
+
 ### October 27 merge-tree G: immutable family source union
 
 `validation/rust-merge-tree-g-ad43ba8d` starts at exact

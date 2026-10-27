@@ -114,8 +114,12 @@ fn executor(wire: Arc<Wire>, endpoint: EndpointBinding) -> HttpExecutor {
 }
 
 #[tokio::test]
-async fn public_and_daily_context_reach_workspace_item_continuation_and_lro_wire_requests() {
-    for host in ["api.fabric.microsoft.com", "dailyapi.fabric.microsoft.com"] {
+async fn public_daily_and_msit_context_bind_workspace_item_paging_and_lro_wire_requests() {
+    for host in [
+        "api.fabric.microsoft.com",
+        "dailyapi.fabric.microsoft.com",
+        "msitapi.fabric.microsoft.com",
+    ] {
         let endpoint = EndpointBinding::with_host(ServiceOrigin::Fabric, host).unwrap();
         let root = format!("https://{host}");
         let credential = Arc::new(Credential::default());
