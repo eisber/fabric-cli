@@ -126,6 +126,9 @@ test('deploy preflight first runs actual library then native root consumer, neve
   assert.ok(family.some(item => item.args.includes('crates/fabric-deploy/tests/orchestration_reference.py')));
   assert.ok(family.some(item => item.args.includes('crates/fabric-cli/tests/deploy_wrapper_reference.py')));
   assert.ok(family.some(item => item.args.includes('crates/fabric-deploy/tests/operation_result_reference.py')));
+  const operation = family.find(item => item.args.includes('crates/fabric-deploy/tests/operation_result_reference.py'));
+  assert.ok(operation.args.includes('--cli-reference-root') && operation.args.includes('--cicd-reference-root'));
+  assert.ok(!operation.args.includes('--reference-root'));
   for (const item of [...commands, ...family]) {
     assert.ok(!item.args.includes('run') && !item.args.includes('--config'));
   }

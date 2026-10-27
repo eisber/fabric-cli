@@ -312,7 +312,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     const cicd = '5ca096c00a9a878c646c59fe537b883eba951329';
     const references = ['config_reference', 'yaml_scalar_reference', 'config_warning_reference',
       'orchestration_reference', 'operation_section_reference', 'literal_parameter_reference',
-      'literal_parameter_payload_reference', 'transform_adapter_reference', 'operation_result_reference'];
+      'literal_parameter_payload_reference', 'transform_adapter_reference'];
     return [
       {program: 'git', args: ['init', source]},
       {program: 'git', args: ['-C', source, 'fetch', '--depth=1',
@@ -320,6 +320,8 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       {program: 'git', args: ['-C', source, 'checkout', '--detach', cicd]},
       ...references.map(name => python(`crates/fabric-deploy/tests/${name}.py`,
         '--reference-root', source)),
+      python('crates/fabric-deploy/tests/operation_result_reference.py',
+        '--cli-reference-root', root, '--cicd-reference-root', source),
       python('crates/fabric-cli/tests/deploy_wrapper_reference.py', '--reference-root', root),
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
         '--features', 'native-read', '--doc', '--', '--test-threads=1'),
