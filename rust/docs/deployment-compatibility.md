@@ -463,3 +463,43 @@ after formatting must show every declared test at module scope; the authorized
 native runner must also compare that inventory with actual `-- --list` output
 before reporting native test coverage. No assertion, oracle, lint waiver,
 production behavior or dependency is changed to repair this failure.
+
+### Terminal-result runtime failure: new synthetic input repaired
+
+Hosted Linux run `40561857558`, job `122392692898`, used source
+`cceae13dbd5e8be621e1f921abb5fcdd36703aa1` and separate CI head
+`284d1220f1eb8506b1cd09024f86c040cb8bd801`. Default/native compilation and
+strict Clippy passed. Actual `-- --list` output contained all 42 declared tests
+across the six new test crates. The deploy library suite passed 87 integration
+tests plus one doctest (88 invocations, not 88 new unique behaviors). The
+front-door mount suite passed 14 tests and failed
+`root_yaml_deploy_waits_for_actual_operation_result_id`; the three registered
+CLI parameter tests and later pipeline stages were not executed.
+
+The failing new synthetic terminal response supplied `{"status":"Succeeded"}`
+without a `Location` header, but queued an item result that it expected the
+shared session to fetch. The existing `PythonSynchronous` policy intentionally
+returns the original response with status 200 when terminal result `Location`
+is absent. The Notebook create consumer then correctly rejects its empty body:
+it cannot derive a created item ID from a successful operation state.
+
+Evidence predating this repair includes the shared operation README/engine,
+`source_read_id_opt_in_polls_safe_opaque_ids_without_mutation_evidence`
+in the shared standalone consumer, and
+`local_import_create_acceptance_retrieves_actual_result_and_never_replays_post` in the
+definition consumer. Their successful result responses advertise `Location`.
+The original pinned Python CLI `_poll_operation`/`_fetch_operation_result` and
+CICD `_handle_response` have the same terminal-location distinction.
+`operation_result_reference.py` additionally executes those actual unchanged
+source functions with synthetic HTTP/time callbacks and captures both branches
+before the new fixture input is corrected.
+
+Only the new successful synthetic response is corrected to advertise its actual
+result URL (and its initial operation URL). The previous missing-header shape
+remains an additive negative root-handler test: one POST, one poll, no result
+fetch/replay/delete, no invented item ID, and original operation ID plus mutation
+uncertainty retained. Existing request-body receipts and protected expectations
+are unchanged. No production transport, result fallback, UUID guard, polling or
+uncertainty policy is weakened. The mount registration inventory is now 16,
+making 43 declared tests across the six new crates; actual corrected-head native
+listing/execution still gates acceptance.

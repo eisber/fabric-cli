@@ -105,16 +105,32 @@ async fn root_yaml_deploy_create_and_update_match_actual_pinned_source_wire() {
 
 #[tokio::test]
 async fn root_yaml_deploy_waits_for_actual_operation_result_id() {
+    let source: Value = serde_json::from_str(include_str!(
+        "../../fabric-deploy/tests/operation_result_source.json"
+    ))
+    .unwrap();
+    let advertised = &source["cases"][1];
+    assert_eq!(advertised["id"], "advertised-result");
+    let result_location = advertised["terminalHeaders"]["Location"].as_str().unwrap();
+    let operation_location = format!("https://api.fabric.microsoft.com/v1/operations/{OPERATION}");
     let mut host = Harness::new();
     input(&host);
     metadata(&host, false);
     host.headers(
         202,
         Value::Null,
-        &[("x-ms-operation-id", OPERATION), ("retry-after", "0")],
+        &[
+            ("x-ms-operation-id", OPERATION),
+            ("retry-after", "0"),
+            ("Location", &operation_location),
+        ],
     );
-    host.reply(200, json!({"status":"Succeeded"}));
-    host.reply(200, json!({"id":ITEM}));
+    host.headers(
+        200,
+        json!({"status":"Succeeded"}),
+        &[("Location", result_location)],
+    );
+    host.reply(200, advertised["result"]["body"].clone());
     let output = host
         .execute(&["deploy", "--config", "deploy.yml", "-f"])
         .await;
@@ -122,12 +138,71 @@ async fn root_yaml_deploy_waits_for_actual_operation_result_id() {
     assert!(
         matches!(&output.evidence, FamilyEvidence::Deploy(Ok(result)) if result.completed[0].outcome.item_id == ITEM)
     );
+    assert_eq!(host.requests().len(), 5);
+    assert_eq!(
+        host.requests()
+            .iter()
+            .filter(|request| request["method"] == "POST")
+            .count(),
+        1
+    );
     assert!(
         host.requests()[4]["url"]
             .as_str()
             .unwrap()
             .ends_with(&format!("/operations/{OPERATION}/result"))
     );
+}
+
+#[tokio::test]
+async fn terminal_success_without_advertised_result_never_invents_created_id_or_replays() {
+    let source: Value = serde_json::from_str(include_str!(
+        "../../fabric-deploy/tests/operation_result_source.json"
+    ))
+    .unwrap();
+    let missing = &source["cases"][0];
+    assert_eq!(missing["id"], "terminal-without-result-location");
+    assert!(missing["result"]["body"].is_null());
+    assert_eq!(missing["cliRequests"].as_array().unwrap().len(), 1);
+    let operation_location = format!("https://api.fabric.microsoft.com/v1/operations/{OPERATION}");
+    let mut host = Harness::new();
+    input(&host);
+    metadata(&host, false);
+    host.headers(
+        202,
+        Value::Null,
+        &[
+            ("x-ms-operation-id", OPERATION),
+            ("retry-after", "0"),
+            ("Location", &operation_location),
+        ],
+    );
+    host.reply(200, json!({"status":"Succeeded"}));
+    let output = host
+        .execute(&["deploy", "--config", "deploy.yml", "-f"])
+        .await;
+    assert_ne!(output.plan.exit_code, 0);
+    assert!(
+        matches!(&output.evidence, FamilyEvidence::Deploy(Err(error))
+        if matches!(&error.failure, DeployFailure::Publish(error)
+        if error.completed.is_empty() && error.current_item.as_deref() == Some("Book")
+        && matches!(&error.failure, PublishFailure::Operation(error)
+        if error.kind == fabric_sdk_operations::OperationErrorKind::InvalidResponse
+        && error.operation_id.as_deref() == Some(OPERATION) && error.mutation_may_have_occurred)))
+    );
+    let requests = host.requests();
+    assert_eq!(requests.len(), 4);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request["method"] == "POST")
+            .count(),
+        1
+    );
+    assert!(!requests.iter().any(
+        |request| request["url"].as_str().unwrap().ends_with("/result")
+            || request["method"] == "DELETE"
+    ));
 }
 
 #[tokio::test]
