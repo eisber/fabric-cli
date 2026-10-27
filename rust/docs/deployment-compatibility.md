@@ -204,3 +204,100 @@ unchanged reference cases. The complete command log is a session artifact
 (`native-notebook-validation.txt`); forum sync is recorded at `tk:post/12/4/30`.
 Full workspace integration, independent-lane acceptance, macOS/Linux execution
 and live Fabric remain unexecuted for this implementation.
+
+## Config-driven checkpoint (October 27)
+
+Base: `03fab20577a1016178de227eac0ee178921bb8d0`. Python and CICD source
+pins above, the original 44 fixtures and their AST oracle are unchanged.
+This is the first bounded config-to-production-host implementation, **not full
+deployment parity or a whole-product command coverage claim**. Source code is
+written; native checks and their immutable source/runner identities must be
+recorded before treating this checkpoint as validated.
+
+`fabric_cli::parser::Invocation::Deploy` routes actual root `deploy --config`
+arguments to `fabric_cli::deploy::DeployHost`. Public native consumers use that
+same host and the same `fabric_deploy::publish` engine. The definition-only
+`TransferHost` is not a second deploy implementation. The root host reuses its
+existing files/UI/configuration, credential, HTTP executor and runtime. A thin
+header adapter binds the CLI-owned user agent and source JSON content type for
+discovery and mutations. It neither owns a client/retry/poller nor discovers
+identity. User-supplied `host_app` cannot override those actual request headers.
+
+### Configuration and behavior ledger
+
+| Field or behavior | Current ported boundary | Proof and remaining boundary |
+| --- | --- | --- |
+| Real YAML config | Event parsing with config last-key-wins, merges and source-style representable scalar resolution | Two unchanged config YAML fixtures; YAML syntax is not JSON-only input |
+| Parameter YAML loader | Separate lower-based duplicate checks and merge rejection before map collapse | Existing duplicate/Unicode/merge fixtures exercise classifications; exact duplicate diagnostics and complete parameter schemas are not yet equivalent |
+| Scalar types | Boolean/null, bounded integers including octal/hex/sexagesimal, finite decimal floats, quoted strings, `1e3` string | Explicit typed failure for timestamps, non-finite/out-of-domain numbers, complex keys and unsupported tags; no coercion waiver |
+| YAML expansion | Bounded bytes, nodes, nesting and alias expansion | New limit/cyclic-alias/multiple-document tests; no emission parity claim |
+| `core.workspace_id` | Exact environment selection, GUID validation and ID precedence | Twelve new actual validator/helper cases; display-name `core.workspace` resolution remains unsupported |
+| `core.repository_directory` | Explicit config-directory-relative path through injected stable-root policy | Actual root-handler/file tests; parent traversal, unresolved aliases, ambient tilde/environment expansion remain explicit path-policy limits |
+| `core.item_types_in_scope` | Source-supported type validation; explicit Notebook publication scope | All other item processors fail preflight; omitted all-type scope does not become Notebook-only success |
+| `core.parameter` | No auto-discovery when absent; optional missing environment remains absent | Configured files fail explicitly; templates, dynamic variables, JSONPath/regex and type-specific parameters remain unported |
+| `publish.skip` | Source booleans and exact environment selection | No mutation when explicitly skipped |
+| `publish.exclude_regex`, `folder_exclude_regex`, `folder_path_to_include`, `items_to_include`, `shortcut_exclude_regex` | Recognized and rejected before writes | Source regex/feature-gating/filter semantics remain unported, not ignored |
+| `unpublish.skip` | Must explicitly resolve true in this bounded publisher | Source omission means unpublish, so omission fails preflight rather than silently pruning or reporting publish-only success |
+| `unpublish.exclude_regex`, `items_to_include` | Recognized and rejected before writes | No deletion, hard-delete/admin feature, pruning or paid-resource provisioning is implemented |
+| `features`, `constants` | Explicit preflight failure | No mutable SDK globals; full source command-local option semantics remain required |
+| CLI `--params` | Max-depth-one dotted keys, JSON typing, backslash normalization and trusted `host_app` override | Malformed/Unicode substring-recovery quirks remain explicit lexical limits; additional kwargs fail typed |
+| `config_override` | Source section/field restrictions and environment-merge behavior | Twelve immutable source cases; exact full aggregate error wording remains incomplete |
+| `--force` / confirmation | Exact source confirmation, silent decline, no automatic approval | Caller-injected UI; native interactive signin is not added |
+| `--bulk_publish` | Explicit unsupported before reads/mutation | No global bulk flags or source-shaped fallback-success |
+| Repository discovery | Complete bounded injected snapshot; original listing order, `.platform` names/IDs, duplicate checks | Root-level Notebooks only; workspace folders, nested resources and other processors fail before service work |
+| Target discovery | Existing SDK completes all bounded pages before selection | Duplicate exact Notebook names and invalid IDs fail; existing folder move requirement fails before writes |
+| Planning/transforms | Preflight every Notebook using the existing logical/default-workspace-ID codec | Unknown/new referenced IDs fail, never dummy IDs; full cross-type ordering, cycles and sequential dependency resolution remain required |
+| Notebook create/update | Existing definition codec; actual source field order, empty folder ID, metadata-updating definition endpoint | Two fixed actual publisher wire receipts; tests assert exact body bytes and actual returned IDs |
+| Operations/reconciliation | Existing shared operation engine; sequential mutations, actual LRO result and original uncertainty | New root tests retain accepted failures/writer failures; no POST replay, cleanup deletion or rollback claim |
+| Source wrapper output | Final `Deployment completed successfully`, silent decline, typed deployment failure | Existing shared stream renderer; original completed/uncertain evidence survives output delivery failure |
+
+### Item processor ledger
+
+The bounded `Notebook` processor uses the original native loader/transforms and
+publisher. It does not reinterpret arbitrary definitions as Notebook content.
+The following exact source item types are recognized but **not ported** in this
+config checkpoint: `VariableLibrary`, `Warehouse`, `MirroredDatabase`,
+`Lakehouse`, `SQLDatabase`, `CosmosDBDatabase`, `Environment`, `UserDataFunction`,
+`Eventhouse`, `SparkJobDefinition`, `SemanticModel`, `Report`, `PaginatedReport`,
+`CopyJob`, `DataBuildToolJob`, `KQLDatabase`, `KQLQueryset`, `Dataflow`,
+`DataPipeline`, `Reflex`, `Eventstream`, `KQLDashboard`, `GraphQLApi`,
+`ApacheAirflowJob`, `MountedDataFactory`, `Ontology`, `DataAgent`, `MLExperiment`,
+`Map`, `GraphModel`, `OrgApp`, and `OrgAppAudience`.
+
+Each needs its own pinned preprocessing/dependency/provisioning/publication and
+unpublication consumers. Raw generic definition import is not a replacement for
+those processors. Parameter adapters and source item-function inventories are
+dependencies, not a basis for estimating those ports as complete. Full config
+validation/diagnostics and folder support are further independent microbatches.
+Pruning/paid/admin behavior requires an explicit execution policy and offline
+proof; a source flag is never authorization for live work.
+
+### Evidence and definition of done
+
+`fabric-deploy/tests/config_reference.py` captures twelve actual unchanged
+`ConfigValidator` override/structure/section/environment and config utility
+functions, without package/auth initialization or filesystem path resolution.
+`publish_reference.py` executes actual `NotebookPublisher.publish_one`,
+`FabricWorkspace._publish_item` and its filters/transforms, plus the original
+`File.base64_payload` property against a recording synthetic endpoint. The two
+fixed wire receipts were captured before native expected outputs. No existing
+fixture was regenerated. Exact duplicate error diagnostics, complete YAML
+scalar domains and cross-platform fixture-path metadata remain separate limits.
+
+Run from `rust/` with an authorized build lease:
+
+```text
+python -B crates/fabric-deploy/tests/config_reference.py --reference-root <exact-cicd-checkout>
+python -B crates/fabric-deploy/tests/publish_reference.py --reference-root <exact-cicd-checkout>
+cargo test --offline --locked -p fabric-deploy
+cargo test --offline --locked -p fabric-cli --features native-read --test deploy_mount
+cargo clippy --offline --locked -p fabric-deploy -p fabric-cli --all-targets --features native-read -- -D warnings
+```
+
+These are required commands, not passed results. The previous 50 bounded
+production happy paths, default/native suites, strict Clippy, workspace/docs and
+independent pinned comparisons remain gates. Full deployment completion requires
+all field/type/behavior rows above, public native and root-argv proofs, failed/
+cancelled/partial/uncertain outcomes, precise platform evidence and independent
+source comparison. Neither one new happy vertical nor a command count closes
+that definition of done.

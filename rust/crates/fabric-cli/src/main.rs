@@ -54,6 +54,7 @@ fn run() -> io::Result<ExitCode> {
             invocation @ (Invocation::Access(_)
             | Invocation::Resource(_)
             | Invocation::Transfer(_)
+            | Invocation::Deploy(_)
             | Invocation::Table(_)),
         ) => {
             return native_read::run_family(&invocation);
@@ -63,6 +64,7 @@ fn run() -> io::Result<ExitCode> {
             Invocation::Access(_)
             | Invocation::Resource(_)
             | Invocation::Transfer(_)
+            | Invocation::Deploy(_)
             | Invocation::Table(_),
         ) => (
             CommandError {

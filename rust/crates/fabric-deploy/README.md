@@ -2,11 +2,35 @@
 
 # Native Notebook deployment and definition transfer
 
-This crate implements a bounded **single-Notebook** path, not the full Python
-`fab deploy` command. It loads real local files, performs supported native
+This crate implements bounded native Notebook deployment, not full Python
+`fab deploy` parity. The original **single-Notebook** path loads real local files, performs supported native
 transforms, builds inline-base64 definition parts, discovers an existing
 Notebook by exact name/type, and creates or updates it through `fabric-sdk`.
 Asynchronous operations are polled to terminal state; accepted is not completed.
+
+The additive `yaml`, `deployment_config`, `repository`, and `publish` modules
+compose real YAML configuration, exact environment selection/overrides, injected
+bounded repository discovery, complete SDK item paging, preflight and sequential
+Notebook publication. `PreparedNotebook::publish_with_session` preserves the
+pinned CICD create/update body, including field order and the empty root folder
+ID, using the existing shared operation engine. The original single-item API and
+definition-transfer consumers remain available unchanged.
+
+The CLI's dedicated `Invocation::Deploy` selects `fabric_cli::deploy::DeployHost`,
+which uses this engine with caller-owned files, confirmation and the same HTTP
+adapter/credential/runtime. Config paths resolve relative to the explicit local
+root; repository paths resolve relative to the config directory. The first
+bounded config requires `core.workspace_id`, `core.repository_directory`,
+`core.item_types_in_scope: [Notebook]`, and explicit `unpublish.skip: true`.
+No parameter file is auto-discovered. Other processors, configured parameters,
+folder moves, features/constants, filters, bulk publication and unpublication
+fail explicitly before writes; they are not silently ignored or counted as a
+completed full deployment port. See the [field/type ledger](../../docs/deployment-compatibility.md#config-driven-checkpoint-october-27).
+
+This checkpoint is source-ready; native compilation and execution results must
+be recorded separately. New source-derived receipts cover twelve real config
+validator/settings cases and two actual Notebook publisher request bodies.
+Source captures, native test registration and a passing native run are distinct.
 
 The additive `definitions` module supplies generic ordered definition reads,
 caller-injected local export and raw copy/SET codec APIs. It is not the full
@@ -82,7 +106,7 @@ hostile concurrent filesystem replacement is not a supported isolation boundary.
 The default aggregate input/output content limit is 10 MiB. Base64/JSON wire
 encoding adds bounded overhead to that content.
 
-This slice does not support YAML deployment files, JSONPath or Python-regex
+The original single-Notebook API does not interpret YAML deployment files, JSONPath or Python-regex
 parameterization, environment expansion, dependency planning, dynamic metadata
 resolution, folder placement/moves, arbitrary notebook resources, bulk publishing,
 or unpublishing. A repository-level driver must not silently drop unsupported

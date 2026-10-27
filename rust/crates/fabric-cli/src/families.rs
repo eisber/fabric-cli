@@ -4,6 +4,7 @@
 //! Central family composition over the existing command-local metadata session.
 
 pub(crate) mod context;
+mod deploy_http;
 
 use crate::{errors, parser::Invocation, session::ReadSession};
 use context::CommandContext;
@@ -56,6 +57,8 @@ pub enum FamilyEvidence {
     Storage(Result<OneLakeWriteResult, OneLakeWriteError>),
     /// Definition transfer retains original operation IDs and file progress.
     Transfer(Result<TransferResult, TransferError>),
+    /// Config deployment retains actual completed IDs and uncertain operations.
+    Deploy(Result<crate::deploy::DeployResult, crate::deploy::DeployError>),
     /// Original table, storage, generic-operation and maintenance-job evidence.
     Table(crate::tables::TableEvidence),
 }
@@ -141,6 +144,7 @@ impl FamilySession<'_, '_> {
             Invocation::Local(command) => command.output_format.as_deref(),
             Invocation::Resource(command) => command.args().output_format.as_deref(),
             Invocation::Transfer(command) => command.output_format.as_deref(),
+            Invocation::Deploy(command) => command.output_format.as_deref(),
             _ => None,
         };
         let format = match invocation {
@@ -150,6 +154,32 @@ impl FamilySession<'_, '_> {
             _ => OutputFormat::resolve(explicit, configured.or(Some("text")))?,
         };
         let timestamp = self.reads.timestamp.clone();
+        if let Invocation::Deploy(command) = invocation {
+            let executor = deploy_http::DeployHttp(self.http);
+            let result = if let Some(files) = self.transfer_files.as_deref_mut() {
+                crate::deploy::DeployHost {
+                    client: self.reads.sdk,
+                    executor: &executor,
+                    files,
+                    ui: self.transfer_ui,
+                    definition_limits: Default::default(),
+                    yaml_limits: Default::default(),
+                    operation_limits: Default::default(),
+                }
+                .execute(command, cancelled.as_mut())
+                .await
+            } else {
+                Err(crate::deploy::DeployError {
+                    failure: crate::deploy::DeployFailure::Command(errors::unsupported(
+                        "Deployment requires an explicit stable local file root",
+                    )),
+                })
+            };
+            return Ok(FamilyOutput {
+                plan: crate::deploy::render(&result, timestamp, format)?,
+                evidence: FamilyEvidence::Deploy(result),
+            });
+        }
         let mut context = CommandContext::default();
         let current = match context
             .resolve(
@@ -513,6 +543,7 @@ impl FamilySession<'_, '_> {
             Invocation::Access(command) => command.command_name(),
             Invocation::Resource(command) => command.name(),
             Invocation::Transfer(command) => command.kind.as_str(),
+            Invocation::Deploy(_) => "deploy",
             _ => "command",
         };
         let plan = text::render(
