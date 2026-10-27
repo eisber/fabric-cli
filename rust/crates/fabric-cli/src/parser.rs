@@ -288,9 +288,8 @@ fn family_invocation(matches: &clap::ArgMatches) -> Result<Invocation, clap::Err
     {
         return Ok(Invocation::Local(command));
     }
-    if let Some(command) =
-        fabric_cli_resources::frontdoor::AccessCommand::from_matches(matches)
-            .map_err(|_| invalid_arguments())?
+    if let Some(command) = fabric_cli_resources::frontdoor::AccessCommand::from_matches(matches)
+        .map_err(|_| invalid_arguments())?
     {
         return Ok(Invocation::Access(command));
     }

@@ -64,6 +64,32 @@ impl Lookup for Snapshot {
 }
 
 impl Snapshot {
+    #[cfg(feature = "native-read")]
+    pub(crate) fn ready(&self, request: LookupRequest<'_>) -> bool {
+        self.loaded.contains(&scope(request))
+    }
+
+    #[cfg(feature = "native-read")]
+    pub(crate) async fn load_lookup(
+        &mut self,
+        session: &ReadSession<'_>,
+        parent: Arc<Element>,
+        kind: LookupKind,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<(), CommandError> {
+        let scope = scope(LookupRequest {
+            parent: &parent,
+            kind,
+            name: "",
+        });
+        self.load(session, scope, parent, cancelled).await
+    }
+
+    #[cfg(feature = "native-read")]
+    pub(crate) fn elements(&self) -> &[Arc<Element>] {
+        &self.elements
+    }
+
     pub(crate) async fn resolve(
         &mut self,
         session: &ReadSession<'_>,

@@ -5,7 +5,7 @@
 
 use fabric_cli::{
     HostError,
-    parser::{JobMutationCommand, JobReadCommand, JobRunCommand, ReadCommand},
+    parser::{Invocation, JobMutationCommand, JobReadCommand, JobRunCommand, ReadCommand},
 };
 use serde_json::json;
 use std::{
@@ -28,6 +28,7 @@ enum NativeCommand<'a> {
     Job(&'a JobReadCommand),
     JobExecution(&'a JobRunCommand),
     JobMutation(&'a JobMutationCommand),
+    Family(&'a Invocation),
 }
 
 fn failure(code: &'static str, message: impl Into<String>, exit: u8) -> Failure {
@@ -75,6 +76,10 @@ pub(crate) fn run_job_execution(command: &JobRunCommand) -> io::Result<ExitCode>
 
 pub(crate) fn run_job_mutation(command: &JobMutationCommand) -> io::Result<ExitCode> {
     run_command(NativeCommand::JobMutation(command))
+}
+
+pub(crate) fn run_family(command: &Invocation) -> io::Result<ExitCode> {
+    run_command(NativeCommand::Family(command))
 }
 
 fn run_command(command: NativeCommand<'_>) -> io::Result<ExitCode> {
@@ -143,6 +148,7 @@ fn run_selected(
         NativeCommand::Job(command) => command.skill.as_deref(),
         NativeCommand::JobExecution(command) => command.skill.as_deref(),
         NativeCommand::JobMutation(command) => command.skill.as_deref(),
+        NativeCommand::Family(_) => None,
     };
     fabric_sdk_jobs::JobRequestHeaders::with_skill(skill).map_err(|_| {
         failure(
@@ -300,6 +306,7 @@ async fn execute(
         NativeCommand::JobMutation(command) => {
             execute_job(&session, &executor, &command.family_command()).await
         }
+        NativeCommand::Family(command) => execute_family(&session, &executor, command).await,
     };
     match result {
         Ok(plan) => Ok(plan),
@@ -334,6 +341,247 @@ async fn execute_job(
     .await
 }
 
+#[cfg(windows)]
+async fn execute_family(
+    session: &fabric_cli::session::ReadSession<'_>,
+    executor: &fabric_sdk_http::HttpExecutor,
+    command: &Invocation,
+) -> Result<fabric_cli_output::text::TextPlan, fabric_cli_output::text::TextError> {
+    use fabric_cli_context::PathElement;
+    use fabric_cli_local::NavigationState;
+    use fabric_cli_mutations::frontdoor::ResourceCommand;
+    use fabric_cli_output::text::{self, OutputFormat, Presentation, TextOptions};
+
+    let result = async {
+        let store = crate::local_host::store()?;
+        store.initialize()?;
+        let local_root = std::env::current_dir()?;
+        let mut navigation = NavigationState::new(
+            PathElement::from_fabric(session.tenant.clone()),
+            session.home.clone(),
+            local_root.to_string_lossy().into_owned(),
+            crate::local_host::session_id()?,
+            true,
+        )?;
+        let mut effects = NativeLocalEffects {
+            base: crate::local_host::Effects,
+            identity: fabric_cli_local::BrowserIdentity {
+                user: true,
+                claims: vec![
+                    ("upn".into(), session.sdk.selection().account().into()),
+                    ("tid".into(), session.sdk.selection().tenant().into()),
+                ],
+            },
+            capacities: None,
+        };
+        if matches!(command, Invocation::Local(local)
+                if matches!(&local.command, fabric_cli_local::LocalCommand::ConfigSet { key, .. }
+                    if key.eq_ignore_ascii_case("default_capacity")))
+        {
+            let list = session
+                .sdk
+                .list_capacities(session.executor, Default::default(), std::future::pending())
+                .await
+                .map_err(|_| {
+                    fabric_cli_local::LocalError::command(
+                        "ReadFailed",
+                        "Capacity metadata did not complete",
+                    )
+                })?;
+            effects.capacities = Some(
+                list.value
+                    .into_iter()
+                    .map(|capacity| fabric_cli_local::Capacity {
+                        display_name: capacity.display_name,
+                        id: capacity.id,
+                    })
+                    .collect(),
+            );
+        }
+        if matches!(
+            command,
+            Invocation::Resource(
+                ResourceCommand::Remove { force: false, .. }
+                    | ResourceCommand::Set { force: false, .. }
+                    | ResourceCommand::Link { force: false, .. }
+                    | ResourceCommand::Start { force: false, .. }
+                    | ResourceCommand::Stop { force: false, .. }
+                    | ResourceCommand::Assign { force: false, .. }
+                    | ResourceCommand::Unassign { force: false, .. }
+                    | ResourceCommand::Move { force: false, .. }
+            )
+        ) {
+            return Err(fabric_cli_local::LocalError::command(
+                "NotSupported",
+                "Native resource confirmation requires an injected UI; use --force explicitly",
+            ));
+        }
+        let mut mutations = NativeMutationUi::default();
+        let mut files =
+            fabric_cli_transfer::LocalTransferFiles::new(local_root, None, Default::default())?;
+        let mut families = fabric_cli::families::FamilySession {
+            reads: session,
+            http: executor,
+            store: &store,
+            navigation: &mut navigation,
+            local: &mut effects,
+            mutations: &mut mutations,
+            confirmation: None,
+            transfer_ui: &NativeTransferUi,
+            transfer_files: Some(&mut files),
+            resource_files: None,
+        };
+        let mut output = families.dispatch(command, std::future::pending()).await?;
+        let mut notices = std::mem::take(&mut mutations.records);
+        notices.append(&mut output.plan.records);
+        output.plan.records = notices;
+        Ok::<_, fabric_cli_local::LocalError>(output.plan)
+    }
+    .await;
+    match result {
+        Ok(plan) => Ok(plan),
+        Err(fabric_cli_local::LocalError::Text(error)) => Err(error),
+        Err(error) => text::render(
+            &error
+                .command_error()
+                .envelope(session.timestamp.clone(), None),
+            OutputFormat::Json,
+            &TextOptions::default(),
+            &text::ascii_width,
+            Presentation::default(),
+        ),
+    }
+}
+
+#[cfg(windows)]
+struct NativeLocalEffects {
+    base: crate::local_host::Effects,
+    identity: fabric_cli_local::BrowserIdentity,
+    capacities: Option<Vec<fabric_cli_local::Capacity>>,
+}
+
+#[cfg(windows)]
+impl fabric_cli_local::LocalEffects for NativeLocalEffects {
+    fn clear_cli_cache(&mut self) -> Result<(), fabric_cli_local::LocalError> {
+        self.base.clear_cli_cache()
+    }
+    fn capacities(
+        &mut self,
+    ) -> Result<Vec<fabric_cli_local::Capacity>, fabric_cli_local::LocalError> {
+        self.capacities.clone().ok_or_else(|| {
+            fabric_cli_local::LocalError::command(
+                "NotConfigured",
+                "Capacity metadata is not loaded",
+            )
+        })
+    }
+    fn browser_identity(
+        &self,
+    ) -> Result<fabric_cli_local::BrowserIdentity, fabric_cli_local::LocalError> {
+        Ok(self.identity.clone())
+    }
+    fn open_browser(&mut self, url: &str) -> Result<(), fabric_cli_local::LocalError> {
+        self.base.open_browser(url)
+    }
+    fn clear_terminal(&mut self) -> Result<(), fabric_cli_local::LocalError> {
+        self.base.clear_terminal()
+    }
+}
+
+#[cfg(windows)]
+#[derive(Default)]
+struct NativeMutationUi {
+    records: Vec<fabric_cli_output::RenderPlan>,
+}
+
+#[cfg(windows)]
+impl fabric_cli_mutations::MutationUi for NativeMutationUi {
+    fn notice(&mut self, kind: fabric_cli_mutations::NoticeKind, message: &str) {
+        use fabric_cli_output::{
+            OutputStream,
+            text::{self, Presentation, Style},
+        };
+        let plan = match kind {
+            fabric_cli_mutations::NoticeKind::Warning => text::render_notice(
+                text::Notice::Warning(message),
+                None,
+                Presentation::default(),
+            ),
+            _ => text::render_line(
+                message,
+                Style::Grey,
+                OutputStream::Stderr,
+                Presentation::default(),
+            ),
+        };
+        self.records.extend(plan.records);
+    }
+    fn confirm<'a>(&'a mut self, _: &'a str) -> fabric_cli_mutations::CommandFuture<'a, bool> {
+        Box::pin(async { false })
+    }
+}
+
+#[cfg(windows)]
+struct NativeTransferUi;
+
+#[cfg(windows)]
+impl fabric_cli_transfer::TransferUi for NativeTransferUi {
+    fn emit(
+        &self,
+        event: fabric_cli_transfer::TransferEvent,
+    ) -> Result<(), fabric_cli_output::CommandError> {
+        use fabric_cli_output::{
+            CommandError, OutputStream,
+            text::{self, Presentation, Style},
+        };
+        let plan = match event {
+            fabric_cli_transfer::TransferEvent::Grey(message) => text::render_line(
+                &message,
+                Style::Grey,
+                OutputStream::Stderr,
+                Presentation::default(),
+            ),
+            fabric_cli_transfer::TransferEvent::Warning(message) => text::render_notice(
+                text::Notice::Warning(&message),
+                None,
+                Presentation::default(),
+            ),
+        };
+        plan.write_to(&mut io::stdout().lock(), &mut io::stderr().lock())
+            .map_err(|error| {
+                CommandError::new(Some(error.to_string()), Some("LocalIOError".into()))
+            })
+    }
+    fn confirm<'a>(
+        &'a self,
+        _: &'a str,
+    ) -> fabric_cli_transfer::TransferFuture<'a, Result<bool, fabric_cli_output::CommandError>>
+    {
+        Box::pin(async {
+            Err(fabric_cli_output::CommandError::new(
+                Some(
+                    "Native transfer confirmation requires an injected UI; use --force explicitly"
+                        .into(),
+                ),
+                Some("NotSupported".into()),
+            ))
+        })
+    }
+    fn select<'a>(
+        &'a self,
+        _: &'a [String],
+    ) -> fabric_cli_transfer::TransferFuture<'a, Result<Vec<String>, fabric_cli_output::CommandError>>
+    {
+        Box::pin(async {
+            Err(fabric_cli_output::CommandError::new(
+                Some(
+                    "Native export selection requires an injected UI; use --all explicitly".into(),
+                ),
+                Some("NotSupported".into()),
+            ))
+        })
+    }
+}
 #[cfg(windows)]
 struct NativeJobUi;
 

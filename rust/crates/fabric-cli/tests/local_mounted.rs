@@ -16,7 +16,9 @@ impl Root {
     fn new() -> Self {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let path = std::env::temp_dir().join(format!(
-            "fabric-mounted-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed),
+            "fabric-mounted-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
         ));
         fs::create_dir(&path).unwrap();
         Self(path)
@@ -37,14 +39,22 @@ fn invoke(root: &Path, args: &[&str]) -> Output {
             command.env(name, value);
         }
     }
-    command.env("FAB_RUST_CONFIG_ROOT", root)
+    command
+        .env("FAB_RUST_CONFIG_ROOT", root)
         .env("FAB_RUST_SESSION_ID", "37")
-        .current_dir(root).args(args).output().unwrap()
+        .current_dir(root)
+        .args(args)
+        .output()
+        .unwrap()
 }
 
 fn success(output: &Output) {
-    assert!(output.status.success(), "stdout={} stderr={}",
-        String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
@@ -75,11 +85,17 @@ fn config_set_get_list_and_cache_have_real_file_effects_without_identity() {
 #[test]
 fn navigation_persists_only_its_explicit_session_and_pwd_uses_stderr() {
     let root = Root::new();
-    success(&invoke(&root.0, &["config", "set", "context_persistence_enabled", "true"]));
+    success(&invoke(
+        &root.0,
+        &["config", "set", "context_persistence_enabled", "true"],
+    ));
     let cd = invoke(&root.0, &["cd", "/"]);
     success(&cd);
     assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&fs::read(root.0.join("context-37.json")).unwrap()).unwrap(),
+        serde_json::from_slice::<serde_json::Value>(
+            &fs::read(root.0.join("context-37.json")).unwrap()
+        )
+        .unwrap(),
         serde_json::json!({"path": "/"}),
     );
     let pwd = invoke(&root.0, &["pwd"]);

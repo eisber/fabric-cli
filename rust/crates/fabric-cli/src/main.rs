@@ -5,9 +5,9 @@
 
 #[cfg(feature = "windows-broker")]
 mod auth;
+mod local_host;
 #[cfg(feature = "native-read")]
 mod native_read;
-mod local_host;
 
 #[cfg(not(feature = "native-read"))]
 use fabric_cli::HostError;
@@ -35,12 +35,28 @@ fn run() -> io::Result<ExitCode> {
             write!(io::stdout().lock(), "{text}")?;
             return Ok(ExitCode::SUCCESS);
         }
+        #[cfg(feature = "native-read")]
+        Ok(invocation @ Invocation::Local(_)) if matches!(&invocation, Invocation::Local(command) if local_host::needs_remote(command)) =>
+        {
+            return native_read::run_family(&invocation);
+        }
         Ok(Invocation::Local(command)) => return local_host::run(&command),
         Ok(Invocation::Access(command))
-            if matches!(command.kind, fabric_cli_resources::frontdoor::AccessKind::LabelListLocal) =>
+            if matches!(
+                command.kind,
+                fabric_cli_resources::frontdoor::AccessKind::LabelListLocal
+            ) =>
         {
             return local_host::local_access(&command);
         }
+        #[cfg(feature = "native-read")]
+        Ok(
+            invocation
+            @ (Invocation::Access(_) | Invocation::Resource(_) | Invocation::Transfer(_)),
+        ) => {
+            return native_read::run_family(&invocation);
+        }
+        #[cfg(not(feature = "native-read"))]
         Ok(Invocation::Access(_) | Invocation::Resource(_) | Invocation::Transfer(_)) => (
             CommandError {
                 code: "NotConfigured",

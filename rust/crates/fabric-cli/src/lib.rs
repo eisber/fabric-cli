@@ -8,6 +8,8 @@
 //! supplies these explicitly; default builds never discover credentials.
 
 mod errors;
+#[cfg(feature = "native-read")]
+pub mod families;
 mod folder_reads;
 pub mod jobs;
 pub mod local_commands;

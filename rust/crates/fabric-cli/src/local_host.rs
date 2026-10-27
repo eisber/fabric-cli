@@ -19,18 +19,31 @@ pub(crate) fn timestamp() -> Result<Timestamp, LocalError> {
     let now = azure_core::time::OffsetDateTime::now_utc();
     Ok(Timestamp::parse(format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:06}Z",
-        now.year(), u8::from(now.month()), now.day(), now.hour(), now.minute(),
-        now.second(), now.microsecond(),
+        now.year(),
+        u8::from(now.month()),
+        now.day(),
+        now.hour(),
+        now.minute(),
+        now.second(),
+        now.microsecond(),
     ))?)
 }
 
 pub(crate) fn store() -> Result<ConfigStore, LocalError> {
     let root = std::env::var_os("FAB_RUST_CONFIG_ROOT")
         .filter(|root| !root.is_empty())
-        .ok_or_else(|| LocalError::command("NotConfigured", "Local commands require FAB_RUST_CONFIG_ROOT"))?;
+        .ok_or_else(|| {
+            LocalError::command(
+                "NotConfigured",
+                "Local commands require FAB_RUST_CONFIG_ROOT",
+            )
+        })?;
     let root = PathBuf::from(root);
     if !root.is_absolute() {
-        return Err(LocalError::command("InvalidInput", "The configuration root must be absolute"));
+        return Err(LocalError::command(
+            "InvalidInput",
+            "The configuration root must be absolute",
+        ));
     }
     Ok(ConfigStore::new(root))
 }
@@ -45,11 +58,17 @@ impl LocalEffects for Effects {
     }
 
     fn capacities(&mut self) -> Result<Vec<Capacity>, LocalError> {
-        Err(LocalError::command("NotConfigured", "Capacity selection requires the configured native metadata host"))
+        Err(LocalError::command(
+            "NotConfigured",
+            "Capacity selection requires the configured native metadata host",
+        ))
     }
 
     fn browser_identity(&self) -> Result<BrowserIdentity, LocalError> {
-        Err(LocalError::command("NotConfigured", "Browser identity requires the configured native host"))
+        Err(LocalError::command(
+            "NotConfigured",
+            "Browser identity requires the configured native host",
+        ))
     }
 
     fn open_browser(&mut self, url: &str) -> Result<(), LocalError> {
@@ -70,22 +89,35 @@ fn execute(command: &LocalInvocation, timestamp: Timestamp) -> Result<TextPlan, 
     let tenant = Element::tenant("", "");
     let lookup = HierarchyCatalog::new(Catalog::new(Vec::new()), Vec::new(), Vec::new());
     let mut state = NavigationState::new(
-        PathElement::from_fabric(tenant), HomeContext::Unspecified,
-        std::env::current_dir()?.to_string_lossy().into_owned(), session_id()?, true,
+        PathElement::from_fabric(tenant),
+        HomeContext::Unspecified,
+        std::env::current_dir()?.to_string_lossy().into_owned(),
+        session_id()?,
+        true,
     )?;
     if !matches!(command.command, LocalCommand::Version) {
         state.restore(&store, &lookup)?;
     }
     let mut effects = Effects;
-    let mut host = NavigationHost { state: &mut state, lookup: &lookup, store: &store, effects: &mut effects };
+    let mut host = NavigationHost {
+        state: &mut state,
+        lookup: &lookup,
+        store: &store,
+        effects: &mut effects,
+    };
     fabric_cli::local_commands::dispatch(command, &store, &mut host, timestamp)
 }
 
-fn session_id() -> Result<u32, LocalError> {
+pub(crate) fn session_id() -> Result<u32, LocalError> {
     match std::env::var("FAB_RUST_SESSION_ID") {
-        Ok(value) => value.parse().map_err(|_| LocalError::command("InvalidInput", "Invalid explicit session ID")),
+        Ok(value) => value
+            .parse()
+            .map_err(|_| LocalError::command("InvalidInput", "Invalid explicit session ID")),
         Err(std::env::VarError::NotPresent) => Ok(std::process::id()),
-        Err(_) => Err(LocalError::command("InvalidInput", "Invalid explicit session ID")),
+        Err(_) => Err(LocalError::command(
+            "InvalidInput",
+            "Invalid explicit session ID",
+        )),
     }
 }
 
@@ -94,12 +126,32 @@ pub(crate) fn run(command: &LocalInvocation) -> io::Result<ExitCode> {
     let plan = match execute(command, timestamp.clone()) {
         Ok(plan) => plan,
         Err(error) => text::render(
-            &error.command_error().envelope(timestamp, Some(command.command.command_path().into())),
-            OutputFormat::Json, &TextOptions::default(), &text::ascii_width, Presentation::default(),
-        ).map_err(io::Error::other)?,
+            &error
+                .command_error()
+                .envelope(timestamp, Some(command.command.command_path().into())),
+            OutputFormat::Json,
+            &TextOptions::default(),
+            &text::ascii_width,
+            Presentation::default(),
+        )
+        .map_err(io::Error::other)?,
     };
     plan.write_to(&mut io::stdout().lock(), &mut io::stderr().lock())?;
     Ok(ExitCode::from(plan.exit_code))
+}
+
+#[cfg(feature = "native-read")]
+pub(crate) fn needs_remote(command: &LocalInvocation) -> bool {
+    match &command.command {
+        LocalCommand::Open { .. } => true,
+        LocalCommand::ChangeDirectory { path } => path.join(" ") != "/",
+        LocalCommand::Describe { path } => !path.is_empty() && !path.join(" ").starts_with('.'),
+        LocalCommand::ConfigSet { key, .. } => key.eq_ignore_ascii_case("default_capacity"),
+        LocalCommand::PrintDirectory => {
+            std::env::var("FAB_RUST_CONTEXT").is_ok_and(|path| path != "/")
+        }
+        _ => false,
+    }
 }
 
 pub(crate) fn local_access(
@@ -109,9 +161,16 @@ pub(crate) fn local_access(
     let result = (|| {
         let store = store()?;
         let settings = store.initialize()?;
-        let configured = settings.get("output_format").and_then(serde_json::Value::as_str);
-        let format = command.output_format.unwrap_or(OutputFormat::resolve(None, configured)?);
-        let definitions = settings.get("local_definition_labels").and_then(serde_json::Value::as_str).map(std::path::Path::new);
+        let configured = settings
+            .get("output_format")
+            .and_then(serde_json::Value::as_str);
+        let format = command
+            .output_format
+            .unwrap_or(OutputFormat::resolve(None, configured)?);
+        let definitions = settings
+            .get("local_definition_labels")
+            .and_then(serde_json::Value::as_str)
+            .map(std::path::Path::new);
         fabric_cli::local_commands::access(command, definitions, timestamp.clone(), format)
             .expect("local-only command selected")
             .map_err(LocalError::from)
@@ -124,9 +183,15 @@ pub(crate) fn local_access(
         }
         Err(error) => {
             let plan = text::render(
-                &error.command_error().envelope(timestamp, Some(command.command_name().into())),
-                OutputFormat::Json, &TextOptions::default(), &text::ascii_width, Presentation::default(),
-            ).map_err(io::Error::other)?;
+                &error
+                    .command_error()
+                    .envelope(timestamp, Some(command.command_name().into())),
+                OutputFormat::Json,
+                &TextOptions::default(),
+                &text::ascii_width,
+                Presentation::default(),
+            )
+            .map_err(io::Error::other)?;
             plan.write_to(&mut io::stdout().lock(), &mut io::stderr().lock())?;
             Ok(ExitCode::from(plan.exit_code))
         }
