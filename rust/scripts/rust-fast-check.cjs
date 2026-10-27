@@ -17,6 +17,7 @@ const LANES = Object.freeze({
   'cli-auth': ['fabric-cli', 'fabric-identity'],
   'cli-95': ['fabric-cli', 'fabric-cli-tables', 'fabric-sdk-tables', 'fabric-identity'],
   'windows-auth': ['fabric-cli', 'fabric-identity', 'fabric-identity-windows'],
+  'deploy-mount': ['fabric-deploy', 'fabric-cli'],
 });
 const CI_FILES = [
   '.github/workflows/rust-fast-check.yml', '.github/rust-fast-candidate.json',
@@ -116,7 +117,9 @@ function prepare() {
     transport: selectedLane === 'sdk-values' && packages.includes('fabric-sdk-transport')
       ? ['hyper-rustls'] : []};
   const fingerprint = digest(JSON.stringify({rustc, target, features, lockHash}));
-  const coverage = selectedLane === 'windows-auth'
+  const coverage = selectedLane === 'deploy-mount'
+    ? 'Linux deploy library and actual native-feature root deploy_mount contracts only; no live deployment, whole configuration parity, canonical acceptance or native platform proof'
+    : selectedLane === 'windows-auth'
     ? 'Native Windows x64 broker/native-read compile, reviewed pure auth/identity/lifecycle/hidden-window contracts only; no real authentication, token/cache access, MFA/CA, service proof or full platform acceptance'
     : selectedLane === 'cli-95'
     ? 'Linux default/native CLI, table/auth root consumers and old mounted regressions only; canonical acceptance, real broker, native Windows/macOS and live platform gates remain separate'
@@ -172,7 +175,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     commands.push(cargo('clippy', '--offline', '--locked', ...packages, '--all-targets', '--', '-D', 'warnings'));
     if (cliAuth) commands.push(cargo('clippy', '--offline', '--locked',
       '-p', 'fabric-cli', '--features', 'windows-broker', '--all-targets', '--', '-D', 'warnings'));
-    if (manifest.lane === 'cli-95') commands.push(cargo('clippy', '--offline', '--locked',
+    if (['cli-95', 'deploy-mount'].includes(manifest.lane)) commands.push(cargo('clippy', '--offline', '--locked',
       '-p', 'fabric-cli', '--features', 'native-read', '--all-targets', '--', '-D', 'warnings'));
     if (windowsAuth) {
       for (const feature of ['windows-broker', 'native-read']) commands.push(cargo('clippy',
@@ -184,6 +187,11 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     return commands;
   }
   if (stage === 'test') {
+    if (manifest.lane === 'deploy-mount') return [
+      cargo('test', '--offline', '--locked', '-p', 'fabric-deploy', '--', '--test-threads=1'),
+      cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
+        '--test', 'deploy_mount', '--', '--test-threads=1'),
+    ];
     if (windowsAuth) return [
       cargo('test', '--offline', '--locked', '-p', 'fabric-identity-windows', '--lib',
         '--', '--test-threads=1'),
@@ -232,6 +240,12 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     return commands;
   }
   requireThat(stage === 'family', `Unknown stage: ${stage}`);
+  if (manifest.lane === 'deploy-mount') {
+    requireThat(exists('crates/fabric-cli/tests/deploy_mount.rs'),
+      'Released offline deployment root consumer is missing');
+    return [cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
+      '--features', 'native-read', '--doc', '--', '--test-threads=1')];
+  }
   if (windowsAuth) {
     for (const file of ['crates/fabric-cli/tests/auth_commands.rs',
       'crates/fabric-identity-windows/src/native.rs']) {

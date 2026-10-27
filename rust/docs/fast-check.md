@@ -121,6 +121,16 @@ This receipt-label correction does not change validation commands or product
 behavior; retain the original successful run's metadata and actual command
 receipts separately.
 
+The bounded Linux `deploy-mount` lane checks and strictly lints the selected
+default and native CLI graph, then tests `fabric-deploy` before the actual
+`fabric-cli` `native-read` integration target `deploy_mount`. It additionally
+checks native-feature CLI doctests. Its consumer injects offline HTTP and uses
+temporary files; the finite plan never invokes a real `deploy` command or live
+publication. The receipt explicitly limits evidence to the library/root
+consumer, not broad configuration parity, whole-workspace regression, canonical
+acceptance or native Windows/macOS deployment proof. Source-owner fixes require
+a newly selected immutable source, never oracle weakening or unchanged retries.
+
 Each run executes workspace formatting, selected all-target offline checks and
 Clippy, single-thread tests and doctests, then actual family examples and pinned
 source comparisons. Selected CLI default and `native-read` all-target compilation

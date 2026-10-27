@@ -11,7 +11,7 @@ on:
       lane:
         description: Bounded offline validation family
         type: choice
-        options: [baseline, cli-jobs, endpoint, native-values, sdk-values, cli-auth, cli-95, windows-auth]
+        options: [baseline, cli-jobs, endpoint, native-values, sdk-values, cli-auth, cli-95, windows-auth, deploy-mount]
         default: baseline
 
 permissions:

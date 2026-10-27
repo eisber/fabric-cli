@@ -13,10 +13,29 @@ test('only full source IDs and finite lanes are accepted', () => {
   for (const value of ['abc123', '0'.repeat(40), '--upload-pack=x', 'a'.repeat(40) + ';echo']) {
     assert.equal(sha(value), false);
   }
-  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values', 'cli-auth', 'cli-95', 'windows-auth']) assert.equal(lane(value), value);
+  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values', 'cli-auth', 'cli-95', 'windows-auth', 'deploy-mount']) assert.equal(lane(value), value);
   for (const value of ['__proto__', 'unknown', 'cli-jobs;echo']) assert.throws(() => lane(value));
   assert.throws(() => options(['--source', 'a', '--source', 'b'], ['--source']));
   assert.throws(() => options(['--command', 'echo'], ['--source']));
+});
+
+test('deploy preflight first runs actual library then native root consumer, never live deployment', () => {
+  const manifest = {lane: 'deploy-mount', packages: ['fabric-deploy', 'fabric-cli']};
+  const commands = plan('test', manifest);
+  assert.deepEqual(commands.map(item => item.args), [
+    ['test', '--offline', '--locked', '-p', 'fabric-deploy', '--', '--test-threads=1'],
+    ['test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
+      '--test', 'deploy_mount', '--', '--test-threads=1'],
+  ]);
+  assert.ok(plan('clippy', manifest)[1].args.includes('native-read'));
+  const family = plan('family', manifest, '/target', '/receipts', () => true);
+  assert.equal(family.length, 1);
+  assert.ok(family[0].args.includes('--doc'));
+  for (const item of [...commands, ...family]) {
+    assert.ok(!item.args.includes('run') && !item.args.includes('--config'));
+  }
+  assert.throws(() => plan('family', manifest, '/target', '/receipts', () => false),
+    /Released offline deployment root consumer is missing/);
 });
 
 test('Windows native lane, host and dedicated validation namespace must agree', () => {
