@@ -141,3 +141,14 @@ shapes, fixed scopes, shared credential identity and rejection before
 credential/send where applicable. These are offline synthetic HTTP boundaries,
 not live service, native CLI environment, private-link or whole-SDK parity.
 Existing independent source/oracle fixtures are not rewritten.
+
+The first hosted check of source `679b6d2` (run `40474226296`, CI head
+`12f1058`) passed formatting, compilation and strict Clippy, then failed this
+wire test before committing its first page. Its new synthetic workspace LIST row
+omitted the existing model's required string `type`; `InvalidResponse` was the
+correct production result. The follow-up supplies `"type":"Workspace"` and
+asserts the decoded row's complete required fields. The separate metadata
+fixture intentionally retains its valid ID/name-only shape. No production
+decoder, endpoint/audience guard or protected expectation changes. A corrected
+source checkpoint still needs actual hosted test and source-oracle execution;
+the failed run did not reach those later comparison stages.
