@@ -97,6 +97,30 @@ from the separate unchanged three-OS workflow. It does not prove WAM/MFA/CA,
 service access, all Windows behavior or canonical command acceptance. Read
 existing exact-source provider jobs before dispatching any additional backstop.
 
+On October 27, 2026, the actual Windows x64 backstop
+[run 40525206815](https://github.com/eisber/fabric-cli/actions/runs/40525206815)
+completed successfully on product source
+`03fab20577a1016178de227eac0ee178921bb8d0`, combined CI head
+`801ee480e03f49fadcac55606c5e3dfc09648010` and automation
+`94a6a2fb01d53edba6fa6ddf10887bea0c1ca3f1`. The downloaded receipts match all
+17 finite commands, all exit zero. Native identity library tests passed 19,
+including both hidden-window/STA lifecycle cases; safe identity tests passed two
+and pure broker adapter binary tests passed two. Broker-feature integration
+tests passed 27, native-read binary/integration tests passed 32, and default
+CLI contracts passed 15. These 97 test invocations overlap across features;
+they are not 97 unique cases. The doc target executed zero doctests, which adds
+no coverage. The final source/lock check passed. Native WAM authentication,
+MFA/Conditional Access, service access and full three-platform acceptance remain
+separate gates.
+
+The initial Windows manifest's supplemental metadata-target labels reused the
+Linux labels, while the actual locked fetch correctly restored all three
+declared targets. Subsequent metadata generation shares the same finite target
+helper as execution so labels match the recorded commands on both hosts.
+This receipt-label correction does not change validation commands or product
+behavior; retain the original successful run's metadata and actual command
+receipts separately.
+
 Each run executes workspace formatting, selected all-target offline checks and
 Clippy, single-thread tests and doctests, then actual family examples and pinned
 source comparisons. Selected CLI default and `native-read` all-target compilation

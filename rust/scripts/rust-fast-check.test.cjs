@@ -6,7 +6,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {sha, lane, runnerLane, laneBranch, ciDelta, select, plan, execute, options, requireFastPass} = require('./rust-fast-check.cjs');
+const {sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, select, plan, execute, options, requireFastPass} = require('./rust-fast-check.cjs');
 
 test('only full source IDs and finite lanes are accepted', () => {
   assert.equal(sha('a'.repeat(40)), true);
@@ -53,6 +53,10 @@ test('native Windows plan invokes only finite reviewed library and CLI test cont
   ], target: 'x86_64-pc-windows-msvc'};
   assert.equal(plan('fetch', manifest).length, 3);
   const checks = plan('check', manifest);
+  assert.deepEqual(metadataTargets(manifest.target),
+    ['x86_64-unknown-linux-gnu', 'aarch64-apple-darwin']);
+  assert.deepEqual(plan('fetch', manifest).slice(1).map(item => item.args.at(-1)),
+    metadataTargets(manifest.target));
   assert.ok(checks.some(item => item.args.includes('windows-broker')));
   assert.ok(checks.some(item => item.args.includes('native-read')));
   assert.equal(plan('clippy', manifest).length, 3);
@@ -78,6 +82,8 @@ test('native Windows plan invokes only finite reviewed library and CLI test cont
 
 test('CLI prefetch retains offline architecture checks for all declared metadata targets', () => {
   const target = 'x86_64-unknown-linux-gnu';
+  assert.deepEqual(metadataTargets(target),
+    ['x86_64-pc-windows-msvc', 'aarch64-apple-darwin']);
   const manifest = {lane: 'cli-auth', packages: ['fabric-cli'], target};
   assert.deepEqual(plan('fetch', manifest).map(item => item.args), [
     ['fetch', '--locked', '--target', target],

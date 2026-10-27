@@ -51,6 +51,10 @@ function laneBranch(selectedLane, branch) {
   requireThat(branch.startsWith('validation/rust-fast-windows-') === (selectedLane === 'windows-auth'),
     'Windows auth lane requires its dedicated validation/rust-fast-windows-* namespace');
 }
+function metadataTargets(target) {
+  return ['x86_64-unknown-linux-gnu', 'x86_64-pc-windows-msvc', 'aarch64-apple-darwin']
+    .filter(value => value !== target);
+}
 function command(program, args, cwd = root) {
   return execFileSync(program, args, {cwd, encoding: 'utf8', timeout: 120000}).trim();
 }
@@ -108,8 +112,7 @@ function prepare() {
   const features = {default: true, packages, family: selectedLane,
     nativeRead: packages.includes('fabric-cli') && selectedLane !== 'cli-auth',
     windowsBroker: packages.includes('fabric-cli'),
-    metadataGraphTargets: packages.includes('fabric-cli')
-      ? ['x86_64-pc-windows-msvc', 'aarch64-apple-darwin'] : [],
+    metadataGraphTargets: packages.includes('fabric-cli') ? metadataTargets(target) : [],
     transport: selectedLane === 'sdk-values' && packages.includes('fabric-sdk-transport')
       ? ['hyper-rustls'] : []};
   const fingerprint = digest(JSON.stringify({rustc, target, features, lockHash}));
@@ -147,8 +150,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
   if (stage === 'fetch') {
     commands.push(cargo('fetch', '--locked', '--target', manifest.target));
     if (has('fabric-cli')) {
-      for (const metadataTarget of ['x86_64-unknown-linux-gnu', 'x86_64-pc-windows-msvc', 'aarch64-apple-darwin']
-        .filter(value => value !== manifest.target)) {
+      for (const metadataTarget of metadataTargets(manifest.target)) {
         commands.push(cargo('fetch', '--locked', '--target', metadataTarget));
       }
     }
@@ -462,7 +464,7 @@ function main(args) {
   if (action === 'full') return full(rest);
   throw new Error('Use prepare, run <fmt|fetch|check|clippy|test|family>, finish, publish or full; see docs/fast-check.md');
 }
-module.exports = {LANES, CI_FILES, sha, lane, runnerLane, laneBranch, ciDelta, select, plan, execute, options, requireFastPass};
+module.exports = {LANES, CI_FILES, sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, select, plan, execute, options, requireFastPass};
 if (require.main === module) {
   try { main(process.argv.slice(2)); }
   catch (error) { console.error(`Rust fast check: ${error.message}`); process.exitCode = 1; }
