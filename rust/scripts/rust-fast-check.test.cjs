@@ -13,12 +13,33 @@ test('only full source IDs and finite lanes are accepted', () => {
   for (const value of ['abc123', '0'.repeat(40), '--upload-pack=x', 'a'.repeat(40) + ';echo']) {
     assert.equal(sha(value), false);
   }
-  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values', 'cli-auth', 'cli-95', 'windows-auth', 'deploy-mount', 'native-endpoint', 'output-audit', 'orchestration-audit', 'argv-audit', 'windows-wheelhouse']) assert.equal(lane(value), value);
+  for (const value of ['baseline', 'cli-jobs', 'endpoint', 'native-values', 'sdk-values', 'cli-auth', 'cli-95', 'windows-auth', 'deploy-mount', 'native-endpoint', 'output-audit', 'orchestration-audit', 'argv-audit', 'argv-repair', 'windows-wheelhouse']) assert.equal(lane(value), value);
   for (const value of ['__proto__', 'unknown', 'cli-jobs;echo']) assert.throws(() => lane(value));
   assert.throws(() => options(['--source', 'a', '--source', 'b'], ['--source']));
   assert.throws(() => options(['--command', 'echo'], ['--source']));
 });
 
+test('argv repair isolates four feature binaries and preserves all actual before/after captures', () => {
+  const commands = plan('audit', {lane: 'argv-repair', packages: ['fabric-cli']},
+    '/target', '/receipts');
+  assert.equal(commands.length, 13);
+  for (const index of [0, 2]) {
+    for (const target of ['argv_contract', 'cli_contract', 'job_cli_contract',
+      'job_arguments', 'query_arguments', 'local_mounted']) assert.ok(commands[index].args.includes(target));
+  }
+  assert.ok(!commands[0].args.includes('native-read'));
+  assert.ok(commands[2].args.includes('native-read'));
+  const paths = [0, 2, 5, 7].map(index => commands[index].environment.CARGO_TARGET_DIR);
+  assert.equal(new Set(paths).size, 4);
+  assert.deepEqual([1, 3, 6, 8].map(index => commands[index].args.at(-1)),
+    ['new-default', 'new-native', 'old-default', 'old-native']);
+  assert.ok(commands[4].args.includes('3fa71a553551b49ceb83671f2f45a5ca5c02df21'));
+  assert.equal(commands.slice(9).length, 4);
+  assert.ok(commands.slice(9).every(item => item.args.includes('tests/compatibility/argv_review/capture.py')));
+  assert.throws(() => requireFastPass({lane: 'argv-repair'}, {}));
+  assert.equal(parallelCandidate('argv-repair', 'validation/rust-fast-msit-exact'), true);
+  assert.equal(parallelCandidate('native-endpoint', 'validation/rust-fast-argvfix-exact'), true);
+});
 test('argv baseline keeps independent default and native results without hiding either failure', () => {
   const commands = plan('audit', {lane: 'argv-audit', packages: ['fabric-cli']});
   assert.deepEqual(commands.map(item => item.args), [
@@ -80,7 +101,8 @@ test('only separately approved disjoint hosted families may publish concurrently
   for (const [family, branch] of [
     ['output-audit', 'validation/rust-fast-output-other'],
     ['baseline', 'validation/rust-fast-wheelhouse-exact'],
-    ['windows-wheelhouse', 'validation/rust-fast-msit-exact'],
+    ['windows-wheelhouse', 'validation/rust-fast-unreviewed-exact'],
+    ['native-endpoint', 'validation/rust-fast-msit-other'],
     ['deploy-mount', 'feature/rust'],
   ]) assert.equal(parallelCandidate(family, branch), false);
 });

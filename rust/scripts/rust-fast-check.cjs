@@ -8,6 +8,7 @@ const crypto = require('node:crypto');
 const {execFileSync, spawnSync} = require('node:child_process');
 
 const REPO = 'eisber/fabric-cli';
+const ARGV_BASELINE = '3fa71a553551b49ceb83671f2f45a5ca5c02df21';
 const LANES = Object.freeze({
   baseline: [],
   'cli-jobs': ['fabric-cli', 'fabric-cli-jobs', 'fabric-sdk-jobs', 'fabric-sdk-paging'],
@@ -22,6 +23,7 @@ const LANES = Object.freeze({
   'output-audit': ['fabric-cli', 'fabric-cli-output'],
   'orchestration-audit': ['fabric-cli'],
   'argv-audit': ['fabric-cli'],
+  'argv-repair': ['fabric-cli'],
   'windows-wheelhouse': [],
 });
 const CI_FILES = [
@@ -68,7 +70,8 @@ function laneBranch(selectedLane, branch) {
   requireThat(branch.startsWith('validation/rust-fast-msit-') === (selectedLane === 'native-endpoint'),
     'Native endpoint lane requires its dedicated validation/rust-fast-msit-* namespace');
   for (const [family, prefix] of [['windows-wheelhouse', 'wheelhouse'],
-    ['output-audit', 'output'], ['orchestration-audit', 'orchestration'], ['argv-audit', 'argv']]) {
+    ['output-audit', 'output'], ['orchestration-audit', 'orchestration'], ['argv-audit', 'argv'],
+    ['argv-repair', 'argvfix']]) {
     requireThat(branch.startsWith(`validation/rust-fast-${prefix}-`) === (selectedLane === family),
       `${family} requires its dedicated immutable validation namespace`);
   }
@@ -138,7 +141,7 @@ function prepare() {
     transport: selectedLane === 'sdk-values' && packages.includes('fabric-sdk-transport')
       ? ['hyper-rustls'] : []};
   const fingerprint = digest(JSON.stringify({rustc, target, features, lockHash}));
-  const coverage = selectedLane.endsWith('-audit')
+  const coverage = selectedLane.endsWith('-audit') || selectedLane === 'argv-repair'
     ? 'Independent baseline observations only; every finite command attempted and each exit retained, expected divergences remain failures; no compatibility gate or live proof'
     : selectedLane === 'native-endpoint'
     ? 'Exact native endpoint union, default/native CLI and affected SDK/source contracts on this actual host; no live auth/network, MSIT permission, deployment or platform acceptance inferred'
@@ -175,7 +178,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       python(`tests/compatibility/output/${reference}`, ...extra, '--observed', file));
   };
   if (stage === 'audit') {
-    requireThat(['output-audit', 'orchestration-audit', 'argv-audit'].includes(manifest.lane),
+    requireThat(['output-audit', 'orchestration-audit', 'argv-audit', 'argv-repair'].includes(manifest.lane),
       'Independent failure collection is restricted to explicit audit lanes');
     if (manifest.lane === 'output-audit') return [
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli-output',
@@ -189,6 +192,36 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
         '--test', 'argv_contract', '--', '--test-threads=1'),
     ];
+    if (manifest.lane === 'argv-repair') {
+      const old = path.join(target, 'argv-old');
+      const selectors = ['argv_contract', 'cli_contract', 'job_cli_contract', 'job_arguments',
+        'query_arguments', 'local_mounted'].flatMap(name => ['--test', name]);
+      const snapshot = label => ({program: 'node',
+        args: ['scripts/rust-fast-check.cjs', 'argv-snapshot', label]});
+      const isolated = (label, item) => ({...item, environment: {
+        CARGO_TARGET_DIR: path.join(target, label),
+      }});
+      return [
+        isolated('new-default', cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
+          ...selectors, '--', '--test-threads=1')),
+        snapshot('new-default'),
+        isolated('new-native', cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
+          '--features', 'native-read', ...selectors, '--', '--test-threads=1')),
+        snapshot('new-native'),
+        {program: 'git', args: ['worktree', 'add', '--detach', old, ARGV_BASELINE]},
+        isolated('old-default', cargo('build', '--offline', '--locked', '--manifest-path',
+          path.join(old, 'rust', 'Cargo.toml'), '-p', 'fabric-cli', '--bin', 'fab-rs')),
+        snapshot('old-default'),
+        isolated('old-native', cargo('build', '--offline', '--locked', '--manifest-path',
+          path.join(old, 'rust', 'Cargo.toml'), '-p', 'fabric-cli',
+          '--features', 'native-read', '--bin', 'fab-rs')),
+        snapshot('old-native'),
+        ...['new-default', 'new-native', 'old-default', 'old-native'].map(label =>
+          python('tests/compatibility/argv_review/capture.py', '--output',
+            path.join(output, `argv-capture-${label}.json`), '--rust-binary',
+            path.join(target, 'argv-snapshots', label))),
+      ];
+    }
     const capture = 'tests/compatibility/orchestration/capture.py';
     const probe = path.join(target, 'debug', 'examples', 'read_session_probe');
     return [
@@ -439,6 +472,7 @@ function execute(commands, cwd, run = spawnSync, collectFailures = false) {
     let result;
     try {
       result = run(item.program, item.args, {cwd, shell: false, timeout: 300000,
+        ...(item.environment ? {env: {...process.env, ...item.environment}} : {}),
         stdio: ['ignore', fd === undefined ? 'inherit' : fd, err === undefined ? 'inherit' : err]});
     } finally {
       if (fd !== undefined) fs.closeSync(fd);
@@ -446,7 +480,8 @@ function execute(commands, cwd, run = spawnSync, collectFailures = false) {
     }
     results.push({program: item.program, args: item.args, startedAt,
       completedAt: new Date().toISOString(), exit: result.status, signal: result.signal,
-      error: result.error?.message, stdout: item.stdout, stderr: item.stderr});
+      error: result.error?.message, stdout: item.stdout, stderr: item.stderr,
+      environment: item.environment});
     if (!collectFailures && (result.error || result.signal || result.status !== 0)) break;
   }
   return results;
@@ -457,7 +492,7 @@ function runStage(stage) {
     'Hosted preflight must use one Cargo job and one test thread');
   requireThat(process.env.CARGO_TARGET_DIR && path.isAbsolute(process.env.CARGO_TARGET_DIR),
     'An absolute private CARGO_TARGET_DIR is required');
-  const audit = stage === 'audit' && ['output-audit', 'orchestration-audit', 'argv-audit'].includes(manifest.lane);
+  const audit = stage === 'audit' && ['output-audit', 'orchestration-audit', 'argv-audit', 'argv-repair'].includes(manifest.lane);
   const commands = plan(stage, manifest, process.env.CARGO_TARGET_DIR, receipts).map((item, index) =>
     audit ? {...item, stdout: item.stdout || path.join(receipts, `audit-${index}-stdout.txt`),
       stderr: path.join(receipts, `audit-${index}-stderr.txt`)} : item);
@@ -500,10 +535,40 @@ function options(args, allowed) {
 }
 function parallelCandidate(selectedLane, branch) {
   const families = {'output-audit': 'output', 'orchestration-audit': 'orchestration',
-    'argv-audit': 'argv', 'windows-wheelhouse': 'wheelhouse', 'deploy-mount': 'deploy'};
+    'argv-audit': 'argv', 'argv-repair': 'argvfix', 'native-endpoint': 'msit',
+    'windows-wheelhouse': 'wheelhouse', 'deploy-mount': 'deploy'};
   const current = Object.entries(families).find(([, prefix]) =>
     branch?.startsWith(`validation/rust-fast-${prefix}-`))?.[0];
   return Object.hasOwn(families, selectedLane) && current !== undefined && current !== selectedLane;
+}
+function argvSnapshot(label) {
+  requireThat(['new-default', 'new-native', 'old-default', 'old-native'].includes(label),
+    'Unknown argv binary label');
+  requireThat(receipts && path.isAbsolute(receipts) && process.env.CARGO_TARGET_DIR &&
+    path.isAbsolute(process.env.CARGO_TARGET_DIR), 'Private absolute argv paths required');
+  const manifest = JSON.parse(fs.readFileSync(path.join(receipts, 'manifest.json')));
+  requireThat(manifest.lane === 'argv-repair' && manifest.target === 'x86_64-unknown-linux-gnu',
+    'Binary snapshots are restricted to the explicit Linux argv repair lane');
+  const old = label.startsWith('old-');
+  const source = old ? ARGV_BASELINE : manifest.source;
+  const checkout = old ? path.join(process.env.CARGO_TARGET_DIR, 'argv-old') : root;
+  requireThat(command('git', ['rev-parse', 'HEAD'], checkout) === (old ? source : manifest.head),
+    'Argv source checkout moved');
+  requireThat(command('git', ['status', '--porcelain', '--untracked-files=all'], checkout) === '',
+    'Argv build mutated its source');
+  const binary = path.join(process.env.CARGO_TARGET_DIR, label, 'debug', 'fab-rs');
+  const directory = path.join(process.env.CARGO_TARGET_DIR, 'argv-snapshots');
+  fs.mkdirSync(directory, {recursive: true});
+  const copy = path.join(directory, label);
+  fs.copyFileSync(binary, copy, fs.constants.COPYFILE_EXCL);
+  fs.chmodSync(copy, 0o700);
+  const hash = digest(fs.readFileSync(copy));
+  requireThat(hash === digest(fs.readFileSync(binary)), 'Argv snapshot digest mismatch');
+  const record = path.join(receipts, `argv-binary-${label}.json`);
+  requireThat(!fs.existsSync(record), 'Never overwrite argv binary provenance');
+  write(record, {label, source, head: old ? source : manifest.head,
+    features: label.endsWith('native') ? ['native-read'] : [], binary: copy,
+    sha256: hash, bytes: fs.statSync(copy).size, sourceClean: true});
 }
 function publish(args) {
   const opts = options(args, ['--source', '--automation', '--lane', '--branch', '--worktree', '--receipt']);
@@ -587,7 +652,7 @@ function full(args) {
   console.log('Full batch requested at exact immutable CI head; read provider jobs before claiming coverage');
 }
 function requireFastPass(receipt, run) {
-  requireThat(!['output-audit', 'orchestration-audit', 'argv-audit', 'windows-wheelhouse'].includes(receipt.lane),
+  requireThat(!['output-audit', 'orchestration-audit', 'argv-audit', 'argv-repair', 'windows-wheelhouse'].includes(receipt.lane),
     'Setup artifacts and independent audits are never full compatibility gates');
   requireThat(run.head_sha === receipt.head && run.path === '.github/workflows/rust-fast-check.yml' &&
     run.status === 'completed' && run.conclusion === 'success', 'Exact combined head has not passed fast preflight');
@@ -597,6 +662,7 @@ function main(args) {
   if (action === 'prepare' && !rest.length) return prepare();
   if (action === 'run' && rest.length === 1) return runStage(rest[0]);
   if (action === 'finish' && !rest.length) return finish();
+  if (action === 'argv-snapshot' && rest.length === 1) return argvSnapshot(rest[0]);
   if (action === 'publish') return publish(rest);
   if (action === 'full') return full(rest);
   throw new Error('Use prepare, run <fmt|fetch|check|clippy|test|family>, finish, publish or full; see docs/fast-check.md');

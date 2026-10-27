@@ -28,8 +28,17 @@ The explicit Linux `argv-audit` lane independently runs the default and
 `native-read` `fabric-cli/argv_contract` targets, preserving both raw streams
 and actual exits even if the first fails. Expected baseline failures remain
 failed tests and cannot satisfy the normal preflight or full-matrix gate.
+The `argv-repair` evidence lane additionally runs the six requested CLI contract
+targets with default and native-read features. It uses four independent target
+directories and immutable executable copies for the old baseline and repaired
+source, each with a separate source/feature/hash receipt. The unchanged 32-case
+argv capture then observes all four executables. Its fixed historical
+`rust_reference_pin` is not actual binary provenance; use the corresponding
+binary receipt. Captures retain successful and failing commands, not a byte-parity
+assertion or a service-access claim. Behavior already passing on the old binary,
+including legacy-help spelling, must not be reported as a new repair.
 
-Root-approved disjoint output, orchestration, argv, wheelhouse and deploy hosted
+Root-approved disjoint output, orchestration, argv, endpoint, wheelhouse and deploy hosted
 families may run concurrently; overlapping families and all other fast
 candidates retain the single-candidate guard. This grants no local build slot.
 
