@@ -155,8 +155,16 @@ receipts separately.
 
 The bounded Linux `deploy-mount` lane checks and strictly lints the selected
 default and native CLI graph, then tests `fabric-deploy` before the actual
-`fabric-cli` `native-read` integration target `deploy_mount`. It additionally
-checks native-feature CLI doctests. Its consumer injects offline HTTP and uses
+`fabric-cli` `native-read` integration targets `deploy_mount` and
+`deploy_parameters`. Before execution, it lists the four deployment library
+targets (`config`, `repository`, `parameters`, `yaml`) and both CLI targets.
+Compare actual registered tests with the source inventory; listing a test
+does not prove it ran, and Cargo can stop before later binaries when one fails.
+The family stage checks nine unchanged source comparators against the pinned
+public CICD/CLI source, then native-feature CLI doctests. Development-only
+PyYAML 6.0.3/jsonpath-ng 1.9.1 match the protected deployment oracle; the
+separate installed Python performance baseline is not modified.
+Its consumer injects offline HTTP and uses
 temporary files; the finite plan never invokes a real `deploy` command or live
 publication. The receipt explicitly limits evidence to the library/root
 consumer, not broad configuration parity, whole-workspace regression, canonical
@@ -172,7 +180,7 @@ This tests endpoint routing with synthetic caller-injected HTTP, not live MSIT
 credentials, access or workspace creation. Existing lanes still select only
 their documented single runner. Windows probe names retain their `.exe` suffix.
 
-Each run executes workspace formatting, selected all-target offline checks and
+Ordinary preflight runs execute workspace formatting, selected all-target offline checks and
 Clippy, single-thread tests and doctests, then actual family examples and pinned
 source comparisons. Selected CLI default and `native-read` all-target compilation
 both run before Clippy, unit tests, doctests and family comparisons, so native
@@ -193,8 +201,12 @@ The existing approved cache action keys toolchain/host, exact package/feature
 fingerprint and lock hash, with an immutable head suffix. Restoration never
 crosses those fingerprints. Registry access is limited to locked dependency
 restoration; subsequent Cargo checks use `--offline`. Hosted runners are not a
-network sandbox. The bounded artifact contains JSON identity/command receipts
-and synthetic observations only, never environment dumps, credentials or binaries.
+network sandbox. Ordinary bounded artifacts contain JSON identity/command receipts
+and synthetic observations only, never environment dumps or credentials.
+Independent audits additionally retain command stdout/stderr. The explicitly
+approved wheelhouse artifact contains public package wheels (including Windows
+dependency binaries), their hashes and preparation provenance; it contains no
+native CLI build or credentials.
 Provider step timestamps distinguish queue, cache, compile and test time; no
 cold/warm latency is promised.
 
@@ -219,6 +231,11 @@ already contains that series, only the candidate record changes. Each commit is
 checked against the finite CI file allowlist; merge commits are rejected.
 A patch conflict stops for human resolution;
 there is no reset, deletion, automatic conflict resolution or branch overwrite.
+The setup-only Windows wheelhouse lane is a narrow exception to patch replay:
+its pinned Python source predates `rust/`, so it copies only allowlisted
+automation-file snapshots from the validated automation commit. Product files
+and historical product ancestry are never copied. Other lanes still replay the
+checked CI-only commit series and stop on conflicts.
 A receipt is written before pushing. If interrupted or uncertain, inspect the
 remote exact head and existing receipt; do not replay with another candidate.
 
