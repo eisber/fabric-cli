@@ -719,8 +719,17 @@ test('full native workflow routes every oracle through isolated source and absol
   assert.ok(workflow.includes('scripts/pinned_python_source.py verify'));
   assert.ok(workflow.includes('unittest discover -s scripts -p test_pinned_python_source.py -v'));
   assert.ok(workflow.includes("if: always() && steps.pinned-python.outcome == 'success'"));
+  const candidateChecks = [
+    'python -B -m unittest discover -s scripts -p test_release_verify.py -v',
+    'python -B -m unittest discover -s tests/acceptance/identity -p test_check_report.py -v',
+  ];
+  for (const command of candidateChecks) {
+    assert.equal(workflow.split(command).length - 1, 1);
+    assert.ok(workflow.indexOf(command) < workflow.indexOf('scripts/pinned_python_source.py prepare'));
+  }
   const calls = workflow.split('\n').filter(line => line.includes('python -B') &&
-    !line.includes('scripts/pinned_python_source.py') && !line.includes('test_pinned_python_source.py'));
+    !line.includes('scripts/pinned_python_source.py') && !line.includes('test_pinned_python_source.py') &&
+    !candidateChecks.some(command => line.trim() === command));
   assert.equal(calls.length, 32);
   assert.ok(calls.every(line => line.includes('(cd "$PINNED_RUST_ROOT" && python -B ')));
   assert.ok(!workflow.includes('--probes target/'));

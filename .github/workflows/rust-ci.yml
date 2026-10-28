@@ -255,6 +255,8 @@ jobs:
           PYTHONUTF8: "1"
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
+          python -B -m unittest discover -s scripts -p test_release_verify.py -v
+          python -B -m unittest discover -s tests/acceptance/identity -p test_check_report.py -v
           python -B -m unittest discover -s scripts -p test_pinned_python_source.py -v
           python -B scripts/pinned_python_source.py prepare \
             --candidate-root "$GITHUB_WORKSPACE" \
