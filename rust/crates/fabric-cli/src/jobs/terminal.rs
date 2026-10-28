@@ -24,7 +24,9 @@ pub fn confirm_with(
         .and_then(|()| prompt.flush())
         .map_err(io_error)?;
     let mut answer = String::new();
-    input.take(4097).read_line(&mut answer).map_err(io_error)?;
+    Read::take(input, 4097)
+        .read_line(&mut answer)
+        .map_err(io_error)?;
     if answer.len() > 4096 {
         return Err(CommandError::new(
             Some("The terminal confirmation answer exceeds its input bound".into()),
