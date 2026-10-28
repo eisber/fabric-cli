@@ -33,6 +33,14 @@ definitions with non-null `byPath` references are invalid import payloads.
 Interactive workspace export selection requires an injected UI; `--all` avoids
 that selection step.
 
+The Windows native CLI supplies this UI with numbered stdin selection and stderr
+prompts. Workspace export with `--force` asks for a selection but skips
+confirmation; `--all` skips selection but still asks for confirmation unless
+`--force` is also present. Workspace export without either flag is rejected in
+command-line mode.
+An explicit empty selection exports nothing. Missing, invalid or failed input
+is an error, not consent. See the [terminal adapter contract](../../../docs/native-family-host.md#terminal-transfer-ui).
+
 ## File capabilities
 
 ### Asynchronous local filesystem boundary (TD03)

@@ -4,6 +4,7 @@
 //! Root parser -> central session -> released production family -> shared HTTP.
 
 #![cfg(feature = "native-read")]
+#![deny(unnameable_test_items)]
 
 #[path = "family_support/metadata.rs"]
 mod family_metadata;
@@ -12,6 +13,8 @@ mod family_support;
 mod import_parity;
 #[path = "family_support/selected_endpoint.rs"]
 mod selected_endpoint;
+#[path = "family_support/terminal_export.rs"]
+mod terminal_export;
 use fabric_cli::families::FamilyEvidence;
 use family_support::{Harness, success};
 use serde_json::json;

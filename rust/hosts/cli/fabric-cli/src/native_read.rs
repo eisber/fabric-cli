@@ -932,17 +932,10 @@ impl fabric_cli_transfer::TransferUi for NativeTransferUi {
     }
     fn select<'a>(
         &'a self,
-        _: &'a [String],
+        names: &'a [String],
     ) -> fabric_cli_transfer::TransferFuture<'a, Result<Vec<String>, fabric_cli_output::CommandError>>
     {
-        Box::pin(async {
-            Err(fabric_cli_output::CommandError::new(
-                Some(
-                    "Native export selection requires an injected UI; use --all explicitly".into(),
-                ),
-                Some("NotSupported".into()),
-            ))
-        })
+        Box::pin(async move { fabric_cli::console::select_items(names).await })
     }
 }
 #[cfg(windows)]

@@ -149,16 +149,39 @@ or export state. No borrowed filesystem or worker guard escapes across awaits.
 Original preflight failures and later partial/uncertain service effects remain
 intact. Synchronous `LocalTransferFiles` remains for explicitly worker-owned
 embedded callers, never as a blocking native async substitute.
-Native confirmation and workspace export
-selection need an injected UI; use the corresponding explicit force/all options
-for supported noninteractive branches. Resource notices are buffered in source
-order and delivered with the final output, so write failures remain observable.
+Resource notices are buffered in source order and delivered with the final
+output, so write failures remain observable. Resource and access confirmations
+remain separate host capabilities; the transfer adapter does not supply them
+implicitly.
 
-The native transfer confirmation adapter also accepts explicit terminal input
-for import and bulk export. It uses a blocking input worker rather than blocking
-the current-thread runtime. EOF or failed prompt delivery is an error, never
-consent. Interactive multi-item export selection remains a caller-injected UI
-boundary; explicit `--all` remains available.
+### Terminal transfer UI
+
+The Windows native host implements `TransferUi` with stdin answers and stderr
+prompts, keeping stdout available for results. Confirmation accepts an entered
+empty line as yes. Workspace selection displays configuration-sorted numbered
+names: enter comma-separated numbers, `all`, or an empty line for no items.
+Names retain their original values and display order; control characters are
+escaped only in prompt labels. Export execution retains discovery order.
+This is a line-based adapter, not an arrow-key or checkbox interface.
+
+| Workspace export flags | Selection | Confirmation |
+| --- | --- | --- |
+| Neither flag | Rejected in command-line mode | Not asked |
+| `--force` | Ask which items to export | Skipped |
+| `--all` | Every supported item | Ask before export |
+| `--all --force` | Every supported item | Skipped |
+
+For single-item export, import and bulk export, `--force` skips the existing
+confirmation prompts. Scripts should use explicit flags. Redirected stdin is
+read as explicit input, never inferred consent. EOF, unterminated or invalid
+answers, input limits and failed prompt delivery produce errors. An explicit
+empty selection is distinct from cancelled or unavailable input.
+
+Input runs on the existing runtime's blocking worker. The adapter releases stderr
+before waiting for input, so cancellation and error output remain deliverable.
+Dropping a prompt future cannot interrupt an OS read; bounded runtime shutdown
+and cancellation uncertainty still apply. No REPL, authentication change or
+unsupported resource-selection capability is implied.
 
 ## Bounded gaps and evidence
 
