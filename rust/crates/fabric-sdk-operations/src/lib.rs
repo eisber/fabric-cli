@@ -77,7 +77,7 @@ impl FabricOperation {
         {
             return Err(OperationErrorKind::InvalidInput);
         }
-        validate_operation_body(method, &body)?;
+        Self::validate_operation_body(method, &body)?;
         Ok(Self {
             method,
             path: relative_operation_path(&url),
@@ -104,43 +104,26 @@ impl FabricOperation {
         body: Vec<u8>,
         completion: CompletionPolicy,
     ) -> Result<Self, OperationErrorKind> {
-        if segments.first() != Some(&"v1")
-            || segments.len() < 2
-            || segments.len() > 256
-            || segments.iter().any(|segment| {
-                segment.is_empty()
-                    || matches!(*segment, "." | "..")
-                    || segment.contains(['/', '\\'])
-                    || segment.chars().any(char::is_control)
-            })
-            || query.iter().any(|(name, value)| {
-                name.is_empty() || name.chars().chain(value.chars()).any(char::is_control)
-            })
-        {
+        if segments.first() != Some(&"v1") || segments.len() < 2 || segments.len() > 256 {
             return Err(OperationErrorKind::InvalidInput);
         }
-        validate_operation_body(method, &body)?;
-        let mut url = EndpointBinding::public(ServiceOrigin::Fabric).base_url();
-        {
-            let mut path = url
-                .path_segments_mut()
-                .map_err(|_| OperationErrorKind::InvalidInput)?;
-            path.clear();
-            path.extend(segments);
-        }
-        if !query.is_empty() {
-            url.query_pairs_mut().extend_pairs(query.iter().copied());
-        }
+        Self::validate_operation_body(method, &body)?;
+        let resource = ResourceOperation::encoded(method, &segments[1..], None, completion)
+            .map_err(|_| OperationErrorKind::InvalidInput)?;
+        let resource = if query.is_empty() {
+            resource
+        } else {
+            resource
+                .with_query(query)
+                .map_err(|_| OperationErrorKind::InvalidInput)?
+        };
+        let mut operation = Self::from_resource(&resource)?;
+        let url = public_operation_url(&operation.path)?;
         if url.as_str().len() > 16 * 1024 {
             return Err(OperationErrorKind::Limit);
         }
-        Ok(Self {
-            method,
-            path: relative_operation_path(&url),
-            body,
-            completion,
-            source_read_operation_ids: false,
-        })
+        operation.body = body;
+        Ok(operation)
     }
 
     /// Convert a focused endpoint's validated operation without changing payloads.
