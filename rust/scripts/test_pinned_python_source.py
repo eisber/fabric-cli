@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -50,6 +51,18 @@ class PinnedPythonSourceTests(unittest.TestCase):
         self.write("rust/tests/compatibility/example/reference.py", b"VALUE = 1\n")
         self.write("rust/scripts/other_helper.py", b"VALUE = 2\n")
         self.write("rust/cli/capability/src/lib.rs", b"// Never built in the oracle.\n")
+        self.template = (
+            "rust/capabilities/resources/fabric-cli-mutations/"
+            "templates/Blank.SemanticModel/.platform"
+        )
+        self.evidence = (
+            "rust/crates/fabric-cli-mutations/templates/Blank.SemanticModel/.platform"
+        )
+        self.write(self.template, b'{"candidate_native_template": true}\n')
+        self.write(
+            "rust/capabilities/resources/fabric-cli-mutations/src/templates.rs",
+            b"// Product implementation is not oracle evidence.\n",
+        )
         self.head = self.commit("candidate Rust and advanced Python", self.pin)
         self.archive = (
             "rust/tests/compatibility/workspace_get/python-source-archive.json"
@@ -135,10 +148,60 @@ class PinnedPythonSourceTests(unittest.TestCase):
             )
         self.assertTrue((checkout / self.archive).is_file())
         self.assertFalse((checkout / "rust/cli/capability/src/lib.rs").exists())
+        self.assertFalse(
+            (
+                checkout
+                / "rust/capabilities/resources/fabric-cli-mutations/src/templates.rs"
+            ).exists()
+        )
         self.assertFalse((checkout / "rust/target").exists())
         receipt = provider.verify(self.output)
         self.assertEqual(receipt["source_commit"], self.pin)
         self.assertEqual(receipt["candidate_commit"], self.head)
+        self.assertEqual(receipt["evidence_file_count"], 1)
+
+    def test_native_template_evidence_retains_candidate_custody(self) -> None:
+        """Historical lookup paths alias candidate inputs, never frozen exports."""
+        checkout = self.prepare()
+        raw = (self.candidate / self.template).read_bytes()
+        self.assertEqual((checkout / self.template).read_bytes(), raw)
+        self.assertEqual((checkout / self.evidence).read_bytes(), raw)
+        manifest = json.loads(
+            (self.output / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            manifest["overlays"][self.evidence],
+            {"source": self.template, "sha256": provider._digest(raw)},
+        )
+
+    def test_altered_native_evidence_and_claimed_source_are_rejected(self) -> None:
+        """Even a rewritten receipt cannot detach evidence from candidate bytes."""
+        checkout = self.prepare()
+        evidence = checkout / self.evidence
+        evidence.write_bytes(b"substituted native template\n")
+        manifest_path = self.output / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["overlays"][self.evidence] = {
+            "source": self.archive,
+            "sha256": provider._digest(evidence.read_bytes()),
+        }
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Oracle overlay changed"):
+            provider.verify(self.output)
+
+    def test_missing_native_evidence_is_rejected(self) -> None:
+        """A missing alias is a changed inventory, not a skipped native check."""
+        checkout = self.prepare()
+        (checkout / self.evidence).unlink()
+        with self.assertRaisesRegex(ValueError, "overlay inventory"):
+            provider.verify(self.output)
+
+    def test_conflicting_candidate_evidence_is_rejected(self) -> None:
+        """Do not silently overwrite a real candidate file at an alias location."""
+        self.write(self.evidence, b"conflicting legacy template\n")
+        with self.assertRaisesRegex(ValueError, "conflicts with oracle evidence"):
+            provider.prepare(self.candidate, self.output, self.pin)
+        self.assertFalse(self.output.exists())
 
     def test_wrong_pin_is_rejected_without_creating_output(self) -> None:
         """Never turn an upstream synchronization into an oracle repin."""
@@ -174,7 +237,9 @@ class PinnedPythonSourceTests(unittest.TestCase):
         (checkout / value).write_bytes(b'{"weakened": true}\n')
         manifest_path = self.output / "manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        manifest["overlays"][value] = provider._digest((checkout / value).read_bytes())
+        manifest["overlays"][value]["sha256"] = provider._digest(
+            (checkout / value).read_bytes()
+        )
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "Oracle overlay changed"):
             provider.verify(self.output)
@@ -232,6 +297,77 @@ class PinnedPythonSourceTests(unittest.TestCase):
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "overlay inventory"):
             provider.verify(self.output)
+
+
+class PreparedResourceTemplateTests(unittest.TestCase):
+    """Exercise the unchanged resource oracle in a real prepared checkout."""
+
+    def test_prepared_snapshot_executes_real_template_validation_contract(self) -> None:
+        """Check candidate native evidence, not just synthetic overlay inventory."""
+        candidate = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory(prefix="fab-pin-") as directory:
+            output = Path(directory).resolve() / "prepared"
+            receipt = provider.prepare(candidate, output)
+            checkout = Path(receipt["checkout"])
+            references = (
+                checkout
+                / "rust"
+                / "capabilities"
+                / "resources"
+                / "fabric-cli-mutations"
+                / "tests"
+            )
+
+            def validate_templates() -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    [
+                        sys.executable,
+                        "-I",
+                        "-B",
+                        "-c",
+                        "import sys; from pathlib import Path; "
+                        "sys.path.insert(0, sys.argv[2]); "
+                        "from creation_reference import verify_templates; "
+                        "verify_templates(Path(sys.argv[1]))",
+                        str(checkout),
+                        str(references),
+                    ],
+                    cwd=checkout,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    timeout=120,
+                    check=False,
+                )
+
+            result = validate_templates()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertGreater(receipt["evidence_file_count"], 0)
+            manifest = json.loads(
+                (output / "manifest.json").read_text(encoding="utf-8")
+            )
+            evidence = {
+                checkout / value: (checkout / value).read_bytes()
+                for value, record in manifest["overlays"].items()
+                if value != record["source"]
+            }
+            template = next(iter(evidence))
+            template.write_bytes(b"not the candidate's native template\n")
+            result = validate_templates()
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Native embedded template differs from pin", result.stderr)
+            with self.assertRaisesRegex(ValueError, "Oracle overlay changed"):
+                provider.verify(output)
+            for path in evidence:
+                path.unlink()
+            result = validate_templates()
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("No native templates were checked", result.stderr)
+            with self.assertRaisesRegex(ValueError, "overlay inventory"):
+                provider.verify(output)
+            for path, raw in evidence.items():
+                path.write_bytes(raw)
+            provider.verify(output)
 
 
 if __name__ == "__main__":

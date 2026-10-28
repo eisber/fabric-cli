@@ -9,6 +9,11 @@ receipt also exposes ``checkout`` and ``rust_root``. Run copied Python oracles
 there with absolute paths to native probes built in the original candidate.
 ``verify --output ABS`` checks the checkout and its byte-identical overlays.
 
+The unchanged resource oracle reads native templates at their pre-relocation
+path. Only in this artifact, explicit evidence aliases supply those candidate
+template bytes; every alias records and verifies its candidate source. No Rust
+implementation or build output is copied to satisfy that historical path.
+
 The existing archive-only template export cannot satisfy references which also
 verify HEAD and historical Git objects. A local shared clone preserves those
 checks without registering worktrees or changing the candidate repository.
@@ -28,9 +33,14 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 SOURCE_COMMIT = "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 TIMEOUT_SECONDS = 120
 EXCLUDED_PARTS = {".git", "target", "__pycache__", ".venv", "venv"}
+EVIDENCE_DIRECTORIES = {
+    PurePosixPath("rust/crates/fabric-cli-mutations/templates"): PurePosixPath(
+        "rust/capabilities/resources/fabric-cli-mutations/templates"
+    ),
+}
 
 
 def _git(root: Path, *arguments: str) -> bytes:
@@ -132,6 +142,22 @@ def overlay_paths(candidate: Path) -> list[str]:
     return result
 
 
+def _overlay_sources(candidate: Path) -> dict[str, str]:
+    sources = {value: value for value in overlay_paths(candidate)}
+    for destination, source in EVIDENCE_DIRECTORIES.items():
+        for value in list(sources):
+            path = PurePosixPath(value)
+            if not path.is_relative_to(source):
+                continue
+            alias = (destination / path.relative_to(source)).as_posix()
+            if alias in sources:
+                raise ValueError(
+                    f"Candidate conflicts with oracle evidence alias: {alias}"
+                )
+            sources[alias] = value
+    return sources
+
+
 def _digest(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
@@ -182,6 +208,9 @@ def _receipt(output: Path, manifest: dict[str, Any]) -> dict[str, Any]:
         "source_commit": manifest["source_commit"],
         "candidate_commit": manifest["candidate_commit"],
         "overlay_file_count": len(manifest["overlays"]),
+        "evidence_file_count": sum(
+            value != record["source"] for value, record in manifest["overlays"].items()
+        ),
     }
 
 
@@ -197,7 +226,7 @@ def prepare(
     ).resolve()
     if top != candidate:
         raise ValueError("Candidate root must be the repository root")
-    paths = overlay_paths(candidate)
+    sources = _overlay_sources(candidate)
     if output.exists():
         raise FileExistsError(
             "Artifact output already exists; choose a fresh directory"
@@ -221,13 +250,13 @@ def prepare(
         str(checkout),
     )
     _git(checkout, "checkout", "--detach", source_commit)
-    overlays: dict[str, str] = {}
-    for value in paths:
-        raw = candidate.joinpath(*PurePosixPath(value).parts).read_bytes()
+    overlays: dict[str, dict[str, str]] = {}
+    for value, source in sources.items():
+        raw = candidate.joinpath(*PurePosixPath(source).parts).read_bytes()
         target = checkout.joinpath(*PurePosixPath(value).parts)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(raw)
-        overlays[value] = _digest(raw)
+        overlays[value] = {"source": source, "sha256": _digest(raw)}
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "source_commit": source_commit,
@@ -260,23 +289,24 @@ def verify(output: Path) -> dict[str, Any]:
         raise ValueError(
             "Candidate revision changed while preparing or using the oracle"
         )
-    paths = overlay_paths(candidate)
-    if set(paths) != manifest["overlays"].keys():
+    sources = _overlay_sources(candidate)
+    if sources.keys() != manifest["overlays"].keys():
         raise ValueError("Candidate oracle overlay inventory changed")
     actual = {
         path.relative_to(checkout).as_posix()
         for path in (checkout / "rust").rglob("*")
         if path.is_file() or path.is_symlink()
     }
-    if actual != set(paths):
+    if actual != sources.keys():
         raise ValueError("Isolated oracle overlay inventory changed")
-    for value in paths:
-        original = candidate.joinpath(*PurePosixPath(value).parts)
+    for value, source in sources.items():
+        original = candidate.joinpath(*PurePosixPath(source).parts)
         copied = checkout.joinpath(*PurePosixPath(value).parts)
         if (
             copied.is_symlink()
             or not copied.resolve().is_relative_to(checkout)
-            or _digest(original.read_bytes()) != manifest["overlays"][value]
+            or {"source": source, "sha256": _digest(original.read_bytes())}
+            != manifest["overlays"][value]
             or copied.read_bytes() != original.read_bytes()
         ):
             raise ValueError(f"Oracle overlay changed: {value}")
