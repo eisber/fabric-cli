@@ -115,9 +115,15 @@ metadata/selection/stream proof does not establish native WAM, MFA, Conditional
 Access or cross-platform authentication; see
 [auth command evidence](auth-command-evidence.md).
 
-The definition file adapter uses the explicitly selected OS working
-directory as its stable owned root. Paths outside that root fail rather than
-silently expanding filesystem authority. The asynchronous family capabilities
+The default definition file adapter uses the explicitly selected OS working
+directory as its stable owned root. Import instead binds its exact explicit
+source argument and selected file parent or directory, including absolute paths
+outside the working directory and Windows tilde expansion. Selection is lexical:
+it does not canonicalize individual files or bypass traversal/reparse guards.
+The lazy import constructor does no filesystem I/O. Target/format validation and
+Fabric-versus-local input classification precede activation on the serialized
+worker, so rejected remote inputs never cause local source access.
+The asynchronous family capabilities
 accept the CLI-owned `families::transfer_files::TokioTransferFiles`, which awaits
 the existing runtime's blocking executor for root checks, bounded directory
 enumeration, import preparation and ordered export writes. Native setup awaits

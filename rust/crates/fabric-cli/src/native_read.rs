@@ -20,6 +20,10 @@ type Failure = (&'static str, String, u8);
 #[path = "native_settings.rs"]
 mod settings;
 
+#[cfg(windows)]
+#[path = "native_transfer_paths.rs"]
+mod transfer_paths;
+
 #[derive(Clone, Copy)]
 #[cfg_attr(
     not(windows),
@@ -682,13 +686,41 @@ async fn execute_family(
             ));
         }
         let mut mutations = NativeMutationUi::default();
-        let mut files = fabric_cli::families::transfer_files::TokioTransferFiles::new(
-            local_root,
-            None,
-            Default::default(),
-            tokio::runtime::Handle::current(),
-        )
-        .await?;
+        let mut files = if let Invocation::Transfer(transfer) = command
+            && transfer.kind == fabric_cli_transfer::TransferKind::Import
+        {
+            let input = transfer
+                .input
+                .as_deref()
+                .map(fabric_cli_transfer::process_tokens)
+                .ok_or_else(|| {
+                    fabric_cli_local::LocalError::command(
+                        "InvalidInput",
+                        "An import source is required",
+                    )
+                })?;
+            let home = transfer_paths::home_from_environment();
+            let candidate = transfer_paths::candidate(
+                &input,
+                &local_root,
+                home.as_deref(),
+                std::env::var_os("USERNAME").as_deref(),
+            );
+            fabric_cli::families::transfer_files::TokioTransferFiles::defer_import_root(
+                candidate,
+                input,
+                Default::default(),
+                tokio::runtime::Handle::current(),
+            )
+        } else {
+            fabric_cli::families::transfer_files::TokioTransferFiles::new(
+                local_root,
+                None,
+                Default::default(),
+                tokio::runtime::Handle::current(),
+            )
+            .await?
+        };
         let mut families = fabric_cli::families::FamilySession {
             reads: session,
             http: executor,
