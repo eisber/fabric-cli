@@ -87,6 +87,20 @@ Accepted Environment staging effects retain their operation IDs and pending
 state until a successful processor state check; missing/unknown final state is
 not reported as completed.
 
+The endpoint follow-up replaces the remaining legacy publication sessions with
+`OperationSession::with_context` and makes the public Notebook SDK session retain
+the caller's endpoint for discovery, continuation links and LROs. It does not add
+a transport policy, accept arbitrary command hosts, discover identity, change
+token audiences or remove the native host's nonpublic-family guard.
+`deployment_endpoint` adds offline shared-HTTP cases for public/daily/MSIT profiles:
+all 33 source dispatch contexts, legacy and public Notebook paging/create/LRO,
+workspace-name lookup, bulk publication, orphan deletion and folder pruning.
+Every emitted request is checked for its selected host and Fabric credential
+scope; cross-origin continuation/LRO cases require rejection without fallback
+or mutation replay. These new native tests remain **unexecuted** until the root's
+serialized validation slot. The additional CLI unit selector is
+`deployment_metadata_adapter_preserves_public_daily_and_msit_contexts`.
+
 Acceptance still needs native compilation/strict Clippy, complete processor
 branch/lifecycle/cancellation/partial-failure source fixtures, full root mounting,
 source constant-override coverage, binary classification equivalence, and

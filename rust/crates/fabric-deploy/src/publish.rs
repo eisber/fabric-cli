@@ -231,9 +231,8 @@ impl NotebookPublishPlan {
         let mut cancelled = pin!(cancelled);
         let mut completed = Vec::new();
         for item in self.items {
-            let mut session = OperationSession::new(
-                client.credential().as_ref(),
-                client.selection(),
+            let mut session = OperationSession::with_context(
+                client.context(),
                 BorrowedExecutor(executor),
                 limits,
                 cancelled.as_mut(),
@@ -318,9 +317,8 @@ pub async fn publish_repository<E: OperationExecutor + ItemExecutor>(
         })?;
     let mut cancelled = pin!(cancelled);
     {
-        let mut session = OperationSession::new(
-            client.credential().as_ref(),
-            client.selection(),
+        let mut session = OperationSession::with_context(
+            client.context(),
             BorrowedExecutor(executor),
             limits,
             cancelled.as_mut(),
