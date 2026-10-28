@@ -223,6 +223,38 @@ impl<E: OperationExecutor> ServiceIo<'_, E> {
             .unwrap_or_default();
         let operation =
             FabricOperation::new(method, path, body, policy).map_err(|kind| self.error(kind))?;
+        self.dispatch(
+            operation,
+            fabric,
+            policy == CompletionPolicy::ReturnAccepted,
+        )
+        .await
+    }
+
+    async fn request_segments(
+        &mut self,
+        method: ResourceMethod,
+        segments: &[&str],
+    ) -> Result<Value, WorkflowFailure> {
+        let operation = FabricOperation::from_path_segments(
+            method,
+            segments,
+            &[],
+            Vec::new(),
+            CompletionPolicy::PythonSynchronous,
+        )
+        .map_err(|kind| self.error(kind))?;
+        self.dispatch(operation, false, false).await
+    }
+
+    async fn dispatch(
+        &mut self,
+        operation: FabricOperation,
+        fabric: bool,
+        allow_accepted: bool,
+    ) -> Result<Value, WorkflowFailure> {
+        let method = operation.method();
+        let path = operation.path().to_owned();
         let mut session = OperationSession::with_context(
             if fabric {
                 self.fabric_client.context()
@@ -240,7 +272,7 @@ impl<E: OperationExecutor> ServiceIo<'_, E> {
         let response = session.execute(operation).await?;
         self.evidence = Some(session.evidence(OperationErrorKind::InvalidResponse));
         self.headers = response.headers.clone();
-        if response.status == 202 && policy != CompletionPolicy::ReturnAccepted {
+        if response.status == 202 && !allow_accepted {
             return Err(session.evidence(OperationErrorKind::InvalidResponse).into());
         }
         let value = if response.body.is_empty() {

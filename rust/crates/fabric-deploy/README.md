@@ -101,12 +101,22 @@ or mutation replay. These new native tests remain **unexecuted** until the root'
 serialized validation slot. The additional CLI unit selector is
 `deployment_metadata_adapter_preserves_public_daily_and_msit_contexts`.
 
+Shortcut deletion now uses the shared operation's literal-component constructor,
+not an unchecked URL or relaxed raw-path constructor. Empty/dot/traversing,
+separator-bearing and control components are rejected; Unicode, spaces and
+literal percent characters are encoded as data. The same context, counted
+executor, LRO reconciliation and single-attempt write policy execute the result.
+`shortcuts_source.json` captures actual pinned `_unpublish_shortcuts` URL
+construction plus offline Requests URL preparation before native expectations.
+The added native scope/URL and constructor tests remain unexecuted.
+
 Acceptance still needs native compilation/strict Clippy, complete processor
 branch/lifecycle/cancellation/partial-failure source fixtures, full root mounting,
 source constant-override coverage, binary classification equivalence, and
-Sparkcompute YAML emission edge cases. Encoded shortcut deletion paths require
-a shared-operation API decision: the existing safe constructor rejects percent
-encoding and must not be bypassed. Advanced regex/JSONPath fullness remains a
+Sparkcompute YAML emission edge cases. The new literal-component operation API
+and encoded shortcut request cases still need native validation and shared-API
+review; the existing raw-path percent guard remains unchanged.
+Advanced regex/JSONPath fullness remains a
 separate transform boundary. No live publish/delete operation is authorized.
 
 This crate implements bounded native Notebook deployment, not full Python

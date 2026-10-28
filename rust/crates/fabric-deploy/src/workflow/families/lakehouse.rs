@@ -133,12 +133,14 @@ pub(super) async fn shortcuts<E: OperationExecutor>(
     for shortcut in deployed {
         let key = key(&shortcut)?;
         if !selected.contains(&key) {
-            io.request(
-                ResourceMethod::Delete,
-                &format!("{base}/items/{id}/shortcuts/{key}"),
-                None,
-            )
-            .await?;
+            let segments: Vec<_> = base
+                .trim_start_matches('/')
+                .split('/')
+                .chain(["items", id.as_str(), "shortcuts"])
+                .chain(key.split('/'))
+                .collect();
+            io.request_segments(ResourceMethod::Delete, &segments)
+                .await?;
         }
     }
     for mut shortcut in shortcuts {
