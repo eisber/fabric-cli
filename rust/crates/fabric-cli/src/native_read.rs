@@ -40,6 +40,16 @@ enum NativeCommand<'a> {
     Family(&'a Invocation),
 }
 
+fn has_bound_context(command: NativeCommand<'_>) -> bool {
+    match command {
+        NativeCommand::Family(Invocation::Transfer(transfer)) => {
+            transfer.kind != fabric_cli_transfer::TransferKind::Deploy
+        }
+        NativeCommand::Family(_) => false,
+        _ => true,
+    }
+}
+
 fn failure(code: &'static str, message: impl Into<String>, exit: u8) -> Failure {
     (code, message.into(), exit)
 }
@@ -138,8 +148,7 @@ fn run_command(command: NativeCommand<'_>) -> io::Result<ExitCode> {
     let result = (|| {
         // Public selectors only, never token/secret environment inputs.
         let endpoint = selected_endpoint(std::env::var_os("FAB_API_ENDPOINT_FABRIC"))?;
-        if endpoint != EndpointBinding::public(ServiceOrigin::Fabric)
-            && matches!(command, NativeCommand::Family(_))
+        if endpoint != EndpointBinding::public(ServiceOrigin::Fabric) && !has_bound_context(command)
         {
             return Err(failure(
                 "NotSupported",
@@ -687,16 +696,23 @@ async fn execute_family(
         }
         let mut mutations = NativeMutationUi::default();
         let mut files = if let Invocation::Transfer(transfer) = command
-            && transfer.kind == fabric_cli_transfer::TransferKind::Import
-        {
-            let input = transfer
-                .input
-                .as_deref()
+            && matches!(
+                transfer.kind,
+                fabric_cli_transfer::TransferKind::Import
+                    | fabric_cli_transfer::TransferKind::Export
+                    | fabric_cli_transfer::TransferKind::BulkExport
+            ) {
+            let tokens = if transfer.kind == fabric_cli_transfer::TransferKind::Import {
+                transfer.input.as_deref()
+            } else {
+                transfer.output.as_deref()
+            };
+            let input = tokens
                 .map(fabric_cli_transfer::process_tokens)
                 .ok_or_else(|| {
                     fabric_cli_local::LocalError::command(
                         "InvalidInput",
-                        "An import source is required",
+                        "A transfer path is required",
                     )
                 })?;
             let home = transfer_paths::home_from_environment();
@@ -706,12 +722,21 @@ async fn execute_family(
                 home.as_deref(),
                 std::env::var_os("USERNAME").as_deref(),
             );
-            fabric_cli::families::transfer_files::TokioTransferFiles::defer_import_root(
-                candidate,
-                input,
-                Default::default(),
-                tokio::runtime::Handle::current(),
-            )
+            if transfer.kind == fabric_cli_transfer::TransferKind::Import {
+                fabric_cli::families::transfer_files::TokioTransferFiles::defer_import_root(
+                    candidate,
+                    input,
+                    Default::default(),
+                    tokio::runtime::Handle::current(),
+                )
+            } else {
+                fabric_cli::families::transfer_files::TokioTransferFiles::defer_export_root(
+                    candidate,
+                    input,
+                    Default::default(),
+                    tokio::runtime::Handle::current(),
+                )
+            }
         } else {
             fabric_cli::families::transfer_files::TokioTransferFiles::new(
                 local_root,

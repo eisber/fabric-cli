@@ -116,5 +116,34 @@ fn migrated_job_leaves_require_explicit_identity_without_discovering_one() {
             let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
             assert_eq!(error["error"]["code"], "NotConfigured", "{host}: {args:?}");
         }
+
+        #[cfg(feature = "native-read")]
+        #[test]
+        fn migrated_definition_leaves_require_identity_before_filesystem_activation() {
+            let invocations: &[&[&str]] = &[
+                &["export", "Book.Notebook", "-o", "output", "-f"],
+                &[
+                    "bulk-export",
+                    "Demo.Workspace",
+                    "-o",
+                    "output",
+                    "--recursive",
+                    "-f",
+                ],
+                &["import", "Book.Notebook", "-i", "input", "-f"],
+            ];
+            for host in [
+                "dailyapi.fabric.microsoft.com",
+                "msitapi.fabric.microsoft.com",
+            ] {
+                for args in invocations {
+                    let output = invoke(Some(host), args);
+                    assert_eq!(output.status.code(), Some(1), "{host}: {args:?}");
+                    assert!(output.stdout.is_empty(), "{host}: {args:?}");
+                    let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+                    assert_eq!(error["error"]["code"], "NotConfigured", "{host}: {args:?}");
+                }
+            }
+        }
     }
 }
