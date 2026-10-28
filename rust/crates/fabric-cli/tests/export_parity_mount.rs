@@ -1046,7 +1046,10 @@ async fn root_cancelled_before_discovery_has_no_http_or_filesystem_effect() {
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     assert_ne!(output.write_to(&mut stdout, &mut stderr).unwrap(), 0);
     let envelope: Value = serde_json::from_slice(&stdout).unwrap();
-    assert_eq!(envelope["result"]["error_code"], "Cancelled");
+    assert_eq!(
+        envelope["result"]["error_code"],
+        "LongRunningOperationCancelled"
+    );
     assert!(stderr.is_empty());
     assert!(host.requests().is_empty());
     assert!(
