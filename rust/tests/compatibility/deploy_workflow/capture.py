@@ -17,6 +17,7 @@ import base64
 import json
 import logging
 import re
+from collections import defaultdict, deque
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -74,23 +75,20 @@ class Endpoint:
 def capture(source: Path) -> dict:
     namespace = {"Enum": __import__("enum").Enum}
     definitions(source / "constants.py", namespace, {"ItemType", "FeatureFlag"})
-    constants = SimpleNamespace(
-        ItemType=namespace["ItemType"],
-        FeatureFlag=namespace["FeatureFlag"],
-        FEATURE_FLAG=set(),
-        DEFAULT_GUID="00000000-0000-0000-0000-000000000000",
-        INDENT="  ",
-        SHELL_ONLY_PUBLISH=["Lakehouse", "Warehouse", "SQLDatabase", "MLExperiment"],
-        NON_MOVABLE_ITEM_TYPES=["OrgAppAudience"],
-        API_FORMAT_MAPPING={"Notebook": "ipynb", "SparkJobDefinition": "SparkJobDefinitionV2"},
-        EXCLUDE_PATH_REGEX_MAPPING={
-            "Report": r".*\.pbi[/\\].*",
-            "SemanticModel": r".*\.pbi[/\\].*",
-            "DataAgent": r".*\.pbi[/\\].*",
-            "Eventhouse": r".*\.children[/\\].*",
-            "OrgApp": r".*\.children[/\\].*",
-        },
-    )
+    constant_names = {
+        "FEATURE_FLAG", "DEFAULT_GUID", "INDENT", "SHELL_ONLY_PUBLISH",
+        "NON_MOVABLE_ITEM_TYPES", "API_FORMAT_MAPPING", "EXCLUDE_PATH_REGEX_MAPPING",
+        "UNPUBLISH_FLAG_MAPPING", "SERIAL_ITEM_PUBLISH_ORDER", "VALID_GUID_REGEX",
+    }
+    constants_tree = ast.parse((source / "constants.py").read_text(encoding="utf-8"))
+    constant_nodes = [
+        node for node in constants_tree.body
+        if (isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id in constant_names for target in node.targets))
+        or (isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id in constant_names)
+    ]
+    exec(compile(ast.fix_missing_locations(ast.Module(body=constant_nodes, type_ignores=[])), "source:constants", "exec"), namespace)
+    namespace["VALID_GUID_REGEX"] = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    constants = SimpleNamespace(**namespace)
     workspace_namespace = {
         "re": re, "logger": logging.getLogger("offline-oracle"),
         "constants": constants, "FeatureFlag": namespace["FeatureFlag"], "ItemType": namespace["ItemType"],
@@ -185,7 +183,39 @@ def capture(source: Path) -> dict:
                 "source": f"_items/{path.name}:{publisher_class.__name__}.publish_one",
                 "calls": workspace.endpoint.calls,
             })
-    return {"source_commit": PIN, "workspace_id": WORKSPACE, "item_id": ITEM, "cases": records}
+    pipeline_namespace = {
+        "re": re, "constants": constants, "ItemType": namespace["ItemType"],
+        "ItemPublisher": Publisher, "ParallelConfig": lambda **_: None,
+    }
+    definitions(source / "_items" / "_datapipeline.py", pipeline_namespace)
+    pipeline_inputs = [
+        {"properties": {"activities": [{
+            "type": "IfCondition", "typeProperties": {"ifTrueActivities": [
+                {"type": "InvokePipeline", "typeProperties": {"pipelineId": {"type": "Expression", "value": LOGICAL}}},
+                {"type": "ExecutePipeline", "typeProperties": {"pipeline": {"referenceName": ITEM}}},
+            ]},
+        }, {"type": "Other", "typeProperties": {"pipelineId": WORKSPACE}}]}},
+        {"properties": {"activities": [{"type": "ExecutePipeline", "typeProperties": {"pipeline": {"referenceName": {"type": "Expression", "value": "@dynamic"}}}}]}},
+    ]
+    pipeline_cases = []
+    for content in pipeline_inputs:
+        references = list(pipeline_namespace["_iter_pipeline_reference_ids"](content["properties"]["activities"]))
+        pipeline_cases.append({"content": content, "references": [value for value in dict.fromkeys(references) if re.fullmatch(namespace["VALID_GUID_REGEX"], value)]})
+
+    sort_namespace = {"defaultdict": defaultdict, "deque": deque, "logger": logging.getLogger("offline-oracle"), "ParsingError": RuntimeError}
+    definitions(source / "_items" / "_manage_dependencies.py", sort_namespace)
+    sorts = []
+    for graph in [{"A": ["B"], "B": [], "C": []}, {"A": ["B"], "B": ["A"]}]:
+        for mode in ("Repository", "Deployed"):
+            try:
+                result = sort_namespace["sort_items"](None, graph, mode, lambda _workspace, refs, _mode: refs)
+            except RuntimeError:
+                result = {"error": "cycle"}
+            sorts.append({"graph": graph, "mode": mode, "result": result})
+    return {
+        "source_commit": PIN, "workspace_id": WORKSPACE, "item_id": ITEM,
+        "cases": records, "pipeline_cases": pipeline_cases, "sort_cases": sorts,
+    }
 
 
 def main() -> None:

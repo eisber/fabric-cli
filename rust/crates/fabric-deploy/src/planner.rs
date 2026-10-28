@@ -1,0 +1,484 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+//! Pure source-order planning and selective publication without mutable globals.
+
+use crate::{
+    config::get_config_value,
+    deployment_config::{ConfigurationError, DeploymentConfig, ITEM_TYPES},
+    model::{RepositoryItem, invalid},
+    processors::Processor,
+    repository::DeploymentRepository,
+    transforms::DEFAULT_GUID,
+};
+use fancy_regex::Regex;
+use serde_json::{Map, Value};
+use std::collections::{HashMap, HashSet, VecDeque};
+
+/// Explicit invocation-local feature policy, restored by dropping this value.
+#[derive(Clone, Debug)]
+pub struct EngineContext {
+    /// Selected source features; libraries never mutate process-wide flags.
+    pub features: HashSet<String>,
+    /// Selected source constants; no environment or process-global discovery.
+    pub constants: Map<String, Value>,
+    /// Requested bulk mode after command-local source flags have been applied.
+    pub bulk_publish: bool,
+    /// Explicitly read parameter source, including processor-specific settings.
+    pub parameter_document: Option<Value>,
+    /// Explicit caller snapshot for opt-in `$ENV:` replacement, never ambient reads.
+    pub environment_variables: HashMap<String, String>,
+}
+
+impl EngineContext {
+    /// Select configuration features/constants and validate experimental policies.
+    ///
+    /// # Errors
+    /// A gated source option without its required flags is real validation failure.
+    pub fn from_config(
+        config: &DeploymentConfig,
+        command_bulk: bool,
+    ) -> Result<Self, ConfigurationError> {
+        let features = config
+            .document
+            .get("features")
+            .map(|value| {
+                value
+                    .as_object()
+                    .and_then(|mapping| mapping.get(&config.environment))
+                    .unwrap_or(value)
+            })
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect();
+        let mut context = Self {
+            features,
+            constants: Map::new(),
+            bulk_publish: command_bulk,
+            parameter_document: None,
+            environment_variables: HashMap::new(),
+        };
+        if command_bulk {
+            context.features.insert("enable_bulk_publish".into());
+            context
+                .features
+                .insert("enable_experimental_features".into());
+        }
+        if let Some(constants) = config.document.get("constants").and_then(Value::as_object) {
+            for key in constants.keys() {
+                if let Some(value) =
+                    get_config_value(&Value::Object(constants.clone()), key, &config.environment)
+                        .map_err(|_| invalid("Invalid constant environment selection"))?
+                {
+                    if !value.is_null() {
+                        context.constants.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+        }
+        context.bulk_publish |= context.enabled("enable_bulk_publish");
+        for (section, key, required) in [
+            (
+                &config.publish,
+                "items_to_include",
+                "enable_items_to_include",
+            ),
+            (
+                &config.unpublish,
+                "items_to_include",
+                "enable_items_to_include",
+            ),
+            (
+                &config.publish,
+                "folder_exclude_regex",
+                "enable_exclude_folder",
+            ),
+            (
+                &config.publish,
+                "folder_path_to_include",
+                "enable_include_folder",
+            ),
+            (
+                &config.publish,
+                "shortcut_exclude_regex",
+                "enable_shortcut_exclude",
+            ),
+        ] {
+            if section.contains_key(key)
+                && (!context.enabled("enable_experimental_features") || !context.enabled(required))
+            {
+                return Err(invalid(
+                    "Selective deployment requires experimental and option-specific feature flags",
+                ));
+            }
+        }
+        if context.bulk_publish && !context.enabled("enable_experimental_features") {
+            return Err(invalid(
+                "enable_bulk_publish requires enable_experimental_features",
+            ));
+        }
+        if config.publish.contains_key("folder_exclude_regex")
+            && config.publish.contains_key("folder_path_to_include")
+            && !context.enabled("disable_workspace_folder_publish")
+        {
+            return Err(invalid(
+                "Folder exclusion and inclusion cannot be used together",
+            ));
+        }
+        Ok(context)
+    }
+
+    /// Query one source feature without global state.
+    pub fn enabled(&self, feature: &str) -> bool {
+        self.features.contains(feature)
+    }
+
+    /// Attach explicit parameter source without rediscovering files or environment.
+    pub fn with_parameter_document(mut self, document: Value) -> Self {
+        self.parameter_document = Some(document);
+        self
+    }
+
+    /// Source unpublication feature gates protect provisioned/data-bearing items.
+    pub fn can_unpublish(&self, item_type: &str) -> bool {
+        let flag = match item_type {
+            "Lakehouse" => "enable_lakehouse_unpublish",
+            "Warehouse" => "enable_warehouse_unpublish",
+            "SQLDatabase" => "enable_sqldatabase_unpublish",
+            "Eventhouse" => "enable_eventhouse_unpublish",
+            "KQLDatabase" => "enable_kqldatabase_unpublish",
+            "CosmosDBDatabase" => "enable_cosmosdbdatabase_unpublish",
+            "GraphModel" => "enable_graphmodel_unpublish",
+            _ => return true,
+        };
+        self.enabled(flag)
+    }
+}
+
+/// Precompiled source filters; arbitrary regex text is never a service URL.
+pub struct PublishSelection {
+    name: Option<Regex>,
+    folder: Option<Regex>,
+    folders: Option<Vec<String>>,
+    items: Option<HashSet<String>>,
+    folders_disabled: bool,
+}
+
+fn pattern(value: Option<&Value>) -> Result<Option<Regex>, ConfigurationError> {
+    value
+        .and_then(Value::as_str)
+        .map(|pattern| {
+            Regex::new(pattern).map_err(|_| invalid("Invalid deployment exclusion regex"))
+        })
+        .transpose()
+}
+
+fn regex_matches(regex: &Regex, content: &str, anchored: bool) -> Result<bool, ConfigurationError> {
+    regex
+        .find(content)
+        .map(|found| found.is_some_and(|found| !anchored || found.start() == 0))
+        .map_err(|_| invalid("Deployment regex exceeded its matching bound"))
+}
+
+impl PublishSelection {
+    /// Compile filters before service mutations.
+    ///
+    /// # Errors
+    /// Invalid or resource-exhausted regex patterns fail validation.
+    pub fn new(
+        config: &DeploymentConfig,
+        context: &EngineContext,
+    ) -> Result<Self, ConfigurationError> {
+        let list = |key| {
+            config
+                .publish
+                .get(key)
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>()
+                })
+        };
+        Ok(Self {
+            name: pattern(config.publish.get("exclude_regex"))?,
+            folder: pattern(config.publish.get("folder_exclude_regex"))?,
+            folders: list("folder_path_to_include"),
+            items: list("items_to_include").map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| value.to_lowercase())
+                    .collect()
+            }),
+            folders_disabled: context.enabled("disable_workspace_folder_publish"),
+        })
+    }
+
+    /// Exact source item selection: case-insensitive include, anchored name regex.
+    ///
+    /// # Errors
+    /// Regex resource failure is never interpreted as a nonmatch.
+    pub fn includes(&self, item: &RepositoryItem) -> Result<bool, ConfigurationError> {
+        if self.items.as_ref().is_some_and(|items| {
+            !items.contains(&format!("{}.{}", item.name, item.item_type).to_lowercase())
+        }) {
+            return Ok(false);
+        }
+        if self
+            .name
+            .as_ref()
+            .map(|regex| regex_matches(regex, &item.name, true))
+            .transpose()?
+            .unwrap_or(false)
+        {
+            return Ok(false);
+        }
+        if self.folders_disabled || item.folder_path.is_empty() {
+            return Ok(true);
+        }
+        if let Some(regex) = &self.folder {
+            let mut path = item.folder_path.as_str();
+            while !path.is_empty() {
+                if regex_matches(regex, path, false)? {
+                    return Ok(false);
+                }
+                path = path.rsplit_once('/').map_or("", |(parent, _)| parent);
+            }
+        }
+        Ok(self
+            .folders
+            .as_ref()
+            .is_none_or(|folders| folders.contains(&item.folder_path)))
+    }
+
+    /// Folder ancestors are retained for hierarchy; inclusion does not include siblings.
+    ///
+    /// # Errors
+    /// Regex errors remain validation failures.
+    pub fn includes_folder(&self, folder: &str) -> Result<bool, ConfigurationError> {
+        if self.folders_disabled {
+            return Ok(false);
+        }
+        if let Some(regex) = &self.folder {
+            let mut path = folder;
+            while !path.is_empty() {
+                if regex_matches(regex, path, false)? {
+                    return Ok(false);
+                }
+                path = path.rsplit_once('/').map_or("", |(parent, _)| parent);
+            }
+        }
+        Ok(self.folders.as_ref().is_none_or(|folders| {
+            folders.iter().any(|included| {
+                included == folder
+                    || included
+                        .strip_prefix(folder)
+                        .is_some_and(|tail| tail.starts_with('/'))
+            })
+        }))
+    }
+}
+
+/// Complete pure publication plan; target IDs are resolved by the async workflow.
+pub struct DeploymentPlan {
+    /// Complete repository, including out-of-scope items needed for logical refs.
+    pub repository: DeploymentRepository,
+    /// Item indices in source type order and dependency order within a type.
+    pub order: Vec<usize>,
+    /// Selected nonempty workspace folders, parents first.
+    pub folders: Vec<String>,
+    /// Source filter policy retained for deferred family hooks.
+    pub selection: PublishSelection,
+}
+
+impl DeploymentPlan {
+    /// Validate processors, source selection, logical references and cycles.
+    ///
+    /// # Errors
+    /// Missing selected dependencies, invalid pipeline JSON and cycles fail before writes.
+    pub fn prepare(
+        config: &DeploymentConfig,
+        context: &EngineContext,
+        repository: DeploymentRepository,
+    ) -> Result<Self, ConfigurationError> {
+        let selection = PublishSelection::new(config, context)?;
+        let mut selected = Vec::new();
+        let mut logical = HashMap::new();
+        for (index, item) in repository.items.iter().enumerate() {
+            Processor::for_type(&item.item_type)?;
+            if item.logical_id != DEFAULT_GUID {
+                logical.insert(item.logical_id.as_str(), index);
+            }
+            if config.item_types.contains(&item.item_type) && selection.includes(item)? {
+                selected.push(index);
+            }
+        }
+        let mut order = Vec::new();
+        for item_type in ITEM_TYPES {
+            let indices: Vec<_> = selected
+                .iter()
+                .copied()
+                .filter(|index| repository.items[*index].item_type == *item_type)
+                .collect();
+            if *item_type == "DataPipeline" {
+                let mut edges = Vec::new();
+                for index in &indices {
+                    let item = &repository.items[*index];
+                    let content = item
+                        .file("pipeline-content.json")
+                        .ok_or_else(|| invalid("Missing pipeline-content.json"))?;
+                    let content: Value = serde_json::from_slice(&content.bytes)
+                        .map_err(|_| invalid("Invalid pipeline-content.json"))?;
+                    for reference in pipeline_references(&content) {
+                        if let Some(dependency) = logical.get(reference.as_str())
+                            && repository.items[*dependency].item_type == "DataPipeline"
+                        {
+                            edges.push((*index, *dependency));
+                        }
+                    }
+                }
+                order.extend(topological_order(&indices, &edges)?);
+            } else {
+                order.extend(indices);
+            }
+        }
+        let folders = repository
+            .folders
+            .iter()
+            .filter_map(|folder| match selection.includes_folder(folder) {
+                Ok(true) => Some(Ok(folder.clone())),
+                Ok(false) => None,
+                Err(error) => Some(Err(error)),
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Self {
+            repository,
+            order,
+            folders,
+            selection,
+        })
+    }
+}
+
+/// Collect only actual nested ExecutePipeline/InvokePipeline references.
+pub fn pipeline_references(content: &Value) -> Vec<String> {
+    fn value(value: &Value) -> Option<&str> {
+        if value.get("type").and_then(Value::as_str) == Some("Expression") {
+            value.get("value").and_then(Value::as_str)
+        } else {
+            value.as_str()
+        }
+    }
+    fn visit(activities: Option<&Value>, result: &mut Vec<String>) {
+        for activity in activities.and_then(Value::as_array).into_iter().flatten() {
+            let Some(properties) = activity.get("typeProperties") else {
+                continue;
+            };
+            let reference = match activity.get("type").and_then(Value::as_str) {
+                Some("ExecutePipeline") => properties
+                    .pointer("/pipeline/referenceName")
+                    .and_then(value),
+                Some("InvokePipeline") => properties.get("pipelineId").and_then(value),
+                _ => None,
+            };
+            if let Some(reference) =
+                reference.filter(|reference| crate::deployment_config::valid_guid(reference))
+                && !result.iter().any(|value| value == reference)
+            {
+                result.push(reference.into());
+            }
+            for key in [
+                "activities",
+                "ifTrueActivities",
+                "ifFalseActivities",
+                "defaultActivities",
+            ] {
+                visit(properties.get(key), result);
+            }
+            for case in properties
+                .get("cases")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                visit(case.get("activities"), result);
+            }
+        }
+    }
+    let mut result = Vec::new();
+    visit(content.pointer("/properties/activities"), &mut result);
+    result
+}
+
+/// Stable source Kahn ordering, with dependency edges `(dependent, prerequisite)`.
+///
+/// # Errors
+/// Cycles or missing prerequisites fail before an operation plan is executed.
+pub fn topological_order(
+    indices: &[usize],
+    edges: &[(usize, usize)],
+) -> Result<Vec<usize>, ConfigurationError> {
+    let mut indegree: HashMap<_, usize> = indices.iter().copied().map(|index| (index, 0)).collect();
+    let mut dependents: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (dependent, prerequisite) in edges {
+        if !indegree.contains_key(prerequisite) {
+            continue;
+        }
+        *indegree
+            .get_mut(dependent)
+            .ok_or_else(|| invalid("Missing dependency target"))? += 1;
+        dependents
+            .entry(*prerequisite)
+            .or_default()
+            .push(*dependent);
+    }
+    let mut ready: VecDeque<_> = indices
+        .iter()
+        .copied()
+        .filter(|index| indegree[index] == 0)
+        .collect();
+    let mut result = Vec::new();
+    while let Some(index) = ready.pop_front() {
+        result.push(index);
+        for dependent in dependents.get(&index).into_iter().flatten() {
+            let degree = indegree
+                .get_mut(dependent)
+                .ok_or_else(|| invalid("Missing dependency target"))?;
+            *degree -= 1;
+            if *degree == 0 {
+                ready.push_back(*dependent);
+            }
+        }
+    }
+    if result.len() != indices.len() {
+        return Err(invalid("There is a cycle in the dependency graph"));
+    }
+    Ok(result)
+}
+
+pub(crate) fn orphan_selected(
+    config: &DeploymentConfig,
+    item_type: &str,
+    name: &str,
+) -> Result<bool, ConfigurationError> {
+    if let Some(items) = config
+        .unpublish
+        .get("items_to_include")
+        .and_then(Value::as_array)
+    {
+        return Ok(items
+            .iter()
+            .any(|item| item.as_str() == Some(&format!("{name}.{item_type}"))));
+    }
+    let excluded = pattern(config.unpublish.get("exclude_regex"))?;
+    Ok(!excluded
+        .as_ref()
+        .map(|regex| regex_matches(regex, name, true))
+        .transpose()?
+        .unwrap_or(name.is_empty()))
+}
