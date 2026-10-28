@@ -37,8 +37,9 @@ the project, never a system temporary directory or real repository snapshot.
 
 Native consumers now have these explicit primitives:
 
-- `ParameterProgram::apply_for_item` applies key/value rules before find rules
-  with exact item/name/path conjunction. `ParameterResolver` supplies metadata
+- `ParameterProgram::apply_for_item` (also exposed as `apply_scoped`) applies
+  key/value rules before find rules with exact item/name/path conjunction.
+  `ParameterResolver` supplies metadata
   and concrete path capabilities; no library reads credentials, files or process
   environment. Dynamic replacements resolve only after a match, once per
   selected JSONPath location. `encode_dynamic_name` retains the source UTF-8

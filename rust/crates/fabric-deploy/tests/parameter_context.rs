@@ -189,7 +189,7 @@ fn all_thirty_four_source_pipelines_and_schemas_match() {
                 dynamic_calls: Cell::new(0),
             };
             let actual = program
-                .apply_for_item(
+                .apply_scoped(
                     case["input"].as_str().unwrap(),
                     ParameterItem {
                         item_type: "Notebook",

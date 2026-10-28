@@ -494,6 +494,23 @@ impl ParameterProgram {
         Ok(content)
     }
 
+    /// Apply scoped source rules through the deployment engine's caller context.
+    ///
+    /// Alias of [`Self::apply_for_item`]; item processors retain ownership of
+    /// item-specific settings, SDK metadata lookup and repository discovery.
+    ///
+    /// # Errors
+    /// Preserves the same syntax, resolver, schema and bounded-work failures.
+    pub fn apply_scoped(
+        &self,
+        content: &str,
+        item: ParameterItem<'_>,
+        resolver: &dyn ParameterResolver,
+        budget: &mut TransformBudget<'_>,
+    ) -> Result<String, TransformError> {
+        self.apply_for_item(content, item, resolver, budget)
+    }
+
     /// Ordered source notice outcomes; caller owns delivery and failures.
     pub fn notices(&self) -> &[ParameterNotice] {
         &self.notices
