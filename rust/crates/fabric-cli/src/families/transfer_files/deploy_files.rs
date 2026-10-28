@@ -3,6 +3,10 @@
 
 //! Read-only, configuration-authorized deploy paths on the shared file worker.
 
+#[cfg(test)]
+#[path = "deploy_files_tests.rs"]
+mod tests;
+
 use super::{ImportWorker, TransferWorkerError, check_stop, serialized_work, worker_error};
 use fabric_cli_transfer::{LocalTransferFiles, TransferFiles, TransferFuture};
 use fabric_deploy::{
