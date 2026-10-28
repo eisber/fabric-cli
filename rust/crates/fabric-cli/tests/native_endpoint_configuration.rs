@@ -77,10 +77,44 @@ fn public_daily_and_msit_do_not_discover_an_identity() {
 fn non_public_unmigrated_family_fails_before_identity_or_network() {
     let output = invoke(
         Some("msitapi.fabric.microsoft.com"),
-        &["job", "run-list", "Book.Notebook"],
+        &["exists", "Book.Notebook"],
     );
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(error["error"]["code"], "NotSupported");
+}
+
+#[cfg(feature = "native-read")]
+#[test]
+fn migrated_job_leaves_require_explicit_identity_without_discovering_one() {
+    let invocations: &[&[&str]] = &[
+        &["job", "start", "Book.Notebook"],
+        &["job", "run", "Book.Notebook"],
+        &["job", "run-status", "Book.Notebook", "--id", "run"],
+        &["job", "run-list", "Book.Notebook"],
+        &["job", "run-cancel", "Book.Notebook", "--id", "run"],
+        &["job", "run-sch", "Book.Notebook", "--input", "{}"],
+        &[
+            "job",
+            "run-update",
+            "Book.Notebook",
+            "--id",
+            "schedule",
+            "--enable",
+        ],
+        &["job", "run-rm", "Book.Notebook", "--id", "schedule"],
+    ];
+    for host in [
+        "dailyapi.fabric.microsoft.com",
+        "msitapi.fabric.microsoft.com",
+    ] {
+        for args in invocations {
+            let output = invoke(Some(host), args);
+            assert_eq!(output.status.code(), Some(1), "{host}: {args:?}");
+            assert!(output.stdout.is_empty(), "{host}: {args:?}");
+            let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+            assert_eq!(error["error"]["code"], "NotConfigured", "{host}: {args:?}");
+        }
+    }
 }
