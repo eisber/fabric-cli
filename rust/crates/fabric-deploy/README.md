@@ -111,6 +111,16 @@ executor, LRO reconciliation and single-attempt write policy execute the result.
 construction plus offline Requests URL preparation before native expectations.
 The added native scope/URL and constructor tests remain unexecuted.
 
+Prepared definitions are bounded both per file and in aggregate through
+`EngineContext::with_definition_limits`; repository preflight and standard/bulk
+publication share the caller's aggregate byte budget. Processor post-hooks retain
+the prepared file contents: VariableLibrary value-set activation and Lakehouse
+shortcut reconciliation must not read a stale pre-parameterization snapshot.
+`post_publish_source.json` captures actual VariableLibrary lifecycle methods with
+an injected prepared-definition capability; it is not a replacement transform
+oracle. New native regression cases cover both publication modes and aggregate
+growth before a definition mutation. They remain unexecuted pending ROOT.
+
 Acceptance still needs native compilation/strict Clippy, complete processor
 branch/lifecycle/cancellation/partial-failure source fixtures, full root mounting,
 source constant-override coverage, binary classification equivalence, and

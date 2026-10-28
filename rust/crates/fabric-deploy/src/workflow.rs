@@ -156,6 +156,8 @@ struct ServiceIo<'a, E> {
     headers: BTreeMap<String, String>,
     collect_responses: bool,
     last_response: Option<Value>,
+    remaining_definition_bytes: usize,
+    processed_items: HashMap<String, crate::model::RepositoryItem>,
 }
 
 impl<E: OperationExecutor> ServiceIo<'_, E> {
@@ -307,6 +309,26 @@ impl<E: OperationExecutor> ServiceIo<'_, E> {
         let responses = self.result.responses.get_or_insert_with(|| json!({}));
         if responses.get(section).is_none() {
             responses[section] = json!({});
+        }
+
+        fn retain_prepared(
+            &mut self,
+            item: &crate::model::RepositoryItem,
+        ) -> Result<(), WorkflowFailure> {
+            let bytes = item
+                .files
+                .iter()
+                .try_fold(0usize, |bytes, file| bytes.checked_add(file.bytes.len()))
+                .ok_or(ConfigurationError::Limit)?;
+            self.remaining_definition_bytes = self
+                .remaining_definition_bytes
+                .checked_sub(bytes)
+                .ok_or(ConfigurationError::Limit)?;
+            if matches!(item.item_type.as_str(), "VariableLibrary" | "Lakehouse") {
+                self.processed_items
+                    .insert(identity_key(item), item.clone());
+            }
+            Ok(())
         }
         if responses[section].get(item_type).is_none() {
             responses[section][item_type] = json!({});
@@ -638,6 +660,8 @@ pub async fn deploy_repository_with_clients<E: OperationExecutor>(
         headers: BTreeMap::new(),
         collect_responses: context.enabled("enable_response_collection"),
         last_response: None,
+        remaining_definition_bytes: context.definition_limits.max_bytes.get(),
+        processed_items: HashMap::new(),
     };
     match run(&mut io, config, repository, &context).await {
         Ok(()) => Ok(io.result),

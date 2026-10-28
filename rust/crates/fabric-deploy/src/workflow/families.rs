@@ -103,7 +103,11 @@ pub(super) async fn publish<E: OperationExecutor>(
             for index in &plan.order {
                 let item = &plan.repository.items[*index];
                 if item.item_type == "Lakehouse" && ids.contains_key(&identity_key(item)) {
-                    lakehouse::shortcuts(io, publication, item, ids).await?;
+                    let prepared = io
+                        .processed_items
+                        .remove(&identity_key(item))
+                        .unwrap_or_else(|| item.clone());
+                    lakehouse::shortcuts(io, publication, &prepared, ids).await?;
                 }
             }
         }
@@ -150,6 +154,7 @@ async fn publish_one<E: OperationExecutor>(
     if !context.shell_only(&source.item_type) {
         preprocess(io, publication, &mut item, ids, false).await?;
     }
+    io.retain_prepared(&item)?;
     let folder_id = folders
         .get(&item.folder_path)
         .map(String::as_str)
@@ -229,7 +234,7 @@ async fn publish_one<E: OperationExecutor>(
     }
     io.collect("publish", &item.item_type, &item.name, collected);
     match processor {
-        Processor::VariableLibrary => activate_value_set(io, config, source, base, &id).await?,
+        Processor::VariableLibrary => activate_value_set(io, config, &item, base, &id).await?,
         Processor::Lakehouse => lakehouse::readiness(io, base, &id).await?,
         Processor::Environment => {
             io.request_policy(
@@ -305,7 +310,14 @@ async fn preprocess<E: OperationExecutor>(
     let repository = &plan.repository;
     let processor = Processor::for_type(&item.item_type)?;
     let snapshot = item.clone();
-    let mut budget = TransformBudget::new(TransformLimits::default(), &|| false);
+    let mut remaining = context.definition_limits.max_bytes.get();
+    let mut budget = TransformBudget::new(
+        TransformLimits {
+            max_bytes: remaining.min(TransformLimits::default().max_bytes),
+            ..TransformLimits::default()
+        },
+        &|| false,
+    );
     for file in &mut item.files {
         if !file.text
             || file.path.ends_with(".platform")
@@ -317,6 +329,9 @@ async fn preprocess<E: OperationExecutor>(
                 bulk,
             )?
         {
+            remaining = remaining
+                .checked_sub(file.bytes.len())
+                .ok_or(ConfigurationError::Limit)?;
             continue;
         }
         let mut content = file.content()?.to_owned();
@@ -355,6 +370,9 @@ async fn preprocess<E: OperationExecutor>(
         if !bulk && processor != Processor::VariableLibrary {
             content = super::text::workspace(&content, &item.item_type, workspace, context)?;
         }
+        remaining = remaining
+            .checked_sub(content.len())
+            .ok_or(ConfigurationError::Limit)?;
         file.bytes = content.into_bytes();
     }
     Ok(())
