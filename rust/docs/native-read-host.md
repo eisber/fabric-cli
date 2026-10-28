@@ -38,6 +38,9 @@ fallbacks are not supported.
 `Demo.Workspace`. There is no implicit personal-workspace or persisted current
 context discovery. Omitted home fails explicitly when `~` is used.
 No Python configuration/cache is read or written.
+An explicit `FAB_RUST_CONFIG_ROOT` selects the existing Rust local-family
+settings snapshot, including read display and output defaults; an omitted root
+retains JSON preview defaults. See the [native settings mapping](native-family-host.md#native-read-and-job-settings).
 
 After configuration checks, the host silently acquires **Fabric only** for the
 explicit Windows account. This is read connection/refresh, not login: it cannot
@@ -47,7 +50,9 @@ Interaction-required, account mismatch, unavailable provider, cancellation and
 other broker failures retain distinct sanitized diagnostics.
 
 The CLI owns one current-thread Tokio runtime, Ctrl+C handling and an overall
-240-second command deadline. Ctrl+C is exit 2; timeout and setup failures are
+240-second read command deadline. Synchronous jobs with an explicit finite
+timeout use the [derived job watchdog](native-job-reads.md#command-watchdog-versus-job-timeout)
+so family timeout/cancellation policy can finish. Ctrl+C is exit 2; timeout and setup failures are
 nonzero diagnostics on stderr. Dropping credential/HTTP futures requests
 cooperative cancellation, not rollback or guaranteed native cleanup completion.
 Ordinary SDK/path/query failures retain the existing command envelopes: JSON on
@@ -120,7 +125,8 @@ enrichment and hidden collection names), named workspace flat item LS,
 folder-context LS, source-routed supported item metadata GET and enriched
 workspace metadata GET. Current/home, quoted/tokenized paths, queries, known-type
 filtering and ordering reuse the existing contracts. Default workspace presentation
-is flat; library callers may explicitly select folder presentation in `ReadConfig`.
+is flat; library callers select folder presentation in `ReadConfig`, and native
+callers can select the existing `folder_listing_enabled` local setting.
 Discovery and handler reads are distinct command-local snapshots: folder path
 discovery can therefore list folders again during rendering. This is not Python
 TTL-cache/request-count parity. A failure on any page never emits partial rows as

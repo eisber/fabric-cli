@@ -28,6 +28,52 @@ no persistent metadata cache. Clearing that cache never deletes settings, sessio
 files or broker data. Remote command results keep their original cache effects
 for embedded consumers; executable snapshots expire at command exit.
 
+## Native read and job settings
+
+On Windows, the native host also loads the explicitly selected
+`FAB_RUST_CONFIG_ROOT` through the same local `ConfigStore::initialize` facility
+before credential connection. This preserves existing default and `fab_` key
+migration rules; it does not discover or import a Python profile. A selected
+missing configuration file receives the existing local-family defaults, including
+text output. An omitted root retains the read/job preview defaults: JSON,
+hidden names off, name sorting, flat workspace listing and timeout cancellation
+enabled. An empty or relative root, unreadable/malformed store, or invalid
+consumed value fails; it is not silently replaced by preview defaults.
+
+| Existing setting | Native consumer |
+| --- | --- |
+| `show_hidden` | `ReadConfig::show_hidden`; explicit `ls --all` still enables hidden names |
+| `output_item_sort_criteria` | `ReadConfig::item_sort`, `byname` or `bytype` |
+| `folder_listing_enabled` | Existing folder-aware read presentation |
+| `output_format` | Read and all job leaves; explicit `--output_format` takes precedence |
+| `job_cancel_ontimeout` | `JobConfig::cancel_on_timeout` for the existing synchronous run handler |
+
+These settings retain the existing schema's string types and case-sensitive
+allowed values. In particular JSON `false` is not the string `"false"`. Invalid
+values produce a typed selection failure naming only the setting, not its value.
+Configuration is a command-boundary snapshot, not mutable global state. Other
+families still require their existing store/setup and use their own released
+configuration consumers.
+
+There are no saved job timeout or polling-interval keys in the pinned source.
+`--timeout` and `--polling_interval` remain unchanged explicit arguments, including
+the family's validation and signed-timeout errors. `cache_enabled` cannot create
+a persistent cache in this command-local host; mandatory metadata hydration
+remains unchanged. Debug, identity, provider, endpoint and HTTP request policies
+are not selected by this mapping.
+
+The pure selector and `native_settings` offline regressions track Python
+`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`:
+`core/fab_constant.py` (keys/defaults), `core/fab_state_config.py`
+(initialization), `parsers/fab_jobs_parser.py` (explicit wait arguments),
+`commands/jobs/fab_jobs_run.py` (timeout cancellation), and
+`utils/fab_cmd_job_utils.py` (integer elapsed accounting and poll overshoot).
+Tests compose selected settings with the existing production read/job sessions,
+synthetic HTTP, time and credentials. They cover saved hidden names, explicit
+format precedence, completion, Unauthorized, local cancellation, timeout with
+and without the cancellation POST, invalid values and local-store migration.
+They do not establish native broker or live-service acceptance.
+
 ## Remote commands
 
 `native-read` selects the same credential, single-thread runtime, native HTTP

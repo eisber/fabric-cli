@@ -16,6 +16,10 @@ use std::{
 
 type Failure = (&'static str, String, u8);
 
+#[cfg(windows)]
+#[path = "native_settings.rs"]
+mod settings;
+
 #[derive(Clone, Copy)]
 #[cfg_attr(
     not(windows),
@@ -231,6 +235,31 @@ fn run_selected(
             2,
         )
     })?;
+    let saved = if std::env::var_os("FAB_RUST_CONFIG_ROOT").is_some() {
+        Some(
+            crate::local_host::store()
+                .and_then(|store| store.initialize())
+                .map_err(|error| failure("invalid_configuration", error.to_string(), 2))?,
+        )
+    } else {
+        None
+    };
+    let settings = settings::NativeSettings::select(saved.as_ref())
+        .map_err(|error| failure("invalid_configuration", error.to_string(), 2))?;
+    let job = match command {
+        NativeCommand::JobExecution(command) => Some(command.family_command()),
+        NativeCommand::JobMutation(command) => Some(command.family_command()),
+        _ => None,
+    };
+    let deadline = settings::command_deadline(job.as_ref(), settings.jobs)
+        .map_err(|error| failure("invalid_configuration", error.to_string(), 2))?;
+    if std::time::Instant::now().checked_add(deadline).is_none() {
+        return Err(failure(
+            "invalid_configuration",
+            "The selected job timeout exceeds the native deadline range.",
+            2,
+        ));
+    }
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -244,10 +273,10 @@ fn run_selected(
                     Err(_) => Err(failure("signal_failed", "The cancellation handler could not start.", 1)),
                 }
             },
-            _ = tokio::time::sleep(std::time::Duration::from_secs(240)) => {
+            _ = tokio::time::sleep(deadline) => {
                 Err(failure("timed_out", "The read command deadline elapsed.", 1))
             },
-            result = execute(command, options, &current, home, restored, endpoint) => result,
+            result = execute(command, options, &current, home, restored, endpoint, settings) => result,
         }
     })
 }
@@ -277,6 +306,7 @@ async fn execute(
     home: fabric_cli_context::HomeContext,
     restored: bool,
     endpoint: EndpointBinding,
+    settings: settings::NativeSettings,
 ) -> Result<fabric_cli_output::text::TextPlan, Failure> {
     use fabric_cli::session::ReadSession;
     use fabric_cli_context::Element;
@@ -351,28 +381,43 @@ async fn execute(
         current_path: current,
         home,
         timestamp,
-        config: fabric_cli::ReadConfig::default(),
+        config: settings.reads,
     };
     let result = match command {
         NativeCommand::Read(command) => {
+            let command = settings
+                .read_command(command)
+                .map_err(|error| failure("invalid_configuration", error.to_string(), 2))?;
             session
                 .with_source_operations(&executor)
-                .dispatch(command, std::future::pending())
+                .dispatch(&command, std::future::pending())
                 .await
         }
         NativeCommand::Job(command) => {
+            let mut command = command.clone();
+            command.output_format = Some(
+                settings
+                    .output(command.output_format.as_deref())
+                    .map_err(|error| failure("invalid_configuration", error.to_string(), 2))?,
+            );
             fabric_cli::jobs::JobReadSession {
                 reads: &session,
                 jobs: Arc::new(fabric_cli_jobs::HttpJobExecutor::new(executor.clone())),
             }
-            .dispatch(command, std::future::pending())
+            .dispatch(&command, std::future::pending())
             .await
         }
         NativeCommand::JobExecution(command) => {
-            execute_job(&session, &executor, &command.family_command()).await
+            let command = settings
+                .job_command(&command.family_command())
+                .map_err(|error| failure("invalid_configuration", error.to_string(), 2))?;
+            execute_job(&session, &executor, &command, settings.jobs).await
         }
         NativeCommand::JobMutation(command) => {
-            execute_job(&session, &executor, &command.family_command()).await
+            let command = settings
+                .job_command(&command.family_command())
+                .map_err(|error| failure("invalid_configuration", error.to_string(), 2))?;
+            execute_job(&session, &executor, &command, settings.jobs).await
         }
         NativeCommand::Family(command) => execute_family(&session, &executor, command).await,
     };
@@ -413,13 +458,14 @@ async fn execute_job(
     session: &fabric_cli::session::ReadSession<'_>,
     executor: &fabric_sdk_http::HttpExecutor,
     command: &fabric_cli_jobs::JobCommand,
+    config: fabric_cli_jobs::JobConfig,
 ) -> Result<fabric_cli_output::text::TextPlan, fabric_cli_output::text::TextError> {
     fabric_cli::jobs::JobSession {
         reads: session,
         jobs: std::sync::Arc::new(fabric_cli_jobs::HttpJobExecutor::new(executor.clone())),
         files: &fabric_cli::jobs::SelectedJobFiles,
         ui: &NativeJobUi,
-        config: fabric_cli_jobs::JobConfig::default(),
+        config,
     }
     .dispatch(command, std::future::pending())
     .await

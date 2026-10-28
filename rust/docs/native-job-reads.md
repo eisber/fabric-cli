@@ -31,8 +31,10 @@ Default/broker-only builds remain `NotConfigured` without credential discovery.
 The CLI supplies a reader for explicitly selected execution/configuration files.
 It rejects malformed/unsupported JSON through the existing lossless output
 parser. Native configuration currently uses the source default
-`cancel_on_timeout=true`; persisted Python/local-family configuration is not
-silently read or claimed supported. Offline callers inject both cancellation
+`cancel_on_timeout=true` when no Rust configuration root is selected; an explicit
+local-family store supplies `job_cancel_ontimeout` and default output through
+the [native settings snapshot](native-family-host.md#native-read-and-job-settings).
+No Python profile is discovered. Offline callers inject both cancellation
 settings. Immediate grey/progress/warning events and failed/unknown raw status
 tables use the shared non-TTY renderer. Deferred async status hints are written
 after the result, preserving stream order. Writer errors remain failures.
@@ -103,7 +105,7 @@ feature selects the same Windows host used by LS/dir/GET. It requires the same
 explicit `FAB_RUST_TENANT`, `FAB_RUST_ACCOUNT` and `FAB_RUST_CLIENT_ID` selectors,
 optional `FAB_RUST_CONTEXT`/`FAB_RUST_HOME`, silent Fabric-only credentials,
 fixed HTTPS origin, shared HTTP executor, CLI-owned runtime, Ctrl+C and
-240-second overall deadline. Non-Windows execution is explicitly unsupported.
+the bounded command-kind deadline below. Non-Windows execution is explicitly unsupported.
 There is no second host, runtime, retry loop, poller, ambient identity,
 static-token input, sign-in prompt or persisted session.
 
@@ -121,6 +123,52 @@ unchanged.
 The only new internal dependency edges are `fabric-cli -> fabric-cli-jobs` and
 `fabric-cli -> fabric-sdk-jobs`; registry packages and default native
 identity/transport feature selection are unchanged.
+
+### Command watchdog versus job timeout
+
+Python has no implicit job timeout. Its explicit signed `--timeout` applies to
+the family's elapsed wait, not credential/metadata setup or timeout cleanup.
+The host must not drop that handler at 240 seconds when the caller selected a
+longer finite wait: doing so skips `job_cancel_ontimeout` policy altogether.
+
+The native watchdog remains 240 seconds for reads, asynchronous submission,
+schedule mutations, negative run timeouts, runs without `--timeout`, and
+`run-cancel --wait` (which has no source timeout option). It does not inject a
+family timeout into the latter two unbounded Python flows. Extending those
+flows needs a separate finite-bound policy decision; the current cap remains
+an explicit preview limitation, not Python parity.
+
+Only synchronous `job run --timeout N` with `N >= 0` receives a derived finite
+wall-clock budget. Using existing executor and operation limits:
+
+```text
+setup allowance       = HTTP timeout                              (240 seconds)
+job wait allowance    = 2 * N
+final poll allowance  = HTTP timeout + maximum executor delay      (300 seconds)
+cleanup, if enabled   = cancellation POST HTTP timeout
+                      + operation maximum requests
+                        * (HTTP timeout + operation maximum poll delay)
+                      = 240 + 100 * (240 + 60) seconds
+host deadline         = setup + job wait + final poll + optional cleanup
+```
+
+The second `N` accounts for source/family truncation of each status request's
+elapsed time to integer seconds with positive polling intervals. The final poll
+can overshoot the family timeout. Cleanup reserves the existing bounded
+generic-operation reconciliation envelope, not an arbitrary new job default;
+it can therefore be much larger than an ordinary successful cancellation.
+When `job_cancel_ontimeout=false`, none of that cleanup allowance is added.
+The family still makes the only cancellation-policy decision, never the watchdog.
+No HTTP timeout, retry, polling or request-count limit is changed.
+
+Checked arithmetic rejects unsupported duration ranges before runtime or
+credential connection. Runtime deadline representability is also checked.
+The watchdog remains finite even for pathological zero-delay service polling,
+clock/accounting anomalies or stalled provider cleanup. It is not a guarantee
+that every adversarial response can reach family cleanup. Ctrl+C retains its
+immediate local-cancellation behavior: neither Ctrl+C nor watchdog expiry
+requests remote cancellation or implies rollback. Accepted cancellation is
+still asynchronous, not a claim that the job has stopped.
 
 The read-only DTO reuses the released family typed conversion. It preserves
 source token paths, required status `--id`, repeated
