@@ -9,6 +9,14 @@ independent execution receipts verify that extra top/core/publish/unpublish
 properties do not change those calls. `require_no_extensions` remains available
 only as an explicit stricter embedded-caller policy, not the CLI default.
 
+Generic CLI deployment emits nonfatal workflow failures through the caller's
+warning UI while retaining the complete `WorkflowResult` in `DeployResult`.
+Warning delivery failure preserves that same partial evidence and never retries
+a mutation. Environment Spark settings retain quoted YAML indicators and scalar
+types when preprocessed for either standard or bulk publication; plain string
+emission is checked by the existing YAML parser rather than inferred from a
+partial list of reserved characters.
+
 ## Command-scoped configuration handoff (October 28)
 
 `DeploymentConfig::command_configuration(CommandOptions)` provides immutable

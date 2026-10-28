@@ -83,6 +83,10 @@ pub struct DeployResult {
     pub completed: Vec<PublishedItem>,
     /// Confirmation was declined; no config reads or remote calls were made.
     pub declined: bool,
+    /// Full generic workflow evidence, including nonfatal failures and effects.
+    ///
+    /// Legacy Notebook execution retains its existing `completed` evidence.
+    pub workflow: Option<WorkflowResult>,
 }
 
 /// Explicit process inputs for parameter loading; libraries do not discover them.
@@ -733,6 +737,7 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
                     return Ok(DeployResult {
                         completed,
                         declined: false,
+                        workflow: None,
                     });
                 }
                 Err(DeployError {
@@ -767,7 +772,7 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
         )
         .await?;
         let context = loaded.context(self.definition_limits, inputs)?;
-        let mut completed = deploy_repository(
+        let completed = deploy_repository(
             self.client,
             self.executor,
             &config,
@@ -780,8 +785,27 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
         .map_err(|error| DeployError {
             failure: DeployFailure::Workflow(Box::new(error)),
         })?;
-        for notice in std::mem::take(&mut completed.notices) {
-            if let Err(error) = self.ui.emit(TransferEvent::Warning(notice)) {
+        for notice in &completed.notices {
+            if let Err(error) = self.ui.emit(TransferEvent::Warning(notice.clone())) {
+                return Err(DeployError {
+                    failure: DeployFailure::Output {
+                        error,
+                        partial: Box::new(completed),
+                    },
+                });
+            }
+        }
+        for warning in &completed.warnings {
+            let output = fabric_cli_mutations::operation_error_output(warning);
+            let message = format!(
+                "{}: {}",
+                output.error_code.as_deref().unwrap_or("DeploymentWarning"),
+                output
+                    .message
+                    .as_deref()
+                    .unwrap_or("A deployment operation did not complete"),
+            );
+            if let Err(error) = self.ui.emit(TransferEvent::Warning(message)) {
                 return Err(DeployError {
                     failure: DeployFailure::Output {
                         error,
@@ -791,8 +815,9 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
             }
         }
         Ok(DeployResult {
-            completed: completed.published,
+            completed: completed.published.clone(),
             declined: false,
+            workflow: Some(completed),
         })
     }
 }

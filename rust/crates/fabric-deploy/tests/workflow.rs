@@ -7,6 +7,8 @@
 
 #[path = "workflow_support/additional.rs"]
 mod additional;
+#[path = "workflow_support/environment_scalars.rs"]
+mod environment_scalars;
 
 use async_trait::async_trait;
 use azure_core::{

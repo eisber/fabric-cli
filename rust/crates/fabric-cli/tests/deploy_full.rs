@@ -9,6 +9,8 @@
 #[path = "deploy_support/extensions.rs"]
 mod extensions;
 mod family_support;
+#[path = "deploy_support/warnings.rs"]
+mod warnings;
 use family_support::{Harness, success};
 use serde_json::{Value, json};
 

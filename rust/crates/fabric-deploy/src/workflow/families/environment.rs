@@ -140,12 +140,23 @@ fn emit_yaml(value: &Value) -> String {
         match value {
             Value::Null => "null".into(),
             Value::String(value) => {
+                if value.chars().any(char::is_control) {
+                    return fabric_core_json::json_dumps(&Value::String(value.clone()));
+                }
                 let ambiguous = value.is_empty()
                     || value.trim() != value
                     || value.contains([':', '#', '\n', '\r', '\'', '"', '[', ']', '{', '}', ','])
                     || ["true", "false", "yes", "no", "on", "off", "null", "~"]
                         .contains(&value.to_lowercase().as_str())
-                    || value.parse::<f64>().is_ok();
+                    || value.parse::<f64>().is_ok()
+                    || !yaml::decode(
+                        &format!("value: {value}\n"),
+                        YamlPolicy::Config,
+                        YamlLimits::default(),
+                    )
+                    .is_ok_and(|document| {
+                        document.get("value") == Some(&Value::String(value.clone()))
+                    });
                 if ambiguous {
                     format!("'{}'", value.replace('\'', "''"))
                 } else {
@@ -204,4 +215,42 @@ fn emit_yaml(value: &Value) -> String {
     let mut output = String::new();
     emit(value, 0, &mut output);
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn emitted_settings_retain_indicator_strings_keys_and_scalar_types() {
+        let document = serde_json::json!({
+            "instance_pool_id": "22222222-2222-2222-2222-222222222222",
+            "spark_conf": {
+                "*": "*",
+                "anchor": "&value",
+                "tag": "!value",
+                "block": "|",
+                "fold": ">",
+                "directive": "%YAML",
+                "reserved": "@value",
+                "backtick": "`value",
+                "octal": "012",
+                "hex": "0x12",
+                "newline": "first\nsecond",
+                "control": "first\tsecond",
+                "boolean": true,
+                "number": 12,
+                "nothing": null,
+            },
+        });
+        assert_eq!(
+            yaml::decode(
+                &emit_yaml(&document),
+                YamlPolicy::Config,
+                YamlLimits::default()
+            )
+            .unwrap(),
+            document
+        );
+    }
 }
