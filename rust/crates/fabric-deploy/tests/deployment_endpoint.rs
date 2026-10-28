@@ -104,8 +104,12 @@ impl Wire {
 
 struct Timer;
 impl ExecutionTimer for Timer {
-    fn sleep(&self, _: Duration) -> ExecutionFuture<'_, ()> {
-        Box::pin(async {})
+    fn sleep(&self, delay: Duration) -> ExecutionFuture<'_, ()> {
+        if delay == Duration::from_secs(240) {
+            Box::pin(std::future::pending())
+        } else {
+            Box::pin(async {})
+        }
     }
 }
 

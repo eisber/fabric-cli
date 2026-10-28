@@ -141,10 +141,14 @@ async fn lakehouse_readiness_waits_use_actual_source_backoff_not_a_fixed_delay()
         .lock()
         .unwrap()
         .iter()
-        .map(Duration::as_secs)
+        .map(Duration::as_secs_f64)
         .collect();
-    assert_eq!(
-        json!(waits),
-        Value::Array(oracle["cases"][0]["seconds"].as_array().unwrap()[..3].to_vec())
-    );
+    let expected: Vec<_> = oracle["cases"][0]["seconds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .take(3)
+        .map(|seconds| seconds.as_f64().unwrap())
+        .collect();
+    assert_eq!(waits, expected);
 }

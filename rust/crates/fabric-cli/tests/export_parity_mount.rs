@@ -444,7 +444,7 @@ async fn bulk_accepted_poll_result_is_written_once_and_writer_failure_does_not_r
     assert_eq!(
         ui.0.lock().unwrap()[0],
         TransferEvent::Warning(
-            "Item definition is exported without its sensitivity label and its data".into()
+            "Item definitions are exported without their sensitivity labels".into()
         )
     );
     assert_eq!(host.requests().len(), 5);
@@ -1035,7 +1035,13 @@ async fn root_cancelled_before_discovery_has_no_http_or_filesystem_effect() {
             std::future::ready(()),
         )
         .await;
-    failed(&output);
+    assert_ne!(output.plan.exit_code, 0);
+    assert!(matches!(output.evidence, FamilyEvidence::Local));
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    assert_ne!(output.write_to(&mut stdout, &mut stderr).unwrap(), 0);
+    let envelope: Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(envelope["result"]["error_code"], "Cancelled");
+    assert!(stderr.is_empty());
     assert!(host.requests().is_empty());
     assert!(
         fs::read_dir(host.root.join("output"))
