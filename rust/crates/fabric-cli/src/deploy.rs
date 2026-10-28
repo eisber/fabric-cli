@@ -15,7 +15,7 @@ use fabric_deploy::{
     notebook::DefinitionLimits,
     parameters::ParameterNotice,
     publish::{PublishError, PublishFailure, PublishedItem, publish_repository},
-    repository::{NotebookRepository, RepositoryError},
+    repository::RepositoryError,
     yaml::{self, YamlLimits, YamlPolicy},
 };
 use fabric_sdk::{Client, items::ItemExecutor};
@@ -25,7 +25,7 @@ use std::{
     fmt,
     future::{Future, poll_fn},
     path::{Path, PathBuf},
-    pin::pin,
+    pin::{Pin, pin},
     task::Poll,
 };
 
@@ -75,7 +75,26 @@ fn command(message: impl Into<String>) -> DeployError {
     }
 }
 
-fn read_file(
+async fn file_phase<T, C: Future<Output = ()> + ?Sized>(
+    work: impl Future<Output = Result<T, DeployError>>,
+    mut cancelled: Pin<&mut C>,
+) -> Result<T, DeployError> {
+    let mut work = pin!(work);
+    poll_fn(|cx| {
+        if cancelled.as_mut().poll(cx).is_ready() {
+            return Poll::Ready(Err(DeployError {
+                failure: DeployFailure::Command(CommandError::new(
+                    Some("Deployment cancelled during local preparation".into()),
+                    Some("LongRunningOperationCancelled".into()),
+                )),
+            }));
+        }
+        work.as_mut().poll(cx)
+    })
+    .await
+}
+
+async fn read_file(
     files: &mut dyn TransferFiles,
     path: &Path,
     max_bytes: usize,
@@ -89,14 +108,16 @@ fn read_file(
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     let root = files
-        .resolve_directory(
+        .resolve_directory_async(
             parent
                 .to_str()
                 .ok_or_else(|| command("Deployment input path must be UTF-8"))?,
         )
+        .await
         .map_err(|error| command(error.to_string()))?;
     let bytes = files
-        .read(&root, name, max_bytes)
+        .read_async(&root, name, max_bytes)
+        .await
         .map_err(|error| command(error.to_string()))?;
     Ok((bytes, root))
 }
@@ -196,7 +217,8 @@ pub struct DeployHost<'a, E> {
 impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
     /// Confirm, parse real YAML, validate overrides, preflight all files, deploy.
     ///
-    /// Synchronous file preparation must run on a caller-appropriate worker.
+    /// OS-backed file preparation runs on the caller's existing bounded worker.
+    /// Legacy synchronous injected adapters retain their explicit worker contract.
     /// Libraries never prompt, print, discover credentials or initialize a runtime.
     ///
     /// # Errors
@@ -269,7 +291,11 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
                 .as_deref()
                 .ok_or_else(|| command("Configuration path is required"))?,
         );
-        let (bytes, config_root) = read_file(self.files, path, self.yaml_limits.max_bytes)?;
+        let (bytes, config_root) = file_phase(
+            read_file(self.files, path, self.yaml_limits.max_bytes),
+            cancelled.as_mut(),
+        )
+        .await?;
         let content =
             std::str::from_utf8(&bytes).map_err(|_| command("Configuration must be UTF-8"))?;
         let document =
@@ -297,11 +323,15 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
             .get("parameter_file_path")
             .and_then(Value::as_str)
         {
-            let (bytes, _) = read_file(
-                self.files,
-                &config_root.join(parameter),
-                self.yaml_limits.max_bytes,
-            )?;
+            let (bytes, _) = file_phase(
+                read_file(
+                    self.files,
+                    &config_root.join(parameter),
+                    self.yaml_limits.max_bytes,
+                ),
+                cancelled.as_mut(),
+            )
+            .await?;
             let content =
                 std::str::from_utf8(&bytes).map_err(|_| command("Parameter file must be UTF-8"))?;
             let document = yaml::decode(content, YamlPolicy::Parameter, self.yaml_limits).map_err(
@@ -353,26 +383,38 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
             .and_then(Value::as_str)
             .ok_or_else(|| command("Repository directory is required"))?;
         let repository = config_root.join(repository);
-        let repository_root = self
-            .files
-            .resolve_directory(
-                repository
-                    .to_str()
-                    .ok_or_else(|| command("Repository path must be UTF-8"))?,
-            )
-            .map_err(|error| command(error.to_string()))?;
+        let repository_path = repository
+            .to_str()
+            .ok_or_else(|| command("Repository path must be UTF-8"))?;
+        let repository_root = file_phase(
+            async {
+                self.files
+                    .resolve_directory_async(repository_path)
+                    .await
+                    .map_err(|error| command(error.to_string()))
+            },
+            cancelled.as_mut(),
+        )
+        .await?;
         if config.skip_publish() {
             return Ok(DeployResult::default());
         }
-        let repository = NotebookRepository::discover(
-            self.files,
-            &repository_root,
-            self.definition_limits,
-            self.yaml_limits.max_nodes,
+        let repository = file_phase(
+            async {
+                self.files
+                    .prepare_repository_async(
+                        &repository_root,
+                        self.definition_limits,
+                        self.yaml_limits.max_nodes,
+                    )
+                    .await
+                    .map_err(|error| DeployError {
+                        failure: DeployFailure::Repository(error),
+                    })
+            },
+            cancelled.as_mut(),
         )
-        .map_err(|error| DeployError {
-            failure: DeployFailure::Repository(error),
-        })?;
+        .await?;
         let completed = publish_repository(
             self.client,
             self.executor,

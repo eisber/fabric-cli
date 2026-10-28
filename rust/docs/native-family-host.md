@@ -130,6 +130,15 @@ Cancellation is not syscall cancellation
 or rollback; an in-flight write can still complete after its future is dropped.
 The [transfer contract](../crates/fabric-cli-transfer/README.md#asynchronous-local-filesystem-boundary-td03)
 records task/byte bounds, partial progress and the independent source pin.
+The bounded deployment host shares this adapter: configuration and parameter
+reads await the confined read capability, and complete Notebook repository
+preparation awaits the same serialized worker before any service work. The
+released discovery routine returns an owned bounded snapshot in native listing
+order; no synchronous borrowed capability or lock guard escapes to an async
+callback. Original repository failures, complete preflight and later publication
+uncertainty remain intact. Synchronous `LocalTransferFiles` stays available for
+explicitly worker-owned embedded callers; it is not substituted into the native
+async host.
 Native confirmation and workspace export
 selection need an injected UI; use the corresponding explicit force/all options
 for supported noninteractive branches. Resource notices are buffered in source

@@ -705,3 +705,85 @@ async fn malformed_capture_and_empty_first_match_never_dispatch_mutation() {
         assert!(matches!(&output.evidence, FamilyEvidence::Deploy(Err(_))));
     }
 }
+
+#[tokio::test]
+async fn root_deploy_shared_async_files_read_nested_config_parameters_and_repository() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../fabric-deploy/tests/literal_parameter_payload_source.json"
+    ))
+    .unwrap();
+    let case = &fixture["cases"][0];
+    let mut host = Harness::new();
+    input(&host);
+    let configured = host.root.join("configured");
+    std::fs::create_dir(&configured).unwrap();
+    std::fs::rename(host.root.join("repository"), configured.join("repository")).unwrap();
+    std::fs::write(
+        configured
+            .join("repository")
+            .join("Book.Notebook")
+            .join("notebook-content.py"),
+        case["input"].as_str().unwrap(),
+    )
+    .unwrap();
+    std::fs::write(
+        configured.join("parameter.yml"),
+        "find_replace:\n- find_value: source\n  replace_value:\n    dev: target\n",
+    )
+    .unwrap();
+    std::fs::write(configured.join("deploy.yml"), format!(
+        "core:\n  workspace_id: {WORKSPACE}\n  repository_directory: repository\n  item_types_in_scope: [Notebook]\n  parameter: parameter.yml\nunpublish:\n  skip: true\n"
+    )).unwrap();
+    metadata(&host, false);
+    host.reply(201, json!({"id":ITEM}));
+    let config = std::path::Path::new("configured").join("deploy.yml");
+    let output = host
+        .execute(&[
+            "deploy",
+            "--config",
+            config.to_str().unwrap(),
+            "-tenv",
+            "dev",
+            "-f",
+        ])
+        .await;
+    success(&output);
+    assert_eq!(host.requests().len(), 3);
+    assert_eq!(
+        host.requests()[2]["body"]["definition"]["parts"][1],
+        case["expectedPart"],
+    );
+    assert!(
+        matches!(&output.evidence, FamilyEvidence::Deploy(Ok(result))
+        if result.completed.len() == 1 && result.completed[0].outcome.item_id == ITEM)
+    );
+}
+
+#[tokio::test]
+async fn root_deploy_async_repository_error_retains_original_preflight_classification() {
+    let mut host = Harness::new();
+    input(&host);
+    std::fs::write(
+        host.root
+            .join("repository")
+            .join("Book.Notebook")
+            .join(".platform"),
+        b"invalid",
+    )
+    .unwrap();
+    let output = host
+        .execute(&["deploy", "--config", "deploy.yml", "-f"])
+        .await;
+    assert_ne!(output.plan.exit_code, 0);
+    assert!(matches!(
+        &output.evidence,
+        FamilyEvidence::Deploy(Err(error))
+        if matches!(&error.failure, DeployFailure::Repository(
+            fabric_deploy::repository::RepositoryError::Notebook(
+                fabric_deploy::notebook::DeploymentError::InvalidInput
+            )
+        ))
+    ));
+    assert!(host.requests().is_empty());
+    assert!(host.credential.0.lock().unwrap().is_empty());
+}

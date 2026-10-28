@@ -6,17 +6,22 @@
 #![cfg(feature = "native-read")]
 
 use fabric_cli::families::transfer_files::{TokioTransferFiles, TransferWorkerError};
-use fabric_cli_transfer::TransferFiles;
+use fabric_cli_transfer::{LocalTransferFiles, TransferFiles};
 use fabric_deploy::definitions::{
-    DefinitionErrorKind, DefinitionFile, DefinitionLimits, ImportTarget,
+    DefinitionErrorKind, DefinitionFile, DefinitionImportFileSystem, DefinitionLimits, ImportTarget,
 };
+use fabric_deploy::{
+    deployment_config::ConfigurationError,
+    repository::{NotebookRepository, RepositoryError},
+};
+use serde_json::Value;
 use std::{
     fs,
     future::{Future, poll_fn},
     io,
     num::NonZeroUsize,
     path::PathBuf,
-    pin::pin,
+    pin::{Pin, pin},
     sync::{
         atomic::{AtomicUsize, Ordering},
         mpsc,
@@ -296,4 +301,161 @@ async fn worker_retains_link_rejection_without_resolving_individual_paths() {
             .is_err()
     );
     assert!(!directory.0.join("real").join("never.bin").exists());
+}
+
+fn repository(directory: &Directory) -> PathBuf {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../fabric-deploy/tests/publish_source.json"
+    ))
+    .unwrap();
+    let root = directory.0.join("repository");
+    let notebook = root.join("Book.Notebook");
+    fs::create_dir(&root).unwrap();
+    fs::create_dir(&notebook).unwrap();
+    for file in fixture["cases"][0]["files"].as_array().unwrap() {
+        fs::write(
+            notebook.join(file[0].as_str().unwrap()),
+            file[1].as_str().unwrap(),
+        )
+        .unwrap();
+    }
+    root
+}
+
+async fn occupy_worker() -> (mpsc::Sender<()>, tokio::task::JoinHandle<()>) {
+    let (entered, started) = oneshot::channel();
+    let (release, gate) = mpsc::channel();
+    let blocker = tokio::task::spawn_blocking(move || {
+        entered.send(()).unwrap();
+        gate.recv_timeout(Duration::from_secs(30)).unwrap();
+    });
+    started.await.unwrap();
+    (release, blocker)
+}
+
+async fn pending_with_heartbeat<T>(mut work: Pin<&mut impl Future<Output = T>>) {
+    poll_fn(|cx| {
+        assert!(work.as_mut().poll(cx).is_pending());
+        Poll::Ready(())
+    })
+    .await;
+    tokio::spawn(async { tokio::task::yield_now().await })
+        .await
+        .unwrap();
+    poll_fn(|cx| {
+        assert!(work.as_mut().poll(cx).is_pending());
+        Poll::Ready(())
+    })
+    .await;
+}
+
+#[test]
+fn current_thread_read_and_deploy_repository_preparation_use_the_actual_worker() {
+    let directory = Directory::new();
+    let repository = repository(&directory);
+    fs::write(directory.0.join("raw.bin"), [0, 255, 13, 10]).unwrap();
+    let runtime = Builder::new_current_thread()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let mut files = directory.adapter(Default::default()).await;
+        {
+            let (release, blocker) = occupy_worker().await;
+            let mut read = pin!(files.read_async(&directory.0, "raw.bin", 4));
+            pending_with_heartbeat(read.as_mut()).await;
+            release.send(()).unwrap();
+            assert_eq!(read.await.unwrap(), [0, 255, 13, 10]);
+            blocker.await.unwrap();
+        }
+        {
+            let (release, blocker) = occupy_worker().await;
+            let mut prepare =
+                pin!(files.prepare_repository_async(&repository, Default::default(), 32,));
+            pending_with_heartbeat(prepare.as_mut()).await;
+            release.send(()).unwrap();
+            let prepared = prepare.await.unwrap();
+            blocker.await.unwrap();
+            assert_eq!(prepared.notebooks.len(), 1);
+            assert_eq!(prepared.notebooks[0].name(), "Book");
+        }
+        assert_eq!(
+            fs::read(directory.0.join("raw.bin")).unwrap(),
+            [0, 255, 13, 10]
+        );
+    });
+    runtime.shutdown_timeout(Duration::from_secs(1));
+}
+
+#[test]
+fn dropped_deploy_preparation_shares_the_transfer_worker_permit_with_reads() {
+    let directory = Directory::new();
+    let repository = repository(&directory);
+    fs::write(directory.0.join("raw.bin"), b"keep").unwrap();
+    let runtime = Builder::new_current_thread()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let mut files = directory.adapter(Default::default()).await;
+        let (release, blocker) = occupy_worker().await;
+        {
+            let mut prepare =
+                pin!(files.prepare_repository_async(&repository, Default::default(), 32,));
+            pending_with_heartbeat(prepare.as_mut()).await;
+        }
+        let mut read = pin!(files.read_async(&directory.0, "raw.bin", 4));
+        pending_with_heartbeat(read.as_mut()).await;
+        release.send(()).unwrap();
+        assert_eq!(read.await.unwrap(), b"keep");
+        blocker.await.unwrap();
+    });
+    runtime.shutdown_timeout(Duration::from_secs(1));
+}
+
+#[tokio::test]
+async fn deployment_preparation_preserves_bounds_native_errors_and_sync_local_compatibility() {
+    let directory = Directory::new();
+    let repository = repository(&directory);
+    fs::write(directory.0.join("raw.bin"), b"keep").unwrap();
+    let mut files = directory.adapter(Default::default()).await;
+    assert_eq!(
+        files
+            .read_async(&directory.0, "../escape", 4)
+            .await
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::InvalidInput,
+    );
+    assert!(files.read_async(&directory.0, "raw.bin", 3).await.is_err());
+    let Err(error) = files
+        .prepare_repository_async(&repository, Default::default(), 0)
+        .await
+    else {
+        panic!("aggregate repository entry bound must fail");
+    };
+    assert!(matches!(
+        error,
+        RepositoryError::Configuration(ConfigurationError::Limit)
+    ));
+    let mut local = LocalTransferFiles::new(directory.0.clone(), None, Default::default()).unwrap();
+    assert_eq!(local.read(&directory.0, "raw.bin", 4).unwrap(), b"keep");
+    let synchronous =
+        NotebookRepository::discover(&mut local, &repository, Default::default(), 32).unwrap();
+    let asynchronous = files
+        .prepare_repository_async(&repository, Default::default(), 32)
+        .await
+        .unwrap();
+    assert_eq!(
+        synchronous.notebooks[0].name(),
+        asynchronous.notebooks[0].name()
+    );
+    let fallback = local
+        .prepare_repository_async(&repository, Default::default(), 32)
+        .await
+        .unwrap();
+    assert_eq!(
+        fallback.notebooks[0].name(),
+        synchronous.notebooks[0].name()
+    );
 }
