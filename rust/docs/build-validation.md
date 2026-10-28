@@ -135,6 +135,9 @@ deployment preflight, alongside the retained legacy mounted consumers. The
 configuration/scoped-parameter gate re-executes all ten additive references
 against the pinned `fabric-cicd` source without regenerating expected receipts.
 The full native matrix retains those comparisons as a separate finite step.
+Deployment selections restore the same pinned development-only oracle
+requirements as the bounded preflight before running those captures; PyYAML and
+JSONPath packages are not dependencies of the shipped Rust product.
 Export storage, fallback, hierarchy, response-index, precondition and input
 classification captures are also re-executed without regenerating their
 immutable expectations; generated receipts stay in an isolated ignored target

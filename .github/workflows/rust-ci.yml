@@ -244,6 +244,9 @@ jobs:
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake') ||
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-onelake-http')
         run: python -m pip install --disable-pip-version-check -r tests/compatibility/requirements.txt
+      - name: Restore pinned deployment oracle dependencies
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-deploy')
+        run: python -m pip install --disable-pip-version-check -r scripts/rust-fast-requirements.txt
       - name: Use repository-pinned toolchain and record actual host
         run: |
           cargo --version

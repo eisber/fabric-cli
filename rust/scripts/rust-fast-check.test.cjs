@@ -565,6 +565,16 @@ test('full dispatch requires real fast success at the combined immutable head', 
   }
 });
 
+test('full native matrix restores the pinned deployment oracle before comparisons', () => {
+  const workflow = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/rust-ci.yml'), 'utf8');
+  const restore = workflow.indexOf('      - name: Restore pinned deployment oracle dependencies');
+  const compare = workflow.indexOf('      - name: Require immutable configuration and scoped parameter source receipts');
+  assert.ok(restore >= 0 && compare > restore);
+  const step = workflow.slice(restore, workflow.indexOf('      - name:', restore + 1));
+  assert.ok(step.includes("contains(fromJSON(needs.changes.outputs.packages), 'fabric-deploy')"));
+  assert.ok(step.includes('-r scripts/rust-fast-requirements.txt'));
+});
+
 test('workflow limits runner context to steps and retains pinned bounded push gate', () => {
   const workflow = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/rust-fast-check.yml'), 'utf8');
   const beforeSteps = workflow.split('    steps:')[0];
