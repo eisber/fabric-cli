@@ -5,13 +5,18 @@ use super::*;
 
 pub(super) async fn bind<E: OperationExecutor>(
     io: &mut ServiceIo<'_, E>,
-    config: &DeploymentConfig,
-    context: &EngineContext,
-    repository: &DeploymentRepository,
-    selected: &[usize],
-    base: &str,
+    publication: Publication<'_>,
     ids: &HashMap<String, String>,
 ) -> Result<(), WorkflowFailure> {
+    let Publication {
+        config,
+        context,
+        plan,
+        base,
+        ..
+    } = publication;
+    let repository = &plan.repository;
+    let selected = &plan.order;
     let Some(bindings) = context
         .parameter_document
         .as_ref()
@@ -117,7 +122,7 @@ pub(super) async fn bind<E: OperationExecutor>(
         {
             continue;
         }
-        let Some(id) = ids.get(&model.logical_id) else {
+        let Some(id) = ids.get(&identity_key(model)) else {
             continue;
         };
         let valid: Vec<_> = connection_ids

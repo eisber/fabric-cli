@@ -81,36 +81,26 @@ impl DeploymentRepository {
                     format!("{relative}/{}", entry.name)
                 });
             }
-            let mut contents = Vec::new();
-            for entry in entries
-                .into_iter()
-                .filter(|entry| entry.kind == DefinitionEntryKind::File)
-            {
-                let path = if relative.is_empty() {
-                    entry.name.clone()
-                } else {
-                    format!("{relative}/{}", entry.name)
-                };
-                let bytes = files
-                    .read(root, &path, remaining)
-                    .map_err(RepositoryError::FileSystem)?;
-                remaining = remaining
-                    .checked_sub(bytes.len())
-                    .ok_or(RepositoryError::Configuration(ConfigurationError::Limit))?;
-                contents.push(ItemFile::new(entry.name, bytes));
-            }
-            directories.push((relative, contents));
+            directories.push((relative, entries));
         }
         let item_paths: HashSet<_> = directories
             .iter()
-            .filter(|(_, files)| files.iter().any(|file| file.path == ".platform"))
+            .filter(|(_, files)| {
+                files
+                    .iter()
+                    .any(|file| file.kind == DefinitionEntryKind::File && file.name == ".platform")
+            })
             .map(|(path, _)| path.clone())
             .collect();
         let mut items = Vec::new();
         let mut names = HashSet::new();
         let mut logical_ids = HashSet::new();
         let mut folders = Vec::new();
-        for path in &item_paths {
+        for path in directories
+            .iter()
+            .map(|(path, _)| path)
+            .filter(|path| item_paths.contains(*path))
+        {
             let mut parent = path.as_str();
             while let Some((ancestor, _)) = parent.rsplit_once('/') {
                 if !item_paths.contains(ancestor)
@@ -126,19 +116,56 @@ impl DeploymentRepository {
             }
         }
         folders.sort_by_key(|folder| folder.bytes().filter(|ch| *ch == b'/').count());
-        for path in directories
+        let mut loaded = Vec::new();
+        for (directory, entries) in directories {
+            if !item_paths.iter().any(|item| {
+                directory == *item
+                    || item.is_empty()
+                    || directory
+                        .strip_prefix(item)
+                        .is_some_and(|tail| tail.starts_with('/'))
+            }) {
+                continue;
+            }
+            let mut contents = Vec::new();
+            for entry in entries
+                .into_iter()
+                .filter(|entry| entry.kind == DefinitionEntryKind::File)
+            {
+                let path = if directory.is_empty() {
+                    entry.name.clone()
+                } else {
+                    format!("{directory}/{}", entry.name)
+                };
+                let bytes = files
+                    .read(root, &path, remaining)
+                    .map_err(RepositoryError::FileSystem)?;
+                remaining = remaining
+                    .checked_sub(bytes.len())
+                    .ok_or(RepositoryError::Configuration(ConfigurationError::Limit))?;
+                contents.push(ItemFile::new(entry.name, bytes));
+            }
+            loaded.push((directory, contents));
+        }
+        let mut snapshot_bytes = 0usize;
+        for path in loaded
             .iter()
             .map(|(path, _)| path)
             .filter(|path| item_paths.contains(*path))
         {
             let mut contents = Vec::new();
-            for (directory, files) in &directories {
-                if directory == path
+            for (directory, files) in &loaded {
+                if path.is_empty()
+                    || directory == path
                     || directory
                         .strip_prefix(path)
                         .is_some_and(|tail| tail.starts_with('/'))
                 {
                     for file in files {
+                        snapshot_bytes = snapshot_bytes
+                            .checked_add(file.bytes.len())
+                            .filter(|bytes| *bytes <= limits.max_bytes.get())
+                            .ok_or(RepositoryError::Configuration(ConfigurationError::Limit))?;
                         let prefix = directory
                             .strip_prefix(path)
                             .unwrap_or("")

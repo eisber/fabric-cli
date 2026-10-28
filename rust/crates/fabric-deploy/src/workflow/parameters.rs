@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+use super::families::Publication;
 use super::*;
 use crate::{
     model::RepositoryItem,
@@ -223,17 +224,16 @@ pub(super) fn has_unfiltered_item_variable(context: &EngineContext) -> bool {
 
 pub(super) async fn apply<E: OperationExecutor>(
     io: &mut ServiceIo<'_, E>,
-    config: &DeploymentConfig,
-    context: &EngineContext,
-    repository: &DeploymentRepository,
+    publication: Publication<'_>,
     item: &RepositoryItem,
     path: &str,
     content: &str,
-    base: &str,
-    workspace: &str,
     ids: &HashMap<String, String>,
     budget: &mut TransformBudget<'_>,
 ) -> Result<String, WorkflowFailure> {
+    let Publication {
+        config, context, ..
+    } = publication;
     let Some(document) = &context.parameter_document else {
         return config.parameters().map_or_else(
             || Ok(content.into()),
@@ -261,8 +261,7 @@ pub(super) async fn apply<E: OperationExecutor>(
             else {
                 continue;
             };
-            let replacement =
-                resolve(io, replacement, repository, context, base, workspace, ids).await?;
+            let replacement = resolve(io, replacement, publication, ids).await?;
             let mut rule = rule
                 .as_object()
                 .cloned()
@@ -281,7 +280,7 @@ pub(super) async fn apply<E: OperationExecutor>(
             {
                 rule.insert(
                     "find_value".into(),
-                    resolve(io, &find, repository, context, base, workspace, ids).await?,
+                    resolve(io, &find, publication, ids).await?,
                 );
             }
             rules.push(Value::Object(rule));
@@ -304,12 +303,17 @@ pub(super) async fn apply<E: OperationExecutor>(
 pub(super) async fn resolve<E: OperationExecutor>(
     io: &mut ServiceIo<'_, E>,
     value: &Value,
-    repository: &DeploymentRepository,
-    context: &EngineContext,
-    base: &str,
-    workspace: &str,
+    publication: Publication<'_>,
     ids: &HashMap<String, String>,
 ) -> Result<Value, WorkflowFailure> {
+    let Publication {
+        context,
+        plan,
+        base,
+        workspace,
+        ..
+    } = publication;
+    let repository = &plan.repository;
     let Some(value) = value.as_str().filter(|value| value.starts_with('$')) else {
         return Ok(value.clone());
     };
@@ -389,7 +393,7 @@ pub(super) async fn resolve<E: OperationExecutor>(
                     .items
                     .iter()
                     .find(|item| item.item_type == item_type && item.name == name)
-                    .and_then(|item| ids.get(&item.logical_id))
+                    .and_then(|item| ids.get(&identity_key(item)))
                     .cloned()
             } else {
                 None

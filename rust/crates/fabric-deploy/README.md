@@ -2,6 +2,82 @@
 
 # Native Notebook deployment and definition transfer
 
+## Multi-item orchestration checkpoint
+
+The additive `model`, `planner`, `processors`, and `workflow` modules translate
+the pinned CICD publisher hierarchy rather than routing every type through the
+definition-import codec. `workflow::deploy_repository` accepts a complete
+`DeploymentRepository`, `EngineContext`, injected SDK client/executor, bounds and
+cancellation. It resolves workspace display names, selects source type/dependency
+order, publishes folders and items sequentially, performs processor lifecycle
+calls, and runs default orphan unpublication with source feature gates and empty
+folder pruning. All flags, constants, parameter source and optional environment
+values belong to the explicit invocation context; there are no global flags.
+Bulk mode uses real `bulkImportDefinitions` parts, source fallback conditions,
+logical-ID publish units and dependency stages.
+
+This is an **unvalidated implementation checkpoint**, not full deployment parity
+or a replacement for the existing Notebook API. The root CLI still uses the
+bounded Notebook preparation capability; mounting the broader workflow requires
+the transfer owner's additive asynchronous full-repository snapshot method.
+No native Cargo test/build slot has been granted to this lane. Source capture,
+Rust formatting and locked no-dependency metadata checks are distinct from native
+compilation and passing tests.
+
+| Source item type | Implemented processor path |
+|---|---|
+| VariableLibrary | Parameter-only definition; active value-set PATCH |
+| Warehouse | Source creationPayload; metadata-only update |
+| MirroredDatabase | Source generic definition publisher |
+| Lakehouse | Schema creation payload; SQL readiness; shortcut reconciliation |
+| SQLDatabase | Source shell create/metadata PATCH |
+| CosmosDBDatabase | Source generic definition publisher |
+| Environment | Sparkcompute pool mapping; staging publish; state checks |
+| UserDataFunction | Source generic definition publisher |
+| Eventhouse | Parent definition excludes `.children` |
+| SparkJobDefinition | `SparkJobDefinitionV2` format |
+| Notebook | Content-before-settings ordering; optional ipynb format |
+| SemanticModel | `.pbi` exclusion; purge options; connection bindings |
+| Report | `.pbi` exclusion; repository byPath model conversion |
+| PaginatedReport | Source generic definition publisher, serialized I/O |
+| CopyJob | Source generic definition publisher |
+| DataBuildToolJob | Source generic publisher; bulk fallback |
+| KQLDatabase | Source generic definition publisher |
+| KQLQueryset | Repository database reference and cluster URI lookup |
+| Dataflow | Parameter-derived dependency order and source-ID conversion |
+| DataPipeline | Actual nested activity references; ordered publish/unpublish |
+| Reflex | Generic definition plus escaped default-workspace replacement |
+| Eventstream | Source generic definition publisher |
+| KQLDashboard | Deployed database-name and cluster URI lookup |
+| GraphQLApi | Source generic definition publisher |
+| ApacheAirflowJob | Source generic definition publisher |
+| MountedDataFactory | Source generic definition publisher |
+| Ontology | Source generic definition publisher |
+| DataAgent | `.pbi` exclusion |
+| MLExperiment | Source shell create/metadata PATCH |
+| Map | Source generic definition publisher |
+| GraphModel | Source generic definition publisher |
+| OrgApp | Parent definition excludes `.children` |
+| OrgAppAudience | Generic definition; parent-managed location does not move |
+
+Source proof is under `rust/tests/compatibility/deploy_workflow`: actual source
+AST definitions produce all 66 create/update publisher cases, actual nested
+pipeline/sort cases, family preprocessing outputs/metadata reads, and soft/hard
+delete/pruning calls before native test expectations are added. The capture uses
+public CICD commit `5ca096c00a9a878c646c59fe537b883eba951329`, synthetic endpoint
+responses, and no credentials, package initialization or network. Its first
+66 cases cover common bodies, **not all lifecycle/configuration branches**.
+The new native selectors are `--test publisher_source_contract --test workflow`.
+They have not yet been executed.
+
+Acceptance still needs native compilation/strict Clippy, complete processor
+branch/lifecycle/cancellation/partial-failure source fixtures, full root mounting,
+source constant-override coverage, binary classification equivalence, and
+Sparkcompute YAML emission edge cases. Encoded shortcut deletion paths require
+a shared-operation API decision: the existing safe constructor rejects percent
+encoding and must not be bypassed. Advanced regex/JSONPath fullness remains a
+separate transform boundary. No live publish/delete operation is authorized.
+
 This crate implements bounded native Notebook deployment, not full Python
 `fab deploy` parity. The original **single-Notebook** path loads real local files, performs supported native
 transforms, builds inline-base64 definition parts, discovers an existing

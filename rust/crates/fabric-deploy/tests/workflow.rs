@@ -10,6 +10,7 @@ use azure_core::{
     credentials::{AccessToken, TokenCredential, TokenRequestOptions},
     time::OffsetDateTime,
 };
+use base64::{Engine, engine::general_purpose::STANDARD};
 use fabric_deploy::{
     deployment_config::{DeploymentConfig, ITEM_TYPES},
     model::{ItemFile, RepositoryItem},
@@ -170,9 +171,6 @@ async fn every_source_publisher_dispatches_real_create_and_update_bodies_and_hoo
         if item_type == "Environment" {
             executor.reply(200, json!({"value": []}));
         }
-        if item_type == "KQLDashboard" {
-            executor.reply(200, json!({"value": []}));
-        }
         executor.reply(
             if update { 200 } else { 201 },
             if update {
@@ -223,11 +221,7 @@ async fn every_source_publisher_dispatches_real_create_and_update_bodies_and_hoo
         let mut expected = case["calls"][0]["body"].clone();
         if item_type == "DataPipeline" {
             let parts = expected
-                .pointer_mut(if update {
-                    "/definition/parts"
-                } else {
-                    "/definition/parts"
-                })
+                .pointer_mut("/definition/parts")
                 .unwrap()
                 .as_array_mut()
                 .unwrap();
@@ -389,4 +383,181 @@ async fn cancellation_before_first_request_has_no_side_effects() {
         matches!(result.failure, WorkflowFailure::Operation(error) if error.kind == OperationErrorKind::Cancelled)
     );
     assert!(executor.calls().is_empty());
+}
+
+#[tokio::test]
+async fn real_report_kql_and_environment_preprocessors_match_captured_source_artifacts() {
+    let oracle: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/deploy_workflow/publisher_calls.json"
+    ))
+    .unwrap();
+    for case in oracle["preprocess_cases"].as_array().unwrap() {
+        let kind = case["type"].as_str().unwrap();
+        let executor = Executor::default();
+        let deployed = json!({"value": [
+            {"id": ITEM, "displayName": "Database", "type": "KQLDatabase"},
+            {"id": ITEM, "displayName": "Model", "type": "SemanticModel"},
+        ]});
+        executor.reply(200, json!({"capacityId": "assigned"}));
+        executor.reply(200, deployed.clone());
+        if matches!(kind, "KQLQueryset" | "KQLDashboard") {
+            executor.reply(200, deployed);
+            executor.reply(200, json!({"properties": {"queryServiceUri": "https://synthetic.kusto.fabric.microsoft.com"}}));
+        }
+
+        #[tokio::test]
+        async fn default_orphan_unpublish_preserves_repository_items_and_source_delete_policy() {
+            let oracle: Value = serde_json::from_str(include_str!(
+                "../../../tests/compatibility/deploy_workflow/publisher_calls.json"
+            ))
+            .unwrap();
+            for hard in [false, true] {
+                let executor = Executor::default();
+                executor.reply(
+                    200,
+                    json!({"value": [
+                        {"id": ITEM, "displayName": "Orphan", "type": "Notebook"},
+                        {"id": SECOND, "displayName": "Kept", "type": "Notebook"},
+                    ]}),
+                );
+                executor.reply(200, Value::Null);
+                executor.reply(
+                    200,
+                    json!({"value": [{"id": SECOND, "displayName": "Kept", "type": "Notebook"}]}),
+                );
+                executor.reply(200, json!({"value": []}));
+                let config = DeploymentConfig::from_document(&json!({
+                    "core": {"workspace_id":WORKSPACE,"repository_directory":".","item_types_in_scope":["Notebook"]},
+                    "publish": {"skip":true},
+                    "features": ["disable_workspace_folder_publish"],
+                }), "test", None).unwrap();
+                let mut context = EngineContext::from_config(&config, false).unwrap();
+                if hard {
+                    context.features.insert("enable_hard_delete".into());
+                }
+                deploy_repository(
+                    &client(),
+                    &executor,
+                    &config,
+                    DeploymentRepository {
+                        items: vec![item("Notebook", "Kept", "kept")],
+                        folders: Vec::new(),
+                    },
+                    context,
+                    OperationLimits::default(),
+                    pending(),
+                )
+                .await
+                .unwrap();
+                let calls = executor.calls();
+                let deleted: Vec<_> = calls
+                    .iter()
+                    .filter(|call| call.0 == ResourceMethod::Delete)
+                    .collect();
+                assert_eq!(deleted.len(), 1);
+                let source = &oracle["unpublish_cases"][usize::from(hard)]["calls"][0];
+                assert!(source["url"].as_str().unwrap().ends_with(&deleted[0].1));
+                assert!(executor.replies.lock().unwrap().is_empty());
+            }
+        }
+
+        #[tokio::test]
+        async fn exported_default_logical_ids_do_not_pair_distinct_new_items() {
+            let executor = Executor::default();
+            executor.reply(200, json!({"capacityId":"assigned"}));
+            executor.reply(200, json!({"value":[]}));
+            executor.reply(201, json!({"id":ITEM}));
+            executor.reply(201, json!({"id":SECOND}));
+            let config = config(&["CopyJob"], false);
+            let result = deploy_repository(
+                &client(),
+                &executor,
+                &config,
+                DeploymentRepository {
+                    items: vec![
+                        item("CopyJob", "First", fabric_deploy::transforms::DEFAULT_GUID),
+                        item("CopyJob", "Second", fabric_deploy::transforms::DEFAULT_GUID),
+                    ],
+                    folders: Vec::new(),
+                },
+                EngineContext::from_config(&config, false).unwrap(),
+                OperationLimits::default(),
+                pending(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                result
+                    .published
+                    .iter()
+                    .map(|item| item.outcome.item_id.as_str())
+                    .collect::<Vec<_>>(),
+                [ITEM, SECOND]
+            );
+            assert!(
+                executor.calls()[2..]
+                    .iter()
+                    .all(|call| call.1.ends_with("/items"))
+            );
+        }
+        if kind == "Environment" {
+            executor.reply(200, json!({"value": []}));
+        }
+        executor.reply(201, json!({"id": SECOND}));
+        if kind == "Environment" {
+            executor.reply(202, Value::Null);
+            executor.reply(200, json!({"value": [{"displayName":"Example","properties":{"publishDetails":{"state":"success"}}}]}));
+        }
+        let mut source = item(kind, "Example", "55555555-5555-5555-5555-555555555555");
+        source.files[1] = ItemFile::new(
+            case["path"].as_str().unwrap().into(),
+            case["input"].as_str().unwrap().as_bytes().to_vec(),
+        );
+        let dependency = if kind == "Report" {
+            item(
+                "SemanticModel",
+                "Model",
+                "33333333-3333-3333-3333-333333333333",
+            )
+        } else {
+            item(
+                "KQLDatabase",
+                "Database",
+                "33333333-3333-3333-3333-333333333333",
+            )
+        };
+        let config = config(&[kind], false);
+        deploy_repository(
+            &client(),
+            &executor,
+            &config,
+            DeploymentRepository {
+                items: vec![source, dependency],
+                folders: Vec::new(),
+            },
+            EngineContext::from_config(&config, false).unwrap(),
+            OperationLimits::default(),
+            pending(),
+        )
+        .await
+        .unwrap();
+        let calls = executor.calls();
+        let mutation = calls
+            .iter()
+            .find(|call| call.0 == ResourceMethod::Post)
+            .unwrap();
+        let parts = mutation.2["definition"]["parts"].as_array().unwrap();
+        let part = parts
+            .iter()
+            .find(|part| part["path"] == case["path"])
+            .unwrap();
+        let actual =
+            String::from_utf8(STANDARD.decode(part["payload"].as_str().unwrap()).unwrap()).unwrap();
+        let expected = case["output"]
+            .as_str()
+            .unwrap()
+            .replace("33333333-3333-3333-3333-333333333333", ITEM);
+        assert_eq!(actual, expected, "{kind}");
+        assert!(executor.replies.lock().unwrap().is_empty(), "{kind}");
+    }
 }

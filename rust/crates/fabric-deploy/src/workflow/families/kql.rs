@@ -10,6 +10,7 @@ pub(super) async fn preprocess<E: OperationExecutor>(
     processor: Processor,
     content: &str,
     base: &str,
+    deployed: &[DeployedItem],
     ids: &HashMap<String, String>,
 ) -> Result<String, WorkflowFailure> {
     let mut definition: Value =
@@ -28,11 +29,6 @@ pub(super) async fn preprocess<E: OperationExecutor>(
     if sources.is_empty() && processor == Processor::KqlQueryset {
         return Ok(content.into());
     }
-    let deployed = if processor == Processor::KqlDashboard {
-        Some(deployed_items(io.list(&format!("{base}/items")).await?)?)
-    } else {
-        None
-    };
     for source in sources {
         if source.is_null() || source.as_object().is_some_and(|object| object.is_empty()) {
             return Err(invalid("No data sources found in KQL Dashboard").into());
@@ -50,7 +46,7 @@ pub(super) async fn preprocess<E: OperationExecutor>(
                 .iter()
                 .find(|item| item.item_type == "KQLDatabase" && item.logical_id == logical)
                 .ok_or_else(|| invalid("KQL database source not found in repository"))?;
-            ids.get(&database.logical_id)
+            ids.get(&identity_key(database))
                 .cloned()
                 .ok_or_else(|| invalid("KQL database is not yet deployed"))?
         } else {
@@ -59,9 +55,7 @@ pub(super) async fn preprocess<E: OperationExecutor>(
                 .and_then(Value::as_str)
                 .ok_or_else(|| invalid("Missing KQL database name"))?;
             deployed
-                .as_ref()
-                .into_iter()
-                .flatten()
+                .iter()
                 .find(|item| item.item_type == "KQLDatabase" && item.name == name)
                 .map(|item| item.id.clone())
                 .ok_or_else(|| invalid("KQL database source is not deployed"))?

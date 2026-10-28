@@ -48,13 +48,17 @@ pub(super) async fn check<E: OperationExecutor>(
 
 pub(super) async fn preprocess<E: OperationExecutor>(
     io: &mut ServiceIo<'_, E>,
-    config: &DeploymentConfig,
-    context: &EngineContext,
+    publication: Publication<'_>,
     item: &RepositoryItem,
     path: &str,
     content: &str,
-    base: &str,
 ) -> Result<String, WorkflowFailure> {
+    let Publication {
+        config,
+        context,
+        base,
+        ..
+    } = publication;
     if path != "Setting/Sparkcompute.yml" || !content.contains("instance_pool_id") {
         return Ok(content.into());
     }

@@ -31,7 +31,26 @@ impl fmt::Debug for ItemFile {
 impl ItemFile {
     /// Load a file without interpreting its definition schema.
     pub fn new(path: String, bytes: Vec<u8>) -> Self {
-        let binary = bytes.contains(&0) || std::str::from_utf8(&bytes).is_err();
+        let binary = bytes.contains(&0)
+            || std::str::from_utf8(&bytes).is_err()
+            || [
+                b"%PDF".as_slice(),
+                b"GIF87a",
+                b"GIF89a",
+                b"BM",
+                b"PK\x03\x04",
+                b"PK\x05\x06",
+                b"PK\x07\x08",
+                b"BZh",
+                b"MZ",
+                b"OTTO",
+                b"wOFF",
+                b"wOF2",
+            ]
+            .iter()
+            .any(|magic| bytes.starts_with(magic))
+            || (bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP"))
+            || bytes.get(257..262) == Some(b"ustar");
         let bytes = if binary {
             bytes
         } else {

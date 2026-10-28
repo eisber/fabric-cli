@@ -16,26 +16,40 @@ mod lakehouse;
 mod report;
 mod semanticmodel;
 
+#[derive(Clone, Copy)]
+pub(super) struct Publication<'a> {
+    pub config: &'a DeploymentConfig,
+    pub context: &'a EngineContext,
+    pub plan: &'a DeploymentPlan,
+    pub base: &'a str,
+    pub workspace: &'a str,
+    pub folders: &'a HashMap<String, String>,
+    pub deployed: &'a [DeployedItem],
+}
+
 pub(super) async fn publish<E: OperationExecutor>(
     io: &mut ServiceIo<'_, E>,
-    config: &DeploymentConfig,
-    context: &EngineContext,
-    plan: &mut DeploymentPlan,
-    base: &str,
-    workspace: &str,
-    folders: &HashMap<String, String>,
-    deployed: &[DeployedItem],
+    publication: Publication<'_>,
     ids: &mut HashMap<String, String>,
 ) -> Result<(), WorkflowFailure> {
+    let Publication {
+        config,
+        context,
+        plan,
+        base,
+        deployed,
+        ..
+    } = publication;
     let bulk = context.bulk_publish
         && !config
             .item_types
             .iter()
             .any(|item_type| ["Warehouse", "DataBuildToolJob"].contains(&item_type.as_str()));
     if bulk && !super::parameters::has_unfiltered_item_variable(context) {
-        return bulk::publish(io, config, context, plan, base, workspace, deployed, ids).await;
+        return bulk::publish(io, publication, ids).await;
     }
     let mut environments = Vec::new();
+    let mut current_deployed = deployed.to_vec();
     for item_type in crate::deployment_config::ITEM_TYPES {
         let mut indices: Vec<_> = plan
             .order
@@ -58,7 +72,7 @@ pub(super) async fn publish<E: OperationExecutor>(
         }
         if matches!(*item_type, "DataPipeline" | "KQLQueryset" | "KQLDashboard") {
             // These source pre-hooks refresh deployed metadata at their type boundary.
-            let _ = deployed_items(io.list(&format!("{base}/items")).await?)?;
+            current_deployed = deployed_items(io.list(&format!("{base}/items")).await?)?;
         }
         let mut failure = None;
         let mut failure_item = None;
@@ -67,14 +81,11 @@ pub(super) async fn publish<E: OperationExecutor>(
             io.current = Some(format!("{}.{}", item.name, item.item_type));
             let result = publish_one(
                 io,
-                config,
-                context,
-                &plan.repository,
+                Publication {
+                    deployed: &current_deployed,
+                    ..publication
+                },
                 index,
-                base,
-                workspace,
-                folders,
-                deployed,
                 ids,
             )
             .await;
@@ -96,32 +107,13 @@ pub(super) async fn publish<E: OperationExecutor>(
         if *item_type == "Lakehouse" && context.enabled("enable_shortcut_publish") {
             for index in &plan.order {
                 let item = &plan.repository.items[*index];
-                if item.item_type == "Lakehouse" && ids.contains_key(&item.logical_id) {
-                    lakehouse::shortcuts(
-                        io,
-                        config,
-                        context,
-                        &plan.repository,
-                        item,
-                        base,
-                        workspace,
-                        ids,
-                    )
-                    .await?;
+                if item.item_type == "Lakehouse" && ids.contains_key(&identity_key(item)) {
+                    lakehouse::shortcuts(io, publication, item, ids).await?;
                 }
             }
         }
         if *item_type == "SemanticModel" {
-            semanticmodel::bind(
-                io,
-                config,
-                context,
-                &plan.repository,
-                &plan.order,
-                base,
-                ids,
-            )
-            .await?;
+            semanticmodel::bind(io, publication, ids).await?;
         }
         if let Some(error) = failure {
             io.current = failure_item;
@@ -137,19 +129,23 @@ pub(super) async fn publish<E: OperationExecutor>(
 
 async fn publish_one<E: OperationExecutor>(
     io: &mut ServiceIo<'_, E>,
-    config: &DeploymentConfig,
-    context: &EngineContext,
-    repository: &DeploymentRepository,
+    publication: Publication<'_>,
     index: usize,
-    base: &str,
-    workspace: &str,
-    folders: &HashMap<String, String>,
-    deployed: &[DeployedItem],
     ids: &mut HashMap<String, String>,
 ) -> Result<(), WorkflowFailure> {
+    let Publication {
+        config,
+        context,
+        plan,
+        base,
+        folders,
+        deployed,
+        ..
+    } = publication;
+    let repository = &plan.repository;
     let source = &repository.items[index];
     let processor = Processor::for_type(&source.item_type)?;
-    let existing = ids.get(&source.logical_id).cloned().or_else(|| {
+    let existing = ids.get(&identity_key(source)).cloned().or_else(|| {
         deployed
             .iter()
             .find(|item| item.item_type == source.item_type && item.name == source.name)
@@ -157,10 +153,7 @@ async fn publish_one<E: OperationExecutor>(
     });
     let mut item = source.clone();
     if !processor.shell_only() {
-        preprocess(
-            io, config, context, repository, &mut item, base, workspace, ids, false,
-        )
-        .await?;
+        preprocess(io, publication, &mut item, ids, false).await?;
     }
     let folder_id = folders
         .get(&item.folder_path)
@@ -190,7 +183,7 @@ async fn publish_one<E: OperationExecutor>(
             .map(str::to_owned)
             .ok_or_else(|| io.error(OperationErrorKind::InvalidResponse))
     })?;
-    ids.insert(item.logical_id.clone(), id.clone());
+    ids.insert(identity_key(&item), id.clone());
     io.result.published.push(PublishedItem {
         name: item.name.clone(),
         logical_id: item.logical_id.clone(),
@@ -278,15 +271,21 @@ async fn activate_value_set<E: OperationExecutor>(
 
 async fn preprocess<E: OperationExecutor>(
     io: &mut ServiceIo<'_, E>,
-    config: &DeploymentConfig,
-    context: &EngineContext,
-    repository: &DeploymentRepository,
+    publication: Publication<'_>,
     item: &mut RepositoryItem,
-    base: &str,
-    workspace: &str,
     ids: &HashMap<String, String>,
     bulk: bool,
 ) -> Result<(), WorkflowFailure> {
+    let Publication {
+        config,
+        context,
+        plan,
+        base,
+        workspace,
+        deployed,
+        ..
+    } = publication;
+    let repository = &plan.repository;
     let processor = Processor::for_type(&item.item_type)?;
     let transforms = NotebookTransforms {
         logical_ids: repository
@@ -295,7 +294,7 @@ async fn preprocess<E: OperationExecutor>(
             .map(|source| {
                 (
                     source.logical_id.clone(),
-                    ids.get(&source.logical_id).cloned().unwrap_or_default(),
+                    ids.get(&identity_key(source)).cloned().unwrap_or_default(),
                 )
             })
             .collect(),
@@ -318,13 +317,12 @@ async fn preprocess<E: OperationExecutor>(
                 )?;
             }
             Processor::KqlQueryset | Processor::KqlDashboard => {
-                content = kql::preprocess(io, repository, processor, &content, base, ids).await?
+                content = kql::preprocess(io, repository, processor, &content, base, deployed, ids)
+                    .await?
             }
             Processor::Environment => {
-                content = environment::preprocess(
-                    io, config, context, &snapshot, &file.path, &content, base,
-                )
-                .await?
+                content = environment::preprocess(io, publication, &snapshot, &file.path, &content)
+                    .await?
             }
             _ => {}
         }
@@ -337,14 +335,10 @@ async fn preprocess<E: OperationExecutor>(
         }
         content = super::parameters::apply(
             io,
-            config,
-            context,
-            repository,
+            publication,
             &snapshot,
             &file.path,
             &content,
-            base,
-            workspace,
             ids,
             &mut budget,
         )

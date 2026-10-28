@@ -20,7 +20,7 @@ use fabric_sdk_operations::{
 use fabric_sdk_workspaces::mutations::{CompletionPolicy, ResourceMethod};
 use serde_json::{Value, json};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt,
     future::{Future, poll_fn},
     pin::{Pin, pin},
@@ -86,7 +86,7 @@ pub struct WorkflowError {
     /// Original typed stage/failure.
     pub failure: WorkflowFailure,
     /// Confirmed effects before the failure.
-    pub partial: WorkflowResult,
+    pub partial: Box<WorkflowResult>,
     /// Current source item, when known.
     pub current_item: Option<String>,
 }
@@ -136,6 +136,7 @@ struct ServiceIo<'a, E> {
     result: WorkflowResult,
     current: Option<String>,
     evidence: Option<OperationError>,
+    headers: BTreeMap<String, String>,
 }
 
 impl<E: OperationExecutor> ServiceIo<'_, E> {
@@ -188,6 +189,7 @@ impl<E: OperationExecutor> ServiceIo<'_, E> {
         );
         let response = session.execute(operation).await?;
         self.evidence = Some(session.evidence(OperationErrorKind::InvalidResponse));
+        self.headers = response.headers.clone();
         if response.status == 202 && policy != CompletionPolicy::ReturnAccepted {
             return Err(session.evidence(OperationErrorKind::InvalidResponse).into());
         }
@@ -224,7 +226,16 @@ impl<E: OperationExecutor> ServiceIo<'_, E> {
                 return Err(self.error(OperationErrorKind::Limit).into());
             }
             result.extend(values.iter().cloned());
-            let Some(link) = value.get("continuationUri").and_then(Value::as_str) else {
+            let Some(link) = value
+                .get("continuationUri")
+                .and_then(Value::as_str)
+                .or_else(|| {
+                    self.headers
+                        .iter()
+                        .find(|(key, _)| key.eq_ignore_ascii_case("continuationUri"))
+                        .map(|(_, value)| value.as_str())
+                })
+            else {
                 break;
             };
             let url = self
@@ -279,6 +290,14 @@ struct DeployedItem {
     name: String,
     item_type: String,
     folder_id: String,
+}
+
+fn identity_key(item: &crate::model::RepositoryItem) -> String {
+    if item.logical_id == crate::transforms::DEFAULT_GUID {
+        format!("{}\0{}", item.item_type, item.name)
+    } else {
+        item.logical_id.clone()
+    }
 }
 
 fn deployed_items(values: Vec<Value>) -> Result<Vec<DeployedItem>, ConfigurationError> {
@@ -454,12 +473,13 @@ pub async fn deploy_repository<E: OperationExecutor>(
         result: WorkflowResult::default(),
         current: None,
         evidence: None,
+        headers: BTreeMap::new(),
     };
     match run(&mut io, config, repository, &context).await {
         Ok(()) => Ok(io.result),
         Err(failure) => Err(WorkflowError {
             failure,
-            partial: io.result,
+            partial: Box::new(io.result),
             current_item: io.current,
         }),
     }
@@ -471,7 +491,7 @@ async fn run<E: OperationExecutor>(
     repository: DeploymentRepository,
     context: &EngineContext,
 ) -> Result<(), WorkflowFailure> {
-    let mut plan = DeploymentPlan::prepare(config, context, repository)?;
+    let plan = DeploymentPlan::prepare(config, context, repository)?;
     parameters::validate(config, context)?;
     let workspace = workspace_id(io, config).await?;
     let base = format!("/v1/workspaces/{workspace}");
@@ -511,11 +531,21 @@ async fn run<E: OperationExecutor>(
                 return Err(invalid("Ambiguous deployed item displayName/type").into());
             }
             if let Some(target) = matches.first() {
-                ids.insert(item.logical_id.clone(), target.id.clone());
+                ids.insert(identity_key(item), target.id.clone());
             }
         }
         families::publish(
-            io, config, context, &mut plan, &base, &workspace, &folders, &deployed, &mut ids,
+            io,
+            families::Publication {
+                config,
+                context,
+                plan: &plan,
+                base: &base,
+                workspace: &workspace,
+                folders: &folders,
+                deployed: &deployed,
+            },
+            &mut ids,
         )
         .await?;
     }

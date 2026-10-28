@@ -6,14 +6,17 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 
 pub(super) async fn publish<E: OperationExecutor>(
     io: &mut ServiceIo<'_, E>,
-    config: &DeploymentConfig,
-    context: &EngineContext,
-    plan: &mut DeploymentPlan,
-    base: &str,
-    workspace: &str,
-    deployed: &[DeployedItem],
+    publication: Publication<'_>,
     ids: &mut HashMap<String, String>,
 ) -> Result<(), WorkflowFailure> {
+    let Publication {
+        config,
+        context,
+        plan,
+        base,
+        deployed,
+        ..
+    } = publication;
     let batches = batches(config, context, plan, deployed)?;
     let environment_names: Vec<_> = plan
         .order
@@ -35,18 +38,7 @@ pub(super) async fn publish<E: OperationExecutor>(
             let processor = Processor::for_type(&item.item_type)?;
             // Bulk source hooks only expose Environment's func_process_file.
             if processor == Processor::Environment {
-                preprocess(
-                    io,
-                    config,
-                    context,
-                    &plan.repository,
-                    &mut item,
-                    base,
-                    workspace,
-                    ids,
-                    true,
-                )
-                .await?;
+                preprocess(io, publication, &mut item, ids, true).await?;
             } else {
                 let snapshot = item.clone();
                 let mut budget = TransformBudget::new(TransformLimits::default(), &|| false);
@@ -59,14 +51,10 @@ pub(super) async fn publish<E: OperationExecutor>(
                     }
                     file.bytes = super::super::parameters::apply(
                         io,
-                        config,
-                        context,
-                        &plan.repository,
+                        publication,
                         &snapshot,
                         &file.path,
                         file.content()?,
-                        base,
-                        workspace,
                         ids,
                         &mut budget,
                     )
@@ -124,7 +112,7 @@ pub(super) async fn publish<E: OperationExecutor>(
                 .and_then(Value::as_str)
                 .filter(|id| valid_guid(id))
                 .ok_or_else(|| io.error(OperationErrorKind::InvalidResponse))?;
-            ids.insert(item.logical_id.clone(), id.into());
+            ids.insert(identity_key(item), id.into());
             io.result.published.push(PublishedItem {
                 name: item.name.clone(),
                 logical_id: item.logical_id.clone(),
@@ -152,7 +140,7 @@ pub(super) async fn publish<E: OperationExecutor>(
     for index in &plan.order {
         let item = &plan.repository.items[*index];
         let id = ids
-            .get(&item.logical_id)
+            .get(&identity_key(item))
             .ok_or_else(|| invalid("Bulk result item ID was not resolved"))?;
         match item.item_type.as_str() {
             "VariableLibrary" => activate_value_set(io, config, item, base, id).await?,
@@ -166,31 +154,12 @@ pub(super) async fn publish<E: OperationExecutor>(
                 .await?;
             }
             "Lakehouse" if context.enabled("enable_shortcut_publish") => {
-                lakehouse::shortcuts(
-                    io,
-                    config,
-                    context,
-                    &plan.repository,
-                    item,
-                    base,
-                    workspace,
-                    ids,
-                )
-                .await?
+                lakehouse::shortcuts(io, publication, item, ids).await?
             }
             _ => {}
         }
     }
-    semanticmodel::bind(
-        io,
-        config,
-        context,
-        &plan.repository,
-        &plan.order,
-        base,
-        ids,
-    )
-    .await?;
+    semanticmodel::bind(io, publication, ids).await?;
     if !environment_names.is_empty() {
         environment::check(io, base, &environment_names, false).await?;
     }
@@ -251,7 +220,7 @@ async fn wait_attribute<E: OperationExecutor>(
         _ => return Ok(()),
     };
     let id = ids
-        .get(&item.logical_id)
+        .get(&identity_key(item))
         .ok_or_else(|| invalid("Provisioned item ID is missing"))?;
     loop {
         let metadata = io
@@ -290,6 +259,16 @@ fn batches(
     plan: &DeploymentPlan,
     deployed: &[DeployedItem],
 ) -> Result<Vec<Vec<usize>>, ConfigurationError> {
+    if plan
+        .repository
+        .items
+        .iter()
+        .any(|item| item.logical_id == crate::transforms::DEFAULT_GUID)
+    {
+        return Err(invalid(
+            "Bulk import requires unique, non-placeholder logical IDs",
+        ));
+    }
     if plan.order.is_empty() {
         return Ok(Vec::new());
     }

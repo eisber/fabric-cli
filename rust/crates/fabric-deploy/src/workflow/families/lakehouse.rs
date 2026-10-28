@@ -37,16 +37,21 @@ pub(super) async fn readiness<E: OperationExecutor>(
 
 pub(super) async fn shortcuts<E: OperationExecutor>(
     io: &mut ServiceIo<'_, E>,
-    config: &DeploymentConfig,
-    context: &EngineContext,
-    repository: &DeploymentRepository,
+    publication: Publication<'_>,
     item: &RepositoryItem,
-    base: &str,
-    workspace: &str,
     ids: &HashMap<String, String>,
 ) -> Result<(), WorkflowFailure> {
+    let Publication {
+        config,
+        context,
+        plan,
+        base,
+        workspace,
+        ..
+    } = publication;
+    let repository = &plan.repository;
     let id = ids
-        .get(&item.logical_id)
+        .get(&identity_key(item))
         .ok_or_else(|| invalid("Lakehouse is not deployed"))?;
     let deployed = io.list(&format!("{base}/items/{id}/shortcuts")).await?;
     let mut shortcuts = if let Some(file) = item
@@ -57,14 +62,10 @@ pub(super) async fn shortcuts<E: OperationExecutor>(
         let mut budget = TransformBudget::new(TransformLimits::default(), &|| false);
         let content = super::super::parameters::apply(
             io,
-            config,
-            context,
-            repository,
+            publication,
             item,
             &file.path,
             file.content()?,
-            base,
-            workspace,
             ids,
             &mut budget,
         )
@@ -76,7 +77,7 @@ pub(super) async fn shortcuts<E: OperationExecutor>(
                 .map(|source| {
                     (
                         source.logical_id.clone(),
-                        ids.get(&source.logical_id).cloned().unwrap_or_default(),
+                        ids.get(&identity_key(source)).cloned().unwrap_or_default(),
                     )
                 })
                 .collect(),
