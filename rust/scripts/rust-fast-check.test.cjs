@@ -176,17 +176,17 @@ test('timeout rescue changes only native Windows endpoint test bounds and no com
 test('deploy preflight first runs actual library then native root consumer, never live deployment', () => {
   const manifest = {lane: 'deploy-mount', packages: ['fabric-deploy', 'fabric-cli']};
   const commands = plan('test', manifest, '/target', '/receipts',
-    file => !['parameter_transforms.rs', 'deploy_full.rs', 'native_deploy_inputs.rs', 'deploy_inputs_debug.rs']
+    file => !['parameter_transforms.rs', 'deploy_full.rs', 'native_deploy_inputs.rs', 'deploy_inputs_debug.rs', 'export_parity_mount.rs']
       .some(name => file.endsWith(name)));
   assert.deepEqual(commands.map(item => item.args), [
     ['test', '--offline', '--locked', '-p', 'fabric-deploy',
       '--test', 'config', '--test', 'repository', '--test', 'parameters', '--test', 'yaml',
       '--', '--list'],
     ['test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
-      '--test', 'deploy_parameters', '--test', 'deploy_mount', '--', '--list'],
+      '--test', 'deploy_parameters', '--test', 'deploy_mount', '--test', 'family_mounts', '--', '--list'],
     ['test', '--offline', '--locked', '-p', 'fabric-deploy', '--', '--test-threads=1'],
     ['test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
-      '--test', 'deploy_parameters', '--test', 'deploy_mount', '--', '--test-threads=1'],
+      '--test', 'deploy_parameters', '--test', 'deploy_mount', '--test', 'family_mounts', '--', '--test-threads=1'],
   ]);
   assert.ok(plan('clippy', manifest)[1].args.includes('native-read'));
   const family = plan('family', manifest, '/target', '/receipts',
@@ -228,7 +228,7 @@ test('released full deployment consumer and parameter source captures cannot be 
   assert.equal(full.length, 2);
   assert.ok(full.some(item => item.args.includes('--list')));
   assert.ok(full.some(item => item.args.includes('--test-threads=1') && !item.args.includes('--list')));
-  for (const target of ['native_deploy_inputs', 'deploy_inputs_debug']) {
+  for (const target of ['native_deploy_inputs', 'deploy_inputs_debug', 'family_mounts', 'export_parity_mount']) {
     const selected = tests.filter(item => item.args.includes(target));
     assert.equal(selected.length, 2);
     assert.ok(selected.some(item => item.args.includes('--list')));

@@ -138,15 +138,17 @@ Cancellation is not syscall cancellation
 or rollback; an in-flight write can still complete after its future is dropped.
 The [transfer contract](../crates/fabric-cli-transfer/README.md#asynchronous-local-filesystem-boundary-td03)
 records task/byte bounds, partial progress and the independent source pin.
-The bounded deployment host shares this adapter: configuration and parameter
-reads await the confined read capability, and complete Notebook repository
-preparation awaits the same serialized worker before any service work. The
-released discovery routine returns an owned bounded snapshot in native listing
-order; no synchronous borrowed capability or lock guard escapes to an async
-callback. Original repository failures, complete preflight and later publication
-uncertainty remain intact. Synchronous `LocalTransferFiles` stays available for
-explicitly worker-owned embedded callers; it is not substituted into the native
-async host.
+Deployment mounts a separate zero-I/O `TokioDeployFiles` capability pinned to
+the explicit configuration argument. Configuration, parameter and template reads
+may select only paths supplied by trusted local documents. Repository preparation
+seals further selections and returns a complete owned bounded snapshot before
+remote work, including the legacy-to-generic fallback on the same checked root.
+The adapter exposes no write or drive-wide repository capability. It shares the
+serialized worker, stop checks and host/caller limits without changing import
+or export state. No borrowed filesystem or worker guard escapes across awaits.
+Original preflight failures and later partial/uncertain service effects remain
+intact. Synchronous `LocalTransferFiles` remains for explicitly worker-owned
+embedded callers, never as a blocking native async substitute.
 Native confirmation and workspace export
 selection need an injected UI; use the corresponding explicit force/all options
 for supported noninteractive branches. Resource notices are buffered in source
@@ -160,8 +162,12 @@ boundary; explicit `--all` remains available.
 
 ## Bounded gaps and evidence
 
-Full `deploy --config`, ACL export, access/resource skill binding, recursive
-folder transfer metadata, virtual resources other than capacity, local-file
+The generic deployment CLI route, recursive transfer metadata and configuration
+parameter inputs are implemented candidates, not a complete native validation
+or live-service claim. The latest source-matched schema, lifecycle and profile
+cases must pass before publishing a parity milestone.
+
+ACL export, access/resource skill binding, virtual resources other than capacity, local-file
 resource copy, workspace removal selection and folder SET metadata are not
 implemented by this central adapter. These fail explicitly. Workspace SET uses
 the existing typed metadata API; it does not claim the source-synchronous

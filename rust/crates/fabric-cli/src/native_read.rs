@@ -699,57 +699,87 @@ async fn execute_family(
             ));
         }
         let mut mutations = NativeMutationUi::default();
-        let mut files = if let Invocation::Transfer(transfer) = command
-            && matches!(
-                transfer.kind,
-                fabric_cli_transfer::TransferKind::Import
-                    | fabric_cli_transfer::TransferKind::Export
-                    | fabric_cli_transfer::TransferKind::BulkExport
-            ) {
-            let tokens = if transfer.kind == fabric_cli_transfer::TransferKind::Import {
-                transfer.input.as_deref()
-            } else {
-                transfer.output.as_deref()
-            };
-            let input = tokens
-                .map(fabric_cli_transfer::process_tokens)
-                .ok_or_else(|| {
+        let mut files: Box<dyn fabric_cli_transfer::TransferFiles> =
+            if let Invocation::Deploy(deploy) = command {
+                let argument = deploy.config.clone().ok_or_else(|| {
                     fabric_cli_local::LocalError::command(
                         "InvalidInput",
-                        "A transfer path is required",
+                        "A deployment configuration path is required",
                     )
                 })?;
-            let home = transfer_paths::home_from_environment();
-            let candidate = transfer_paths::candidate(
-                &input,
-                &local_root,
-                home.as_deref(),
-                std::env::var_os("USERNAME").as_deref(),
-            );
-            if transfer.kind == fabric_cli_transfer::TransferKind::Import {
-                fabric_cli::families::transfer_files::TokioTransferFiles::defer_import_root(
-                    candidate,
-                    input,
-                    Default::default(),
-                    tokio::runtime::Handle::current(),
+                let home = transfer_paths::home_from_environment();
+                let candidate = transfer_paths::candidate(
+                    &argument,
+                    &local_root,
+                    home.as_deref(),
+                    std::env::var_os("USERNAME").as_deref(),
+                );
+                Box::new(
+                    fabric_cli::families::transfer_files::TokioDeployFiles::defer_config(
+                        candidate,
+                        argument,
+                        Default::default(),
+                        tokio::runtime::Handle::current(),
+                    ),
                 )
+            } else if let Invocation::Transfer(transfer) = command
+                && matches!(
+                    transfer.kind,
+                    fabric_cli_transfer::TransferKind::Import
+                        | fabric_cli_transfer::TransferKind::Export
+                        | fabric_cli_transfer::TransferKind::BulkExport
+                )
+            {
+                let tokens = if transfer.kind == fabric_cli_transfer::TransferKind::Import {
+                    transfer.input.as_deref()
+                } else {
+                    transfer.output.as_deref()
+                };
+                let input = tokens
+                    .map(fabric_cli_transfer::process_tokens)
+                    .ok_or_else(|| {
+                        fabric_cli_local::LocalError::command(
+                            "InvalidInput",
+                            "A transfer path is required",
+                        )
+                    })?;
+                let home = transfer_paths::home_from_environment();
+                let candidate = transfer_paths::candidate(
+                    &input,
+                    &local_root,
+                    home.as_deref(),
+                    std::env::var_os("USERNAME").as_deref(),
+                );
+                if transfer.kind == fabric_cli_transfer::TransferKind::Import {
+                    Box::new(
+                        fabric_cli::families::transfer_files::TokioTransferFiles::defer_import_root(
+                            candidate,
+                            input,
+                            Default::default(),
+                            tokio::runtime::Handle::current(),
+                        ),
+                    )
+                } else {
+                    Box::new(
+                        fabric_cli::families::transfer_files::TokioTransferFiles::defer_export_root(
+                            candidate,
+                            input,
+                            Default::default(),
+                            tokio::runtime::Handle::current(),
+                        ),
+                    )
+                }
             } else {
-                fabric_cli::families::transfer_files::TokioTransferFiles::defer_export_root(
-                    candidate,
-                    input,
-                    Default::default(),
-                    tokio::runtime::Handle::current(),
+                Box::new(
+                    fabric_cli::families::transfer_files::TokioTransferFiles::new(
+                        local_root,
+                        None,
+                        Default::default(),
+                        tokio::runtime::Handle::current(),
+                    )
+                    .await?,
                 )
-            }
-        } else {
-            fabric_cli::families::transfer_files::TokioTransferFiles::new(
-                local_root,
-                None,
-                Default::default(),
-                tokio::runtime::Handle::current(),
-            )
-            .await?
-        };
+            };
         let mut families = fabric_cli::families::FamilySession {
             reads: session,
             http: executor,
@@ -759,7 +789,7 @@ async fn execute_family(
             mutations: &mut mutations,
             confirmation: None,
             transfer_ui: &NativeTransferUi,
-            transfer_files: Some(&mut files),
+            transfer_files: Some(files.as_mut()),
             resource_files: None,
         };
         let mut output = if matches!(command, Invocation::Deploy(_)) {
