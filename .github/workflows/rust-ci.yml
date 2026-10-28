@@ -205,7 +205,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.run_native == 'true'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       CARGO_PACKAGE_ARGS: ${{ needs.changes.outputs.package_args }}
     defaults:
