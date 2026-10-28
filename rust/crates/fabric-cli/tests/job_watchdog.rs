@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Source-aware native job watchdog selection without real time or service I/O.
+
 #[allow(dead_code)]
 #[path = "../src/native_settings.rs"]
 mod settings;
