@@ -61,10 +61,11 @@ The lane does not edit `native_read.rs`. The integration owner must mount:
    is `Option<Duration>`: check `Instant::checked_add` only for `Some`; race
    `Some` against `tokio::time::sleep` and `None` against `pending::<()>`.
    Keep the existing Ctrl+C and bounded runtime shutdown branches.
-2. An actual terminal confirmation in `NativeJobUi::confirm`. The jobs lane
-   offers `fabric_cli::jobs::terminal::confirm_terminal().await`; integration
-   may instead reuse its already-provided canonical CLI console confirmation.
-   Never mount an unconditional yes or `NotSupported` placeholder.
+2. The root-owned canonical CLI console confirmation in `NativeJobUi::confirm`.
+   The job handler emits the source warning before invoking that UI capability.
+   The duplicate jobs-specific console candidate has been removed; no SDK or
+   family prompt implementation is installed. Never mount an unconditional yes
+   or `NotSupported` placeholder.
 
 No timeout and `run-cancel --wait` have no arbitrary whole-command deadline.
 Negative runtime reaches the source negative-sleep error rather than an implicit
@@ -74,10 +75,13 @@ its existing 240-second or separately bounded policy. Individual HTTP exchanges
 and generic operations remain bounded; this does not launch background jobs or
 permit mutation retries.
 
-Terminal confirmation is default-no, flushes before reading, reports typed
-writer/read errors before DELETE, and runs its blocking read off the async
-runtime. Cancellation can leave a local terminal read finishing later; it cannot
-continue a dropped mutation handler. Force bypasses all prompting.
+Source questionary's default yes applies when the user explicitly submits an
+empty line, not when input is absent. Root's canonical console flushes before
+reading, rejects EOF/oversized/unterminated/invalid input and writer failures
+with typed errors before DELETE, and runs its blocking read off the async
+runtime. Cancellation cannot continue a dropped mutation handler. Force
+bypasses all prompting. Console implementation/tests and native UI mounts remain
+root-owned, rather than duplicated or claimed validated by this lane.
 
 ## Offline evidence
 
@@ -92,8 +96,10 @@ with their existing source output instead of requiring a Rust failure.
 `job_command_parity` drives the actual root parser, session and shared
 `HttpExecutor` against the source capture, plus all-leaf authorization,
 cancellation, missing-field and unusual status cases. `command_policy` separately
-protects strict SDK readers and partial-list behavior. `job_watchdog` and
-`job_terminal` exercise the two native seams without real time or a terminal.
+protects strict SDK readers and partial-list behavior. `job_watchdog` exercises
+the native budget selection without real time. Existing job mutation tests
+retain injected confirmation, decline, interruption and UI failure evidence.
+Root's canonical console owns bounded terminal-input and prompt-flush tests.
 `numeric_source.py` adds eleven actual-source finite numeric observations and
 the complete 68-block Unicode 15.1 decimal inventory. `job_numeric_parity`
 exercises those root argv/session/HTTP observations; SDK numeric tests compare
@@ -117,7 +123,7 @@ this lane without a named slot):
 
 ```text
 cargo test --locked -p fabric-sdk-jobs -p fabric-cli-jobs
-cargo test --locked -p fabric-cli --test job_command_parity --test job_numeric_parity --test job_watchdog --test job_terminal
+cargo test --locked -p fabric-cli --test job_command_parity --test job_numeric_parity --test job_watchdog
 ```
 
 The existing read, execution, mutation, selected-settings, shared-operation and
