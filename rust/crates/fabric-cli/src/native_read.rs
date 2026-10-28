@@ -40,6 +40,25 @@ fn failure(code: &'static str, message: impl Into<String>, exit: u8) -> Failure 
     (code, message.into(), exit)
 }
 
+#[cfg(any(windows, test))]
+fn interrupted_failure(code: &'static str, message: &str, exit: u8) -> Failure {
+    failure(
+        code,
+        format!(
+            "{message} Local waiting has stopped; in-flight remote or filesystem work may still complete. No rollback is implied."
+        ),
+        exit,
+    )
+}
+
+#[cfg(any(windows, test))]
+fn finish_runtime<T>(runtime: tokio::runtime::Runtime, result: T) -> T {
+    // Runtime Drop waits indefinitely for blocking syscalls; a bounded wait does
+    // not cancel those calls or erase their possible filesystem effects.
+    runtime.shutdown_timeout(std::time::Duration::from_secs(1));
+    result
+}
+
 fn write_error((code, message, exit): Failure) -> io::Result<ExitCode> {
     let mut stderr = io::stderr().lock();
     serde_json::to_writer(
@@ -189,6 +208,93 @@ mod endpoint_tests {
     }
 }
 
+#[cfg(test)]
+mod runtime_tests {
+    use super::*;
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+            mpsc,
+        },
+        time::Duration,
+    };
+
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(1)
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn shutdown_preserves_the_original_success_or_typed_failure() {
+        for result in [
+            Ok(7_u8),
+            Err(failure("synthetic_failed", "Synthetic failure.", 4)),
+        ] {
+            assert_eq!(finish_runtime(runtime(), result.clone()), result);
+        }
+    }
+
+    #[test]
+    fn shutdown_is_bounded_while_blocking_work_can_still_finish_with_effects() {
+        let runtime = runtime();
+        let (entered, started) = mpsc::channel();
+        let (release, gate) = mpsc::channel();
+        let (completed, completion) = mpsc::channel();
+        let effect = Arc::new(AtomicBool::new(false));
+        let worker_effect = Arc::clone(&effect);
+        let _worker = runtime.spawn_blocking(move || {
+            entered.send(()).unwrap();
+            gate.recv_timeout(Duration::from_secs(30)).unwrap();
+            worker_effect.store(true, Ordering::SeqCst);
+            completed.send(()).unwrap();
+        });
+        started.recv_timeout(Duration::from_secs(10)).unwrap();
+        let (returned, result) = mpsc::channel();
+        let shutdown = std::thread::spawn(move || {
+            returned
+                .send(finish_runtime(
+                    runtime,
+                    Err::<u8, _>(interrupted_failure("cancelled", "Read cancelled.", 2)),
+                ))
+                .unwrap();
+        });
+
+        // Release before asserting, so a regression to ordinary runtime Drop
+        // fails the test without stranding its blocking worker.
+        let observed = result.recv_timeout(Duration::from_secs(10));
+        let effect_before_release = effect.load(Ordering::SeqCst);
+        release.send(()).unwrap();
+        completion.recv_timeout(Duration::from_secs(10)).unwrap();
+        shutdown.join().unwrap();
+
+        assert_eq!(
+            observed.unwrap(),
+            Err(interrupted_failure("cancelled", "Read cancelled.", 2))
+        );
+        assert!(!effect_before_release);
+        assert!(effect.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn interruption_diagnostics_retain_code_exit_and_mutation_uncertainty() {
+        for (code, message, exit) in [
+            ("cancelled", "Read cancelled.", 2),
+            ("timed_out", "The read command deadline elapsed.", 1),
+        ] {
+            let (actual_code, actual_message, actual_exit) =
+                interrupted_failure(code, message, exit);
+            assert_eq!(actual_code, code);
+            assert_eq!(actual_exit, exit);
+            assert!(actual_message.starts_with(message));
+            assert!(actual_message.contains("may still complete"));
+            assert!(actual_message.contains("No rollback is implied"));
+        }
+    }
+}
+
 #[cfg(windows)]
 fn run_selected(
     command: NativeCommand<'_>,
@@ -264,21 +370,22 @@ fn run_selected(
         .enable_all()
         .build()
         .map_err(|_| failure("runtime_failed", "The read runtime could not start.", 1))?;
-    runtime.block_on(async {
+    let result = runtime.block_on(async {
         tokio::select! {
             biased;
             signal = tokio::signal::ctrl_c() => {
                 match signal {
-                    Ok(()) => Err(failure("cancelled", "Read cancelled.", 2)),
+                    Ok(()) => Err(interrupted_failure("cancelled", "Read cancelled.", 2)),
                     Err(_) => Err(failure("signal_failed", "The cancellation handler could not start.", 1)),
                 }
             },
             _ = tokio::time::sleep(deadline) => {
-                Err(failure("timed_out", "The read command deadline elapsed.", 1))
+                Err(interrupted_failure("timed_out", "The read command deadline elapsed.", 1))
             },
             result = execute(command, options, &current, home, restored, endpoint, settings) => result,
         }
-    })
+    });
+    finish_runtime(runtime, result)
 }
 
 #[cfg(windows)]
@@ -547,8 +654,13 @@ async fn execute_family(
             ));
         }
         let mut mutations = NativeMutationUi::default();
-        let mut files =
-            fabric_cli_transfer::LocalTransferFiles::new(local_root, None, Default::default())?;
+        let mut files = fabric_cli::families::transfer_files::TokioTransferFiles::new(
+            local_root,
+            None,
+            Default::default(),
+            tokio::runtime::Handle::current(),
+        )
+        .await?;
         let mut families = fabric_cli::families::FamilySession {
             reads: session,
             http: executor,

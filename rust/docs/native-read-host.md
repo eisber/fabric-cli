@@ -55,6 +55,11 @@ timeout use the [derived job watchdog](native-job-reads.md#command-watchdog-vers
 so family timeout/cancellation policy can finish. Ctrl+C is exit 2; timeout and setup failures are
 nonzero diagnostics on stderr. Dropping credential/HTTP futures requests
 cooperative cancellation, not rollback or guaranteed native cleanup completion.
+The host captures the original command result before a bounded, one-second
+runtime shutdown wait. A running blocking filesystem call can outlive that wait
+and still finish with effects; cancellation and watchdog diagnostics state that
+uncertainty explicitly. The grace does not extend the family job timeout or
+certify that mutation work stopped.
 Ordinary SDK/path/query failures retain the existing command envelopes: JSON on
 stdout, Unauthorized exit 4 and other command failures exit 1.
 Writer and rendering failures never become successful results.

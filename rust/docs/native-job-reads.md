@@ -169,6 +169,9 @@ that every adversarial response can reach family cleanup. Ctrl+C retains its
 immediate local-cancellation behavior: neither Ctrl+C nor watchdog expiry
 requests remote cancellation or implies rollback. Accepted cancellation is
 still asynchronous, not a claim that the job has stopped.
+After retaining the command result, native runtime shutdown has a separate
+one-second bounded wait. Unfinished blocking work may still complete afterward;
+the interruption diagnostic states this, rather than silently claiming cleanup.
 
 The read-only DTO reuses the released family typed conversion. It preserves
 source token paths, required status `--id`, repeated
