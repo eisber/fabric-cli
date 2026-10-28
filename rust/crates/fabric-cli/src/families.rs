@@ -114,6 +114,24 @@ impl FamilySession<'_, '_> {
         invocation: &Invocation,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<FamilyOutput, TextError> {
+        self.dispatch_with_deploy_inputs(
+            invocation,
+            &crate::deploy::DeployInputs::default(),
+            cancelled,
+        )
+        .await
+    }
+
+    /// Dispatch with explicit caller-owned deployment parameter environment data.
+    ///
+    /// Only deployment consumes these inputs. The default dispatcher supplies
+    /// an empty map; neither entry point discovers process environment values.
+    pub async fn dispatch_with_deploy_inputs(
+        &mut self,
+        invocation: &Invocation,
+        inputs: &crate::deploy::DeployInputs,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<FamilyOutput, TextError> {
         let mut cancelled = std::pin::pin!(cancelled);
         if self.reads.tenant.id() != Some(self.reads.sdk.selection().tenant())
             || self.reads.tenant.kind() != NodeKind::Tenant
@@ -168,7 +186,7 @@ impl FamilySession<'_, '_> {
                     yaml_limits: Default::default(),
                     operation_limits: Default::default(),
                 }
-                .execute(command, cancelled.as_mut())
+                .execute_with_inputs(command, inputs, cancelled.as_mut())
                 .await
             } else {
                 Err(crate::deploy::DeployError {
