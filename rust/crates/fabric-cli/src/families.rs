@@ -582,6 +582,103 @@ impl FamilySession<'_, '_> {
     }
 }
 
+/// Classify source import input through the caller's existing metadata resolver.
+///
+/// Recognized Fabric/OneLake inputs fail before local file reads or prompts.
+/// Local path candidates are deferred to the caller-owned file worker, which
+/// must validate existence, ordinary-file/directory kind, confinement and links.
+/// `Ok(())` is not a filesystem acceptance result. No bytes are downloaded and
+/// no runtime, endpoint, credential provider or home directory is discovered.
+///
+/// Use this from the metadata owner's import hook after source format/target
+/// validation. The caller supplies the same selected read context, HTTP executor
+/// and cancellation policy as its command session.
+///
+/// # Errors
+/// Preserves selected-context, authentication, service, paging and cancellation
+/// failures. Lakehouse `Files/…` inputs return Python's explicit local-only import
+/// error; other recognized Fabric inputs retain the source path/type errors.
+pub async fn validate_local_import_input(
+    reads: &ReadSession<'_>,
+    http: &HttpExecutor,
+    input: &str,
+    cancelled: impl Future<Output = ()> + Send,
+) -> Result<(), CommandError> {
+    if reads.tenant.id() != Some(reads.sdk.selection().tenant())
+        || reads.tenant.kind() != NodeKind::Tenant
+        || reads.sdk.selection().audience() != fabric_sdk::Audience::Fabric
+        || !reads.current_path.starts_with('/')
+    {
+        return Err(errors::error(
+            "InvalidInput",
+            "Invalid selected read context",
+        ));
+    }
+    let mut cancelled = std::pin::pin!(cancelled);
+    let mut context = CommandContext::default();
+    let current = context
+        .resolve(
+            reads,
+            http,
+            reads.tenant.clone(),
+            reads.current_path,
+            ResolveOptions::default(),
+            cancelled.as_mut(),
+        )
+        .await?;
+    let target = context
+        .resolve_path(
+            reads,
+            http,
+            current,
+            PathInput::Scalar(input),
+            ResolveOptions::default(),
+            cancelled.as_mut(),
+        )
+        .await;
+    match target {
+        Err(error) => {
+            let envelope = error.envelope(reads.timestamp.clone(), None);
+            if matches!(
+                envelope.result().error_code(),
+                Some(
+                    "InvalidPath"
+                        | "InvalidItemType"
+                        | "InvalidWorkspaceType"
+                        | "NotFound"
+                        | "NotSupported"
+                        | "UnsupportedCommand"
+                )
+            ) {
+                Ok(())
+            } else {
+                Err(error)
+            }
+        }
+        Ok(target) if matches!(target.kind(), fabric_cli_context::PathKind::OneLake(_)) => {
+            if export_files::lakehouse_owner(&target)
+                && target
+                    .local_path()
+                    .is_some_and(|path| path.starts_with("Files/"))
+            {
+                Err(errors::error(
+                    "NotSupported",
+                    "Import only supports local paths. Unsupported input path type: 'lakehouse'.",
+                ))
+            } else {
+                Err(errors::error(
+                    "NotSupported",
+                    "Only supported for Lakehouse/Files",
+                ))
+            }
+        }
+        Ok(_) => Err(errors::error(
+            "InvalidPath",
+            "The specified path is invalid",
+        )),
+    }
+}
+
 pub(super) fn storage_client(reads: &ReadSession<'_>) -> OneLakeClient {
     OneLakeClient::new(
         reads.sdk.credential().clone(),
@@ -752,6 +849,18 @@ struct TransferTargets<'a, 'session> {
 }
 
 impl TransferMetadata for TransferTargets<'_, '_> {
+    fn validate_import_input<'a>(
+        &'a self,
+        input: &'a str,
+    ) -> fabric_cli_transfer::TransferFuture<'a, Result<(), CommandError>> {
+        Box::pin(validate_local_import_input(
+            self.reads,
+            self.http,
+            input,
+            pending(),
+        ))
+    }
+
     fn resolve<'a>(
         &'a self,
         kind: TransferKind,

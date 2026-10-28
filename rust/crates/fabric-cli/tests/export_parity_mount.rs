@@ -11,6 +11,8 @@ mod deferred_export;
 #[path = "family_support/metadata_snapshot.rs"]
 mod family_metadata;
 mod family_support;
+#[path = "export_support/import_input.rs"]
+mod import_input;
 
 use fabric_cli::families::FamilyEvidence;
 use fabric_cli_local::ConfigStore;

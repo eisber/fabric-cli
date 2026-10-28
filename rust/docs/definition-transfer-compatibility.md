@@ -100,7 +100,7 @@ coincidentally named local directory. Ordinary local path-resolution fallback
 is retained, and the original failure still fails closed.
 
 These changes are not a Rust validation receipt: tests/builds are **NOT RUN**
-pending the integrator's serialized grant. Six additive actual-source captures
+pending the integrator's serialized grant. Seven additive actual-source captures
 reproduce independently before Rust expectations; the new offline argv consumer
 covers generic/default/explicit formats, workspace selection/execution ordering,
 nested folder Selective requests, workspace response-index filtering, malformed
@@ -122,6 +122,34 @@ The workflow consumers are module-level registered tests; the consumer now denie
 `unnameable_test_items` so accidental nesting is a compile error, not silent
 coverage. Rust execution is still required; formatting/static registration checks
 are not test-pass evidence.
+
+The public metadata-only `families::validate_local_import_input` seam reuses the
+selected SDK/resolver and explicit OneLake metadata adapter; it never downloads
+bytes, probes native files, prompts or acquires ambient credentials. Its new
+actual-source receipt executes `get_import_path`, `import_single_item`, common
+error leaves and the real exception normalizer on injected synthetic metadata.
+Local regular-file/directory candidates are deferred to the file worker; known
+remote/Fabric inputs fail with the captured source message before file I/O/UI.
+Direct consumers cover selected MSIT metadata versus public OneLake HEAD,
+authentication failure without local fallback and pre-discovery cancellation.
+
+The central `TransferTargets::validate_import_input` override now delegates to
+that seam. Only the exact default trait declaration/docs are adopted from import
+commit `d9c51de23877c7c047d42f3528c2098c8b308c11`, after SDK peer coordination;
+ROOT must deduplicate that identical declaration when unioning both lanes.
+The import function itself is untouched here: the actual after-format/before-
+filesystem invocation belongs to that import commit, following
+`18c1a86e73674f14e6c0c92f370d32e41130ab78`. ROOT must still integrate those
+calls and file-aware/environment worker bindings. Until that union is validated,
+these direct helper cases are not a front-door import completion claim.
+
+Do not silently reparent a single requested item from a raw `folderId`:
+pinned `fab_handle_context.py` constructs workspace-qualified items with the
+requested workspace parent (lines 507–508), and explicitly folder-qualified
+items with the requested folder parent (lines 560–561). The complete workspace/
+folder discovery snapshot already uses the raw service `folderId` and validated
+folder graph. Those distinct source paths remain distinct; changing generic
+`Snapshot`/read-parent behavior requires separate source evidence and review.
 
 One native-only mount remains assigned to the integrator: the binary currently
 constructs its local adapter with CWD and no explicit home. For user-selected
