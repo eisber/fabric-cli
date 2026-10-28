@@ -263,6 +263,23 @@ impl CommandConfiguration {
     }
 }
 
+pub(super) fn selected_constants(config: &DeploymentConfig) -> Map<String, Value> {
+    let mut constants = Map::new();
+    if let Some(values) = config.document.get("constants").and_then(Value::as_object) {
+        for (key, value) in values {
+            let selected = if let Some(mapping) = value.as_object() {
+                mapping.get(&config.environment)
+            } else {
+                Some(value)
+            };
+            if let Some(value) = selected.filter(|value| !value.is_null()) {
+                constants.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    constants
+}
+
 pub(super) fn snapshot(
     config: &DeploymentConfig,
     options: CommandOptions,
@@ -303,20 +320,9 @@ pub(super) fn snapshot(
         }
     }
     let mut constants = options.constants;
-    if let Some(values) = config.document.get("constants").and_then(Value::as_object) {
-        for (key, value) in values {
-            let selected = if let Some(mapping) = value.as_object() {
-                mapping.get(&config.environment)
-            } else {
-                Some(value)
-            };
-            if let Some(value) = selected.filter(|value| !value.is_null()) {
-                constants.insert(key.clone(), value.clone());
-            }
-        }
-        if let Some(flags) = constants.get("FEATURE_FLAG") {
-            membership(flags, "")?;
-        }
+    constants.extend(selected_constants(config));
+    if let Some(flags) = constants.get("FEATURE_FLAG") {
+        membership(flags, "")?;
     }
     let mut extensions = Map::new();
     for (key, value) in config.document.as_object().expect("validated document") {

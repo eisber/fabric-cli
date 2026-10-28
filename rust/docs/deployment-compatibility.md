@@ -44,6 +44,17 @@ These are separate protocols, not generalized truthiness for parameter flags.
 This brings the additive source comparison set to 195 without modifying the
 protected original expectations or baseline ledger.
 
+The engine convenience methods `DeploymentConfig::selected_constants()` and
+`raw_parameter_document()` add no struct fields and preserve legacy consumers.
+The former returns an owned snapshot of only selected, nonnull overrides; every
+dictionary remains an environment mapping. Runtime mappings therefore need
+environment wrapping. Eighteen additional source selector/scope cases verify
+these rules and that changing one constant does not recompute derived aliases.
+Source `FEATURE_FLAG` list/dictionary overrides also exhibit cleanup errors in
+the mutable Python scope; those errors are recorded separately from selected
+values and are not evidence of successful deployment.
+The additive source comparison set now contains 213 cases.
+
 Native consumers now have these explicit primitives:
 
 - `ParameterProgram::apply_for_item` (also exposed as `apply_scoped`) applies

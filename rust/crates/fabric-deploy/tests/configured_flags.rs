@@ -10,6 +10,77 @@ use fabric_deploy::{
 use serde_json::{Value, json};
 
 #[test]
+fn selected_constant_getter_matches_eighteen_actual_source_cases_without_alias_recomputation() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("selected_constants_source.json")).unwrap();
+    assert_eq!(fixture["cases"].as_array().unwrap().len(), 18);
+    for case in fixture["cases"].as_array().unwrap() {
+        let config = DeploymentConfig::from_document(&json!({
+            "core": { "workspace_id": "11111111-1111-1111-1111-111111111111", "repository_directory": "repository" },
+            "constants": case["constants"],
+        }), case["environment"].as_str().unwrap(), None).unwrap();
+        assert_eq!(
+            json!(config.selected_constants()),
+            case["selected"],
+            "{}",
+            case["id"]
+        );
+        let command = config
+            .command_configuration(CommandOptions {
+                features: vec!["base".into()],
+                constants: fixture["defaults"].as_object().unwrap().clone(),
+                ..CommandOptions::default()
+            })
+            .unwrap();
+        assert_eq!(
+            json!(command.constants()),
+            case["effective_before_cleanup"],
+            "{}",
+            case["id"]
+        );
+        assert_eq!(
+            config.document["constants"], case["constants"],
+            "{}",
+            case["id"]
+        );
+    }
+}
+
+#[test]
+fn config_raw_parameter_getter_never_reads_or_reuses_stale_source() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("literal_parameter_source.json")).unwrap();
+    let raw = &fixture["cases"][0]["parameters"];
+    let mut config = DeploymentConfig::from_document(&json!({
+        "core": { "workspace_id": "11111111-1111-1111-1111-111111111111", "repository_directory": "repository", "parameter": "parameter.yml" },
+    }), "dev", None).unwrap();
+    assert!(config.raw_parameter_document().is_none());
+    config.resolve_parameters(raw).unwrap();
+    assert_eq!(config.raw_parameter_document(), Some(raw));
+    assert!(
+        config
+            .resolve_parameters(&json!({"find_replace": false}))
+            .is_err()
+    );
+    assert!(config.raw_parameter_document().is_none());
+}
+
+#[test]
+fn invalid_caller_flag_constant_is_a_typed_error_not_a_feature_query_panic() {
+    let config = DeploymentConfig::from_document(&json!({
+        "core": { "workspace_id": "11111111-1111-1111-1111-111111111111", "repository_directory": "repository" },
+    }), "dev", None).unwrap();
+    assert!(
+        config
+            .command_configuration(CommandOptions {
+                constants: serde_json::Map::from_iter([("FEATURE_FLAG".into(), json!(false))]),
+                ..CommandOptions::default()
+            })
+            .is_err()
+    );
+}
+
+#[test]
 fn thirty_additional_config_values_and_caller_flags_match_actual_source() {
     let fixture: Value =
         serde_json::from_str(include_str!("config_value_edges_source.json")).unwrap();

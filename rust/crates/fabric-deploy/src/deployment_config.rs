@@ -641,6 +641,26 @@ impl DeploymentConfig {
         self.parameters.as_ref()
     }
 
+    /// Full prepared parameter source after explicit successful resolution.
+    ///
+    /// No source is auto-discovered or read here. None also follows a failed
+    /// resolution, so a stale previously validated document cannot be reused.
+    pub fn raw_parameter_document(&self) -> Option<&Value> {
+        self.parameters()
+            .map(crate::parameter_transforms::ParameterProgram::source_document)
+    }
+
+    /// Select configured constant overrides for the exact target environment.
+    ///
+    /// Every dictionary is an environment mapping, including runtime mappings
+    /// such as API_FORMAT_MAPPING: those require an environment-wrapped value.
+    /// Missing environments and null values are omitted; false, zero and empty
+    /// strings remain values. The returned snapshot neither recomputes aliases
+    /// nor changes caller globals or this validated source document.
+    pub fn selected_constants(&self) -> Map<String, Value> {
+        model::selected_constants(self)
+    }
+
     /// Resolve templates and parameter features through caller-owned capabilities.
     ///
     /// The host decodes each template with parameter duplicate-key policy after
