@@ -93,9 +93,7 @@ fn flag(rule: &Map<String, Value>, key: &str) -> Result<bool, TransformError> {
         Some(Value::String(value)) if value.is_empty() || value.eq_ignore_ascii_case("false") => {
             Ok(false)
         }
-        Some(Value::String(_)) => Err(TransformError::Unsupported(
-            "noncanonical parameter flag warnings",
-        )),
+        Some(Value::String(_)) => Ok(false),
         _ => Err(invalid(
             "Parameter flags must be strings, not YAML booleans",
         )),

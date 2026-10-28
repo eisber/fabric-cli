@@ -7,6 +7,9 @@ use crate::config::{extract_workspace_settings, get_config_value};
 use serde_json::{Map, Value};
 use std::fmt;
 
+mod model;
+pub use model::{CommandConfiguration, CommandOptions, OperationSettings, WorkspaceTarget};
+
 /// Exact CICD serial publication order, independent of user scope ordering.
 pub const ITEM_TYPES: &[&str] = &[
     "VariableLibrary",
@@ -311,12 +314,41 @@ fn operation(
                 _ => nonempty_string,
             };
             check_values(value, &format!("{name}.{key}"), accepts, errors);
+            let values = value
+                .as_object()
+                .map_or_else(|| vec![value], |mapping| mapping.values().collect());
+            for value in values {
+                if key.ends_with("regex") {
+                    if let Some(pattern) = value.as_str() {
+                        if pattern.len() > 4096 {
+                            errors.push(format!("'{name}.{key}' regex exceeds its syntax bound"));
+                        } else if fancy_regex::RegexBuilder::new(pattern)
+                            .delegate_size_limit(1024 * 1024)
+                            .build()
+                            .is_err()
+                        {
+                            errors.push(format!("'{name}.{key}' is not a valid supported regex"));
+                        }
+                    }
+                }
+                if *key == "folder_path_to_include"
+                    && value.as_array().is_some_and(|paths| {
+                        paths
+                            .iter()
+                            .any(|path| path.as_str().is_some_and(|path| !path.starts_with('/')))
+                    })
+                {
+                    errors.push(format!("'{name}.{key}' paths must start with '/'"));
+                }
+            }
             if let Some(value) = selected(section, key, environment) {
                 result.insert((*key).into(), value);
             }
         }
     }
-    if result.contains_key("folder_exclude_regex") && result.contains_key("folder_path_to_include")
+    if !section.get("skip").is_some_and(Value::is_boolean)
+        && result.contains_key("folder_exclude_regex")
+        && result.contains_key("folder_path_to_include")
     {
         errors.push(format!("'{name}.folder_exclude_regex' and '{name}.folder_path_to_include' are mutually exclusive"));
     }
@@ -338,9 +370,6 @@ impl DeploymentConfig {
         environment: &str,
         overrides: Option<&Value>,
     ) -> Result<Self, ConfigurationError> {
-        if environment.is_empty() {
-            return Err(invalid("environment must be a non-empty string"));
-        }
         let mut document = document
             .as_object()
             .cloned()
@@ -396,6 +425,7 @@ impl DeploymentConfig {
         }
         let publish = operation(&document, "publish", environment, &mut errors);
         let unpublish = operation(&document, "unpublish", environment, &mut errors);
+        model::validate_sections(&document, environment, &mut errors);
         for (section_name, keys) in [
             ("core", CORE),
             ("publish", PUBLISH),
@@ -557,5 +587,20 @@ impl DeploymentConfig {
     /// Explicitly validated source parameters, never an ambient auto-discovery.
     pub fn parameters(&self) -> Option<&crate::parameter_transforms::ParameterProgram> {
         self.parameters.as_ref()
+    }
+
+    /// Freeze selected configuration and caller-owned global options for one command.
+    ///
+    /// Unlike the legacy Notebook preflight, this retains every source setting
+    /// for the orchestrator and never installs process-global flags or constants.
+    ///
+    /// # Errors
+    /// Rejects inconsistent caller options; extension fields are retained and
+    /// consumers must explicitly acknowledge them before executing mutations.
+    pub fn command_configuration(
+        &self,
+        options: CommandOptions,
+    ) -> Result<CommandConfiguration, ConfigurationError> {
+        model::snapshot(self, options)
     }
 }

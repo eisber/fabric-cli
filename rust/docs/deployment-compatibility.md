@@ -2,6 +2,32 @@
 
 # Deployment configuration and transform compatibility
 
+## Command-scoped configuration handoff (October 28)
+
+`DeploymentConfig::command_configuration(CommandOptions)` provides immutable
+`CommandConfiguration`, `WorkspaceTarget` and `OperationSettings` models for the
+orchestrator. The model preserves ID-versus-display-name precedence, all 33 item
+types, selected publish/unpublish filters and skip values, exact-case feature
+names, typed per-environment constant overrides and keyword arguments. Caller
+bulk options add both source bulk/experimental flags to this command only.
+Unknown source fields are retained in `extensions()`; consumers must implement
+them or call `require_no_extensions()` before mutation, never silently drop them.
+The existing Notebook-only preflight remains a legacy consumer, not a restriction
+on the full configuration model.
+
+The configured `find_replace.is_regex` and `ignore_case` flags accept strings or
+null, not YAML booleans. Only `lower() == "true"` enables either flag: there is no
+whitespace stripping or `"yes"`/`"1"` truthiness. Every other string is valid false;
+a nonempty false `is_regex` retains the source ignored-regex notice. Existing
+bounded regex/JSONPath syntax limits still apply independently.
+
+`configured_flags_reference.py` captures 50 additional cases from the unchanged
+pinned CICD validator, parameter class and actual consumers before Rust expected
+results are written. It records source-byte hashes and pinned dependency versions.
+The original 44 fixtures and existing config/parameter captures are unchanged.
+Native checks require the integration owner's serialized build slot; source-only
+capture and formatting do not prove executable consumer parity.
+
 The initial slice inventories reference behavior and adds synthetic offline
 fixtures. The owner subsequently approved a native single-Notebook implementation,
 described below. It is not the full `fab deploy` command, a planner, unpublication,
