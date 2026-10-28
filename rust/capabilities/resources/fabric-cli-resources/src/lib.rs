@@ -112,7 +112,8 @@ pub struct CommandError {
 }
 
 impl CommandError {
-    pub(crate) fn new(code: &str, message: impl Into<String>) -> Self {
+    /// Construct a local failure without diagnostics or mutation side effects.
+    pub fn new(code: &str, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
             message: message.into().trim_end_matches('.').to_owned(),

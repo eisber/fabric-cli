@@ -17,27 +17,24 @@ use std::{future::Future, io, pin::Pin, sync::Arc};
 
 type ConfirmationReader = dyn Fn(&str) -> io::Result<bool> + Send + Sync;
 
+fn read_native_confirmation(question: &str) -> io::Result<bool> {
+    fabric_cli::console::read_confirmation(&mut io::stdin().lock(), &mut io::stderr(), question)
+}
+
 pub(crate) struct NativeAccessConfirmation {
     reader: Arc<ConfirmationReader>,
 }
 
 impl Default for NativeAccessConfirmation {
     fn default() -> Self {
-        Self {
-            reader: Arc::new(|question| {
-                fabric_cli::console::read_confirmation(
-                    &mut io::stdin().lock(),
-                    &mut io::stderr().lock(),
-                    question,
-                )
-            }),
-        }
+        Self::with_reader(read_native_confirmation)
     }
 }
 
 impl NativeAccessConfirmation {
-    #[cfg(test)]
-    pub(crate) fn scripted(reader: impl Fn(&str) -> io::Result<bool> + Send + Sync + 'static) -> Self {
+    pub(crate) fn with_reader(
+        reader: impl Fn(&str) -> io::Result<bool> + Send + Sync + 'static,
+    ) -> Self {
         Self {
             reader: Arc::new(reader),
         }
@@ -76,32 +73,27 @@ pub(crate) struct NativeMutationUi {
 
 impl Default for NativeMutationUi {
     fn default() -> Self {
-        Self {
-            records: Vec::new(),
-            confirmation: NativeAccessConfirmation::default(),
-            writer: Arc::new(|records| {
-                use io::Write;
-                let mut stdout = io::stdout().lock();
-                let mut stderr = io::stderr().lock();
-                for record in records {
-                    record.write_to(&mut stdout, &mut stderr)?;
-                }
-                stdout.flush()?;
-                stderr.flush()
-            }),
-        }
+        Self::with_io(read_native_confirmation, |records| {
+            use io::Write;
+            let mut stdout = io::stdout().lock();
+            let mut stderr = io::stderr().lock();
+            for record in records {
+                record.write_to(&mut stdout, &mut stderr)?;
+            }
+            stdout.flush()?;
+            stderr.flush()
+        })
     }
 }
 
 impl NativeMutationUi {
-    #[cfg(test)]
-    pub(crate) fn scripted(
+    pub(crate) fn with_io(
         reader: impl Fn(&str) -> io::Result<bool> + Send + Sync + 'static,
         writer: impl Fn(&[fabric_cli_output::RenderPlan]) -> io::Result<()> + Send + Sync + 'static,
     ) -> Self {
         Self {
             records: Vec::new(),
-            confirmation: NativeAccessConfirmation::scripted(reader),
+            confirmation: NativeAccessConfirmation::with_reader(reader),
             writer: Arc::new(writer),
         }
     }

@@ -64,11 +64,7 @@ impl MutationUi for Ui {
 }
 
 impl RemovalUi for Ui {
-    fn select<'a>(
-        &'a mut self,
-        _: &'a str,
-        _: &'a [String],
-    ) -> CommandFuture<'a, Vec<String>> {
+    fn select<'a>(&'a mut self, _: &'a str, _: &'a [String]) -> CommandFuture<'a, Vec<String>> {
         panic!("production used the infallible selection boundary")
     }
 
@@ -90,10 +86,8 @@ struct Operations {
 
 impl Operations {
     fn reply(&mut self, method: ResourceMethod, data: Option<Value>) {
-        self.responses.push_back((
-            method,
-            ResourceOutcome::Completed { status: 200, data },
-        ));
+        self.responses
+            .push_back((method, ResourceOutcome::Completed { status: 200, data }));
     }
 }
 
@@ -102,7 +96,8 @@ impl ResourceOperations for Operations {
         &mut self,
         operation: ResourceOperation,
     ) -> CommandFuture<'_, Result<ResourceOutcome, ResourceError>> {
-        self.requests.push((operation.method(), operation.path().into()));
+        self.requests
+            .push((operation.method(), operation.path().into()));
         let (expected, response) = self.responses.pop_front().expect("unexpected operation");
         assert_eq!(operation.method(), expected);
         Box::pin(std::future::ready(Ok(response)))
@@ -191,7 +186,11 @@ async fn default_result_methods_preserve_legacy_adapters_without_requiring_new_m
 async fn single_remove_errors_are_not_successful_declines_and_force_bypasses_input() {
     for force in [false, true] {
         for failed in [false, true] {
-            let mut ui = Ui::new(if failed { Err(input_error()) } else { Ok(false) });
+            let mut ui = Ui::new(if failed {
+                Err(input_error())
+            } else {
+                Ok(false)
+            });
             let mut operations = Operations::default();
             if force {
                 operations.reply(ResourceMethod::Delete, None);
@@ -231,7 +230,11 @@ async fn set_retains_workspace_read_before_prompt_and_item_read_after_consent() 
                 } else {
                     item("Notebook")
                 };
-                let mut ui = Ui::new(if failed { Err(input_error()) } else { Ok(false) });
+                let mut ui = Ui::new(if failed {
+                    Err(input_error())
+                } else {
+                    Ok(false)
+                });
                 let mut operations = Operations::default();
                 if force {
                     operations.reply(ResourceMethod::Patch, None);
@@ -267,7 +270,11 @@ async fn lifecycle_keeps_preconfirmation_reads_but_never_dispatches_after_prompt
     for action in ["start", "stop", "assign", "unassign"] {
         for force in [false, true] {
             for failed in [false, true] {
-                let mut ui = Ui::new(if failed { Err(input_error()) } else { Ok(false) });
+                let mut ui = Ui::new(if failed {
+                    Err(input_error())
+                } else {
+                    Ok(false)
+                });
                 let mut operations = Operations::default();
                 let before = usize::from(action != "assign");
                 match action {
@@ -275,10 +282,8 @@ async fn lifecycle_keeps_preconfirmation_reads_but_never_dispatches_after_prompt
                         ResourceMethod::Post,
                         Some(json!({"status":if action == "start" {"Stopped"} else {"Running"}})),
                     ),
-                    "unassign" => operations.reply(
-                        ResourceMethod::Get,
-                        Some(json!({"capacityId":"capacity"})),
-                    ),
+                    "unassign" => operations
+                        .reply(ResourceMethod::Get, Some(json!({"capacityId":"capacity"}))),
                     _ => {}
                 }
                 if force {
@@ -333,7 +338,11 @@ async fn shortcut_create_remove_and_update_propagate_input_errors_without_losing
     for action in ["create", "remove", "update"] {
         for force in [false, true] {
             for failed in [false, true] {
-                let mut ui = Ui::new(if failed { Err(input_error()) } else { Ok(false) });
+                let mut ui = Ui::new(if failed {
+                    Err(input_error())
+                } else {
+                    Ok(false)
+                });
                 let mut operations = Operations::default();
                 if action == "update" {
                     operations.reply(

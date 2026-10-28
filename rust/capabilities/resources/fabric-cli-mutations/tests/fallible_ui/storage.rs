@@ -46,7 +46,8 @@ impl OneLakeExecutor for Executor {
     fn execute<'a>(
         &'a self,
         request: OneLakeRequest<'a>,
-    ) -> Pin<Box<dyn Future<Output = Result<OneLakeResponse, OneLakeExecutionError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<OneLakeResponse, OneLakeExecutionError>> + Send + 'a>>
+    {
         self.0.lock().unwrap().push(request.url().to_string());
         Box::pin(std::future::ready(Ok(OneLakeResponse {
             status: 200,
@@ -75,7 +76,11 @@ async fn storage_delete_and_move_keep_input_failures_typed_and_force_explicit() 
         for force in [false, true] {
             for failed in [false, true] {
                 let executor = Executor::default();
-                let mut ui = Ui::new(if failed { Err(input_error()) } else { Ok(false) });
+                let mut ui = Ui::new(if failed {
+                    Err(input_error())
+                } else {
+                    Ok(false)
+                });
                 let mut host = OneLakeWriteHost {
                     client: &client,
                     executor: &executor,
@@ -84,13 +89,8 @@ async fn storage_delete_and_move_keep_input_failures_typed_and_force_explicit() 
                     write_limits: Default::default(),
                 };
                 let result = if moving {
-                    host.rename(
-                        &target("Files/from"),
-                        &target("Files/to"),
-                        force,
-                        pending(),
-                    )
-                    .await
+                    host.rename(&target("Files/from"), &target("Files/to"), force, pending())
+                        .await
                 } else {
                     host.remove(&target("Files/from"), force, pending()).await
                 };
