@@ -121,6 +121,17 @@ an injected prepared-definition capability; it is not a replacement transform
 oracle. New native regression cases cover both publication modes and aggregate
 growth before a definition mutation. They remain unexecuted pending ROOT.
 
+The pipeline planner follows the source ordered-publisher boundary: once any
+pipeline is selected, dependency validation covers every repository pipeline
+before filtering the execution order. Excluded cycles must not become a
+successful selective deployment. `pipeline_selection_source.json` captures the
+actual source selection, file-reading dependency planner and graph sorter.
+The separate `planner_source` native selector is pending ROOT execution.
+Source type pre-hooks still refresh metadata when selective publication yields
+no items. Those refreshes do not retarget an initially absent item to a new
+concurrently discovered ID; `refresh_source.json` captures the actual source
+selection/refresh/create boundary. Native comparisons are pending ROOT.
+
 Acceptance still needs native compilation/strict Clippy, complete processor
 branch/lifecycle/cancellation/partial-failure source fixtures, full root mounting,
 source constant-override coverage, binary classification equivalence, and

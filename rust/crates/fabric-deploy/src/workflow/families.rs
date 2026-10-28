@@ -46,13 +46,28 @@ pub(super) async fn publish<E: OperationExecutor>(
     let mut environments = Vec::new();
     let mut current_deployed = deployed.to_vec();
     for item_type in context.type_order() {
+        if !config.item_types.iter().any(|scope| scope == item_type)
+            || !plan
+                .repository
+                .items
+                .iter()
+                .any(|item| item.item_type == *item_type)
+        {
+            continue;
+        }
         let mut indices: Vec<_> = plan
             .order
             .iter()
             .copied()
             .filter(|index| plan.repository.items[*index].item_type == *item_type)
             .collect();
+        if matches!(*item_type, "DataPipeline" | "KQLQueryset" | "KQLDashboard") {
+            current_deployed = deployed_items(io.list(&format!("{base}/items")).await?)?;
+        }
         if indices.is_empty() {
+            if *item_type == "SemanticModel" {
+                semanticmodel::bind(io, publication, ids).await?;
+            }
             continue;
         }
         if *item_type == "Dataflow" {
@@ -64,10 +79,6 @@ pub(super) async fn publish<E: OperationExecutor>(
                 .map(|index| plan.repository.items[*index].name.clone())
                 .collect();
             environment::check(io, base, &environments, true).await?;
-        }
-        if matches!(*item_type, "DataPipeline" | "KQLQueryset" | "KQLDashboard") {
-            // These source pre-hooks refresh deployed metadata at their type boundary.
-            current_deployed = deployed_items(io.list(&format!("{base}/items")).await?)?;
         }
         let mut failure = None;
         let mut failure_item = None;
@@ -144,12 +155,7 @@ async fn publish_one<E: OperationExecutor>(
     let repository = &plan.repository;
     let source = &repository.items[index];
     let processor = Processor::for_type(&source.item_type)?;
-    let existing = ids.get(&identity_key(source)).cloned().or_else(|| {
-        deployed
-            .iter()
-            .find(|item| item.item_type == source.item_type && item.name == source.name)
-            .map(|item| item.id.clone())
-    });
+    let existing = ids.get(&identity_key(source)).cloned();
     let mut item = source.clone();
     if !context.shell_only(&source.item_type) {
         preprocess(io, publication, &mut item, ids, false).await?;

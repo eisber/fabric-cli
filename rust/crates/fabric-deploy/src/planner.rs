@@ -588,8 +588,10 @@ impl DeploymentPlan {
                 if !seen_logical.insert(item.logical_id.clone()) {
                     return Err(invalid("Duplicate logicalId in repository"));
                 }
-                logical.insert(item.logical_id.as_str(), index);
             }
+            logical
+                .entry((item.item_type.as_str(), item.logical_id.as_str()))
+                .or_insert(index);
             if !config.skip_publish()
                 && config.item_types.contains(&item.item_type)
                 && selection.includes(item)?
@@ -604,9 +606,16 @@ impl DeploymentPlan {
                 .copied()
                 .filter(|index| repository.items[*index].item_type == *item_type)
                 .collect();
-            if *item_type == "DataPipeline" {
+            if *item_type == "DataPipeline" && !indices.is_empty() {
+                let all_indices: Vec<_> = repository
+                    .items
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, item)| item.item_type == "DataPipeline")
+                    .map(|(index, _)| index)
+                    .collect();
                 let mut edges = Vec::new();
-                for index in &indices {
+                for index in &all_indices {
                     let item = &repository.items[*index];
                     let filename = context.dependency_file("DataPipeline")?;
                     let content = item
@@ -619,14 +628,18 @@ impl DeploymentPlan {
                         Value::String(content.content()?.into())
                     };
                     for reference in pipeline_references(&content) {
-                        if let Some(dependency) = logical.get(reference.as_str())
+                        if let Some(dependency) = logical.get(&("DataPipeline", reference.as_str()))
                             && repository.items[*dependency].item_type == "DataPipeline"
                         {
                             edges.push((*index, *dependency));
                         }
                     }
                 }
-                order.extend(topological_order(&indices, &edges)?);
+                order.extend(
+                    topological_order(&all_indices, &edges)?
+                        .into_iter()
+                        .filter(|index| indices.contains(index)),
+                );
             } else {
                 order.extend(indices);
             }
