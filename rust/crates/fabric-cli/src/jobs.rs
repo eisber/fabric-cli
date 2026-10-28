@@ -3,6 +3,8 @@
 
 //! Runtime-neutral job composition shared by native and offline hosts.
 
+pub mod terminal;
+
 use crate::{
     errors,
     parser::JobReadCommand,
