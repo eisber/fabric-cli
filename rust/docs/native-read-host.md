@@ -126,6 +126,12 @@ discovery can therefore list folders again during rendering. This is not Python
 TTL-cache/request-count parity. A failure on any page never emits partial rows as
 complete success.
 
+Absolute/root and explicitly configured home targets resolve from the tenant
+without first discovering the unrelated current workspace, item or folder.
+Relative and omitted paths still reconstruct the supplied current path.
+The current path must remain absolute even when the target does not use it;
+tenant/audience checks and cancellation remain unchanged.
+
 JSON is the native preview default. Explicit `--output_format text` uses the
 shared renderer with no colors and fixed pure-renderer terminal defaults.
 ASCII table width/key/repr properties are supplied; non-ASCII requiring missing

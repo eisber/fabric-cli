@@ -452,3 +452,292 @@ fn actual_session_plan_propagates_writer_failure() {
         std::io::ErrorKind::BrokenPipe
     );
 }
+
+mod absolute_context {
+    use super::*;
+
+    const WORKSPACES: &str = "https://api.fabric.microsoft.com/v1/workspaces";
+    const ITEMS: &str = "https://api.fabric.microsoft.com/v1/workspaces/w/items";
+    const NOTEBOOK: &str = "https://api.fabric.microsoft.com/v1/workspaces/w/notebooks/n";
+    const SCOPE: &str = "https://api.fabric.microsoft.com/.default";
+    const CURRENTS: [&str; 3] = [
+        "/Gone.Workspace",
+        "/Demo.Workspace/Missing.Notebook",
+        "/Demo.Workspace/Missing.Folder",
+    ];
+
+    struct Observation {
+        exit: u8,
+        output: Value,
+        requests: Vec<String>,
+        scopes: Vec<Vec<String>>,
+    }
+
+    fn observe(
+        args: &[&str],
+        replies: Vec<Reply>,
+        current: &str,
+        home: HomeContext,
+        cancelled: bool,
+        source_operations: bool,
+    ) -> Observation {
+        let Invocation::Read(command) =
+            parse_args(std::iter::once("fab-rs").chain(args.iter().copied())).unwrap()
+        else {
+            panic!("read required");
+        };
+        let http = Arc::new(Http::new(replies));
+        let executor = executor(http.clone(), Arc::new(Timer::default()));
+        let credential = Arc::new(Credential::default());
+        let sdk = sdk(credential.clone());
+        let session = ReadSession {
+            sdk: &sdk,
+            executor: &executor,
+            tenant: Element::tenant("Tenant", "offline-tenant"),
+            current_path: current,
+            home,
+            timestamp: Timestamp::parse("2000-01-01T00:00:00Z").unwrap(),
+            config: ReadConfig::default(),
+        };
+        let cancellation = std::future::poll_fn(|_| {
+            if cancelled {
+                std::task::Poll::Ready(())
+            } else {
+                std::task::Poll::Pending
+            }
+        });
+        let plan = if source_operations {
+            complete(
+                session
+                    .with_source_operations(&executor)
+                    .dispatch(&command, cancellation),
+            )
+        } else {
+            complete(session.dispatch(&command, cancellation))
+        }
+        .unwrap();
+        let (mut stdout, mut stderr) = (vec![], vec![]);
+        plan.write_to(&mut stdout, &mut stderr).unwrap();
+        assert!(stderr.is_empty());
+        assert_eq!(session.current_path, current);
+        http.assert_consumed();
+        let requests = http.requests.lock().unwrap().clone();
+        let scopes = credential.scopes.lock().unwrap().clone();
+        Observation {
+            exit: plan.exit_code,
+            output: serde_json::from_slice(&stdout).unwrap(),
+            requests,
+            scopes,
+        }
+    }
+
+    fn assert_success(result: &Observation, command: &str, data: Value, requests: &[&str]) {
+        assert_eq!(result.exit, 0);
+        assert_eq!(
+            result.output,
+            json!({
+                "timestamp":"2000-01-01T00:00:00Z", "status":"Success", "command":command,
+                "result":{"data":data}
+            })
+        );
+        assert_eq!(result.requests, requests);
+        assert_eq!(result.scopes, vec![vec![SCOPE]; requests.len()]);
+    }
+
+    #[test]
+    fn root_ignores_stale_workspace_item_and_folder_without_irrelevant_discovery() {
+        for current in CURRENTS {
+            for path in ["/", "/..", "'/'"] {
+                for source_operations in [false, true] {
+                    let result = observe(
+                        &["ls", path, "--output_format", "json"],
+                        vec![workspaces()],
+                        current,
+                        HomeContext::Unspecified,
+                        false,
+                        source_operations,
+                    );
+                    assert_success(
+                        &result,
+                        "ls",
+                        json!([{"name":"Demo.Workspace"}]),
+                        &[WORKSPACES],
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn absolute_workspace_and_item_get_do_not_resolve_irrelevant_current() {
+        for current in CURRENTS {
+            for source_operations in [false, true] {
+                let result = observe(
+                    &["ls", "/Demo.Workspace", "--output_format", "json"],
+                    vec![
+                        workspaces(),
+                        reply(json!({"value":[{"id":"n","displayName":"Book","type":"Notebook"}]})),
+                    ],
+                    current,
+                    HomeContext::Unspecified,
+                    false,
+                    source_operations,
+                );
+                assert_success(
+                    &result,
+                    "ls",
+                    json!([{"name":"Book.Notebook"}]),
+                    &[WORKSPACES, ITEMS],
+                );
+                let result = observe(
+                    &["get", "/Demo.Workspace/Book.Notebook", "-q", "description"],
+                    vec![
+                        workspaces(),
+                        reply(json!({"value":[{"id":"n","displayName":"Book","type":"Notebook"}]})),
+                        reply(json!({"id":"n","displayName":"Book","description":"offline"})),
+                    ],
+                    current,
+                    HomeContext::Unspecified,
+                    false,
+                    source_operations,
+                );
+                assert_success(
+                    &result,
+                    "get",
+                    json!(["offline"]),
+                    &[WORKSPACES, ITEMS, NOTEBOOK],
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn home_is_explicit_and_independent_of_stale_current() {
+        for source_operations in [false, true] {
+            for path in ["~", "~/"] {
+                let result = observe(
+                    &["ls", path],
+                    vec![workspaces(), reply(json!({"value":[]}))],
+                    CURRENTS[0],
+                    HomeContext::Workspace("Demo.Workspace".into()),
+                    false,
+                    source_operations,
+                );
+                assert_success(&result, "ls", json!([]), &[WORKSPACES, ITEMS]);
+                for (home, code) in [
+                    (HomeContext::Unspecified, "NotSupported"),
+                    (
+                        HomeContext::Unavailable(fabric_cli_context::ContextError::lookup(
+                            "HomeUnavailable",
+                            "Home selection failed",
+                        )),
+                        "HomeUnavailable",
+                    ),
+                ] {
+                    let result = observe(
+                        &["ls", path],
+                        vec![],
+                        CURRENTS[0],
+                        home,
+                        false,
+                        source_operations,
+                    );
+                    assert_eq!(result.exit, 1);
+                    assert_eq!(result.output["result"]["error_code"], code);
+                    assert!(result.requests.is_empty());
+                    assert!(result.scopes.is_empty());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn relative_and_omitted_paths_still_resolve_current_metadata() {
+        for args in [vec!["ls"], vec!["ls", "."], vec!["ls", ".."]] {
+            for current in CURRENTS {
+                let mut replies = vec![workspaces()];
+                let expected = if current.ends_with(".Notebook") {
+                    replies.push(reply(json!({"value":[]})));
+                    vec![WORKSPACES, ITEMS]
+                } else if current.ends_with(".Folder") {
+                    replies.push(reply(json!({"value":[]})));
+                    vec![
+                        WORKSPACES,
+                        "https://api.fabric.microsoft.com/v1/workspaces/w/folders?recursive=True",
+                    ]
+                } else {
+                    vec![WORKSPACES]
+                };
+                let result = observe(
+                    &args,
+                    replies,
+                    current,
+                    HomeContext::Unspecified,
+                    false,
+                    false,
+                );
+                assert_eq!(result.exit, 1);
+                assert_eq!(result.output["result"]["error_code"], "NotFound");
+                assert_eq!(result.requests, expected);
+                assert_eq!(result.scopes, vec![vec![SCOPE]; expected.len()]);
+            }
+            let (data, requests, handler_reply) = if args.last() == Some(&"..") {
+                (
+                    json!([{"name":"Demo.Workspace"}]),
+                    vec![WORKSPACES, WORKSPACES],
+                    workspaces(),
+                )
+            } else {
+                (
+                    json!([]),
+                    vec![WORKSPACES, ITEMS],
+                    reply(json!({"value":[]})),
+                )
+            };
+            let result = observe(
+                &args,
+                vec![workspaces(), handler_reply],
+                "/Demo.Workspace",
+                HomeContext::Unspecified,
+                false,
+                false,
+            );
+            assert_success(&result, "ls", data, &requests);
+        }
+    }
+
+    #[test]
+    fn cancellation_and_invalid_current_shape_precede_absolute_discovery() {
+        for path in ["/", "/Demo.Workspace", "~"] {
+            for source_operations in [false, true] {
+                let result = observe(
+                    &["ls", path],
+                    vec![],
+                    CURRENTS[0],
+                    HomeContext::Unspecified,
+                    true,
+                    source_operations,
+                );
+                assert_eq!(result.exit, 1);
+                assert_eq!(
+                    result.output["result"]["error_code"],
+                    "LongRunningOperationCancelled"
+                );
+                assert!(result.requests.is_empty());
+                assert!(result.scopes.is_empty());
+                let result = observe(
+                    &["ls", path],
+                    vec![],
+                    "Demo.Workspace",
+                    HomeContext::Unspecified,
+                    false,
+                    source_operations,
+                );
+                assert_eq!(result.exit, 1);
+                assert_eq!(result.output["result"]["error_code"], "InvalidInput");
+                assert!(result.requests.is_empty());
+                assert!(result.scopes.is_empty());
+            }
+        }
+    }
+}
