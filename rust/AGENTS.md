@@ -38,6 +38,11 @@ Repository-wide contribution and team-review rules still apply.
 - Read/format/narrow checks first; run the smallest tests covering the slice.
   Required full/native checks still gate integration; resource limits are not
   permission to omit validation.
+- New test crates must deny `unnameable_test_items`. After adding or moving a
+  helper or test, verify its enclosing scope and obtain an actual all-target
+  check from the authorized validator. Formatting and metadata cannot establish
+  method visibility or test registration. Preserve test bodies and source
+  expectations when repairing accidental nesting; never suppress the warning.
 - Keep dependencies and features centralized in `Cargo.toml`, preserve the lock,
   document public APIs, and respect workspace lints. Coordinate shared core,
   manifest, lockfile, toolchain, and architecture changes with integration.

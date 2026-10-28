@@ -302,6 +302,26 @@ impl<E: OperationExecutor> ServiceIo<'_, E> {
         Ok(value)
     }
 
+    fn retain_prepared(
+        &mut self,
+        item: &crate::model::RepositoryItem,
+    ) -> Result<(), WorkflowFailure> {
+        let bytes = item
+            .files
+            .iter()
+            .try_fold(0usize, |bytes, file| bytes.checked_add(file.bytes.len()))
+            .ok_or(ConfigurationError::Limit)?;
+        self.remaining_definition_bytes = self
+            .remaining_definition_bytes
+            .checked_sub(bytes)
+            .ok_or(ConfigurationError::Limit)?;
+        if matches!(item.item_type.as_str(), "VariableLibrary" | "Lakehouse") {
+            self.processed_items
+                .insert(identity_key(item), item.clone());
+        }
+        Ok(())
+    }
+
     fn collect(&mut self, section: &str, item_type: &str, name: &str, response: Option<Value>) {
         let Some(response) = response.filter(|_| self.collect_responses) else {
             return;
@@ -311,25 +331,6 @@ impl<E: OperationExecutor> ServiceIo<'_, E> {
             responses[section] = json!({});
         }
 
-        fn retain_prepared(
-            &mut self,
-            item: &crate::model::RepositoryItem,
-        ) -> Result<(), WorkflowFailure> {
-            let bytes = item
-                .files
-                .iter()
-                .try_fold(0usize, |bytes, file| bytes.checked_add(file.bytes.len()))
-                .ok_or(ConfigurationError::Limit)?;
-            self.remaining_definition_bytes = self
-                .remaining_definition_bytes
-                .checked_sub(bytes)
-                .ok_or(ConfigurationError::Limit)?;
-            if matches!(item.item_type.as_str(), "VariableLibrary" | "Lakehouse") {
-                self.processed_items
-                    .insert(identity_key(item), item.clone());
-            }
-            Ok(())
-        }
         if responses[section].get(item_type).is_none() {
             responses[section][item_type] = json!({});
         }
