@@ -6,7 +6,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, select, plan, execute, options, requireFastPass, parallelCandidate, commandTimeout, verifyRequest015} = require('./rust-fast-check.cjs');
+const {sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, activeRunsArgs, select, plan, execute, options, requireFastPass, parallelCandidate, commandTimeout, verifyRequest015} = require('./rust-fast-check.cjs');
+
+test('publication projects bounded active-run fields before buffering provider history', () => {
+  assert.deepEqual(activeRunsArgs(), [
+    'api', '--method', 'GET', 'repos/eisber/fabric-cli/actions/runs', '-f', 'per_page=100',
+    '--jq', '{workflow_runs: [.workflow_runs[] | select(.status != "completed") | {path, status, head_branch}]}',
+  ]);
+});
 
 test('only full source IDs and finite lanes are accepted', () => {
   assert.equal(sha('a'.repeat(40)), true);

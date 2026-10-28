@@ -92,6 +92,10 @@ function ciDelta(files) {
   requireThat(files.every(file => CI_FILES.includes(file)),
     `Non-CI delta from original product source: ${files.filter(file => !CI_FILES.includes(file)).join(', ')}`);
 }
+function activeRunsArgs() {
+  return ['api', '--method', 'GET', `repos/${REPO}/actions/runs`, '-f', 'per_page=100',
+    '--jq', '{workflow_runs: [.workflow_runs[] | select(.status != "completed") | {path, status, head_branch}]}'];
+}
 function select(metadata, selectedLane) {
   lane(selectedLane);
   const defaults = new Set(metadata.workspace_default_members);
@@ -646,8 +650,7 @@ function publish(args) {
   for (const commit of commits) {
     ciDelta(git(['diff-tree', '--no-commit-id', '--name-only', '-r', commit]).split('\n').filter(Boolean));
   }
-  const active = JSON.parse(command('gh', ['api', '--method', 'GET',
-    `repos/${REPO}/actions/runs`, '-f', 'per_page=100'])).workflow_runs;
+  const active = JSON.parse(command('gh', activeRunsArgs())).workflow_runs;
   requireThat(!active.some(run => run.path === '.github/workflows/rust-fast-check.yml' &&
     run.status !== 'completed' && run.head_branch?.startsWith('validation/rust-fast-') &&
     !parallelCandidate(opts['--lane'], run.head_branch)),
@@ -723,7 +726,7 @@ function main(args) {
   if (action === 'full') return full(rest);
   throw new Error('Use prepare, run <fmt|fetch|check|clippy|test|family>, finish, publish or full; see docs/fast-check.md');
 }
-module.exports = {LANES, CI_FILES, sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, select, plan, execute, options, requireFastPass, parallelCandidate, commandTimeout, verifyRequest015};
+module.exports = {LANES, CI_FILES, sha, lane, runnerLane, laneBranch, metadataTargets, ciDelta, activeRunsArgs, select, plan, execute, options, requireFastPass, parallelCandidate, commandTimeout, verifyRequest015};
 if (require.main === module) {
   try { main(process.argv.slice(2)); }
   catch (error) { console.error(`Rust fast check: ${error.message}`); process.exitCode = 1; }
