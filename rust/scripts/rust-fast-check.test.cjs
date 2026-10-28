@@ -176,7 +176,7 @@ test('timeout rescue changes only native Windows endpoint test bounds and no com
 test('deploy preflight first runs actual library then native root consumer, never live deployment', () => {
   const manifest = {lane: 'deploy-mount', packages: ['fabric-deploy', 'fabric-cli']};
   const commands = plan('test', manifest, '/target', '/receipts',
-    file => !file.endsWith('parameter_transforms.rs'));
+    file => !file.endsWith('parameter_transforms.rs') && !file.endsWith('deploy_full.rs'));
   assert.deepEqual(commands.map(item => item.args), [
     ['test', '--offline', '--locked', '-p', 'fabric-deploy',
       '--test', 'config', '--test', 'repository', '--test', 'parameters', '--test', 'yaml',
@@ -190,7 +190,7 @@ test('deploy preflight first runs actual library then native root consumer, neve
   assert.ok(plan('clippy', manifest)[1].args.includes('native-read'));
   const family = plan('family', manifest, '/target', '/receipts',
     file => !file.endsWith('transform_program_reference.py'));
-  assert.equal(family.length, 16);
+  assert.equal(family.length, 26);
   assert.ok(family.some(item => item.program === 'git' &&
     item.args.slice(-4).join(' ') === 'config --local core.autocrlf true'));
   assert.ok(family.at(-1).args.includes('--doc'));
@@ -218,6 +218,20 @@ test('released parameter transform target runs first and retains its source comp
   assert.ok(tests[1].args.includes('parameter_transforms') && tests[1].args.includes('--list'));
   const family = plan('family', manifest, '/target', '/receipts', () => true);
   assert.ok(family.some(item => item.args.includes('crates/fabric-deploy/tests/transform_program_reference.py')));
+});
+
+test('released full deployment consumer and parameter source captures cannot be omitted', () => {
+  const manifest = {lane: 'deploy-mount', packages: ['fabric-deploy', 'fabric-cli']};
+  const tests = plan('test', manifest, '/target', '/receipts', () => true);
+  const full = tests.filter(item => item.args.includes('deploy_full'));
+  assert.equal(full.length, 2);
+  assert.ok(full.some(item => item.args.includes('--list')));
+  assert.ok(full.some(item => item.args.includes('--test-threads=1') && !item.args.includes('--list')));
+  const family = plan('family', manifest, '/target', '/receipts', () => true);
+  for (const name of ['configured_flags', 'flag_protocol', 'config_value_edges', 'parameter_context',
+    'parameter_pipeline', 'path_filter', 'selected_constants', 'parameter_resolution', 'parameter_schema_edges']) {
+    assert.ok(family.some(item => item.args.includes(`crates/fabric-deploy/tests/${name}_reference.py`)));
+  }
 });
 test('Windows native lane, host and dedicated validation namespace must agree', () => {
   const ref = 'refs/heads/validation/rust-fast-windows-03fab';
@@ -459,6 +473,8 @@ test('job and import source receipts remain required for their command consumers
     const commands = plan('family', {lane: 'baseline', packages}, '/target', '/receipts', () => true);
     assert.ok(commands.some(item => item.program === 'python' &&
       item.args.includes('crates/fabric-deploy/tests/definition_import_reference_checks.py')));
+    assert.ok(commands.some(item => item.program === 'python' &&
+      item.args.includes('tests/compatibility/run_export_source_parity.py')));
   }
 });
 

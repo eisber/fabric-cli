@@ -303,10 +303,14 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
         ...(exists('crates/fabric-deploy/tests/parameter_transforms.rs') ? ['--test', 'parameter_transforms'] : []),
         '--', '--list'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
-        '--test', 'deploy_parameters', '--test', 'deploy_mount', '--', '--list'),
+        '--test', 'deploy_parameters', '--test', 'deploy_mount',
+        ...(exists('crates/fabric-cli/tests/deploy_full.rs') ? ['--test', 'deploy_full'] : []),
+        '--', '--list'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-deploy', '--', '--test-threads=1'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
-        '--test', 'deploy_parameters', '--test', 'deploy_mount', '--', '--test-threads=1'),
+        '--test', 'deploy_parameters', '--test', 'deploy_mount',
+        ...(exists('crates/fabric-cli/tests/deploy_full.rs') ? ['--test', 'deploy_full'] : []),
+        '--', '--test-threads=1'),
     ];
     if (windowsAuth) return [
       cargo('test', '--offline', '--locked', '-p', 'fabric-identity-windows', '--lib',
@@ -365,6 +369,12 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       'orchestration_reference', 'operation_section_reference', 'literal_parameter_reference',
       'literal_parameter_payload_reference', 'transform_adapter_reference'];
     if (exists('crates/fabric-deploy/tests/transform_program_reference.py')) references.push('transform_program_reference');
+    for (const name of ['configured_flags_reference', 'flag_protocol_reference',
+      'config_value_edges_reference', 'parameter_context_reference', 'parameter_pipeline_reference',
+      'path_filter_reference', 'selected_constants_reference', 'parameter_resolution_reference',
+      'parameter_schema_edges_reference']) {
+      if (exists(`crates/fabric-deploy/tests/${name}.py`)) references.push(name);
+    }
     return [
       {program: 'git', args: ['init', source]},
       {program: 'git', args: ['-C', source, 'config', '--local', 'core.autocrlf', 'true']},
@@ -378,6 +388,8 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
         '--cli-reference-root', root, '--cicd-reference-root', source),
       python('crates/fabric-cli/tests/deploy_wrapper_reference.py', '--reference-root', root),
       python('crates/fabric-deploy/tests/definition_import_reference_checks.py'),
+      python('tests/compatibility/run_export_source_parity.py',
+        '--artifacts', path.join(rust, 'target', 'export-source-receipts')),
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
         '--features', 'native-read', '--doc', '--', '--test-threads=1'),
     ];
@@ -473,7 +485,9 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     commands.push(python('tests/compatibility/run_definition_parity.py', '--artifacts', path.join(output, 'definition')));
   }
   if (has('fabric-cli') || has('fabric-cli-transfer') || has('fabric-deploy')) {
-    commands.push(python('crates/fabric-deploy/tests/definition_import_reference_checks.py'));
+    commands.push(python('crates/fabric-deploy/tests/definition_import_reference_checks.py'),
+      python('tests/compatibility/run_export_source_parity.py',
+        '--artifacts', path.join(rust, 'target', 'export-source-receipts')));
   }
   if (manifest.lane !== 'sdk-values' &&
     (has('fabric-cli-mutations') || has('fabric-sdk-operations') || has('fabric-sdk-onelake') || has('fabric-sdk-onelake-http'))) {

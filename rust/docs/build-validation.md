@@ -130,6 +130,16 @@ recheck the ordered input and Environment lifecycle receipts without regeneratin
 expectations. Both the full matrix and relevant fast-check plans retain these
 additional comparisons alongside their existing checks.
 
+When released, `deploy_full` must be both listed and executed by the bounded
+deployment preflight, alongside the retained legacy mounted consumers. The
+configuration/scoped-parameter gate re-executes all nine additive references
+against the pinned `fabric-cicd` source without regenerating expected receipts.
+The full native matrix retains those comparisons as a separate finite step.
+Export storage, fallback, hierarchy, response-index, precondition and input
+classification captures are also re-executed without regenerating their
+immutable expectations; generated receipts stay in an isolated ignored target
+subdirectory inside the checked-out source.
+
 ### Optional native transport gate
 
 Selecting `fabric-sdk-transport` runs its no-default-feature library check and
