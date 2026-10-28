@@ -583,10 +583,10 @@ impl DeploymentPlan {
         let mut seen_logical = HashSet::new();
         for (index, item) in repository.items.iter().enumerate() {
             Processor::for_type(&item.item_type)?;
-            if item.logical_id != context.default_guid() {
-                if !seen_logical.insert(item.logical_id.clone()) {
-                    return Err(invalid("Duplicate logicalId in repository"));
-                }
+            if item.logical_id != context.default_guid()
+                && !seen_logical.insert(item.logical_id.clone())
+            {
+                return Err(invalid("Duplicate logicalId in repository"));
             }
             logical
                 .entry((item.item_type.as_str(), item.logical_id.as_str()))
