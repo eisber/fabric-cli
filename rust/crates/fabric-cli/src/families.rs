@@ -798,7 +798,7 @@ impl TransferMetadata for TransferTargets<'_, '_> {
             })?;
             let support =
                 fabric_cli_local::SupportMatrix::source().map_err(|error| error.command_error())?;
-            if matches!(target.kind(), NodeKind::Item(_)) && kind != TransferKind::BulkExport {
+            if matches!(kind, TransferKind::Export | TransferKind::Import) {
                 support
                     .check(&PathElement::from_fabric(target.clone()), kind.as_str())
                     .map_err(|error| error.command_error())?;

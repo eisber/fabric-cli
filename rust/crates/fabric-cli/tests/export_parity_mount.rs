@@ -4,6 +4,7 @@
 //! Root argv -> FamilySession -> actual shared HTTP, file worker and OneLake SDK.
 
 #![cfg(feature = "native-read")]
+#![deny(unnameable_test_items)]
 
 #[path = "family_support/metadata.rs"]
 mod family_metadata;
@@ -1305,369 +1306,482 @@ async fn selected_export_context_rejects_foreign_poll_or_result_without_fallback
             if !bulk {
                 host.reply(200, json!({"id":PIPELINE}));
             }
+            selected_export_foreign_case(host, bulk, foreign_result).await;
+        }
+    }
+}
 
-            #[derive(Default)]
-            struct PreconditionUi {
-                events: Mutex<Vec<Value>>,
-                confirmations: Mutex<std::collections::VecDeque<bool>>,
-            }
+#[derive(Default)]
+struct PreconditionUi {
+    events: Mutex<Vec<Value>>,
+    confirmations: Mutex<std::collections::VecDeque<bool>>,
+}
 
-            impl TransferUi for PreconditionUi {
-                fn emit(&self, event: TransferEvent) -> Result<(), CommandError> {
-                    let (kind, message) = match event {
-                        TransferEvent::Warning(message) => ("warning", message),
-                        TransferEvent::Grey(message) => ("grey", message),
-                    };
-                    self.events
-                        .lock()
-                        .unwrap()
-                        .push(json!({"kind":kind,"message":message}));
-                    Ok(())
-                }
+impl TransferUi for PreconditionUi {
+    fn emit(&self, event: TransferEvent) -> Result<(), CommandError> {
+        let (kind, message) = match event {
+            TransferEvent::Warning(message) => ("warning", message),
+            TransferEvent::Grey(message) => ("grey", message),
+        };
+        self.events
+            .lock()
+            .unwrap()
+            .push(json!({"kind":kind,"message":message}));
+        Ok(())
+    }
 
-                fn confirm<'a>(
-                    &'a self,
-                    question: &'a str,
-                ) -> TransferFuture<'a, Result<bool, CommandError>> {
-                    Box::pin(async move {
-                        self.events
-                            .lock()
-                            .unwrap()
-                            .push(json!({"kind":"confirm","message":question}));
-                        Ok(self
-                            .confirmations
-                            .lock()
-                            .unwrap()
-                            .pop_front()
-                            .expect("unexpected source confirmation"))
-                    })
-                }
+    fn confirm<'a>(&'a self, question: &'a str) -> TransferFuture<'a, Result<bool, CommandError>> {
+        Box::pin(async move {
+            self.events
+                .lock()
+                .unwrap()
+                .push(json!({"kind":"confirm","message":question}));
+            Ok(self
+                .confirmations
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("unexpected source confirmation"))
+        })
+    }
 
-                fn select<'a>(
-                    &'a self,
-                    _: &'a [String],
-                ) -> TransferFuture<'a, Result<Vec<String>, CommandError>> {
-                    Box::pin(async { panic!("bulk preconditions do not use export selection UI") })
-                }
-            }
+    fn select<'a>(
+        &'a self,
+        _: &'a [String],
+    ) -> TransferFuture<'a, Result<Vec<String>, CommandError>> {
+        Box::pin(async { panic!("bulk preconditions do not use export selection UI") })
+    }
+}
 
-            #[tokio::test]
-            async fn actual_python_bulk_precondition_branches_match_real_root_arguments_fs_and_ui()
-            {
-                let receipt: Value = serde_json::from_str(include_str!(
-                    "../../fabric-deploy/tests/definition_export_precondition_source.json"
-                ))
-                .unwrap();
-                for case in receipt["cases"].as_array().unwrap() {
-                    let mut host = host();
-                    if case["nonempty"].as_bool().unwrap() {
-                        fs::write(host.root.join("output").join("existing.txt"), b"keep").unwrap();
-                    }
-                    let recursive = case["recursive"].as_bool().unwrap();
-                    if recursive {
-                        host.reply(
-                            200,
-                            json!({"value":[{"id":WS,"displayName":"Demo","type":"Workspace"}]}),
-                        );
-                    }
-                    if case["kind"] == "lakehouse" {
-                        host.metadata_with_id(
-                            WS,
-                            json!([{"id":LAKE,"displayName":"Lake","type":"Lakehouse"}]),
-                        );
-                        host.headers(200, Value::Null, &[("x-ms-resource-type", "directory")]);
-                    } else if case["result"] == true {
-                        host.reply(200,json!({"value":[{"id":PIPELINE,"displayName":"Book","type":"DataPipeline"}]}));
-                        host.reply(200,json!({
-                            "definitionParts":[{"path":"/Book.DataPipeline/part.txt","payload":"eA=="}],
-                            "itemDefinitionsIndex":[{"id":PIPELINE,"rootPath":"/Book.DataPipeline"}],
-                        }));
-                    }
-                    let ui = PreconditionUi::default();
-                    if !case["force"].as_bool().unwrap() {
-                        ui.confirmations
-                            .lock()
-                            .unwrap()
-                            .push_back(case["confirmation"].as_bool().unwrap());
-                    }
-                    let mut args = vec![
-                        "bulk-export",
-                        "Demo.Workspace",
-                        "-o",
-                        case["output"].as_str().unwrap(),
-                    ];
-                    if recursive {
-                        args.push("--recursive");
-                    }
-                    if case["force"].as_bool().unwrap() {
-                        args.push("-f");
-                    }
-                    let output = host.execute_with_capabilities(&args, pending(), &ui).await;
-                    if !case["error"].is_null() {
-                        failed(&output);
-                        let FamilyEvidence::Transfer(Err(error)) = &output.evidence else {
-                            unreachable!()
-                        };
-                        let envelope = error.envelope(
-                            fabric_cli_output::Timestamp::parse("2026-10-28T12:00:00Z").unwrap(),
-                            None,
-                        );
-                        assert_eq!(
-                            envelope.result().message(),
-                            case["error"]["message"].as_str(),
-                            "{}",
-                            case["name"]
-                        );
-                        assert_eq!(
-                            envelope.result().error_code(),
-                            case["error"]["code"].as_str(),
-                            "{}",
-                            case["name"]
-                        );
-                        assert!(
-                            host.requests()
-                                .iter()
-                                .all(|request| request["method"] != "POST")
-                        );
-                    } else {
-                        success(&output);
-                        assert!(
-                            matches!(&output.evidence,FamilyEvidence::Transfer(Ok(result))
-                            if result.declined != case["result"].as_bool().unwrap())
-                        );
-                        if case["result"] == true {
-                            assert_eq!(
-                                fs::read(
-                                    host.root
-                                        .join("output")
-                                        .join("Book.DataPipeline")
-                                        .join("part.txt")
-                                )
-                                .unwrap(),
-                                b"x"
-                            );
-                        } else {
-                            assert_eq!(host.requests().len(), 1, "decline must precede discovery");
-                        }
-                    }
-                    let preconditions = ui
-                        .events
-                        .lock()
-                        .unwrap()
-                        .iter()
-                        .filter(|event| event["kind"] != "grey")
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    assert_eq!(
-                        Value::Array(preconditions),
-                        case["events"],
-                        "{}",
-                        case["name"]
-                    );
-                    assert!(ui.confirmations.lock().unwrap().is_empty());
-                    if case["nonempty"].as_bool().unwrap() {
-                        assert_eq!(
-                            fs::read(host.root.join("output").join("existing.txt")).unwrap(),
-                            b"keep"
-                        );
-                    }
-                }
-            }
-
-            #[tokio::test]
-            async fn item_in_fabric_folder_exports_ordered_json_and_binary_to_nested_lakehouse_folder()
-             {
-                let mut host = host();
-                host.reply(
-                    200,
-                    json!({"value":[{"id":WS,"displayName":"Demo","type":"Workspace"}]}),
-                );
-                host.reply(
-                    200,
-                    json!({"value":[{"id":"parent","displayName":"Parent"}]}),
-                );
-                host.reply(200,json!({"value":[{"id":PIPELINE,"displayName":"Book","type":"DataPipeline","folderId":"parent"}]}));
-                host.reply(200, json!({"id":PIPELINE}));
-                host.reply(200,json!({"definition":{"parts":[
-                    {"path":"definition/object.json","payload":"eyJ6Ijoiw6kiLCJhIjpbMSx0cnVlXX0="},
-                    {"path":"assets/image.bin","payload":"/w0KAA=="},
-                ]}}));
-                host.metadata_with_id(
-                    WS,
-                    json!([{"id":LAKE,"displayName":"Lake","type":"Lakehouse"}]),
-                );
-                for _ in 0..2 {
-                    host.headers(200, Value::Null, &[("x-ms-resource-type", "directory")]);
-                }
-                for _ in 0..2 {
-                    host.reply(201, Value::Null);
-                    host.reply(202, Value::Null);
-                    host.reply(200, Value::Null);
-                }
-                let http = Arc::new(BinaryHttp {
-                    base: host.http.clone(),
-                    bytes: Mutex::default(),
-                });
-                let mut files = fabric_cli::families::transfer_files::TokioTransferFiles::new(
-                    host.root.clone(),
-                    None,
-                    Default::default(),
-                    tokio::runtime::Handle::current(),
-                )
-                .await
-                .unwrap();
-                let output = injected_export_with_http(
-                    &mut host,
-                    &mut files,
-                    pending(),
-                    &[
-                        "fab-rs",
-                        "export",
-                        "Demo.Workspace/Parent.Folder/Book.DataPipeline",
-                        "-f",
-                        "-o",
-                        "Demo.Workspace/Lake.Lakehouse/Files/Archive/Run",
-                    ],
-                    http.clone(),
-                )
-                .await;
-                success(&output);
-                let requests = host.requests();
-                assert_eq!(requests.len(), 15);
-                assert!(
-                    requests[4]["url"]
-                        .as_str()
-                        .unwrap()
-                        .ends_with("/getDefinition")
-                );
-                assert_eq!(requests[4]["raw_body"], "");
-                assert_eq!(requests[7]["method"], "HEAD");
-                assert_eq!(requests[8]["method"], "HEAD");
-                assert!(requests[9]["url"].as_str().unwrap().contains(&format!(
-                    "/{WS}/{LAKE}/Files/Archive/Run/Book.DataPipeline/definition/object.json/?resource=file"
-                )));
-                assert_eq!(
-                    requests[10]["raw_body"],
-                    "{\"z\": \"\\u00e9\", \"a\": [1, true]}"
-                );
-                assert!(requests[12]["url"].as_str().unwrap().contains(
-                    "/Files/Archive/Run/Book.DataPipeline/assets/image.bin/?resource=file"
-                ));
-                assert_eq!(*http.bytes.lock().unwrap(), vec![vec![255, 13, 10, 0]]);
-                assert!(
-                    matches!(&output.evidence,FamilyEvidence::Transfer(Ok(result))
-                    if result.exported_ids == [PIPELINE] && result.completed_paths == [
-                        "Book.DataPipeline/definition/object.json","Book.DataPipeline/assets/image.bin",
-                    ])
-                );
-                assert!(!host.root.join("Demo.Workspace").exists());
-                assert!(
-                    fs::read_dir(host.root.join("output"))
-                        .unwrap()
-                        .next()
-                        .is_none()
-                );
-            }
-            let root = "https://msitapi.fabric.microsoft.com";
-            let poll = format!("{root}/v1/operations/{OPERATION}");
-            let foreign = format!("https://api.fabric.microsoft.com/v1/operations/{OPERATION}");
-            host.headers(
-                202,
-                Value::Null,
-                &[
-                    ("Location", if foreign_result { &poll } else { &foreign }),
-                    ("x-ms-operation-id", OPERATION),
-                    ("Retry-After", "0"),
-                ],
+#[tokio::test]
+async fn actual_python_bulk_precondition_branches_match_real_root_arguments_fs_and_ui() {
+    let receipt: Value = serde_json::from_str(include_str!(
+        "../../fabric-deploy/tests/definition_export_precondition_source.json"
+    ))
+    .unwrap();
+    for case in receipt["cases"].as_array().unwrap() {
+        let mut host = host();
+        if case["nonempty"].as_bool().unwrap() {
+            fs::write(host.root.join("output").join("existing.txt"), b"keep").unwrap();
+        }
+        let recursive = case["recursive"].as_bool().unwrap();
+        if recursive {
+            host.reply(
+                200,
+                json!({"value":[{"id":WS,"displayName":"Demo","type":"Workspace"}]}),
             );
-            if foreign_result {
-                host.headers(
-                    200,
-                    json!({"status":"Succeeded"}),
-                    &[("Location", &format!("{foreign}/result"))],
-                );
-            }
-            let mut files = fabric_cli::families::transfer_files::TokioTransferFiles::new(
-                host.root.clone(),
-                None,
-                Default::default(),
-                tokio::runtime::Handle::current(),
-            )
-            .await
-            .unwrap();
-            let http = host.http.clone();
-            let args: &[&str] = if bulk {
-                &[
-                    "fab-rs",
-                    "bulk-export",
-                    "Demo.Workspace",
-                    "--recursive",
-                    "-f",
-                    "-o",
-                    "output",
-                ]
-            } else {
-                &[
-                    "fab-rs",
-                    "export",
-                    "Demo.Workspace/Book.DataPipeline",
-                    "-f",
-                    "-o",
-                    "output",
-                ]
-            };
-            let output = injected_export_at_endpoint(
-                &mut host,
-                &mut files,
-                pending(),
-                args,
-                http,
-                fabric_sdk::EndpointBinding::with_host(
-                    fabric_sdk::ServiceOrigin::Fabric,
-                    "msitapi.fabric.microsoft.com",
-                )
-                .unwrap(),
-            )
-            .await;
+        }
+        if case["kind"] == "lakehouse" {
+            host.metadata_with_id(
+                WS,
+                json!([{"id":LAKE,"displayName":"Lake","type":"Lakehouse"}]),
+            );
+            host.headers(200, Value::Null, &[("x-ms-resource-type", "directory")]);
+        } else if case["result"] == true {
+            host.reply(
+                200,
+                json!({"value":[{"id":PIPELINE,"displayName":"Book","type":"DataPipeline"}]}),
+            );
+            host.reply(
+                200,
+                json!({
+                    "definitionParts":[{"path":"/Book.DataPipeline/part.txt","payload":"eA=="}],
+                    "itemDefinitionsIndex":[{"id":PIPELINE,"rootPath":"/Book.DataPipeline"}],
+                }),
+            );
+        }
+        let ui = PreconditionUi::default();
+        if !case["force"].as_bool().unwrap() {
+            ui.confirmations
+                .lock()
+                .unwrap()
+                .push_back(case["confirmation"].as_bool().unwrap());
+        }
+        let mut args = vec![
+            "bulk-export",
+            "Demo.Workspace",
+            "-o",
+            case["output"].as_str().unwrap(),
+        ];
+        if recursive {
+            args.push("--recursive");
+        }
+        if case["force"].as_bool().unwrap() {
+            args.push("-f");
+        }
+        let output = host.execute_with_capabilities(&args, pending(), &ui).await;
+        if !case["error"].is_null() {
             failed(&output);
-            let requests = host.requests();
-            assert_eq!(
-                requests.len(),
-                (if bulk { 4 } else { 5 }) + usize::from(foreign_result)
-            );
-            assert!(
-                requests
-                    .iter()
-                    .all(|request| request["url"].as_str().unwrap().starts_with(root))
-            );
-            assert_eq!(
-                requests
-                    .iter()
-                    .filter(|request| request["method"] == "POST")
-                    .count(),
-                1
-            );
-            assert!(
-                fs::read_dir(host.root.join("output"))
-                    .unwrap()
-                    .next()
-                    .is_none()
-            );
             let FamilyEvidence::Transfer(Err(error)) = &output.evidence else {
                 unreachable!()
             };
-            let TransferFailure::Definition(error) = &error.failure else {
-                unreachable!()
-            };
-            let fabric_deploy::definitions::DefinitionErrorKind::Operation(error) = &error.kind
-            else {
-                unreachable!()
-            };
-            assert_eq!(
-                error.operation_id.as_deref(),
-                foreign_result.then_some(OPERATION)
+            let envelope = error.envelope(
+                fabric_cli_output::Timestamp::parse("2026-10-28T12:00:00Z").unwrap(),
+                None,
             );
-            assert!(error.mutation_may_have_occurred);
+            assert_eq!(
+                envelope.result().message(),
+                case["error"]["message"].as_str(),
+                "{}",
+                case["name"]
+            );
+            assert_eq!(
+                envelope.result().error_code(),
+                case["error"]["code"].as_str(),
+                "{}",
+                case["name"]
+            );
+            assert!(
+                host.requests()
+                    .iter()
+                    .all(|request| request["method"] != "POST")
+            );
+        } else {
+            success(&output);
+            assert!(
+                matches!(&output.evidence,FamilyEvidence::Transfer(Ok(result))
+                            if result.declined != case["result"].as_bool().unwrap())
+            );
+            if case["result"] == true {
+                assert_eq!(
+                    fs::read(
+                        host.root
+                            .join("output")
+                            .join("Book.DataPipeline")
+                            .join("part.txt")
+                    )
+                    .unwrap(),
+                    b"x"
+                );
+            } else {
+                assert_eq!(host.requests().len(), 1, "decline must precede discovery");
+            }
+        }
+        let preconditions = ui
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| event["kind"] != "grey")
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            Value::Array(preconditions),
+            case["events"],
+            "{}",
+            case["name"]
+        );
+        assert!(ui.confirmations.lock().unwrap().is_empty());
+        if case["nonempty"].as_bool().unwrap() {
+            assert_eq!(
+                fs::read(host.root.join("output").join("existing.txt")).unwrap(),
+                b"keep"
+            );
         }
     }
+}
+
+#[tokio::test]
+async fn item_in_fabric_folder_exports_ordered_json_and_binary_to_nested_lakehouse_folder() {
+    let mut host = host();
+    host.reply(
+        200,
+        json!({"value":[{"id":WS,"displayName":"Demo","type":"Workspace"}]}),
+    );
+    host.reply(
+        200,
+        json!({"value":[{"id":"parent","displayName":"Parent"}]}),
+    );
+    host.reply(200,json!({"value":[{"id":PIPELINE,"displayName":"Book","type":"DataPipeline","folderId":"parent"}]}));
+    host.reply(200, json!({"id":PIPELINE}));
+    host.reply(
+        200,
+        json!({"definition":{"parts":[
+            {"path":"definition/object.json","payload":"eyJ6Ijoiw6kiLCJhIjpbMSx0cnVlXX0="},
+            {"path":"assets/image.bin","payload":"/w0KAA=="},
+        ]}}),
+    );
+    host.metadata_with_id(
+        WS,
+        json!([{"id":LAKE,"displayName":"Lake","type":"Lakehouse"}]),
+    );
+    for _ in 0..2 {
+        host.headers(200, Value::Null, &[("x-ms-resource-type", "directory")]);
+    }
+    for _ in 0..2 {
+        host.reply(201, Value::Null);
+        host.reply(202, Value::Null);
+        host.reply(200, Value::Null);
+    }
+    let http = Arc::new(BinaryHttp {
+        base: host.http.clone(),
+        bytes: Mutex::default(),
+    });
+    let mut files = fabric_cli::families::transfer_files::TokioTransferFiles::new(
+        host.root.clone(),
+        None,
+        Default::default(),
+        tokio::runtime::Handle::current(),
+    )
+    .await
+    .unwrap();
+    let output = injected_export_with_http(
+        &mut host,
+        &mut files,
+        pending(),
+        &[
+            "fab-rs",
+            "export",
+            "Demo.Workspace/Parent.Folder/Book.DataPipeline",
+            "-f",
+            "-o",
+            "Demo.Workspace/Lake.Lakehouse/Files/Archive/Run",
+        ],
+        http.clone(),
+    )
+    .await;
+    success(&output);
+    let requests = host.requests();
+    assert_eq!(requests.len(), 15);
+    assert!(
+        requests[4]["url"]
+            .as_str()
+            .unwrap()
+            .ends_with("/getDefinition")
+    );
+    assert_eq!(requests[4]["raw_body"], "");
+    assert_eq!(requests[7]["method"], "HEAD");
+    assert_eq!(requests[8]["method"], "HEAD");
+    assert!(requests[9]["url"].as_str().unwrap().contains(&format!(
+        "/{WS}/{LAKE}/Files/Archive/Run/Book.DataPipeline/definition/object.json/?resource=file"
+    )));
+    assert_eq!(
+        requests[10]["raw_body"],
+        "{\"z\": \"\\u00e9\", \"a\": [1, true]}"
+    );
+    assert!(
+        requests[12]["url"]
+            .as_str()
+            .unwrap()
+            .contains("/Files/Archive/Run/Book.DataPipeline/assets/image.bin/?resource=file")
+    );
+    assert_eq!(*http.bytes.lock().unwrap(), vec![vec![255, 13, 10, 0]]);
+    assert!(
+        matches!(&output.evidence,FamilyEvidence::Transfer(Ok(result))
+        if result.exported_ids == [PIPELINE] && result.completed_paths == [
+            "Book.DataPipeline/definition/object.json","Book.DataPipeline/assets/image.bin",
+        ])
+    );
+    assert!(!host.root.join("Demo.Workspace").exists());
+    assert!(
+        fs::read_dir(host.root.join("output"))
+            .unwrap()
+            .next()
+            .is_none()
+    );
+}
+async fn selected_export_foreign_case(mut host: Harness, bulk: bool, foreign_result: bool) {
+    let root = "https://msitapi.fabric.microsoft.com";
+    let poll = format!("{root}/v1/operations/{OPERATION}");
+    let foreign = format!("https://api.fabric.microsoft.com/v1/operations/{OPERATION}");
+    host.headers(
+        202,
+        Value::Null,
+        &[
+            ("Location", if foreign_result { &poll } else { &foreign }),
+            ("x-ms-operation-id", OPERATION),
+            ("Retry-After", "0"),
+        ],
+    );
+    if foreign_result {
+        host.headers(
+            200,
+            json!({"status":"Succeeded"}),
+            &[("Location", &format!("{foreign}/result"))],
+        );
+    }
+    let mut files = fabric_cli::families::transfer_files::TokioTransferFiles::new(
+        host.root.clone(),
+        None,
+        Default::default(),
+        tokio::runtime::Handle::current(),
+    )
+    .await
+    .unwrap();
+    let http = host.http.clone();
+    let args: &[&str] = if bulk {
+        &[
+            "fab-rs",
+            "bulk-export",
+            "Demo.Workspace",
+            "--recursive",
+            "-f",
+            "-o",
+            "output",
+        ]
+    } else {
+        &[
+            "fab-rs",
+            "export",
+            "Demo.Workspace/Book.DataPipeline",
+            "-f",
+            "-o",
+            "output",
+        ]
+    };
+    let output = injected_export_at_endpoint(
+        &mut host,
+        &mut files,
+        pending(),
+        args,
+        http,
+        fabric_sdk::EndpointBinding::with_host(
+            fabric_sdk::ServiceOrigin::Fabric,
+            "msitapi.fabric.microsoft.com",
+        )
+        .unwrap(),
+    )
+    .await;
+    failed(&output);
+    let requests = host.requests();
+    assert_eq!(
+        requests.len(),
+        (if bulk { 4 } else { 5 }) + usize::from(foreign_result)
+    );
+    assert!(
+        requests
+            .iter()
+            .all(|request| request["url"].as_str().unwrap().starts_with(root))
+    );
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request["method"] == "POST")
+            .count(),
+        1
+    );
+    assert!(
+        fs::read_dir(host.root.join("output"))
+            .unwrap()
+            .next()
+            .is_none()
+    );
+    let FamilyEvidence::Transfer(Err(error)) = &output.evidence else {
+        unreachable!()
+    };
+    let TransferFailure::Definition(error) = &error.failure else {
+        unreachable!()
+    };
+    let fabric_deploy::definitions::DefinitionErrorKind::Operation(error) = &error.kind else {
+        unreachable!()
+    };
+    assert_eq!(
+        error.operation_id.as_deref(),
+        foreign_result.then_some(OPERATION)
+    );
+    assert!(error.mutation_may_have_occurred);
+}
+
+#[tokio::test]
+async fn central_transfer_support_gate_rejects_source_scopes_and_types_before_preparation() {
+    for (leaf, target, folder, unsupported_type) in [
+        ("import", "Demo.Workspace", false, false),
+        ("import", "Demo.Workspace/Parent.Folder", true, false),
+        ("export", "Demo.Workspace/Parent.Folder", true, false),
+        ("import", "Demo.Workspace/Book.GraphQuerySet", false, true),
+    ] {
+        let mut host = host();
+        host.reply(
+            200,
+            json!({"value":[{"id":WS,"displayName":"Demo","type":"Workspace"}]}),
+        );
+        if folder {
+            host.reply(
+                200,
+                json!({"value":[{"id":NOTEBOOK,"displayName":"Parent"}]}),
+            );
+        }
+        if unsupported_type {
+            host.reply(
+                200,
+                json!({"value":[{"id":PIPELINE,"displayName":"Book","type":"GraphQuerySet"}]}),
+            );
+        }
+        let args = if leaf == "import" {
+            vec![leaf, target, "-i", "must-not-be-read", "-f"]
+        } else {
+            vec![leaf, target, "-o", "output", "-f"]
+        };
+        let output = host.execute(&args).await;
+        failed(&output);
+        let FamilyEvidence::Transfer(Err(error)) = &output.evidence else {
+            unreachable!()
+        };
+        let envelope = error.envelope(
+            fabric_cli_output::Timestamp::parse("2026-10-28T12:00:00Z").unwrap(),
+            None,
+        );
+        assert_eq!(envelope.result().error_code(), Some("UnsupportedCommand"));
+        assert_eq!(
+            envelope.result().message(),
+            Some(format!("not supported for command '{leaf}'").as_str())
+        );
+        assert!(
+            host.requests()
+                .iter()
+                .all(|request| request["method"] == "GET")
+        );
+        assert!(
+            fs::read_dir(host.root.join("output"))
+                .unwrap()
+                .next()
+                .is_none()
+        );
+    }
+}
+
+#[tokio::test]
+async fn central_import_support_gate_allows_known_missing_item_and_retains_folder_context() {
+    let mut host = host();
+    fs::create_dir(host.root.join("input")).unwrap();
+    fs::write(host.root.join("input").join("part.txt"), b"raw").unwrap();
+    host.reply(
+        200,
+        json!({"value":[{"id":WS,"displayName":"Demo","type":"Workspace"}]}),
+    );
+    host.reply(
+        200,
+        json!({"value":[{"id":NOTEBOOK,"displayName":"Parent"}]}),
+    );
+    host.reply(200, json!({"value":[]}));
+    let created = "88888888-8888-8888-8888-888888888888";
+    host.reply(201, json!({"id":created}));
+    let output = host
+        .execute(&[
+            "import",
+            "Demo.Workspace/Parent.Folder/New.DataPipeline",
+            "-i",
+            "input",
+            "-f",
+        ])
+        .await;
+    success(&output);
+    let requests = host.requests();
+    assert_eq!(requests.len(), 4);
+    assert_eq!(requests[3]["method"], "POST");
+    assert_eq!(requests[3]["body"]["folderId"], NOTEBOOK);
+    assert_eq!(requests[3]["body"]["displayName"], "New");
+    assert_eq!(requests[3]["body"]["type"], "DataPipeline");
+    assert_eq!(
+        requests[3]["body"]["definition"]["parts"],
+        json!([
+            {"path":"part.txt","payload":"cmF3","payloadType":"InlineBase64"},
+        ])
+    );
+    assert!(
+        matches!(&output.evidence,FamilyEvidence::Transfer(Ok(result))
+        if result.effects.len() == 1 && result.effects[0].item_id == created
+        && result.effects[0].target.id().is_none()
+        && result.effects[0].target.parent().and_then(|parent| parent.id()) == Some(NOTEBOOK))
+    );
 }

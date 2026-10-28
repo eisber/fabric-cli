@@ -43,6 +43,12 @@ Metadata's additive `resolve_target`/`complete_snapshot` phases preserve that
 warning/precondition order without breaking already-complete injected snapshots.
 Folder collection reuses the resolver's validated command-local folder graph;
 it does not fetch another hierarchy, install a TTL cache or duplicate paging.
+Before returning Export/Import targets, the central resolver applies the existing
+source support policy to every target kind. Unsupported workspace/folder imports,
+folder export and explicitly unsupported item types fail with the real
+`UnsupportedCommand`, not an item-only adapter placeholder. The policy does not
+require an item ID: a supported missing import item retains its known workspace/
+folder parent and creates through the ordinary source path.
 The export wrapper belongs only in `Invocation::Transfer` for Export/BulkExport.
 Import and Deploy must receive their original async file capability unchanged;
 in particular, deployment's `read_async` and `prepare_repository_async` must not
@@ -112,6 +118,10 @@ HEAD boundaries and create/append/flush requests with no local spill.
 These are injected functional stream/workflow cases, not native keypress,
 questionary styling or TTY-byte parity claims. ROOT's separately owned native
 console checkpoint is not copied into this branch.
+The workflow consumers are module-level registered tests; the consumer now denies
+`unnameable_test_items` so accidental nesting is a compile error, not silent
+coverage. Rust execution is still required; formatting/static registration checks
+are not test-pass evidence.
 
 One native-only mount remains assigned to the integrator: the binary currently
 constructs its local adapter with CWD and no explicit home. For user-selected
