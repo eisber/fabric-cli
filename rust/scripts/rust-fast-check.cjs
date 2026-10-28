@@ -373,6 +373,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       python('crates/fabric-deploy/tests/operation_result_reference.py',
         '--cli-reference-root', root, '--cicd-reference-root', source),
       python('crates/fabric-cli/tests/deploy_wrapper_reference.py', '--reference-root', root),
+      python('crates/fabric-deploy/tests/definition_import_reference_checks.py'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
         '--features', 'native-read', '--doc', '--', '--test-threads=1'),
     ];
@@ -397,8 +398,9 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       requireThat(exists(file), `Released combined CLI consumer is missing: ${file}`);
     }
   }
-  if (has('fabric-cli-jobs') || has('fabric-sdk-jobs') || has('fabric-sdk-paging')) {
-    for (const reference of ['reference', 'branches_reference', 'operation_output_reference', 'skill_headers_reference']) {
+  if (has('fabric-cli') || has('fabric-cli-jobs') || has('fabric-sdk-jobs') || has('fabric-sdk-paging')) {
+    for (const reference of ['reference', 'branches_reference', 'operation_output_reference',
+      'skill_headers_reference', 'command_source', 'poll_source', 'numeric_source', 'endpoint_reference']) {
       commands.push(python(`tests/compatibility/jobs/${reference}.py`));
     }
     if (has('fabric-cli-jobs')) {
@@ -465,6 +467,9 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
   }
   if (has('fabric-deploy')) {
     commands.push(python('tests/compatibility/run_definition_parity.py', '--artifacts', path.join(output, 'definition')));
+  }
+  if (has('fabric-cli') || has('fabric-cli-transfer') || has('fabric-deploy')) {
+    commands.push(python('crates/fabric-deploy/tests/definition_import_reference_checks.py'));
   }
   if (manifest.lane !== 'sdk-values' &&
     (has('fabric-cli-mutations') || has('fabric-sdk-operations') || has('fabric-sdk-onelake') || has('fabric-sdk-onelake-http'))) {

@@ -353,6 +353,7 @@ jobs:
           cargo run --offline --locked -p fabric-identity --example safe_consumer --features windows-broker
       - name: Require pinned Python job contracts and actual offline job consumer
         if: >-
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli') ||
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-jobs') ||
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-jobs') ||
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk-paging')
@@ -364,6 +365,10 @@ jobs:
           python -B tests/compatibility/jobs/branches_reference.py
           python -B tests/compatibility/jobs/operation_output_reference.py
           python -B tests/compatibility/jobs/skill_headers_reference.py
+          python -B tests/compatibility/jobs/command_source.py
+          python -B tests/compatibility/jobs/poll_source.py
+          python -B tests/compatibility/jobs/numeric_source.py
+          python -B tests/compatibility/jobs/endpoint_reference.py
           cargo run --offline --locked -p fabric-cli-jobs --example offline_job
       - name: Require released definition source receipts and native transfer consumers
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-deploy')
@@ -374,6 +379,15 @@ jobs:
           python -B -m unittest discover -s tests/compatibility -p test_run_definition_parity.py -v
           python -B tests/compatibility/run_definition_parity.py --artifacts "$RUNNER_TEMP/definition-parity"
           cargo test --offline --locked -p fabric-deploy --test definitions
+      - name: Require immutable import input and Environment lifecycle source receipts
+        if: >-
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-transfer') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-deploy')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python -B crates/fabric-deploy/tests/definition_import_reference_checks.py
       - name: Require opt-in native read host without authentication
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
         env:

@@ -113,7 +113,7 @@ This observed host path is not a requirement for other developers or CI runners.
 
 ### Job and shared paging gate
 
-Changes selecting `fabric-sdk-paging`, `fabric-sdk-jobs` or `fabric-cli-jobs`
+Changes selecting `fabric-cli`, `fabric-sdk-paging`, `fabric-sdk-jobs` or `fabric-cli-jobs`
 require the independent pinned Python job reference and executed public
 `offline_job` consumer on every selected native runner. The reference uses only
 the Python standard library, verifies the original source ASTs and performs no
@@ -121,6 +121,14 @@ product initialization, credential discovery or service calls. It is separate
 from, and does not replace, the existing read/query/folder comparisons.
 Native crate tests cover both the typed job handlers and the real shared HTTP
 adapter; dependency selection follows actual transitive consumers.
+
+The job source gate also re-executes the immutable command-response, polling,
+checked-numeric and selected-endpoint/skill captures. Native Rust tests consume
+those receipts; passing a source capture alone does not establish Rust parity.
+Import selections (`fabric-cli`, `fabric-cli-transfer` or `fabric-deploy`) also
+recheck the ordered input and Environment lifecycle receipts without regenerating
+expectations. Both the full matrix and relevant fast-check plans retain these
+additional comparisons alongside their existing checks.
 
 ### Optional native transport gate
 

@@ -183,12 +183,13 @@ test('deploy preflight first runs actual library then native root consumer, neve
   assert.ok(plan('clippy', manifest)[1].args.includes('native-read'));
   const family = plan('family', manifest, '/target', '/receipts',
     file => !file.endsWith('transform_program_reference.py'));
-  assert.equal(family.length, 15);
+  assert.equal(family.length, 16);
   assert.ok(family.some(item => item.program === 'git' &&
     item.args.slice(-4).join(' ') === 'config --local core.autocrlf true'));
   assert.ok(family.at(-1).args.includes('--doc'));
   assert.ok(family.some(item => item.args.includes('crates/fabric-deploy/tests/orchestration_reference.py')));
   assert.ok(family.some(item => item.args.includes('crates/fabric-cli/tests/deploy_wrapper_reference.py')));
+  assert.ok(family.some(item => item.args.includes('crates/fabric-deploy/tests/definition_import_reference_checks.py')));
   assert.ok(family.some(item => item.args.includes('crates/fabric-deploy/tests/operation_result_reference.py')));
   const operation = family.find(item => item.args.includes('crates/fabric-deploy/tests/operation_result_reference.py'));
   assert.ok(operation.args.includes('--cli-reference-root') && operation.args.includes('--cicd-reference-root'));
@@ -437,6 +438,21 @@ test('job lane executes actual consumer and requires released comparison hook', 
   assert.ok(commands.some(item => item.args.includes('tests/compatibility/job_reads/compare.py')));
   assert.ok(commands.some(item => item.args.includes('native-read')));
   assert.throws(() => plan('family', manifest, '/target', '/receipts', () => false), /comparator is missing/);
+});
+
+test('job and import source receipts remain required for their command consumers', () => {
+  for (const packages of [['fabric-cli'], ['fabric-cli-jobs'], ['fabric-sdk-jobs']]) {
+    const commands = plan('family', {lane: 'baseline', packages}, '/target', '/receipts', () => true);
+    for (const name of ['command_source', 'poll_source', 'numeric_source', 'endpoint_reference']) {
+      assert.ok(commands.some(item => item.program === 'python' &&
+        item.args.includes(`tests/compatibility/jobs/${name}.py`)));
+    }
+  }
+  for (const packages of [['fabric-cli'], ['fabric-cli-transfer'], ['fabric-deploy']]) {
+    const commands = plan('family', {lane: 'baseline', packages}, '/target', '/receipts', () => true);
+    assert.ok(commands.some(item => item.program === 'python' &&
+      item.args.includes('crates/fabric-deploy/tests/definition_import_reference_checks.py')));
+  }
 });
 
 test('native-values requires native and text observations without weakening oracle', () => {
