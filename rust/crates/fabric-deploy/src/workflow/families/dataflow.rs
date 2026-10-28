@@ -44,7 +44,7 @@ fn dependency(
         .flatten()
     {
         if rule.get("find_value").and_then(Value::as_str) != Some(id)
-            || !super::super::parameters::rule_applies(rule, item, path)
+            || !super::super::parameters::rule_applies(rule, item, path, context, repository)?
         {
             continue;
         }

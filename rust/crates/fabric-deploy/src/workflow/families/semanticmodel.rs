@@ -18,9 +18,15 @@ pub(super) async fn bind<E: OperationExecutor>(
     let repository = &plan.repository;
     let selected = &plan.order;
     let Some(bindings) = context
-        .parameter_document
+        .program
         .as_ref()
-        .and_then(|document| document.get("semantic_model_binding"))
+        .and_then(|program| program.item_settings().get("semantic_model_binding"))
+        .or_else(|| {
+            context
+                .parameter_document
+                .as_ref()
+                .and_then(|document| document.get("semantic_model_binding"))
+        })
     else {
         return Ok(());
     };

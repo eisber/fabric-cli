@@ -11,17 +11,27 @@ use fabric_cli_transfer::{
     TransferCommand, TransferEvent, TransferFiles, TransferKind, TransferUi,
 };
 use fabric_deploy::{
-    deployment_config::{ConfigurationError, DeploymentConfig},
+    deployment_config::{
+        CommandConfiguration, CommandOptions, ConfigurationError, DeploymentConfig,
+    },
     notebook::DefinitionLimits,
+    parameter_transforms::{
+        ParameterFileHost, TransformBudget, TransformError, TransformLimits,
+        expand_parameter_environment,
+    },
     parameters::ParameterNotice,
+    planner::EngineContext,
     publish::{PublishError, PublishFailure, PublishedItem, publish_repository},
-    repository::RepositoryError,
+    repository::{DeploymentRepository, RepositoryError},
+    workflow::{WorkflowError, WorkflowFailure, WorkflowResult, deploy_repository},
     yaml::{self, YamlLimits, YamlPolicy},
 };
 use fabric_sdk::{Client, items::ItemExecutor};
 use fabric_sdk_operations::{OperationExecutor, OperationLimits};
 use serde_json::{Map, Value};
 use std::{
+    cell::{Cell, RefCell},
+    collections::BTreeMap,
     fmt,
     future::{Future, poll_fn},
     path::{Path, PathBuf},
@@ -40,6 +50,15 @@ pub enum DeployFailure {
     Repository(RepositoryError),
     /// Discovery/operation failure with actual partial deployment evidence.
     Publish(PublishError),
+    /// Broad workflow failure with original completed/accepted effects.
+    Workflow(Box<WorkflowError>),
+    /// Immediate UI delivery failed after confirmed remote work.
+    Output {
+        /// Original caller output failure.
+        error: CommandError,
+        /// Actual completed/accepted effects, never replayed to repair output.
+        partial: Box<WorkflowResult>,
+    },
 }
 
 /// Failed deploy retains its original stage and partial/uncertain service effects.
@@ -64,6 +83,135 @@ pub struct DeployResult {
     pub completed: Vec<PublishedItem>,
     /// Confirmation was declined; no config reads or remote calls were made.
     pub declined: bool,
+}
+
+/// Explicit process inputs for parameter loading; libraries do not discover them.
+#[derive(Clone, Debug, Default)]
+pub struct DeployInputs {
+    /// Caller-provided environment values, used only under the frozen source flag.
+    pub environment: BTreeMap<String, String>,
+}
+
+/// Validated command snapshot plus caller-resolved, confined local paths.
+pub struct LoadedDeploymentConfiguration {
+    /// The configuration owner's immutable complete command snapshot.
+    pub configuration: CommandConfiguration,
+    /// Actual confined repository root returned by the existing file capability.
+    pub repository_root: PathBuf,
+}
+
+impl LoadedDeploymentConfiguration {
+    fn context(
+        &self,
+        limits: DefinitionLimits,
+        inputs: &DeployInputs,
+    ) -> Result<EngineContext, DeployError> {
+        let mut context = EngineContext::from_configuration(self.configuration.clone())
+            .map_err(configuration)?
+            .with_definition_limits(limits)
+            .with_repository_root(
+                self.repository_root
+                    .to_str()
+                    .ok_or_else(|| command("Repository path must be UTF-8"))?,
+            );
+        let mut features = vec!["disable_print_identity".into()];
+        if self.configuration.feature_enabled("enable_bulk_publish") {
+            features.extend([
+                "enable_experimental_features".into(),
+                "enable_bulk_publish".into(),
+            ]);
+        }
+        context = context.with_scope_features(features);
+        context.environment_variables = inputs
+            .environment
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        Ok(context)
+    }
+}
+struct Templates<'a> {
+    values: &'a [(String, Option<Value>)],
+    cursor: Cell<usize>,
+    requested: RefCell<Option<String>>,
+}
+
+impl ParameterFileHost for Templates<'_> {
+    fn template(&self, reference: &str) -> Result<Option<Value>, TransformError> {
+        let index = self.cursor.get();
+        self.cursor.set(index + 1);
+        if let Some((expected, value)) = self.values.get(index) {
+            if expected != reference {
+                return Err(TransformError::Invalid(
+                    "Template resolution order changed".into(),
+                ));
+            }
+            return Ok(value.clone());
+        }
+        self.requested.replace(Some(reference.into()));
+        Err(TransformError::Invalid(
+            "Template file capability handoff".into(),
+        ))
+    }
+}
+
+fn configuration(error: ConfigurationError) -> DeployError {
+    DeployError {
+        failure: DeployFailure::Configuration(error),
+    }
+}
+
+fn parameter_document(
+    bytes: &[u8],
+    enabled: bool,
+    inputs: &DeployInputs,
+    limits: YamlLimits,
+) -> Result<Value, DeployError> {
+    let raw = std::str::from_utf8(bytes).map_err(|_| command("Parameter file must be UTF-8"))?;
+    let expanded = expand_parameter_environment(
+        raw,
+        enabled,
+        &inputs.environment,
+        &mut TransformBudget::new(
+            TransformLimits {
+                max_bytes: limits.max_bytes,
+                ..Default::default()
+            },
+            &|| false,
+        ),
+    )
+    .map_err(|error| configuration(ConfigurationError::Transform(Box::new(error))))?;
+    yaml::decode(&expanded, YamlPolicy::Parameter, limits).map_err(configuration)
+}
+
+fn legacy_parameters(
+    program: Option<&fabric_deploy::parameter_transforms::ParameterProgram>,
+) -> bool {
+    fn dynamic(value: &Value) -> bool {
+        match value {
+            Value::String(value) => value.starts_with('$'),
+            Value::Array(values) => values.iter().any(dynamic),
+            Value::Object(values) => values.values().any(dynamic),
+            _ => false,
+        }
+    }
+    program.is_none_or(|program| {
+        program.item_settings().is_empty()
+            && !dynamic(program.source_document())
+            && ["find_replace", "key_value_replace"].iter().all(|section| {
+                program
+                    .source_document()
+                    .get(*section)
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .all(|rule| {
+                        ["item_type", "item_name", "file_path"]
+                            .iter()
+                            .all(|key| rule.get(*key).is_none())
+                    })
+            })
+    })
 }
 
 fn command(message: impl Into<String>) -> DeployError {
@@ -120,6 +268,51 @@ async fn read_file(
         .await
         .map_err(|error| command(error.to_string()))?;
     Ok((bytes, root))
+}
+
+async fn template_bytes(
+    files: &mut dyn TransferFiles,
+    path: &Path,
+    max_bytes: usize,
+) -> Result<Option<Vec<u8>>, DeployError> {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return Ok(None);
+    };
+    let parent = path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let Some(parent) = parent.to_str() else {
+        return Ok(None);
+    };
+    let root = match files.resolve_directory_async(parent).await {
+        Ok(root) => root,
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound
+                    | std::io::ErrorKind::PermissionDenied
+                    | std::io::ErrorKind::InvalidInput
+            ) =>
+        {
+            return Ok(None);
+        }
+        Err(error) => return Err(command(error.to_string())),
+    };
+    match files.read_async(&root, name, max_bytes).await {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound
+                    | std::io::ErrorKind::PermissionDenied
+                    | std::io::ErrorKind::InvalidInput
+            ) =>
+        {
+            Ok(None)
+        }
+        Err(error) => Err(command(error.to_string())),
+    }
 }
 
 /// Render a source environment warning with the existing Python-style formatter.
@@ -229,6 +422,20 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
         args: &TransferCommand,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<DeployResult, DeployError> {
+        self.execute_with_inputs(args, &DeployInputs::default(), cancelled)
+            .await
+    }
+
+    /// Execute with explicit environment inputs for source parameter expansion.
+    ///
+    /// # Errors
+    /// Local/feature failures precede writes; broad service failures retain effects.
+    pub async fn execute_with_inputs(
+        &mut self,
+        args: &TransferCommand,
+        inputs: &DeployInputs,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<DeployResult, DeployError> {
         if args.kind != TransferKind::Deploy {
             return Err(command("Expected a deploy invocation"));
         }
@@ -268,24 +475,24 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
             return Err(command("Deployment cancelled before configuration reads"));
         }
         if args.bulk_publish {
-            return Err(DeployError {
-                failure: DeployFailure::Configuration(ConfigurationError::Unsupported(
-                    "command-scoped experimental bulk publication".into(),
-                )),
-            });
+            self.ui.emit(TransferEvent::Warning(
+                "Experimental bulk publish is enabled: items will be deployed through the source bulk import workflow.".into(),
+            )).map_err(|error|DeployError {failure:DeployFailure::Command(error)})?;
         }
         let mut params = parameters(args.params.as_deref().unwrap_or_default())?;
         // The source wrapper always overwrites this kwargs field; user input is
         // never forwarded into request metadata. The central adapter binds it.
-        params.remove("host_app");
+        params.insert(
+            "host_app".into(),
+            format!("ms-fabric-cli/{}", env!("CARGO_PKG_VERSION")).into(),
+        );
         let overrides = params.remove("config_override");
-        if !params.is_empty() {
-            return Err(DeployError {
-                failure: DeployFailure::Configuration(ConfigurationError::Unsupported(
-                    "additional deploy keyword parameters".into(),
-                )),
-            });
-        }
+        let options = CommandOptions {
+            bulk_publish: args.bulk_publish,
+            kwargs: params,
+            features: vec!["disable_print_identity".into()],
+            ..Default::default()
+        };
         let path = Path::new(
             args.config
                 .as_deref()
@@ -323,7 +530,7 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
             .get("parameter_file_path")
             .and_then(Value::as_str)
         {
-            let (bytes, _) = file_phase(
+            let (bytes, parameter_root) = file_phase(
                 read_file(
                     self.files,
                     &config_root.join(parameter),
@@ -332,18 +539,78 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
                 cancelled.as_mut(),
             )
             .await?;
-            let content =
-                std::str::from_utf8(&bytes).map_err(|_| command("Parameter file must be UTF-8"))?;
-            let document = yaml::decode(content, YamlPolicy::Parameter, self.yaml_limits).map_err(
-                |error| DeployError {
-                    failure: DeployFailure::Configuration(error),
+            let enabled = config
+                .command_configuration(options.clone())
+                .map_err(configuration)?
+                .feature_enabled("enable_environment_variable_replacement");
+            let document = parameter_document(&bytes, enabled, inputs, self.yaml_limits)?;
+            let mut templates = Vec::new();
+            let mut budget = TransformBudget::new(
+                TransformLimits {
+                    max_bytes: self.yaml_limits.max_bytes,
+                    ..Default::default()
                 },
-            )?;
-            config
-                .resolve_parameters(&document)
-                .map_err(|error| DeployError {
-                    failure: DeployFailure::Configuration(error),
-                })?;
+                &|| false,
+            );
+            loop {
+                let (result, requested) = {
+                    let host = Templates {
+                        values: &templates,
+                        cursor: Cell::new(0),
+                        requested: RefCell::new(None),
+                    };
+                    let result = config.resolve_parameters_with_host(
+                        &document,
+                        &host,
+                        options.clone(),
+                        &mut budget,
+                    );
+                    (result, host.requested.into_inner())
+                };
+                let Some(reference) = requested else {
+                    let prepared = result.map_err(configuration)?;
+                    for skipped in prepared.skipped_templates {
+                        self.ui
+                            .emit(TransferEvent::Warning(format!(
+                                "Parameter template was skipped: {skipped}"
+                            )))
+                            .map_err(|error| DeployError {
+                                failure: DeployFailure::Command(error),
+                            })?;
+                    }
+                    break;
+                };
+                let bytes = file_phase(
+                    template_bytes(
+                        self.files,
+                        &parameter_root.join(&reference),
+                        self.yaml_limits.max_bytes,
+                    ),
+                    cancelled.as_mut(),
+                )
+                .await?;
+                let value = match bytes {
+                    None => None,
+                    Some(bytes) => {
+                        match parameter_document(&bytes, enabled, inputs, self.yaml_limits) {
+                            Ok(value) => Some(value),
+                            Err(error)
+                                if matches!(
+                                    &error.failure,
+                                    DeployFailure::Configuration(ConfigurationError::Limit)
+                                        | DeployFailure::Configuration(
+                                            ConfigurationError::Transform(_)
+                                        )
+                                ) =>
+                            {
+                                return Err(error);
+                            }
+                            Err(_) => None,
+                        }
+                    }
+                };
+                templates.push((reference, value));
+            }
             for notice in config
                 .parameters()
                 .expect("explicitly resolved parameter file")
@@ -372,17 +639,17 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
                 }
             }
         }
-        config
-            .require_notebook_publish()
-            .map_err(|error| DeployError {
-                failure: DeployFailure::Configuration(error),
-            })?;
-        let repository = config
-            .workspace
-            .get("repository_directory")
-            .and_then(Value::as_str)
-            .ok_or_else(|| command("Repository directory is required"))?;
-        let repository = config_root.join(repository);
+        let snapshot = config
+            .command_configuration(options)
+            .map_err(configuration)?;
+        snapshot.require_no_extensions().map_err(configuration)?;
+        snapshot
+            .validate_operation_features()
+            .map_err(configuration)?;
+        let legacy = !args.bulk_publish
+            && config.require_notebook_publish().is_ok()
+            && legacy_parameters(snapshot.parameters());
+        let repository = config_root.join(snapshot.repository_directory());
         let repository_path = repository
             .to_str()
             .ok_or_else(|| command("Repository path must be UTF-8"))?;
@@ -396,14 +663,87 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
             cancelled.as_mut(),
         )
         .await?;
-        if config.skip_publish() {
+        let loaded = LoadedDeploymentConfiguration {
+            configuration: snapshot,
+            repository_root,
+        };
+        if loaded.configuration.publish().skip() && loaded.configuration.unpublish().skip() {
+            if matches!(
+                loaded.configuration.target(),
+                fabric_deploy::deployment_config::WorkspaceTarget::Name(_)
+            ) {
+                deploy_repository(
+                    self.client,
+                    self.executor,
+                    &config,
+                    DeploymentRepository::default(),
+                    loaded.context(self.definition_limits, inputs)?,
+                    self.operation_limits,
+                    cancelled.as_mut(),
+                )
+                .await
+                .map_err(|error| DeployError {
+                    failure: DeployFailure::Workflow(Box::new(error)),
+                })?;
+            }
             return Ok(DeployResult::default());
+        }
+        if legacy {
+            let repository = file_phase(
+                async {
+                    self.files
+                        .prepare_repository_async(
+                            &loaded.repository_root,
+                            self.definition_limits,
+                            self.yaml_limits.max_nodes,
+                        )
+                        .await
+                        .map_err(|error| DeployError {
+                            failure: DeployFailure::Repository(error),
+                        })
+                },
+                cancelled.as_mut(),
+            )
+            .await;
+            match repository {
+                Ok(repository) => {
+                    let completed = publish_repository(
+                        self.client,
+                        self.executor,
+                        &config,
+                        repository,
+                        self.operation_limits,
+                        cancelled.as_mut(),
+                    )
+                    .await
+                    .map_err(|error| DeployError {
+                        failure: DeployFailure::Publish(error),
+                    })?;
+                    return Ok(DeployResult {
+                        completed,
+                        declined: false,
+                    });
+                }
+                Err(DeployError {
+                    failure:
+                        DeployFailure::Repository(RepositoryError::Configuration(
+                            ConfigurationError::Unsupported(_),
+                        )),
+                }) => {}
+                Err(DeployError {
+                    failure:
+                        DeployFailure::Repository(RepositoryError::Notebook(
+                            fabric_deploy::notebook::DeploymentError::UnsupportedContent,
+                        )),
+                }) => {}
+                Err(error) => return Err(error),
+            }
         }
         let repository = file_phase(
             async {
                 self.files
-                    .prepare_repository_async(
-                        &repository_root,
+                    .prepare_deployment_repository_async(
+                        &loaded.repository_root,
                         self.definition_limits,
                         self.yaml_limits.max_nodes,
                     )
@@ -415,20 +755,32 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
             cancelled.as_mut(),
         )
         .await?;
-        let completed = publish_repository(
+        let context = loaded.context(self.definition_limits, inputs)?;
+        let mut completed = deploy_repository(
             self.client,
             self.executor,
             &config,
             repository,
+            context,
             self.operation_limits,
             cancelled.as_mut(),
         )
         .await
         .map_err(|error| DeployError {
-            failure: DeployFailure::Publish(error),
+            failure: DeployFailure::Workflow(Box::new(error)),
         })?;
+        for notice in std::mem::take(&mut completed.notices) {
+            if let Err(error) = self.ui.emit(TransferEvent::Warning(notice)) {
+                return Err(DeployError {
+                    failure: DeployFailure::Output {
+                        error,
+                        partial: Box::new(completed),
+                    },
+                });
+            }
+        }
         Ok(DeployResult {
-            completed,
+            completed: completed.published,
             declined: false,
         })
     }
@@ -461,6 +813,15 @@ pub fn render(
                     failure: PublishFailure::Operation(error),
                     ..
                 }) => fabric_cli_mutations::operation_error_output(error),
+                DeployFailure::Workflow(error) => match &error.failure {
+                    WorkflowFailure::Operation(error) => {
+                        fabric_cli_mutations::operation_error_output(error)
+                    }
+                    _ => OutputInput {
+                        status: OutputStatus::Failure,
+                        ..Default::default()
+                    },
+                },
                 _ => OutputInput {
                     status: OutputStatus::Failure,
                     ..Default::default()

@@ -4,9 +4,11 @@
 //! Pure source-order planning and selective publication without mutable globals.
 
 use crate::{
-    config::get_config_value,
-    deployment_config::{ConfigurationError, DeploymentConfig, ITEM_TYPES},
+    deployment_config::{
+        CommandConfiguration, CommandOptions, ConfigurationError, DeploymentConfig, ITEM_TYPES,
+    },
     model::{RepositoryItem, invalid},
+    parameter_transforms::{ParameterProgram, PathFilterOptions},
     processors::Processor,
     repository::DeploymentRepository,
     transforms::DEFAULT_GUID,
@@ -30,6 +32,13 @@ pub struct EngineContext {
     pub environment_variables: HashMap<String, String>,
     /// Aggregate prepared-definition byte budget, independent of service responses.
     pub definition_limits: crate::notebook::DefinitionLimits,
+    /// Explicit confined root for source path-filter resolution, never ambient CWD.
+    pub repository_root: Option<String>,
+    /// Source host path behavior over the immutable file inventory.
+    pub path_filter_options: PathFilterOptions,
+    pub(crate) configuration: CommandConfiguration,
+    pub(crate) program: Option<ParameterProgram>,
+    pub(crate) scope_features: Vec<String>,
 }
 
 impl EngineContext {
@@ -41,125 +50,55 @@ impl EngineContext {
         config: &DeploymentConfig,
         command_bulk: bool,
     ) -> Result<Self, ConfigurationError> {
-        let features = config
-            .document
-            .get("features")
-            .map(|value| {
-                value
-                    .as_object()
-                    .and_then(|mapping| mapping.get(&config.environment))
-                    .unwrap_or(value)
-            })
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .map(str::to_owned)
-            .collect();
-        let mut context = Self {
-            features,
-            constants: Map::new(),
-            bulk_publish: command_bulk,
-            parameter_document: None,
+        let mut context =
+            Self::from_configuration(config.command_configuration(CommandOptions {
+                bulk_publish: command_bulk,
+                ..Default::default()
+            })?)?;
+        if command_bulk {
+            context.scope_features = vec![
+                "enable_experimental_features".into(),
+                "enable_bulk_publish".into(),
+            ];
+        }
+        Ok(context)
+    }
+
+    /// Consume the configuration owner's immutable selected command snapshot.
+    ///
+    /// # Errors
+    /// Unconsumed extensions and active source feature/policy errors precede writes.
+    pub fn from_configuration(
+        configuration: CommandConfiguration,
+    ) -> Result<Self, ConfigurationError> {
+        configuration.require_no_extensions()?;
+        configuration.validate_operation_features()?;
+        let context = Self {
+            features: configuration.features().iter().cloned().collect(),
+            constants: configuration.constants().clone(),
+            bulk_publish: configuration.feature_enabled("enable_bulk_publish"),
+            parameter_document: configuration
+                .parameters()
+                .map(|program| program.source_document().clone()),
+            program: configuration.parameters().cloned(),
             environment_variables: HashMap::new(),
             definition_limits: crate::notebook::DefinitionLimits::default(),
+            repository_root: None,
+            path_filter_options: PathFilterOptions::default(),
+            configuration,
+            scope_features: Vec::new(),
         };
-        if command_bulk {
-            context.features.insert("enable_bulk_publish".into());
-            context
-                .features
-                .insert("enable_experimental_features".into());
-        }
-        if let Some(constants) = config.document.get("constants").and_then(Value::as_object) {
-            for key in constants.keys() {
-                if let Some(value) =
-                    get_config_value(&Value::Object(constants.clone()), key, &config.environment)
-                        .map_err(|_| invalid("Invalid constant environment selection"))?
-                {
-                    if !value.is_null() {
-                        context.constants.insert(key.clone(), value.clone());
-                    }
-                }
-            }
-        }
-        if let Some(flags) = context.constants.get("FEATURE_FLAG") {
-            context.features = flags
-                .as_array()
-                .ok_or_else(|| invalid("FEATURE_FLAG must be a list"))?
-                .iter()
-                .map(|value| {
-                    value
-                        .as_str()
-                        .map(str::to_owned)
-                        .ok_or_else(|| invalid("FEATURE_FLAG entries must be strings"))
-                })
-                .collect::<Result<_, _>>()?;
-        }
-        context.bulk_publish = context.enabled("enable_bulk_publish");
         context.validate_constants()?;
-        for (section, key, required) in [
-            (
-                &config.publish,
-                "items_to_include",
-                "enable_items_to_include",
-            ),
-            (
-                &config.unpublish,
-                "items_to_include",
-                "enable_items_to_include",
-            ),
-            (
-                &config.publish,
-                "folder_exclude_regex",
-                "enable_exclude_folder",
-            ),
-            (
-                &config.publish,
-                "folder_path_to_include",
-                "enable_include_folder",
-            ),
-            (
-                &config.publish,
-                "shortcut_exclude_regex",
-                "enable_shortcut_exclude",
-            ),
-        ] {
-            if section.get("skip").and_then(Value::as_bool) == Some(true)
-                || (key.starts_with("folder_")
-                    && context.enabled("disable_workspace_folder_publish"))
-            {
-                continue;
-            }
-            if section.contains_key(key)
-                && (!context.enabled("enable_experimental_features") || !context.enabled(required))
-            {
-                return Err(invalid(
-                    "Selective deployment requires experimental and option-specific feature flags",
-                ));
-            }
-        }
-        if !config.skip_publish()
-            && context.bulk_publish
-            && !context.enabled("enable_experimental_features")
-        {
-            return Err(invalid(
-                "enable_bulk_publish requires enable_experimental_features",
-            ));
-        }
-        if config.publish.contains_key("folder_exclude_regex")
-            && config.publish.contains_key("folder_path_to_include")
-            && !context.enabled("disable_workspace_folder_publish")
-        {
-            return Err(invalid(
-                "Folder exclusion and inclusion cannot be used together",
-            ));
-        }
         Ok(context)
     }
 
     /// Query one source feature without global state.
     pub fn enabled(&self, feature: &str) -> bool {
-        self.features.contains(feature)
+        if self.constants.contains_key("FEATURE_FLAG") {
+            self.configuration.feature_enabled(feature)
+        } else {
+            self.features.contains(feature)
+        }
     }
 
     fn validate_constants(&self) -> Result<(), ConfigurationError> {
@@ -352,7 +291,33 @@ impl EngineContext {
     /// Attach explicit parameter source without rediscovering files or environment.
     pub fn with_parameter_document(mut self, document: Value) -> Self {
         self.parameter_document = Some(document);
+        self.program = None;
         self
+    }
+
+    /// Bind source path filters to an explicitly resolved repository root.
+    pub fn with_repository_root(mut self, root: impl Into<String>) -> Self {
+        self.repository_root = Some(root.into());
+        self
+    }
+
+    /// Retain the source scope's preexisting caller flags without installing globals.
+    pub fn with_scope_features(mut self, features: Vec<String>) -> Self {
+        self.scope_features = features;
+        self
+    }
+
+    pub(crate) fn scope_exit_error(&self) -> Option<ConfigurationError> {
+        let value = self.constants.get("FEATURE_FLAG")?;
+        let fails = match value {
+            Value::Array(_) => true,
+            Value::Object(_) => self
+                .scope_features
+                .iter()
+                .any(|feature| feature.chars().count() != 2),
+            _ => true,
+        };
+        fails.then(|| invalid("Pinned source FEATURE_FLAG override scope restoration failed"))
     }
 
     /// Apply caller-owned local definition bounds without changing source policy.
