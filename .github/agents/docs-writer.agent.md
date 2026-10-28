@@ -306,7 +306,12 @@ Fix any failures before delivering.
 
 ### 4. Check for cross-reference impact
 
-Before delivering, determine whether the change affects other pages. Ask the user to confirm if uncertain.
+Before delivering, inspect related pages and navigation to determine the
+cross-reference impact. Resolve technical uncertainty from repository evidence;
+do not interrupt an authorized task for routine confirmation or document
+unverified behavior. Escalate unresolved intent or authority. Authorized Rust
+migration tasks follow `rust/docs/agentic-delivery.md` for independent stage
+reviews, evidence, and bounded repair; this does not expand this agent's scope.
 
 **When adding a new page:**
 
@@ -586,4 +591,3 @@ Use these verbs consistently for the corresponding actions:
 | Downloading files | download | pull, fetch |
 | Listing resources | list | show, display, view |
 | Navigating | go to, open | navigate to, browse to |
-

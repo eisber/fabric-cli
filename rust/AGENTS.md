@@ -4,7 +4,32 @@
 
 Read [migration guidance](docs/migration-guidance.md),
 [architecture](docs/architecture.md), and [compatibility](docs/compatibility.md).
-Repository-wide contribution and team-review rules still apply.
+Follow [agent-operated delivery](docs/agentic-delivery.md) for authorized task
+execution, independent stage reviews, repair, and integration. Repository-wide
+CLA, required checks, restricted-area review, and authority boundaries still apply.
+
+## Autonomous task lifecycle
+
+- Research authoritative sources and repository evidence before asking for
+  clarification. Within an authorized task, proceed through planning,
+  implementation, independent review, validation, and repair without routine
+  human handoffs. Do not invent missing product requirements or permission.
+- At every stage, use the two distinct review perspectives in
+  [stage reviews](docs/agentic-delivery.md#stage-reviews). Reviewers examine the
+  actual change and evidence independently of the authoring context. Required
+  review must be real, not a self-review presented as independent approval.
+- Bind findings and actual check results to the full tested revision and
+  feature/platform scope. Revalidate the combined integration candidate;
+  passing component checks do not prove the executable works.
+- Repair blocking findings and have them independently verified. Unless the
+  assignment is stricter, escalate after three failed repair cycles per blocker,
+  counted across handoffs; honor all assigned time/cost/resource limits.
+- Escalate only unresolved intent, missing authority or required evidence,
+  unresolved material review disagreement, or exhausted repair budget. Send the
+  evidence, attempts, exact decision needed, and recommended option. Continue
+  safe independent work rather than polling or repeatedly asking to begin.
+- These are instructions, not installed orchestration or merge permission.
+  Preserve current writer ownership and all runtime permission gates.
 
 ## Required working rules
 
@@ -27,7 +52,9 @@ Repository-wide contribution and team-review rules still apply.
   Integrate only explicitly agreed commits through the integration owner.
 - The shared integration branch is `feature/rust`. Use the
   exact agreed checkpoint, not an assumed latest version. Lane sessions develop
-  on their own branches; only the integration owner advances the shared branch.
+  on their own branches and target that trunk directly with small changes.
+  Do not add permanent family-merger chains. Only the assigned integration owner
+  advances the shared branch until separately authorized automation takes over.
   Pushes, PRs, releases, and live operations require their own authorization.
   Follow the [safe synchronization handoff](docs/integration-handoff.md); never
   reset, force-push, or switch a peer worktree to adopt a checkpoint.
@@ -36,6 +63,8 @@ Repository-wide contribution and team-review rules still apply.
   owner; if messaging is unavailable, ask the owner rather than polling or
   inventing a lease. Read-only work can proceed while waiting.
 - Read/format/narrow checks first; run the smallest tests covering the slice.
+  Include affected downstream consumers and relevant optional features using
+  existing Cargo-metadata-based validation plans, not per-agent package lists.
   Required full/native checks still gate integration; resource limits are not
   permission to omit validation.
 - New test crates must deny `unnameable_test_items`. After adding or moving a
