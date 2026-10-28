@@ -1122,31 +1122,21 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
         })
     }
 
-    async fn directory(&mut self, input: &str) -> Result<PathBuf, TransferError> {
+    fn check_snapshot(&self, context: &TransferContext) -> Result<(), TransferError> {
+        if context.items.len() > self.definition_limits.max_files.get()
+            || context.selection_order.len() > self.definition_limits.max_files.get()
+        {
+            return Err(DefinitionError::from(DefinitionErrorKind::Limit).into());
+        }
+        Ok(())
+    }
+
+    async fn export_directory(&mut self, input: &str) -> Result<PathBuf, TransferError> {
         if input.is_empty() {
             return Err(command_error("InvalidPath", "No such file or directory").into());
         }
-
-        fn check_snapshot(&self, context: &TransferContext) -> Result<(), TransferError> {
-            if context.items.len() > self.definition_limits.max_files.get()
-                || context.selection_order.len() > self.definition_limits.max_files.get()
-            {
-                return Err(DefinitionError::from(DefinitionErrorKind::Limit).into());
-            }
-            Ok(())
-        }
-
-        async fn export_directory(&mut self, input: &str) -> Result<PathBuf, TransferError> {
-            if input.is_empty() {
-                return Err(command_error("InvalidPath", "No such file or directory").into());
-            }
-            self.files
-                .resolve_export_directory_async(input)
-                .await
-                .map_err(local_error)
-        }
         self.files
-            .resolve_directory_async(input)
+            .resolve_export_directory_async(input)
             .await
             .map_err(local_error)
     }
