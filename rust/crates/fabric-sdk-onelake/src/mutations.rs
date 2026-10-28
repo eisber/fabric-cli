@@ -204,11 +204,80 @@ impl OneLakeClient {
         limits: OneLakeWriteLimits,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<OneLakeUpload, OneLakeMutationError> {
+        self.upload_file_impl(
+            executor,
+            path,
+            content,
+            content_type,
+            limits,
+            false,
+            content.len(),
+            cancelled,
+        )
+        .await
+    }
+
+    /// Upload source export bytes, omitting an empty append and retaining its position.
+    ///
+    /// Python's Lakehouse export flushes `len(data)`: default ASCII JSON and
+    /// binary use their byte length, while ordinary Unicode text uses character
+    /// length. The command codec supplies that explicit source position. No
+    /// request is replayed, and actual create/append/flush responses are retained.
+    ///
+    /// # Errors
+    /// Applies the same credential, path, bounds, cancellation and uncertain
+    /// mutation policy as [`Self::upload_file`]. Positions larger than the byte
+    /// payload are invalid and fail before create.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Explicit source upload policy and caller capabilities."
+    )]
+    pub async fn upload_export_file(
+        &self,
+        executor: &dyn OneLakeExecutor,
+        path: &OneLakePath,
+        content: &[u8],
+        flush_position: usize,
+        content_type: &str,
+        limits: OneLakeWriteLimits,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<OneLakeUpload, OneLakeMutationError> {
+        self.upload_file_impl(
+            executor,
+            path,
+            content,
+            content_type,
+            limits,
+            true,
+            flush_position,
+            cancelled,
+        )
+        .await
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Shared implementation preserves released upload behavior."
+    )]
+    async fn upload_file_impl(
+        &self,
+        executor: &dyn OneLakeExecutor,
+        path: &OneLakePath,
+        content: &[u8],
+        content_type: &str,
+        limits: OneLakeWriteLimits,
+        omit_empty_append: bool,
+        flush_position: usize,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<OneLakeUpload, OneLakeMutationError> {
         let mut dispatched = false;
         let mut steps = Vec::new();
         let mut cancelled = pin!(cancelled);
         let result = async {
             writable(path)?;
+            if flush_position > content.len() {
+                return Err(OneLakeError::InvalidInput);
+            }
             if content.len() > limits.max_request_bytes.get() || content.len() > 4 * 1024 * 1024 {
                 return Err(OneLakeError::Limit);
             }
@@ -242,35 +311,37 @@ impl OneLakeClient {
             if created.status != 201 {
                 return Ok(result);
             }
-            let mut append = path.url()?;
-            append
-                .query_pairs_mut()
-                .append_pair("action", "append")
-                .append_pair("position", "0");
-            let response = self
-                .exchange(
-                    executor,
-                    Exchange {
-                        method: OneLakeMethod::Patch,
-                        url: append,
-                        body: content.to_vec(),
-                        headers: vec![
-                            ("Content-Type".into(), content_type.into()),
-                            ("x-ms-content-type".into(), content_type.into()),
-                        ],
-                        limit: limits.max_response_bytes,
-                    },
-                    cancelled.as_mut(),
-                    &mut dispatched,
-                )
-                .await?;
-            result.append = Some(outcome(response.status));
-            steps.push(OneLakeWriteStep::Append);
+            if !omit_empty_append || !content.is_empty() {
+                let mut append = path.url()?;
+                append
+                    .query_pairs_mut()
+                    .append_pair("action", "append")
+                    .append_pair("position", "0");
+                let response = self
+                    .exchange(
+                        executor,
+                        Exchange {
+                            method: OneLakeMethod::Patch,
+                            url: append,
+                            body: content.to_vec(),
+                            headers: vec![
+                                ("Content-Type".into(), content_type.into()),
+                                ("x-ms-content-type".into(), content_type.into()),
+                            ],
+                            limit: limits.max_response_bytes,
+                        },
+                        cancelled.as_mut(),
+                        &mut dispatched,
+                    )
+                    .await?;
+                result.append = Some(outcome(response.status));
+                steps.push(OneLakeWriteStep::Append);
+            }
             let mut flush = path.url()?;
             flush
                 .query_pairs_mut()
                 .append_pair("action", "flush")
-                .append_pair("position", &content.len().to_string());
+                .append_pair("position", &flush_position.to_string());
             let response = self
                 .exchange(
                     executor,

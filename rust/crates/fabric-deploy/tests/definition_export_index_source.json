@@ -1,0 +1,23 @@
+{
+  "source": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "missing_duplicate": false,
+      "exported_types": {
+        "DataPipeline": 1,
+        "SemanticModel": 1
+      },
+      "skipped_types": {}
+    },
+    {
+      "missing_duplicate": true,
+      "exported_types": {
+        "SemanticModel": 1
+      },
+      "skipped_types": {
+        "Notebook": 1,
+        "DataPipeline": 1
+      }
+    }
+  ]
+}

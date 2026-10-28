@@ -113,6 +113,13 @@ impl HierarchyLookup for Loading<'_> {
 }
 
 impl CommandContext {
+    pub(crate) fn cached_folders(
+        &self,
+        workspace: Arc<Element>,
+    ) -> Result<Option<Vec<Arc<Element>>>, CommandError> {
+        self.snapshot.cached_folders(workspace)
+    }
+
     pub(crate) async fn resolve(
         &mut self,
         reads: &ReadSession<'_>,

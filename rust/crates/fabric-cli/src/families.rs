@@ -5,6 +5,7 @@
 
 pub(crate) mod context;
 mod deploy_http;
+mod export_files;
 pub mod transfer_files;
 
 use crate::{errors, parser::Invocation, session::ReadSession};
@@ -42,7 +43,7 @@ use std::{
     future::{Future, pending},
     io::{self, Write},
     path::Path,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 /// Original family evidence remains inspectable after rendering or writer failure.
@@ -483,8 +484,28 @@ impl FamilySession<'_, '_> {
                 let metadata = TransferTargets {
                     reads: self.reads,
                     http: self.http,
+                    folders: Mutex::default(),
+                    item_sort: if settings
+                        .get("output_item_sort_criteria")
+                        .and_then(Value::as_str)
+                        == Some("bytype")
+                    {
+                        crate::ItemSort::ByType
+                    } else {
+                        crate::ItemSort::ByName
+                    },
                 };
                 let result = if let Some(files) = self.transfer_files.as_deref_mut() {
+                    let mut export_files;
+                    let files: &mut dyn TransferFiles = if matches!(
+                        command.kind,
+                        TransferKind::Export | TransferKind::BulkExport
+                    ) {
+                        export_files = export_files::ExportFiles::new(files, self.reads, self.http);
+                        &mut export_files
+                    } else {
+                        files
+                    };
                     TransferHost {
                         client: self.reads.sdk,
                         executor: self.http,
@@ -726,10 +747,23 @@ fn mutation_error(error: CommandError, timestamp: &Timestamp) -> MutationError {
 struct TransferTargets<'a, 'session> {
     reads: &'a ReadSession<'session>,
     http: &'a HttpExecutor,
+    item_sort: crate::ItemSort,
+    folders: Mutex<std::collections::BTreeMap<String, Vec<Arc<Element>>>>,
 }
 
 impl TransferMetadata for TransferTargets<'_, '_> {
     fn resolve<'a>(
+        &'a self,
+        kind: TransferKind,
+        path: &'a [String],
+    ) -> fabric_cli_transfer::TransferFuture<'a, Result<TransferContext, CommandError>> {
+        Box::pin(async move {
+            let context = self.resolve_target(kind, path).await?;
+            self.complete_snapshot(kind, context).await
+        })
+    }
+
+    fn resolve_target<'a>(
         &'a self,
         kind: TransferKind,
         path: &'a [String],
@@ -747,14 +781,11 @@ impl TransferMetadata for TransferTargets<'_, '_> {
                 )
                 .await?;
             let target = context
-                .resolve(
+                .resolve_path(
                     self.reads,
                     self.http,
-                    current
-                        .fabric()
-                        .cloned()
-                        .unwrap_or_else(|| self.reads.tenant.clone()),
-                    &path.join(" "),
+                    current,
+                    PathInput::Scalar(&path.join(" ")),
                     ResolveOptions {
                         raise_error: kind != TransferKind::Import,
                         supports_local_path: false,
@@ -765,19 +796,51 @@ impl TransferMetadata for TransferTargets<'_, '_> {
             let target = target.fabric().cloned().ok_or_else(|| {
                 errors::unsupported("Definition transfer requires a Fabric item or workspace")
             })?;
-            if matches!(target.kind(), NodeKind::Folder) {
-                return Err(errors::unsupported(
-                    "Recursive folder transfer metadata is not mounted",
-                ));
+            let support =
+                fabric_cli_local::SupportMatrix::source().map_err(|error| error.command_error())?;
+            if matches!(kind, TransferKind::Export | TransferKind::Import) {
+                support
+                    .check(&PathElement::from_fabric(target.clone()), kind.as_str())
+                    .map_err(|error| error.command_error())?;
             }
+            if let Some(workspace) = target.workspace()
+                && let Some(folders) = context.cached_folders(workspace.clone())?
+            {
+                self.folders
+                    .lock()
+                    .map_err(|_| {
+                        errors::error("MetadataUnavailable", "Transfer snapshot is unavailable")
+                    })?
+                    .insert(workspace.id().unwrap_or_default().into(), folders);
+            }
+            Ok(TransferContext {
+                target,
+                items: Vec::new(),
+                selection_order: Vec::new(),
+            })
+        })
+    }
+
+    fn complete_snapshot<'a>(
+        &'a self,
+        kind: TransferKind,
+        context: TransferContext,
+    ) -> fabric_cli_transfer::TransferFuture<'a, Result<TransferContext, CommandError>> {
+        Box::pin(async move {
+            let target = context.target;
+            let support =
+                fabric_cli_local::SupportMatrix::source().map_err(|error| error.command_error())?;
             let mut items = Vec::new();
-            if matches!(target.kind(), NodeKind::Workspace(_)) {
+            if matches!(target.kind(), NodeKind::Workspace(_) | NodeKind::Folder) {
+                let workspace = target.workspace().ok_or_else(|| {
+                    errors::error("InvalidInput", "Workspace metadata is required")
+                })?;
                 let list = self
                     .reads
                     .sdk
                     .list_items(
                         self.reads.executor,
-                        target
+                        workspace
                             .id()
                             .ok_or_else(|| errors::error("NotFound", "Workspace has no ID"))?,
                         Default::default(),
@@ -785,20 +848,74 @@ impl TransferMetadata for TransferTargets<'_, '_> {
                     )
                     .await
                     .map_err(|error| errors::item(&error.kind))?;
-                let support = fabric_cli_local::SupportMatrix::source()
-                    .map_err(|error| error.command_error())?;
+                let cached = self
+                    .folders
+                    .lock()
+                    .map_err(|_| {
+                        errors::error("MetadataUnavailable", "Transfer snapshot is unavailable")
+                    })?
+                    .get(workspace.id().unwrap_or_default())
+                    .cloned();
+                let folders = if let Some(folders) = cached {
+                    folders
+                } else if target.kind() == NodeKind::Folder
+                    || list
+                        .value
+                        .iter()
+                        .any(|item| item.additional_fields.contains_key("folderId"))
+                {
+                    let folders = self
+                        .reads
+                        .sdk
+                        .list_folders(
+                            self.reads.executor,
+                            workspace
+                                .id()
+                                .ok_or_else(|| errors::error("NotFound", "Workspace has no ID"))?,
+                            Default::default(),
+                            pending(),
+                        )
+                        .await
+                        .map_err(|error| crate::folder_reads::folder_error(&error.kind))?;
+                    crate::folder_reads::FolderGraph::new(folders.value)
+                        .map_err(|error| error.command_error())?
+                        .elements(workspace.clone())
+                        .map_err(|error| errors::error(&error.code, error.message))?
+                } else {
+                    Vec::new()
+                };
                 for item in list.value {
-                    let item_type = item
+                    let parent = match item.additional_fields.get("folderId") {
+                        None => workspace.clone(),
+                        Some(id) => folders
+                            .iter()
+                            .find(|folder| folder.id() == id.as_str())
+                            .filter(|_| id.is_string())
+                            .cloned()
+                            .ok_or_else(|| {
+                                errors::error(
+                                    "InvalidResponse",
+                                    "Item folder metadata is missing or invalid",
+                                )
+                            })?,
+                    };
+                    if !item.additional_fields.contains_key("type") {
+                        return Err(errors::error(
+                            "InvalidResponse",
+                            "Fabric returned an item without its type",
+                        ));
+                    }
+                    let Some(item_type) = item
                         .item_type()
                         .and_then(|kind| fabric_cli_context::ItemType::parse(kind).ok())
-                        .ok_or_else(|| {
-                            errors::error("NotSupported", "Unknown transfer item type")
-                        })?;
+                    else {
+                        continue;
+                    };
                     let element = Element::child(
                         &item.display_name,
                         Some(item.id),
                         NodeKind::Item(item_type),
-                        target.clone(),
+                        parent,
                     )
                     .map_err(|error| errors::error(&error.code, error.message))?;
                     let policy = if kind == TransferKind::BulkExport {
@@ -808,37 +925,89 @@ impl TransferMetadata for TransferTargets<'_, '_> {
                     };
                     let supported =
                         match support.check(&PathElement::from_fabric(element.clone()), policy) {
-                            Ok(()) => true,
+                            Ok(()) => fabric_deploy::definitions::CommandSupport::Supported,
                             Err(fabric_cli_local::LocalError::Context(error))
                                 if error.code == "UnsupportedCommand" =>
                             {
-                                false
+                                fabric_deploy::definitions::CommandSupport::Rejected
                             }
                             Err(error) => return Err(error.command_error()),
                         };
                     items.push(fabric_cli_transfer::TransferItem {
                         element,
-                        support: if supported {
-                            fabric_deploy::definitions::CommandSupport::Supported
-                        } else {
-                            fabric_deploy::definitions::CommandSupport::Unsupported
-                        },
+                        support: supported,
                     });
                 }
+                if target.kind() == NodeKind::Folder {
+                    items = folder_transfer_order(&target, &folders, &items)?;
+                }
             }
-            let mut selection_order = items
+            let mut selection_items = items
                 .iter()
                 .filter(|item| {
                     item.support == fabric_deploy::definitions::CommandSupport::Supported
                 })
-                .map(|item| item.element.name())
                 .collect::<Vec<_>>();
-            selection_order.sort_by_key(|name| name.to_lowercase());
+            selection_items.sort_by_cached_key(|item| {
+                let NodeKind::Item(kind) = item.element.kind() else {
+                    unreachable!()
+                };
+                let name = item.element.short_name().to_lowercase();
+                let kind = crate::reads::enum_name(kind).to_owned();
+                match self.item_sort {
+                    crate::ItemSort::ByName => (name, kind),
+                    crate::ItemSort::ByType => (kind, name),
+                }
+            });
+            let selection_order = selection_items
+                .iter()
+                .map(|item| item.element.name())
+                .collect();
             Ok(TransferContext {
                 target,
                 items,
                 selection_order,
             })
         })
+    }
+
+    fn folder_transfer_order(
+        target: &Arc<Element>,
+        folders: &[Arc<Element>],
+        items: &[fabric_cli_transfer::TransferItem],
+    ) -> Result<Vec<fabric_cli_transfer::TransferItem>, CommandError> {
+        let mut result = Vec::new();
+        let mut stack = vec![(target.clone(), false, 0usize)];
+        while let Some((folder, visited, depth)) = stack.pop() {
+            if depth
+                > fabric_deploy::definitions::DefinitionLimits::default()
+                    .max_depth
+                    .get()
+            {
+                return Err(errors::error(
+                    "Limit",
+                    "Folder transfer depth bound reached",
+                ));
+            }
+            if visited {
+                result.extend(
+                    items
+                        .iter()
+                        .filter(|item| item.element.parent() == Some(&folder))
+                        .cloned(),
+                );
+            } else {
+                // Source visits child folders before the direct items at each level.
+                stack.push((folder.clone(), true, depth));
+                stack.extend(
+                    folders
+                        .iter()
+                        .rev()
+                        .filter(|child| child.parent() == Some(&folder))
+                        .map(|child| (child.clone(), false, depth + 1)),
+                );
+            }
+        }
+        Ok(result)
     }
 }

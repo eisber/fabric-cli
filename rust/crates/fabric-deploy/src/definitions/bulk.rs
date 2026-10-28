@@ -70,6 +70,12 @@ pub struct BulkExportOutcome {
     pub supported_ids: Vec<String>,
     /// Known IDs counted unsupported/missing, in source order.
     pub skipped_ids: Vec<String>,
+    /// Workspace response-index IDs before filtering, including unknown entries.
+    ///
+    /// This distinguishes returned unsupported rows from missing cached rows
+    /// when duplicate cached IDs have different source types. Folder selection
+    /// ignores the response index and leaves this empty.
+    pub indexed_ids: Vec<String>,
     /// Fully written relative files in service part order.
     pub completed_paths: Vec<String>,
 }
@@ -241,6 +247,53 @@ pub async fn bulk_export<E: OperationExecutor>(
     confirmed: bool,
     limits: DefinitionLimits,
 ) -> Result<BulkExportOutcome, DefinitionError> {
+    bulk_export_impl(
+        session, filesystem, snapshot, root, recursive, confirmed, limits, false,
+    )
+    .await
+}
+
+/// Execute bulk export with Python's per-part error-preserving storage codec.
+///
+/// Keeps the released snapshot, All/Selective request, index ordering, unchanged
+/// Notebook outputs and confinement policy. The original [`bulk_export`] API
+/// retains its narrower released codec for existing consumers.
+///
+/// # Errors
+/// Retains typed input, operation, safety, cancellation and ordered file failures.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Explicit caller-owned boundaries."
+)]
+pub async fn bulk_export_source<E: OperationExecutor>(
+    session: &mut OperationSession<'_, E>,
+    filesystem: &mut dyn DefinitionFileSystem,
+    snapshot: BulkExportSnapshot<'_>,
+    root: &Path,
+    recursive: bool,
+    confirmed: bool,
+    limits: DefinitionLimits,
+) -> Result<BulkExportOutcome, DefinitionError> {
+    bulk_export_impl(
+        session, filesystem, snapshot, root, recursive, confirmed, limits, true,
+    )
+    .await
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Shared implementation preserves released API behavior."
+)]
+async fn bulk_export_impl<E: OperationExecutor>(
+    session: &mut OperationSession<'_, E>,
+    filesystem: &mut dyn DefinitionFileSystem,
+    snapshot: BulkExportSnapshot<'_>,
+    root: &Path,
+    recursive: bool,
+    confirmed: bool,
+    limits: DefinitionLimits,
+    source_codec: bool,
+) -> Result<BulkExportOutcome, DefinitionError> {
     if !recursive {
         return Err(Kind::InvalidInput.into());
     }
@@ -268,14 +321,38 @@ pub async fn bulk_export<E: OperationExecutor>(
         snapshot.workspace_id
     );
     let mut response = object(&execute_body(session, ResourceMethod::Post, &path, body).await?)?;
+    let indexed_ids = if snapshot.scope == BulkScope::Workspace {
+        let index = array_or_empty(&response, "itemDefinitionsIndex")?;
+        if index.len() > limits.max_files.get() {
+            return Err(Kind::Limit.into());
+        }
+        index
+            .iter()
+            .map(|entry| {
+                entry
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned()
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     let (supported_ids, skipped_ids) = filter_bulk_definition(snapshot, &mut response, limits)?;
     strip_bulk_parent_prefix(&mut response, snapshot.from_path)?;
     let parts = array_or_empty(&response, "definitionParts")?;
-    let files = decode_export_files(&json!({"definition":{"parts":parts}}), false, limits)?;
+    let item = json!({"definition":{"parts":parts}});
+    let files = if source_codec {
+        super::decode_export_files_for_storage(&item, false, limits, super::ExportStorage::Local)?
+    } else {
+        decode_export_files(&item, false, limits)?
+    };
     let completed_paths = write_export_files(session, filesystem, root, &files, None).await?;
     Ok(BulkExportOutcome {
         supported_ids,
         skipped_ids,
+        indexed_ids,
         completed_paths,
     })
 }

@@ -1,0 +1,122 @@
+{
+  "source": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "name": "missing-recursive",
+      "output": "output",
+      "recursive": false,
+      "kind": "local",
+      "nonempty": false,
+      "force": true,
+      "confirmation": true,
+      "result": null,
+      "error": {
+        "message": "The --recursive flag is required when bulk-exporting a Workspace or Folder",
+        "code": "InvalidOperation"
+      },
+      "events": []
+    },
+    {
+      "name": "empty-output",
+      "output": "",
+      "recursive": true,
+      "kind": "local",
+      "nonempty": false,
+      "force": true,
+      "confirmation": true,
+      "result": null,
+      "error": {
+        "message": "Export path '' is not a valid directory",
+        "code": "InvalidOperation"
+      },
+      "events": []
+    },
+    {
+      "name": "remote-output",
+      "output": "Demo.Workspace/Lake.Lakehouse/Files/Archive",
+      "recursive": true,
+      "kind": "lakehouse",
+      "nonempty": false,
+      "force": true,
+      "confirmation": true,
+      "result": null,
+      "error": {
+        "message": "Export path 'Demo.Workspace/Lake.Lakehouse/Files/Archive' is not a valid directory",
+        "code": "InvalidOperation"
+      },
+      "events": []
+    },
+    {
+      "name": "nonempty-declined",
+      "output": "output",
+      "recursive": true,
+      "kind": "local",
+      "nonempty": true,
+      "force": false,
+      "confirmation": false,
+      "result": false,
+      "error": null,
+      "events": [
+        {
+          "kind": "confirm",
+          "message": "Output folder 'output' is not empty. Do you want to proceed?"
+        }
+      ]
+    },
+    {
+      "name": "sensitivity-declined",
+      "output": "output",
+      "recursive": true,
+      "kind": "local",
+      "nonempty": false,
+      "force": false,
+      "confirmation": false,
+      "result": false,
+      "error": null,
+      "events": [
+        {
+          "kind": "confirm",
+          "message": "Item definitions are exported without their sensitivity labels. Are you sure?"
+        }
+      ]
+    },
+    {
+      "name": "forced-nonempty",
+      "output": "output",
+      "recursive": true,
+      "kind": "local",
+      "nonempty": true,
+      "force": true,
+      "confirmation": true,
+      "result": true,
+      "error": null,
+      "events": [
+        {
+          "kind": "warning",
+          "message": "Item definitions are exported without their sensitivity labels"
+        },
+        {
+          "kind": "warning",
+          "message": "Exporting to a non-empty output folder"
+        }
+      ]
+    },
+    {
+      "name": "sensitivity-confirmed",
+      "output": "output",
+      "recursive": true,
+      "kind": "local",
+      "nonempty": false,
+      "force": false,
+      "confirmation": true,
+      "result": true,
+      "error": null,
+      "events": [
+        {
+          "kind": "confirm",
+          "message": "Item definitions are exported without their sensitivity labels. Are you sure?"
+        }
+      ]
+    }
+  ]
+}

@@ -10,10 +10,20 @@ use fabric_sdk_operations::{OperationExecutor, OperationSession};
 use std::{
     future::{Future, poll_fn},
     io,
-    path::Path,
+    path::{Path, PathBuf},
     pin::pin,
     task::Poll,
 };
+
+pub(crate) async fn export_directory<E: OperationExecutor>(
+    session: &mut OperationSession<'_, E>,
+    files: &mut dyn TransferFiles,
+    output: &str,
+) -> Result<PathBuf, DefinitionError> {
+    file_phase(session, files.resolve_export_directory_async(output))
+        .await
+        .map_err(|(error, _)| error)
+}
 
 pub(crate) struct ImportFiles<'a, T: ?Sized>(pub(crate) &'a mut T);
 

@@ -12,13 +12,17 @@ mod bulk;
 mod codec;
 mod import;
 mod local;
+mod source_codec;
 mod transfer;
 
 pub use bulk::{
     BulkExportOutcome, BulkExportSnapshot, BulkItem, BulkScope, CommandSupport, bulk_export,
-    bulk_export_payload, filter_bulk_definition, strip_bulk_parent_prefix,
+    bulk_export_payload, bulk_export_source, filter_bulk_definition, strip_bulk_parent_prefix,
 };
-pub use codec::{DefinitionFile, decode_export_files, validate_part_path};
+pub use codec::{
+    DefinitionFile, ExportStorage, decode_export_files, decode_export_files_for_storage,
+    validate_part_path,
+};
 pub use import::{
     DefinitionEntry, DefinitionEntryKind, DefinitionImportFileSystem, ImportAction,
     ImportDefinition, ImportOutcome, ImportTarget, PreparedImport, load_import_definition,
@@ -368,6 +372,64 @@ pub async fn export_item<E: OperationExecutor>(
     confirmed: bool,
     limits: DefinitionLimits,
 ) -> Result<ExportOutcome, DefinitionError> {
+    export_item_impl(
+        session, filesystem, target, item_name, root, selector, confirmed, limits, None,
+    )
+    .await
+}
+
+/// Export using the complete source per-part fallback and selected storage codec.
+///
+/// The caller still owns destination resolution, confirmation and actual local
+/// or remote writes. Unlike the original bounded [`export_item`] API, malformed
+/// suffix JSON retains the original encoded payload exactly as Python does.
+///
+/// # Errors
+/// Preserves ordered partial-write, permission, path, bound and operation errors.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Explicit caller-owned boundaries."
+)]
+pub async fn export_item_for_storage<E: OperationExecutor>(
+    session: &mut OperationSession<'_, E>,
+    filesystem: &mut dyn DefinitionFileSystem,
+    target: DefinitionTarget<'_>,
+    item_name: &str,
+    root: &Path,
+    selector: Option<&str>,
+    confirmed: bool,
+    limits: DefinitionLimits,
+    storage: ExportStorage,
+) -> Result<ExportOutcome, DefinitionError> {
+    export_item_impl(
+        session,
+        filesystem,
+        target,
+        item_name,
+        root,
+        selector,
+        confirmed,
+        limits,
+        Some(storage),
+    )
+    .await
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Shared implementation preserves released API behavior."
+)]
+async fn export_item_impl<E: OperationExecutor>(
+    session: &mut OperationSession<'_, E>,
+    filesystem: &mut dyn DefinitionFileSystem,
+    target: DefinitionTarget<'_>,
+    item_name: &str,
+    root: &Path,
+    selector: Option<&str>,
+    confirmed: bool,
+    limits: DefinitionLimits,
+    storage: Option<ExportStorage>,
+) -> Result<ExportOutcome, DefinitionError> {
     if !confirmed {
         return Err(DefinitionErrorKind::ConfirmationRequired.into());
     }
@@ -376,10 +438,82 @@ pub async fn export_item<E: OperationExecutor>(
         return Err(DefinitionErrorKind::UnsafePath.into());
     }
     let read = read_item_definition(session, target, selector).await?;
+    write_read_item(
+        session,
+        filesystem,
+        read,
+        target.item_type,
+        item_name,
+        root,
+        limits,
+        storage,
+    )
+    .await
+}
+
+/// Write an already-read item after the command resolves its export destination.
+///
+/// Python single export reads metadata/definition before resolving its output
+/// path. This explicit read/write composition preserves that order without
+/// replaying the POST or adding another decoder. The caller has already confirmed
+/// the source warning and selects the local/Lakehouse byte policy.
+///
+/// # Errors
+/// Preserves definition denial, portable paths, bounds and ordered write evidence.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Explicit caller-owned export boundaries."
+)]
+pub async fn export_read_item<E: OperationExecutor>(
+    session: &mut OperationSession<'_, E>,
+    filesystem: &mut dyn DefinitionFileSystem,
+    read: DefinitionRead,
+    item_type: &str,
+    item_name: &str,
+    root: &Path,
+    limits: DefinitionLimits,
+    storage: ExportStorage,
+) -> Result<ExportOutcome, DefinitionError> {
+    validate_part_path(item_name, limits)?;
+    if item_name.contains('/') {
+        return Err(DefinitionErrorKind::UnsafePath.into());
+    }
+    write_read_item(
+        session,
+        filesystem,
+        read,
+        item_type,
+        item_name,
+        root,
+        limits,
+        Some(storage),
+    )
+    .await
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Shared implementation preserves released API behavior."
+)]
+async fn write_read_item<E: OperationExecutor>(
+    session: &mut OperationSession<'_, E>,
+    filesystem: &mut dyn DefinitionFileSystem,
+    read: DefinitionRead,
+    item_type: &str,
+    item_name: &str,
+    root: &Path,
+    limits: DefinitionLimits,
+    storage: Option<ExportStorage>,
+) -> Result<ExportOutcome, DefinitionError> {
     if let Some(status) = read.definition_access_denied {
         return Err(DefinitionErrorKind::DefinitionAccessDenied(status).into());
     }
-    let mut files = decode_export_files(&read.item, target.item_type == "Notebook", limits)?;
+    let mut files = match storage {
+        Some(storage) => {
+            decode_export_files_for_storage(&read.item, item_type == "Notebook", limits, storage)?
+        }
+        None => decode_export_files(&read.item, item_type == "Notebook", limits)?,
+    };
     for file in &mut files {
         file.path = format!("{item_name}/{}", file.path);
         validate_part_path(&file.path, limits)?;

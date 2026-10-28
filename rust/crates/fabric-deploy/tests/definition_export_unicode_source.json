@@ -1,0 +1,18 @@
+{
+  "source": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "calls": [
+    {
+      "stage": "create",
+      "path": "Demo/Lake.Lakehouse/Files/unicode.txt"
+    },
+    {
+      "stage": "append",
+      "base64": "w6nwn5iA",
+      "position": 0
+    },
+    {
+      "stage": "flush",
+      "position": 2
+    }
+  ]
+}
