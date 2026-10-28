@@ -30,6 +30,7 @@ use std::{
 };
 
 struct Http {
+    host: String,
     replies: Mutex<VecDeque<reads::Reply>>,
     requests: Mutex<Vec<Value>>,
     hold_after: Option<usize>,
@@ -47,7 +48,7 @@ impl fmt::Debug for Http {
 impl HttpClient for Http {
     async fn execute_request(&self, request: &Request) -> azure_core::Result<AsyncRawResponse> {
         assert_eq!(request.url().scheme(), "https");
-        assert_eq!(request.url().host_str(), Some("api.fabric.microsoft.com"));
+        assert_eq!(request.url().host_str(), Some(self.host.as_str()));
         assert!(request.headers().get_str(&"authorization".into()).is_ok());
         let body = match request.body() {
             Body::Bytes(bytes) if bytes.is_empty() => Value::Null,
@@ -183,15 +184,29 @@ pub fn observe(input: &Value) -> Value {
         _ => panic!("a job leaf is required"),
     };
     let credential = Arc::new(reads::Credential::default());
-    let sdk = reads::sdk(credential.clone());
+    let default_sdk = reads::sdk(credential.clone());
+    let endpoint = fabric_sdk::EndpointBinding::with_host(
+        fabric_sdk::ServiceOrigin::Fabric,
+        input["endpoint"]
+            .as_str()
+            .unwrap_or("api.fabric.microsoft.com"),
+    )
+    .unwrap();
+    let sdk = fabric_sdk::Client::with_context(fabric_sdk::RequestContext::with_endpoint(
+        Arc::clone(default_sdk.credential()),
+        default_sdk.selection().clone(),
+        endpoint.clone(),
+    ));
     let http = Arc::new(Http {
+        host: endpoint.host().into(),
         replies: Mutex::new(serde_json::from_value(input["responses"].clone()).unwrap()),
         requests: Mutex::new(Vec::new()),
         hold_after: input["hold_after"].as_u64().map(|value| value as usize),
     });
     let timer = Arc::new(reads::Timer::default());
-    let executor =
-        HttpExecutor::new(http.clone(), timer.clone(), ExecutionOptions::default()).unwrap();
+    let executor = HttpExecutor::new(http.clone(), timer.clone(), ExecutionOptions::default())
+        .unwrap()
+        .with_endpoint(endpoint);
     let reads = ReadSession {
         sdk: &sdk,
         executor: &executor,

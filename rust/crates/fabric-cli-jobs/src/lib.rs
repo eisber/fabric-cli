@@ -397,8 +397,13 @@ impl JobHost<'_> {
                     )
                     .await
                     .map_err(|e| sdk_error(e, None))?;
-                let Some(handle) = RunHandle::from_command_response(&target, response, None)
-                    .map_err(|e| sdk_error(e, None))?
+                let Some(handle) = RunHandle::from_bound_command_response(
+                    &target,
+                    response,
+                    None,
+                    self.sdk.context().endpoint(),
+                )
+                .map_err(|e| sdk_error(e, None))?
                 else {
                     return Ok(None);
                 };
@@ -451,8 +456,13 @@ impl JobHost<'_> {
                     )
                     .await
                     .map_err(|e| sdk_error(e, Some(id)))?;
-                let Some(handle) = RunHandle::from_command_response(&target, response, Some(id))
-                    .map_err(|e| sdk_error(e, Some(id)))?
+                let Some(handle) = RunHandle::from_bound_command_response(
+                    &target,
+                    response,
+                    Some(id),
+                    self.sdk.context().endpoint(),
+                )
+                .map_err(|e| sdk_error(e, Some(id)))?
                 else {
                     return Ok(None);
                 };

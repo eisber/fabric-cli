@@ -117,15 +117,13 @@ impl JobSession<'_, '_> {
                 )
                 .await?;
             let jobs: Arc<dyn JobExecutor> = Arc::new(CheckedJobExecutor(Arc::clone(&self.jobs)));
-            let sdk = JobClient::new(
-                Arc::clone(reads.sdk.credential()),
-                reads.sdk.selection().clone(),
+            let sdk = JobClient::with_context(
+                reads.sdk.context().clone(),
                 Arc::clone(&jobs),
                 JobLimits::default(),
             );
-            let operations = SharedJobOperations::from_job_executor(
-                Arc::clone(reads.sdk.credential()),
-                reads.sdk.selection().clone(),
+            let operations = SharedJobOperations::from_job_executor_with_context(
+                reads.sdk.context().clone(),
                 jobs,
                 fabric_sdk_operations::OperationLimits::default(),
             );
