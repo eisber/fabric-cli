@@ -6,7 +6,7 @@
 #![cfg(feature = "native-read")]
 #![deny(unnameable_test_items)]
 
-#[path = "family_support/metadata.rs"]
+#[path = "family_support/metadata_snapshot.rs"]
 mod family_metadata;
 mod family_support;
 
@@ -21,10 +21,7 @@ use serde_json::{Value, json};
 use std::{
     fs,
     future::pending,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::{Arc, Mutex, atomic::Ordering},
 };
 
 const WS: &str = "11111111-1111-1111-1111-111111111111";
@@ -34,31 +31,9 @@ const LAKE: &str = "66666666-6666-6666-6666-666666666666";
 const OPERATION: &str = "77777777-7777-7777-7777-777777777777";
 
 fn host() -> Harness {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("target")
-        .join(format!(
-            "export-parity-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed),
-        ));
-    fs::create_dir_all(&root).unwrap();
-    let root = fs::canonicalize(root).unwrap();
-    let store = ConfigStore::new(&root);
-    let mut settings = store.initialize().unwrap();
-    settings.insert("output_format".into(), json!("json"));
-    store.write(&settings).unwrap();
-    fs::create_dir(root.join("output")).unwrap();
-    Harness {
-        root,
-        credential: Arc::default(),
-        http: Arc::new(family_support::Http {
-            replies: Mutex::default(),
-            requests: Mutex::default(),
-        }),
-        effects: Default::default(),
-        endpoint: fabric_sdk::EndpointBinding::public(fabric_sdk::ServiceOrigin::Fabric),
-    }
+    let host = Harness::new();
+    fs::create_dir(host.root.join("output")).unwrap();
+    host
 }
 
 fn items() -> Value {
