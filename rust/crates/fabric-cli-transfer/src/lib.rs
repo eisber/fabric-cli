@@ -313,7 +313,7 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             .map_err(|error| error.command_error())?;
         if command.kind == TransferKind::Deploy {
             return Err(command_error("NotSupported",
-                "deploy --config requires the unported CICD configuration, parameter validation, planning and command-scoped bulk-flag lifecycle; the bounded Notebook publisher is not this command").into());
+                "Config deployment requires the native deployment host, not the definition transfer host").into());
         }
         if command.kind == TransferKind::BulkExport && !command.recursive {
             return Err(command_error(

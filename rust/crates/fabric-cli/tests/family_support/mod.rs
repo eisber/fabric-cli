@@ -230,22 +230,6 @@ impl Harness {
         ));
     }
 
-    pub fn metadata(&self, items: Value) {
-        self.metadata_with_id("w", items);
-    }
-
-    pub fn metadata_with_id(&self, workspace_id: &str, items: Value) {
-        self.reply(
-            200,
-            json!({"value":[{"id":workspace_id,"displayName":"Demo","type":"Workspace"}]}),
-        );
-        self.reply(200, json!({"value":items}));
-    }
-
-    pub fn item(&self, kind: &str) {
-        self.metadata(json!([{"id":"n","displayName":"Book","type":kind}]));
-    }
-
     pub async fn execute(&mut self, args: &[&str]) -> FamilyOutput {
         self.execute_with_cancelled(args, pending()).await
     }
@@ -254,6 +238,16 @@ impl Harness {
         &mut self,
         args: &[&str],
         cancelled: impl Future<Output = ()> + Send,
+    ) -> FamilyOutput {
+        self.execute_with_capabilities(args, cancelled, &TransferUiCapture::default())
+            .await
+    }
+
+    pub(super) async fn execute_with_capabilities(
+        &mut self,
+        args: &[&str],
+        cancelled: impl Future<Output = ()> + Send,
+        transfer_ui: &dyn TransferUi,
     ) -> FamilyOutput {
         let invocation = parse_args(std::iter::once("fab-rs").chain(args.iter().copied())).unwrap();
         let sdk = Client::new(
@@ -286,7 +280,6 @@ impl Harness {
         )
         .unwrap();
         let mut mutations = MutationUiCapture::default();
-        let transfer_ui = TransferUiCapture::default();
         let mut files =
             LocalTransferFiles::new(self.root.clone(), None, Default::default()).unwrap();
         let output = FamilySession {
@@ -297,7 +290,7 @@ impl Harness {
             local: &mut self.effects,
             mutations: &mut mutations,
             confirmation: None,
-            transfer_ui: &transfer_ui,
+            transfer_ui,
             transfer_files: Some(&mut files),
             resource_files: None,
         }

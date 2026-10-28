@@ -1,0 +1,406 @@
+{
+  "source": "microsoft/fabric-cicd@5ca096c00a9a878c646c59fe537b883eba951329",
+  "boundary": "The PyYAML6.0.3 safe_load used by pinned ConfigValidator._validate_yaml_content; source-compatible type evidence is not JSON coercion.",
+  "pyyaml": "6.0.3",
+  "cases": [
+    {
+      "input": "y",
+      "pythonType": "str",
+      "expected": "y",
+      "unsupportedNativeDomain": false,
+      "pythonText": "y"
+    },
+    {
+      "input": "n",
+      "pythonType": "str",
+      "expected": "n",
+      "unsupportedNativeDomain": false,
+      "pythonText": "n"
+    },
+    {
+      "input": "yes",
+      "pythonType": "bool",
+      "expected": true,
+      "unsupportedNativeDomain": false,
+      "pythonText": "True"
+    },
+    {
+      "input": "YES",
+      "pythonType": "bool",
+      "expected": true,
+      "unsupportedNativeDomain": false,
+      "pythonText": "True"
+    },
+    {
+      "input": "Yes",
+      "pythonType": "bool",
+      "expected": true,
+      "unsupportedNativeDomain": false,
+      "pythonText": "True"
+    },
+    {
+      "input": "yEs",
+      "pythonType": "str",
+      "expected": "yEs",
+      "unsupportedNativeDomain": false,
+      "pythonText": "yEs"
+    },
+    {
+      "input": "on",
+      "pythonType": "bool",
+      "expected": true,
+      "unsupportedNativeDomain": false,
+      "pythonText": "True"
+    },
+    {
+      "input": "OFF",
+      "pythonType": "bool",
+      "expected": false,
+      "unsupportedNativeDomain": false,
+      "pythonText": "False"
+    },
+    {
+      "input": "null",
+      "pythonType": "NoneType",
+      "expected": null,
+      "unsupportedNativeDomain": false,
+      "pythonText": "None"
+    },
+    {
+      "input": "Null",
+      "pythonType": "NoneType",
+      "expected": null,
+      "unsupportedNativeDomain": false,
+      "pythonText": "None"
+    },
+    {
+      "input": "NULL",
+      "pythonType": "NoneType",
+      "expected": null,
+      "unsupportedNativeDomain": false,
+      "pythonText": "None"
+    },
+    {
+      "input": "nUll",
+      "pythonType": "str",
+      "expected": "nUll",
+      "unsupportedNativeDomain": false,
+      "pythonText": "nUll"
+    },
+    {
+      "input": "~",
+      "pythonType": "NoneType",
+      "expected": null,
+      "unsupportedNativeDomain": false,
+      "pythonText": "None"
+    },
+    {
+      "input": "0",
+      "pythonType": "int",
+      "expected": 0,
+      "unsupportedNativeDomain": false,
+      "pythonText": "0"
+    },
+    {
+      "input": "-0",
+      "pythonType": "int",
+      "expected": 0,
+      "unsupportedNativeDomain": false,
+      "pythonText": "0"
+    },
+    {
+      "input": "+0",
+      "pythonType": "int",
+      "expected": 0,
+      "unsupportedNativeDomain": false,
+      "pythonText": "0"
+    },
+    {
+      "input": "012",
+      "pythonType": "int",
+      "expected": 10,
+      "unsupportedNativeDomain": false,
+      "pythonText": "10"
+    },
+    {
+      "input": "0_12",
+      "pythonType": "int",
+      "expected": 10,
+      "unsupportedNativeDomain": false,
+      "pythonText": "10"
+    },
+    {
+      "input": "0x10",
+      "pythonType": "int",
+      "expected": 16,
+      "unsupportedNativeDomain": false,
+      "pythonText": "16"
+    },
+    {
+      "input": "0x_10",
+      "pythonType": "int",
+      "expected": 16,
+      "unsupportedNativeDomain": false,
+      "pythonText": "16"
+    },
+    {
+      "input": "0_x10",
+      "pythonType": "str",
+      "expected": "0_x10",
+      "unsupportedNativeDomain": false,
+      "pythonText": "0_x10"
+    },
+    {
+      "input": "0b10",
+      "pythonType": "int",
+      "expected": 2,
+      "unsupportedNativeDomain": false,
+      "pythonText": "2"
+    },
+    {
+      "input": "0b_10",
+      "pythonType": "int",
+      "expected": 2,
+      "unsupportedNativeDomain": false,
+      "pythonText": "2"
+    },
+    {
+      "input": "0b102",
+      "pythonType": "str",
+      "expected": "0b102",
+      "unsupportedNativeDomain": false,
+      "pythonText": "0b102"
+    },
+    {
+      "input": "0o12",
+      "pythonType": "str",
+      "expected": "0o12",
+      "unsupportedNativeDomain": false,
+      "pythonText": "0o12"
+    },
+    {
+      "input": "08",
+      "pythonType": "str",
+      "expected": "08",
+      "unsupportedNativeDomain": false,
+      "pythonText": "08"
+    },
+    {
+      "input": "0_8",
+      "pythonType": "str",
+      "expected": "0_8",
+      "unsupportedNativeDomain": false,
+      "pythonText": "0_8"
+    },
+    {
+      "input": "_1",
+      "pythonType": "str",
+      "expected": "_1",
+      "unsupportedNativeDomain": false,
+      "pythonText": "_1"
+    },
+    {
+      "input": "1_",
+      "pythonType": "int",
+      "expected": 1,
+      "unsupportedNativeDomain": false,
+      "pythonText": "1"
+    },
+    {
+      "input": "1__2",
+      "pythonType": "int",
+      "expected": 12,
+      "unsupportedNativeDomain": false,
+      "pythonText": "12"
+    },
+    {
+      "input": "1:20",
+      "pythonType": "int",
+      "expected": 80,
+      "unsupportedNativeDomain": false,
+      "pythonText": "80"
+    },
+    {
+      "input": "1_:20",
+      "pythonType": "int",
+      "expected": 80,
+      "unsupportedNativeDomain": false,
+      "pythonText": "80"
+    },
+    {
+      "input": "1:2_0",
+      "pythonType": "str",
+      "expected": "1:2_0",
+      "unsupportedNativeDomain": false,
+      "pythonText": "1:2_0"
+    },
+    {
+      "input": "01:20",
+      "pythonType": "str",
+      "expected": "01:20",
+      "unsupportedNativeDomain": false,
+      "pythonText": "01:20"
+    },
+    {
+      "input": "1:02",
+      "pythonType": "int",
+      "expected": 62,
+      "unsupportedNativeDomain": false,
+      "pythonText": "62"
+    },
+    {
+      "input": "1:60",
+      "pythonType": "str",
+      "expected": "1:60",
+      "unsupportedNativeDomain": false,
+      "pythonText": "1:60"
+    },
+    {
+      "input": "-1:20",
+      "pythonType": "int",
+      "expected": -80,
+      "unsupportedNativeDomain": false,
+      "pythonText": "-80"
+    },
+    {
+      "input": ".5",
+      "pythonType": "float",
+      "expected": 0.5,
+      "unsupportedNativeDomain": false,
+      "pythonText": "0.5"
+    },
+    {
+      "input": "1.",
+      "pythonType": "float",
+      "expected": 1.0,
+      "unsupportedNativeDomain": false,
+      "pythonText": "1.0"
+    },
+    {
+      "input": "1.e+2",
+      "pythonType": "float",
+      "expected": 100.0,
+      "unsupportedNativeDomain": false,
+      "pythonText": "100.0"
+    },
+    {
+      "input": "1.2e3",
+      "pythonType": "str",
+      "expected": "1.2e3",
+      "unsupportedNativeDomain": false,
+      "pythonText": "1.2e3"
+    },
+    {
+      "input": "1.2e+3",
+      "pythonType": "float",
+      "expected": 1200.0,
+      "unsupportedNativeDomain": false,
+      "pythonText": "1200.0"
+    },
+    {
+      "input": "1e3",
+      "pythonType": "str",
+      "expected": "1e3",
+      "unsupportedNativeDomain": false,
+      "pythonText": "1e3"
+    },
+    {
+      "input": "1e+3",
+      "pythonType": "str",
+      "expected": "1e+3",
+      "unsupportedNativeDomain": false,
+      "pythonText": "1e+3"
+    },
+    {
+      "input": "1:20.5",
+      "pythonType": "float",
+      "expected": null,
+      "unsupportedNativeDomain": true,
+      "pythonText": "80.5"
+    },
+    {
+      "input": ".inf",
+      "pythonType": "float",
+      "expected": null,
+      "unsupportedNativeDomain": true,
+      "pythonText": "inf"
+    },
+    {
+      "input": "-.INF",
+      "pythonType": "float",
+      "expected": null,
+      "unsupportedNativeDomain": true,
+      "pythonText": "-inf"
+    },
+    {
+      "input": ".NaN",
+      "pythonType": "float",
+      "expected": null,
+      "unsupportedNativeDomain": true,
+      "pythonText": "nan"
+    },
+    {
+      "input": "2026-01-02",
+      "pythonType": "date",
+      "expected": null,
+      "unsupportedNativeDomain": true,
+      "pythonText": "2026-01-02"
+    },
+    {
+      "input": "2026-1-2",
+      "pythonType": "str",
+      "expected": "2026-1-2",
+      "unsupportedNativeDomain": false,
+      "pythonText": "2026-1-2"
+    },
+    {
+      "input": "2026-01-02T03:04:05Z",
+      "pythonType": "datetime",
+      "expected": null,
+      "unsupportedNativeDomain": true,
+      "pythonText": "2026-01-02 03:04:05+00:00"
+    },
+    {
+      "input": "'on'",
+      "pythonType": "str",
+      "expected": "on",
+      "unsupportedNativeDomain": false,
+      "pythonText": "on"
+    },
+    {
+      "input": "'012'",
+      "pythonType": "str",
+      "expected": "012",
+      "unsupportedNativeDomain": false,
+      "pythonText": "012"
+    },
+    {
+      "input": "!!str on",
+      "pythonType": "str",
+      "expected": "on",
+      "unsupportedNativeDomain": false,
+      "pythonText": "on"
+    },
+    {
+      "input": "18446744073709551616",
+      "pythonType": "int",
+      "expected": null,
+      "unsupportedNativeDomain": true,
+      "pythonText": "18446744073709551616"
+    },
+    {
+      "input": "-9223372036854775808",
+      "pythonType": "int",
+      "expected": -9223372036854775808,
+      "unsupportedNativeDomain": false,
+      "pythonText": "-9223372036854775808"
+    },
+    {
+      "input": "-9223372036854775809",
+      "pythonType": "int",
+      "expected": null,
+      "unsupportedNativeDomain": true,
+      "pythonText": "-9223372036854775809"
+    }
+  ]
+}

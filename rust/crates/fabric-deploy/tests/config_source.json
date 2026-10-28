@@ -1,0 +1,455 @@
+{
+  "source": "microsoft/fabric-cicd@5ca096c00a9a878c646c59fe537b883eba951329",
+  "pyyaml": "6.0.3",
+  "boundary": "Actual ConfigValidator overrides/structure/sections/environment before path resolution; actual settings extractors. No service/auth/package initialization.",
+  "hashes": {
+    "constants.py": "9db94078b1152f137b0c44a60626460575280455642a81d8a932035b251c9535",
+    "_common\\_config_validator.py": "abbe7131d8dd14202064e3b4b5e954924ff1215e7c10be191acff4df8eecc11b",
+    "_common\\_config_utils.py": "acdb203d4db08687c438c811598f696c7aed69674c3e3d42b81a3ad627396f2f"
+  },
+  "cases": [
+    {
+      "id": "notebook",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "N/A",
+      "overrides": null,
+      "expected": {
+        "errors": [],
+        "config": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ]
+          },
+          "unpublish": {
+            "skip": true
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "id": "environment",
+      "config": {
+        "core": {
+          "workspace_id": {
+            "dev": "11111111-1111-1111-1111-111111111111"
+          },
+          "repository_directory": {
+            "dev": "repository"
+          },
+          "item_types_in_scope": {
+            "dev": [
+              "Notebook"
+            ]
+          }
+        },
+        "unpublish": {
+          "skip": {
+            "dev": true
+          }
+        }
+      },
+      "environment": "dev",
+      "overrides": null,
+      "expected": {
+        "errors": [],
+        "config": {
+          "core": {
+            "workspace_id": {
+              "dev": "11111111-1111-1111-1111-111111111111"
+            },
+            "repository_directory": {
+              "dev": "repository"
+            },
+            "item_types_in_scope": {
+              "dev": [
+                "Notebook"
+              ]
+            }
+          },
+          "unpublish": {
+            "skip": {
+              "dev": true
+            }
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "id": "missing-environment",
+      "config": {
+        "core": {
+          "workspace_id": {
+            "dev": "11111111-1111-1111-1111-111111111111"
+          },
+          "repository_directory": "repository"
+        }
+      },
+      "environment": "prod",
+      "overrides": null,
+      "expected": {
+        "errors": [
+          "Environment 'prod' not found in 'core.workspace_id' mappings. Available: ['dev']"
+        ]
+      }
+    },
+    {
+      "id": "no-environment-with-mapping",
+      "config": {
+        "core": {
+          "workspace_id": {
+            "dev": "11111111-1111-1111-1111-111111111111"
+          },
+          "repository_directory": "repository"
+        }
+      },
+      "environment": "N/A",
+      "overrides": null,
+      "expected": {
+        "errors": [
+          "Configuration contains environment mappings but no environment was provided. Please specify an environment or remove environment mappings."
+        ]
+      }
+    },
+    {
+      "id": "override",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": {
+        "core": {
+          "workspace_id": {
+            "dev": "11111111-1111-1111-1111-111111111111"
+          }
+        },
+        "publish": {
+          "skip": true
+        }
+      },
+      "expected": {
+        "errors": [],
+        "config": {
+          "core": {
+            "workspace_id": {
+              "dev": "11111111-1111-1111-1111-111111111111"
+            },
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ]
+          },
+          "unpublish": {
+            "skip": true
+          },
+          "publish": {
+            "skip": true
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {
+          "skip": true
+        },
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "id": "override-cannot-create-repository",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111"
+        }
+      },
+      "environment": "dev",
+      "overrides": {
+        "core": {
+          "repository_directory": "repository"
+        }
+      },
+      "expected": {
+        "errors": [
+          "Cannot create required field 'core.repository_directory'",
+          "Configuration must specify 'repository_directory' in core section"
+        ]
+      }
+    },
+    {
+      "id": "override-unknown-setting",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": {
+        "core": {
+          "typo": 1
+        }
+      },
+      "expected": {
+        "errors": [
+          "Cannot override unsupported setting 'core.typo'. Supported: ['workspace_id', 'workspace', 'repository_directory', 'item_types_in_scope', 'parameter']"
+        ]
+      }
+    },
+    {
+      "id": "default-unpublish",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        }
+      },
+      "environment": "N/A",
+      "overrides": null,
+      "expected": {
+        "errors": [],
+        "config": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ]
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {}
+      }
+    },
+    {
+      "id": "skip-yaml-booleans",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository"
+        },
+        "publish": {
+          "skip": false
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "N/A",
+      "overrides": null,
+      "expected": {
+        "errors": [],
+        "config": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository"
+          },
+          "publish": {
+            "skip": false
+          },
+          "unpublish": {
+            "skip": true
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository"
+        },
+        "publish": {
+          "skip": false
+        },
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "id": "invalid-item-type",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "notebook"
+          ]
+        }
+      },
+      "environment": "N/A",
+      "overrides": null,
+      "expected": {
+        "errors": [
+          "Invalid item type 'notebook'. Available types: ApacheAirflowJob, CopyJob, CosmosDBDatabase, DataAgent, DataBuildToolJob, DataPipeline, Dataflow, Environment, Eventhouse, Eventstream, GraphModel, GraphQLApi, KQLDashboard, KQLDatabase, KQLQueryset, Lakehouse, MLExperiment, Map, MirroredDatabase, MountedDataFactory, Notebook, Ontology, OrgApp, OrgAppAudience, PaginatedReport, Reflex, Report, SQLDatabase, SemanticModel, SparkJobDefinition, UserDataFunction, VariableLibrary, Warehouse"
+        ]
+      }
+    },
+    {
+      "id": "optional-missing-environment",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ],
+          "parameter": {
+            "other": "parameter.yml"
+          }
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": null,
+      "expected": {
+        "errors": [],
+        "config": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ],
+            "parameter": {
+              "other": "parameter.yml"
+            }
+          },
+          "unpublish": {
+            "skip": true
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "id": "environment-override-merges",
+      "config": {
+        "core": {
+          "workspace_id": {
+            "dev": "11111111-1111-1111-1111-111111111111",
+            "prod": "11111111-1111-1111-1111-111111111111"
+          },
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": {
+        "core": {
+          "workspace_id": {
+            "dev": "22222222-2222-2222-2222-222222222222"
+          }
+        }
+      },
+      "expected": {
+        "errors": [],
+        "config": {
+          "core": {
+            "workspace_id": {
+              "dev": "22222222-2222-2222-2222-222222222222",
+              "prod": "11111111-1111-1111-1111-111111111111"
+            },
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ]
+          },
+          "unpublish": {
+            "skip": true
+          }
+        },
+        "workspace": {
+          "workspace_id": "22222222-2222-2222-2222-222222222222",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    }
+  ]
+}

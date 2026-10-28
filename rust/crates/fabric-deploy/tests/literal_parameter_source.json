@@ -1,0 +1,335 @@
+{
+  "source": "microsoft/fabric-cicd@5ca096c00a9a878c646c59fe537b883eba951329",
+  "sourceHashes": {
+    "constants.py": "9db94078b1152f137b0c44a60626460575280455642a81d8a932035b251c9535",
+    "_common\\_exceptions.py": "22cc6ce5ca4dcf209c1d7c1c056c1c2b40cdc8ca397d36c9c68d108d0c89440e",
+    "_common\\_check_utils.py": "f60444e11a5f3424b5afb63cc4b69c7cd68a2fd4aff268913061e96c4000f39c",
+    "_common\\_config_utils.py": "acdb203d4db08687c438c811598f696c7aed69674c3e3d42b81a3ad627396f2f",
+    "_parameter\\_parameter.py": "32d603cfaf2b891194a5ea170dcd952d3c492a8420a3df0595ce84c682b07daf",
+    "_parameter\\_utils.py": "2d8b79c6d7d737595b346da0466790308e46b9cbed46bfaf1b3cde8a189e69d6",
+    "fabric_workspace.py": "10bae33f95026065fc22d558dc02b8ee17929cac77fa0dde298cc4d41ac7a890"
+  },
+  "boundary": "Actual Parameter name/structure/find_replace schema validation and FabricWorkspace._replace_parameters, with no filters, dynamic variables, file setup, constructors or service callbacks.",
+  "cases": [
+    {
+      "id": "literal",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "target"
+            }
+          }
+        ]
+      },
+      "environment": "dev",
+      "input": "source source SOURCE",
+      "valid": true,
+      "steps": [
+        [
+          true,
+          "Parameter names are valid"
+        ],
+        [
+          true,
+          "Parameter file structure is valid"
+        ],
+        [
+          true,
+          "find_replace parameter is valid"
+        ]
+      ],
+      "expected": "target target SOURCE"
+    },
+    {
+      "id": "ordered",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "middle"
+            }
+          },
+          {
+            "find_value": "middle",
+            "replace_value": {
+              "dev": "target"
+            }
+          }
+        ]
+      },
+      "environment": "dev",
+      "input": "source source SOURCE",
+      "valid": true,
+      "steps": [
+        [
+          true,
+          "Parameter names are valid"
+        ],
+        [
+          true,
+          "Parameter file structure is valid"
+        ],
+        [
+          true,
+          "find_replace parameter is valid"
+        ]
+      ],
+      "expected": "target target SOURCE"
+    },
+    {
+      "id": "all-alias",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "_aLl_": "target"
+            }
+          }
+        ]
+      },
+      "environment": "dev",
+      "input": "source source SOURCE",
+      "valid": true,
+      "steps": [
+        [
+          true,
+          "Parameter names are valid"
+        ],
+        [
+          true,
+          "Parameter file structure is valid"
+        ],
+        [
+          true,
+          "find_replace parameter is valid"
+        ]
+      ],
+      "expected": "target target SOURCE"
+    },
+    {
+      "id": "literal-backreference",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "\\1"
+            }
+          }
+        ]
+      },
+      "environment": "dev",
+      "input": "source source SOURCE",
+      "valid": true,
+      "steps": [
+        [
+          true,
+          "Parameter names are valid"
+        ],
+        [
+          true,
+          "Parameter file structure is valid"
+        ],
+        [
+          true,
+          "find_replace parameter is valid"
+        ]
+      ],
+      "expected": "\\1 \\1 SOURCE"
+    },
+    {
+      "id": "missing-environment",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "other": "target"
+            }
+          }
+        ]
+      },
+      "environment": "dev",
+      "input": "source source SOURCE",
+      "valid": true,
+      "steps": [
+        [
+          true,
+          "Parameter names are valid"
+        ],
+        [
+          true,
+          "Parameter file structure is valid"
+        ],
+        [
+          true,
+          "find_replace parameter is valid"
+        ]
+      ],
+      "expected": "source source SOURCE"
+    },
+    {
+      "id": "string-false-flags",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "target"
+            },
+            "is_regex": "false",
+            "ignore_case": "false"
+          }
+        ]
+      },
+      "environment": "dev",
+      "input": "source source SOURCE",
+      "valid": true,
+      "steps": [
+        [
+          true,
+          "Parameter names are valid"
+        ],
+        [
+          true,
+          "Parameter file structure is valid"
+        ],
+        [
+          true,
+          "find_replace parameter is valid"
+        ]
+      ],
+      "expected": "target target SOURCE"
+    },
+    {
+      "id": "empty-replacement-invalid",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": ""
+            }
+          }
+        ]
+      },
+      "environment": "dev",
+      "input": "source source SOURCE",
+      "valid": false,
+      "steps": [
+        [
+          true,
+          "Parameter names are valid"
+        ],
+        [
+          true,
+          "Parameter file structure is valid"
+        ],
+        [
+          false,
+          "find_replace is missing a replace value for 'dev' environment'"
+        ]
+      ],
+      "expected": null
+    },
+    {
+      "id": "yaml-boolean-flag-invalid",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "target"
+            },
+            "is_regex": false
+          }
+        ]
+      },
+      "environment": "dev",
+      "input": "source source SOURCE",
+      "valid": false,
+      "steps": [
+        [
+          true,
+          "Parameter names are valid"
+        ],
+        [
+          true,
+          "Parameter file structure is valid"
+        ],
+        [
+          false,
+          "The provided 'is_regex' is not of type string in find_replace"
+        ]
+      ],
+      "expected": null
+    },
+    {
+      "id": "mixed-all-invalid",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "_ALL_": "default",
+              "dev": "target"
+            }
+          }
+        ]
+      },
+      "environment": "dev",
+      "input": "source source SOURCE",
+      "valid": false,
+      "steps": [
+        [
+          true,
+          "Parameter names are valid"
+        ],
+        [
+          true,
+          "Parameter file structure is valid"
+        ],
+        [
+          false,
+          "The '_ALL_' environment key can only be used alone. Other environment keys found in replace_value: '{'_ALL_': 'default', 'dev': 'target'}'"
+        ]
+      ],
+      "expected": null
+    },
+    {
+      "id": "wrong-replacement-type",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": 2
+            }
+          }
+        ]
+      },
+      "environment": "dev",
+      "input": "source source SOURCE",
+      "valid": false,
+      "steps": [
+        [
+          true,
+          "Parameter names are valid"
+        ],
+        [
+          true,
+          "Parameter file structure is valid"
+        ],
+        [
+          false,
+          "The provided 'dev replace_value' is not of type string in find_replace"
+        ]
+      ],
+      "expected": null
+    }
+  ]
+}

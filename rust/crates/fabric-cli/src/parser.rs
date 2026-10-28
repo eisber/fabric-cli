@@ -71,8 +71,10 @@ pub enum Invocation {
     Access(fabric_cli_resources::frontdoor::AccessCommand),
     /// Released resource mutations and OneLake transfers.
     Resource(fabric_cli_mutations::frontdoor::ResourceCommand),
-    /// Released definition transfer family, including the explicit deploy gap.
+    /// Released definition export/import transfers.
     Transfer(fabric_cli_transfer::TransferCommand),
+    /// Source config deployment, routed to the native deployment engine.
+    Deploy(fabric_cli_transfer::TransferCommand),
     /// Released TABLE handlers over the existing metadata/storage/job session.
     Table(fabric_cli_tables::TableCommand),
     /// Explicit opt-in broker command; parsing never signs in.
@@ -92,7 +94,7 @@ pub fn command() -> Command {
         .bin_name("fab-rs")
         .version(env!("CARGO_PKG_VERSION"))
         .about("Experimental command composition for Microsoft Fabric")
-        .after_help("Local commands use FAB_RUST_CONFIG_ROOT and explicit session context. Remote execution requires a caller-configured host; this default binary has no production authentication or HTTP transport. Config-driven deploy remains unsupported.")
+        .after_help("Local commands use FAB_RUST_CONFIG_ROOT and explicit session context. Remote execution requires a caller-configured host; this default binary has no production authentication or HTTP transport. Config-driven deploy has a bounded native Notebook host; other deployment branches fail explicitly.")
         .arg_required_else_help(true)
         .args_override_self(true)
         .arg(
@@ -104,7 +106,7 @@ pub fn command() -> Command {
     #[cfg(feature = "windows-broker")]
     let command = auth::register(command);
     #[cfg(feature = "native-read")]
-    let command = command.after_help("Native remote commands require FAB_RUST_TENANT, FAB_RUST_ACCOUNT and FAB_RUST_CLIENT_ID. Windows broker authentication is opt-in; credentials are silent and never show sign-in UI. Use explicit auth login first when required. FAB_RUST_CONTEXT defaults to / or the explicitly selected persisted session; FAB_RUST_HOME is optional. Local/config and family commands use FAB_RUST_CONFIG_ROOT. Mutations change remote state; job run may cancel on timeout. Native confirmations require explicit --force or an injected UI host. No token input or credential fallback is available. Config-driven deploy remains unsupported.");
+    let command = command.after_help("Native remote commands require FAB_RUST_TENANT, FAB_RUST_ACCOUNT and FAB_RUST_CLIENT_ID. Windows broker authentication is opt-in; credentials are silent and never show sign-in UI. Use explicit auth login first when required. FAB_RUST_CONTEXT defaults to / or the explicitly selected persisted session; FAB_RUST_HOME is optional. Local/config and family commands use FAB_RUST_CONFIG_ROOT. Mutations change remote state; job run may cancel on timeout. Native confirmations require explicit --force or an injected UI host. No token input or credential fallback is available. Config-driven deploy supports bounded root-level Notebooks with explicit unpublish.skip; other branches fail before writes.");
     let command = fabric_cli_resources::frontdoor::register(command)
         .subcommands(fabric_cli_local::root_commands())
         .subcommands(fabric_cli_mutations::frontdoor::resource_subcommands())
@@ -322,7 +324,10 @@ fn family_invocation(matches: &clap::ArgMatches) -> Result<Invocation, clap::Err
         return Ok(Invocation::Access(command));
     }
     match matches.subcommand_name() {
-        Some("export" | "bulk-export" | "import" | "deploy") => {
+        Some("deploy") => fabric_cli_transfer::command_from_matches(matches)
+            .map(Invocation::Deploy)
+            .map_err(|_| invalid_arguments()),
+        Some("export" | "bulk-export" | "import") => {
             fabric_cli_transfer::command_from_matches(matches)
                 .map(Invocation::Transfer)
                 .map_err(|_| invalid_arguments())

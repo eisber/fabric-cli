@@ -5,6 +5,8 @@
 
 #![cfg(feature = "native-read")]
 
+#[path = "family_support/metadata.rs"]
+mod family_metadata;
 mod family_support;
 use fabric_cli::families::FamilyEvidence;
 use family_support::{Harness, success};

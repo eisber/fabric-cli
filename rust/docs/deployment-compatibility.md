@@ -204,3 +204,302 @@ unchanged reference cases. The complete command log is a session artifact
 (`native-notebook-validation.txt`); forum sync is recorded at `tk:post/12/4/30`.
 Full workspace integration, independent-lane acceptance, macOS/Linux execution
 and live Fabric remain unexecuted for this implementation.
+
+## Config-driven checkpoint (October 27)
+
+Base: `03fab20577a1016178de227eac0ee178921bb8d0`. Python and CICD source
+pins above, the original 44 fixtures and their AST oracle are unchanged.
+This is the first bounded config-to-production-host implementation, **not full
+deployment parity or a whole-product command coverage claim**. Source code is
+written; native checks and their immutable source/runner identities must be
+recorded before treating this checkpoint as validated.
+
+`fabric_cli::parser::Invocation::Deploy` routes actual root `deploy --config`
+arguments to `fabric_cli::deploy::DeployHost`. Public native consumers use that
+same host and the same `fabric_deploy::publish` engine. The definition-only
+`TransferHost` is not a second deploy implementation. The root host reuses its
+existing files/UI/configuration, credential, HTTP executor and runtime. A thin
+header adapter binds the CLI-owned user agent and source JSON content type for
+discovery and mutations. It neither owns a client/retry/poller nor discovers
+identity. User-supplied `host_app` cannot override those actual request headers.
+
+### Configuration and behavior ledger
+
+| Field or behavior | Current ported boundary | Proof and remaining boundary |
+| --- | --- | --- |
+| Real YAML config | Event parsing with config last-key-wins, merges and source-style representable scalar resolution | Two unchanged config YAML fixtures; YAML syntax is not JSON-only input |
+| Parameter YAML loader | Separate lower-based duplicate checks and merge rejection before map collapse | Existing duplicate/Unicode/merge fixtures exercise classifications; exact duplicate diagnostics and complete parameter schemas are not yet equivalent |
+| Scalar types | Boolean/null, bounded integers including octal/hex/sexagesimal, finite decimal floats, quoted strings, `1e3` string | Explicit typed failure for timestamps, non-finite/out-of-domain numbers, complex keys and unsupported tags; no coercion waiver |
+| YAML expansion | Bounded bytes, nodes, nesting and alias expansion | New limit/cyclic-alias/multiple-document tests; no emission parity claim |
+| `core.workspace_id` | Exact environment selection, GUID validation and ID precedence | Twelve new actual validator/helper cases; display-name `core.workspace` resolution remains unsupported |
+| `core.repository_directory` | Explicit config-directory-relative path through injected stable-root policy | Actual root-handler/file tests; parent traversal, unresolved aliases, ambient tilde/environment expansion remain explicit path-policy limits |
+| `core.item_types_in_scope` | Source-supported type validation; explicit Notebook publication scope | All other item processors fail preflight; omitted all-type scope does not become Notebook-only success |
+| `core.parameter` | No auto-discovery when absent; optional missing config environment remains absent; explicit literal files use the same confined reads and publication transforms | Ten actual schema/transform plus six source payload cases; templates, filters, dynamic variables, JSONPath/regex, missing parameter-environment skip notices and type-specific parameters remain unported |
+| `publish.skip` | Source booleans and exact environment selection | No mutation when explicitly skipped |
+| `publish.exclude_regex`, `folder_exclude_regex`, `folder_path_to_include`, `items_to_include`, `shortcut_exclude_regex` | Recognized and rejected before writes | Source regex/feature-gating/filter semantics remain unported, not ignored |
+| `unpublish.skip` | Must explicitly resolve true in this bounded publisher | Source omission means unpublish, so omission fails preflight rather than silently pruning or reporting publish-only success |
+| `unpublish.exclude_regex`, `items_to_include` | Recognized and rejected before writes | No deletion, hard-delete/admin feature, pruning or paid-resource provisioning is implemented |
+| `features`, `constants` | Explicit preflight failure | No mutable SDK globals; full source command-local option semantics remain required |
+| CLI `--params` | Max-depth-one dotted keys, JSON typing, backslash normalization and trusted `host_app` override | Malformed/Unicode substring-recovery quirks remain explicit lexical limits; additional kwargs fail typed |
+| `config_override` | Source section/field restrictions and environment-merge behavior | Twelve immutable source cases; exact full aggregate error wording remains incomplete |
+| `--force` / confirmation | Exact source confirmation, silent decline, no automatic approval | Caller-injected UI; native interactive signin is not added |
+| `--bulk_publish` | Explicit unsupported before reads/mutation | No global bulk flags or source-shaped fallback-success |
+| Repository discovery | Complete bounded injected snapshot; original listing order, `.platform` names/IDs, duplicate checks | Root-level Notebooks only; workspace folders, nested resources and other processors fail before service work |
+| Target discovery | Existing SDK completes all bounded pages before selection | Duplicate exact Notebook names and invalid IDs fail; existing folder move requirement fails before writes |
+| Planning/transforms | Preflight every Notebook using the existing logical/default-workspace-ID codec | Unknown/new referenced IDs fail, never dummy IDs; full cross-type ordering, cycles and sequential dependency resolution remain required |
+| Notebook create/update | Existing definition codec; actual source field order, empty folder ID, metadata-updating definition endpoint | Two fixed actual publisher wire receipts; tests assert exact body bytes and actual returned IDs |
+| Operations/reconciliation | Existing shared operation engine; sequential mutations, actual LRO result and original uncertainty | New root tests retain accepted failures/writer failures; no POST replay, cleanup deletion or rollback claim |
+| Source wrapper output | Final `Deployment completed successfully`, silent decline, typed deployment failure | Existing shared stream renderer; original completed/uncertain evidence survives output delivery failure |
+
+### Item processor ledger
+
+The bounded `Notebook` processor uses the original native loader/transforms and
+publisher. It does not reinterpret arbitrary definitions as Notebook content.
+The following exact source item types are recognized but **not ported** in this
+config checkpoint: `VariableLibrary`, `Warehouse`, `MirroredDatabase`,
+`Lakehouse`, `SQLDatabase`, `CosmosDBDatabase`, `Environment`, `UserDataFunction`,
+`Eventhouse`, `SparkJobDefinition`, `SemanticModel`, `Report`, `PaginatedReport`,
+`CopyJob`, `DataBuildToolJob`, `KQLDatabase`, `KQLQueryset`, `Dataflow`,
+`DataPipeline`, `Reflex`, `Eventstream`, `KQLDashboard`, `GraphQLApi`,
+`ApacheAirflowJob`, `MountedDataFactory`, `Ontology`, `DataAgent`, `MLExperiment`,
+`Map`, `GraphModel`, `OrgApp`, and `OrgAppAudience`.
+
+Each needs its own pinned preprocessing/dependency/provisioning/publication and
+unpublication consumers. Raw generic definition import is not a replacement for
+those processors. Parameter adapters and source item-function inventories are
+dependencies, not a basis for estimating those ports as complete. Full config
+validation/diagnostics and folder support are further independent microbatches.
+Pruning/paid/admin behavior requires an explicit execution policy and offline
+proof; a source flag is never authorization for live work.
+
+### Evidence and definition of done
+
+`fabric-deploy/tests/config_reference.py` captures twelve actual unchanged
+`ConfigValidator` override/structure/section/environment and config utility
+functions, without package/auth initialization or filesystem path resolution.
+`publish_reference.py` executes actual `NotebookPublisher.publish_one`,
+`FabricWorkspace._publish_item` and its filters/transforms, plus the original
+`File.base64_payload` property against a recording synthetic endpoint. The two
+fixed wire receipts were captured before native expected outputs. No existing
+fixture was regenerated. Exact duplicate error diagnostics, complete YAML
+scalar domains and cross-platform fixture-path metadata remain separate limits.
+
+Run from `rust/` with an authorized build lease:
+
+```text
+python -B crates/fabric-deploy/tests/config_reference.py --reference-root <exact-cicd-checkout>
+python -B crates/fabric-deploy/tests/publish_reference.py --reference-root <exact-cicd-checkout>
+cargo test --offline --locked -p fabric-deploy
+cargo test --offline --locked -p fabric-cli --features native-read --test deploy_mount
+cargo clippy --offline --locked -p fabric-deploy -p fabric-cli --all-targets --features native-read -- -D warnings
+```
+
+These are required commands, not passed results. The previous 50 bounded
+production happy paths, default/native suites, strict Clippy, workspace/docs and
+independent pinned comparisons remain gates. Full deployment completion requires
+all field/type/behavior rows above, public native and root-argv proofs, failed/
+cancelled/partial/uncertain outcomes, precise platform evidence and independent
+source comparison. Neither one new happy vertical nor a command count closes
+that definition of done.
+
+### Locked candidate and additive wrapper/scalar proof
+
+The locked follow-up is
+`770197da9f3d3f7e93a6bb5c8589846ca8744367`, over source checkpoint
+`f360c47a7f074016ee91d92e1a852d12f433e8ce`. The integration owner explicitly
+approved `yaml-rust2 =0.10.4`, default features disabled, and the five exact new
+registry records (`arraydeque 0.5.1`, `foldhash 0.1.5`, `hashbrown 0.15.5`,
+`hashlink 0.10.0`, `yaml-rust2 0.10.4`). All original 218 registry versions,
+checksums, order and resolved dependency edges remain unchanged. Cargo requires
+exactly two approved spelling qualifications: existing `indexmap 2.14.2` names
+`hashbrown 0.17.1`, and existing `serde_json 1.0.154` names `foldhash 0.2.0`.
+The other 216 original registry records remain byte-identical.
+
+After restoring only the pinned missing oracle dependencies into the deployment
+session's private virtual environment, all 44 unchanged protected source cases
+passed on Windows x64, Python 3.13.15, PyYAML 6.0.3 and jsonpath-ng 1.9.1.
+The prior installed-jsonpath-ng-1.8.0 refusal remains evidence; no oracle guard,
+expectation or source pin changed. Twelve new config and two actual Notebook
+wire source captures also passed. These are Python/source results, not native
+Rust test results.
+
+`fabric-cli/tests/deploy_wrapper_reference.py` additionally captures eight
+max-depth-one/JSON-typing parameter cases and five actual wrapper lifecycle
+cases from exact Python source, with synthetic capability callbacks. They
+preserve the unexpected regex comma boundary inside quotes, backslash
+normalization, exact confirmation, forced/no-prompt behavior, trusted `host_app`
+override, and bulk-flag finally cleanup on success/failure. Bulk native
+publication itself remains unsupported; the source receipt is not a port claim.
+`fabric-deploy/tests/yaml_scalar_reference.py` captures 57 exact PyYAML scalar
+observations, retaining non-JSON type evidence and explicit unsupported domains.
+Both fixed receipts were captured before their native test expectations.
+
+The root-host tests additionally exercise confirmation decline before file
+reads/credentials, explicit force bypass, real config overrides, later discovery
+pages before update selection, partial sequential failure preserving the earlier
+actual item ID, and owned-file-root escape and duplicate-service-target failures.
+These are registered tests pending actual native compilation/execution, not an
+assertion that they passed. Direct per-file formatting can be used when the
+shared Windows host's `cargo fmt --all` command exceeds its command-line length;
+that OS error is not a formatting waiver.
+
+Five further immutable actual `deploy_with_config` observations cover both
+operations skipped, publish-only/no parameter auto-discovery, default publish
+then unpublish, explicit parameter forwarding, and failure/feature-scope cleanup.
+The source constructs its workspace on the both-skipped branch but does not
+enumerate or load item definitions. The native host now preserves that boundary:
+it validates/resolves its explicit repository directory, then returns the source
+final message without discovery or definition reads when publication is skipped.
+It still rejects unsupported configuration before that branch.
+
+Four actual environment-validator observations capture optional-setting warnings
+in source field order. The library exposes typed `EnvironmentWarning` outcomes;
+the CLI uses its existing Python-style formatter and injected warning writer.
+A warning delivery failure fails explicitly before credential acquisition or
+service mutation. The source warnings do not authorize ignoring unsupported
+parameter fields or silently treating an incomplete scope as a full deployment.
+
+### Explicit literal parameter file follow-up
+
+The `parameters` module adds the source-valid literal-only `find_replace`
+schema. It validates every rule and replacement environment before publication,
+requires source string flags rather than YAML booleans, rejects mixed `_ALL_`
+mappings, preserves literal backreferences and ordered replacements, and uses the
+existing logical/literal/workspace transform sequence. A configured file must be
+explicitly decoded and resolved; a failed subsequent resolution clears the prior
+resolved rules. It cannot silently reuse stale rules or treat configured input
+as absent. Parameter diagnostics and reserved-alias/false-regex notices are
+caller-owned, not global logging or mutable SDK flags.
+
+`literal_parameter_reference.py` executes the real pinned `Parameter` schema
+methods and `FabricWorkspace._replace_parameters` for ten additive cases.
+`literal_parameter_payload_reference.py` subsequently executes the original
+`File.base64_payload` property for six valid source observations. Both receipts
+were captured before native expected outputs and require the protected oracle's
+exact PyYAML/jsonpath-ng versions. The root handler test reads an actual YAML
+parameter file and asserts that its changed POST definition part equals the
+source receipt; another rejects parameter duplicate keys and unsupported regex
+before credential/service work. These native tests remain pending execution.
+
+Full regex/ignore-case/JSONPath mutation, dynamic metadata, templates, file/item
+filters, missing parameter-environment skip notices and all item-specific
+parameter schemas remain explicit unported branches. No new dependency is added
+for this literal follow-up. Future syntax primitives require the integration
+owner's exact dependency/feature decision and semantic proof, not an assumption
+that a similarly named Rust library matches Python.
+
+An additional three-case actual operation-validator receipt protects source-
+forbidden `unpublish.folder_exclude_regex`, `folder_path_to_include` and
+`shortcut_exclude_regex`. They must fail even with `unpublish.skip: true`;
+unpublication being disabled is not permission to silently ignore invalid
+source configuration. The native validator retains the exact source errors.
+
+### First hosted compiler receipt and narrow helper correction
+
+Hosted Linux run `40542574209`, job `122324567961`, used source
+`770197da9f3d3f7e93a6bb5c8589846ca8744367` and separate CI head
+`a168d31bda05465e773a28645c08db095757397e`. Default and explicit-native
+all-target compilation and default strict Clippy passed. Native strict Clippy
+failed because the new `deploy_mount` consumer imported the shared harness's
+unused read-metadata convenience methods. Tests, docs and source-comparison CI
+steps were not executed after that failure. This receipt does not validate later
+source heads or establish a native deploy happy path.
+
+The correction moves those three unchanged convenience methods into a metadata
+extension included only by the family/table consumers that use them. The
+deploy-only UI convenience method likewise lives only in its deploy consumer.
+The common harness still supplies the same injected capabilities and request
+assertions. No lint allowance, test expectation, production behavior, dependency
+or protected oracle changes to address this failure.
+
+### Deferred transform adapters: independent source observations
+
+The parser dependencies for regex/JSONPath remain deferred until the existing
+vertical passes native tests and strict Clippy. No manifest or registry records
+are added for this investigation. The additive
+`transform_adapter_reference.py` captures 25 further immutable observations from
+the exact pinned original leaves using the protected oracle's pinned
+dependencies. This is source-only inventory, not native adapter acceptance.
+
+Important observations to preserve or explicitly fail before enabling a branch:
+
+- Python regex replacement changes only capture 1 within each complete match.
+  Pattern backreferences are evaluated, but replacement `\1`, `$1` and `\g<1>`
+  remain literal. An optional first capture that does not participate fails;
+  a later nonparticipating capture follows Python's `-1` slicing behavior and can
+  duplicate match text. Unicode ignore-case includes `I/i/İ/ı`, `S/s/ſ` and
+  `K/k/K`, not just ASCII case folding.
+- `jsonpath_ng.ext` numeric filter comparisons can coerce `"1"` and treat
+  `true` as equal to `1`. A missing path does not create data or reformat the
+  original bytes. A root-path match can set `replacement_made` and trigger JSON
+  re-emission without replacing the root value. Object traversal/emission order
+  and typed replacement values remain significant.
+- The transform leaf accepts null/empty replacement values or boolean regex
+  flags that full parameter schema validation rejects. Leaf proof must never be
+  mislabeled as acceptance of those full configured parameter files.
+
+These are observed source semantics, not an instruction to repair upstream or
+normalize native outputs. The existing typed unsupported boundary remains in
+effect for native regex/JSONPath. Any improvement to the later-capture slicing
+or root-path behavior needs a separate owner decision and unchanged independent
+source evidence.
+
+### Second hosted registration failure and prevention
+
+Hosted Linux run `40557934344`, job `122378892695`, used source
+`cf9ce0c75b33dc7f7deb81a86e8b667f231f9e9c` and separate CI head
+`da58ee153b60cf045b43a11f6552c3bbe293b5a3`. Default/native all-target checks
+passed, then default strict Clippy rejected a nested `#[test]` in
+`deploy_parameters.rs`: the optional-environment warning test was inside the
+invalid-parameter test and therefore never registered. Tests/docs did not run.
+This is a failed registration gate, not evidence that the warning behavior was
+tested successfully.
+
+The repair places that unchanged warning test at module scope. Each of the six
+new deployment integration-test crates now denies `unnameable_test_items`, as the
+existing definition consumer already does, so accidental nested tests fail during
+ordinary compilation rather than waiting for strict Clippy. A source inventory
+after formatting must show every declared test at module scope; the authorized
+native runner must also compare that inventory with actual `-- --list` output
+before reporting native test coverage. No assertion, oracle, lint waiver,
+production behavior or dependency is changed to repair this failure.
+
+### Terminal-result runtime failure: new synthetic input repaired
+
+Hosted Linux run `40561857558`, job `122392692898`, used source
+`cceae13dbd5e8be621e1f921abb5fcdd36703aa1` and separate CI head
+`284d1220f1eb8506b1cd09024f86c040cb8bd801`. Default/native compilation and
+strict Clippy passed. Actual `-- --list` output contained all 42 declared tests
+across the six new test crates. The deploy library suite passed 87 integration
+tests plus one doctest (88 invocations, not 88 new unique behaviors). The
+front-door mount suite passed 14 tests and failed
+`root_yaml_deploy_waits_for_actual_operation_result_id`; the three registered
+CLI parameter tests and later pipeline stages were not executed.
+
+The failing new synthetic terminal response supplied `{"status":"Succeeded"}`
+without a `Location` header, but queued an item result that it expected the
+shared session to fetch. The existing `PythonSynchronous` policy intentionally
+returns the original response with status 200 when terminal result `Location`
+is absent. The Notebook create consumer then correctly rejects its empty body:
+it cannot derive a created item ID from a successful operation state.
+
+Evidence predating this repair includes the shared operation README/engine,
+`source_read_id_opt_in_polls_safe_opaque_ids_without_mutation_evidence`
+in the shared standalone consumer, and
+`local_import_create_acceptance_retrieves_actual_result_and_never_replays_post` in the
+definition consumer. Their successful result responses advertise `Location`.
+The original pinned Python CLI `_poll_operation`/`_fetch_operation_result` and
+CICD `_handle_response` have the same terminal-location distinction.
+`operation_result_reference.py` additionally executes those actual unchanged
+source functions with synthetic HTTP/time callbacks and captures both branches
+before the new fixture input is corrected.
+
+Only the new successful synthetic response is corrected to advertise its actual
+result URL (and its initial operation URL). The previous missing-header shape
+remains an additive negative root-handler test: one POST, one poll, no result
+fetch/replay/delete, no invented item ID, and original operation ID plus mutation
+uncertainty retained. Existing request-body receipts and protected expectations
+are unchanged. No production transport, result fallback, UUID guard, polling or
+uncertainty policy is weakened. The mount registration inventory is now 16,
+making 43 declared tests across the six new crates; actual corrected-head native
+listing/execution still gates acceptance.

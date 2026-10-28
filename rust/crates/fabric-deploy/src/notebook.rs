@@ -86,6 +86,7 @@ impl Default for DefinitionLimits {
 pub struct LocalNotebook {
     name: String,
     description: String,
+    logical_id: String,
     files: Vec<(String, String)>,
     ipynb: bool,
     limits: DefinitionLimits,
@@ -143,6 +144,46 @@ impl LocalNotebook {
             let text = text.replace("\r\n", "\n").replace('\r', "\n");
             files.push((name, text));
         }
+        Self::from_text_files(files, limits)
+    }
+
+    /// Validate bounded caller-injected files using the same native Notebook codec.
+    ///
+    /// Filesystem adapters must reject links/special files before supplying bytes.
+    /// This does not bypass format, duplicate-path, metadata or allocation checks.
+    ///
+    /// # Errors
+    /// Rejects unsupported/duplicate paths, invalid UTF-8/metadata and excess bytes.
+    pub fn from_files(
+        files: Vec<(String, Vec<u8>)>,
+        limits: DefinitionLimits,
+    ) -> Result<Self, DeploymentError> {
+        let mut remaining = limits.max_bytes.get();
+        let mut text_files = Vec::new();
+        for (name, bytes) in files {
+            if !matches!(
+                name.as_str(),
+                ".platform"
+                    | "notebook-content.py"
+                    | "notebook-content.ipynb"
+                    | "notebook-settings.json"
+            ) || text_files.iter().any(|(path, _)| path == &name)
+            {
+                return Err(DeploymentError::UnsupportedContent);
+            }
+            remaining = remaining
+                .checked_sub(bytes.len())
+                .ok_or(DeploymentError::Limit)?;
+            let text = String::from_utf8(bytes).map_err(|_| DeploymentError::UnsupportedContent)?;
+            text_files.push((name, text.replace("\r\n", "\n").replace('\r', "\n")));
+        }
+        Self::from_text_files(text_files, limits)
+    }
+
+    fn from_text_files(
+        mut files: Vec<(String, String)>,
+        limits: DefinitionLimits,
+    ) -> Result<Self, DeploymentError> {
         files.sort_by_key(|(name, _)| match name.as_str() {
             ".platform" => 0,
             "notebook-content.py" | "notebook-content.ipynb" => 1,
@@ -173,6 +214,11 @@ impl LocalNotebook {
             Some(Value::String(value)) => value.clone(),
             _ => return Err(DeploymentError::InvalidInput),
         };
+        let logical_id = metadata
+            .pointer("/config/logicalId")
+            .and_then(Value::as_str)
+            .expect("validated logical ID")
+            .to_owned();
         let py = files.iter().any(|(name, _)| name == "notebook-content.py");
         let ipynb = files
             .iter()
@@ -191,10 +237,21 @@ impl LocalNotebook {
         Ok(Self {
             name,
             description,
+            logical_id,
             files,
             ipynb,
             limits,
         })
+    }
+
+    /// Exact `.platform` display name, independent of the directory spelling.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Source logical identifier, including the permitted export placeholder.
+    pub fn logical_id(&self) -> &str {
+        &self.logical_id
     }
 
     /// Applies the supported transforms and encodes exact ordered definition parts.
@@ -283,6 +340,81 @@ pub struct DeploymentOutcome {
 }
 
 impl PreparedNotebook {
+    /// Publish this definition against a caller-complete repository target snapshot.
+    ///
+    /// Uses the exact CICD metadata/definition/folder field order and the existing
+    /// shared operation engine. It does not discover targets, move folders, replay
+    /// uncertain writes, or create another HTTP client/runtime/poller.
+    ///
+    /// # Errors
+    /// Invalid targets fail before dispatch. Accepted/incomplete operations retain
+    /// original mutation uncertainty; create requires an actual valid result ID.
+    pub async fn publish_with_session<E: fabric_sdk_operations::OperationExecutor>(
+        &self,
+        session: &mut fabric_sdk_operations::OperationSession<'_, E>,
+        existing_item: Option<&str>,
+    ) -> Result<DeploymentOutcome, fabric_sdk_operations::OperationError> {
+        use crate::deployment_config::valid_guid;
+        use fabric_sdk_operations::{FabricOperation, OperationErrorKind};
+        use fabric_sdk_workspaces::mutations::{CompletionPolicy, ResourceMethod};
+        use serde_json::json;
+
+        if !valid_guid(&self.workspace) || existing_item.is_some_and(|id| !valid_guid(id)) {
+            return Err(session.evidence(OperationErrorKind::InvalidInput));
+        }
+        let definition = serde_json::to_value(&self.definition)
+            .map_err(|_| session.evidence(OperationErrorKind::InvalidInput))?;
+        let (path, body) = if let Some(item) = existing_item {
+            (
+                format!(
+                    "/v1/workspaces/{}/items/{item}/updateDefinition?updateMetadata=True",
+                    self.workspace
+                ),
+                json!({"definition": definition}),
+            )
+        } else {
+            (
+                format!("/v1/workspaces/{}/items", self.workspace),
+                json!({
+                    "displayName": self.name, "type": "Notebook",
+                    "description": self.description, "definition": definition, "folderId": "",
+                }),
+            )
+        };
+        let operation = FabricOperation::new(
+            ResourceMethod::Post,
+            &path,
+            fabric_core_json::json_dumps(&body).into_bytes(),
+            CompletionPolicy::PythonSynchronous,
+        )
+        .map_err(|kind| session.evidence(kind))?;
+        let response = session.execute(operation).await?;
+        if response.status == 202 {
+            return Err(session.evidence(OperationErrorKind::InvalidResponse));
+        }
+        let item_id = match existing_item {
+            Some(id) => id.to_owned(),
+            None => {
+                let result: Value = serde_json::from_slice(&response.body)
+                    .map_err(|_| session.evidence(OperationErrorKind::InvalidResponse))?;
+                result
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .filter(|id| valid_guid(id))
+                    .ok_or_else(|| session.evidence(OperationErrorKind::InvalidResponse))?
+                    .to_owned()
+            }
+        };
+        Ok(DeploymentOutcome {
+            action: if existing_item.is_some() {
+                DeploymentAction::Updated
+            } else {
+                DeploymentAction::Created
+            },
+            item_id,
+        })
+    }
+
     /// Discovers the exact Notebook name, then creates or updates through the SDK.
     ///
     /// Uses only injected execution/credentials/cancellation. Never retries a

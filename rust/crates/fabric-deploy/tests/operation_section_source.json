@@ -1,0 +1,42 @@
+{
+  "source": "microsoft/fabric-cicd@5ca096c00a9a878c646c59fe537b883eba951329",
+  "cases": [
+    {
+      "section": "unpublish",
+      "input": {
+        "folder_exclude_regex": "^/folder",
+        "skip": true
+      },
+      "expectedErrors": [
+        "'folder_exclude_regex' field is not supported in 'unpublish' section"
+      ]
+    },
+    {
+      "section": "unpublish",
+      "input": {
+        "folder_path_to_include": [
+          "/folder"
+        ],
+        "skip": true
+      },
+      "expectedErrors": [
+        "'folder_path_to_include' field is not supported in 'unpublish' section"
+      ]
+    },
+    {
+      "section": "unpublish",
+      "input": {
+        "shortcut_exclude_regex": "^shortcut",
+        "skip": true
+      },
+      "expectedErrors": [
+        "'unpublish.shortcut_exclude_regex' is not supported - shortcut exclusion is only available in the 'publish' section"
+      ]
+    }
+  ],
+  "hashes": {
+    "constants.py": "9db94078b1152f137b0c44a60626460575280455642a81d8a932035b251c9535",
+    "_common\\_config_validator.py": "abbe7131d8dd14202064e3b4b5e954924ff1215e7c10be191acff4df8eecc11b"
+  },
+  "boundary": "Actual ConfigValidator._validate_operation_section; source-forbidden unpublish fields fail even when skip is true."
+}
