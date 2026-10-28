@@ -25,6 +25,10 @@ use fabric_deploy::definitions::{
     DefinitionErrorKind, DefinitionFile, DefinitionFileSystem, DefinitionImportFileSystem,
     DefinitionLimits, DefinitionTarget, ImportTarget, PreparedImport,
 };
+use fabric_deploy::{
+    notebook::DefinitionLimits as NotebookDefinitionLimits,
+    repository::{NotebookRepository, RepositoryError},
+};
 use fabric_sdk::Client;
 use fabric_sdk_operations::{
     OperationExecutionError, OperationExecutor, OperationLimits, OperationRequest,
@@ -125,6 +129,36 @@ pub trait TransferFiles: DefinitionFileSystem + DefinitionImportFileSystem + Sen
     /// Check emptiness on the caller's worker, preserving bounded entry policy.
     fn is_empty_async<'a>(&'a mut self, root: &'a Path) -> TransferFuture<'a, io::Result<bool>> {
         Box::pin(async move { self.is_empty(root) })
+    }
+
+    /// Read exact bounded bytes using the same confined path policy as import.
+    ///
+    /// Deployment configuration and parameter files share this capability.
+    /// OS-backed hosts must offload it just like definition file reads.
+    fn read_async<'a>(
+        &'a mut self,
+        root: &'a Path,
+        relative: &'a str,
+        max_bytes: usize,
+    ) -> TransferFuture<'a, io::Result<Vec<u8>>> {
+        Box::pin(async move { self.read(root, relative, max_bytes) })
+    }
+
+    /// Prepare a complete owned deployment repository before remote work.
+    ///
+    /// Reuse the released discovery, file order, aggregate bounds and Notebook
+    /// validation. No borrowed filesystem capability or worker guard may escape.
+    /// The default retains synchronous injected-adapter compatibility; OS-backed
+    /// async hosts must run the whole bounded discovery on their file worker.
+    fn prepare_repository_async<'a>(
+        &'a mut self,
+        root: &'a Path,
+        limits: NotebookDefinitionLimits,
+        max_entries: usize,
+    ) -> TransferFuture<'a, Result<NotebookRepository, RepositoryError>> {
+        Box::pin(async move {
+            NotebookRepository::discover(&mut files::ImportFiles(self), root, limits, max_entries)
+        })
     }
 
     /// Preflight all destinations before any write, returning the unchanged plan.
