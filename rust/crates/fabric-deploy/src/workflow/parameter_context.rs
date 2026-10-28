@@ -6,37 +6,29 @@ use super::*;
 use crate::{
     model::RepositoryItem,
     parameter_transforms::{
-        DynamicVariable, DynamicVariableKind, ParameterItem, ParameterProgram, ParameterResolver,
-        TransformBudget, TransformError, encode_dynamic_name, resolve_parameter_paths,
+        DynamicVariable, DynamicVariableKind, ParameterItem, ParameterResolution,
+        ParameterResolver, TransformBudget, TransformError, TransformLimits, encode_dynamic_name,
+        resolve_parameter_paths,
     },
 };
-use std::cell::{Cell, RefCell};
-
-struct Resolver<'a> {
-    values: &'a [(DynamicVariable, String)],
-    cursor: Cell<usize>,
-    requested: RefCell<Option<DynamicVariable>>,
-    paths: &'a HashMap<Vec<String>, Vec<String>>,
+struct Resolver<'io, 'context, 'session, E> {
+    io: &'io mut ServiceIo<'session, E>,
+    publication: Publication<'context>,
+    paths: HashMap<Vec<String>, Vec<String>>,
+    failure: Option<WorkflowFailure>,
 }
 
-impl ParameterResolver for Resolver<'_> {
-    fn resolve_dynamic(&self, variable: &DynamicVariable) -> Result<String, TransformError> {
-        let index = self.cursor.get();
-        self.cursor.set(index + 1);
-        if let Some((expected, value)) = self.values.get(index) {
-            if expected != variable {
-                return Err(TransformError::Invalid(
-                    "Parameter resolution order changed".into(),
-                ));
+impl<E: OperationExecutor> ParameterResolver for Resolver<'_, '_, '_, E> {
+    fn resolve<'a>(&'a mut self, variable: &'a DynamicVariable) -> ParameterResolution<'a> {
+        Box::pin(async move {
+            match resolve_value(self.io, self.publication, variable).await {
+                Ok(value) => Ok(Value::String(value)),
+                Err(error) => {
+                    self.failure = Some(error);
+                    Err(TransformError::Invalid("Metadata resolution failed".into()))
+                }
             }
-            return Ok(value.clone());
-        }
-        self.requested.replace(Some(variable.clone()));
-        // This synchronous capability handoff is consumed by `step`; it is never
-        // reported as a deployment failure or resolved by blocking the runtime.
-        Err(TransformError::Invalid(
-            "Metadata capability handoff".into(),
-        ))
+        })
     }
 
     fn resolve_paths(&self, filters: &[String]) -> Result<Vec<String>, TransformError> {
@@ -44,32 +36,6 @@ impl ParameterResolver for Resolver<'_> {
             .get(filters)
             .cloned()
             .ok_or_else(|| TransformError::Invalid("Unprepared path-filter capability".into()))
-    }
-}
-
-enum Step {
-    Complete(Result<String, TransformError>),
-    Metadata(DynamicVariable),
-}
-
-fn step(
-    program: &ParameterProgram,
-    content: &str,
-    item: ParameterItem<'_>,
-    values: &[(DynamicVariable, String)],
-    paths: &HashMap<Vec<String>, Vec<String>>,
-    budget: &mut TransformBudget<'_>,
-) -> Step {
-    let resolver = Resolver {
-        values,
-        cursor: Cell::new(0),
-        requested: RefCell::new(None),
-        paths,
-    };
-    let result = program.apply_scoped(content, item, &resolver, budget);
-    match resolver.requested.into_inner() {
-        Some(variable) => Step::Metadata(variable),
-        None => Step::Complete(result),
     }
 }
 
@@ -130,29 +96,26 @@ pub(super) async fn apply<E: OperationExecutor>(
         item_name: &item.name,
         file_path: &full,
     };
-    let mut values = Vec::new();
-    loop {
-        budget
-            .checkpoint()
-            .map_err(|error| ConfigurationError::Transform(Box::new(error)))?;
-        match step(program, content, item, &values, &paths, budget) {
-            Step::Complete(result) => {
-                return result
-                    .map_err(|error| ConfigurationError::Transform(Box::new(error)).into());
-            }
-            Step::Metadata(variable) => {
-                let value = resolve(io, publication, &variable, budget).await?;
-                values.push((variable, value));
-            }
-        }
+    let mut resolver = Resolver {
+        io,
+        publication,
+        paths,
+        failure: None,
+    };
+    let result = program
+        .apply_scoped(content, item, &mut resolver, budget)
+        .await;
+    if let Some(error) = resolver.failure {
+        Err(error)
+    } else {
+        result.map_err(|error| ConfigurationError::Transform(Box::new(error)).into())
     }
 }
 
-async fn resolve<E: OperationExecutor>(
+async fn resolve_value<E: OperationExecutor>(
     io: &mut ServiceIo<'_, E>,
     publication: Publication<'_>,
     variable: &DynamicVariable,
-    budget: &mut TransformBudget<'_>,
 ) -> Result<String, WorkflowFailure> {
     let workspace = if let Some(name) = &variable.workspace_name {
         io.list("/v1/workspaces")
@@ -178,8 +141,11 @@ async fn resolve<E: OperationExecutor>(
             .and_then(Value::as_str)
             .ok_or_else(|| invalid("Workspace display name was not found"))?;
         return if variable.attribute == "name_encoded" {
-            encode_dynamic_name(name, budget)
-                .map_err(|error| ConfigurationError::Transform(Box::new(error)).into())
+            encode_dynamic_name(
+                name,
+                &mut TransformBudget::new(TransformLimits::default(), &|| false),
+            )
+            .map_err(|error| ConfigurationError::Transform(Box::new(error)).into())
         } else {
             Ok(name.into())
         };

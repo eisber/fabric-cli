@@ -137,11 +137,14 @@ The broad CLI loader embeds `CommandConfiguration` rather than duplicating its
 schema. It expands caller-injected environment values before parameter YAML,
 loads templates through the existing asynchronous file capability, validates the
 complete parameter program and freezes it before publication. Scoped evaluation
-uses the configuration owner's `apply_scoped` and path/name primitives. A
-bounded cooperative host adapter suspends only missing metadata capabilities,
-performs their SDK reads asynchronously, and retains results by call occurrence:
-no-match rules do not eagerly resolve metadata, repeated occurrences preserve
-source refresh boundaries, and local pure reevaluation never replays mutations.
+uses the configuration owner's `apply_scoped` and path/name primitives. The
+async-consumer follow-up requires config checkpoint
+`91dafe3349c9f4c78a8e486b9033b334f730c1af` atomically: a mutable resolver awaits
+source-conditional SDK reads directly, preserving per-match JSONPath and dynamic
+FIND timing without an executor, blocking call, eager prefetch or pure-rule replay.
+The prior `d6edc45` synchronous-host bridge remains the integration target until
+ROOT adopts both async producer and consumer together. Original SDK failures and
+partial effects remain independent of parameter diagnostic projection.
 `DeployHost::execute_with_inputs` accepts explicit environment values; the native
 composition must inject these without adding a credential fallback.
 
