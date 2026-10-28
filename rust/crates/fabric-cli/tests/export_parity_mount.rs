@@ -6,6 +6,8 @@
 #![cfg(feature = "native-read")]
 #![deny(unnameable_test_items)]
 
+#[path = "family_support/deferred_export.rs"]
+mod deferred_export;
 #[path = "family_support/metadata_snapshot.rs"]
 mod family_metadata;
 mod family_support;

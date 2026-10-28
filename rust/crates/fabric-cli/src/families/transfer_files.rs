@@ -106,6 +106,7 @@ fn selected_import_directory(source: &Path, limits: DefinitionLimits) -> io::Res
 
 enum WorkerFiles {
     Ready(LocalTransferFiles),
+    DeferredExport,
     DeferredImport {
         source: PathBuf,
         original_input: String,
@@ -121,6 +122,7 @@ impl WorkerFiles {
     ) -> io::Result<PathBuf> {
         match self {
             Self::Ready(files) => files.resolve_import(input),
+            Self::DeferredExport => Err(worker_error(TransferWorkerError::AsyncRequired)),
             Self::DeferredImport {
                 source,
                 original_input,
@@ -168,6 +170,29 @@ pub struct TokioTransferFiles {
 }
 
 impl TokioTransferFiles {
+    /// Defer one explicit export directory until classified local resolution.
+    ///
+    /// Construction performs no filesystem I/O, cwd/home lookup, validation or
+    /// canonicalization. The candidate and normalized argument are caller-owned
+    /// values, not an inferred remote path. Only the first matching
+    /// [`TransferFiles::resolve_export_directory_async`] activates the directory
+    /// on the existing serialized worker. Remote export classification can use
+    /// its own SDK without ever activating this local candidate.
+    ///
+    /// The exact argument alias survives activation and repeated workspace
+    /// exports. Activation remains directory-only and retains the existing
+    /// containment, link, device, stream, network and finite-limit checks.
+    pub fn defer_export_root(
+        source_candidate: PathBuf,
+        normalized_input: String,
+        limits: DefinitionLimits,
+        runtime: Handle,
+    ) -> Self {
+        let mut files = Self::with_files(WorkerFiles::DeferredExport, limits, runtime);
+        files.export_root = Some((normalized_input, source_candidate));
+        files
+    }
+
     /// Defer an explicitly authorized source selection until import resolution.
     ///
     /// This constructor does no filesystem I/O, cwd/home discovery, path
@@ -293,7 +318,7 @@ impl TokioTransferFiles {
     ) -> TransferFuture<'_, io::Result<T>> {
         self.run_state(move |files, stop| match files {
             WorkerFiles::Ready(files) => operation(files, stop),
-            WorkerFiles::DeferredImport { .. } => {
+            WorkerFiles::DeferredImport { .. } | WorkerFiles::DeferredExport => {
                 Err(worker_error(TransferWorkerError::AsyncRequired))
             }
         })
@@ -424,17 +449,47 @@ impl TransferFiles for TokioTransferFiles {
             .as_ref()
             .filter(|(spelling, _)| spelling == input)
             .map(|(_, root)| root.clone());
-        match selected {
-            Some(root) => self.run(move |files, _| {
-                files.resolve_directory(root.to_str().ok_or_else(|| {
+        let input = input.to_owned();
+        let limits = self.limits;
+        self.run_state(move |state, stop| match state {
+            WorkerFiles::DeferredExport => {
+                let root = selected.ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Export argument differs from the explicit selection",
+                    )
+                })?;
+                if input.is_empty() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Export path is empty",
+                    ));
+                }
+                let mut files = LocalTransferFiles::new(root.clone(), None, limits)?;
+                check_stop(stop)?;
+                let path = files.resolve_directory(root.to_str().ok_or_else(|| {
                     io::Error::new(
                         io::ErrorKind::InvalidInput,
                         "Export path is not valid Unicode",
                     )
-                })?)
-            }),
-            None => self.resolve_directory_async(input),
-        }
+                })?)?;
+                check_stop(stop)?;
+                *state = WorkerFiles::Ready(files);
+                Ok(path)
+            }
+            WorkerFiles::Ready(files) => match selected {
+                Some(root) => files.resolve_directory(root.to_str().ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Export path is not valid Unicode",
+                    )
+                })?),
+                None => files.resolve_directory(&input),
+            },
+            WorkerFiles::DeferredImport { .. } => {
+                Err(worker_error(TransferWorkerError::AsyncRequired))
+            }
+        })
     }
 
     fn resolve_directory(&mut self, _: &str) -> io::Result<PathBuf> {
