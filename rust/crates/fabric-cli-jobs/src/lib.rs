@@ -24,8 +24,8 @@ use fabric_cli_output::{
     Timestamp,
 };
 use fabric_sdk_jobs::{
-    JobClient, JobError, JobOperationReconciler, JobRequestHeaders, JobState, JobStatus, JobTarget,
-    JobType, OperationError, RunHandle, WaitOptions,
+    JobClient, JobCommandRoute, JobError, JobOperationReconciler, JobRequestHeaders, JobResponse,
+    JobState, JobStatus, JobTarget, JobType, OperationError, RunHandle, WaitOptions,
 };
 use parser::invalid;
 use serde_json::{Value, json};
@@ -384,11 +384,29 @@ impl JobHost<'_> {
                     },
                     context.name()
                 )))?;
-                let handle = self
+                let payload = data.map(|data| json!({"executionData": data}));
+                let response = self
                     .sdk
-                    .submit(&target, data, cancelled.as_mut())
+                    .response_for_command(
+                        &target,
+                        JobCommandRoute::Submit,
+                        payload.as_ref(),
+                        command.kind == JobKind::Run,
+                        self.operations,
+                        cancelled.as_mut(),
+                    )
                     .await
                     .map_err(|e| sdk_error(e, None))?;
+                let Some(handle) = RunHandle::from_bound_command_response(
+                    &target,
+                    response,
+                    None,
+                    self.sdk.context().endpoint(),
+                )
+                .map_err(|e| sdk_error(e, None))?
+                else {
+                    return Ok(None);
+                };
                 if command.kind == JobKind::Start {
                     self.ui.emit(JobEvent::Grey(String::new()))?;
                     let mut output = JobOutput::new(
@@ -426,15 +444,29 @@ impl JobHost<'_> {
                     "Cancelling job instance for item {} with id: '{id}'...",
                     context.path()
                 )))?;
+                let response = self
+                    .sdk
+                    .response_for_command(
+                        &target,
+                        JobCommandRoute::Cancel(id),
+                        None,
+                        command.wait,
+                        self.operations,
+                        cancelled.as_mut(),
+                    )
+                    .await
+                    .map_err(|e| sdk_error(e, Some(id)))?;
+                let Some(handle) = RunHandle::from_bound_command_response(
+                    &target,
+                    response,
+                    Some(id),
+                    self.sdk.context().endpoint(),
+                )
+                .map_err(|e| sdk_error(e, Some(id)))?
+                else {
+                    return Ok(None);
+                };
                 if command.wait {
-                    let Some(handle) = self
-                        .sdk
-                        .cancel_for_wait(&target, id, self.operations, cancelled.as_mut())
-                        .await
-                        .map_err(|e| sdk_error(e, Some(id)))?
-                    else {
-                        return Ok(None);
-                    };
                     self.wait(
                         &handle,
                         WaitOptions::default(),
@@ -444,10 +476,6 @@ impl JobHost<'_> {
                     )
                     .await
                 } else {
-                    self.sdk
-                        .cancel(&target, id, cancelled.as_mut())
-                        .await
-                        .map_err(|e| sdk_error(e, Some(id)))?;
                     let mut output = JobOutput::new(
                         None,
                         Some(format!("Job instance '{id}' cancelled (async)")),
@@ -462,27 +490,44 @@ impl JobHost<'_> {
             }
             JobKind::Status => {
                 let id = id()?;
-                let value = if command.schedule {
-                    self.sdk
-                        .get_schedule(&target, id, cancelled.as_mut())
-                        .await
-                        .map_err(|e| sdk_error(e, Some(id)))?
+                let route = if command.schedule {
+                    JobCommandRoute::GetSchedule(id)
                 } else {
-                    self.sdk
-                        .status(&target, id, cancelled.as_mut())
-                        .await
-                        .map_err(|e| sdk_error(e, Some(id)))?
-                        .into_value()
+                    JobCommandRoute::Status(id)
                 };
+                let response = self
+                    .sdk
+                    .response_for_command(
+                        &target,
+                        route,
+                        None,
+                        true,
+                        self.operations,
+                        cancelled.as_mut(),
+                    )
+                    .await
+                    .map_err(|e| sdk_error(e, Some(id)))?;
+                if response.status != 200 {
+                    return Ok(None);
+                }
+                let value = command_value(&response)?;
                 Ok(Some(JobOutput::new(Some(value), None, true, false)))
             }
             JobKind::List => {
-                let values = self
+                let Some(values) = self
                     .sdk
-                    .list(&target, command.schedule, cancelled.as_mut())
+                    .list_for_command(
+                        &target,
+                        command.schedule,
+                        self.operations,
+                        cancelled.as_mut(),
+                    )
                     .await
                     .map_err(|e| sdk_error(e, None))?
-                    .value;
+                else {
+                    return Ok(None);
+                };
+                let values = values.value;
                 if values.is_empty() {
                     Ok(Some(JobOutput::new(
                         None,
@@ -509,13 +554,19 @@ impl JobHost<'_> {
                         .map(|row| {
                             let mut object = serde_json::Map::new();
                             for key in &keys {
-                                if let Some(value) = row.get(key) {
-                                    object.insert(key.clone(), value.clone());
+                                match row {
+                                    Value::Object(row) => {
+                                        if let Some(value) = row.get(key) {
+                                            object.insert(key.clone(), value.clone());
+                                        }
+                                    }
+                                    Value::String(row) if !row.contains(key) => {}
+                                    _ => return Err(sdk_error(JobError::InvalidResponse, None)),
                                 }
                             }
-                            Value::Object(object)
+                            Ok(Value::Object(object))
                         })
-                        .collect();
+                        .collect::<Result<Vec<_>, JobCommandError>>()?;
                     Ok(Some(JobOutput::new(
                         Some(Value::Array(projected)),
                         None,
@@ -542,9 +593,16 @@ impl JobHost<'_> {
                 })?;
                 let payload =
                     payload::schedule_payload(config, json!(command.schedule_args.enable))?;
-                let value = self
+                let response = self
                     .sdk
-                    .create_schedule(&target, &payload, cancelled.as_mut())
+                    .response_for_command(
+                        &target,
+                        JobCommandRoute::CreateSchedule,
+                        Some(&payload),
+                        true,
+                        self.operations,
+                        cancelled.as_mut(),
+                    )
                     .await
                     .map_err(|e| {
                         if matches!(&e, JobError::Http { code, .. } if code == "EntityConflict") {
@@ -554,12 +612,13 @@ impl JobHost<'_> {
                             sdk_error(e, None)
                         }
                     })?;
+                if response.status != 201 {
+                    return Ok(None);
+                }
+                let value = command_value(&response)?;
                 Ok(Some(JobOutput::new(
                     None,
-                    Some(format!(
-                        "Job schedule '{}' created",
-                        value["id"].as_str().expect("validated ID")
-                    )),
+                    Some(format!("Job schedule '{}' created", command_id(&value)?)),
                     false,
                     false,
                 )))
@@ -576,11 +635,22 @@ impl JobHost<'_> {
                 if args.enable && args.disable {
                     return Err(invalid("You must specify one of --enable --disable").into());
                 }
-                let existing = self
+                let response = self
                     .sdk
-                    .get_schedule(&target, id, cancelled.as_mut())
+                    .response_for_command(
+                        &target,
+                        JobCommandRoute::GetSchedule(id),
+                        None,
+                        true,
+                        self.operations,
+                        cancelled.as_mut(),
+                    )
                     .await
                     .map_err(|e| sdk_error(e, Some(id)))?;
+                if response.status != 200 {
+                    return Ok(None);
+                }
+                let existing = command_value(&response)?;
                 let payload = if let Some(config) = config {
                     let enabled = if !args.enable && !args.disable {
                         existing
@@ -598,17 +668,25 @@ impl JobHost<'_> {
                         .clone();
                     json!({"configuration": old_config, "enabled": args.enable})
                 };
-                let value = self
+                let response = self
                     .sdk
-                    .update_schedule(&target, id, &payload, cancelled.as_mut())
+                    .response_for_command(
+                        &target,
+                        JobCommandRoute::UpdateSchedule(id),
+                        Some(&payload),
+                        true,
+                        self.operations,
+                        cancelled.as_mut(),
+                    )
                     .await
                     .map_err(|e| sdk_error(e, Some(id)))?;
+                if response.status != 200 {
+                    return Ok(None);
+                }
+                let value = command_value(&response)?;
                 Ok(Some(JobOutput::new(
                     None,
-                    Some(format!(
-                        "Job schedule {} updated",
-                        value["id"].as_str().expect("validated ID")
-                    )),
+                    Some(format!("Job schedule {} updated", command_id(&value)?)),
                     false,
                     false,
                 )))
@@ -637,10 +715,21 @@ impl JobHost<'_> {
                     "Removing job schedule '{id}'... from '{}'",
                     context.name()
                 )))?;
-                self.sdk
-                    .remove_schedule(&target, id, cancelled.as_mut())
+                let response = self
+                    .sdk
+                    .response_for_command(
+                        &target,
+                        JobCommandRoute::RemoveSchedule(id),
+                        None,
+                        true,
+                        self.operations,
+                        cancelled.as_mut(),
+                    )
                     .await
                     .map_err(|e| sdk_error(e, Some(id)))?;
+                if response.status != 200 {
+                    return Ok(None);
+                }
                 Ok(Some(JobOutput::new(
                     None,
                     Some(format!("Job schedule '{id}' removed")),
@@ -663,7 +752,7 @@ impl JobHost<'_> {
         let ui = self.ui;
         let result = self
             .sdk
-            .wait(
+            .wait_for_command(
                 handle,
                 options,
                 |status: &JobStatus| {
@@ -673,12 +762,12 @@ impl JobHost<'_> {
                             .emit(JobEvent::LogWarning(format!(
                                 "Job instance '{}' unknown status: {}",
                                 handle.id(),
-                                status.status()
+                                status_text(status)
                             )))
                             .and_then(|()| ui.emit(JobEvent::Table(status.as_value().clone()))),
                         _ => ui.emit(JobEvent::Progress(format!(
                             "Job instance status: {}",
-                            status.status()
+                            status_text(status)
                         ))),
                     };
                     result.map_err(|error| {
@@ -686,6 +775,7 @@ impl JobHost<'_> {
                         JobError::Observer
                     })
                 },
+                self.operations,
                 cancelled.as_mut(),
             )
             .await;
@@ -710,7 +800,7 @@ impl JobHost<'_> {
                     self.ui.emit(JobEvent::LogWarning(format!(
                         "Job instance {} finished with status: {}",
                         handle.id(),
-                        status.status()
+                        status_text(&status)
                     )))?;
                     Ok(None)
                 }
@@ -727,17 +817,19 @@ impl JobHost<'_> {
                     Ok(None)
                 } else {
                     self.ui.emit(JobEvent::Grey(format!("Cancelling job instance '{}' (timeout). To change this behaviour and continue running on timeout, set job_cancel_ontimeout config property to 'false'", handle.id())))?;
-                    let cancelled = self
+                    let response = self
                         .sdk
-                        .cancel_for_wait(
+                        .response_for_command(
                             handle.target(),
-                            handle.id(),
+                            JobCommandRoute::Cancel(handle.id()),
+                            None,
+                            true,
                             self.operations,
                             cancelled.as_mut(),
                         )
                         .await
                         .map_err(|e| sdk_error(e, Some(handle.id())))?;
-                    if cancelled.is_none() {
+                    if response.status != 202 {
                         return Ok(None);
                     }
                     self.ui.emit(JobEvent::Grey(String::new()))?;
@@ -752,6 +844,26 @@ impl JobHost<'_> {
             Err(error) => Err(sdk_error(error, Some(handle.id()))),
         }
     }
+}
+
+fn command_value(response: &JobResponse) -> Result<Value, JobCommandError> {
+    let text = std::str::from_utf8(&response.body)
+        .map_err(|_| sdk_error(JobError::InvalidResponse, None))?;
+    fabric_cli_output::parse_data(text).map_err(|_| sdk_error(JobError::InvalidResponse, None))
+}
+
+fn command_id(value: &Value) -> Result<String, JobCommandError> {
+    let id = value
+        .get("id")
+        .ok_or_else(|| sdk_error(JobError::InvalidResponse, None))?;
+    fabric_cli_output::text::python_string(id)
+        .map_err(|_| sdk_error(JobError::InvalidResponse, None))
+}
+
+fn status_text(status: &JobStatus) -> String {
+    // Values have already crossed the checked JSON-domain boundary.
+    fabric_cli_output::text::python_string(status.status_value())
+        .unwrap_or_else(|_| status.status().into())
 }
 
 fn status_hint(context: &Element, id: &str) -> String {

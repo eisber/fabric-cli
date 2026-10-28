@@ -3,7 +3,8 @@
 
 use fabric_sdk_http::{ExecutionError, HttpExecutor, PublicOrigin};
 use fabric_sdk_jobs::{
-    JobExecutionError, JobExecutor, JobFuture, JobRequest, JobRequestHeaders, JobResponse,
+    EndpointBinding, JobExecutionError, JobExecutor, JobFuture, JobRequest, JobRequestHeaders,
+    JobResponse,
 };
 use fabric_sdk_operations::{
     OperationExecutionError, OperationExecutor, OperationRequest, OperationResponse,
@@ -24,6 +25,14 @@ impl HttpJobExecutor {
     pub fn new(http: HttpExecutor) -> Self {
         Self { http }
     }
+
+    /// Inspect the immutable binding selected on the caller's shared executor.
+    ///
+    /// Job requests require its Fabric service identity, even when a different
+    /// service's hostname would otherwise match a public-origin fallback.
+    pub fn endpoint(&self) -> &EndpointBinding {
+        self.http.endpoint()
+    }
 }
 
 impl JobExecutor for HttpJobExecutor {
@@ -35,6 +44,9 @@ impl JobExecutor for HttpJobExecutor {
         request: JobRequest<'a>,
     ) -> JobFuture<'a, Result<JobResponse, JobExecutionError>> {
         Box::pin(async move {
+            if self.http.endpoint().origin() != PublicOrigin::Fabric {
+                return Err(JobExecutionError::Failed);
+            }
             if request.headers().is_empty() {
                 return self
                     .http

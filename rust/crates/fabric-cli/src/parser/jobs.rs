@@ -163,7 +163,8 @@ impl JobMutationCommand {
 }
 
 impl JobReadCommand {
-    pub(crate) fn family_command(&self) -> JobCommand {
+    /// Compose the existing family DTO without adding a response or execution policy.
+    pub fn family_command(&self) -> JobCommand {
         JobCommand {
             kind: match self.kind {
                 JobReadKind::List => JobKind::List,

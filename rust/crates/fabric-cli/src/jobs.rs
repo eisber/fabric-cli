@@ -115,15 +115,13 @@ impl JobSession<'_, '_> {
                 )
                 .await?;
             let jobs: Arc<dyn JobExecutor> = Arc::new(CheckedJobExecutor(Arc::clone(&self.jobs)));
-            let sdk = JobClient::new(
-                Arc::clone(reads.sdk.credential()),
-                reads.sdk.selection().clone(),
+            let sdk = JobClient::with_context(
+                reads.sdk.context().clone(),
                 Arc::clone(&jobs),
                 JobLimits::default(),
             );
-            let operations = SharedJobOperations::from_job_executor(
-                Arc::clone(reads.sdk.credential()),
-                reads.sdk.selection().clone(),
+            let operations = SharedJobOperations::from_job_executor_with_context(
+                reads.sdk.context().clone(),
                 jobs,
                 fabric_sdk_operations::OperationLimits::default(),
             );
@@ -249,8 +247,18 @@ impl JobExecutor for CheckedJobExecutor {
         request: JobRequest<'a>,
     ) -> JobFuture<'a, Result<JobResponse, JobExecutionError>> {
         Box::pin(async move {
+            let method = request.method();
+            let schedule_creation = method == azure_core::http::Method::Post
+                && request.url().path().ends_with("/schedules");
             let response = self.0.execute(request).await?;
-            if response.status == 200 {
+            let consumes_json = (response.status == 200
+                && matches!(
+                    method,
+                    azure_core::http::Method::Get | azure_core::http::Method::Patch
+                ))
+                || (response.status == 201
+                    && (schedule_creation || method == azure_core::http::Method::Get));
+            if consumes_json && !response.body.is_empty() {
                 // Reject values before serde_json can round oversized integer tokens.
                 let json =
                     std::str::from_utf8(&response.body).map_err(|_| JobExecutionError::Failed)?;

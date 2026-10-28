@@ -7,13 +7,19 @@
 //! `client/fab_api_jobs.py` and `utils/fab_cmd_job_utils.py`. Credentials,
 //! transport, asynchronous time and cancellation belong to the caller.
 
+mod command;
 mod headers;
+mod numeric;
 mod operations;
 use azure_core::{
     credentials::AccessToken,
     http::{Method, Url},
 };
-pub use fabric_core::{Audience, CredentialSelection, TokenCredential};
+pub use command::JobCommandRoute;
+pub use fabric_core::{
+    Audience, CredentialSelection, EndpointBinding, RequestContext, ServiceOrigin, TokenCredential,
+};
+use fabric_core::{AuthenticatedExecution, RequestError};
 pub use fabric_sdk_operations::OperationError;
 use fabric_sdk_paging::TokenPager;
 pub use fabric_sdk_paging::{PagedValues, PagingError, PagingErrorKind, PagingLimits};
@@ -22,6 +28,7 @@ pub use fabric_sdk_workspaces::workspaces::{
     WorkspaceExecutionError as JobExecutionError, WorkspaceResponse as JobResponse,
 };
 pub use headers::JobRequestHeaders;
+pub use numeric::{source_decimal_digit, source_decimal_text, source_integer_text};
 pub use operations::SharedJobOperations;
 use serde_json::{Value, json};
 use std::{
@@ -243,6 +250,7 @@ pub struct RunHandle {
     target: JobTarget,
     id: String,
     accepted: JobResponse,
+    endpoint: EndpointBinding,
 }
 
 impl RunHandle {
@@ -254,6 +262,11 @@ impl RunHandle {
     /// Validated resource binding, preventing cross-resource polling.
     pub fn target(&self) -> &JobTarget {
         &self.target
+    }
+
+    /// Exact selected endpoint for subsequent status requests, not an advertised host.
+    pub fn endpoint(&self) -> &EndpointBinding {
+        &self.endpoint
     }
 
     /// Original accepted response, including headers needed by a shared reconciler.
@@ -308,7 +321,17 @@ pub struct JobStatus {
 impl JobStatus {
     /// The source status string.
     pub fn status(&self) -> &str {
-        self.value["status"].as_str().expect("validated status")
+        // Typed status reads require a string. Only the explicit command policy
+        // can retain a source non-string status, which classifies as unknown.
+        self.value["status"].as_str().unwrap_or("")
+    }
+
+    /// Original status value for the opt-in source command policy.
+    ///
+    /// Typed SDK status reads still require a string; command consumers may
+    /// need to display Python's unknown null/bool/number/container status.
+    pub fn status_value(&self) -> &Value {
+        &self.value["status"]
     }
 
     /// Interpret known statuses without rejecting future service states.
@@ -403,6 +426,9 @@ pub enum JobError {
     /// The explicit selection is not Fabric.
     #[error("job operations require the Fabric audience")]
     InvalidAudience,
+    /// The selected service, URL or accepted handle does not match the Fabric context.
+    #[error("job request does not match the selected Fabric endpoint")]
+    InvalidEndpoint,
     /// An ID could alter the validated route.
     #[error("invalid job route identifier")]
     InvalidIdentifier,
@@ -477,8 +503,7 @@ pub enum JobError {
 
 /// Reusable job service with caller-injected credential, HTTP execution and runtime.
 pub struct JobClient {
-    credential: Arc<dyn TokenCredential>,
-    selection: CredentialSelection,
+    context: RequestContext,
     executor: Arc<dyn JobExecutor>,
     limits: JobLimits,
     headers: JobRequestHeaders,
@@ -492,13 +517,30 @@ impl JobClient {
         executor: Arc<dyn JobExecutor>,
         limits: JobLimits,
     ) -> Self {
+        Self::with_context(RequestContext::new(credential, selection), executor, limits)
+    }
+
+    /// Store the caller's exact credential, selection and endpoint without I/O.
+    ///
+    /// Every route, page and status request uses this immutable context. An
+    /// audience/service mismatch fails before credential acquisition; no host
+    /// is inferred from response data. Existing constructors remain public Fabric.
+    pub fn with_context(
+        context: RequestContext,
+        executor: Arc<dyn JobExecutor>,
+        limits: JobLimits,
+    ) -> Self {
         Self {
-            credential,
-            selection,
+            context,
             executor,
             limits,
             headers: JobRequestHeaders::default(),
         }
+    }
+
+    /// Inspect the exact immutable endpoint and injected credential identity.
+    pub fn context(&self) -> &RequestContext {
+        &self.context
     }
 
     /// Clone a command-local client with explicit validated request headers.
@@ -510,8 +552,7 @@ impl JobClient {
             return Err(JobError::RequestHeadersUnsupported);
         }
         Ok(Self {
-            credential: self.credential.clone(),
-            selection: self.selection.clone(),
+            context: self.context.clone(),
             executor: self.executor.clone(),
             limits: self.limits,
             headers,
@@ -523,6 +564,19 @@ impl JobClient {
         &self.headers
     }
 
+    fn route_url(&self, path: &str) -> Result<Url, JobError> {
+        // Routes contain only fixed service segments and validated identifiers.
+        // set_path preserves the old SDK's Unicode path encoding without letting
+        // a raw path replace the context's authority.
+        let mut url = self.context.endpoint().base_url();
+        url.set_path(path);
+        self.context
+            .endpoint()
+            .validate_url(&url)
+            .map_err(|_| JobError::InvalidEndpoint)?;
+        Ok(url)
+    }
+
     async fn request(
         &self,
         method: Method,
@@ -530,8 +584,7 @@ impl JobClient {
         query: Option<&str>,
         body: Option<&Value>,
     ) -> Result<JobResponse, JobError> {
-        let mut url = Url::parse(&format!("https://api.fabric.microsoft.com{path}"))
-            .map_err(|_| JobError::InvalidIdentifier)?;
+        let mut url = self.route_url(path)?;
         if let Some(job_type) = query {
             url.query_pairs_mut().append_pair("jobType", job_type);
         }
@@ -546,31 +599,31 @@ impl JobClient {
         body: Option<&Value>,
         max_response_bytes: NonZeroUsize,
     ) -> Result<JobResponse, JobError> {
-        if self.selection.audience() != Audience::Fabric {
-            return Err(JobError::InvalidAudience);
-        }
-        let token = self
-            .credential
-            .get_token(&[Audience::Fabric.scope()], None)
-            .await
-            .map_err(|_| JobError::Credential)?;
         let bytes = body
             .map(serde_json::to_vec)
             .transpose()
             .map_err(|_| JobError::InvalidResponse)?
             .unwrap_or_default();
+        let mut execution = AuthenticatedJob {
+            executor: self.executor.as_ref(),
+            method,
+            body: bytes,
+            max_response_bytes,
+            headers: self.headers.clone(),
+        };
+        let mut never = pin!(std::future::pending());
         let response = self
-            .executor
-            .execute(JobRequest {
-                method,
-                url,
-                token: &token,
-                body: bytes,
-                max_response_bytes,
-                headers: self.headers.clone(),
-            })
+            .context
+            .authentication()
+            .execute(ServiceOrigin::Fabric, &url, &mut execution, never.as_mut())
             .await
-            .map_err(JobError::Execution)?;
+            .map_err(|error| match error {
+                RequestError::InvalidAudience => JobError::InvalidAudience,
+                RequestError::InvalidEndpoint => JobError::InvalidEndpoint,
+                RequestError::Credential => JobError::Credential,
+                RequestError::Execution(error) => JobError::Execution(error),
+                RequestError::Cancelled => JobError::Cancelled,
+            })?;
         if response.body.len() > max_response_bytes.get() {
             return Err(JobError::Execution(JobExecutionError::ResponseLimit));
         }
@@ -595,8 +648,7 @@ impl JobClient {
         } else {
             target.instances_path()
         };
-        let url = Url::parse(&format!("https://api.fabric.microsoft.com{path}"))
-            .map_err(|_| JobError::InvalidIdentifier)?;
+        let url = self.route_url(&path)?;
         let pager = TokenPager::new(
             url,
             PagingLimits {
@@ -654,8 +706,12 @@ impl JobClient {
                 .strip_prefix(&prefix)
                 .ok_or(JobError::InvalidResponse)?;
             identifier(id).map_err(|_| JobError::InvalidResponse)?;
-            if url.as_str() != format!("https://api.fabric.microsoft.com{prefix}{id}")
-                || !location.starts_with("https://api.fabric.microsoft.com/")
+            if self
+                .context
+                .endpoint()
+                .validate_link(location, &format!("{prefix}{id}"))
+                .is_err()
+                || !location.starts_with(&format!("https://{}/", self.context.endpoint().host()))
             {
                 return Err(JobError::InvalidResponse);
             }
@@ -663,6 +719,7 @@ impl JobClient {
                 target: target.clone(),
                 id: id.into(),
                 accepted: response,
+                endpoint: self.context.endpoint().clone(),
             })
         })
         .await
@@ -750,6 +807,7 @@ impl JobClient {
                 target: target.clone(),
                 id: id.into(),
                 accepted: response,
+                endpoint: self.context.endpoint().clone(),
             })
         })
         .await
@@ -766,7 +824,41 @@ impl JobClient {
         mut observe: impl FnMut(&JobStatus) -> Result<(), JobError> + Send,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<JobStatus, JobError> {
+        self.wait_inner(handle, options, &mut observe, false, None, cancelled)
+            .await
+    }
+
+    /// Wait with the source CLI's permissive status-response policy.
+    ///
+    /// Missing status remains an error. Present non-string statuses reach the
+    /// unknown-status observer unchanged. Successful non-200 responses continue
+    /// the source loop without a fabricated terminal result or extra sleep.
+    /// Shared operation reconciliation is conditional on actual response headers.
+    pub async fn wait_for_command(
+        &self,
+        handle: &RunHandle,
+        options: WaitOptions,
+        mut observe: impl FnMut(&JobStatus) -> Result<(), JobError> + Send,
+        operations: Option<&dyn JobOperationReconciler>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<JobStatus, JobError> {
+        self.wait_inner(handle, options, &mut observe, true, operations, cancelled)
+            .await
+    }
+
+    async fn wait_inner(
+        &self,
+        handle: &RunHandle,
+        options: WaitOptions,
+        observe: &mut (impl FnMut(&JobStatus) -> Result<(), JobError> + Send),
+        command_policy: bool,
+        operations: Option<&dyn JobOperationReconciler>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<JobStatus, JobError> {
         options.validate()?;
+        if handle.endpoint != *self.context.endpoint() {
+            return Err(JobError::InvalidEndpoint);
+        }
         cancellable(cancelled, async {
             if options.timeout.is_some_and(|timeout| timeout < 0) {
                 return Err(JobError::InvalidSleep);
@@ -786,8 +878,34 @@ impl JobClient {
                 .is_none_or(|timeout| elapsed < timeout as u64)
             {
                 let started = Instant::now();
-                let status = self.status_inner(&handle.target, &handle.id).await?;
-                elapsed = elapsed.saturating_add(started.elapsed().as_secs());
+                let status = if command_policy {
+                    let response = self
+                        .response_for_command(
+                            &handle.target,
+                            JobCommandRoute::Status(&handle.id),
+                            None,
+                            true,
+                            operations,
+                            std::future::pending(),
+                        )
+                        .await?;
+                    elapsed = elapsed.saturating_add(started.elapsed().as_secs());
+                    if response.status != 200 {
+                        continue;
+                    }
+                    let value = decode_object(&response)?;
+                    if value.get("status").is_none() {
+                        return Err(JobError::InvalidResponse);
+                    }
+                    JobStatus {
+                        value,
+                        headers: response.headers,
+                    }
+                } else {
+                    let status = self.status_inner(&handle.target, &handle.id).await?;
+                    elapsed = elapsed.saturating_add(started.elapsed().as_secs());
+                    status
+                };
                 observe(&status)?;
                 match status.state() {
                     JobState::Completed
@@ -913,6 +1031,34 @@ impl fmt::Debug for JobClient {
     }
 }
 
+struct AuthenticatedJob<'a> {
+    executor: &'a dyn JobExecutor,
+    method: Method,
+    body: Vec<u8>,
+    max_response_bytes: NonZeroUsize,
+    headers: JobRequestHeaders,
+}
+
+impl AuthenticatedExecution for AuthenticatedJob<'_> {
+    type Response = JobResponse;
+    type Error = JobExecutionError;
+
+    fn execute<'a>(
+        &'a mut self,
+        url: &'a Url,
+        token: &'a AccessToken,
+    ) -> JobFuture<'a, Result<Self::Response, Self::Error>> {
+        self.executor.execute(JobRequest {
+            method: self.method,
+            url: url.clone(),
+            token,
+            body: std::mem::take(&mut self.body),
+            max_response_bytes: self.max_response_bytes,
+            headers: self.headers.clone(),
+        })
+    }
+}
+
 fn identifier(id: &str) -> Result<(), JobError> {
     if id.is_empty()
         || matches!(id, "." | "..")
@@ -970,26 +1116,13 @@ fn polling_interval(
     let Some(value) = header(headers, "retry-after") else {
         return Ok(10);
     };
-    let value = value.trim();
-    let negative = value.starts_with('-');
-    let digits = value.strip_prefix(['+', '-']).unwrap_or(value);
-    let bytes = digits.as_bytes();
-    if bytes.is_empty()
-        || !bytes[0].is_ascii_digit()
-        || !bytes[bytes.len() - 1].is_ascii_digit()
-        || !bytes.iter().enumerate().all(|(i, b)| {
-            b.is_ascii_digit()
-                || (*b == b'_'
-                    && i > 0
-                    && bytes[i - 1].is_ascii_digit()
-                    && i + 1 < bytes.len()
-                    && bytes[i + 1].is_ascii_digit())
-        })
-    {
+    let Some(value) = source_integer_text(value) else {
         return Ok(10);
-    }
-    let seconds = digits
-        .replace('_', "")
+    };
+    let negative = value.starts_with('-');
+    let seconds = value
+        .strip_prefix(['+', '-'])
+        .unwrap_or(&value)
         .parse::<u64>()
         .map_err(|_| JobError::PollingDelayLimit)?;
     if negative && seconds != 0 {

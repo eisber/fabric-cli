@@ -2,6 +2,14 @@
 
 # Bounded native job reads
 
+The [source command response policy](job-command-response-policy.md) is the
+current additive family follow-up. It closes the historical raw-response family
+gaps below without weakening typed SDK readers, adds source captures and
+provides optional-watchdog/terminal-confirmation seams for root integration.
+The historical 240-second unlimited-job limitation is no longer an authorized
+compatibility exception; executable closure requires the documented root mount
+and actual CI evidence. This lane does not edit `native_read.rs`.
+
 Python source: `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
 Released Rust prerequisite: `50eb337e696d5de8d49c65039ca9eff4ca3e0a60`,
 adopted by ordinary merge after preserving the original `9c396ce` draft.

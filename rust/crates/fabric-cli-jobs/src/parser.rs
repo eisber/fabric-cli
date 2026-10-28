@@ -153,12 +153,12 @@ pub fn job_subcommand() -> Command {
                     Arg::new("timeout")
                         .long("timeout")
                         .allow_negative_numbers(true)
-                        .value_parser(clap::value_parser!(i64)),
+                        .value_parser(source_timeout),
                 )
                 .arg(
                     Arg::new("polling_interval")
                         .long("polling_interval")
-                        .value_parser(clap::value_parser!(u64).range(1..)),
+                        .value_parser(source_positive_interval),
                 );
         }
         if matches!(
@@ -258,4 +258,17 @@ pub fn command_from_matches(group: &ArgMatches) -> Result<JobCommand, CommandErr
 
 pub(crate) fn invalid(message: impl Into<String>) -> CommandError {
     CommandError::new(Some(message.into()), Some("InvalidInput".into()))
+}
+
+fn source_timeout(value: &str) -> Result<i64, String> {
+    fabric_sdk_jobs::source_integer_text(value)
+        .and_then(|value| value.parse().ok())
+        .ok_or_else(|| "Timeout must be a supported signed integer".into())
+}
+
+fn source_positive_interval(value: &str) -> Result<u64, String> {
+    fabric_sdk_jobs::source_integer_text(value)
+        .and_then(|value| value.parse().ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(|| "Polling interval must be a supported positive integer".into())
 }

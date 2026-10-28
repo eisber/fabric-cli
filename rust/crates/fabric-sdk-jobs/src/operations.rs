@@ -3,7 +3,8 @@
 
 use crate::{
     CredentialSelection, JobError, JobExecutionError, JobExecutor, JobFuture,
-    JobOperationReconciler, JobRequest, JobRequestHeaders, JobResponse, TokenCredential,
+    JobOperationReconciler, JobRequest, JobRequestHeaders, JobResponse, RequestContext,
+    TokenCredential,
 };
 use azure_core::http::Method;
 use fabric_sdk_operations::{
@@ -20,8 +21,7 @@ use std::{fmt, future::pending, sync::Arc, time::Duration};
 /// credential acquisition and reconciliation evidence. No runtime or HTTP stack
 /// is created here.
 pub struct SharedJobOperations {
-    credential: Arc<dyn TokenCredential>,
-    selection: CredentialSelection,
+    context: RequestContext,
     executor: Arc<dyn OperationExecutor>,
     limits: OperationLimits,
     job_executor: Option<Arc<dyn JobExecutor>>,
@@ -36,14 +36,30 @@ impl SharedJobOperations {
         executor: Arc<dyn OperationExecutor>,
         limits: OperationLimits,
     ) -> Self {
+        Self::with_context(RequestContext::new(credential, selection), executor, limits)
+    }
+
+    /// Bind generic-operation follow-ups to the caller's exact credential and endpoint.
+    ///
+    /// Existing construction remains public Fabric. Every poll/result URL is
+    /// checked by the shared operation session before credential acquisition.
+    pub fn with_context(
+        context: RequestContext,
+        executor: Arc<dyn OperationExecutor>,
+        limits: OperationLimits,
+    ) -> Self {
         Self {
-            credential,
-            selection,
+            context,
             executor,
             limits,
             job_executor: None,
             headers: JobRequestHeaders::default(),
         }
+    }
+
+    /// Inspect the context used by every operation poll and result request.
+    pub fn context(&self) -> &RequestContext {
+        &self.context
     }
 
     /// Inspect the explicit context used for operation follow-ups.
@@ -61,9 +77,23 @@ impl SharedJobOperations {
         executor: Arc<dyn JobExecutor>,
         limits: OperationLimits,
     ) -> Self {
+        Self::from_job_executor_with_context(
+            RequestContext::new(credential, selection),
+            executor,
+            limits,
+        )
+    }
+
+    /// Compose job and generic-operation requests over one selected endpoint.
+    ///
+    /// Header scoping clones retain this same context and caller credential Arc.
+    pub fn from_job_executor_with_context(
+        context: RequestContext,
+        executor: Arc<dyn JobExecutor>,
+        limits: OperationLimits,
+    ) -> Self {
         Self {
-            credential,
-            selection,
+            context,
             executor: Arc::new(JobOperationsExecutor {
                 executor: executor.clone(),
                 headers: JobRequestHeaders::default(),
@@ -93,8 +123,7 @@ impl JobOperationReconciler for SharedJobOperations {
     ) -> Result<Arc<dyn JobOperationReconciler>, JobError> {
         if headers.is_empty() && self.headers.is_empty() {
             return Ok(Arc::new(Self {
-                credential: self.credential.clone(),
-                selection: self.selection.clone(),
+                context: self.context.clone(),
                 executor: self.executor.clone(),
                 limits: self.limits,
                 job_executor: self.job_executor.clone(),
@@ -109,8 +138,7 @@ impl JobOperationReconciler for SharedJobOperations {
             return Err(JobError::RequestHeadersUnsupported);
         }
         Ok(Arc::new(Self {
-            credential: self.credential.clone(),
-            selection: self.selection.clone(),
+            context: self.context.clone(),
             executor: Arc::new(JobOperationsExecutor {
                 executor: executor.clone(),
                 headers: headers.clone(),
@@ -133,9 +161,8 @@ impl JobOperationReconciler for SharedJobOperations {
         cancelled: JobFuture<'a, ()>,
     ) -> JobFuture<'a, Result<JobResponse, JobError>> {
         Box::pin(async move {
-            let mut session = OperationSession::new(
-                self.credential.as_ref(),
-                &self.selection,
+            let mut session = OperationSession::with_context(
+                &self.context,
                 BorrowedExecutor(self.executor.as_ref()),
                 self.limits,
                 cancelled,

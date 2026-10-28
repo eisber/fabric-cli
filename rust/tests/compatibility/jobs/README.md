@@ -2,6 +2,23 @@
 
 # Independent job-family expectations
 
+`command_source.py` and `poll_source.py` add 210 command-response and ten
+non-string/HTTP-204 polling observations captured from actual unchanged source.
+Their JSON captures predate native expected-output assertions; default execution
+compares fresh source observations with the frozen captures. The root
+`job_command_parity` integration test consumes them through the production
+parser, session and shared HTTP executor. Existing 155/396 fixtures are unchanged.
+See the [source command response policy](../../../docs/job-command-response-policy.md)
+for typed-SDK separation, intentional numeric/security failures and root seams.
+`numeric_source.py` separately captures eleven bounded Unicode numeric
+observations and the actual Python 3.13/Unicode 15.1 decimal inventory. No
+arbitrary-size or non-finite JSON value is reclassified as safe by this increment.
+`endpoint_reference.py` executes unchanged pinned job API and HTTP bodies with
+explicit public/daily/MSIT snapshots, all five job types and three skill states;
+all 540 requests retain the fixed Fabric audience. Native endpoint consumers use
+the production root parser/session/shared HTTP and reject cross-host continuation,
+submission and operation links without sending a foreign request.
+
 `cases.json` is hand-authored from Python source
 `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`, not generated from Rust.
 `reference.py` uses only the Python standard library. Before executing selected

@@ -20,7 +20,7 @@ use fabric_cli_local::{ConfigStore, LocalError};
 use fabric_cli_output::Timestamp;
 use folder_support::{Credential, Http, Timer, complete, executor, reply, sdk};
 use serde_json::{Map, Value, json};
-use settings::{NativeSettings, SelectionError, command_deadline};
+use settings::{NativeSettings, SelectionError, command_deadline, command_watchdog};
 use std::{
     future::pending,
     path::PathBuf,
@@ -90,6 +90,11 @@ fn saved_settings_select_existing_fields_and_explicit_argv_wins() {
     // Neither timeout nor interval has a saved setting in the pinned schema.
     assert_eq!(command.timeout, Some(600));
     assert_eq!(command.polling_interval, Some(3));
+    assert!(
+        command_watchdog(Some(&command), selected.jobs)
+            .unwrap()
+            .is_some()
+    );
 }
 
 #[test]
