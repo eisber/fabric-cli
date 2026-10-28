@@ -101,8 +101,9 @@ or mutation replay. These new native tests remain **unexecuted** until the root'
 serialized validation slot. The additional CLI unit selector is
 `deployment_metadata_adapter_preserves_public_daily_and_msit_contexts`.
 
-Shortcut deletion now uses the shared operation's literal-component constructor,
-not an unchecked URL or relaxed raw-path constructor. Empty/dot/traversing,
+Shortcut deletion uses the existing approved `ResourceOperation::encoded` and
+`FabricOperation::from_resource` APIs, not a new SDK API, unchecked URL or relaxed
+raw-path constructor. Empty/dot/traversing,
 separator-bearing and control components are rejected; Unicode, spaces and
 literal percent characters are encoded as data. The same context, counted
 executor, LRO reconciliation and single-attempt write policy execute the result.
@@ -110,12 +111,33 @@ executor, LRO reconciliation and single-attempt write policy execute the result.
 construction plus offline Requests URL preparation before native expectations.
 The added native scope/URL and constructor tests remain unexecuted.
 
+Prepared definitions are bounded both per file and in aggregate through
+`EngineContext::with_definition_limits`; repository preflight and standard/bulk
+publication share the caller's aggregate byte budget. Processor post-hooks retain
+the prepared file contents: VariableLibrary value-set activation and Lakehouse
+shortcut reconciliation must not read a stale pre-parameterization snapshot.
+`post_publish_source.json` captures actual VariableLibrary lifecycle methods with
+an injected prepared-definition capability; it is not a replacement transform
+oracle. New native regression cases cover both publication modes and aggregate
+growth before a definition mutation. They remain unexecuted pending ROOT.
+
+The pipeline planner follows the source ordered-publisher boundary: once any
+pipeline is selected, dependency validation covers every repository pipeline
+before filtering the execution order. Excluded cycles must not become a
+successful selective deployment. `pipeline_selection_source.json` captures the
+actual source selection, file-reading dependency planner and graph sorter.
+The separate `planner_source` native selector is pending ROOT execution.
+Source type pre-hooks still refresh metadata when selective publication yields
+no items. Those refreshes do not retarget an initially absent item to a new
+concurrently discovered ID; `refresh_source.json` captures the actual source
+selection/refresh/create boundary. Native comparisons are pending ROOT.
+
 Acceptance still needs native compilation/strict Clippy, complete processor
 branch/lifecycle/cancellation/partial-failure source fixtures, full root mounting,
 source constant-override coverage, binary classification equivalence, and
-Sparkcompute YAML emission edge cases. The new literal-component operation API
-and encoded shortcut request cases still need native validation and shared-API
-review; the existing raw-path percent guard remains unchanged.
+Sparkcompute YAML emission edge cases. The encoded shortcut consumer cases still
+need native validation; the approved operation APIs and existing raw-path percent
+guard remain unchanged.
 Advanced regex/JSONPath fullness remains a
 separate transform boundary. No live publish/delete operation is authorized.
 

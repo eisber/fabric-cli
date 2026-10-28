@@ -28,6 +28,8 @@ pub struct EngineContext {
     pub parameter_document: Option<Value>,
     /// Explicit caller snapshot for opt-in `$ENV:` replacement, never ambient reads.
     pub environment_variables: HashMap<String, String>,
+    /// Aggregate prepared-definition byte budget, independent of service responses.
+    pub definition_limits: crate::notebook::DefinitionLimits,
 }
 
 impl EngineContext {
@@ -60,6 +62,7 @@ impl EngineContext {
             bulk_publish: command_bulk,
             parameter_document: None,
             environment_variables: HashMap::new(),
+            definition_limits: crate::notebook::DefinitionLimits::default(),
         };
         if command_bulk {
             context.features.insert("enable_bulk_publish".into());
@@ -352,6 +355,12 @@ impl EngineContext {
         self
     }
 
+    /// Apply caller-owned local definition bounds without changing source policy.
+    pub fn with_definition_limits(mut self, limits: crate::notebook::DefinitionLimits) -> Self {
+        self.definition_limits = limits;
+        self
+    }
+
     /// Source unpublication feature gates protect provisioned/data-bearing items.
     pub fn can_unpublish(&self, item_type: &str) -> bool {
         if let Some(mapping) = self
@@ -526,6 +535,26 @@ impl DeploymentPlan {
         context: &EngineContext,
         mut repository: DeploymentRepository,
     ) -> Result<Self, ConfigurationError> {
+        let mut bytes = 0usize;
+        let mut entries = repository
+            .items
+            .len()
+            .saturating_add(repository.folders.len());
+        if entries > 100_000 {
+            return Err(ConfigurationError::Limit);
+        }
+        for item in &repository.items {
+            entries = entries
+                .checked_add(item.files.len())
+                .filter(|entries| *entries <= 100_000)
+                .ok_or(ConfigurationError::Limit)?;
+            for file in &item.files {
+                bytes = bytes
+                    .checked_add(file.bytes.len())
+                    .filter(|bytes| *bytes <= context.definition_limits.max_bytes.get())
+                    .ok_or(ConfigurationError::Limit)?;
+            }
+        }
         for item in &mut repository.items {
             let pattern = match item.item_type.as_str() {
                 "KQLDatabase" => Some(context.text_constant(
@@ -559,8 +588,10 @@ impl DeploymentPlan {
                 if !seen_logical.insert(item.logical_id.clone()) {
                     return Err(invalid("Duplicate logicalId in repository"));
                 }
-                logical.insert(item.logical_id.as_str(), index);
             }
+            logical
+                .entry((item.item_type.as_str(), item.logical_id.as_str()))
+                .or_insert(index);
             if !config.skip_publish()
                 && config.item_types.contains(&item.item_type)
                 && selection.includes(item)?
@@ -575,9 +606,16 @@ impl DeploymentPlan {
                 .copied()
                 .filter(|index| repository.items[*index].item_type == *item_type)
                 .collect();
-            if *item_type == "DataPipeline" {
+            if *item_type == "DataPipeline" && !indices.is_empty() {
+                let all_indices: Vec<_> = repository
+                    .items
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, item)| item.item_type == "DataPipeline")
+                    .map(|(index, _)| index)
+                    .collect();
                 let mut edges = Vec::new();
-                for index in &indices {
+                for index in &all_indices {
                     let item = &repository.items[*index];
                     let filename = context.dependency_file("DataPipeline")?;
                     let content = item
@@ -590,14 +628,18 @@ impl DeploymentPlan {
                         Value::String(content.content()?.into())
                     };
                     for reference in pipeline_references(&content) {
-                        if let Some(dependency) = logical.get(reference.as_str())
+                        if let Some(dependency) = logical.get(&("DataPipeline", reference.as_str()))
                             && repository.items[*dependency].item_type == "DataPipeline"
                         {
                             edges.push((*index, *dependency));
                         }
                     }
                 }
-                order.extend(topological_order(&indices, &edges)?);
+                order.extend(
+                    topological_order(&all_indices, &edges)?
+                        .into_iter()
+                        .filter(|index| indices.contains(index)),
+                );
             } else {
                 order.extend(indices);
             }

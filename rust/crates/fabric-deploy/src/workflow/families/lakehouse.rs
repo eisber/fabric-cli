@@ -134,7 +134,8 @@ pub(super) async fn shortcuts<E: OperationExecutor>(
         let key = key(&shortcut)?;
         if !selected.contains(&key) {
             let segments: Vec<_> = base
-                .trim_start_matches('/')
+                .strip_prefix("/v1/")
+                .ok_or_else(|| invalid("Invalid workspace API prefix"))?
                 .split('/')
                 .chain(["items", id.as_str(), "shortcuts"])
                 .chain(key.split('/'))

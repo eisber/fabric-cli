@@ -469,3 +469,231 @@ async fn real_report_kql_and_environment_preprocessors_match_captured_source_art
         assert!(executor.replies.lock().unwrap().is_empty(), "{kind}");
     }
 }
+
+#[tokio::test]
+async fn variable_library_hooks_read_prepared_settings_in_standard_and_bulk_modes() {
+    let oracle: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/deploy_workflow/post_publish_source.json"
+    ))
+    .unwrap();
+    for case in oracle["cases"].as_array().unwrap() {
+        let bulk = case["bulk"].as_bool().unwrap();
+        let executor = Executor::default();
+        executor.reply(200, json!({"capacityId":"assigned"}));
+        executor.reply(200, json!({"value":[]}));
+        executor.reply(if bulk {200} else {201}, if bulk {
+                        json!({"importItemDefinitionsDetails":[{
+                            "itemType":"VariableLibrary","itemDisplayName":"Example","itemId":ITEM,"operationType":"Create",
+                        }]})
+                    } else { json!({"id":ITEM}) });
+        executor.reply(200, Value::Null);
+        let mut config = DeploymentConfig::from_document(&json!({
+                        "core":{"workspace_id":WORKSPACE,"repository_directory":".","item_types_in_scope":["VariableLibrary"],"parameter":"p.yml"},
+                        "unpublish":{"skip":true},"features":["disable_workspace_folder_publish"],
+                    }),"test",None).unwrap();
+        config
+            .resolve_parameters(&json!({"find_replace":[{
+                "find_value":"dev","replace_value":{"test":"test"},
+            }]}))
+            .unwrap();
+        let mut source = item(
+            "VariableLibrary",
+            "Example",
+            "33333333-3333-3333-3333-333333333333",
+        );
+        source.files[0].bytes = serde_json::to_vec(&json!({
+            "metadata":{"displayName":"Example","type":"VariableLibrary"},
+            "config":{"logicalId":source.logical_id},
+        }))
+        .unwrap();
+        source.files[1] = ItemFile::new(
+            "settings.json".into(),
+            oracle["input_settings"]
+                .as_str()
+                .unwrap()
+                .as_bytes()
+                .to_vec(),
+        );
+        deploy_repository(
+            &client(),
+            &executor,
+            &config,
+            DeploymentRepository {
+                items: vec![source],
+                folders: Vec::new(),
+            },
+            EngineContext::from_config(&config, bulk).unwrap(),
+            OperationLimits::default(),
+            pending(),
+        )
+        .await
+        .unwrap();
+        let calls = executor.calls();
+        let parts = if bulk {
+            &calls[2].2["definitionParts"]
+        } else {
+            &calls[2].2["definition"]["parts"]
+        };
+        let settings = parts
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|part| part["path"].as_str().unwrap().ends_with("settings.json"))
+            .unwrap();
+        assert_eq!(
+            String::from_utf8(
+                STANDARD
+                    .decode(settings["payload"].as_str().unwrap())
+                    .unwrap()
+            )
+            .unwrap(),
+            oracle["prepared_settings"].as_str().unwrap()
+        );
+        assert_eq!(calls[3].0, ResourceMethod::Patch);
+        assert_eq!(calls[3].2, case["events"][1]["body"]);
+        assert!(
+            case["events"][1]["url"]
+                .as_str()
+                .unwrap()
+                .ends_with(&calls[3].1)
+        );
+    }
+}
+
+#[tokio::test]
+async fn aggregate_transformed_definition_limit_fails_before_publication() {
+    let executor = Executor::default();
+    executor.reply(200, json!({"capacityId":"assigned"}));
+    executor.reply(200, json!({"value":[]}));
+    let mut config = DeploymentConfig::from_document(&json!({
+                    "core":{"workspace_id":WORKSPACE,"repository_directory":".","item_types_in_scope":["CopyJob"],"parameter":"p.yml"},
+                    "unpublish":{"skip":true},"features":["disable_workspace_folder_publish"],
+                }),"test",None).unwrap();
+    config
+        .resolve_parameters(&json!({"find_replace":[{
+            "find_value":"x","replace_value":{"test":"x".repeat(150)},
+        }]}))
+        .unwrap();
+    let mut source = item("CopyJob", "Example", "copy-logical");
+    source.files[1] = ItemFile::new("content.json".into(), br#"{"v":"x"}"#.to_vec());
+    source
+        .files
+        .push(ItemFile::new("resource.txt".into(), b"x".to_vec()));
+    let context = EngineContext::from_config(&config, false)
+        .unwrap()
+        .with_definition_limits(fabric_deploy::notebook::DefinitionLimits {
+            max_bytes: std::num::NonZeroUsize::new(300).unwrap(),
+        });
+    let error = deploy_repository(
+        &client(),
+        &executor,
+        &config,
+        DeploymentRepository {
+            items: vec![source],
+            folders: Vec::new(),
+        },
+        context,
+        OperationLimits::default(),
+        pending(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(
+        error.failure,
+        WorkflowFailure::Configuration(fabric_deploy::deployment_config::ConfigurationError::Limit)
+    ));
+    assert!(error.partial.effects.is_empty());
+    assert_eq!(executor.calls().len(), 2);
+}
+
+#[tokio::test]
+async fn excluded_pipeline_still_runs_source_metadata_pre_hook_without_definition_reads() {
+    let source: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/deploy_workflow/refresh_source.json"
+    ))
+    .unwrap();
+    let executor = Executor::default();
+    executor.reply(200, json!({"capacityId":"assigned"}));
+    executor.reply(200, json!({"value":[]}));
+    executor.reply(200, json!({"value":[]}));
+    let config = DeploymentConfig::from_document(&json!({
+                    "core":{"workspace_id":WORKSPACE,"repository_directory":".","item_types_in_scope":["DataPipeline"]},
+                    "publish":{"items_to_include":["Absent.DataPipeline"]},"unpublish":{"skip":true},
+                    "features":["enable_experimental_features","enable_items_to_include","disable_workspace_folder_publish"],
+                }),"test",None).unwrap();
+    let result = deploy_repository(
+        &client(),
+        &executor,
+        &config,
+        DeploymentRepository {
+            items: vec![item("DataPipeline", "Excluded", "excluded-logical")],
+            folders: Vec::new(),
+        },
+        EngineContext::from_config(&config, false).unwrap(),
+        OperationLimits::default(),
+        pending(),
+    )
+    .await
+    .unwrap();
+    assert!(result.published.is_empty());
+    assert_eq!(
+        executor.calls().len(),
+        2 + source["excluded_pipeline"]["events"]
+            .as_array()
+            .unwrap()
+            .len()
+    );
+    assert!(
+        executor.calls()[2].1.ends_with(
+            source["excluded_pipeline"]["events"][0]["path"]
+                .as_str()
+                .unwrap()
+        )
+    );
+    assert!(
+        executor
+            .calls()
+            .iter()
+            .all(|call| call.0 == ResourceMethod::Get)
+    );
+}
+
+#[tokio::test]
+async fn type_pre_hook_refresh_does_not_retarget_an_initially_absent_item() {
+    let source: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/deploy_workflow/refresh_source.json"
+    ))
+    .unwrap();
+    let source = &source["initially_absent_queryset"];
+    let executor = Executor::default();
+    executor.reply(200, json!({"capacityId":"assigned"}));
+    executor.reply(200, json!({"value":[]}));
+    executor.reply(200,json!({"value":[{"id":source["fresh_cache_id"],"displayName":"Example","type":"KQLQueryset"}]}));
+    executor.reply(201, json!({"id":ITEM}));
+    let config = config(&["KQLQueryset"], false);
+    let result = deploy_repository(
+        &client(),
+        &executor,
+        &config,
+        DeploymentRepository {
+            items: vec![item("KQLQueryset", "Example", "queryset-logical")],
+            folders: Vec::new(),
+        },
+        EngineContext::from_config(&config, false).unwrap(),
+        OperationLimits::default(),
+        pending(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        result.published[0].outcome.item_id,
+        source["returned_id"].as_str().unwrap()
+    );
+    assert!(
+        source["events"][1]["url"]
+            .as_str()
+            .unwrap()
+            .ends_with(&executor.calls()[3].1)
+    );
+    assert!(!executor.calls()[3].1.contains("updateDefinition"));
+}

@@ -41,7 +41,14 @@ pub(super) async fn publish<E: OperationExecutor>(
                 preprocess(io, publication, &mut item, ids, true).await?;
             } else {
                 let snapshot = item.clone();
-                let mut budget = TransformBudget::new(TransformLimits::default(), &|| false);
+                let mut remaining = context.definition_limits.max_bytes.get();
+                let mut budget = TransformBudget::new(
+                    TransformLimits {
+                        max_bytes: remaining.min(TransformLimits::default().max_bytes),
+                        ..TransformLimits::default()
+                    },
+                    &|| false,
+                );
                 for file in &mut item.files {
                     if !file.text
                         || file.path.ends_with(".platform")
@@ -53,6 +60,9 @@ pub(super) async fn publish<E: OperationExecutor>(
                             true,
                         )?
                     {
+                        remaining = remaining
+                            .checked_sub(file.bytes.len())
+                            .ok_or(ConfigurationError::Limit)?;
                         continue;
                     }
                     file.bytes = super::super::parameters::apply(
@@ -66,8 +76,12 @@ pub(super) async fn publish<E: OperationExecutor>(
                     )
                     .await?
                     .into_bytes();
+                    remaining = remaining
+                        .checked_sub(file.bytes.len())
+                        .ok_or(ConfigurationError::Limit)?;
                 }
             }
+            io.retain_prepared(&item)?;
             let directory = item
                 .path
                 .rsplit('/')
@@ -155,11 +169,15 @@ pub(super) async fn publish<E: OperationExecutor>(
     }
     for index in &plan.order {
         let item = &plan.repository.items[*index];
+        let prepared = io
+            .processed_items
+            .remove(&identity_key(item))
+            .unwrap_or_else(|| item.clone());
         let id = ids
             .get(&identity_key(item))
             .ok_or_else(|| invalid("Bulk result item ID was not resolved"))?;
         match item.item_type.as_str() {
-            "VariableLibrary" => activate_value_set(io, config, item, base, id).await?,
+            "VariableLibrary" => activate_value_set(io, config, &prepared, base, id).await?,
             "Environment" => {
                 io.request_policy(
                     ResourceMethod::Post,
@@ -170,7 +188,7 @@ pub(super) async fn publish<E: OperationExecutor>(
                 .await?;
             }
             "Lakehouse" if context.enabled("enable_shortcut_publish") => {
-                lakehouse::shortcuts(io, publication, item, ids).await?
+                lakehouse::shortcuts(io, publication, &prepared, ids).await?
             }
             _ => {}
         }
