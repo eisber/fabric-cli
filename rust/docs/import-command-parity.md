@@ -89,6 +89,23 @@ device/stream/alias checks. Root-file enumeration retains the source's empty
 parts; export directory resolution remains directory-only. Constructors, runtime,
 manifests, transport and credential composition remain unchanged.
 
+`TokioTransferFiles::for_import_root(source, original_input, limits, runtime)` is
+the additive constructor for a caller-selected existing directory or regular
+file outside the initial CWD root, including an exact explicitly expanded tilde
+argument. It validates on the worker, reuses `Self::new`, and binds an import-only
+exact argument alias in `LocalTransferFiles`; it adds no Tokio worker fields or
+competing changes to that worker's original constructor. File sources use a
+validated parent but cannot import another source under that parent. Alias
+binding still rejects traversal, network/device/stream aliases and URI paths.
+Export directory resolution does not use this alias.
+
+ROOT must mount that constructor only after target support/format validation
+and Fabric-versus-local input classification, so local preflight does not
+supplant earlier source errors. `original_input` must be the same normalized
+`process_tokens` value passed to import. Resolve only the selected directory or
+file parent; do not canonicalize an individual selected file past link/alias
+checks. No ambient home/profile lookup belongs in the constructor.
+
 The integration/shared-discovery owners still need:
 
 1. `TransferMetadata::validate_import_input`: the existing metadata owner should
@@ -165,4 +182,5 @@ live Fabric and non-Windows native runs remain unexecuted.
 - `rust/crates/fabric-cli/src/families/transfer_files.rs` (import worker methods)
 - `rust/crates/fabric-cli/tests/family_mounts.rs` (additive test registration only)
 - `rust/crates/fabric-cli/tests/family_support/import_parity.rs`
+- `rust/crates/fabric-cli/tests/family_support/import_roots.rs`
 - `rust/docs/import-command-parity.md`

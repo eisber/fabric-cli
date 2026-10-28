@@ -4,11 +4,11 @@
 use crate::{TransferFiles, TransferFuture};
 use fabric_deploy::definitions::{
     DefinitionEntry, DefinitionFile, DefinitionFileSystem, DefinitionImportFileSystem,
-    DefinitionLimits, LocalDefinitionFileSystem,
+    DefinitionLimits, LocalDefinitionFileSystem, validate_part_path,
 };
 use std::{
     fs, io,
-    path::{Component, Path, PathBuf},
+    path::{Component, Path, PathBuf, Prefix},
 };
 
 /// Local CLI adapter confined to one explicit, stable caller-owned root.
@@ -19,6 +19,7 @@ use std::{
 pub struct LocalTransferFiles {
     root: PathBuf,
     home: Option<PathBuf>,
+    import_alias: Option<(String, PathBuf)>,
     definitions: LocalDefinitionFileSystem,
 }
 
@@ -39,8 +40,30 @@ impl LocalTransferFiles {
         Ok(Self {
             root,
             home,
+            import_alias: None,
             definitions,
         })
+    }
+
+    /// Bind one exact source argument to an explicitly selected local source.
+    ///
+    /// The source must be a regular file or directory within this adapter's
+    /// stable owned root. Only import resolution uses this alias; it grants no
+    /// tilde expansion, export alias, or access to a different source argument.
+    /// File sources retain Python's empty-definition traversal behavior.
+    ///
+    /// # Errors
+    /// Rejects empty aliases, paths outside the owned root, links, device/stream
+    /// aliases and inaccessible sources using the existing definition policy.
+    pub fn bind_import_source(
+        &mut self,
+        original_input: String,
+        source: PathBuf,
+    ) -> io::Result<()> {
+        validate_import_alias(&original_input)?;
+        self.check_import(&source)?;
+        self.import_alias = Some((original_input, source));
+        Ok(())
     }
 
     fn check(&mut self, root: &Path) -> io::Result<()> {
@@ -51,6 +74,11 @@ impl LocalTransferFiles {
     }
 
     fn check_import(&mut self, root: &Path) -> io::Result<()> {
+        if let Some((_, source)) = &self.import_alias
+            && root != source.as_path()
+        {
+            return Err(invalid());
+        }
         if !root.starts_with(&self.root) {
             return Err(invalid());
         }
@@ -110,6 +138,32 @@ fn invalid() -> io::Error {
     )
 }
 
+fn validate_import_alias(input: &str) -> io::Result<()> {
+    if input.is_empty()
+        || input.contains("://")
+        || input.starts_with("\\\\")
+        || input.starts_with("//")
+    {
+        return Err(invalid());
+    }
+    for component in Path::new(input).components() {
+        match component {
+            Component::ParentDir => return Err(invalid()),
+            Component::Prefix(prefix)
+                if !matches!(prefix.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_)) =>
+            {
+                return Err(invalid());
+            }
+            Component::Normal(name) => {
+                let name = name.to_str().ok_or_else(invalid)?;
+                validate_part_path(name, DefinitionLimits::default()).map_err(|_| invalid())?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 impl TransferFiles for LocalTransferFiles {
     fn resolve_directory(&mut self, input: &str) -> io::Result<PathBuf> {
         let path = self.selected_path(input)?;
@@ -118,7 +172,11 @@ impl TransferFiles for LocalTransferFiles {
     }
 
     fn resolve_import(&mut self, input: &str) -> io::Result<PathBuf> {
-        let path = self.selected_path(input)?;
+        let path = match &self.import_alias {
+            Some((original, source)) if input == original => source.clone(),
+            Some(_) => return Err(invalid()),
+            None => self.selected_path(input)?,
+        };
         self.check_import(&path)?;
         Ok(path)
     }
@@ -160,7 +218,7 @@ impl DefinitionImportFileSystem for LocalTransferFiles {
     }
 
     fn read(&mut self, root: &Path, relative: &str, max_bytes: usize) -> io::Result<Vec<u8>> {
-        self.check(root)?;
+        self.check_import(root)?;
         self.definitions.read(root, relative, max_bytes)
     }
 }

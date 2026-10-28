@@ -6,6 +6,9 @@
 #![cfg(feature = "native-read")]
 #![deny(unnameable_test_items)]
 
+#[path = "import_roots.rs"]
+mod import_roots;
+
 use crate::family_support::{Harness, success};
 use fabric_cli::families::FamilyEvidence;
 use fabric_cli_output::CommandError;
