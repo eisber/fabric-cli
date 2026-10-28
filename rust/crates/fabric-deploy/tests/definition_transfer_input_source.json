@@ -1,0 +1,59 @@
+{
+  "source": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "name": "local-directory-candidate",
+      "input": "input",
+      "path_type": "local",
+      "error": null,
+      "events": []
+    },
+    {
+      "name": "local-file-candidate",
+      "input": "input",
+      "path_type": "local",
+      "error": null,
+      "events": []
+    },
+    {
+      "name": "lakehouse-files-child",
+      "input": "Demo.Workspace/Lake.Lakehouse/Files/input",
+      "path_type": null,
+      "error": {
+        "code": "NotSupported",
+        "message": "Import only supports local paths. Unsupported input path type: 'lakehouse'"
+      },
+      "events": []
+    },
+    {
+      "name": "lakehouse-files-root",
+      "input": "Demo.Workspace/Lake.Lakehouse/Files",
+      "path_type": null,
+      "error": {
+        "code": "NotSupported",
+        "message": "Only supported for Lakehouse/Files"
+      },
+      "events": []
+    },
+    {
+      "name": "warehouse-files-child",
+      "input": "Demo.Workspace/Lake.Warehouse/Files/input",
+      "path_type": null,
+      "error": {
+        "code": "NotSupported",
+        "message": "Only supported for Lakehouse/Files"
+      },
+      "events": []
+    },
+    {
+      "name": "fabric-folder",
+      "input": "Demo.Workspace/Parent.Folder",
+      "path_type": null,
+      "error": {
+        "code": "InvalidPath",
+        "message": "The specified path is invalid"
+      },
+      "events": []
+    }
+  ]
+}

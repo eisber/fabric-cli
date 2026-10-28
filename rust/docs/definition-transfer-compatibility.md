@@ -100,7 +100,7 @@ coincidentally named local directory. Ordinary local path-resolution fallback
 is retained, and the original failure still fails closed.
 
 These changes are not a Rust validation receipt: tests/builds are **NOT RUN**
-pending the integrator's serialized grant. Six additive actual-source captures
+pending the integrator's serialized grant. Seven additive actual-source captures
 reproduce independently before Rust expectations; the new offline argv consumer
 covers generic/default/explicit formats, workspace selection/execution ordering,
 nested folder Selective requests, workspace response-index filtering, malformed
@@ -122,6 +122,32 @@ The workflow consumers are module-level registered tests; the consumer now denie
 `unnameable_test_items` so accidental nesting is a compile error, not silent
 coverage. Rust execution is still required; formatting/static registration checks
 are not test-pass evidence.
+
+The public metadata-only `families::validate_local_import_input` seam reuses the
+selected SDK/resolver and explicit OneLake metadata adapter; it never downloads
+bytes, probes native files, prompts or acquires ambient credentials. Its new
+actual-source receipt executes `get_import_path`, `import_single_item`, common
+error leaves and the real exception normalizer on injected synthetic metadata.
+Local regular-file/directory candidates are deferred to the file worker; known
+remote/Fabric inputs fail with the captured source message before file I/O/UI.
+Direct consumers cover selected MSIT metadata versus public OneLake HEAD,
+authentication failure without local fallback and pre-discovery cancellation.
+
+This seam must be connected to the import peer's new
+`TransferMetadata::validate_import_input` after that shared API is unioned:
+delegate with
+`Box::pin(validate_local_import_input(self.reads, self.http, input, pending()))`.
+That trait is not redeclared or copied into this lane; the existing import
+function is untouched. Until the override and worker bindings are attached,
+these direct helper cases are not a front-door import completion claim.
+
+Do not silently reparent a single requested item from a raw `folderId`:
+pinned `fab_handle_context.py` constructs workspace-qualified items with the
+requested workspace parent (lines 507–508), and explicitly folder-qualified
+items with the requested folder parent (lines 560–561). The complete workspace/
+folder discovery snapshot already uses the raw service `folderId` and validated
+folder graph. Those distinct source paths remain distinct; changing generic
+`Snapshot`/read-parent behavior requires separate source evidence and review.
 
 One native-only mount remains assigned to the integrator: the binary currently
 constructs its local adapter with CWD and no explicit home. For user-selected

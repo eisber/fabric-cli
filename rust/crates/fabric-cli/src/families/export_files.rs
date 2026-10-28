@@ -82,7 +82,7 @@ impl<'a, 'session> ExportFiles<'a, 'session> {
     }
 }
 
-fn lakehouse_owner(target: &fabric_cli_context::PathElement) -> bool {
+pub(super) fn lakehouse_owner(target: &fabric_cli_context::PathElement) -> bool {
     let mut current = target;
     while let Some(parent) = current.parent() {
         if matches!(parent.kind(), PathKind::OneLake(_)) {
