@@ -970,44 +970,44 @@ impl TransferMetadata for TransferTargets<'_, '_> {
             })
         })
     }
+}
 
-    fn folder_transfer_order(
-        target: &Arc<Element>,
-        folders: &[Arc<Element>],
-        items: &[fabric_cli_transfer::TransferItem],
-    ) -> Result<Vec<fabric_cli_transfer::TransferItem>, CommandError> {
-        let mut result = Vec::new();
-        let mut stack = vec![(target.clone(), false, 0usize)];
-        while let Some((folder, visited, depth)) = stack.pop() {
-            if depth
-                > fabric_deploy::definitions::DefinitionLimits::default()
-                    .max_depth
-                    .get()
-            {
-                return Err(errors::error(
-                    "Limit",
-                    "Folder transfer depth bound reached",
-                ));
-            }
-            if visited {
-                result.extend(
-                    items
-                        .iter()
-                        .filter(|item| item.element.parent() == Some(&folder))
-                        .cloned(),
-                );
-            } else {
-                // Source visits child folders before the direct items at each level.
-                stack.push((folder.clone(), true, depth));
-                stack.extend(
-                    folders
-                        .iter()
-                        .rev()
-                        .filter(|child| child.parent() == Some(&folder))
-                        .map(|child| (child.clone(), false, depth + 1)),
-                );
-            }
+fn folder_transfer_order(
+    target: &Arc<Element>,
+    folders: &[Arc<Element>],
+    items: &[fabric_cli_transfer::TransferItem],
+) -> Result<Vec<fabric_cli_transfer::TransferItem>, CommandError> {
+    let mut result = Vec::new();
+    let mut stack = vec![(target.clone(), false, 0usize)];
+    while let Some((folder, visited, depth)) = stack.pop() {
+        if depth
+            > fabric_deploy::definitions::DefinitionLimits::default()
+                .max_depth
+                .get()
+        {
+            return Err(errors::error(
+                "Limit",
+                "Folder transfer depth bound reached",
+            ));
         }
-        Ok(result)
+        if visited {
+            result.extend(
+                items
+                    .iter()
+                    .filter(|item| item.element.parent() == Some(&folder))
+                    .cloned(),
+            );
+        } else {
+            // Source visits child folders before the direct items at each level.
+            stack.push((folder.clone(), true, depth));
+            stack.extend(
+                folders
+                    .iter()
+                    .rev()
+                    .filter(|child| child.parent() == Some(&folder))
+                    .map(|child| (child.clone(), false, depth + 1)),
+            );
+        }
     }
+    Ok(result)
 }
