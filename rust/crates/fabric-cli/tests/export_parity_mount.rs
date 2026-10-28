@@ -16,7 +16,6 @@ use fabric_cli_output::CommandError;
 use fabric_cli_transfer::{
     TransferEvent, TransferFailure, TransferFiles, TransferFuture, TransferUi,
 };
-use fabric_deploy::definitions::{DefinitionFileSystem, DefinitionImportFileSystem};
 use family_support::{Harness, success};
 use serde_json::{Value, json};
 use std::{
@@ -58,6 +57,7 @@ fn host() -> Harness {
             requests: Mutex::default(),
         }),
         effects: Default::default(),
+        endpoint: fabric_sdk::EndpointBinding::public(fabric_sdk::ServiceOrigin::Fabric),
     }
 }
 
@@ -1301,7 +1301,7 @@ async fn selected_context_binds_export_and_bulk_initial_pages_poll_and_result() 
 async fn selected_export_context_rejects_foreign_poll_or_result_without_fallback_or_replay() {
     for bulk in [false, true] {
         for foreign_result in [false, true] {
-            let mut host = host();
+            let host = host();
             paged_metadata(&host);
             if !bulk {
                 host.reply(200, json!({"id":PIPELINE}));
