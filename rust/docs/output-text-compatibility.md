@@ -72,6 +72,12 @@ all four config leaves, absent-value silence, real setting/context files and
 failure paths. This repairs grouped local output, not all grouped command
 families or complete Python terminal parity.
 
+`desc` directly prints the source command-support report, not a formatted
+success envelope, even when `--output_format json` is selected. Pinned
+`fab_describe._print_available_commands` uses `utils_ui.print`. Mounted
+text/JSON-override tests compare the same unchanged source report fixture,
+stdout, stderr and exit status; they do not parse human-readable output as JSON.
+
 The mounted PWD fixture separately follows source `_print_context`'s OS cwd
 contract: physical directory spelling on POSIX and native cwd spelling on
 Windows. Its exact parsed-JSON assertion and portable parent-component cwd

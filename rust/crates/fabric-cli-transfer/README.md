@@ -4,8 +4,9 @@
 
 `fabric-cli-transfer` composes `export`, `bulk-export`, and `import` over the
 released `fabric_deploy::definitions` APIs. It also registers the source `deploy`
-arguments but explicitly rejects execution: the existing bounded Notebook
-publisher does not implement the valid Python `deploy --config` pipeline.
+arguments, but `TransferHost` explicitly rejects their execution. The central CLI
+routes them separately to its bounded `fabric_cli::deploy::DeployHost`; neither
+host claims the complete Python/CICD deployment pipeline.
 There is no new executable, runtime, registry, credential provider, HTTP stack,
 codec, item format, or deployment algorithm.
 
@@ -61,7 +62,7 @@ versions, checksums and features remain unchanged.
 | `export` | Single item and selected/all workspace items; original prompt and warning; configuration display order versus discovery execution order; real shared definition GET/POST and local ordered writes; Notebook cleanup and format policy reused | Remote Lakehouse output and existing library's unsupported decoding branches |
 | `bulk-export` | Required `--recursive`; existing local output check; nonempty-output prompt before sensitivity prompt; All/Selective requests with complete injected metadata; actual filtering, ancestor stripping and local writes; original type counts and summary | Caller discovery/support integration and remote output; no partial snapshot fallback |
 | `import` | Initial/overwrite prompts; raw local deterministic traversal, cache-file exclusion and format policy; exact create/update body; actual completed ID and explicit cache effects | Environment readiness/publish lifecycle; remote input |
-| `deploy` | Original arguments retained; explicit `NotSupported` without credential, file, metadata or service access | Full CICD config/YAML validation, override typing, environment selection, planning, publication and command-scoped bulk-flag cleanup |
+| `deploy` | Original arguments retained; `TransferHost` rejects execution, while central `DeployHost` separately consumes shared file capabilities | Full CICD processing remains outside this definition-transfer host |
 
 `--all` affects workspace single export only; the source accepts it for an item
 without changing single-item behavior. Transfer commands do not accept `--query`.
@@ -123,6 +124,41 @@ not a promised OS completion time. Runtime owners must use bounded shutdown
 for blocked syscalls); abandoning the wait does not stop the OS operation.
 Do not delete or reuse an owned test tree until its actual worker has exited.
 
+#### Shared deployment consumer
+
+The same native adapter also serves `DeployHost`. Its configuration/parameter
+reads and complete Notebook repository preparation must use `read_async`,
+`resolve_directory_async` and `prepare_repository_async`; invoking the adapter's
+synchronous entry points is an error, not a deployment compatibility bridge.
+The low-level synchronous `LocalTransferFiles` API and injected-adapter defaults
+remain available unchanged for callers that explicitly own a suitable worker.
+
+Repository preparation runs the released `NotebookRepository::discover` once on
+the same serialized worker, retaining original listing order, containment,
+preflight errors, universal-newline handling and complete-snapshot validation.
+It returns only the bounded owned repository—not a mutex guard, borrowed local
+capability, unchecked adapter clone or a partially loaded iterator. All local
+preparation finishes before any service discovery or mutation. Configuration and
+parameter reads retain their explicit YAML byte limits (default 1 MiB); repository
+preparation retains the caller's aggregate Notebook bytes (default 10 MiB) and
+entry bound (default 50,000), plus the existing per-directory/path checks.
+No new sort, extra filesystem authority, service retry or file-write phase is
+introduced.
+
+Cancellation while preparation is pending drops its future, sets the same stop
+flag and retains its permit until the worker really exits. Repository discovery
+checks that flag between entry/read calls. There are no deployment mutations to
+roll back during this phase; later publication retains its original completed IDs
+and accepted-operation uncertainty. YAML/parameter parsing and transformation CPU
+work remain their existing separately bounded implementation, not a claim that
+the entire deployment pipeline has moved to a worker.
+
+This consumer was omitted by the first TD03 mount: integration
+`a62cd4028f2b3cad2107a293cb893fd07ba887f7` consequently failed 13 of the existing
+18 `deploy_mount` tests before network work with `AsyncRequired`. The correction
+must pass those unchanged tests alongside the current-thread transfer/read/
+repository regressions. Source or formatting checks alone do not prove that gate.
+
 ## Independent source and focused checks
 
 `tests/source_reference.py` extracts actual immutable Python handlers with AST,
@@ -140,6 +176,7 @@ python -B -m unittest discover -s crates/fabric-cli-transfer/tests -p test_sourc
 cargo fmt -p fabric-cli-transfer -- --check
 cargo test --offline --locked -p fabric-cli-transfer --all-targets -- --test-threads=1
 cargo test --offline --locked -p fabric-cli --features native-read --test async_transfer_files -- --test-threads=1
+cargo test --offline --locked -p fabric-cli --features native-read --test deploy_mount -- --test-threads=1
 cargo test --offline --locked -p fabric-cli --features native-read --test family_mounts root_export_and_bulk_export_write_real_definition_files -- --exact
 cargo test --offline --locked -p fabric-cli --features native-read --test family_mounts root_import_worker_keeps_raw_bytes_file_before_directory_order_and_exclusions -- --exact
 cargo clippy --offline --locked -p fabric-cli-transfer --all-targets -- -D warnings

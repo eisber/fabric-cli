@@ -9,6 +9,10 @@ use fabric_deploy::definitions::{
     DefinitionFileSystem, DefinitionImportFileSystem, DefinitionLimits, ImportTarget,
     PreparedImport,
 };
+use fabric_deploy::{
+    notebook::DefinitionLimits as NotebookDefinitionLimits,
+    repository::{NotebookRepository, RepositoryError},
+};
 use std::{
     fmt, io,
     path::{Path, PathBuf},
@@ -75,7 +79,10 @@ fn check_stop(stop: &AtomicBool) -> io::Result<()> {
 /// One operation at a time holds the adapter's async mutex, including after a
 /// future is dropped. Queued work checks a stop flag before touching the tree;
 /// import checks it between entries/read calls. There is no recursive task fanout.
-/// File counts, traversal and bytes retain the released finite definition limits.
+/// Definition transfers retain their released file/traversal/byte limits.
+/// Deployment reads and complete repository preparation use their explicit
+/// configuration-byte, aggregate Notebook-byte and repository-entry bounds.
+/// Both consumers share the same permit and unchanged per-directory path policy.
 ///
 /// A running OS call cannot be cancelled. Dropping a write can leave partial or
 /// complete bytes, never rollback. The runtime owner must use bounded shutdown
@@ -196,6 +203,38 @@ impl TransferFiles for TokioTransferFiles {
     fn is_empty_async<'a>(&'a mut self, root: &'a Path) -> TransferFuture<'a, io::Result<bool>> {
         let root = root.to_owned();
         self.run(move |files, _| files.is_empty(&root))
+    }
+
+    fn read_async<'a>(
+        &'a mut self,
+        root: &'a Path,
+        relative: &'a str,
+        max_bytes: usize,
+    ) -> TransferFuture<'a, io::Result<Vec<u8>>> {
+        let root = root.to_owned();
+        let relative = relative.to_owned();
+        self.run(move |files, _| files.read(&root, &relative, max_bytes))
+    }
+
+    fn prepare_repository_async<'a>(
+        &'a mut self,
+        root: &'a Path,
+        limits: NotebookDefinitionLimits,
+        max_entries: usize,
+    ) -> TransferFuture<'a, Result<NotebookRepository, RepositoryError>> {
+        let root = root.to_owned();
+        Box::pin(async move {
+            self.run(move |files, stop| {
+                Ok(NotebookRepository::discover(
+                    &mut ImportWorker { files, stop },
+                    &root,
+                    limits,
+                    max_entries,
+                ))
+            })
+            .await
+            .map_err(RepositoryError::FileSystem)?
+        })
     }
 
     fn preflight_async<'a>(
