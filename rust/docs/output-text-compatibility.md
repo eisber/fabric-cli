@@ -76,8 +76,8 @@ The mounted PWD fixture separately follows source `_print_context`'s OS cwd
 contract: physical directory spelling on POSIX and native cwd spelling on
 Windows. Its exact parsed-JSON assertion and portable parent-component cwd
 regression do not change production path resolution, containment or symlink
-behavior. The owner-authorized test correction and source blob proof are
-recorded in the [self-review](../reviews/20261028/output-consistency-self-review.md#authorized-mounted-pwd-cwd-expectation-correction).
+behavior. Pinned `commands/fs/fab_fs.py::_print_context` uses `os.getcwd()`;
+the native local host injects `std::env::current_dir()`.
 
 ### SRC3: silent empty GET projections
 
@@ -98,8 +98,10 @@ production-session outputs, folder delegation, exact request counts/scopes,
 query/service failures and caller-owned writer failures. The original frozen
 `get-query-empty-source` capture and mounted failing regression are retained.
 These are bounded output repairs, not completion of GET export, definitions,
-enrichment, metadata operations or live host acceptance. See the
-[self-review and pending native CI selectors](../reviews/20261028/output-consistency-self-review.md).
+enrichment, metadata operations or live host acceptance. Focused validation
+uses `local_mounted`, `folder_reads`, and the native-read
+`output_contract_audit`, `read_session` and `job_read_session` test targets.
+Native after-fix CI remains required.
 
 ## Explicit boundaries still requiring completion
 
