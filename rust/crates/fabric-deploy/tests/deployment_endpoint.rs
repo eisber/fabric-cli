@@ -567,44 +567,45 @@ async fn scoped_bulk_import_keeps_selected_profile_and_actual_returned_id() {
             format!("/v1/workspaces/{WORKSPACE}/items/bulkImportDefinitions")
         );
     }
+}
 
-    #[tokio::test]
-    async fn lakehouse_shortcut_pruning_uses_source_encoded_names_on_the_selected_http_path() {
-        let oracle: Value = serde_json::from_str(include_str!(
-            "../../../tests/compatibility/deploy_workflow/shortcuts_source.json"
-        ))
-        .unwrap();
-        let harness = Harness::new("msitapi.fabric.microsoft.com");
-        harness
-            .wire
-            .reply(200, json!({"capacityId":"assigned"}), &[]);
-        harness.wire.reply(200, json!({"value":[]}), &[]);
-        harness.wire.reply(201, json!({"id":ITEM}), &[]);
-        harness.wire.reply(
-            200,
-            json!({"properties":{"sqlEndpointProperties":{"provisioningStatus":"Success"}}}),
-            &[],
-        );
-        let mut shortcuts = vec![json!({"path":"Tables","name":"Keep"})];
-        for case in oracle["cases"].as_array().unwrap() {
-            let (path, name) = case["shortcut_path"]
-                .as_str()
-                .unwrap()
-                .rsplit_once('/')
-                .unwrap();
-            shortcuts.push(json!({"path":path,"name":name}));
-        }
-        harness.wire.reply(200, json!({"value":shortcuts}), &[]);
-        for _ in oracle["cases"].as_array().unwrap() {
-            harness.wire.reply(200, Value::Null, &[]);
-        }
-        harness.wire.reply(200, json!({"name":"Keep"}), &[]);
-        let config = DeploymentConfig::from_document(&json!({
+#[tokio::test]
+async fn lakehouse_shortcut_pruning_uses_source_encoded_names_on_the_selected_http_path() {
+    let oracle: Value = serde_json::from_str(include_str!(
+        "../../../tests/compatibility/deploy_workflow/shortcuts_source.json"
+    ))
+    .unwrap();
+    let harness = Harness::new("msitapi.fabric.microsoft.com");
+    harness
+        .wire
+        .reply(200, json!({"capacityId":"assigned"}), &[]);
+    harness.wire.reply(200, json!({"value":[]}), &[]);
+    harness.wire.reply(201, json!({"id":ITEM}), &[]);
+    harness.wire.reply(
+        200,
+        json!({"properties":{"sqlEndpointProperties":{"provisioningStatus":"Success"}}}),
+        &[],
+    );
+    let mut shortcuts = vec![json!({"path":"Tables","name":"Keep"})];
+    for case in oracle["cases"].as_array().unwrap() {
+        let (path, name) = case["shortcut_path"]
+            .as_str()
+            .unwrap()
+            .rsplit_once('/')
+            .unwrap();
+        shortcuts.push(json!({"path":path,"name":name}));
+    }
+    harness.wire.reply(200, json!({"value":shortcuts}), &[]);
+    for _ in oracle["cases"].as_array().unwrap() {
+        harness.wire.reply(200, Value::Null, &[]);
+    }
+    harness.wire.reply(200, json!({"name":"Keep"}), &[]);
+    let config = DeploymentConfig::from_document(&json!({
                         "core":{"workspace_id":WORKSPACE,"repository_directory":".","item_types_in_scope":["Lakehouse"]},
                         "unpublish":{"skip":true},
                         "features":["disable_workspace_folder_publish","enable_shortcut_publish"],
                     }),"test",None).unwrap();
-        let item = RepositoryItem::from_files("Example.Lakehouse".into(),vec![
+    let item = RepositoryItem::from_files("Example.Lakehouse".into(),vec![
                         ItemFile::new(".platform".into(),serde_json::to_vec(&json!({
                             "metadata":{"displayName":"Example","type":"Lakehouse"},
                             "config":{"logicalId":"33333333-3333-3333-3333-333333333333"},
@@ -615,29 +616,28 @@ async fn scoped_bulk_import_keeps_selected_profile_and_actual_returned_id() {
                             }},
                         }])).unwrap()),
                     ]).unwrap();
-        deploy_repository(
-            &harness.client,
-            &harness.http,
-            &config,
-            DeploymentRepository {
-                items: vec![item],
-                folders: Vec::new(),
-            },
-            EngineContext::from_config(&config, false).unwrap(),
-            OperationLimits::default(),
-            pending(),
-        )
-        .await
-        .unwrap();
-        harness.assert_bound("msitapi.fabric.microsoft.com");
-        let requests = harness.wire.requests.lock().unwrap();
-        let deletes: Vec<_> = requests
-            .iter()
-            .filter(|request| request.method() == Method::Delete)
-            .collect();
-        assert_eq!(deletes.len(), oracle["cases"].as_array().unwrap().len());
-        for (request, source) in deletes.iter().zip(oracle["cases"].as_array().unwrap()) {
-            assert_eq!(request.url().as_str(), source["url"].as_str().unwrap());
-        }
+    deploy_repository(
+        &harness.client,
+        &harness.http,
+        &config,
+        DeploymentRepository {
+            items: vec![item],
+            folders: Vec::new(),
+        },
+        EngineContext::from_config(&config, false).unwrap(),
+        OperationLimits::default(),
+        pending(),
+    )
+    .await
+    .unwrap();
+    harness.assert_bound("msitapi.fabric.microsoft.com");
+    let requests = harness.wire.requests.lock().unwrap();
+    let deletes: Vec<_> = requests
+        .iter()
+        .filter(|request| request.method() == Method::Delete)
+        .collect();
+    assert_eq!(deletes.len(), oracle["cases"].as_array().unwrap().len());
+    for (request, source) in deletes.iter().zip(oracle["cases"].as_array().unwrap()) {
+        assert_eq!(request.url().as_str(), source["url"].as_str().unwrap());
     }
 }
