@@ -5,8 +5,8 @@
 
 use fabric_deploy::parameter_transforms::{
     DynamicVariable, DynamicVariableKind, ParameterFileHost, ParameterItem, ParameterProgram,
-    ParameterResolver, PathFilterOptions, TransformBudget, TransformError, TransformLimits,
-    encode_dynamic_name, expand_parameter_environment, matches_parameter_filters,
+    ParameterResolution, ParameterResolver, PathFilterOptions, TransformBudget, TransformError,
+    TransformLimits, encode_dynamic_name, expand_parameter_environment, matches_parameter_filters,
     merge_parameter_template, prepare_parameter_document, resolve_parameter_paths,
 };
 use serde_json::{Value, json};
@@ -71,12 +71,83 @@ struct Resolver {
     dynamic_calls: Cell<usize>,
 }
 
+struct TracedResolver {
+    events: Vec<String>,
+    workspace_name: String,
+}
+
+impl ParameterResolver for TracedResolver {
+    fn resolve<'a>(&'a mut self, variable: &'a DynamicVariable) -> ParameterResolution<'a> {
+        Box::pin(async move {
+            self.events.push(format!("begin:{}", variable.expression));
+            tokio::task::yield_now().await;
+            let value = match variable.kind {
+                DynamicVariableKind::Item => "22222222-2222-2222-2222-222222222222".to_owned(),
+                DynamicVariableKind::Workspace if variable.workspace_name.is_some() => {
+                    "22222222-2222-2222-2222-222222222222".to_owned()
+                }
+                DynamicVariableKind::Workspace if variable.attribute == "id" => GUID.into(),
+                DynamicVariableKind::Workspace => self.workspace_name.clone(),
+            };
+            self.events.push(format!("end:{}", variable.expression));
+            Ok(Value::String(value))
+        })
+    }
+
+    fn resolve_paths(&self, filters: &[String]) -> Result<Vec<String>, TransformError> {
+        Ok(filters.to_vec())
+    }
+}
+
+fn assert_send<T: Send>(_: &T) {}
+
+#[tokio::test(flavor = "current_thread")]
+async fn seventeen_actual_source_metadata_traces_are_awaited_conditionally_without_cache() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("parameter_resolution_source.json")).unwrap();
+    assert_eq!(fixture["cases"].as_array().unwrap().len(), 17);
+    for case in fixture["cases"].as_array().unwrap() {
+        let program = ParameterProgram::with_default_limits(&case["parameters"], "dev").unwrap();
+        let mut resolver = TracedResolver {
+            events: Vec::new(),
+            workspace_name: case["workspace_name"].as_str().unwrap().into(),
+        };
+        let mut budget = TransformBudget::new(TransformLimits::default(), &|| false);
+        let future = program.apply_for_item(
+            case["input"].as_str().unwrap(),
+            ParameterItem {
+                item_type: "Notebook",
+                item_name: "Book",
+                file_path: "content.py",
+            },
+            &mut resolver,
+            &mut budget,
+        );
+        assert_send(&future);
+        let output = future.await.unwrap();
+        assert_eq!(output, case["expected"].as_str().unwrap(), "{}", case["id"]);
+        let expected: Vec<String> = case["calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|call| {
+                let call = call.as_str().unwrap();
+                [format!("begin:{call}"), format!("end:{call}")]
+            })
+            .collect();
+        assert_eq!(resolver.events, expected, "{}", case["id"]);
+    }
+}
+
 impl ParameterResolver for Resolver {
-    fn resolve_dynamic(&self, variable: &DynamicVariable) -> Result<String, TransformError> {
-        self.dynamic_calls.set(self.dynamic_calls.get() + 1);
-        assert_eq!(variable.kind, DynamicVariableKind::Workspace);
-        assert_eq!(variable.attribute, "id");
-        Ok(GUID.into())
+    fn resolve<'a>(&'a mut self, variable: &'a DynamicVariable) -> ParameterResolution<'a> {
+        Box::pin(async move {
+            self.dynamic_calls.set(self.dynamic_calls.get() + 1);
+            assert_eq!(variable.kind, DynamicVariableKind::Workspace);
+            assert_eq!(variable.attribute, "id");
+            tokio::task::yield_now().await;
+            Ok(Value::String(GUID.into()))
+        })
     }
 
     fn resolve_paths(&self, filters: &[String]) -> Result<Vec<String>, TransformError> {
@@ -160,8 +231,8 @@ fn all_thirty_three_injected_contexts_match_actual_source() {
     }
 }
 
-#[test]
-fn all_thirty_four_source_pipelines_and_schemas_match() {
+#[tokio::test(flavor = "current_thread")]
+async fn all_thirty_four_source_pipelines_and_schemas_match() {
     let fixture: Value =
         serde_json::from_str(include_str!("parameter_pipeline_source.json")).unwrap();
     assert_eq!(fixture["cases"].as_array().unwrap().len(), 34);
@@ -185,7 +256,7 @@ fn all_thirty_four_source_pipelines_and_schemas_match() {
         } else {
             let program = result.unwrap();
             assert_eq!(program.source_document(), &case["parameters"]);
-            let resolver = Resolver {
+            let mut resolver = Resolver {
                 dynamic_calls: Cell::new(0),
             };
             let actual = program
@@ -196,9 +267,10 @@ fn all_thirty_four_source_pipelines_and_schemas_match() {
                         item_name: "Book",
                         file_path: case["file"].as_str().unwrap(),
                     },
-                    &resolver,
+                    &mut resolver,
                     &mut TransformBudget::new(TransformLimits::default(), &|| false),
                 )
+                .await
                 .unwrap();
             assert_eq!(actual, case["expected"].as_str().unwrap(), "{}", case["id"]);
             if case["id"] == "ordered-4" || case["id"] == "ordered-7" {

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use super::{TransformBudget, TransformError};
+use super::{ParameterResolver, TransformBudget, TransformError};
 use crate::yaml::{self, YamlLimits, YamlPolicy};
 use jsonpath_rust::{
     JsonPath,
@@ -17,6 +17,50 @@ enum Segment {
 }
 
 type Location = Vec<Segment>;
+
+struct Mutation {
+    data: Value,
+    paths: Vec<Location>,
+    encoded_length: usize,
+    is_yaml: bool,
+}
+
+impl Mutation {
+    fn replace(
+        &mut self,
+        path: &Location,
+        replacement: Value,
+        budget: &mut TransformBudget<'_>,
+    ) -> Result<(), TransformError> {
+        validate_value(&replacement, budget, 0)?;
+        let replacement_length = fabric_core_json::json_dumps(&replacement).len();
+        // Source Root.update returns a value which its caller ignores.
+        if path.is_empty() {
+            return Ok(());
+        }
+        let target = get_mut(&mut self.data, path)
+            .ok_or_else(|| TransformError::Invalid("Matched JSONPath no longer exists".into()))?;
+        self.encoded_length = self
+            .encoded_length
+            .checked_sub(fabric_core_json::json_dumps(target).len())
+            .and_then(|length| length.checked_add(replacement_length))
+            .filter(|length| *length <= budget.limits.max_bytes)
+            .ok_or(TransformError::Limit)?;
+        *target = replacement;
+        Ok(())
+    }
+
+    fn finish(self, budget: &mut TransformBudget<'_>) -> Result<String, TransformError> {
+        budget.checkpoint()?;
+        let output = if self.is_yaml {
+            emit_flat_yaml(&self.data, budget)?
+        } else {
+            fabric_core_json::json_dumps(&self.data)
+        };
+        budget.text(&output)?;
+        Ok(output)
+    }
+}
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Comparison {
@@ -198,8 +242,47 @@ impl JsonPathReplacement {
         mut resolve: impl FnMut(&Value, &mut TransformBudget<'_>) -> Result<Value, TransformError>,
         budget: &mut TransformBudget<'_>,
     ) -> Result<String, TransformError> {
+        let Some(mut mutation) = self.prepare(content, replacement, is_yaml, budget)? else {
+            return Ok(content.into());
+        };
+        let replacement = replacement.expect("prepared replacement");
+        for path in std::mem::take(&mut mutation.paths) {
+            budget.matched()?;
+            let value = resolve(replacement, budget)?;
+            mutation.replace(&path, value, budget)?;
+        }
+        mutation.finish(budget)
+    }
+
+    pub(super) async fn apply_resolving_async(
+        &self,
+        content: &str,
+        replacement: Option<&Value>,
+        is_yaml: bool,
+        resolver: &mut dyn ParameterResolver,
+        budget: &mut TransformBudget<'_>,
+    ) -> Result<String, TransformError> {
+        let Some(mut mutation) = self.prepare(content, replacement, is_yaml, budget)? else {
+            return Ok(content.into());
+        };
+        let replacement = replacement.expect("prepared replacement");
+        for path in std::mem::take(&mut mutation.paths) {
+            budget.matched()?;
+            let value = super::program::resolve_value(replacement, resolver, budget).await?;
+            mutation.replace(&path, value, budget)?;
+        }
+        mutation.finish(budget)
+    }
+
+    fn prepare(
+        &self,
+        content: &str,
+        replacement: Option<&Value>,
+        is_yaml: bool,
+        budget: &mut TransformBudget<'_>,
+    ) -> Result<Option<Mutation>, TransformError> {
         budget.text(content)?;
-        let mut data = if is_yaml {
+        let data = if is_yaml {
             yaml::decode(
                 content,
                 YamlPolicy::Config,
@@ -224,7 +307,7 @@ impl JsonPathReplacement {
                 .map_err(|_| TransformError::Invalid("Invalid JSON parameter content".into()))?
         };
         if is_yaml && data.is_null() {
-            return Ok(content.into());
+            return Ok(None);
         }
         validate_value(&data, budget, 0)?;
         if let Some(replacement) = replacement {
@@ -238,9 +321,9 @@ impl JsonPathReplacement {
             budget,
             0,
         )?;
-        let Some(replacement) = replacement.filter(|_| !paths.is_empty()) else {
-            return Ok(content.into());
-        };
+        if replacement.is_none() || paths.is_empty() {
+            return Ok(None);
+        }
         for (index, path) in paths.iter().enumerate() {
             budget.checkpoint()?;
             for other in &paths[..index] {
@@ -256,38 +339,16 @@ impl JsonPathReplacement {
                 }
             }
         }
-        let mut encoded_length = fabric_core_json::json_dumps(&data).len();
+        let encoded_length = fabric_core_json::json_dumps(&data).len();
         if encoded_length > budget.limits.max_bytes {
             return Err(TransformError::Limit);
         }
-        for path in paths {
-            budget.matched()?;
-            let replacement = resolve(replacement, budget)?;
-            validate_value(&replacement, budget, 0)?;
-            let replacement_length = fabric_core_json::json_dumps(&replacement).len();
-            // jsonpath_ng Root.update returns a value; the source caller ignores
-            // that return but still marks replacement_made and emits JSON.
-            if path.is_empty() {
-                continue;
-            }
-            let target = get_mut(&mut data, &path).ok_or_else(|| {
-                TransformError::Invalid("Matched JSONPath no longer exists".into())
-            })?;
-            encoded_length = encoded_length
-                .checked_sub(fabric_core_json::json_dumps(target).len())
-                .and_then(|length| length.checked_add(replacement_length))
-                .filter(|length| *length <= budget.limits.max_bytes)
-                .ok_or(TransformError::Limit)?;
-            *target = replacement;
-        }
-        budget.checkpoint()?;
-        let output = if is_yaml {
-            emit_flat_yaml(&data, budget)?
-        } else {
-            fabric_core_json::json_dumps(&data)
-        };
-        budget.text(&output)?;
-        Ok(output)
+        Ok(Some(Mutation {
+            data,
+            paths,
+            encoded_length,
+            is_yaml,
+        }))
     }
 }
 

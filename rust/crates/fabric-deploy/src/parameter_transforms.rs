@@ -12,8 +12,8 @@ mod regex;
 mod schema;
 
 pub use context::{
-    DynamicVariable, DynamicVariableKind, ParameterItem, ParameterResolver, encode_dynamic_name,
-    matches_parameter_filters,
+    DynamicVariable, DynamicVariableKind, ParameterItem, ParameterResolution, ParameterResolver,
+    encode_dynamic_name, matches_parameter_filters,
 };
 pub use input::{
     ParameterFileHost, PreparedParameters, expand_parameter_environment, merge_parameter_template,

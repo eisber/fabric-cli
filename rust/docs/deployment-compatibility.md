@@ -74,7 +74,8 @@ Native consumers now have these explicit primitives:
 
 - `ParameterProgram::apply_for_item` (also exposed as `apply_scoped`) applies
   key/value rules before find rules with exact item/name/path conjunction.
-  `ParameterResolver` supplies metadata
+  Both methods are async and borrow `&mut dyn ParameterResolver`; the caller
+  awaits them using its existing runtime. `ParameterResolver` supplies metadata
   and concrete path capabilities; no library reads credentials, files or process
   environment. Dynamic replacements resolve only after a match, once per
   selected JSONPath location. `encode_dynamic_name` retains the source UTF-8
@@ -114,6 +115,30 @@ the pinned config validator resolves paths relative to the config directory and
 checks existence/type/git-root consistency; it does not expand `~` or `$ENV:`
 within these config path fields. No planner, CLI host, publisher or item processor
 is modified by this configuration-only lane.
+
+### Source-conditional asynchronous parameter metadata
+
+`ParameterResolver: Send` exposes
+`resolve<'a>(&'a mut self, &'a DynamicVariable) -> ParameterResolution<'a>`,
+where the result is a boxed standard `Future<Output = Result<Value,
+TransformError>> + Send`. The pure inventory `resolve_paths` method stays
+synchronous. No `Sync` bound, mutex, global state, runtime construction,
+unconditional prefetch or default metadata cache is introduced.
+
+Find replacements await resolution only after filter/environment/match selection;
+key/value rules await once per concrete selected path, preserving repeated source
+refresh points. Dynamic **find** expressions retain a distinct source quirk:
+their resolution precedes the find helper's filter/environment skip decisions.
+Unexpanded `$ENV:` find patterns remain literal, as the pinned source dictates.
+Seventeen new actual-source consumer traces capture these points before the
+asynchronous native test expectations.
+
+Legacy context-free `apply` and public JSONPath primitives remain synchronous.
+The former uses exactly one ready poll with a resolver incapable of I/O, never
+a blocking executor or loop. Actual metadata always requires the async API.
+Callers own I/O deadlines/cancellation; the explicit transform budget checks
+elapsed time before/after awaits and must be sized for the complete preparation.
+Existing dependency versions/features and all protected receipts are unchanged.
 
 The initial slice inventories reference behavior and adds synthetic offline
 fixtures. The owner subsequently approved a native single-Notebook implementation,
