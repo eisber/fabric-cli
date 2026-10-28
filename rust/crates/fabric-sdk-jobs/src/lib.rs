@@ -564,6 +564,19 @@ impl JobClient {
         &self.headers
     }
 
+    fn route_url(&self, path: &str) -> Result<Url, JobError> {
+        // Routes contain only fixed service segments and validated identifiers.
+        // set_path preserves the old SDK's Unicode path encoding without letting
+        // a raw path replace the context's authority.
+        let mut url = self.context.endpoint().base_url();
+        url.set_path(path);
+        self.context
+            .endpoint()
+            .validate_url(&url)
+            .map_err(|_| JobError::InvalidEndpoint)?;
+        Ok(url)
+    }
+
     async fn request(
         &self,
         method: Method,
@@ -571,11 +584,7 @@ impl JobClient {
         query: Option<&str>,
         body: Option<&Value>,
     ) -> Result<JobResponse, JobError> {
-        let mut url = self
-            .context
-            .endpoint()
-            .url(path)
-            .map_err(|_| JobError::InvalidEndpoint)?;
+        let mut url = self.route_url(path)?;
         if let Some(job_type) = query {
             url.query_pairs_mut().append_pair("jobType", job_type);
         }
@@ -639,11 +648,7 @@ impl JobClient {
         } else {
             target.instances_path()
         };
-        let url = self
-            .context
-            .endpoint()
-            .url(&path)
-            .map_err(|_| JobError::InvalidEndpoint)?;
+        let url = self.route_url(&path)?;
         let pager = TokenPager::new(
             url,
             PagingLimits {

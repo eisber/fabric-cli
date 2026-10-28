@@ -131,5 +131,31 @@ raw routes, token-pager bases and bound run handles use the selected endpoint.
 Authentication uses the existing core request primitive with fixed Fabric scope,
 not another credential path. `RunHandle::from_bound_command_response` is the
 explicit raw-response counterpart; its old constructor remains public Fabric.
-The operation bridge and CLI metadata-session composition must adopt this same
-context before claiming end-to-end non-public-host support.
+`SharedJobOperations::with_context(context, executor, limits)` and
+`from_job_executor_with_context(context, executor, limits)` now carry that
+context through the existing `OperationSession::with_context`. Original bridge
+constructors retain their public defaults. Header-scoped clones retain the same
+credential Arc and binding. `JobSession` derives both clients directly from
+`reads.sdk.context()`, so metadata, submission, cancellation, schedules, pages,
+status polls and generic-operation/result requests share one authority.
+
+`HttpJobExecutor` accepts the already-configured shared `HttpExecutor`; its
+`endpoint()` accessor exposes that binding. Fabric remains the explicit service
+identity, not an inferred token scope. A non-Fabric executor binding fails even
+on the header-aware path instead of using the shared public-origin fallback.
+No HTTP retry/timeout, auth provider, transport feature or dependency changes.
+
+`endpoint_reference.py` passed 540 unchanged-source job API/HTTP endpoint, scope
+and skill observations across public/daily/MSIT, all five source resources and
+missing/empty/selected skill values. The native `job_endpoint_context` consumer
+adds all eight leaves (including actual pages/status waits), generic operation
+poll/result chains for every synchronous leaf, and foreign-host rejection.
+Focused SDK tests preserve constructor/credential identity, strict audience and
+service validation before credentials, and cross-endpoint handle rejection.
+These new Rust consumers remain CI-gated until the root executes them.
+
+For the endpoint increment the smallest additional root command is:
+
+```text
+cargo test --locked -p fabric-cli --test job_endpoint_context
+```

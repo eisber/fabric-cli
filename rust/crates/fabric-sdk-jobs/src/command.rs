@@ -137,11 +137,7 @@ impl JobClient {
         } else {
             target.instances_path()
         };
-        let url = self
-            .context
-            .endpoint()
-            .url(&path)
-            .map_err(|_| JobError::InvalidEndpoint)?;
+        let url = self.route_url(&path)?;
         let pager = TokenPager::new(
             url,
             PagingLimits {
