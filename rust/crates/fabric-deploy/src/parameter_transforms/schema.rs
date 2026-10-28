@@ -185,7 +185,7 @@ pub(super) fn item_settings(
     let mut semantic = document.get("semantic_model_binding").cloned();
     if let Some(gateways) = document.get("gateway_binding") {
         result.insert("gateway_binding".into(), gateways.clone());
-        if !truthy(gateways) || semantic.as_ref().is_none_or(Value::is_array) {
+        if truthy(gateways) && semantic.as_ref().is_none_or(Value::is_array) {
             let gateways = gateways
                 .as_array()
                 .ok_or_else(|| invalid("gateway_binding must be a list"))?;

@@ -181,11 +181,11 @@ impl ParameterProgram {
                 "find_replace",
                 "key_value_replace",
                 "spark_pool",
-                "gateway_binding",
                 "semantic_model_binding",
             ]
             .contains(&key.as_str())
-        }) {
+        }) && !item_settings.contains_key("semantic_model_binding")
+        {
             return Err(invalid("Parameter file has no parameter sections"));
         }
         let mut notices = Vec::new();
@@ -593,8 +593,7 @@ impl ParameterProgram {
                     && (self
                         .item_settings
                         .get(key.as_str())
-                        .and_then(Value::as_array)
-                        .is_some_and(Vec::is_empty)
+                        .is_some_and(|value| !super::context::truthy(value))
                         || (self.item_settings.contains_key("semantic_model_binding")
                             && sections.contains(&"semantic_model_binding"))))
         }) {
