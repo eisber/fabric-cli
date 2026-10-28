@@ -144,6 +144,12 @@ selection need an injected UI; use the corresponding explicit force/all options
 for supported noninteractive branches. Resource notices are buffered in source
 order and delivered with the final output, so write failures remain observable.
 
+The native transfer confirmation adapter also accepts explicit terminal input
+for import and bulk export. It uses a blocking input worker rather than blocking
+the current-thread runtime. EOF or failed prompt delivery is an error, never
+consent. Interactive multi-item export selection remains a caller-injected UI
+boundary; explicit `--all` remains available.
+
 ## Bounded gaps and evidence
 
 Full `deploy --config`, ACL export, access/resource skill binding, recursive

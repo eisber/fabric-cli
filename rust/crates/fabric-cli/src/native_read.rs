@@ -796,18 +796,10 @@ impl fabric_cli_transfer::TransferUi for NativeTransferUi {
     }
     fn confirm<'a>(
         &'a self,
-        _: &'a str,
+        question: &'a str,
     ) -> fabric_cli_transfer::TransferFuture<'a, Result<bool, fabric_cli_output::CommandError>>
     {
-        Box::pin(async {
-            Err(fabric_cli_output::CommandError::new(
-                Some(
-                    "Native transfer confirmation requires an injected UI; use --force explicitly"
-                        .into(),
-                ),
-                Some("NotSupported".into()),
-            ))
-        })
+        Box::pin(async move { fabric_cli::console::confirm(question).await })
     }
     fn select<'a>(
         &'a self,
@@ -849,12 +841,7 @@ impl fabric_cli_jobs::JobUi for NativeJobUi {
     }
 
     fn confirm(&self) -> fabric_cli_jobs::Confirmation<'_> {
-        Box::pin(async {
-            Err(fabric_cli_output::CommandError::new(
-                Some("Native interactive confirmation is not supported; select --force explicitly or inject a confirmation UI".into()),
-                Some("NotSupported".into()),
-            ))
-        })
+        Box::pin(async { fabric_cli::console::confirm("Are you sure?").await })
     }
 }
 

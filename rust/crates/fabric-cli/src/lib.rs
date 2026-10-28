@@ -9,6 +9,7 @@
 
 #[cfg(feature = "windows-broker")]
 pub mod auth_commands;
+pub mod console;
 pub mod deploy;
 mod errors;
 #[cfg(feature = "native-read")]

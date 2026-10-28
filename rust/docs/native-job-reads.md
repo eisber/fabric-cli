@@ -75,10 +75,12 @@ Cancellation delegates one POST and optional actual job-status wait; accepted
 generic operations use the existing shared operation/result retrieval, not a
 second poller. Schedule updates retain the family's GET-before-PATCH and enabled
 state rules. Removal never assumes consent: an injected UI can confirm, decline,
-fail or be cancelled before DELETE. Native terminal prompting remains explicitly
-unsupported; the native removal happy path requires the caller's `--force`.
-Non-forced native removal fails `NotSupported` without DELETE rather than
-blocking the current-thread runtime or silently approving the action.
+fail or be cancelled before DELETE. Native removal now reads explicit terminal
+confirmation on a blocking input worker; `--force` bypasses that prompt.
+An entered empty line accepts the source prompt's yes default. EOF, malformed
+or oversized answers, and prompt-write failures never grant consent. Prompt
+bytes go to stderr, preserving JSON stdout. Dropping the prompt future does not
+cancel an OS read; the host retains its bounded runtime-shutdown behavior.
 
 The same `job_execution_probe` now accepts these typed invocations.
 `tests/compatibility/job_mutations/compare.py` independently freezes 64 source
