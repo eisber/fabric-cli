@@ -305,11 +305,15 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
         '--test', 'deploy_parameters', '--test', 'deploy_mount',
         ...(exists('crates/fabric-cli/tests/deploy_full.rs') ? ['--test', 'deploy_full'] : []),
+        ...(exists('crates/fabric-cli/tests/native_deploy_inputs.rs') ? ['--test', 'native_deploy_inputs'] : []),
+        ...(exists('crates/fabric-cli/tests/deploy_inputs_debug.rs') ? ['--test', 'deploy_inputs_debug'] : []),
         '--', '--list'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-deploy', '--', '--test-threads=1'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
         '--test', 'deploy_parameters', '--test', 'deploy_mount',
         ...(exists('crates/fabric-cli/tests/deploy_full.rs') ? ['--test', 'deploy_full'] : []),
+        ...(exists('crates/fabric-cli/tests/native_deploy_inputs.rs') ? ['--test', 'native_deploy_inputs'] : []),
+        ...(exists('crates/fabric-cli/tests/deploy_inputs_debug.rs') ? ['--test', 'deploy_inputs_debug'] : []),
         '--', '--test-threads=1'),
     ];
     if (windowsAuth) return [
