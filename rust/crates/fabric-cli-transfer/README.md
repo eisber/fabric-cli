@@ -30,9 +30,11 @@ with request, stream, and file effects before counting these leaves.
 3. Construct `TransferHost` with the existing SDK `Client`, an injected
    `OperationExecutor`, file policy, UI, finite limits, and explicit CLI mode.
    The executor delegates to the existing shared HTTP/time implementation.
-   Execute with caller cancellation on the caller's runtime. Local file methods
-   are synchronous; use an appropriate caller worker, not a blocking async
-   service-discovery callback.
+   Execute with caller cancellation on the caller's runtime. Override the
+   `TransferFiles` asynchronous file capabilities for OS-backed hosts. The default
+   methods retain existing synchronous injected adapters; they do not make those
+   adapters nonblocking. The central CLI supplies `TokioTransferFiles` on the
+   caller's existing blocking executor, not a second runtime or discovery callback.
 4. Apply deferred `ImportCacheEffect` values after successful result delivery,
    matching the source handler. If output fails, retain the result as completion
    evidence but do not silently apply cache effects or replay the mutation.
@@ -80,6 +82,47 @@ this avoids credential/service work for an invalid local root. Existing library
 path/bounds/accepted-response safety exceptions remain unchanged. No Python
 source, old oracle, baseline, or production containment rule is modified.
 
+### Asynchronous local filesystem boundary (TD03)
+
+The family now awaits directory resolution, bounded emptiness checks, complete
+import preparation, preflight, directory creation and each ordered file write.
+The released definition library still owns HTTP/LRO, codecs, source path
+validation, Notebook cleanup, import sorting/exclusions and request metadata.
+For export it first produces an in-memory write plan, then the family executes
+the actual preflight/create/write phases asynchronously. A captured path is never
+reported as written: preparation errors discard plan-only progress; failures
+during actual writes retain completed paths and the possibly incomplete path.
+Progress still follows successful preflight (bulk) or item-directory creation
+(single), and preflight still precedes every write.
+
+`fabric_cli::families::transfer_files::TokioTransferFiles` delegates to the
+unchanged stable-root `LocalTransferFiles` policy on an injected Tokio handle.
+Synchronous entry points on this adapter explicitly fail, rather than silently
+performing blocking I/O. There is one queued/running blocking task per adapter,
+including after a caller drops a future. The next call asynchronously waits for
+that task's permit; no parallel tree walk, enumeration sort, runtime, global pool,
+or new dependency is introduced. Native setup must await this adapter's `new`
+instead of constructing synchronous `LocalTransferFiles`.
+
+The configured definition bounds cap each phase: by default 4,096 entries/files,
+10 MiB aggregate decoded/input bytes, depth 32 and 1,024 portable path bytes.
+Import additionally retains the separate encoded-request byte check. Worker
+import limits cannot exceed its constructor's caps. Export planning adds at most
+one bounded decoded-byte copy while the released library is preparing the plan;
+worker preflight takes ownership of that plan without another content copy.
+Filesystem enumeration and source-defined import sorting are unchanged.
+
+Cancellation is polled while filesystem work is pending and before the next
+phase. Queued work checks a stop flag before touching the tree; import checks it
+between entry/read calls. A running OS call cannot be interrupted. An in-flight
+write may finish after cancellation returns, so its path remains uncertain,
+earlier completed files remain present, and no cleanup, rollback, replay or
+deadline-based no-effects claim is made. Each task has finite byte/traversal work,
+not a promised OS completion time. Runtime owners must use bounded shutdown
+(`Runtime::shutdown_timeout`, rather than ordinary runtime drop waiting forever
+for blocked syscalls); abandoning the wait does not stop the OS operation.
+Do not delete or reuse an owned test tree until its actual worker has exited.
+
 ## Independent source and focused checks
 
 `tests/source_reference.py` extracts actual immutable Python handlers with AST,
@@ -96,6 +139,9 @@ From `rust/`, on the root-owned validation worker:
 python -B -m unittest discover -s crates/fabric-cli-transfer/tests -p test_source_reference.py -v
 cargo fmt -p fabric-cli-transfer -- --check
 cargo test --offline --locked -p fabric-cli-transfer --all-targets -- --test-threads=1
+cargo test --offline --locked -p fabric-cli --features native-read --test async_transfer_files -- --test-threads=1
+cargo test --offline --locked -p fabric-cli --features native-read --test family_mounts root_export_and_bulk_export_write_real_definition_files -- --exact
+cargo test --offline --locked -p fabric-cli --features native-read --test family_mounts root_import_worker_keeps_raw_bytes_file_before_directory_order_and_exclusions -- --exact
 cargo clippy --offline --locked -p fabric-cli-transfer --all-targets -- -D warnings
 cargo test --offline --locked -p fabric-deploy --test definitions --test notebook -- --test-threads=1
 ```
@@ -105,3 +151,11 @@ directories. They do not authenticate, inspect caches/certificates, create live
 resources, provision paid capacity, or execute jobs/Notebooks. Build scheduling,
 central mounting, Linux execution and publication belong to the integration owner;
 commands listed here are not a claim that validation has already passed.
+
+The current-thread heartbeat regression queues the actual production file
+adapter behind one gated blocking worker, runs a runtime heartbeat, checks that
+the destination is untouched, then releases the gate and checks exact binary
+bytes. It does not depend on disk speed, huge payloads or a timing threshold.
+Separate tests cover dropped queued writes/permit retention, original native
+errors, typed unavailable-worker errors, bounds, link rejection where supported,
+ordered duplicate overwrites, partial writes and cancellation uncertainty.

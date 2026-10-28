@@ -8,7 +8,7 @@ use azure_core::{
     time::OffsetDateTime,
 };
 use fabric_cli::{
-    families::{FamilyOutput, FamilySession},
+    families::{FamilyOutput, FamilySession, transfer_files::TokioTransferFiles},
     parser::parse_args,
     session::ReadSession,
 };
@@ -18,7 +18,7 @@ use fabric_cli_local::{
 };
 use fabric_cli_mutations::{CommandFuture, MutationUi, NoticeKind};
 use fabric_cli_output::{CommandError, Timestamp};
-use fabric_cli_transfer::{LocalTransferFiles, TransferEvent, TransferFuture, TransferUi};
+use fabric_cli_transfer::{TransferEvent, TransferFuture, TransferUi};
 use fabric_sdk::{Audience, Client, CredentialSelection};
 use fabric_sdk_http::{ExecutionFuture, ExecutionOptions, ExecutionTimer, HttpExecutor};
 use serde_json::{Value, json};
@@ -280,8 +280,14 @@ impl Harness {
         )
         .unwrap();
         let mut mutations = MutationUiCapture::default();
-        let mut files =
-            LocalTransferFiles::new(self.root.clone(), None, Default::default()).unwrap();
+        let mut files = TokioTransferFiles::new(
+            self.root.clone(),
+            None,
+            Default::default(),
+            tokio::runtime::Handle::current(),
+        )
+        .await
+        .unwrap();
         let output = FamilySession {
             reads: &reads,
             http: &executor,
