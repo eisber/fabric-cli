@@ -28,7 +28,7 @@ use fabric_deploy::definitions::{
 };
 use fabric_deploy::{
     notebook::DefinitionLimits as NotebookDefinitionLimits,
-    repository::{NotebookRepository, RepositoryError},
+    repository::{DeploymentRepository, NotebookRepository, RepositoryError},
 };
 use fabric_sdk::Client;
 use fabric_sdk_operations::{
@@ -241,6 +241,22 @@ pub trait TransferFiles: DefinitionFileSystem + DefinitionImportFileSystem + Sen
     ) -> TransferFuture<'a, Result<NotebookRepository, RepositoryError>> {
         Box::pin(async move {
             NotebookRepository::discover(&mut files::ImportFiles(self), root, limits, max_entries)
+        })
+    }
+
+    /// Prepare all source-supported deployment item types as one owned snapshot.
+    ///
+    /// The legacy Notebook capability remains independent. This default is for
+    /// synchronous injected file policies; native async adapters must override it
+    /// using their existing serialized blocking worker and bounded discovery.
+    fn prepare_deployment_repository_async<'a>(
+        &'a mut self,
+        root: &'a Path,
+        limits: NotebookDefinitionLimits,
+        max_entries: usize,
+    ) -> TransferFuture<'a, Result<DeploymentRepository, RepositoryError>> {
+        Box::pin(async move {
+            DeploymentRepository::discover(&mut files::ImportFiles(self), root, limits, max_entries)
         })
     }
 
