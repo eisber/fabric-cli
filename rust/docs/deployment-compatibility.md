@@ -15,6 +15,21 @@ them or call `require_no_extensions()` before mutation, never silently drop them
 The existing Notebook-only preflight remains a legacy consumer, not a restriction
 on the full configuration model.
 
+The constructor also accepts `&CommandOptions`. `CommandOptions::new(bulk,
+kwargs)` is the two-input command construction path; kwargs contain only
+noncredential metadata and the CLI wrapper overwrites `host_app`. Earlier
+optional caller-global `features`/`constants` inputs remain compatible. Unknown
+kwargs remain source-ignored metadata, not invented deployment behavior.
+No `onboard_missing_items` behavior is introduced.
+
+`CommandConfiguration` exposes documented fields through a read-only
+`CommandConfigurationData` view: `workspace`, `repository_directory`,
+`parameter_file_path`, `item_types`, `publish`, `unpublish`, `features`,
+`constants`, `extensions`, `raw_document`, `environment` and `kwargs`. Nested
+operation fields are also readable. The view is shared behind a private `Arc`
+without `DerefMut`; it cannot be mutated through the frozen snapshot. Existing
+getters remain supported, and no existing `DeploymentConfig` fields change.
+
 The configured `find_replace.is_regex` and `ignore_case` flags accept strings or
 null, not YAML booleans. Only `lower() == "true"` enables either flag: there is no
 whitespace stripping or `"yes"`/`"1"` truthiness. Every other string is valid false;

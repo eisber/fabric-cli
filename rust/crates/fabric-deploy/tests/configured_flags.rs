@@ -10,6 +10,60 @@ use fabric_deploy::{
 use serde_json::{Value, json};
 
 #[test]
+fn borrowed_options_expose_readonly_source_field_view_without_changing_legacy_config() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("configured_flags_source.json")).unwrap();
+    let case = fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["id"] == "filters-environment")
+        .unwrap();
+    let mut config = DeploymentConfig::from_document(&case["config"], "dev", None).unwrap();
+    let mut options = CommandOptions::new(
+        true,
+        serde_json::Map::from_iter([
+            ("host_app".into(), json!("wrapper/1")),
+            ("unused_argument".into(), json!({"typed": false})),
+        ]),
+    );
+    let snapshot = config.command_configuration(&options).unwrap();
+    assert_eq!(snapshot.raw_document, config.document);
+    assert_eq!(
+        snapshot.workspace,
+        fabric_deploy::deployment_config::WorkspaceTarget::Id(
+            "11111111-1111-1111-1111-111111111111".into()
+        )
+    );
+    assert_eq!(snapshot.repository_directory, "repository");
+    assert!(snapshot.parameter_file_path.is_none());
+    assert_eq!(snapshot.item_types, ["Notebook"]);
+    assert_eq!(snapshot.publish.exclude_regex.as_deref(), Some("Book"));
+    assert!(!snapshot.publish.skip);
+    assert!(!snapshot.unpublish.skip);
+    assert_eq!(
+        snapshot.unpublish.items_to_include.as_ref().unwrap(),
+        &["Book.Notebook"]
+    );
+    assert!(snapshot.features.contains(&"enable_bulk_publish".into()));
+    assert!(
+        snapshot
+            .features
+            .contains(&"enable_experimental_features".into())
+    );
+    assert_eq!(snapshot.kwargs["unused_argument"], json!({"typed": false}));
+    let cloned = snapshot.clone();
+    assert!(std::ptr::eq(&*snapshot, &*cloned));
+    options.kwargs.insert("host_app".into(), json!("changed"));
+    config.document["core"]["repository_directory"] = json!("changed");
+    assert_eq!(snapshot.host_app(), Some(&json!("wrapper/1")));
+    assert_eq!(
+        snapshot.raw_document["core"]["repository_directory"],
+        "repository"
+    );
+}
+
+#[test]
 fn selected_constant_getter_matches_eighteen_actual_source_cases_without_alias_recomputation() {
     let fixture: Value =
         serde_json::from_str(include_str!("selected_constants_source.json")).unwrap();

@@ -3,6 +3,7 @@
 
 use super::{ConfigurationError, DeploymentConfig, invalid, section_fields};
 use serde_json::{Map, Value};
+use std::{ops::Deref, sync::Arc};
 
 /// Source workspace selection, preserving ID precedence over a display name.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -22,19 +23,42 @@ pub struct CommandOptions {
     pub features: Vec<String>,
     /// Existing caller constant values, overridden by selected config constants.
     pub constants: Map<String, Value>,
-    /// Source keyword arguments. Only `host_app` is consumed by deploy_with_config.
+    /// Noncredential keyword metadata; only `host_app` is consumed upstream.
+    ///
+    /// The CLI wrapper overwrites `host_app`. Credentials/SDK identity are
+    /// injected separately and must never be supplied through this map.
     pub kwargs: Map<String, Value>,
+}
+
+impl CommandOptions {
+    /// Construct command inputs from bulk selection and noncredential metadata.
+    ///
+    /// Optional source-global snapshots remain empty unless explicitly injected
+    /// through the existing `features` and `constants` compatibility fields.
+    pub fn new(bulk_publish: bool, kwargs: Map<String, Value>) -> Self {
+        Self {
+            bulk_publish,
+            kwargs,
+            ..Self::default()
+        }
+    }
 }
 
 /// Selected publication or unpublication settings, without implicit execution.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct OperationSettings {
-    skip: bool,
-    exclude_regex: Option<String>,
-    folder_exclude_regex: Option<String>,
-    folder_path_to_include: Option<Vec<String>>,
-    items_to_include: Option<Vec<String>>,
-    shortcut_exclude_regex: Option<String>,
+    /// Source skip value; omitted settings default to false.
+    pub skip: bool,
+    /// Item-name exclusion regex.
+    pub exclude_regex: Option<String>,
+    /// Folder exclusion regex, publish only.
+    pub folder_exclude_regex: Option<String>,
+    /// Exact folder inclusion paths, publish only.
+    pub folder_path_to_include: Option<Vec<String>>,
+    /// Exact source item selection values.
+    pub items_to_include: Option<Vec<String>>,
+    /// Shortcut-name exclusion regex, publish only.
+    pub shortcut_exclude_regex: Option<String>,
 }
 
 impl OperationSettings {
@@ -97,29 +121,66 @@ impl OperationSettings {
 /// Unknown source fields remain lossless extensions, not silently dropped input.
 #[derive(Clone, Debug)]
 pub struct CommandConfiguration {
-    document: Value,
-    target: WorkspaceTarget,
-    environment: String,
-    repository_directory: String,
-    parameter_file: Option<String>,
-    item_types: Vec<String>,
-    publish: OperationSettings,
-    unpublish: OperationSettings,
-    features: Vec<String>,
-    constants: Map<String, Value>,
-    kwargs: Map<String, Value>,
-    extensions: Map<String, Value>,
+    fields: Arc<CommandConfigurationData>,
+}
+
+/// Public read-only field view of a validated immutable command snapshot.
+///
+/// [`CommandConfiguration`] exposes these fields through [`Deref`], without
+/// `DerefMut`; callers can read/clone them but cannot mutate the frozen snapshot.
+#[derive(Clone, Debug)]
+pub struct CommandConfigurationData {
+    /// Complete merged source document, including all unselected environments.
+    pub raw_document: Value,
+    /// Source ID/name selector with workspace-ID precedence.
+    pub workspace: WorkspaceTarget,
+    /// Exact selected target environment.
+    pub environment: String,
+    /// Source-selected path; host owns resolution and filesystem validation.
+    pub repository_directory: String,
+    /// Explicit parameter path; None forbids implicit discovery.
+    pub parameter_file_path: Option<String>,
+    /// Selected source item types, without a Notebook-only restriction.
+    pub item_types: Vec<String>,
+    /// Every selected source publish setting.
+    pub publish: OperationSettings,
+    /// Every selected source unpublish setting, including skip=false by default.
+    pub unpublish: OperationSettings,
+    /// Exact-case base/config feature entries before a FEATURE_FLAG override.
+    pub features: Vec<String>,
+    /// Caller constants overlaid with exact source-selected configuration values.
+    pub constants: Map<String, Value>,
+    /// Noncredential source keyword metadata, including source-ignored arguments.
+    pub kwargs: Map<String, Value>,
+    /// Unknown source properties retained for explicit emission handling.
+    pub extensions: Map<String, Value>,
     parameters: Option<crate::parameter_transforms::ParameterProgram>,
+}
+
+impl Deref for CommandConfiguration {
+    type Target = CommandConfigurationData;
+
+    fn deref(&self) -> &Self::Target {
+        &self.fields
+    }
 }
 
 impl CommandConfiguration {
     /// Full merged source document, retaining unselected environments and fields.
     pub fn document(&self) -> &Value {
-        &self.document
+        &self.raw_document
+    }
+    /// Full merged source document using the engine field-view naming.
+    pub fn raw_document(&self) -> &Value {
+        &self.raw_document
     }
     /// Workspace ID or display name with source precedence.
     pub fn target(&self) -> &WorkspaceTarget {
-        &self.target
+        &self.workspace
+    }
+    /// Workspace selector using the engine field-view naming.
+    pub fn workspace(&self) -> &WorkspaceTarget {
+        &self.workspace
     }
     /// Exact deployment environment.
     pub fn environment(&self) -> &str {
@@ -131,7 +192,11 @@ impl CommandConfiguration {
     }
     /// Explicit parameter path; None forbids implicit repository auto-discovery.
     pub fn parameter_file(&self) -> Option<&str> {
-        self.parameter_file.as_deref()
+        self.parameter_file_path.as_deref()
+    }
+    /// Explicit configured parameter path using the engine field-view naming.
+    pub fn parameter_file_path(&self) -> Option<&str> {
+        self.parameter_file_path.as_deref()
     }
     /// All selected source-supported types, without a Notebook-only restriction.
     pub fn item_types(&self) -> &[String] {
@@ -337,28 +402,30 @@ pub(super) fn snapshot(
         }
     }
     Ok(CommandConfiguration {
-        document: config.document.clone(),
-        target,
-        environment: config.environment.clone(),
-        repository_directory: config
-            .workspace
-            .get("repository_directory")
-            .and_then(Value::as_str)
-            .ok_or_else(|| invalid("Selected repository_directory is absent"))?
-            .into(),
-        parameter_file: config
-            .workspace
-            .get("parameter_file_path")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-        item_types: config.item_types.clone(),
-        publish: OperationSettings::from_mapping(&config.publish),
-        unpublish: OperationSettings::from_mapping(&config.unpublish),
-        features,
-        constants,
-        kwargs: options.kwargs,
-        extensions,
-        parameters: config.parameters().cloned(),
+        fields: Arc::new(CommandConfigurationData {
+            raw_document: config.document.clone(),
+            workspace: target,
+            environment: config.environment.clone(),
+            repository_directory: config
+                .workspace
+                .get("repository_directory")
+                .and_then(Value::as_str)
+                .ok_or_else(|| invalid("Selected repository_directory is absent"))?
+                .into(),
+            parameter_file_path: config
+                .workspace
+                .get("parameter_file_path")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            item_types: config.item_types.clone(),
+            publish: OperationSettings::from_mapping(&config.publish),
+            unpublish: OperationSettings::from_mapping(&config.unpublish),
+            features,
+            constants,
+            kwargs: options.kwargs,
+            extensions,
+            parameters: config.parameters().cloned(),
+        }),
     })
 }
 
