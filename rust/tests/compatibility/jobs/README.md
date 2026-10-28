@@ -10,6 +10,9 @@ compares fresh source observations with the frozen captures. The root
 parser, session and shared HTTP executor. Existing 155/396 fixtures are unchanged.
 See the [source command response policy](../../../docs/job-command-response-policy.md)
 for typed-SDK separation, intentional numeric/security failures and root seams.
+`numeric_source.py` separately captures eleven bounded Unicode numeric
+observations and the actual Python 3.13/Unicode 15.1 decimal inventory. No
+arbitrary-size or non-finite JSON value is reclassified as safe by this increment.
 
 `cases.json` is hand-authored from Python source
 `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`, not generated from Rust.

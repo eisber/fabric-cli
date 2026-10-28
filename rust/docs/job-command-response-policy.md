@@ -36,11 +36,21 @@ Location behavior remains an explicit safety difference.
 
 The CLI validates consumed JSON before SDK decoding. Valid signed/unsigned
 64-bit integers, including `u64::MAX`, remain exact. Oversized Python integers,
-NaN/Infinity, lone surrogates and unsupported Unicode numeric spellings remain
+NaN/Infinity and lone surrogates remain
 explicitly outside the approved JSON/native numeric domain; there is no f64
 fallback for integer parameters and no silent non-finite-to-null conversion.
 Signed timeouts outside i64/native duration representability remain rejected.
 Source conversion error wording is not claimed byte-identical.
+
+Feasible lexical compatibility is implemented separately from value bounds:
+parameter integers/floats, signed timeouts, positive custom polling intervals,
+Retry-After integers, cron intervals and schedule digit-shape validation accept
+the actual oracle's 68 Unicode decimal blocks. Integer underscores and ASCII
+signs follow source grammar rather than JSON-number grammar. Finite `u64::MAX`
+and `i64::MIN` spellings never pass through f64. Cron still forbids signs and
+underscores; daily time prefixes and impossible timestamp shapes retain the
+source's permissive validation. Newer Unicode database additions remain a
+version-drift gate, not certified support.
 
 ## Native host seams reserved to integration
 
@@ -84,6 +94,11 @@ with their existing source output instead of requiring a Rust failure.
 cancellation, missing-field and unusual status cases. `command_policy` separately
 protects strict SDK readers and partial-list behavior. `job_watchdog` and
 `job_terminal` exercise the two native seams without real time or a terminal.
+`numeric_source.py` adds eleven actual-source finite numeric observations and
+the complete 68-block Unicode 15.1 decimal inventory. `job_numeric_parity`
+exercises those root argv/session/HTTP observations; SDK numeric tests compare
+every Unicode scalar with the captured inventory, while explicit over-bound and
+non-finite regressions retain the approved rejection policy.
 Existing selected settings, skill, generic-operation, execution, mutation and
 read tests remain required and are not newly claimed missing work.
 

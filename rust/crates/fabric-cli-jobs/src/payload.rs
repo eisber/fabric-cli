@@ -3,7 +3,7 @@
 
 use crate::{JobCommand, ScheduleArgs, parser::invalid};
 use fabric_cli_output::{CommandError, parse_data};
-use fabric_sdk_jobs::JobType;
+use fabric_sdk_jobs::{JobType, source_decimal_digit, source_decimal_text, source_integer_text};
 use serde_json::{Map, Value, json};
 
 /// Caller-owned input-file boundary; libraries never open arbitrary supplied paths.
@@ -172,15 +172,8 @@ fn parameter_value(kind: &str, raw: &str, job_type: JobType) -> Result<Value, Co
         }
         "bool" => Ok(Value::Bool(raw.to_lowercase() == "true")),
         "int" => {
-            let value = raw.trim();
-            let digits = value.strip_prefix(['+', '-']).unwrap_or(value);
-            if digits.is_empty()
-                || !valid_numeric_underscores(digits)
-                || !digits.bytes().all(|c| c.is_ascii_digit() || c == b'_')
-            {
-                return Err(not_runnable("Invalid integer parameter value"));
-            }
-            let normalized = value.replace('_', "");
+            let normalized = source_integer_text(raw)
+                .ok_or_else(|| not_runnable("Invalid integer parameter value"))?;
             if let Ok(value) = normalized.parse::<i64>() {
                 return Ok(json!(value));
             }
@@ -189,11 +182,11 @@ fn parameter_value(kind: &str, raw: &str, job_type: JobType) -> Result<Value, Co
             })
         }
         "float" => {
-            if !valid_numeric_underscores(raw.trim()) {
+            let normalized = source_decimal_text(raw.trim());
+            if !valid_numeric_underscores(&normalized) {
                 return Err(not_runnable("Invalid float parameter value"));
             }
-            let number = raw
-                .trim()
+            let number = normalized
                 .replace('_', "")
                 .parse::<f64>()
                 .map_err(|_| not_runnable("Invalid float parameter value"))?;
@@ -272,23 +265,31 @@ pub fn schedule_configuration(
         match kind.as_str() {
             "cron" => {
                 let normalized = interval.strip_suffix('\n').unwrap_or(interval);
-                if normalized.is_empty() || !normalized.bytes().all(|c| c.is_ascii_digit()) {
+                if normalized.is_empty()
+                    || !normalized
+                        .chars()
+                        .all(|c| source_decimal_digit(c).is_some())
+                {
                     return Err(not_runnable(format!(
                         "Invalid format for interval: {interval}. Must be an integer."
                     )));
                 }
-                let number = normalized.parse::<u64>().map_err(|_| {
-                    not_runnable("Schedule interval exceeds the JSON integer bound")
-                })?;
+                let number = source_decimal_text(normalized)
+                    .parse::<u64>()
+                    .map_err(|_| {
+                        not_runnable("Schedule interval exceeds the JSON integer bound")
+                    })?;
                 config.insert("interval".into(), json!(number));
             }
             "daily" | "weekly" => {
                 let times: Vec<_> = interval.trim_matches(['[', ']']).split(',').collect();
                 for time in &times {
-                    let bytes = time.as_bytes();
-                    if bytes.len() < 5
-                        || bytes[2] != b':'
-                        || ![0, 1, 3, 4].iter().all(|&i| bytes[i].is_ascii_digit())
+                    let chars: Vec<_> = time.chars().take(5).collect();
+                    if chars.len() < 5
+                        || chars[2] != ':'
+                        || ![0, 1, 3, 4]
+                            .iter()
+                            .all(|&i| source_decimal_digit(chars[i]).is_some())
                     {
                         return Err(not_runnable(format!(
                             "Invalid time format: {time}. Must be in the format HH:mm"
@@ -328,13 +329,13 @@ pub fn schedule_configuration(
             _ => unreachable!(),
         }
         for (key, value) in [("startDateTime", start), ("endDateTime", end)] {
-            let b = value.strip_suffix('\n').unwrap_or(value).as_bytes();
-            if b.len() != 19
-                || !b.iter().enumerate().all(|(i, c)| match i {
-                    4 | 7 => *c == b'-',
-                    10 => *c == b'T',
-                    13 | 16 => *c == b':',
-                    _ => c.is_ascii_digit(),
+            let chars: Vec<_> = value.strip_suffix('\n').unwrap_or(value).chars().collect();
+            if chars.len() != 19
+                || !chars.iter().enumerate().all(|(i, c)| match i {
+                    4 | 7 => *c == '-',
+                    10 => *c == 'T',
+                    13 | 16 => *c == ':',
+                    _ => source_decimal_digit(*c).is_some(),
                 })
             {
                 return Err(not_runnable(format!(

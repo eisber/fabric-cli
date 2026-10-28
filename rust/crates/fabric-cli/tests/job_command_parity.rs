@@ -3,6 +3,7 @@
 
 //! Root argv -> real session -> shared HTTP, against actual unchanged Python output.
 
+#[allow(dead_code)]
 mod job_execution_support;
 
 use job_execution_support::{metadata, observe};

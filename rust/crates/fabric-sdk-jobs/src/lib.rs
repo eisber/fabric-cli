@@ -9,6 +9,7 @@
 
 mod command;
 mod headers;
+mod numeric;
 mod operations;
 use azure_core::{
     credentials::AccessToken,
@@ -24,6 +25,7 @@ pub use fabric_sdk_workspaces::workspaces::{
     WorkspaceExecutionError as JobExecutionError, WorkspaceResponse as JobResponse,
 };
 pub use headers::JobRequestHeaders;
+pub use numeric::{source_decimal_digit, source_decimal_text, source_integer_text};
 pub use operations::SharedJobOperations;
 use serde_json::{Value, json};
 use std::{
@@ -1039,26 +1041,13 @@ fn polling_interval(
     let Some(value) = header(headers, "retry-after") else {
         return Ok(10);
     };
-    let value = value.trim();
-    let negative = value.starts_with('-');
-    let digits = value.strip_prefix(['+', '-']).unwrap_or(value);
-    let bytes = digits.as_bytes();
-    if bytes.is_empty()
-        || !bytes[0].is_ascii_digit()
-        || !bytes[bytes.len() - 1].is_ascii_digit()
-        || !bytes.iter().enumerate().all(|(i, b)| {
-            b.is_ascii_digit()
-                || (*b == b'_'
-                    && i > 0
-                    && bytes[i - 1].is_ascii_digit()
-                    && i + 1 < bytes.len()
-                    && bytes[i + 1].is_ascii_digit())
-        })
-    {
+    let Some(value) = source_integer_text(value) else {
         return Ok(10);
-    }
-    let seconds = digits
-        .replace('_', "")
+    };
+    let negative = value.starts_with('-');
+    let seconds = value
+        .strip_prefix(['+', '-'])
+        .unwrap_or(&value)
         .parse::<u64>()
         .map_err(|_| JobError::PollingDelayLimit)?;
     if negative && seconds != 0 {
