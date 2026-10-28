@@ -94,6 +94,30 @@ pub struct TransferContext {
 
 /// Existing context owner resolves paths asynchronously and checks command support.
 pub trait TransferMetadata: Send + Sync {
+    /// Resolve only the source target before warnings and export preconditions.
+    ///
+    /// Existing immutable injected snapshots remain compatible through `resolve`.
+    fn resolve_target<'a>(
+        &'a self,
+        command: TransferKind,
+        path: &'a [String],
+    ) -> TransferFuture<'a, Result<TransferContext, CommandError>> {
+        self.resolve(command, path)
+    }
+
+    /// Complete workspace/folder discovery at its source orchestration boundary.
+    ///
+    /// Export warns before workspace collection. Bulk confirms its local output
+    /// preconditions before collection. Existing complete injected snapshots pass
+    /// through unchanged; no second discovery engine is installed.
+    fn complete_snapshot<'a>(
+        &'a self,
+        _command: TransferKind,
+        context: TransferContext,
+    ) -> TransferFuture<'a, Result<TransferContext, CommandError>> {
+        Box::pin(async move { Ok(context) })
+    }
+
     /// Reuse existing discovery/cache policy; never hide network I/O in a sync lookup.
     ///
     /// Import resolution allows a missing destination item but requires its real
@@ -119,6 +143,17 @@ pub trait TransferFiles: DefinitionFileSystem + DefinitionImportFileSystem + Sen
     /// Select source storage bytes for an already resolved output root.
     fn export_storage(&self, _root: &Path) -> definitions::ExportStorage {
         definitions::ExportStorage::Local
+    }
+
+    /// Source presentation path, separate from the confined physical write root.
+    fn export_display_path(&self, root: &Path, input: &str) -> String {
+        if input.starts_with('~')
+            || self.export_storage(root) == definitions::ExportStorage::Lakehouse
+        {
+            root.display().to_string()
+        } else {
+            input.to_owned()
+        }
     }
 
     /// Resolve a source local directory inside the caller's explicitly owned roots.
@@ -248,6 +283,10 @@ pub struct TransferResult {
     pub key_value: bool,
     /// Fully written relative paths, retaining earlier workspace-item progress.
     pub completed_paths: Vec<String>,
+    /// Completed export IDs in workspace execution or bulk response-index order.
+    pub exported_ids: Vec<String>,
+    /// Known bulk IDs skipped by source support/index policy, in source order.
+    pub skipped_ids: Vec<String>,
     /// Source cache changes, applied after successful result delivery.
     ///
     /// Source-silent overwrite declines still upsert. Output failure must not
@@ -275,6 +314,8 @@ pub struct TransferError {
     pub failure: TransferFailure,
     /// Earlier completed files, plus current library progress when available.
     pub completed_paths: Vec<String>,
+    /// Earlier workspace item exports that completed before this failure.
+    pub exported_ids: Vec<String>,
     /// Earlier confirmed cache effects.
     pub effects: Vec<ImportCacheEffect>,
 }
@@ -284,6 +325,7 @@ impl From<CommandError> for TransferError {
         Self {
             failure: TransferFailure::Command(error),
             completed_paths: Vec::new(),
+            exported_ids: Vec::new(),
             effects: Vec::new(),
         }
     }
@@ -293,6 +335,7 @@ impl From<DefinitionError> for TransferError {
     fn from(error: DefinitionError) -> Self {
         Self {
             completed_paths: error.completed_paths.clone(),
+            exported_ids: Vec::new(),
             failure: TransferFailure::Definition(Box::new(error)),
             effects: Vec::new(),
         }
@@ -316,16 +359,15 @@ impl TransferError {
                             "InvalidDefinitionPayload",
                             "Invalid item definition payload".into(),
                         ),
-                        DefinitionErrorKind::Limit => (
-                            "InvalidOperation",
-                            "Definition transfer limit reached".into(),
-                        ),
+                        DefinitionErrorKind::Limit => {
+                            ("Limit", "Definition transfer limit reached".into())
+                        }
                         DefinitionErrorKind::UnsafePath | DefinitionErrorKind::Collision => (
                             "InvalidPath",
                             "Unsafe or conflicting definition path".into(),
                         ),
                         DefinitionErrorKind::ConfirmationRequired => {
-                            ("InvalidOperation", "Confirmation is required".into())
+                            ("ConfirmationRequired", "Confirmation is required".into())
                         }
                         DefinitionErrorKind::DefinitionAccessDenied(_) => {
                             ("Unauthorized", "Item definition access denied".into())
@@ -438,7 +480,7 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
         if command.kind == TransferKind::BulkExport && !command.recursive {
             return Err(command_error(
                 "InvalidOperation",
-                "The --recursive flag is required for bulk-export",
+                "The --recursive flag is required when bulk-exporting a Workspace or Folder",
             )
             .into());
         }
@@ -449,15 +491,11 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
         )
         .await?;
         let context = phase(
-            self.metadata.resolve(command.kind, &command.path),
+            self.metadata.resolve_target(command.kind, &command.path),
             &mut cancelled,
         )
         .await?;
-        if context.items.len() > self.definition_limits.max_files.get()
-            || context.selection_order.len() > self.definition_limits.max_files.get()
-        {
-            return Err(DefinitionError::from(DefinitionErrorKind::Limit).into());
-        }
+        self.check_snapshot(&context)?;
         match command.kind {
             TransferKind::Export => self.export(command, context, &mut cancelled).await,
             TransferKind::BulkExport => self.bulk(command, context, &mut cancelled).await,
@@ -495,10 +533,12 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
         let mut result = TransferResult::default();
         if !workspace {
             if command.force || phase(self.ui.confirm(SINGLE_CONFIRM), cancelled).await? {
-                let root = phase(self.export_directory(&output), cancelled).await?;
                 result.completed_paths = self
-                    .export_one(&context.target, command, &root, cancelled)
+                    .export_one(&context.target, command, None, &output, cancelled)
                     .await?;
+                result
+                    .exported_ids
+                    .push(require_id(&context.target)?.into());
             } else {
                 result.declined = true;
             }
@@ -508,6 +548,12 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
                 .push(message(format!("'{}' exported", context.target.name())));
             return Ok(result);
         }
+        let context = phase(
+            self.metadata.complete_snapshot(command.kind, context),
+            cancelled,
+        )
+        .await?;
+        self.check_snapshot(&context)?;
         if context.items.is_empty() {
             return Err(command_error("InvalidOperation", "Your workspace is empty").into());
         }
@@ -563,14 +609,20 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
         let count = filtered_items.len();
         for item in filtered_items {
             match self
-                .export_one(&item.element, command, &root, cancelled)
+                .export_one(&item.element, command, Some(&root), &output, cancelled)
                 .await
             {
-                Ok(paths) => result.completed_paths.extend(paths),
+                Ok(paths) => {
+                    result.completed_paths.extend(paths);
+                    result.exported_ids.push(require_id(&item.element)?.into());
+                }
                 Err(mut error) => {
                     let mut paths = result.completed_paths;
                     paths.append(&mut error.completed_paths);
                     error.completed_paths = paths;
+                    let mut exported_ids = result.exported_ids;
+                    exported_ids.append(&mut error.exported_ids);
+                    error.exported_ids = exported_ids;
                     return Err(error);
                 }
             }
@@ -586,7 +638,8 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
         &mut self,
         item: &Arc<Element>,
         command: &TransferCommand,
-        root: &Path,
+        root: Option<&Path>,
+        output: &str,
         cancelled: &mut Cancellation<'_>,
     ) -> Result<Vec<String>, TransferError> {
         let (workspace, item_type) = item_parts(item)?;
@@ -598,33 +651,42 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             self.operation_limits,
             cancelled.as_mut(),
         );
-        let progress = format!(
-            "Exporting '{}' \u{2192} '{}/{}'...",
-            item.path().trim_matches('/'),
-            root.display(),
-            item.name(),
-        );
-        let mut files = files::ExportFiles::default();
-        let storage = self.files.export_storage(root);
-        definitions::export_item_for_storage(
+        let read = definitions::read_item_definition(
             &mut session,
-            &mut files,
             DefinitionTarget {
                 workspace_id: require_id(&workspace)?,
                 item_id,
                 item_type,
             },
-            &item.name(),
-            root,
             command.format.as_deref(),
-            true,
+        )
+        .await?;
+        let root = match root {
+            Some(root) => root.to_owned(),
+            None => files::export_directory(&mut session, self.files, output).await?,
+        };
+        let progress = format!(
+            "Exporting '{}' \u{2192} '{}/{}'...",
+            item.path().trim_matches('/'),
+            self.files.export_display_path(&root, output),
+            item.name(),
+        );
+        let mut files = files::ExportFiles::default();
+        let storage = self.files.export_storage(&root);
+        definitions::export_read_item(
+            &mut session,
+            &mut files,
+            read,
+            item_type,
+            &item.name(),
+            &root,
             self.definition_limits,
             storage,
         )
         .await
         .map_err(files::ExportFiles::preparation_error)?;
         Ok(files
-            .write(&mut session, self.files, root, self.ui, progress)
+            .write(&mut session, self.files, &root, self.ui, progress)
             .await?)
     }
 
@@ -640,7 +702,10 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             _ => {
                 return Err(command_error(
                     "InvalidOperation",
-                    "Bulk-export requires a workspace or folder",
+                    format!(
+                        "'bulk-export' requires a workspace or folder path, but got '{}'",
+                        context.target.name()
+                    ),
                 )
                 .into());
             }
@@ -659,6 +724,7 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             )
             .into());
         }
+        let display = self.files.export_display_path(&root, &output);
         let nonempty = !phase(
             async { self.files.is_empty_async(&root).await.map_err(local_error) },
             cancelled,
@@ -669,7 +735,7 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             && !phase(
                 self.ui.confirm(&format!(
                     "Output folder '{}' is not empty. Do you want to proceed?",
-                    root.display(),
+                    display,
                 )),
                 cancelled,
             )
@@ -702,6 +768,12 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
                 ..TransferResult::default()
             });
         }
+        let context = phase(
+            self.metadata.complete_snapshot(command.kind, context),
+            cancelled,
+        )
+        .await?;
+        self.check_snapshot(&context)?;
         let workspace = context
             .target
             .workspace()
@@ -719,7 +791,26 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             })
             .collect::<Result<_, TransferError>>()?;
         if items.is_empty() {
-            return Err(command_error("InvalidOperation", "Bulk-export target is empty").into());
+            return Err(command_error(
+                "InvalidOperation",
+                format!("No items found in '{}'", context.target.name()),
+            )
+            .into());
+        }
+        if scope == BulkScope::Folder
+            && !items
+                .iter()
+                .any(|item| item.support == CommandSupport::Supported)
+        {
+            let message = if items
+                .iter()
+                .any(|item| item.support == CommandSupport::Rejected)
+            {
+                "No exportable items found. All items have unsupported types".into()
+            } else {
+                format!("No items found in '{}'", context.target.name())
+            };
+            return Err(command_error("InvalidOperation", message).into());
         }
         let path = context.target.path();
         let snapshot = BulkExportSnapshot {
@@ -737,8 +828,7 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
         );
         let progress = format!(
             "Bulk-exporting '{}' \u{2192} '{}'...",
-            snapshot.from_path,
-            root.display()
+            snapshot.from_path, display
         );
         let mut files = files::ExportFiles::default();
         let mut outcome = definitions::bulk_export_source(
@@ -751,12 +841,34 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             self.definition_limits,
         )
         .await
-        .map_err(files::ExportFiles::preparation_error)?;
+        .map_err(|error| {
+            if matches!(
+                error.kind,
+                DefinitionErrorKind::Unsupported(
+                    "bulk target has no exportable items" | "bulk folder has no exportable items"
+                )
+            ) {
+                command_error(
+                    "InvalidOperation",
+                    "No exportable items found. All items have unsupported types",
+                )
+                .into()
+            } else {
+                TransferError::from(files::ExportFiles::preparation_error(error))
+            }
+        })?;
         outcome.completed_paths = files
             .write(&mut session, self.files, &root, self.ui, progress)
             .await?;
-        let exported = type_counts(&outcome.supported_ids, &items)?;
-        let skipped = type_counts(&outcome.skipped_ids, &items)?;
+        let (exported_items, skipped_items) = bulk_summary_items(
+            scope,
+            &items,
+            &outcome.supported_ids,
+            &outcome.skipped_ids,
+            &outcome.indexed_ids,
+        )?;
+        let exported = type_counts(exported_items)?;
+        let skipped = type_counts(skipped_items)?;
         let mut summary = format!(
             "Exported {} items to '{output}'",
             outcome.supported_ids.len()
@@ -783,6 +895,8 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             }],
             key_value: true,
             completed_paths: outcome.completed_paths,
+            exported_ids: outcome.supported_ids,
+            skipped_ids: outcome.skipped_ids,
             ..TransferResult::default()
         })
     }
@@ -876,6 +990,15 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             return Err(command_error("InvalidPath", "No such file or directory").into());
         }
 
+        fn check_snapshot(&self, context: &TransferContext) -> Result<(), TransferError> {
+            if context.items.len() > self.definition_limits.max_files.get()
+                || context.selection_order.len() > self.definition_limits.max_files.get()
+            {
+                return Err(DefinitionError::from(DefinitionErrorKind::Limit).into());
+            }
+            Ok(())
+        }
+
         async fn export_directory(&mut self, input: &str) -> Result<PathBuf, TransferError> {
             if input.is_empty() {
                 return Err(command_error("InvalidPath", "No such file or directory").into());
@@ -924,13 +1047,48 @@ fn item_parts(item: &Arc<Element>) -> Result<(Arc<Element>, &'static str), Trans
     ))
 }
 
-fn type_counts(ids: &[String], items: &[BulkItem]) -> Result<Map<String, Value>, TransferError> {
+fn bulk_summary_items<'a>(
+    scope: BulkScope,
+    items: &'a [BulkItem],
+    supported: &[String],
+    skipped: &[String],
+    indexed: &[String],
+) -> Result<(Vec<&'a BulkItem>, Vec<&'a BulkItem>), TransferError> {
+    if scope == BulkScope::Folder {
+        return Ok((
+            items
+                .iter()
+                .filter(|item| item.support == CommandSupport::Supported)
+                .collect(),
+            items
+                .iter()
+                .filter(|item| item.support == CommandSupport::Rejected)
+                .collect(),
+        ));
+    }
+    let by_id: std::collections::HashMap<_, _> =
+        items.iter().map(|item| (item.id.as_str(), item)).collect();
+    let known = |id: &String| {
+        by_id
+            .get(id.as_str())
+            .copied()
+            .ok_or_else(|| TransferError::from(invalid("Incomplete bulk metadata snapshot")))
+    };
+    let exported = supported.iter().map(known).collect::<Result<Vec<_>, _>>()?;
+    let mut skipped_items = skipped
+        .iter()
+        .filter(|id| indexed.contains(id))
+        .map(known)
+        .collect::<Result<Vec<_>, _>>()?;
+    // Source's final missing-item pass appends the original cached objects,
+    // not the last-by-ID lookup used for response-index entries.
+    skipped_items.extend(items.iter().filter(|item| !indexed.contains(&item.id)));
+    Ok((exported, skipped_items))
+}
+
+fn type_counts(items: Vec<&BulkItem>) -> Result<Map<String, Value>, TransferError> {
     let mut counts = Map::new();
-    for id in ids {
-        let item = items
-            .iter()
-            .find(|item| item.id == *id)
-            .ok_or_else(|| invalid("Incomplete bulk metadata snapshot"))?;
+    for item in items {
         let count = counts.entry(item.item_type.clone()).or_insert(json!(0));
         *count = json!(
             count

@@ -9,6 +9,31 @@ use fabric_deploy::definitions::{
 };
 use serde_json::Value;
 
+fn expected(encoded: &Value, binary: bool) -> Vec<u8> {
+    let bytes = STANDARD.decode(encoded.as_str().unwrap()).unwrap();
+    #[cfg(windows)]
+    {
+        let _ = binary;
+        bytes
+    }
+    #[cfg(not(windows))]
+    {
+        if binary {
+            return bytes;
+        }
+        let mut output = Vec::new();
+        let mut index = 0;
+        while index < bytes.len() {
+            if bytes[index..].starts_with(b"\r\n") {
+                index += 1;
+            }
+            output.push(bytes[index]);
+            index += 1;
+        }
+        output
+    }
+}
+
 #[test]
 fn actual_python_fallback_and_remote_storage_captures_match() {
     let receipt: Value =
@@ -25,31 +50,13 @@ fn actual_python_fallback_and_remote_storage_captures_match() {
             ExportStorage::Local,
         )
         .unwrap();
-        let mut expected = STANDARD
-            .decode(case["local_base64"].as_str().unwrap())
-            .unwrap();
-        #[cfg(not(windows))]
-        if case["name"] != "remote-binary" {
-            expected = expected
-                .split(|_| false)
-                .flat_map(|bytes| {
-                    let mut out = Vec::new();
-                    let mut index = 0;
-                    while index < bytes.len() {
-                        if bytes[index..].starts_with(b"\r\n") {
-                            index += 1;
-                        }
-                        out.push(bytes[index]);
-                        index += 1;
-                    }
-                    out
-                })
-                .collect();
-        }
-        #[cfg(windows)]
-        let _ = &mut expected;
         assert_eq!(files[0].path, case["path"].as_str().unwrap());
-        assert_eq!(files[0].bytes, expected, "{}", case["name"]);
+        assert_eq!(
+            files[0].bytes,
+            expected(&case["local_base64"], case["name"] == "remote-binary"),
+            "{}",
+            case["name"]
+        );
         if let Some(remote) = case["remote"].as_array() {
             let files = decode_export_files_for_storage(
                 &case["input"],
@@ -66,6 +73,31 @@ fn actual_python_fallback_and_remote_storage_captures_match() {
                 files[0].bytes.len(),
                 remote[2]["position"].as_u64().unwrap() as usize
             );
+        }
+
+        #[test]
+        fn actual_python_wide_integer_nonfinite_and_notebook_captures_match() {
+            let receipt: Value =
+                serde_json::from_str(include_str!("definition_export_native_source.json")).unwrap();
+            assert_eq!(
+                receipt["source"],
+                "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4"
+            );
+            for case in receipt["cases"].as_array().unwrap() {
+                let files = decode_export_files_for_storage(
+                    &case["input"],
+                    case["notebook"].as_bool().unwrap(),
+                    DefinitionLimits::default(),
+                    ExportStorage::Local,
+                )
+                .unwrap();
+                assert_eq!(
+                    files[0].bytes,
+                    expected(&case["expected_base64"], false),
+                    "{}",
+                    case["name"]
+                );
+            }
         }
     }
 }

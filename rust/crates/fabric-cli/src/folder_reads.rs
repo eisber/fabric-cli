@@ -379,14 +379,26 @@ pub(crate) struct FolderGraph {
 
 impl FolderGraph {
     /// Materialize the validated source-ordered graph for transfer snapshots.
+    #[cfg(feature = "native-read")]
     pub(crate) fn elements(
         &self,
         workspace: Arc<Element>,
     ) -> Result<Vec<Arc<Element>>, fabric_cli_context::ContextError> {
         let mut contexts = BTreeMap::from([(0, workspace)]);
+        let mut depths = BTreeMap::from([(0, 0usize)]);
+        let max_depth = fabric_deploy::definitions::DefinitionLimits::default()
+            .max_depth
+            .get();
         let mut elements = Vec::with_capacity(self.order.len());
         for &index in &self.order {
             let node = &self.nodes[index];
+            let depth = depths[&node.parent] + 1;
+            if depth > max_depth {
+                return Err(fabric_cli_context::ContextError::lookup(
+                    "Limit",
+                    "Folder transfer depth bound reached",
+                ));
+            }
             let parent = contexts[&node.parent].clone();
             let element = Element::child(
                 &node.folder.display_name,
@@ -397,6 +409,7 @@ impl FolderGraph {
             contexts
                 .entry(node.context)
                 .or_insert_with(|| element.clone());
+            depths.entry(node.context).or_insert(depth);
             elements.push(element);
         }
         Ok(elements)

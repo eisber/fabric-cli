@@ -65,6 +65,22 @@ impl Lookup for Snapshot {
 
 impl Snapshot {
     #[cfg(feature = "native-read")]
+    pub(crate) fn cached_folders(
+        &self,
+        workspace: Arc<Element>,
+    ) -> Result<Option<Vec<Arc<Element>>>, CommandError> {
+        workspace
+            .id()
+            .and_then(|id| self.folders.get(id))
+            .map(|graph| {
+                graph
+                    .elements(workspace.clone())
+                    .map_err(|error| errors::error(&error.code, error.message))
+            })
+            .transpose()
+    }
+
+    #[cfg(feature = "native-read")]
     pub(crate) fn ready(&self, request: LookupRequest<'_>) -> bool {
         self.loaded.contains(&scope(request))
     }

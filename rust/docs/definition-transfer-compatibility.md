@@ -31,11 +31,81 @@ Unknown future item types are filtered; absent types and invalid/missing item
 parents fail rather than producing a partial snapshot. Graph, portable-path,
 strict-decoding and containment safety policies are retained.
 
-These changes are not a validation receipt: Rust tests/builds are **NOT RUN**
-pending the integrator's serialized grant. The first microbatch does not yet
-mount the Lakehouse output adapter; storage serialization alone is not remote
-command completion. Python bulk-export explicitly accepts only an existing
-local output directory; this validation is not a missing remote bulk branch.
+The first microbatch is `980da06d8eb96bbb5d83ccf424b51beed4d65c0b`.
+The follow-up mounts the existing caller-injected OneLake SDK in the central
+`FamilySession` transfer branch, without changing native host construction,
+dependencies, identity, HTTP policy or the import adapter. Local outputs delegate
+to the existing asynchronous filesystem worker. Single-item metadata/definition
+reads precede destination resolution; workspace destination validation precedes
+selection and its execution retains cached item order. The existing resolver
+also preserves relative paths from OneLake current roots.
+Metadata's additive `resolve_target`/`complete_snapshot` phases preserve that
+warning/precondition order without breaking already-complete injected snapshots.
+Folder collection reuses the resolver's validated command-local folder graph;
+it does not fetch another hierarchy, install a TTL cache or duplicate paging.
+
+`export_read_item` separates an already-completed definition read from output
+resolution without replaying the POST. Source storage decoding uses the shared
+native Python-value encoder for wide integers, nonfinite floats, duplicate keys,
+Unicode and Notebook cleanup. The private export parser does not replace service
+JSON or add another encoder. Shared native depth/node/string/digit/output limits
+remain explicit safety bounds. The original bounded codec and consumers retain
+their protected contracts.
+
+Lakehouse export checks actual create/append/flush responses and retains original
+SDK mutation errors. The additive SDK `upload_export_file` uses the existing upload engine,
+omits empty appends, and preserves Python's character-count flush position for
+ordinary Unicode text (even though UTF-8 byte length differs). That source oddity
+is captured independently rather than silently repaired. Accepted-only create
+or flush is an explicit incomplete failure, never an exported-success fallback.
+No upload, failed file, writer or uncertain request is replayed or rolled back.
+Bulk result evidence retains exported/skipped IDs in source index/selection
+order; workspace failure retains previously exported item IDs and files.
+The source's last-by-ID response lookup and original-object missing-item pass
+remain distinct for duplicate cached IDs, including type-count insertion order.
+
+Python bulk-export explicitly accepts only an existing local output directory;
+this validation is not a missing remote bulk branch. Permissive/noncanonical
+base64, traversal/aliases/symlinks/collisions, invalid graphs and shared finite
+allocation bounds remain intentional safety exceptions. Unrepresentable local
+Unicode and invalid remote scalar payloads fail typed validation rather than
+substituting bytes or claiming success. No injected UI is replaced with consent,
+a fabricated display capability or an operator/live call.
+Python's broad destination-resolution exception handler is narrowed deliberately:
+an authentication/service failure cannot become a successful export to a
+coincidentally named local directory. Ordinary local path-resolution fallback
+is retained, and the original failure still fails closed.
+
+These changes are not a Rust validation receipt: tests/builds are **NOT RUN**
+pending the integrator's serialized grant. Five additive actual-source captures
+reproduce independently before Rust expectations; the new offline argv consumer
+covers generic/default/explicit formats, workspace selection/execution ordering,
+nested folder Selective requests, workspace response-index filtering, malformed
+JSON fallback, binary data, later-page errors, accepted/poll/result completion,
+partial local/remote writes, cancellation, writer failure, empty remote uploads,
+returned IDs and non-replay. All new filesystem roots are caller-confined project
+directories; no service, authentication profile or token cache is touched.
+
+One native-only mount remains assigned to the integrator: the binary currently
+constructs its local adapter with CWD and no explicit home. For user-selected
+existing local export directories outside CWD (including explicit `~` expansion),
+resolve that caller-owned root on the native filesystem worker and use
+`TokioTransferFiles::for_export_root(root, original_output, limits, runtime)`.
+The original argument spelling remains the progress path while every write is
+confined to that selected root. The new argv consumer verifies a selected physical
+root outside the current root through real async filesystem writes. Import
+construction/preparation and remote Fabric destination resolution are unchanged.
+No native host file is edited in this lane.
+
+From `rust/`, serialized validation selectors for the integrator are:
+
+```text
+python -B tests/compatibility/run_export_source_parity.py --artifacts <new-directory-inside-checkout>
+cargo test --offline --locked -p fabric-deploy --test export_parity --test definitions
+cargo test --offline --locked -p fabric-cli-transfer
+cargo test --offline --locked -p fabric-cli --features native-read --test export_parity_mount --test family_mounts --test async_transfer_files
+cargo clippy --offline --locked -p fabric-deploy -p fabric-cli-transfer -p fabric-sdk-onelake -p fabric-cli --features fabric-cli/native-read --all-targets -- -D warnings
+```
 
 Python reference: `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
 Rust integration base: `61d77e330be8a13cbd5033713f1f2badcecfce60`.

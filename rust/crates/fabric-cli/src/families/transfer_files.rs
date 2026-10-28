@@ -92,6 +92,7 @@ pub struct TokioTransferFiles {
     files: Arc<Mutex<LocalTransferFiles>>,
     runtime: Handle,
     limits: DefinitionLimits,
+    export_root: Option<(String, PathBuf)>,
 }
 
 impl TokioTransferFiles {
@@ -121,7 +122,37 @@ impl TokioTransferFiles {
             files: Arc::new(Mutex::new(files)),
             runtime,
             limits,
+            export_root: None,
         })
+    }
+
+    /// Bind one explicit local export argument to its caller-selected stable root.
+    ///
+    /// The caller resolves the user-owned existing directory before this call,
+    /// including explicit home expansion. This authorizes only that selected
+    /// root, not every path on a drive or the runtime's current directory.
+    /// Relative argument spelling is retained for source progress/output while
+    /// all actual operations use the checked physical root on the same worker.
+    /// Import preparation and the ordinary constructor remain unchanged.
+    ///
+    /// # Errors
+    /// Rejects empty argument spelling and the released unsafe/non-directory
+    /// root policy. No service-supplied path is canonicalized or granted access.
+    pub async fn for_export_root(
+        root: PathBuf,
+        input: String,
+        limits: DefinitionLimits,
+        runtime: Handle,
+    ) -> io::Result<Self> {
+        if input.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Export path is empty",
+            ));
+        }
+        let mut files = Self::new(root.clone(), None, limits, runtime).await?;
+        files.export_root = Some((input, root));
+        Ok(files)
     }
 
     fn run<T: Send + 'static>(
@@ -184,6 +215,28 @@ impl DefinitionImportFileSystem for TokioTransferFiles {
 }
 
 impl TransferFiles for TokioTransferFiles {
+    fn resolve_export_directory_async<'a>(
+        &'a mut self,
+        input: &'a str,
+    ) -> TransferFuture<'a, io::Result<PathBuf>> {
+        let selected = self
+            .export_root
+            .as_ref()
+            .filter(|(spelling, _)| spelling == input)
+            .map(|(_, root)| root.clone());
+        match selected {
+            Some(root) => self.run(move |files, _| {
+                files.resolve_directory(root.to_str().ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Export path is not valid Unicode",
+                    )
+                })?)
+            }),
+            None => self.resolve_directory_async(input),
+        }
+    }
+
     fn resolve_directory(&mut self, _: &str) -> io::Result<PathBuf> {
         Err(worker_error(TransferWorkerError::AsyncRequired))
     }

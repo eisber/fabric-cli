@@ -70,6 +70,12 @@ pub struct BulkExportOutcome {
     pub supported_ids: Vec<String>,
     /// Known IDs counted unsupported/missing, in source order.
     pub skipped_ids: Vec<String>,
+    /// Workspace response-index IDs before filtering, including unknown entries.
+    ///
+    /// This distinguishes returned unsupported rows from missing cached rows
+    /// when duplicate cached IDs have different source types. Folder selection
+    /// ignores the response index and leaves this empty.
+    pub indexed_ids: Vec<String>,
     /// Fully written relative files in service part order.
     pub completed_paths: Vec<String>,
 }
@@ -315,6 +321,24 @@ async fn bulk_export_impl<E: OperationExecutor>(
         snapshot.workspace_id
     );
     let mut response = object(&execute_body(session, ResourceMethod::Post, &path, body).await?)?;
+    let indexed_ids = if snapshot.scope == BulkScope::Workspace {
+        let index = array_or_empty(&response, "itemDefinitionsIndex")?;
+        if index.len() > limits.max_files.get() {
+            return Err(Kind::Limit.into());
+        }
+        index
+            .iter()
+            .map(|entry| {
+                entry
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned()
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     let (supported_ids, skipped_ids) = filter_bulk_definition(snapshot, &mut response, limits)?;
     strip_bulk_parent_prefix(&mut response, snapshot.from_path)?;
     let parts = array_or_empty(&response, "definitionParts")?;
@@ -328,6 +352,7 @@ async fn bulk_export_impl<E: OperationExecutor>(
     Ok(BulkExportOutcome {
         supported_ids,
         skipped_ids,
+        indexed_ids,
         completed_paths,
     })
 }

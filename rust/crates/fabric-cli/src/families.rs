@@ -5,6 +5,7 @@
 
 pub(crate) mod context;
 mod deploy_http;
+mod export_files;
 pub mod transfer_files;
 
 use crate::{errors, parser::Invocation, session::ReadSession};
@@ -42,7 +43,7 @@ use std::{
     future::{Future, pending},
     io::{self, Write},
     path::Path,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 /// Original family evidence remains inspectable after rendering or writer failure.
@@ -158,6 +159,13 @@ impl FamilySession<'_, '_> {
         if let Invocation::Deploy(command) = invocation {
             let executor = deploy_http::DeployHttp(self.http);
             let result = if let Some(files) = self.transfer_files.as_deref_mut() {
+                let mut export_files;
+                let files: &mut dyn TransferFiles = if command.kind == TransferKind::Import {
+                    files
+                } else {
+                    export_files = export_files::ExportFiles::new(files, self.reads, self.http);
+                    &mut export_files
+                };
                 crate::deploy::DeployHost {
                     client: self.reads.sdk,
                     executor: &executor,
@@ -483,6 +491,16 @@ impl FamilySession<'_, '_> {
                 let metadata = TransferTargets {
                     reads: self.reads,
                     http: self.http,
+                    folders: Mutex::default(),
+                    item_sort: if settings
+                        .get("output_item_sort_criteria")
+                        .and_then(Value::as_str)
+                        == Some("bytype")
+                    {
+                        crate::ItemSort::ByType
+                    } else {
+                        crate::ItemSort::ByName
+                    },
                 };
                 let result = if let Some(files) = self.transfer_files.as_deref_mut() {
                     TransferHost {
@@ -726,10 +744,23 @@ fn mutation_error(error: CommandError, timestamp: &Timestamp) -> MutationError {
 struct TransferTargets<'a, 'session> {
     reads: &'a ReadSession<'session>,
     http: &'a HttpExecutor,
+    item_sort: crate::ItemSort,
+    folders: Mutex<std::collections::BTreeMap<String, Vec<Arc<Element>>>>,
 }
 
 impl TransferMetadata for TransferTargets<'_, '_> {
     fn resolve<'a>(
+        &'a self,
+        kind: TransferKind,
+        path: &'a [String],
+    ) -> fabric_cli_transfer::TransferFuture<'a, Result<TransferContext, CommandError>> {
+        Box::pin(async move {
+            let context = self.resolve_target(kind, path).await?;
+            self.complete_snapshot(kind, context).await
+        })
+    }
+
+    fn resolve_target<'a>(
         &'a self,
         kind: TransferKind,
         path: &'a [String],
@@ -747,14 +778,11 @@ impl TransferMetadata for TransferTargets<'_, '_> {
                 )
                 .await?;
             let target = context
-                .resolve(
+                .resolve_path(
                     self.reads,
                     self.http,
-                    current
-                        .fabric()
-                        .cloned()
-                        .unwrap_or_else(|| self.reads.tenant.clone()),
-                    &path.join(" "),
+                    current,
+                    PathInput::Scalar(&path.join(" ")),
                     ResolveOptions {
                         raise_error: kind != TransferKind::Import,
                         supports_local_path: false,
@@ -767,11 +795,38 @@ impl TransferMetadata for TransferTargets<'_, '_> {
             })?;
             let support =
                 fabric_cli_local::SupportMatrix::source().map_err(|error| error.command_error())?;
-            if matches!(target.kind(), NodeKind::Item(_)) {
+            if matches!(target.kind(), NodeKind::Item(_)) && kind != TransferKind::BulkExport {
                 support
                     .check(&PathElement::from_fabric(target.clone()), kind.as_str())
                     .map_err(|error| error.command_error())?;
             }
+            if let Some(workspace) = target.workspace()
+                && let Some(folders) = context.cached_folders(workspace.clone())?
+            {
+                self.folders
+                    .lock()
+                    .map_err(|_| {
+                        errors::error("MetadataUnavailable", "Transfer snapshot is unavailable")
+                    })?
+                    .insert(workspace.id().unwrap_or_default().into(), folders);
+            }
+            Ok(TransferContext {
+                target,
+                items: Vec::new(),
+                selection_order: Vec::new(),
+            })
+        })
+    }
+
+    fn complete_snapshot<'a>(
+        &'a self,
+        kind: TransferKind,
+        context: TransferContext,
+    ) -> fabric_cli_transfer::TransferFuture<'a, Result<TransferContext, CommandError>> {
+        Box::pin(async move {
+            let target = context.target;
+            let support =
+                fabric_cli_local::SupportMatrix::source().map_err(|error| error.command_error())?;
             let mut items = Vec::new();
             if matches!(target.kind(), NodeKind::Workspace(_) | NodeKind::Folder) {
                 let workspace = target.workspace().ok_or_else(|| {
@@ -790,7 +845,17 @@ impl TransferMetadata for TransferTargets<'_, '_> {
                     )
                     .await
                     .map_err(|error| errors::item(&error.kind))?;
-                let folders = if target.kind() == NodeKind::Folder
+                let cached = self
+                    .folders
+                    .lock()
+                    .map_err(|_| {
+                        errors::error("MetadataUnavailable", "Transfer snapshot is unavailable")
+                    })?
+                    .get(workspace.id().unwrap_or_default())
+                    .cloned();
+                let folders = if let Some(folders) = cached {
+                    folders
+                } else if target.kind() == NodeKind::Folder
                     || list
                         .value
                         .iter()
@@ -817,18 +882,6 @@ impl TransferMetadata for TransferTargets<'_, '_> {
                     Vec::new()
                 };
                 for item in list.value {
-                    if !item.additional_fields.contains_key("type") {
-                        return Err(errors::error(
-                            "InvalidResponse",
-                            "Fabric returned an item without its type",
-                        ));
-                    }
-                    let Some(item_type) = item
-                        .item_type()
-                        .and_then(|kind| fabric_cli_context::ItemType::parse(kind).ok())
-                    else {
-                        continue;
-                    };
                     let parent = match item.additional_fields.get("folderId") {
                         None => workspace.clone(),
                         Some(id) => folders
@@ -842,6 +895,18 @@ impl TransferMetadata for TransferTargets<'_, '_> {
                                     "Item folder metadata is missing or invalid",
                                 )
                             })?,
+                    };
+                    if !item.additional_fields.contains_key("type") {
+                        return Err(errors::error(
+                            "InvalidResponse",
+                            "Fabric returned an item without its type",
+                        ));
+                    }
+                    let Some(item_type) = item
+                        .item_type()
+                        .and_then(|kind| fabric_cli_context::ItemType::parse(kind).ok())
+                    else {
+                        continue;
                     };
                     let element = Element::child(
                         &item.display_name,
@@ -886,7 +951,7 @@ impl TransferMetadata for TransferTargets<'_, '_> {
                 };
                 let name = item.element.short_name().to_lowercase();
                 let kind = crate::reads::enum_name(kind).to_owned();
-                match self.reads.config.item_sort {
+                match self.item_sort {
                     crate::ItemSort::ByName => (name, kind),
                     crate::ItemSort::ByType => (kind, name),
                 }
