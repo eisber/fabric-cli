@@ -1,6 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Source-captured selective dependency ordering and planner boundary contracts.
+
+#![deny(unnameable_test_items)]
+
 use fabric_deploy::{
     deployment_config::DeploymentConfig,
     model::{ItemFile, RepositoryItem},
