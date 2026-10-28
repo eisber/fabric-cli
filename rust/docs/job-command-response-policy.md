@@ -124,3 +124,12 @@ The existing read, execution, mutation, selected-settings, shared-operation and
 skill consumers, strict Clippy, and native-read feature compilation must also
 remain green in root CI. The lane will repair actual returned diagnostics;
 source capture, metadata and formatting do not replace that author-fix loop.
+
+The endpoint follow-up adds `JobClient::with_context(context, executor, limits)`
+and `context()`, retaining the original public-default constructor. Typed and
+raw routes, token-pager bases and bound run handles use the selected endpoint.
+Authentication uses the existing core request primitive with fixed Fabric scope,
+not another credential path. `RunHandle::from_bound_command_response` is the
+explicit raw-response counterpart; its old constructor remains public Fabric.
+The operation bridge and CLI metadata-session composition must adopt this same
+context before claiming end-to-end non-public-host support.

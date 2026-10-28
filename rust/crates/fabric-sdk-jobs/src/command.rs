@@ -4,10 +4,11 @@
 //! Opt-in source command response policy, separate from typed SDK contracts.
 
 use crate::{
-    JobClient, JobError, JobOperationReconciler, JobResponse, JobTarget, PagedValues, PagingLimits,
-    RunHandle, TokenPager, cancellable, header, identifier, service_failure,
+    EndpointBinding, JobClient, JobError, JobOperationReconciler, JobResponse, JobTarget,
+    PagedValues, PagingLimits, RunHandle, ServiceOrigin, TokenPager, cancellable, header,
+    identifier, service_failure,
 };
-use azure_core::http::{Method, Url};
+use azure_core::http::Method;
 use serde_json::{Value, json};
 use std::{
     future::{Future, pending},
@@ -136,8 +137,11 @@ impl JobClient {
         } else {
             target.instances_path()
         };
-        let url = Url::parse(&format!("https://api.fabric.microsoft.com{path}"))
-            .map_err(|_| JobError::InvalidIdentifier)?;
+        let url = self
+            .context
+            .endpoint()
+            .url(&path)
+            .map_err(|_| JobError::InvalidEndpoint)?;
         let pager = TokenPager::new(
             url,
             PagingLimits {
@@ -214,6 +218,27 @@ impl RunHandle {
         response: JobResponse,
         cancelled_id: Option<&str>,
     ) -> Result<Option<Self>, JobError> {
+        Self::from_bound_command_response(
+            target,
+            response,
+            cancelled_id,
+            &EndpointBinding::public(ServiceOrigin::Fabric),
+        )
+    }
+
+    /// Bind an accepted command response to the caller's exact selected endpoint.
+    ///
+    /// This changes no status policy and never follows an advertised foreign
+    /// authority. The public-default constructor remains backward compatible.
+    pub fn from_bound_command_response(
+        target: &JobTarget,
+        response: JobResponse,
+        cancelled_id: Option<&str>,
+        endpoint: &EndpointBinding,
+    ) -> Result<Option<Self>, JobError> {
+        if endpoint.origin() != ServiceOrigin::Fabric {
+            return Err(JobError::InvalidEndpoint);
+        }
         if response.status != 202 {
             return Ok(None);
         }
@@ -223,10 +248,7 @@ impl RunHandle {
         } else {
             let location =
                 header(&response.headers, "location").ok_or(JobError::InvalidResponse)?;
-            let prefix = format!(
-                "https://api.fabric.microsoft.com{}/",
-                target.instances_path()
-            );
+            let prefix = format!("https://{}{}/", endpoint.host(), target.instances_path());
             let id = location
                 .strip_prefix(&prefix)
                 .ok_or(JobError::InvalidResponse)?;
@@ -237,6 +259,7 @@ impl RunHandle {
             target: target.clone(),
             id,
             accepted: response,
+            endpoint: endpoint.clone(),
         }))
     }
 }
