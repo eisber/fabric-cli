@@ -5,6 +5,8 @@
 
 #![cfg(feature = "native-read")]
 
+#[path = "family_support/metadata.rs"]
+mod family_metadata;
 #[allow(dead_code)]
 mod family_support;
 #[allow(dead_code, unused_imports)]
