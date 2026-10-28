@@ -80,7 +80,9 @@ The same binding configures SDK workspace/item reads, folder discovery,
 long-LS capacity enrichment, the shared HTTP executor and source-synchronous
 workspace GET initial/poll/result requests. Active continuation/result links
 cannot switch back to public or another Microsoft host. Non-public native
-endpoints currently support only `ls`/`dir`/`get`; other remote families fail
+endpoints support `ls`/`dir`/`get` and all eight job commands. Jobs retain the
+same binding for metadata, skill-scoped clients, pages, status polls and
+generic-operation/result reconciliation. Other remote families fail
 explicitly with `NotSupported` before credentials instead of routing silently
 to their not-yet-migrated public defaults. Unset/public configuration preserves
 existing family behavior. This is not a migration of every SDK family or any

@@ -59,6 +59,14 @@ fn finish_runtime<T>(runtime: tokio::runtime::Runtime, result: T) -> T {
     result
 }
 
+#[cfg(any(windows, test))]
+async fn wait_for_deadline(deadline: Option<std::time::Duration>) {
+    match deadline {
+        Some(deadline) => tokio::time::sleep(deadline).await,
+        None => std::future::pending::<()>().await,
+    }
+}
+
 fn write_error((code, message, exit): Failure) -> io::Result<ExitCode> {
     let mut stderr = io::stderr().lock();
     serde_json::to_writer(
@@ -127,11 +135,11 @@ fn run_command(command: NativeCommand<'_>) -> io::Result<ExitCode> {
         // Public selectors only, never token/secret environment inputs.
         let endpoint = selected_endpoint(std::env::var_os("FAB_API_ENDPOINT_FABRIC"))?;
         if endpoint != EndpointBinding::public(ServiceOrigin::Fabric)
-            && !matches!(command, NativeCommand::Read(_))
+            && matches!(command, NativeCommand::Family(_))
         {
             return Err(failure(
                 "NotSupported",
-                "Non-public Fabric endpoints currently support only ls and get.",
+                "The selected endpoint is not yet wired for this command family.",
                 1,
             ));
         }
@@ -212,6 +220,7 @@ mod endpoint_tests {
 mod runtime_tests {
     use super::*;
     use std::{
+        future::{Future, poll_fn},
         sync::{
             Arc,
             atomic::{AtomicBool, Ordering},
@@ -222,9 +231,28 @@ mod runtime_tests {
 
     fn runtime() -> tokio::runtime::Runtime {
         tokio::runtime::Builder::new_current_thread()
+            .enable_time()
             .max_blocking_threads(1)
             .build()
             .unwrap()
+    }
+
+    #[test]
+    fn no_watchdog_stays_pending_and_a_finite_watchdog_elapses() {
+        runtime().block_on(async {
+            let mut unbounded = std::pin::pin!(wait_for_deadline(None));
+            poll_fn(|context| {
+                assert!(unbounded.as_mut().poll(context).is_pending());
+                std::task::Poll::Ready(())
+            })
+            .await;
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                wait_for_deadline(Some(Duration::ZERO)),
+            )
+            .await
+            .expect("an explicit finite watchdog must still elapse");
+        });
     }
 
     #[test]
@@ -357,9 +385,9 @@ fn run_selected(
         NativeCommand::JobMutation(command) => Some(command.family_command()),
         _ => None,
     };
-    let deadline = settings::command_deadline(job.as_ref(), settings.jobs)
+    let deadline = settings::command_watchdog(job.as_ref(), settings.jobs)
         .map_err(|error| failure("invalid_configuration", error.to_string(), 2))?;
-    if std::time::Instant::now().checked_add(deadline).is_none() {
+    if deadline.is_some_and(|deadline| std::time::Instant::now().checked_add(deadline).is_none()) {
         return Err(failure(
             "invalid_configuration",
             "The selected job timeout exceeds the native deadline range.",
@@ -379,7 +407,7 @@ fn run_selected(
                     Err(_) => Err(failure("signal_failed", "The cancellation handler could not start.", 1)),
                 }
             },
-            _ = tokio::time::sleep(deadline) => {
+            _ = wait_for_deadline(deadline) => {
                 Err(interrupted_failure("timed_out", "The read command deadline elapsed.", 1))
             },
             result = execute(command, options, &current, home, restored, endpoint, settings) => result,

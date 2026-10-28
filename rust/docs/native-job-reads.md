@@ -5,10 +5,9 @@
 The [source command response policy](job-command-response-policy.md) is the
 current additive family follow-up. It closes the historical raw-response family
 gaps below without weakening typed SDK readers, adds source captures and
-provides optional-watchdog/terminal-confirmation seams for root integration.
-The historical 240-second unlimited-job limitation is no longer an authorized
-compatibility exception; executable closure requires the documented root mount
-and actual CI evidence. This lane does not edit `native_read.rs`.
+provides optional-watchdog/terminal-confirmation capabilities. The native host
+mounts both capabilities. The historical 240-second unlimited-job limitation is
+removed; source fixtures and native validation remain separate evidence gates.
 
 Python source: `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
 Released Rust prerequisite: `50eb337e696d5de8d49c65039ca9eff4ca3e0a60`,
@@ -32,7 +31,7 @@ constructs the existing `JobClient`, `HttpJobExecutor` and
 `SharedJobOperations`. It injects the caller's `JsonInput`, `JobUi` and
 `JobConfig` into `JobHost`; it implements no submission, poll, timeout,
 reconciliation, retry or credential algorithm. The native host retains its
-single current-thread runtime, Ctrl+C and overall deadline, with silent explicit
+single current-thread runtime, Ctrl+C and command-selected watchdog, with silent explicit
 Windows credentials only. Linux/macOS credentials are still unsupported.
 Default/broker-only builds remain `NotConfigured` without credential discovery.
 
@@ -141,12 +140,12 @@ the family's elapsed wait, not credential/metadata setup or timeout cleanup.
 The host must not drop that handler at 240 seconds when the caller selected a
 longer finite wait: doing so skips `job_cancel_ontimeout` policy altogether.
 
-The native watchdog remains 240 seconds for reads, asynchronous submission,
-schedule mutations, negative run timeouts, runs without `--timeout`, and
-`run-cancel --wait` (which has no source timeout option). It does not inject a
-family timeout into the latter two unbounded Python flows. Extending those
-flows needs a separate finite-bound policy decision; the current cap remains
-an explicit preview limitation, not Python parity.
+The native watchdog remains 240 seconds for reads, asynchronous submission and
+schedule mutations. Synchronous runs without `--timeout`, negative run timeouts
+and `run-cancel --wait` have no whole-command watchdog. Their selected watchdog
+future remains pending, while Ctrl+C and individual HTTP/operation bounds remain
+active. Negative timeouts still reach the source family's negative-sleep error;
+they are not converted to an implicit positive timeout.
 
 Only synchronous `job run --timeout N` with `N >= 0` receives a derived finite
 wall-clock budget. Using existing executor and operation limits:
@@ -173,8 +172,8 @@ No HTTP timeout, retry, polling or request-count limit is changed.
 
 Checked arithmetic rejects unsupported duration ranges before runtime or
 credential connection. Runtime deadline representability is also checked.
-The watchdog remains finite even for pathological zero-delay service polling,
-clock/accounting anomalies or stalled provider cleanup. It is not a guarantee
+An explicitly selected watchdog remains finite even for pathological zero-delay
+service polling, clock/accounting anomalies or stalled provider cleanup. It is not a guarantee
 that every adversarial response can reach family cleanup. Ctrl+C retains its
 immediate local-cancellation behavior: neither Ctrl+C nor watchdog expiry
 requests remote cancellation or implies rollback. Accepted cancellation is
