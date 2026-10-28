@@ -98,6 +98,18 @@ pub struct LocalInvocation {
 }
 
 impl LocalCommand {
+    /// Python's `args.command` for successful output, retaining grouped config names.
+    pub const fn command_name(&self) -> &'static str {
+        match self {
+            Self::ConfigHelp
+            | Self::ConfigSet { .. }
+            | Self::ConfigGet { .. }
+            | Self::ConfigList
+            | Self::ClearCache => "config",
+            _ => self.command_path(),
+        }
+    }
+
     /// Canonical decorated command path for the existing output pipeline.
     pub const fn command_path(&self) -> &'static str {
         match self {

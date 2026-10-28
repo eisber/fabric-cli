@@ -57,9 +57,20 @@ renderer are not rewritten.
 
 The additive frozen Python captures and `output_audit`/`output_contract_audit`
 tests cover the presentation regression and its consumers. Their presence is
-not a claim of native execution or full command parity. Empty GET suppression,
-config success command naming, format defaults and Unicode providers remain
-separate compatibility boundaries.
+not a claim of native execution or full command parity. Format defaults and
+Unicode providers remain separate compatibility boundaries.
+
+### SRC2: local success command names
+
+The local adapter passes Python's `args.command` to successful output:
+`config get`, `config set`, `config ls` and `config clear-cache` use `config`.
+The typed local-command mapping is separate from `command_path`; failures keep
+the complete leaf path in text and JSON. No envelope serializer, filesystem
+handler or configuration-format selection changes. The frozen `config-value`
+capture remains unchanged. Mounted executable tests cover explicit text/JSON,
+all four config leaves, absent-value silence, real setting/context files and
+failure paths. This repairs grouped local output, not all grouped command
+families or complete Python terminal parity.
 
 ## Explicit boundaries still requiring completion
 
