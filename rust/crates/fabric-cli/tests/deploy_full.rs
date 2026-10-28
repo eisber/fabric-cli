@@ -121,3 +121,53 @@ async fn root_bulk_flag_uses_real_bulk_import_and_returned_identity() {
     assert!(requests[2]["body"]["definitionParts"].is_array());
     assert_ne!(requests[2]["body"], Value::Null);
 }
+
+#[tokio::test]
+async fn full_root_publication_and_bulk_preserve_the_callers_fabric_binding() {
+    for hostname in [
+        "api.fabric.microsoft.com",
+        "dailyapi.fabric.microsoft.com",
+        "msitapi.fabric.microsoft.com",
+    ] {
+        for bulk in [false, true] {
+            let mut host = Harness::new();
+            host.endpoint =
+                fabric_sdk::EndpointBinding::with_host(fabric_sdk::ServiceOrigin::Fabric, hostname)
+                    .unwrap();
+            input(&host, false);
+            metadata(&host);
+            if bulk {
+                host.reply(
+                    200,
+                    json!({"importItemDefinitionsDetails":[{
+                        "itemType":"CopyJob","itemDisplayName":"Example",
+                        "itemId":ITEM,"operationType":"Create",
+                    }]}),
+                );
+            } else {
+                host.reply(201, json!({"id":ITEM}));
+            }
+            let mut args = vec!["deploy", "--config", "deploy.yml", "-f"];
+            if bulk {
+                args.push("--bulk_publish");
+            }
+            let output = host.execute(&args).await;
+            success(&output);
+            let requests = host.requests();
+            assert_eq!(requests.len(), 3);
+            assert!(requests.iter().all(|request| {
+                request["url"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with(&format!("https://{hostname}/v1/"))
+            }));
+            let scopes = host.credential.0.lock().unwrap();
+            assert!(!scopes.is_empty());
+            assert!(
+                scopes
+                    .iter()
+                    .all(|scopes| scopes == &[fabric_sdk::Audience::Fabric.scope()])
+            );
+        }
+    }
+}
