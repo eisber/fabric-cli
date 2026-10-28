@@ -1,6 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Source-pinned publisher dispatch contracts, distinct from lifecycle parity.
+
+#![deny(unnameable_test_items)]
+
 use fabric_deploy::{
     deployment_config::ITEM_TYPES,
     model::{ItemFile, RepositoryItem},
