@@ -1,0 +1,772 @@
+{
+  "source": "microsoft/fabric-cicd@5ca096c00a9a878c646c59fe537b883eba951329",
+  "sourceHashes": {
+    "constants.py": "9db94078b1152f137b0c44a60626460575280455642a81d8a932035b251c9535",
+    "_common\\_exceptions.py": "22cc6ce5ca4dcf209c1d7c1c056c1c2b40cdc8ca397d36c9c68d108d0c89440e",
+    "_common\\_check_utils.py": "f60444e11a5f3424b5afb63cc4b69c7cd68a2fd4aff268913061e96c4000f39c",
+    "_common\\_config_utils.py": "acdb203d4db08687c438c811598f696c7aed69674c3e3d42b81a3ad627396f2f",
+    "_parameter\\_parameter.py": "32d603cfaf2b891194a5ea170dcd952d3c492a8420a3df0595ce84c682b07daf",
+    "_parameter\\_utils.py": "2d8b79c6d7d737595b346da0466790308e46b9cbed46bfaf1b3cde8a189e69d6",
+    "fabric_workspace.py": "10bae33f95026065fc22d558dc02b8ee17929cac77fa0dde298cc4d41ac7a890",
+    "_common/_validate_env_vars.py": "0f8673deb44bf2bbf5599e0495e199fab8f76f99f7b72e175f2c547008625246"
+  },
+  "dependencies": {
+    "PyYAML": "6.0.3",
+    "jsonpath-ng": "1.9.1"
+  },
+  "boundary": "Actual _replace_parameters with concrete path resolver injection (not path expansion oracle), actual item-parameter validators/gateway conversion, no constructor, service/auth, ambient filesystem or environment.",
+  "cases": [
+    {
+      "kind": "pipeline",
+      "id": "filter-0",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "target"
+            }
+          }
+        ]
+      },
+      "input": "source SOURCE",
+      "file": "content.py",
+      "expected": "target SOURCE"
+    },
+    {
+      "kind": "pipeline",
+      "id": "filter-1",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "target"
+            },
+            "item_type": "Notebook"
+          }
+        ]
+      },
+      "input": "source SOURCE",
+      "file": "content.py",
+      "expected": "target SOURCE"
+    },
+    {
+      "kind": "pipeline",
+      "id": "filter-2",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "target"
+            },
+            "item_type": "Report"
+          }
+        ]
+      },
+      "input": "source SOURCE",
+      "file": "content.py",
+      "expected": "source SOURCE"
+    },
+    {
+      "kind": "pipeline",
+      "id": "filter-3",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "target"
+            },
+            "item_type": []
+          }
+        ]
+      },
+      "input": "source SOURCE",
+      "file": "content.py",
+      "expected": "source SOURCE"
+    },
+    {
+      "kind": "pipeline",
+      "id": "filter-4",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "target"
+            },
+            "item_type": false
+          }
+        ]
+      },
+      "input": "source SOURCE",
+      "file": "content.py",
+      "expected": "source SOURCE"
+    },
+    {
+      "kind": "pipeline",
+      "id": "filter-5",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "target"
+            },
+            "item_name": "Book"
+          }
+        ]
+      },
+      "input": "source SOURCE",
+      "file": "content.py",
+      "expected": "target SOURCE"
+    },
+    {
+      "kind": "pipeline",
+      "id": "filter-6",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "target"
+            },
+            "item_name": [
+              "Other"
+            ]
+          }
+        ]
+      },
+      "input": "source SOURCE",
+      "file": "content.py",
+      "expected": "source SOURCE"
+    },
+    {
+      "kind": "pipeline",
+      "id": "filter-7",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "target"
+            },
+            "file_path": "content.py"
+          }
+        ]
+      },
+      "input": "source SOURCE",
+      "file": "content.py",
+      "expected": "target SOURCE"
+    },
+    {
+      "kind": "pipeline",
+      "id": "filter-8",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "target"
+            },
+            "file_path": "other.py"
+          }
+        ]
+      },
+      "input": "source SOURCE",
+      "file": "content.py",
+      "expected": "source SOURCE"
+    },
+    {
+      "kind": "pipeline",
+      "id": "filter-9",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "target"
+            },
+            "item_type": [
+              "Report",
+              "Notebook"
+            ],
+            "item_name": [
+              "Book"
+            ],
+            "file_path": [
+              "content.py"
+            ]
+          }
+        ]
+      },
+      "input": "source SOURCE",
+      "file": "content.py",
+      "expected": "target SOURCE"
+    },
+    {
+      "kind": "pipeline",
+      "id": "ordered-0",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "other": "target"
+            }
+          }
+        ]
+      },
+      "input": "source",
+      "file": "content.py",
+      "expected": "source"
+    },
+    {
+      "kind": "pipeline",
+      "id": "ordered-1",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "_ALL_": "target"
+            }
+          }
+        ]
+      },
+      "input": "source",
+      "file": "content.py",
+      "expected": "target"
+    },
+    {
+      "kind": "pipeline",
+      "id": "ordered-2",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "$workspace.$id",
+            "replace_value": {
+              "dev": "target"
+            }
+          }
+        ]
+      },
+      "input": "11111111-1111-1111-1111-111111111111",
+      "file": "content.py",
+      "expected": "target"
+    },
+    {
+      "kind": "pipeline",
+      "id": "ordered-3",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "$workspace.$id"
+            }
+          }
+        ]
+      },
+      "input": "source",
+      "file": "content.py",
+      "expected": "11111111-1111-1111-1111-111111111111"
+    },
+    {
+      "kind": "pipeline",
+      "id": "ordered-4",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "absent",
+            "replace_value": {
+              "dev": "$workspace.$id"
+            }
+          }
+        ]
+      },
+      "input": "source",
+      "file": "content.py",
+      "expected": "source"
+    },
+    {
+      "kind": "pipeline",
+      "id": "ordered-5",
+      "parameters": {
+        "key_value_replace": [
+          {
+            "find_key": "$.x",
+            "replace_value": {
+              "_ALL_": false
+            }
+          }
+        ]
+      },
+      "input": "{\"x\": 1}",
+      "file": "content.py",
+      "expected": "{\"x\": false}"
+    },
+    {
+      "kind": "pipeline",
+      "id": "ordered-6",
+      "parameters": {
+        "key_value_replace": [
+          {
+            "find_key": "$.x",
+            "replace_value": {
+              "dev": "$workspace.$id"
+            }
+          }
+        ]
+      },
+      "input": "{\"x\": 1}",
+      "file": "content.py",
+      "expected": "{\"x\": \"11111111-1111-1111-1111-111111111111\"}"
+    },
+    {
+      "kind": "pipeline",
+      "id": "ordered-7",
+      "parameters": {
+        "key_value_replace": [
+          {
+            "find_key": "$.missing",
+            "replace_value": {
+              "dev": "$workspace.$id"
+            }
+          }
+        ]
+      },
+      "input": "{\"x\": 1}",
+      "file": "content.py",
+      "expected": "{\"x\": 1}"
+    },
+    {
+      "kind": "pipeline",
+      "id": "ordered-8",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "middle",
+            "replace_value": {
+              "dev": "final"
+            }
+          }
+        ],
+        "key_value_replace": [
+          {
+            "find_key": "$.x",
+            "replace_value": {
+              "dev": "middle"
+            }
+          }
+        ]
+      },
+      "input": "{\"x\": \"source\"}",
+      "file": "content.py",
+      "expected": "{\"x\": \"final\"}"
+    },
+    {
+      "kind": "schema",
+      "id": "item-schema-0",
+      "parameters": {
+        "spark_pool": [
+          {
+            "instance_pool_id": "pool",
+            "replace_value": {
+              "dev": {
+                "type": "Capacity",
+                "name": "Pool"
+              }
+            }
+          }
+        ]
+      },
+      "valid": true,
+      "normalized": {
+        "spark_pool": [
+          {
+            "instance_pool_id": "pool",
+            "replace_value": {
+              "dev": {
+                "type": "Capacity",
+                "name": "Pool"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "schema",
+      "id": "item-schema-1",
+      "parameters": {
+        "spark_pool": [
+          {
+            "instance_pool_id": "pool",
+            "replace_value": {
+              "dev": {
+                "type": "Workspace",
+                "name": "Pool"
+              }
+            }
+          }
+        ]
+      },
+      "valid": true,
+      "normalized": {
+        "spark_pool": [
+          {
+            "instance_pool_id": "pool",
+            "replace_value": {
+              "dev": {
+                "type": "Workspace",
+                "name": "Pool"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "schema",
+      "id": "item-schema-2",
+      "parameters": {
+        "spark_pool": [
+          {
+            "instance_pool_id": "pool",
+            "replace_value": {
+              "dev": {
+                "type": "capacity",
+                "name": "Pool"
+              }
+            }
+          }
+        ]
+      },
+      "valid": false,
+      "normalized": {
+        "spark_pool": [
+          {
+            "instance_pool_id": "pool",
+            "replace_value": {
+              "dev": {
+                "type": "capacity",
+                "name": "Pool"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "schema",
+      "id": "item-schema-3",
+      "parameters": {
+        "spark_pool": [
+          {
+            "instance_pool_id": "pool",
+            "replace_value": {
+              "dev": {
+                "type": "Capacity",
+                "name": ""
+              }
+            }
+          }
+        ]
+      },
+      "valid": false,
+      "normalized": {
+        "spark_pool": [
+          {
+            "instance_pool_id": "pool",
+            "replace_value": {
+              "dev": {
+                "type": "Capacity",
+                "name": ""
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "schema",
+      "id": "item-schema-4",
+      "parameters": {
+        "spark_pool": [
+          {
+            "instance_pool_id": "pool",
+            "replace_value": {
+              "dev": {
+                "type": "Capacity",
+                "name": "Pool",
+                "extra": 1
+              }
+            }
+          }
+        ]
+      },
+      "valid": false,
+      "normalized": {
+        "spark_pool": [
+          {
+            "instance_pool_id": "pool",
+            "replace_value": {
+              "dev": {
+                "type": "Capacity",
+                "name": "Pool",
+                "extra": 1
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "schema",
+      "id": "item-schema-5",
+      "parameters": {
+        "semantic_model_binding": [
+          {
+            "connection_id": "11111111-1111-1111-1111-111111111111",
+            "semantic_model_name": "Model"
+          }
+        ]
+      },
+      "valid": true,
+      "normalized": {
+        "semantic_model_binding": [
+          {
+            "connection_id": "11111111-1111-1111-1111-111111111111",
+            "semantic_model_name": "Model"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "schema",
+      "id": "item-schema-6",
+      "parameters": {
+        "semantic_model_binding": [
+          {
+            "connection_id": {
+              "dev": "11111111-1111-1111-1111-111111111111"
+            },
+            "semantic_model_name": "Model"
+          }
+        ]
+      },
+      "valid": false,
+      "normalized": {
+        "semantic_model_binding": [
+          {
+            "connection_id": {
+              "dev": "11111111-1111-1111-1111-111111111111"
+            },
+            "semantic_model_name": "Model"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "schema",
+      "id": "item-schema-7",
+      "parameters": {
+        "semantic_model_binding": {
+          "default": {
+            "connection_id": {
+              "dev": "11111111-1111-1111-1111-111111111111"
+            }
+          }
+        }
+      },
+      "valid": true,
+      "normalized": {
+        "semantic_model_binding": {
+          "default": {
+            "connection_id": {
+              "dev": "11111111-1111-1111-1111-111111111111"
+            }
+          }
+        }
+      }
+    },
+    {
+      "kind": "schema",
+      "id": "item-schema-8",
+      "parameters": {
+        "semantic_model_binding": {
+          "default": {
+            "connection_id": {
+              "_ALL_": [
+                "11111111-1111-1111-1111-111111111111"
+              ]
+            }
+          }
+        }
+      },
+      "valid": true,
+      "normalized": {
+        "semantic_model_binding": {
+          "default": {
+            "connection_id": {
+              "_ALL_": [
+                "11111111-1111-1111-1111-111111111111"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "kind": "schema",
+      "id": "item-schema-9",
+      "parameters": {
+        "semantic_model_binding": {
+          "default": {
+            "connection_id": "11111111-1111-1111-1111-111111111111"
+          }
+        }
+      },
+      "valid": false,
+      "normalized": {
+        "semantic_model_binding": {
+          "default": {
+            "connection_id": "11111111-1111-1111-1111-111111111111"
+          }
+        }
+      }
+    },
+    {
+      "kind": "schema",
+      "id": "item-schema-10",
+      "parameters": {
+        "semantic_model_binding": {
+          "models": [
+            {
+              "semantic_model_name": [
+                "Model"
+              ],
+              "connection_id": {
+                "dev": [
+                  "11111111-1111-1111-1111-111111111111"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "valid": true,
+      "normalized": {
+        "semantic_model_binding": {
+          "models": [
+            {
+              "semantic_model_name": [
+                "Model"
+              ],
+              "connection_id": {
+                "dev": [
+                  "11111111-1111-1111-1111-111111111111"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "kind": "schema",
+      "id": "item-schema-11",
+      "parameters": {
+        "semantic_model_binding": {
+          "models": []
+        }
+      },
+      "valid": false,
+      "normalized": {
+        "semantic_model_binding": {
+          "models": []
+        }
+      }
+    },
+    {
+      "kind": "schema",
+      "id": "item-schema-12",
+      "parameters": {
+        "semantic_model_binding": {
+          "models": [
+            {
+              "semantic_model_name": "",
+              "connection_id": {
+                "dev": "11111111-1111-1111-1111-111111111111"
+              },
+              "extra": false
+            }
+          ]
+        }
+      },
+      "valid": true,
+      "normalized": {
+        "semantic_model_binding": {
+          "models": [
+            {
+              "semantic_model_name": "",
+              "connection_id": {
+                "dev": "11111111-1111-1111-1111-111111111111"
+              },
+              "extra": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "kind": "schema",
+      "id": "item-schema-13",
+      "parameters": {
+        "gateway_binding": [
+          {
+            "gateway_id": "11111111-1111-1111-1111-111111111111",
+            "dataset_name": [
+              "Model"
+            ]
+          }
+        ]
+      },
+      "valid": true,
+      "normalized": {
+        "semantic_model_binding": [
+          {
+            "connection_id": "11111111-1111-1111-1111-111111111111",
+            "semantic_model_name": [
+              "Model"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "kind": "schema",
+      "id": "item-schema-14",
+      "parameters": {
+        "gateway_binding": [
+          {
+            "gateway_id": "bad",
+            "dataset_name": "Model"
+          }
+        ]
+      },
+      "valid": false,
+      "normalized": {
+        "semantic_model_binding": [
+          {
+            "connection_id": "bad",
+            "semantic_model_name": "Model"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -3,13 +3,26 @@
 
 //! Bounded source-compatible parameter primitives, separate from CLI projection.
 
+mod context;
+mod input;
 mod jsonpath;
+mod paths;
 mod program;
 mod regex;
+mod schema;
 
+pub use context::{
+    DynamicVariable, DynamicVariableKind, ParameterItem, ParameterResolver,
+    matches_parameter_filters,
+};
+pub use input::{
+    ParameterFileHost, PreparedParameters, expand_parameter_environment, merge_parameter_template,
+    prepare_parameter_document,
+};
 pub use jsonpath::JsonPathReplacement;
-pub use program::ParameterProgram;
-pub use regex::FindReplacement;
+pub use paths::{PathFilterOptions, PathFilterResolution, resolve_parameter_paths};
+pub use program::{ParameterProgram, SkippedParameter};
+pub use regex::{FindReplacement, SourceRegex};
 
 use std::{
     fmt,

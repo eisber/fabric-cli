@@ -69,6 +69,10 @@ impl OperationSettings {
     pub fn exclude_regex(&self) -> Option<&str> {
         self.exclude_regex.as_deref()
     }
+    /// Source orphan-unpublish default when no exclusion was selected.
+    pub fn orphan_exclude_regex(&self) -> &str {
+        self.exclude_regex.as_deref().unwrap_or("^$")
+    }
     /// Folder exclusion regex, publish only.
     pub fn folder_exclude_regex(&self) -> Option<&str> {
         self.folder_exclude_regex.as_deref()
@@ -93,6 +97,7 @@ impl OperationSettings {
 /// Unknown source fields remain lossless extensions, not silently dropped input.
 #[derive(Clone, Debug)]
 pub struct CommandConfiguration {
+    document: Value,
     target: WorkspaceTarget,
     environment: String,
     repository_directory: String,
@@ -104,9 +109,14 @@ pub struct CommandConfiguration {
     constants: Map<String, Value>,
     kwargs: Map<String, Value>,
     extensions: Map<String, Value>,
+    parameters: Option<crate::parameter_transforms::ParameterProgram>,
 }
 
 impl CommandConfiguration {
+    /// Full merged source document, retaining unselected environments and fields.
+    pub fn document(&self) -> &Value {
+        &self.document
+    }
     /// Workspace ID or display name with source precedence.
     pub fn target(&self) -> &WorkspaceTarget {
         &self.target
@@ -141,7 +151,24 @@ impl CommandConfiguration {
     }
     /// Test a source feature name exactly, without truthiness or case folding.
     pub fn feature_enabled(&self, feature: &str) -> bool {
+        if let Some(flags) = self.constants.get("FEATURE_FLAG") {
+            return membership(flags, feature).expect("validated iterable flag constant");
+        }
         self.features.iter().any(|value| value == feature)
+    }
+    /// Evaluate an injected environment flag with source VALID_ENABLE_FLAGS.
+    ///
+    /// This is distinct from parameter string flags: defaults accept `"1"`,
+    /// `"true"` and `"yes"` after lowercasing, with no whitespace stripping.
+    ///
+    /// # Errors
+    /// A configured non-iterable VALID_ENABLE_FLAGS fails rather than becoming false.
+    pub fn environment_flag_enabled(&self, value: &str) -> Result<bool, ConfigurationError> {
+        let value = value.to_lowercase();
+        self.constants.get("VALID_ENABLE_FLAGS").map_or_else(
+            || Ok(["1", "true", "yes"].contains(&value.as_str())),
+            |flags| membership(flags, &value),
+        )
     }
     /// Typed constants after exact per-environment overrides.
     pub fn constants(&self) -> &Map<String, Value> {
@@ -158,6 +185,65 @@ impl CommandConfiguration {
     /// Unknown fields indexed by source field path, retaining their typed values.
     pub fn extensions(&self) -> &Map<String, Value> {
         &self.extensions
+    }
+    /// The resolved command-local parameter program, if explicitly configured.
+    pub fn parameters(&self) -> Option<&crate::parameter_transforms::ParameterProgram> {
+        self.parameters.as_ref()
+    }
+
+    /// Validate source operation feature dependencies without changing globals.
+    ///
+    /// Parsing accepts configured settings before these publication-time checks.
+    /// Disabled folder publication preserves the settings but skips their feature
+    /// gates exactly as source does. Item scope/bulk fallback remains caller-owned.
+    ///
+    /// # Errors
+    /// Rejects missing feature dependencies and conflicting active folder filters.
+    pub fn validate_operation_features(&self) -> Result<(), ConfigurationError> {
+        let require = |feature| {
+            if self.feature_enabled("enable_experimental_features") && self.feature_enabled(feature)
+            {
+                Ok(())
+            } else {
+                Err(invalid(format!(
+                    "Configured operation requires enable_experimental_features and {feature}"
+                )))
+            }
+        };
+        if !self.publish.skip() {
+            if self.feature_enabled("enable_bulk_publish")
+                && !self.feature_enabled("enable_experimental_features")
+            {
+                return Err(invalid(
+                    "enable_bulk_publish requires enable_experimental_features",
+                ));
+            }
+            if self.publish.items_to_include().is_some() {
+                require("enable_items_to_include")?;
+            }
+            if self.publish.shortcut_exclude_regex().is_some() {
+                require("enable_shortcut_exclude")?;
+            }
+            if !self.feature_enabled("disable_workspace_folder_publish") {
+                if self.publish.folder_exclude_regex().is_some()
+                    && self.publish.folder_path_to_include().is_some()
+                {
+                    return Err(invalid(
+                        "Folder exclusion and inclusion cannot both be active",
+                    ));
+                }
+                if self.publish.folder_exclude_regex().is_some() {
+                    require("enable_exclude_folder")?;
+                }
+                if self.publish.folder_path_to_include().is_some() {
+                    require("enable_include_folder")?;
+                }
+            }
+        }
+        if !self.unpublish.skip() && self.unpublish.items_to_include().is_some() {
+            require("enable_items_to_include")?;
+        }
+        Ok(())
     }
 
     /// Refuse extension emission until the consumer explicitly implements it.
@@ -231,6 +317,9 @@ pub(super) fn snapshot(
                 constants.insert(key.clone(), value.clone());
             }
         }
+        if let Some(flags) = constants.get("FEATURE_FLAG") {
+            membership(flags, "")?;
+        }
     }
     let mut extensions = Map::new();
     for (key, value) in config.document.as_object().expect("validated document") {
@@ -245,6 +334,7 @@ pub(super) fn snapshot(
         }
     }
     Ok(CommandConfiguration {
+        document: config.document.clone(),
         target,
         environment: config.environment.clone(),
         repository_directory: config
@@ -265,7 +355,19 @@ pub(super) fn snapshot(
         constants,
         kwargs: options.kwargs,
         extensions,
+        parameters: config.parameters().cloned(),
     })
+}
+
+fn membership(value: &Value, entry: &str) -> Result<bool, ConfigurationError> {
+    match value {
+        Value::String(value) => Ok(value.contains(entry)),
+        Value::Array(values) => Ok(values.iter().any(|value| value.as_str() == Some(entry))),
+        Value::Object(values) => Ok(values.contains_key(entry)),
+        _ => Err(invalid(
+            "Source flag constant must support membership testing",
+        )),
+    }
 }
 
 pub(super) fn validate_sections(
@@ -428,4 +530,5 @@ const CONSTANT_NAMES: &[&str] = &[
     "__file__",
     "__cached__",
     "__builtins__",
+    "__annotations__",
 ];

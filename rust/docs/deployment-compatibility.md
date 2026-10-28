@@ -28,6 +28,54 @@ The original 44 fixtures and existing config/parameter captures are unchanged.
 Native checks require the integration owner's serialized build slot; source-only
 capture and formatting do not prove executable consumer parity.
 
+The parameter continuation adds 33 injected context comparisons, 34 actual
+source ordered-pipeline/item-schema comparisons, and 26 actual source path-filter
+comparisons, plus 22 actual global-flag/scoped-constant comparisons (165 new
+comparisons in total). Expectations are captured before
+their Rust tests. Synthetic path captures create and remove an owned tree inside
+the project, never a system temporary directory or real repository snapshot.
+
+Native consumers now have these explicit primitives:
+
+- `ParameterProgram::apply_for_item` applies key/value rules before find rules
+  with exact item/name/path conjunction. `ParameterResolver` supplies metadata
+  and concrete path capabilities; no library reads credentials, files or process
+  environment. Dynamic replacements resolve only after a match, once per
+  selected JSONPath location. Missing parameter environments produce typed skip
+  outcomes rather than an unsupported-field stub.
+- `resolve_parameter_paths` evaluates source regular paths and glob filters over
+  caller-validated repository-relative regular-file inventories. Source bracket,
+  recursive wildcard, literal-brace, casing, confinement and invalid-pattern
+  behavior is retained for the captured host. Symlink/canonical-file discovery
+  stays with the injected file host; drive-relative paths require explicit host
+  normalization.
+- `expand_parameter_environment` performs exact-case `$ENV:` substitution from
+  an injected snapshot before YAML decoding. Unset variables retain their tokens;
+  active unresolved tokens fail parameter validation. Parameter flag truth and
+  environment `VALID_ENABLE_FLAGS` truth are separate source protocols.
+- `prepare_parameter_document` and `resolve_parameters_with_host` append template
+  rules after base rules, skip duplicate/missing/nested templates with outcomes,
+  and retain source recursive merge/type-mismatch behavior. Template decoding
+  uses the existing parameter duplicate-key policy.
+- `item_settings()` retains validated Spark-pool and semantic-model binding
+  schemas, including deprecated gateway conversion. Owning item processors must
+  explicitly consume these settings (`require_item_settings_consumed`), not
+  silently treat them as text rules.
+- `SourceRegex` shares the existing bounded Python syntax translator without
+  find-rule capture-count restrictions. Item-name exclusion uses `matches_start`
+  (`re.match`), while folder exclusion uses `search`. Advanced syntax remains an
+  explicit unsupported classification, not a dropped setting or a claim that the
+  Rust regex/JSONPath crates implement Python completely.
+
+The orchestrator must freeze `command_configuration` after parameter resolution,
+call `require_no_extensions` and `validate_operation_features` before mutation,
+and consume the selected constants, filters, flags and item-specific settings in
+its actual plan. Repository/parameter path resolution remains caller-host-owned:
+the pinned config validator resolves paths relative to the config directory and
+checks existence/type/git-root consistency; it does not expand `~` or `$ENV:`
+within these config path fields. No planner, CLI host, publisher or item processor
+is modified by this configuration-only lane.
+
 The initial slice inventories reference behavior and adds synthetic offline
 fixtures. The owner subsequently approved a native single-Notebook implementation,
 described below. It is not the full `fab deploy` command, a planner, unpublication,

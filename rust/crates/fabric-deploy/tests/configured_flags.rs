@@ -10,6 +10,54 @@ use fabric_deploy::{
 use serde_json::{Value, json};
 
 #[test]
+fn all_twenty_two_source_environment_flags_and_scoped_overrides_match() {
+    let fixture: Value = serde_json::from_str(include_str!("flag_protocol_source.json")).unwrap();
+    assert_eq!(fixture["cases"].as_array().unwrap().len(), 22);
+    let base = json!({
+        "core": { "workspace_id": "11111111-1111-1111-1111-111111111111", "repository_directory": "repository" },
+        "unpublish": { "skip": true },
+    });
+    for case in fixture["cases"].as_array().unwrap() {
+        let mut document = base.clone();
+        if case["kind"] == "environment-flag" {
+            document["constants"] = json!({"VALID_ENABLE_FLAGS": case["flags"]});
+            let config = DeploymentConfig::from_document(&document, "dev", None)
+                .unwrap()
+                .command_configuration(CommandOptions::default())
+                .unwrap();
+            let result = config.environment_flag_enabled(case["input"].as_str().unwrap());
+            assert_eq!(result.is_ok(), case["valid"].as_bool().unwrap(), "{case}");
+            if let Ok(value) = result {
+                assert_eq!(json!(value), case["expected"], "{case}");
+            }
+        } else {
+            for (key, value) in case["config"].as_object().unwrap() {
+                document[key] = value.clone();
+            }
+            let options = CommandOptions {
+                features: vec!["base".into()],
+                constants: serde_json::Map::from_iter([("VERSION".into(), json!("1.4.0"))]),
+                ..CommandOptions::default()
+            };
+            let config = DeploymentConfig::from_document(&document, "dev", None)
+                .unwrap()
+                .command_configuration(options.clone())
+                .unwrap();
+            let mut features = config.features().to_vec();
+            features.sort();
+            assert_eq!(json!(features), case["expected"]["features"]);
+            assert_eq!(config.constants()["VERSION"], case["expected"]["version"]);
+            let restored = DeploymentConfig::from_document(&base, "dev", None)
+                .unwrap()
+                .command_configuration(options)
+                .unwrap();
+            assert_eq!(json!(restored.features()), case["restored"]["features"]);
+            assert_eq!(restored.constants()["VERSION"], case["restored"]["version"]);
+        }
+    }
+}
+
+#[test]
 fn configured_strings_and_all_config_fields_match_fifty_source_cases() {
     let fixture: Value =
         serde_json::from_str(include_str!("configured_flags_source.json")).unwrap();
