@@ -1,13 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use crate::TransferFiles;
+use crate::{TransferFiles, TransferFuture};
 use fabric_deploy::definitions::{
     DefinitionEntry, DefinitionFile, DefinitionFileSystem, DefinitionImportFileSystem,
     DefinitionLimits, LocalDefinitionFileSystem,
 };
 use std::{
-    io,
+    fs, io,
     path::{Component, Path, PathBuf},
 };
 
@@ -49,17 +49,35 @@ impl LocalTransferFiles {
         }
         self.definitions.preflight(root, &[])
     }
-}
 
-fn invalid() -> io::Error {
-    io::Error::new(
-        io::ErrorKind::InvalidInput,
-        "Local transfer path is outside the owned root or is unsafe",
-    )
-}
+    fn check_import(&mut self, root: &Path) -> io::Result<()> {
+        if !root.starts_with(&self.root) {
+            return Err(invalid());
+        }
+        if root == self.root.as_path() {
+            return self.check(root);
+        }
+        let parent = root.parent().ok_or_else(invalid)?;
+        self.check(parent)?;
+        let metadata = fs::symlink_metadata(root)?;
+        if metadata.is_file() {
+            let name = root
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(invalid)?;
+            self.definitions.preflight(
+                parent,
+                &[DefinitionFile {
+                    path: name.to_owned(),
+                    bytes: Vec::new(),
+                }],
+            )
+        } else {
+            self.check(root)
+        }
+    }
 
-impl TransferFiles for LocalTransferFiles {
-    fn resolve_directory(&mut self, input: &str) -> io::Result<PathBuf> {
+    fn selected_path(&self, input: &str) -> io::Result<PathBuf> {
         if input.is_empty() || input.contains("://") {
             return Err(invalid());
         }
@@ -81,8 +99,35 @@ impl TransferFiles for LocalTransferFiles {
         if path.components().any(|part| part == Component::ParentDir) {
             return Err(invalid());
         }
+        Ok(path)
+    }
+}
+
+fn invalid() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidInput,
+        "Local transfer path is outside the owned root or is unsafe",
+    )
+}
+
+impl TransferFiles for LocalTransferFiles {
+    fn resolve_directory(&mut self, input: &str) -> io::Result<PathBuf> {
+        let path = self.selected_path(input)?;
         self.check(&path)?;
         Ok(path)
+    }
+
+    fn resolve_import(&mut self, input: &str) -> io::Result<PathBuf> {
+        let path = self.selected_path(input)?;
+        self.check_import(&path)?;
+        Ok(path)
+    }
+
+    fn resolve_import_async<'a>(
+        &'a mut self,
+        input: &'a str,
+    ) -> TransferFuture<'a, io::Result<PathBuf>> {
+        Box::pin(async move { self.resolve_import(input) })
     }
 
     fn is_empty(&mut self, root: &Path) -> io::Result<bool> {
@@ -110,7 +155,7 @@ impl DefinitionFileSystem for LocalTransferFiles {
 
 impl DefinitionImportFileSystem for LocalTransferFiles {
     fn entries(&mut self, root: &Path, relative: &str) -> io::Result<Vec<DefinitionEntry>> {
-        self.check(root)?;
+        self.check_import(root)?;
         self.definitions.entries(root, relative)
     }
 

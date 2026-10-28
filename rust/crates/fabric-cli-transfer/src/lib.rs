@@ -122,6 +122,14 @@ pub trait TransferMetadata: Send + Sync {
 
 /// Definition file policy plus caller-owned path selection and emptiness checks.
 pub trait TransferFiles: DefinitionFileSystem + DefinitionImportFileSystem + Send {
+    /// Resolve an import directory or regular file on an appropriate file worker.
+    ///
+    /// The default retains existing directory-only injected adapters. OS-backed
+    /// async callers invoke this synchronous capability only on their worker.
+    fn resolve_import(&mut self, input: &str) -> io::Result<PathBuf> {
+        self.resolve_directory(input)
+    }
+
     /// Resolve an existing confined import directory or regular file.
     ///
     /// The pinned source's `os.walk(file)` yields an empty parts array; it does

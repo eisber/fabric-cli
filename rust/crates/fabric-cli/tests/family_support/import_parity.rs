@@ -465,3 +465,66 @@ async fn environment_readiness_permission_and_malformed_publish_state_are_not_su
         }
     }
 }
+
+#[tokio::test]
+async fn existing_local_file_uses_production_worker_and_source_empty_definition() {
+    let source: Value = serde_json::from_str(include_str!(
+        "../../../fabric-deploy/tests/definition_import_inputs_source.json"
+    ))
+    .unwrap();
+    assert_eq!(source["source"], "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4");
+    let expected: Value =
+        serde_json::from_str(source["cases"][0]["requests"][0]["body"].as_str().unwrap()).unwrap();
+    let mut host = Harness::new();
+    std::fs::write(host.root.join("file.bin"), b"not traversed by os.walk").unwrap();
+    host.metadata_with_id(WORKSPACE, json!([]));
+    host.reply(201, json!({"id":CREATED}));
+    let output = host
+        .execute(&[
+            "import",
+            "Demo.Workspace/Synthetic.DataPipeline",
+            "-i",
+            "file.bin",
+            "-f",
+        ])
+        .await;
+    success(&output);
+    let requests = host.requests();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[2]["body"]["definition"], expected["definition"]);
+    assert_eq!(requests[2]["body"]["type"], expected["type"]);
+    assert_eq!(requests[2]["body"]["displayName"], expected["displayName"]);
+    assert_eq!(requests[2]["body"]["folderId"], Value::Null);
+    assert!(
+        matches!(&output.evidence, FamilyEvidence::Transfer(Ok(result))
+        if result.effects[0].item_id == CREATED)
+    );
+}
+
+#[tokio::test]
+async fn import_file_resolution_keeps_traversal_network_and_stream_alias_rejections() {
+    for path in [
+        "..\\outside.bin",
+        "sub\\..\\file.bin",
+        "file.bin:stream",
+        "\\\\untrusted-server\\share\\input",
+    ] {
+        let mut host = Harness::new();
+        host.metadata_with_id(WORKSPACE, json!([]));
+        let output = host
+            .execute(&[
+                "import",
+                "Demo.Workspace/Synthetic.DataPipeline",
+                "-i",
+                path,
+                "-f",
+            ])
+            .await;
+        assert_ne!(output.plan.exit_code, 0);
+        assert_eq!(host.requests().len(), 2);
+        assert!(
+            matches!(&output.evidence, FamilyEvidence::Transfer(Err(error))
+            if error.effects.is_empty())
+        );
+    }
+}
