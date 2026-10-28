@@ -38,7 +38,7 @@ pub fn dispatch(
     let result = settings.and_then(|_| fabric_cli_local::execute(&command.command, store, effects));
     match result {
         Ok(output) => output.render(
-            command.command.command_path(),
+            command.command.command_name(),
             timestamp,
             format,
             &text::ascii_width,

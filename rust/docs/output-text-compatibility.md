@@ -57,9 +57,49 @@ renderer are not rewritten.
 
 The additive frozen Python captures and `output_audit`/`output_contract_audit`
 tests cover the presentation regression and its consumers. Their presence is
-not a claim of native execution or full command parity. Empty GET suppression,
-config success command naming, format defaults and Unicode providers remain
-separate compatibility boundaries.
+not a claim of native execution or full command parity. Format defaults and
+Unicode providers remain separate compatibility boundaries.
+
+### SRC2: local success command names
+
+The local adapter passes Python's `args.command` to successful output:
+`config get`, `config set`, `config ls` and `config clear-cache` use `config`.
+The typed local-command mapping is separate from `command_path`; failures keep
+the complete leaf path in text and JSON. No envelope serializer, filesystem
+handler or configuration-format selection changes. The frozen `config-value`
+capture remains unchanged. Mounted executable tests cover explicit text/JSON,
+all four config leaves, absent-value silence, real setting/context files and
+failure paths. This repairs grouped local output, not all grouped command
+families or complete Python terminal parity.
+
+The mounted PWD fixture separately follows source `_print_context`'s OS cwd
+contract: physical directory spelling on POSIX and native cwd spelling on
+Windows. Its exact parsed-JSON assertion and portable parent-component cwd
+regression do not change production path resolution, containment or symlink
+behavior. The owner-authorized test correction and source blob proof are
+recorded in the [self-review](../reviews/20261028/output-consistency-self-review.md#authorized-mounted-pwd-cwd-expectation-correction).
+
+### SRC3: silent empty GET projections
+
+The generic item GET consumer now preserves `query_and_export`'s conditional
+printing **after** query evaluation. Empty lists, objects and strings return
+no output input, not a successful empty envelope. Source query results for
+false, null/missing and zero are the nonempty strings `"False"`, `"None"` and
+`"0"` and therefore remain visible. The shared envelope/query libraries and
+LS behavior are unchanged: JSON LS still emits `Success` with `data: []`.
+The existing job empty-result message is not changed or suppressed. In the
+adopted source and current job host it is a successful `"No runs found"` message,
+not a `NoRunsFound` failure code.
+
+The folder wrapper already delegates GET's optional output unchanged; no
+additional envelope or folder request is introduced. Additive real-query
+consumer tests cover empty/container/scalar distinctions, both text/JSON
+production-session outputs, folder delegation, exact request counts/scopes,
+query/service failures and caller-owned writer failures. The original frozen
+`get-query-empty-source` capture and mounted failing regression are retained.
+These are bounded output repairs, not completion of GET export, definitions,
+enrichment, metadata operations or live host acceptance. See the
+[self-review and pending native CI selectors](../reviews/20261028/output-consistency-self-review.md).
 
 ## Explicit boundaries still requiring completion
 

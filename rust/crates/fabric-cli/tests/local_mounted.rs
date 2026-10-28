@@ -32,6 +32,10 @@ impl Drop for Root {
 }
 
 fn invoke(root: &Path, args: &[&str]) -> Output {
+    invoke_in(root, root, args)
+}
+
+fn invoke_in(root: &Path, directory: &Path, args: &[&str]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_fab-rs"));
     command.env_clear();
     for name in ["SystemRoot", "WINDIR", "TEMP", "TMP"] {
@@ -42,10 +46,20 @@ fn invoke(root: &Path, args: &[&str]) -> Output {
     command
         .env("FAB_RUST_CONFIG_ROOT", root)
         .env("FAB_RUST_SESSION_ID", "37")
-        .current_dir(root)
+        .current_dir(directory)
         .args(args)
         .output()
         .unwrap()
+}
+
+fn expected_cwd(directory: &Path) -> String {
+    // POSIX getcwd resolves symlinks; Windows getcwd does not add canonicalize's verbatim prefix.
+    let path = if cfg!(windows) {
+        directory.to_path_buf()
+    } else {
+        fs::canonicalize(directory).unwrap()
+    };
+    path.to_string_lossy().into_owned()
 }
 
 fn success(output: &Output) {
@@ -113,6 +127,135 @@ fn config_success_json_preserves_the_frozen_source_group_name() {
 }
 
 #[test]
+fn all_config_success_leaves_keep_the_group_and_real_file_effects() {
+    for format in ["text", "json"] {
+        let root = Root::new();
+        let set = invoke(
+            &root.0,
+            &[
+                "config",
+                "set",
+                "show_hidden",
+                "true",
+                "--output_format",
+                format,
+            ],
+        );
+        success(&set);
+        assert_eq!(set.stderr, b"Updating 'show_hidden' value...\n");
+        let message = "Configuration 'show_hidden' set to 'true'";
+        if format == "json" {
+            let value: serde_json::Value = serde_json::from_slice(&set.stdout).unwrap();
+            assert_eq!(value["command"], "config");
+            assert_eq!(value["status"], "Success");
+            assert_eq!(value["result"], serde_json::json!({"message":message}));
+        } else {
+            assert_eq!(set.stdout, format!("\n* {message}\n\n").as_bytes());
+        }
+        let settings = fs::read(root.0.join("config.json")).unwrap();
+        let values: serde_json::Value = serde_json::from_slice(&settings).unwrap();
+        assert_eq!(values["show_hidden"], "true");
+        assert_eq!(values["output_format"], "text");
+        let get = invoke(
+            &root.0,
+            &["config", "get", "show_hidden", "--output_format", format],
+        );
+        success(&get);
+        assert!(get.stderr.is_empty());
+        if format == "json" {
+            let value: serde_json::Value = serde_json::from_slice(&get.stdout).unwrap();
+            assert_eq!(value["command"], "config");
+            assert_eq!(value["status"], "Success");
+            assert_eq!(value["result"], serde_json::json!({"data":["true"]}));
+        } else {
+            assert_eq!(get.stdout, b"true\n");
+        }
+        let list = invoke(&root.0, &["config", "ls", "--output_format", format]);
+        success(&list);
+        assert!(list.stderr.is_empty());
+        if format == "json" {
+            let value: serde_json::Value = serde_json::from_slice(&list.stdout).unwrap();
+            assert_eq!(value["command"], "config");
+            assert_eq!(value["status"], "Success");
+            let rows = value["result"]["data"].as_array().unwrap();
+            assert_eq!(rows.len(), 18);
+            assert!(rows.contains(&serde_json::json!({"setting":"show_hidden","value":"true"})));
+        } else {
+            let text = std::str::from_utf8(&list.stdout).unwrap();
+            assert!(text.starts_with("setting"));
+            assert!(text.contains("show_hidden"));
+            assert!(text.contains("true"));
+        }
+        let context = root.0.join("context-37.json");
+        fs::write(&context, br#"{"path":"/"}"#).unwrap();
+        let cache = invoke(
+            &root.0,
+            &["config", "clear-cache", "--output_format", format],
+        );
+        success(&cache);
+        assert!(cache.stderr.is_empty());
+        if format == "json" {
+            let value: serde_json::Value = serde_json::from_slice(&cache.stdout).unwrap();
+            assert_eq!(value["command"], "config");
+            assert_eq!(value["status"], "Success");
+            assert_eq!(
+                value["result"],
+                serde_json::json!({"message":"Cleared the cache"})
+            );
+        } else {
+            assert_eq!(cache.stdout, b"\n* Cleared the cache\n\n");
+        }
+        let absent = invoke(
+            &root.0,
+            &[
+                "config",
+                "get",
+                "default_capacity",
+                "--output_format",
+                format,
+            ],
+        );
+        success(&absent);
+        assert!(absent.stdout.is_empty());
+        assert!(absent.stderr.is_empty());
+        assert_eq!(fs::read(root.0.join("config.json")).unwrap(), settings);
+        assert_eq!(fs::read(context).unwrap(), br#"{"path":"/"}"#);
+    }
+}
+
+#[test]
+fn config_set_failure_preserves_leaf_name_and_does_not_change_the_setting() {
+    for format in ["text", "json"] {
+        let root = Root::new();
+        success(&invoke(&root.0, &["config", "get", "show_hidden"]));
+        let before = fs::read(root.0.join("config.json")).unwrap();
+        let output = invoke(
+            &root.0,
+            &[
+                "config",
+                "set",
+                "show_hidden",
+                "invalid",
+                "--output_format",
+                format,
+            ],
+        );
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stderr.is_empty());
+        if format == "json" {
+            let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(value["command"], "config set");
+            assert_eq!(value["status"], "Failure");
+            assert_eq!(value["result"]["error_code"], "InvalidInput");
+            assert!(value["result"].get("data").is_none());
+        } else {
+            assert!(output.stdout.starts_with(b"x config set: [InvalidInput] "));
+        }
+        assert_eq!(fs::read(root.0.join("config.json")).unwrap(), before);
+    }
+}
+
+#[test]
 fn local_failure_text_keeps_the_leaf_prefix_and_json_failure_fields() {
     let root = Root::new();
     for format in ["text", "json"] {
@@ -162,7 +305,25 @@ fn navigation_persists_only_its_explicit_session_and_pwd_uses_stderr() {
         .strip_prefix("! Command context path: root\n")
         .expect("restored context warning must precede pwd data");
     let output: serde_json::Value = serde_json::from_str(data).unwrap();
-    assert_eq!(output["local_path"], root.0.to_string_lossy().as_ref(),);
+    assert_eq!(output["local_path"], expected_cwd(&root.0));
+}
+
+#[test]
+fn pwd_reports_process_cwd_not_the_config_root_or_a_parent_component_alias() {
+    let root = Root::new();
+    let directory = root.0.join("working");
+    let nested = directory.join("nested");
+    fs::create_dir_all(&nested).unwrap();
+    let alias = nested.join("..").join(".");
+    let pwd = invoke_in(&root.0, &alias, &["pwd"]);
+    success(&pwd);
+    assert!(pwd.stdout.is_empty());
+    let output: serde_json::Value = serde_json::from_slice(&pwd.stderr).unwrap();
+    assert_eq!(output["local_path"], expected_cwd(&directory));
+    assert_ne!(output["local_path"], expected_cwd(&root.0));
+    assert!(root.0.join("config.json").is_file());
+    assert!(!directory.join("config.json").exists());
+    assert!(!root.0.join("context-37.json").exists());
 }
 
 #[test]
@@ -175,6 +336,8 @@ fn named_version_never_creates_configuration_and_desc_is_a_handler() {
     let desc = invoke(&root.0, &["desc", ".Notebook", "--output_format", "json"]);
     success(&desc);
     assert!(String::from_utf8_lossy(&desc.stdout).contains("Notebook"));
+    let value: serde_json::Value = serde_json::from_slice(&desc.stdout).unwrap();
+    assert_eq!(value["command"], "desc");
     let extension = invoke(&root.0, &["extension"]);
     success(&extension);
     assert!(!extension.stderr.is_empty());

@@ -670,6 +670,74 @@ fn get_delegates_to_the_base_host_with_no_folder_graph_or_metadata_rewrite() {
 }
 
 #[test]
+fn delegated_get_preserves_empty_silence_and_post_query_scalar_strings() {
+    for (expression, expected) in [
+        ("parts", None),
+        ("settings", None),
+        ("description", None),
+        ("enabled", Some(json!(["False"]))),
+        ("nullable", Some(json!(["None"]))),
+        ("missing", Some(json!(["None"]))),
+        ("zero", Some(json!(["0"]))),
+        ("values", Some(json!(["part"]))),
+    ] {
+        let item = Element::child(
+            "I",
+            Some("i".into()),
+            NodeKind::Item(fabric_cli_context::ItemType::parse("Notebook").unwrap()),
+            workspace(),
+        )
+        .unwrap();
+        let credential = Arc::new(folder_support::Credential::default());
+        let sdk = sdk(credential.clone());
+        let metadata = json!({
+            "id":"i", "displayName":"I", "parts":[], "settings":{},
+            "description":"", "enabled":false, "nullable":null, "zero":0,
+            "values":["part"]
+        });
+        let http = Arc::new(Http::new([reply(metadata.clone()), reply(metadata)]));
+        let exec = executor(http.clone(), Arc::default());
+        let catalog = Catalog::new(vec![]);
+        let host = host(&sdk, &exec, &catalog, item.clone());
+        let command = parse(&["get", ".", "-q", expression, "--output_format", "json"]);
+        let before = command.clone();
+        let base = complete(host.dispatch(&command, pending())).unwrap();
+        let wrapped = complete(host.with_folders(&exec).dispatch(&command, pending())).unwrap();
+        assert_eq!(base.payload, wrapped.payload, "{expression}");
+        assert_eq!(base.exit_code, 0);
+        assert_eq!(wrapped.exit_code, 0);
+        assert_eq!(base.stream, wrapped.stream);
+        if let Some(expected) = expected {
+            let output: Value = serde_json::from_slice(&wrapped.payload).unwrap();
+            assert_eq!(output["status"], "Success");
+            assert_eq!(output["command"], "get");
+            assert_eq!(output["result"]["data"], expected);
+        } else {
+            assert!(wrapped.payload.is_empty(), "{expression}");
+        }
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        wrapped.write_to(&mut stdout, &mut stderr).unwrap();
+        assert_eq!(stdout, wrapped.payload);
+        assert!(stderr.is_empty());
+        assert_eq!(
+            *http.requests.lock().unwrap(),
+            [
+                "https://api.fabric.microsoft.com/v1/workspaces/w/notebooks/i",
+                "https://api.fabric.microsoft.com/v1/workspaces/w/notebooks/i",
+            ]
+        );
+        let scopes = credential.scopes.lock().unwrap();
+        assert_eq!(scopes.len(), 2);
+        for scope in scopes.iter() {
+            assert_eq!(scope, &["https://api.fabric.microsoft.com/.default"]);
+        }
+        assert_eq!(command, before);
+        assert!(Arc::ptr_eq(&host.current, &item));
+        http.assert_consumed();
+    }
+}
+
+#[test]
 fn cancellation_and_lookup_snapshot_failures_preserve_old_priority_and_boundary() {
     let sdk = sdk(Arc::default());
     let http = Arc::new(Http::new([]));
