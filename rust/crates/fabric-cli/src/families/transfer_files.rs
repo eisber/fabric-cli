@@ -7,7 +7,7 @@ use fabric_cli_transfer::{LocalTransferFiles, TransferFiles, TransferFuture};
 use fabric_deploy::definitions::{
     self, DefinitionEntry, DefinitionError, DefinitionErrorKind, DefinitionFile,
     DefinitionFileSystem, DefinitionImportFileSystem, DefinitionLimits, ImportTarget,
-    PreparedImport,
+    LocalDefinitionFileSystem, PreparedImport,
 };
 use fabric_deploy::{
     notebook::DefinitionLimits as NotebookDefinitionLimits,
@@ -74,6 +74,78 @@ fn check_stop(stop: &AtomicBool) -> io::Result<()> {
     }
 }
 
+fn selected_import_directory(source: &Path, limits: DefinitionLimits) -> io::Result<PathBuf> {
+    let mut policy = LocalDefinitionFileSystem::new(limits);
+    if let Some(parent) = source.parent() {
+        policy.preflight(parent, &[])?;
+    } else {
+        policy.preflight(source, &[])?;
+    }
+    let metadata = std::fs::symlink_metadata(source)?;
+    if metadata.is_file() {
+        let parent = source.parent().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "Import source has no parent")
+        })?;
+        let name = source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Invalid import source"))?;
+        policy.preflight(
+            parent,
+            &[DefinitionFile {
+                path: name.to_owned(),
+                bytes: Vec::new(),
+            }],
+        )?;
+        Ok(parent.to_owned())
+    } else {
+        policy.preflight(source, &[])?;
+        Ok(source.to_owned())
+    }
+}
+
+enum WorkerFiles {
+    Ready(LocalTransferFiles),
+    DeferredImport {
+        source: PathBuf,
+        original_input: String,
+    },
+}
+
+impl WorkerFiles {
+    fn resolve_import(
+        &mut self,
+        input: &str,
+        limits: DefinitionLimits,
+        stop: &AtomicBool,
+    ) -> io::Result<PathBuf> {
+        match self {
+            Self::Ready(files) => files.resolve_import(input),
+            Self::DeferredImport {
+                source,
+                original_input,
+            } => {
+                if input != original_input.as_str() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Import source argument differs from the explicit selection",
+                    ));
+                }
+                let root = selected_import_directory(source, limits)?;
+                check_stop(stop)?;
+                let mut files = LocalTransferFiles::new(root, None, limits)?;
+                check_stop(stop)?;
+                files.bind_import_source(original_input.clone(), source.clone())?;
+                check_stop(stop)?;
+                let path = files.resolve_import(input)?;
+                check_stop(stop)?;
+                *self = Self::Ready(files);
+                Ok(path)
+            }
+        }
+    }
+}
+
 /// OS-backed transfer adapter confined to the released stable-root policy.
 ///
 /// One operation at a time holds the adapter's async mutex, including after a
@@ -89,12 +161,68 @@ fn check_stop(stop: &AtomicBool) -> io::Result<()> {
 /// rather than waiting indefinitely for blocking syscalls; this adapter neither
 /// creates a runtime nor joins abandoned work in Drop.
 pub struct TokioTransferFiles {
-    files: Arc<Mutex<LocalTransferFiles>>,
+    files: Arc<Mutex<WorkerFiles>>,
     runtime: Handle,
     limits: DefinitionLimits,
 }
 
 impl TokioTransferFiles {
+    /// Defer an explicitly authorized source selection until import resolution.
+    ///
+    /// This constructor does no filesystem I/O, cwd/home discovery, path
+    /// canonicalization or validation. The caller supplies a source candidate
+    /// derived from its explicit input and captured path context, plus the exact
+    /// normalized source argument. Only the first matching
+    /// [`TransferFiles::resolve_import_async`] initializes the selected file or
+    /// directory, using the existing serialized worker and all current guards.
+    ///
+    /// Select this instead of eagerly calling `new(CWD)` for import. The command
+    /// handler performs target support/format and Fabric/local classification
+    /// before resolution, so remote rejection and earlier source errors occur
+    /// without touching this candidate. No remote-name heuristic is used.
+    pub fn defer_import_root(
+        source: PathBuf,
+        original_input: String,
+        limits: DefinitionLimits,
+        runtime: Handle,
+    ) -> Self {
+        Self::with_files(
+            WorkerFiles::DeferredImport {
+                source,
+                original_input,
+            },
+            limits,
+            runtime,
+        )
+    }
+
+    /// Bind an explicitly selected import file/directory and exact source alias.
+    ///
+    /// The caller resolves only its selected stable root (or file parent), never
+    /// service-supplied definition parts. No cwd/home discovery, individual-file
+    /// canonicalization, runtime or credential fallback occurs here. Validation
+    /// and alias binding use the existing bounded blocking worker. Export and
+    /// deployment resolution do not consume this import-only argument alias.
+    /// Invoke this after target support/format validation and the existing
+    /// metadata boundary's local-input classification, preserving source error
+    /// ordering. It does not classify or download remote Fabric inputs.
+    ///
+    /// # Errors
+    /// Preserves the existing root/link/device/alias/containment checks and typed
+    /// worker failures. A file source owns only its validated parent directory
+    /// and import reads remain bound to the exact selected source.
+    pub async fn for_import_root(
+        source: PathBuf,
+        original_input: String,
+        limits: DefinitionLimits,
+        runtime: Handle,
+    ) -> io::Result<Self> {
+        let input = original_input.clone();
+        let mut files = Self::defer_import_root(source, original_input, limits, runtime);
+        files.resolve_import_async(&input).await?;
+        Ok(files)
+    }
+
     /// Validate the explicit root/home on the caller's existing blocking executor.
     ///
     /// Paths are not canonicalized or discovered here: the released link/reparse,
@@ -117,16 +245,32 @@ impl TokioTransferFiles {
             })
             .await
             .map_err(|_| worker_error(TransferWorkerError::Unavailable))??;
-        Ok(Self {
+        Ok(Self::with_files(WorkerFiles::Ready(files), limits, runtime))
+    }
+
+    fn with_files(files: WorkerFiles, limits: DefinitionLimits, runtime: Handle) -> Self {
+        Self {
             files: Arc::new(Mutex::new(files)),
             runtime,
             limits,
-        })
+        }
     }
 
     fn run<T: Send + 'static>(
         &mut self,
         operation: impl FnOnce(&mut LocalTransferFiles, &AtomicBool) -> io::Result<T> + Send + 'static,
+    ) -> TransferFuture<'_, io::Result<T>> {
+        self.run_state(move |files, stop| match files {
+            WorkerFiles::Ready(files) => operation(files, stop),
+            WorkerFiles::DeferredImport { .. } => {
+                Err(worker_error(TransferWorkerError::AsyncRequired))
+            }
+        })
+    }
+
+    fn run_state<T: Send + 'static>(
+        &mut self,
+        operation: impl FnOnce(&mut WorkerFiles, &AtomicBool) -> io::Result<T> + Send + 'static,
     ) -> TransferFuture<'_, io::Result<T>> {
         Box::pin(async move {
             // Acquire before spawning: dropped operations keep their permit until
@@ -261,7 +405,8 @@ impl TransferFiles for TokioTransferFiles {
         input: &'a str,
     ) -> TransferFuture<'a, io::Result<PathBuf>> {
         let input = input.to_owned();
-        self.run(move |files, _| files.resolve_import(&input))
+        let limits = self.limits;
+        self.run_state(move |files, stop| files.resolve_import(&input, limits, stop))
     }
 
     fn is_empty_async<'a>(&'a mut self, root: &'a Path) -> TransferFuture<'a, io::Result<bool>> {

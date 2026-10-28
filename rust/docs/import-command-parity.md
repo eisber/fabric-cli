@@ -89,6 +89,50 @@ device/stream/alias checks. Root-file enumeration retains the source's empty
 parts; export directory resolution remains directory-only. Constructors, runtime,
 manifests, transport and credential composition remain unchanged.
 
+`TokioTransferFiles::for_import_root(source, original_input, limits, runtime)` is
+the additive constructor for a caller-selected existing directory or regular
+file outside the initial CWD root, including an exact explicitly expanded tilde
+argument. It validates on the worker and binds an import-only exact argument
+alias in `LocalTransferFiles`. File sources use a
+validated parent but cannot import another source under that parent. Alias
+binding still rejects traversal, network/device/stream aliases and URI paths.
+Export directory resolution does not use this alias.
+
+ROOT must mount that constructor only after target support/format validation
+and Fabric-versus-local input classification, so local preflight does not
+supplant earlier source errors. `original_input` must be the same normalized
+`process_tokens` value passed to import. Resolve only the selected directory or
+file parent; do not canonicalize an individual selected file past link/alias
+checks. No ambient home/profile lookup belongs in the constructor.
+
+For the native host, prefer the zero-I/O constructor:
+
+```text
+TokioTransferFiles::defer_import_root(
+    absolute_candidate_from_caller_path_context,
+    process_tokens(input_tokens),
+    limits,
+    existing_runtime_handle,
+)
+```
+
+It does not preflight CWD, expand home, canonicalize, classify remote paths or
+touch the candidate. Root mounting selects it **instead of** `new(CWD)` for
+IMPORT. The candidate is only an explicit caller-authorized path value until
+the first matching `resolve_import_async`, which the handler invokes after
+target support/format and source classification. Thus a Fabric input never
+needs a `.Lakehouse` substring heuristic, and outside-CWD or tilde input is not
+silently confined to CWD.
+
+Internally one private ready/deferred state sits under the existing worker
+mutex. Source selection, validation and activation run in one blocking operation
+holding that same owned permit, including after the calling future is dropped.
+Stop checks bracket initialization phases. Ordinary worker operations keep their
+existing `LocalTransferFiles` callback interface; the normal `new` constructor
+retains its behavior. Calling preparation before source resolution fails without
+activating the source. The eager constructor remains available for a central
+factory that already runs after classification; it uses the same activation path.
+
 The integration/shared-discovery owners still need:
 
 1. `TransferMetadata::validate_import_input`: the existing metadata owner should
@@ -165,4 +209,5 @@ live Fabric and non-Windows native runs remain unexecuted.
 - `rust/crates/fabric-cli/src/families/transfer_files.rs` (import worker methods)
 - `rust/crates/fabric-cli/tests/family_mounts.rs` (additive test registration only)
 - `rust/crates/fabric-cli/tests/family_support/import_parity.rs`
+- `rust/crates/fabric-cli/tests/family_support/import_roots.rs`
 - `rust/docs/import-command-parity.md`
