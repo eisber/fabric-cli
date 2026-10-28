@@ -94,7 +94,7 @@ coincidentally named local directory. Ordinary local path-resolution fallback
 is retained, and the original failure still fails closed.
 
 These changes are not a Rust validation receipt: tests/builds are **NOT RUN**
-pending the integrator's serialized grant. Five additive actual-source captures
+pending the integrator's serialized grant. Six additive actual-source captures
 reproduce independently before Rust expectations; the new offline argv consumer
 covers generic/default/explicit formats, workspace selection/execution ordering,
 nested folder Selective requests, workspace response-index filtering, malformed
@@ -102,6 +102,16 @@ JSON fallback, binary data, later-page errors, accepted/poll/result completion,
 partial local/remote writes, cancellation, writer failure, empty remote uploads,
 returned IDs and non-replay. All new filesystem roots are caller-confined project
 directories; no service, authentication profile or token cache is touched.
+The added bulk-precondition receipt independently captures missing recursive/
+empty output errors, remote-output rejection, both source decline questions,
+explicit confirmation and nonempty-force warnings. Root consumers compare those
+exact messages/events and require decline before item discovery, while retaining
+existing files. A nested Fabric-folder item also exercises source-ordered JSON
+and raw binary parts through a nested Lakehouse folder, including real metadata
+HEAD boundaries and create/append/flush requests with no local spill.
+These are injected functional stream/workflow cases, not native keypress,
+questionary styling or TTY-byte parity claims. ROOT's separately owned native
+console checkpoint is not copied into this branch.
 
 One native-only mount remains assigned to the integrator: the binary currently
 constructs its local adapter with CWD and no explicit home. For user-selected

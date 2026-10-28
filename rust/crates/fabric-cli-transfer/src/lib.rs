@@ -715,15 +715,22 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
                 .as_deref()
                 .ok_or_else(|| invalid("Output path is required"))?,
         );
-        let root = phase(self.export_directory(&output), cancelled).await?;
-        if self.files.export_storage(&root) != definitions::ExportStorage::Local {
+        if output.is_empty() {
             return Err(command_error(
-                "InvalidInput",
-                "Bulk-export output must be an existing local directory",
+                "InvalidOperation",
+                "Export path '' is not a valid directory",
             )
             .into());
         }
+        let root = phase(self.export_directory(&output), cancelled).await?;
         let display = self.files.export_display_path(&root, &output);
+        if self.files.export_storage(&root) != definitions::ExportStorage::Local {
+            return Err(command_error(
+                "InvalidOperation",
+                format!("Export path '{display}' is not a valid directory"),
+            )
+            .into());
+        }
         let nonempty = !phase(
             async { self.files.is_empty_async(&root).await.map_err(local_error) },
             cancelled,

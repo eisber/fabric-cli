@@ -1305,6 +1305,269 @@ async fn selected_export_context_rejects_foreign_poll_or_result_without_fallback
             if !bulk {
                 host.reply(200, json!({"id":PIPELINE}));
             }
+
+            #[derive(Default)]
+            struct PreconditionUi {
+                events: Mutex<Vec<Value>>,
+                confirmations: Mutex<std::collections::VecDeque<bool>>,
+            }
+
+            impl TransferUi for PreconditionUi {
+                fn emit(&self, event: TransferEvent) -> Result<(), CommandError> {
+                    let (kind, message) = match event {
+                        TransferEvent::Warning(message) => ("warning", message),
+                        TransferEvent::Grey(message) => ("grey", message),
+                    };
+                    self.events
+                        .lock()
+                        .unwrap()
+                        .push(json!({"kind":kind,"message":message}));
+                    Ok(())
+                }
+
+                fn confirm<'a>(
+                    &'a self,
+                    question: &'a str,
+                ) -> TransferFuture<'a, Result<bool, CommandError>> {
+                    Box::pin(async move {
+                        self.events
+                            .lock()
+                            .unwrap()
+                            .push(json!({"kind":"confirm","message":question}));
+                        Ok(self
+                            .confirmations
+                            .lock()
+                            .unwrap()
+                            .pop_front()
+                            .expect("unexpected source confirmation"))
+                    })
+                }
+
+                fn select<'a>(
+                    &'a self,
+                    _: &'a [String],
+                ) -> TransferFuture<'a, Result<Vec<String>, CommandError>> {
+                    Box::pin(async { panic!("bulk preconditions do not use export selection UI") })
+                }
+            }
+
+            #[tokio::test]
+            async fn actual_python_bulk_precondition_branches_match_real_root_arguments_fs_and_ui()
+            {
+                let receipt: Value = serde_json::from_str(include_str!(
+                    "../../fabric-deploy/tests/definition_export_precondition_source.json"
+                ))
+                .unwrap();
+                for case in receipt["cases"].as_array().unwrap() {
+                    let mut host = host();
+                    if case["nonempty"].as_bool().unwrap() {
+                        fs::write(host.root.join("output").join("existing.txt"), b"keep").unwrap();
+                    }
+                    let recursive = case["recursive"].as_bool().unwrap();
+                    if recursive {
+                        host.reply(
+                            200,
+                            json!({"value":[{"id":WS,"displayName":"Demo","type":"Workspace"}]}),
+                        );
+                    }
+                    if case["kind"] == "lakehouse" {
+                        host.metadata_with_id(
+                            WS,
+                            json!([{"id":LAKE,"displayName":"Lake","type":"Lakehouse"}]),
+                        );
+                        host.headers(200, Value::Null, &[("x-ms-resource-type", "directory")]);
+                    } else if case["result"] == true {
+                        host.reply(200,json!({"value":[{"id":PIPELINE,"displayName":"Book","type":"DataPipeline"}]}));
+                        host.reply(200,json!({
+                            "definitionParts":[{"path":"/Book.DataPipeline/part.txt","payload":"eA=="}],
+                            "itemDefinitionsIndex":[{"id":PIPELINE,"rootPath":"/Book.DataPipeline"}],
+                        }));
+                    }
+                    let ui = PreconditionUi::default();
+                    if !case["force"].as_bool().unwrap() {
+                        ui.confirmations
+                            .lock()
+                            .unwrap()
+                            .push_back(case["confirmation"].as_bool().unwrap());
+                    }
+                    let mut args = vec![
+                        "bulk-export",
+                        "Demo.Workspace",
+                        "-o",
+                        case["output"].as_str().unwrap(),
+                    ];
+                    if recursive {
+                        args.push("--recursive");
+                    }
+                    if case["force"].as_bool().unwrap() {
+                        args.push("-f");
+                    }
+                    let output = host.execute_with_capabilities(&args, pending(), &ui).await;
+                    if !case["error"].is_null() {
+                        failed(&output);
+                        let FamilyEvidence::Transfer(Err(error)) = &output.evidence else {
+                            unreachable!()
+                        };
+                        let envelope = error.envelope(
+                            fabric_cli_output::Timestamp::parse("2026-10-28T12:00:00Z").unwrap(),
+                            None,
+                        );
+                        assert_eq!(
+                            envelope.result().message(),
+                            case["error"]["message"].as_str(),
+                            "{}",
+                            case["name"]
+                        );
+                        assert_eq!(
+                            envelope.result().error_code(),
+                            case["error"]["code"].as_str(),
+                            "{}",
+                            case["name"]
+                        );
+                        assert!(
+                            host.requests()
+                                .iter()
+                                .all(|request| request["method"] != "POST")
+                        );
+                    } else {
+                        success(&output);
+                        assert!(
+                            matches!(&output.evidence,FamilyEvidence::Transfer(Ok(result))
+                            if result.declined != case["result"].as_bool().unwrap())
+                        );
+                        if case["result"] == true {
+                            assert_eq!(
+                                fs::read(
+                                    host.root
+                                        .join("output")
+                                        .join("Book.DataPipeline")
+                                        .join("part.txt")
+                                )
+                                .unwrap(),
+                                b"x"
+                            );
+                        } else {
+                            assert_eq!(host.requests().len(), 1, "decline must precede discovery");
+                        }
+                    }
+                    let preconditions = ui
+                        .events
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .filter(|event| event["kind"] != "grey")
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    assert_eq!(
+                        Value::Array(preconditions),
+                        case["events"],
+                        "{}",
+                        case["name"]
+                    );
+                    assert!(ui.confirmations.lock().unwrap().is_empty());
+                    if case["nonempty"].as_bool().unwrap() {
+                        assert_eq!(
+                            fs::read(host.root.join("output").join("existing.txt")).unwrap(),
+                            b"keep"
+                        );
+                    }
+                }
+            }
+
+            #[tokio::test]
+            async fn item_in_fabric_folder_exports_ordered_json_and_binary_to_nested_lakehouse_folder()
+             {
+                let mut host = host();
+                host.reply(
+                    200,
+                    json!({"value":[{"id":WS,"displayName":"Demo","type":"Workspace"}]}),
+                );
+                host.reply(
+                    200,
+                    json!({"value":[{"id":"parent","displayName":"Parent"}]}),
+                );
+                host.reply(200,json!({"value":[{"id":PIPELINE,"displayName":"Book","type":"DataPipeline","folderId":"parent"}]}));
+                host.reply(200, json!({"id":PIPELINE}));
+                host.reply(200,json!({"definition":{"parts":[
+                    {"path":"definition/object.json","payload":"eyJ6Ijoiw6kiLCJhIjpbMSx0cnVlXX0="},
+                    {"path":"assets/image.bin","payload":"/w0KAA=="},
+                ]}}));
+                host.metadata_with_id(
+                    WS,
+                    json!([{"id":LAKE,"displayName":"Lake","type":"Lakehouse"}]),
+                );
+                for _ in 0..2 {
+                    host.headers(200, Value::Null, &[("x-ms-resource-type", "directory")]);
+                }
+                for _ in 0..2 {
+                    host.reply(201, Value::Null);
+                    host.reply(202, Value::Null);
+                    host.reply(200, Value::Null);
+                }
+                let http = Arc::new(BinaryHttp {
+                    base: host.http.clone(),
+                    bytes: Mutex::default(),
+                });
+                let mut files = fabric_cli::families::transfer_files::TokioTransferFiles::new(
+                    host.root.clone(),
+                    None,
+                    Default::default(),
+                    tokio::runtime::Handle::current(),
+                )
+                .await
+                .unwrap();
+                let output = injected_export_with_http(
+                    &mut host,
+                    &mut files,
+                    pending(),
+                    &[
+                        "fab-rs",
+                        "export",
+                        "Demo.Workspace/Parent.Folder/Book.DataPipeline",
+                        "-f",
+                        "-o",
+                        "Demo.Workspace/Lake.Lakehouse/Files/Archive/Run",
+                    ],
+                    http.clone(),
+                )
+                .await;
+                success(&output);
+                let requests = host.requests();
+                assert_eq!(requests.len(), 15);
+                assert!(
+                    requests[4]["url"]
+                        .as_str()
+                        .unwrap()
+                        .ends_with("/getDefinition")
+                );
+                assert_eq!(requests[4]["raw_body"], "");
+                assert_eq!(requests[7]["method"], "HEAD");
+                assert_eq!(requests[8]["method"], "HEAD");
+                assert!(requests[9]["url"].as_str().unwrap().contains(&format!(
+                    "/{WS}/{LAKE}/Files/Archive/Run/Book.DataPipeline/definition/object.json/?resource=file"
+                )));
+                assert_eq!(
+                    requests[10]["raw_body"],
+                    "{\"z\": \"\\u00e9\", \"a\": [1, true]}"
+                );
+                assert!(requests[12]["url"].as_str().unwrap().contains(
+                    "/Files/Archive/Run/Book.DataPipeline/assets/image.bin/?resource=file"
+                ));
+                assert_eq!(*http.bytes.lock().unwrap(), vec![vec![255, 13, 10, 0]]);
+                assert!(
+                    matches!(&output.evidence,FamilyEvidence::Transfer(Ok(result))
+                    if result.exported_ids == [PIPELINE] && result.completed_paths == [
+                        "Book.DataPipeline/definition/object.json","Book.DataPipeline/assets/image.bin",
+                    ])
+                );
+                assert!(!host.root.join("Demo.Workspace").exists());
+                assert!(
+                    fs::read_dir(host.root.join("output"))
+                        .unwrap()
+                        .next()
+                        .is_none()
+                );
+            }
             let root = "https://msitapi.fabric.microsoft.com";
             let poll = format!("{root}/v1/operations/{OPERATION}");
             let foreign = format!("https://api.fabric.microsoft.com/v1/operations/{OPERATION}");
