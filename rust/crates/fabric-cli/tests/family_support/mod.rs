@@ -190,7 +190,7 @@ pub struct Harness {
     pub credential: Arc<Credential>,
     pub http: Arc<Http>,
     pub effects: Effects,
-    endpoint: EndpointBinding,
+    pub(super) endpoint: EndpointBinding,
 }
 
 impl Harness {
@@ -217,11 +217,6 @@ impl Harness {
             effects: Effects::default(),
             endpoint: EndpointBinding::public(ServiceOrigin::Fabric),
         }
-    }
-
-    pub fn with_endpoint(mut self, host: &str) -> Self {
-        self.endpoint = EndpointBinding::with_host(ServiceOrigin::Fabric, host).unwrap();
-        self
     }
 
     pub fn reply(&self, status: u16, body: Value) {

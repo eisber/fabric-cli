@@ -6,6 +6,7 @@ use super::{
     family_support::{Harness, success},
 };
 use fabric_cli::families::FamilyEvidence;
+use fabric_sdk::{EndpointBinding, ServiceOrigin};
 use serde_json::{Value, json};
 
 const OPERATION: &str = "44444444-4444-4444-4444-444444444444";
@@ -13,6 +14,13 @@ const HOSTS: [&str; 2] = [
     "dailyapi.fabric.microsoft.com",
     "msitapi.fabric.microsoft.com",
 ];
+
+impl Harness {
+    fn with_endpoint(mut self, host: &str) -> Self {
+        self.endpoint = EndpointBinding::with_host(ServiceOrigin::Fabric, host).unwrap();
+        self
+    }
+}
 
 fn input(host: &Harness) {
     let input = host.root.join("input");
