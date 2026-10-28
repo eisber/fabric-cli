@@ -345,26 +345,26 @@ fn class_matches(
             matched |= equal_character(class[index], value, case_sensitive);
             index += 1;
         }
-
-        fn equal_character(left: char, right: char, case_sensitive: bool) -> bool {
-            if left == right {
-                return true;
-            }
-            if case_sensitive {
-                return false;
-            }
-            if matches!(left, 'i' | 'I' | '\u{0130}' | '\u{0131}')
-                && matches!(right, 'i' | 'I' | '\u{0130}' | '\u{0131}')
-            {
-                return true;
-            }
-            if left.to_lowercase().eq(right.to_lowercase()) {
-                return true;
-            }
-            let left: Vec<_> = left.to_uppercase().collect();
-            let right: Vec<_> = right.to_uppercase().collect();
-            left.len() == 1 && right.len() == 1 && left == right
-        }
     }
     Ok(if negated { !matched } else { matched })
+}
+
+fn equal_character(left: char, right: char, case_sensitive: bool) -> bool {
+    if left == right {
+        return true;
+    }
+    if case_sensitive {
+        return false;
+    }
+    if matches!(left, 'i' | 'I' | '\u{0130}' | '\u{0131}')
+        && matches!(right, 'i' | 'I' | '\u{0130}' | '\u{0131}')
+    {
+        return true;
+    }
+    if left.to_lowercase().eq(right.to_lowercase()) {
+        return true;
+    }
+    let left: Vec<_> = left.to_uppercase().collect();
+    let right: Vec<_> = right.to_uppercase().collect();
+    left.len() == 1 && right.len() == 1 && left == right
 }
