@@ -1,6 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Validated operation components preserve route, payload and endpoint policies.
+
+#![deny(unnameable_test_items)]
+
 use fabric_sdk_operations::FabricOperation;
 use fabric_sdk_workspaces::mutations::{CompletionPolicy, ResourceMethod};
 

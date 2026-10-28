@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+#![deny(unnameable_test_items)]
+
 //! Additive actual-source receipts; no released oracle expectations are changed.
 
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -74,30 +76,30 @@ fn actual_python_fallback_and_remote_storage_captures_match() {
                 remote[2]["position"].as_u64().unwrap() as usize
             );
         }
+    }
+}
 
-        #[test]
-        fn actual_python_wide_integer_nonfinite_and_notebook_captures_match() {
-            let receipt: Value =
-                serde_json::from_str(include_str!("definition_export_native_source.json")).unwrap();
-            assert_eq!(
-                receipt["source"],
-                "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4"
-            );
-            for case in receipt["cases"].as_array().unwrap() {
-                let files = decode_export_files_for_storage(
-                    &case["input"],
-                    case["notebook"].as_bool().unwrap(),
-                    DefinitionLimits::default(),
-                    ExportStorage::Local,
-                )
-                .unwrap();
-                assert_eq!(
-                    files[0].bytes,
-                    expected(&case["expected_base64"], false),
-                    "{}",
-                    case["name"]
-                );
-            }
-        }
+#[test]
+fn actual_python_wide_integer_nonfinite_and_notebook_captures_match() {
+    let receipt: Value =
+        serde_json::from_str(include_str!("definition_export_native_source.json")).unwrap();
+    assert_eq!(
+        receipt["source"],
+        "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4"
+    );
+    for case in receipt["cases"].as_array().unwrap() {
+        let files = decode_export_files_for_storage(
+            &case["input"],
+            case["notebook"].as_bool().unwrap(),
+            DefinitionLimits::default(),
+            ExportStorage::Local,
+        )
+        .unwrap();
+        assert_eq!(
+            files[0].bytes,
+            expected(&case["expected_base64"], false),
+            "{}",
+            case["name"]
+        );
     }
 }
