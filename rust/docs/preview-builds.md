@@ -168,6 +168,16 @@ download/verification commands, target/architecture, exits, checksums, run/job
 URLs, and artifact ID/URL/archive digest. The workflow writes upload receipts,
 but an upload receipt alone is not a successful download or execution receipt.
 
+The offline [release verifier](../scripts/release_verify.py) implements this
+five-file schema without changing the workflow. It requires separately trusted
+identity/digest expectations, rejects links and unexpected files, and can repeat
+the copied-executable smoke on a matching native host. See
+[release readiness and pending owner decisions](release-readiness.md) and
+[clean-machine acceptance, installation and recovery](clean-machine-acceptance.md)
+for commands and evidence boundaries. Its Python standard-library dependency is
+verification-host tooling, not a shipped executable requirement. Synthetic tests
+are not downloaded-binary, clean-machine or live-service receipts.
+
 ## Resource and security policy
 
 Only `contents: read` is granted to `GITHUB_TOKEN`; upload uses the job-scoped
