@@ -514,6 +514,15 @@ impl ParameterProgram {
         &self.document
     }
 
+    /// Validated prepared source schema, including raw rules and item settings.
+    ///
+    /// Alias of [`Self::document`] for deployment-engine consumers. Replacement
+    /// mappings, source string flags, filters and dynamic expressions remain
+    /// lossless and are not rewritten during item application.
+    pub fn source_document(&self) -> &Value {
+        self.document()
+    }
+
     /// Exact selected target environment used by this immutable program.
     pub fn environment(&self) -> &str {
         &self.environment

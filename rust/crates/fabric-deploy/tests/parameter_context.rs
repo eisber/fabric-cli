@@ -175,6 +175,7 @@ fn all_thirty_four_source_pipelines_and_schemas_match() {
                 case["id"]
             );
             if let Ok(program) = result {
+                assert_eq!(program.source_document(), &case["parameters"]);
                 for key in ["spark_pool", "semantic_model_binding"] {
                     if let Some(value) = case["normalized"].get(key) {
                         assert_eq!(&program.item_settings()[key], value, "{}", case["id"]);
@@ -183,6 +184,7 @@ fn all_thirty_four_source_pipelines_and_schemas_match() {
             }
         } else {
             let program = result.unwrap();
+            assert_eq!(program.source_document(), &case["parameters"]);
             let resolver = Resolver {
                 dynamic_calls: Cell::new(0),
             };

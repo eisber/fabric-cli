@@ -61,7 +61,9 @@ Native consumers now have these explicit primitives:
 - `item_settings()` retains validated Spark-pool and semantic-model binding
   schemas, including deprecated gateway conversion. Owning item processors must
   explicitly consume these settings (`require_item_settings_consumed`), not
-  silently treat them as text rules.
+  silently treat them as text rules. `ParameterProgram::source_document()` (an
+  alias of `document()`) exposes the complete validated prepared source document
+  for dynamic-rule metadata and dependency planning without dropping raw fields.
 - `SourceRegex` shares the existing bounded Python syntax translator without
   find-rule capture-count restrictions. Item-name and shortcut exclusions use
   `matches_start` (`re.match`), while folder exclusion uses `search`. Advanced
