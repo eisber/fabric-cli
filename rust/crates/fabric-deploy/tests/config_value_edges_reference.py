@@ -245,7 +245,9 @@ def capture(root: Path) -> dict[str, Any]:
         "source": f"microsoft/fabric-cicd@{PIN}",
         "pyyaml": yaml.__version__,
         "sourceHashes": {
-            str(path.relative_to(source)): hashlib.sha256(path.read_bytes()).hexdigest()
+            "\\".join(path.relative_to(source).parts): hashlib.sha256(
+                path.read_bytes()
+            ).hexdigest()
             for path in files
         },
         "boundary": "Actual source override/structure/sections/environment/extractors and append_feature_flag. No path resolution, URL constant cases, package initialization, environment or service access.",
