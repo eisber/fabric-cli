@@ -8,7 +8,8 @@
 //! avoiding an ambient Unicode database or silently approximate width tables.
 
 use crate::{
-    CommandError, Indent, OutputEnvelope, OutputError, OutputStatus, OutputStream, RenderPlan, encoding,
+    CommandError, Indent, OutputEnvelope, OutputError, OutputStatus, OutputStream, RenderPlan,
+    encoding,
 };
 use serde_json::{Map, Value};
 use std::io::{self, Write};

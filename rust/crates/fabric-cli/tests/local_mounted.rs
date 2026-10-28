@@ -116,7 +116,10 @@ fn config_success_json_preserves_the_frozen_source_group_name() {
 fn local_failure_text_keeps_the_leaf_prefix_and_json_failure_fields() {
     let root = Root::new();
     for format in ["text", "json"] {
-        let output = invoke(&root.0, &["config", "get", "bad", "--output_format", format]);
+        let output = invoke(
+            &root.0,
+            &["config", "get", "bad", "--output_format", format],
+        );
         assert_eq!(output.status.code(), Some(1));
         assert!(output.stderr.is_empty());
         let message = "'bad' is not a recognized configuration key. Please check the available configuration keys";
