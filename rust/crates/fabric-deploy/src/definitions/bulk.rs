@@ -241,6 +241,53 @@ pub async fn bulk_export<E: OperationExecutor>(
     confirmed: bool,
     limits: DefinitionLimits,
 ) -> Result<BulkExportOutcome, DefinitionError> {
+    bulk_export_impl(
+        session, filesystem, snapshot, root, recursive, confirmed, limits, false,
+    )
+    .await
+}
+
+/// Execute bulk export with Python's per-part error-preserving storage codec.
+///
+/// Keeps the released snapshot, All/Selective request, index ordering, unchanged
+/// Notebook outputs and confinement policy. The original [`bulk_export`] API
+/// retains its narrower released codec for existing consumers.
+///
+/// # Errors
+/// Retains typed input, operation, safety, cancellation and ordered file failures.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Explicit caller-owned boundaries."
+)]
+pub async fn bulk_export_source<E: OperationExecutor>(
+    session: &mut OperationSession<'_, E>,
+    filesystem: &mut dyn DefinitionFileSystem,
+    snapshot: BulkExportSnapshot<'_>,
+    root: &Path,
+    recursive: bool,
+    confirmed: bool,
+    limits: DefinitionLimits,
+) -> Result<BulkExportOutcome, DefinitionError> {
+    bulk_export_impl(
+        session, filesystem, snapshot, root, recursive, confirmed, limits, true,
+    )
+    .await
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Shared implementation preserves released API behavior."
+)]
+async fn bulk_export_impl<E: OperationExecutor>(
+    session: &mut OperationSession<'_, E>,
+    filesystem: &mut dyn DefinitionFileSystem,
+    snapshot: BulkExportSnapshot<'_>,
+    root: &Path,
+    recursive: bool,
+    confirmed: bool,
+    limits: DefinitionLimits,
+    source_codec: bool,
+) -> Result<BulkExportOutcome, DefinitionError> {
     if !recursive {
         return Err(Kind::InvalidInput.into());
     }
@@ -271,7 +318,12 @@ pub async fn bulk_export<E: OperationExecutor>(
     let (supported_ids, skipped_ids) = filter_bulk_definition(snapshot, &mut response, limits)?;
     strip_bulk_parent_prefix(&mut response, snapshot.from_path)?;
     let parts = array_or_empty(&response, "definitionParts")?;
-    let files = decode_export_files(&json!({"definition":{"parts":parts}}), false, limits)?;
+    let item = json!({"definition":{"parts":parts}});
+    let files = if source_codec {
+        super::decode_export_files_for_storage(&item, false, limits, super::ExportStorage::Local)?
+    } else {
+        decode_export_files(&item, false, limits)?
+    };
     let completed_paths = write_export_files(session, filesystem, root, &files, None).await?;
     Ok(BulkExportOutcome {
         supported_ids,

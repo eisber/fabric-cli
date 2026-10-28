@@ -16,6 +16,16 @@ pub struct DefinitionFile {
     pub bytes: Vec<u8>,
 }
 
+/// Source storage serialization policy, independent of transport and credentials.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ExportStorage {
+    /// Pretty Unicode JSON and native text-mode newlines.
+    #[default]
+    Local,
+    /// Default Python JSON bytes and unchanged ordinary text/binary bytes.
+    Lakehouse,
+}
+
 impl fmt::Debug for DefinitionFile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DefinitionFile")
@@ -76,14 +86,42 @@ pub fn validate_part_path(path: &str, limits: DefinitionLimits) -> Result<(), Ki
 /// are cleared, never added. Missing/empty payloads retain source behavior.
 ///
 /// # Errors
-/// Explicitly rejects malformed/noncanonical base64, malformed suffix JSON and
-/// numeric domains outside the shared JSON encoder rather than pretending to
-/// implement Python's part-error fallback. Unsafe/colliding paths and aggregate
+/// Noncanonical base64 remains a safety exception: it is never permissively
+/// decoded. Malformed base64/JSON retains the original payload for storage, as
+/// Python's per-part error fallback does. Unsafe/colliding paths and aggregate
 /// decoded/formatted bounds fail before any filesystem write.
 pub fn decode_export_files(
     item: &Value,
     notebook: bool,
     limits: DefinitionLimits,
+) -> Result<Vec<DefinitionFile>, DefinitionError> {
+    decode_files(item, notebook, limits, ExportStorage::Local, true)
+}
+
+/// Decode source-ordered parts for local or Lakehouse storage.
+///
+/// The Lakehouse policy has no native newline conversion and uses source default
+/// ASCII JSON rather than the local pretty Unicode serializer. This API performs
+/// no remote I/O and does not discover credentials.
+///
+/// # Errors
+/// Retains the same path/collision, finite allocation and numeric-domain policy
+/// as [`decode_export_files`].
+pub fn decode_export_files_for_storage(
+    item: &Value,
+    notebook: bool,
+    limits: DefinitionLimits,
+    destination: ExportStorage,
+) -> Result<Vec<DefinitionFile>, DefinitionError> {
+    decode_files(item, notebook, limits, destination, false)
+}
+
+fn decode_files(
+    item: &Value,
+    notebook: bool,
+    limits: DefinitionLimits,
+    destination: ExportStorage,
+    bounded_legacy: bool,
 ) -> Result<Vec<DefinitionFile>, DefinitionError> {
     let definition = item
         .get("definition")
@@ -103,7 +141,7 @@ pub fn decode_export_files(
     let mut paths = HashMap::new();
     let mut prefixes = HashMap::new();
     for (index, part) in parts.iter().enumerate() {
-        if part.get("nested_parts").is_some() {
+        if bounded_legacy && part.get("nested_parts").is_some() {
             return Err(Kind::Unsupported("nested export definition parts").into());
         }
         let path = part
@@ -129,10 +167,7 @@ pub fn decode_export_files(
                 return Err(Kind::Collision.into());
             }
         }
-        let missing_payload = !part
-            .as_object()
-            .ok_or(Kind::InvalidDefinition)?
-            .contains_key("payload");
+        part.as_object().ok_or(Kind::InvalidDefinition)?;
         let payload = part
             .get("payload")
             .cloned()
@@ -142,11 +177,36 @@ pub fn decode_export_files(
                 if payload.len() / 4 * 3 > decoded_remaining.saturating_add(2) {
                     return Err(Kind::Limit.into());
                 }
-                let decoded = STANDARD.decode(&payload).map_err(|_| {
-                    Kind::Unsupported("Python permissive/error-preserving base64 branch")
-                })?;
+                let decoded = match STANDARD.decode(&payload) {
+                    Ok(decoded) => decoded,
+                    Err(_) if bounded_legacy => {
+                        return Err(Kind::Unsupported(
+                            "Python permissive/error-preserving base64 branch",
+                        )
+                        .into());
+                    }
+                    Err(_) => {
+                        // Python retains the original part after a decode error.
+                        // Do not turn this into permissive base64 decoding.
+                        let mut bytes = storage(&Value::String(payload), destination)?;
+                        if destination == ExportStorage::Local {
+                            bytes = native_text(bytes, remaining)?;
+                        }
+                        remaining = remaining.checked_sub(bytes.len()).ok_or(Kind::Limit)?;
+                        files.push(DefinitionFile {
+                            path: path.to_owned(),
+                            bytes,
+                        });
+                        continue;
+                    }
+                };
                 if STANDARD.encode(&decoded) != payload {
-                    return Err(Kind::Unsupported("noncanonical source base64").into());
+                    return Err(if bounded_legacy {
+                        Kind::Unsupported("noncanonical source base64")
+                    } else {
+                        Kind::InvalidDefinition
+                    }
+                    .into());
                 }
                 decoded_remaining = decoded_remaining
                     .checked_sub(decoded.len())
@@ -157,9 +217,15 @@ pub fn decode_export_files(
                             .iter()
                             .any(|suffix| path.ends_with(suffix));
                         let value = if suffix_json {
-                            let mut value = parse_json(text)?.ok_or(Kind::Unsupported(
-                                "Python error-preserving malformed suffix JSON",
-                            ))?;
+                            let parsed = parse_json(text)?;
+                            if bounded_legacy && parsed.is_none() {
+                                return Err(Kind::Unsupported(
+                                    "Python error-preserving malformed suffix JSON",
+                                )
+                                .into());
+                            }
+                            let mut value =
+                                parsed.unwrap_or_else(|| Value::String(payload.clone()));
                             if notebook && index == 0 {
                                 clean_notebook(&mut value)?;
                             }
@@ -167,19 +233,22 @@ pub fn decode_export_files(
                         } else {
                             Value::String(text.to_owned())
                         };
-                        (storage(&value)?, true)
+                        (storage(&value, destination)?, true)
                     }
                     Err(_) => (decoded, false),
                 }
             }
             value => {
-                if !missing_payload && (value.is_array() || value.is_object()) {
+                if bounded_legacy
+                    && part.get("payload").is_some()
+                    && (value.is_array() || value.is_object())
+                {
                     return Err(Kind::Unsupported("non-string encoded payload").into());
                 }
-                (storage(&value)?, true)
+                (storage(&value, destination)?, true)
             }
         };
-        if text {
+        if text && destination == ExportStorage::Local {
             bytes = native_text(bytes, remaining)?;
         }
         remaining = remaining.checked_sub(bytes.len()).ok_or(Kind::Limit)?;
@@ -212,13 +281,17 @@ fn clean_notebook(value: &mut Value) -> Result<(), Kind> {
     Ok(())
 }
 
-fn storage(value: &Value) -> Result<Vec<u8>, Kind> {
+fn storage(value: &Value, destination: ExportStorage) -> Result<Vec<u8>, Kind> {
+    let encode = |value: &Value| match destination {
+        ExportStorage::Local => encode_unicode(value, Format::Pretty(Indent::Four)),
+        ExportStorage::Lakehouse => json_dumps(value),
+    };
     let text = match value {
         Value::String(text) => match parse_json(text)? {
-            Some(value) => encode_unicode(&value, Format::Pretty(Indent::Four)),
+            Some(value) => encode(&value),
             None => text.clone(),
         },
-        Value::Object(_) | Value::Array(_) => encode_unicode(value, Format::Pretty(Indent::Four)),
+        Value::Object(_) | Value::Array(_) => encode(value),
         Value::Null => "None".into(),
         Value::Bool(true) => "True".into(),
         Value::Bool(false) => "False".into(),

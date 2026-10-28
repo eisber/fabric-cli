@@ -378,6 +378,30 @@ pub(crate) struct FolderGraph {
 }
 
 impl FolderGraph {
+    /// Materialize the validated source-ordered graph for transfer snapshots.
+    pub(crate) fn elements(
+        &self,
+        workspace: Arc<Element>,
+    ) -> Result<Vec<Arc<Element>>, fabric_cli_context::ContextError> {
+        let mut contexts = BTreeMap::from([(0, workspace)]);
+        let mut elements = Vec::with_capacity(self.order.len());
+        for &index in &self.order {
+            let node = &self.nodes[index];
+            let parent = contexts[&node.parent].clone();
+            let element = Element::child(
+                &node.folder.display_name,
+                Some(node.folder.id.clone()),
+                NodeKind::Folder,
+                parent,
+            )?;
+            contexts
+                .entry(node.context)
+                .or_insert_with(|| element.clone());
+            elements.push(element);
+        }
+        Ok(elements)
+    }
+
     pub(crate) fn new(folders: Vec<Folder>) -> Result<Self, GraphFailure> {
         let mut graph = Self {
             nodes: folders

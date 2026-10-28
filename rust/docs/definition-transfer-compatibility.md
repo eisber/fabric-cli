@@ -16,6 +16,27 @@ Clippy with `-D warnings` and formatting checks. No expected source outputs,
 skips or lint waivers were changed. This is native offline library evidence,
 not integrated CLI, live Fabric or full command parity.
 
+The additive export command parity work on `parity/export-bulk-20261028` starts
+at integration `0e4b0759bd8c3e933250a6f174d3711fcbbdde50`. Its
+`decode_export_files_for_storage`, `export_item_for_storage`, and
+`bulk_export_source` APIs preserve Python's malformed per-part JSON/base64
+fallback, non-string payload storage and local versus Lakehouse serialization.
+Existing bounded codec APIs and protected receipts remain unchanged. Actual
+pinned-source fallback/remote captures are additive in
+`definition_export_fallback_source.json`, captured before Rust expectations.
+The central transfer metadata now builds a complete validated folder hierarchy,
+uses cached source item order for workspace execution, configuration sorting
+only for selection, and folder-first depth-first order for Selective requests.
+Unknown future item types are filtered; absent types and invalid/missing item
+parents fail rather than producing a partial snapshot. Graph, portable-path,
+strict-decoding and containment safety policies are retained.
+
+These changes are not a validation receipt: Rust tests/builds are **NOT RUN**
+pending the integrator's serialized grant. The first microbatch does not yet
+mount the Lakehouse output adapter; storage serialization alone is not remote
+command completion. Python bulk-export explicitly accepts only an existing
+local output directory; this validation is not a missing remote bulk branch.
+
 Python reference: `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
 Rust integration base: `61d77e330be8a13cbd5033713f1f2badcecfce60`.
 The committed `fabric-cli-definitions` candidate at

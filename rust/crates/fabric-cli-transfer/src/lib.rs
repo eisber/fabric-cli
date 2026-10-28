@@ -108,6 +108,19 @@ pub trait TransferMetadata: Send + Sync {
 
 /// Definition file policy plus caller-owned path selection and emptiness checks.
 pub trait TransferFiles: DefinitionFileSystem + DefinitionImportFileSystem + Send {
+    /// Resolve export output; import continues using its independent input policy.
+    fn resolve_export_directory_async<'a>(
+        &'a mut self,
+        input: &'a str,
+    ) -> TransferFuture<'a, io::Result<PathBuf>> {
+        self.resolve_directory_async(input)
+    }
+
+    /// Select source storage bytes for an already resolved output root.
+    fn export_storage(&self, _root: &Path) -> definitions::ExportStorage {
+        definitions::ExportStorage::Local
+    }
+
     /// Resolve a source local directory inside the caller's explicitly owned roots.
     ///
     /// Remote Fabric paths must fail explicitly, never become local directories.
@@ -482,7 +495,7 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
         let mut result = TransferResult::default();
         if !workspace {
             if command.force || phase(self.ui.confirm(SINGLE_CONFIRM), cancelled).await? {
-                let root = phase(self.directory(&output), cancelled).await?;
+                let root = phase(self.export_directory(&output), cancelled).await?;
                 result.completed_paths = self
                     .export_one(&context.target, command, &root, cancelled)
                     .await?;
@@ -510,7 +523,7 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             )
             .into());
         }
-        let root = phase(self.directory(&output), cancelled).await?;
+        let root = phase(self.export_directory(&output), cancelled).await?;
         let names = &context.selection_order;
         let mut expected = supported
             .iter()
@@ -592,7 +605,8 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             item.name(),
         );
         let mut files = files::ExportFiles::default();
-        definitions::export_item(
+        let storage = self.files.export_storage(root);
+        definitions::export_item_for_storage(
             &mut session,
             &mut files,
             DefinitionTarget {
@@ -605,6 +619,7 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             command.format.as_deref(),
             true,
             self.definition_limits,
+            storage,
         )
         .await
         .map_err(files::ExportFiles::preparation_error)?;
@@ -636,7 +651,14 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
                 .as_deref()
                 .ok_or_else(|| invalid("Output path is required"))?,
         );
-        let root = phase(self.directory(&output), cancelled).await?;
+        let root = phase(self.export_directory(&output), cancelled).await?;
+        if self.files.export_storage(&root) != definitions::ExportStorage::Local {
+            return Err(command_error(
+                "InvalidInput",
+                "Bulk-export output must be an existing local directory",
+            )
+            .into());
+        }
         let nonempty = !phase(
             async { self.files.is_empty_async(&root).await.map_err(local_error) },
             cancelled,
@@ -719,7 +741,7 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             root.display()
         );
         let mut files = files::ExportFiles::default();
-        let mut outcome = definitions::bulk_export(
+        let mut outcome = definitions::bulk_export_source(
             &mut session,
             &mut files,
             snapshot,
@@ -852,6 +874,16 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
     async fn directory(&mut self, input: &str) -> Result<PathBuf, TransferError> {
         if input.is_empty() {
             return Err(command_error("InvalidPath", "No such file or directory").into());
+        }
+
+        async fn export_directory(&mut self, input: &str) -> Result<PathBuf, TransferError> {
+            if input.is_empty() {
+                return Err(command_error("InvalidPath", "No such file or directory").into());
+            }
+            self.files
+                .resolve_export_directory_async(input)
+                .await
+                .map_err(local_error)
         }
         self.files
             .resolve_directory_async(input)
