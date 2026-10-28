@@ -35,6 +35,15 @@ comparisons in total). Expectations are captured before
 their Rust tests. Synthetic path captures create and remove an owned tree inside
 the project, never a system temporary directory or real repository snapshot.
 
+A further 30 actual-source config-value cases cover Python-falsy override
+no-ops (`false`, zero, empty string/list/dictionary), exact environment/extractor
+boundaries, every source item type, and pre-existing caller feature strings.
+Config-file feature entries still require nonblank strings; the source
+`append_feature_flag` helper does not impose that validation on caller globals.
+These are separate protocols, not generalized truthiness for parameter flags.
+This brings the additive source comparison set to 195 without modifying the
+protected original expectations or baseline ledger.
+
 Native consumers now have these explicit primitives:
 
 - `ParameterProgram::apply_for_item` (also exposed as `apply_scoped`) applies

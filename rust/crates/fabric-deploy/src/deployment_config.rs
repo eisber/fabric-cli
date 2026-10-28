@@ -154,7 +154,7 @@ fn apply_overrides(
     overrides: Option<&Value>,
     environment: &str,
 ) -> Result<(), ConfigurationError> {
-    let Some(overrides) = overrides.filter(|value| !value.is_null()) else {
+    let Some(overrides) = overrides.filter(|value| override_present(value)) else {
         return Ok(());
     };
     let overrides = overrides
@@ -242,6 +242,17 @@ fn apply_overrides(
         Ok(())
     } else {
         Err(ConfigurationError::Invalid(errors))
+    }
+}
+
+fn override_present(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(value) => *value,
+        Value::Number(value) => value.as_f64() != Some(0.0),
+        Value::String(value) => !value.is_empty(),
+        Value::Array(value) => !value.is_empty(),
+        Value::Object(value) => !value.is_empty(),
     }
 }
 

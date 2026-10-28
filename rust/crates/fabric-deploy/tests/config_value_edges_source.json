@@ -1,0 +1,1179 @@
+{
+  "source": "microsoft/fabric-cicd@5ca096c00a9a878c646c59fe537b883eba951329",
+  "pyyaml": "6.0.3",
+  "sourceHashes": {
+    "constants.py": "9db94078b1152f137b0c44a60626460575280455642a81d8a932035b251c9535",
+    "_common\\_config_validator.py": "abbe7131d8dd14202064e3b4b5e954924ff1215e7c10be191acff4df8eecc11b",
+    "_common\\_config_utils.py": "acdb203d4db08687c438c811598f696c7aed69674c3e3d42b81a3ad627396f2f",
+    "_common\\_validate_env_vars.py": "0f8673deb44bf2bbf5599e0495e199fab8f76f99f7b72e175f2c547008625246",
+    "__init__.py": "44b0ed667028da4ee265b1bc785fcc5f7427491881f4a163e580ff1ed545d477"
+  },
+  "boundary": "Actual source override/structure/sections/environment/extractors and append_feature_flag. No path resolution, URL constant cases, package initialization, environment or service access.",
+  "cases": [
+    {
+      "kind": "config",
+      "id": "override-0",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": null,
+      "valid": true,
+      "expected": {
+        "document": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ]
+          },
+          "unpublish": {
+            "skip": true
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "kind": "config",
+      "id": "override-1",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": false,
+      "valid": true,
+      "expected": {
+        "document": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ]
+          },
+          "unpublish": {
+            "skip": true
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "kind": "config",
+      "id": "override-2",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": 0,
+      "valid": true,
+      "expected": {
+        "document": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ]
+          },
+          "unpublish": {
+            "skip": true
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "kind": "config",
+      "id": "override-3",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": -0.0,
+      "valid": true,
+      "expected": {
+        "document": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ]
+          },
+          "unpublish": {
+            "skip": true
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "kind": "config",
+      "id": "override-4",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": "",
+      "valid": true,
+      "expected": {
+        "document": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ]
+          },
+          "unpublish": {
+            "skip": true
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "kind": "config",
+      "id": "override-5",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": [],
+      "valid": true,
+      "expected": {
+        "document": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ]
+          },
+          "unpublish": {
+            "skip": true
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "kind": "config",
+      "id": "override-6",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": {},
+      "valid": true,
+      "expected": {
+        "document": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ]
+          },
+          "unpublish": {
+            "skip": true
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "kind": "config",
+      "id": "override-7",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": true,
+      "valid": false,
+      "expected": null
+    },
+    {
+      "kind": "config",
+      "id": "override-8",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": 1,
+      "valid": false,
+      "expected": null
+    },
+    {
+      "kind": "config",
+      "id": "override-9",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": " ",
+      "valid": false,
+      "expected": null
+    },
+    {
+      "kind": "config",
+      "id": "override-10",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": [
+        1
+      ],
+      "valid": false,
+      "expected": null
+    },
+    {
+      "kind": "config",
+      "id": "empty-publish-override",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": {
+        "publish": {}
+      },
+      "valid": true,
+      "expected": {
+        "document": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ]
+          },
+          "unpublish": {
+            "skip": true
+          },
+          "publish": {}
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {
+          "skip": false
+        },
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "kind": "config",
+      "id": "empty-features-override-invalid",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": {
+        "features": []
+      },
+      "valid": false,
+      "expected": null
+    },
+    {
+      "kind": "config",
+      "id": "empty-constants-override",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "N/A",
+      "overrides": {
+        "constants": {}
+      },
+      "valid": true,
+      "expected": {
+        "document": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ]
+          },
+          "unpublish": {
+            "skip": true
+          },
+          "constants": {}
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "kind": "config",
+      "id": "optional-path-other-environment",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": {
+        "core": {
+          "parameter": {
+            "prod": "parameter.yml"
+          }
+        }
+      },
+      "valid": true,
+      "expected": {
+        "document": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ],
+            "parameter": {
+              "prod": "parameter.yml"
+            }
+          },
+          "unpublish": {
+            "skip": true
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "kind": "config",
+      "id": "added-name-id-precedence",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": {
+        "core": {
+          "workspace": "Name"
+        }
+      },
+      "valid": true,
+      "expected": {
+        "document": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ],
+            "workspace": "Name"
+          },
+          "unpublish": {
+            "skip": true
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "kind": "config",
+      "id": "features-other-environment",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": {
+        "features": {
+          "prod": [
+            "other"
+          ]
+        }
+      },
+      "valid": true,
+      "expected": {
+        "document": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ]
+          },
+          "unpublish": {
+            "skip": true
+          },
+          "features": {
+            "prod": [
+              "other"
+            ]
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "kind": "config",
+      "id": "all-item-types",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "ApacheAirflowJob",
+            "CopyJob",
+            "CosmosDBDatabase",
+            "DataAgent",
+            "DataBuildToolJob",
+            "DataPipeline",
+            "Dataflow",
+            "Environment",
+            "Eventhouse",
+            "Eventstream",
+            "GraphModel",
+            "GraphQLApi",
+            "KQLDashboard",
+            "KQLDatabase",
+            "KQLQueryset",
+            "Lakehouse",
+            "Map",
+            "MirroredDatabase",
+            "MLExperiment",
+            "MountedDataFactory",
+            "Notebook",
+            "Ontology",
+            "OrgApp",
+            "OrgAppAudience",
+            "PaginatedReport",
+            "Reflex",
+            "Report",
+            "SemanticModel",
+            "SparkJobDefinition",
+            "SQLDatabase",
+            "UserDataFunction",
+            "VariableLibrary",
+            "Warehouse"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "dev",
+      "overrides": null,
+      "valid": true,
+      "expected": {
+        "document": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "ApacheAirflowJob",
+              "CopyJob",
+              "CosmosDBDatabase",
+              "DataAgent",
+              "DataBuildToolJob",
+              "DataPipeline",
+              "Dataflow",
+              "Environment",
+              "Eventhouse",
+              "Eventstream",
+              "GraphModel",
+              "GraphQLApi",
+              "KQLDashboard",
+              "KQLDatabase",
+              "KQLQueryset",
+              "Lakehouse",
+              "Map",
+              "MirroredDatabase",
+              "MLExperiment",
+              "MountedDataFactory",
+              "Notebook",
+              "Ontology",
+              "OrgApp",
+              "OrgAppAudience",
+              "PaginatedReport",
+              "Reflex",
+              "Report",
+              "SemanticModel",
+              "SparkJobDefinition",
+              "SQLDatabase",
+              "UserDataFunction",
+              "VariableLibrary",
+              "Warehouse"
+            ]
+          },
+          "unpublish": {
+            "skip": true
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "ApacheAirflowJob",
+            "CopyJob",
+            "CosmosDBDatabase",
+            "DataAgent",
+            "DataBuildToolJob",
+            "DataPipeline",
+            "Dataflow",
+            "Environment",
+            "Eventhouse",
+            "Eventstream",
+            "GraphModel",
+            "GraphQLApi",
+            "KQLDashboard",
+            "KQLDatabase",
+            "KQLQueryset",
+            "Lakehouse",
+            "Map",
+            "MirroredDatabase",
+            "MLExperiment",
+            "MountedDataFactory",
+            "Notebook",
+            "Ontology",
+            "OrgApp",
+            "OrgAppAudience",
+            "PaginatedReport",
+            "Reflex",
+            "Report",
+            "SemanticModel",
+            "SparkJobDefinition",
+            "SQLDatabase",
+            "UserDataFunction",
+            "VariableLibrary",
+            "Warehouse"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "kind": "config",
+      "id": "environment-case-exact",
+      "config": {
+        "core": {
+          "workspace_id": {
+            "dev": "11111111-1111-1111-1111-111111111111"
+          },
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": "DEV",
+      "overrides": null,
+      "valid": false,
+      "expected": null
+    },
+    {
+      "kind": "config",
+      "id": "environment-extractor-strips",
+      "config": {
+        "core": {
+          "workspace_id": {
+            " dev ": "11111111-1111-1111-1111-111111111111"
+          },
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": " dev ",
+      "overrides": null,
+      "valid": true,
+      "expected": {
+        "document": {
+          "core": {
+            "workspace_id": {
+              " dev ": "11111111-1111-1111-1111-111111111111"
+            },
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ]
+          },
+          "unpublish": {
+            "skip": true
+          }
+        },
+        "workspace": {
+          "workspace_id": null,
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "kind": "config",
+      "id": "optional-extractor-strips",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ],
+          "parameter": {
+            "dev": "parameter.yml"
+          }
+        },
+        "unpublish": {
+          "skip": true
+        }
+      },
+      "environment": " dev ",
+      "overrides": null,
+      "valid": true,
+      "expected": {
+        "document": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ],
+            "parameter": {
+              "dev": "parameter.yml"
+            }
+          },
+          "unpublish": {
+            "skip": true
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ],
+          "parameter_file_path": "parameter.yml"
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "kind": "config",
+      "id": "folder-mutual-skip-bool-source-return",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        },
+        "publish": {
+          "folder_exclude_regex": "/A",
+          "folder_path_to_include": [
+            "/B"
+          ],
+          "skip": false
+        }
+      },
+      "environment": "dev",
+      "overrides": null,
+      "valid": true,
+      "expected": {
+        "document": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ]
+          },
+          "unpublish": {
+            "skip": true
+          },
+          "publish": {
+            "folder_exclude_regex": "/A",
+            "folder_path_to_include": [
+              "/B"
+            ],
+            "skip": false
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {
+          "folder_exclude_regex": "/A",
+          "folder_path_to_include": [
+            "/B"
+          ],
+          "skip": false
+        },
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "kind": "config",
+      "id": "folder-mutual-skip-env-invalid",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        },
+        "publish": {
+          "folder_exclude_regex": "/A",
+          "folder_path_to_include": [
+            "/B"
+          ],
+          "skip": {
+            "dev": false
+          }
+        }
+      },
+      "environment": "dev",
+      "overrides": null,
+      "valid": false,
+      "expected": null
+    },
+    {
+      "kind": "config",
+      "id": "folder-other-env-prefix-invalid",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "unpublish": {
+          "skip": true
+        },
+        "publish": {
+          "folder_path_to_include": {
+            "dev": [
+              "/A"
+            ],
+            "prod": [
+              "relative"
+            ]
+          }
+        }
+      },
+      "environment": "dev",
+      "overrides": null,
+      "valid": false,
+      "expected": null
+    },
+    {
+      "kind": "config",
+      "id": "unknown-source-fields-retained",
+      "config": {
+        "core": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ],
+          "future": {
+            "typed": [
+              false,
+              1
+            ]
+          }
+        },
+        "unpublish": {
+          "skip": true
+        },
+        "extra.section": {
+          "typed": null
+        }
+      },
+      "environment": "dev",
+      "overrides": null,
+      "valid": true,
+      "expected": {
+        "document": {
+          "core": {
+            "workspace_id": "11111111-1111-1111-1111-111111111111",
+            "repository_directory": "repository",
+            "item_types_in_scope": [
+              "Notebook"
+            ],
+            "future": {
+              "typed": [
+                false,
+                1
+              ]
+            }
+          },
+          "unpublish": {
+            "skip": true
+          },
+          "extra.section": {
+            "typed": null
+          }
+        },
+        "workspace": {
+          "workspace_id": "11111111-1111-1111-1111-111111111111",
+          "repository_directory": "repository",
+          "item_types_in_scope": [
+            "Notebook"
+          ]
+        },
+        "publish": {},
+        "unpublish": {
+          "skip": true
+        }
+      }
+    },
+    {
+      "kind": "caller-flags",
+      "flags": [
+        ""
+      ],
+      "expected": [
+        ""
+      ]
+    },
+    {
+      "kind": "caller-flags",
+      "flags": [
+        " "
+      ],
+      "expected": [
+        " "
+      ]
+    },
+    {
+      "kind": "caller-flags",
+      "flags": [
+        "Case",
+        "case"
+      ],
+      "expected": [
+        "Case",
+        "case"
+      ]
+    },
+    {
+      "kind": "caller-flags",
+      "flags": [
+        "base",
+        "base"
+      ],
+      "expected": [
+        "base"
+      ]
+    },
+    {
+      "kind": "caller-flags",
+      "flags": [
+        "",
+        " ",
+        "base",
+        "custom_CASE"
+      ],
+      "expected": [
+        "",
+        " ",
+        "base",
+        "custom_CASE"
+      ]
+    }
+  ]
+}

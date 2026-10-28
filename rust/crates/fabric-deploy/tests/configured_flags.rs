@@ -10,6 +10,79 @@ use fabric_deploy::{
 use serde_json::{Value, json};
 
 #[test]
+fn thirty_additional_config_values_and_caller_flags_match_actual_source() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("config_value_edges_source.json")).unwrap();
+    assert_eq!(fixture["cases"].as_array().unwrap().len(), 30);
+    for case in fixture["cases"].as_array().unwrap() {
+        if case["kind"] == "config" {
+            let result = DeploymentConfig::from_document(
+                &case["config"],
+                case["environment"].as_str().unwrap(),
+                Some(&case["overrides"]),
+            );
+            assert_eq!(
+                result.is_ok(),
+                case["valid"].as_bool().unwrap(),
+                "{}",
+                case["id"]
+            );
+            if let Ok(config) = result {
+                assert_eq!(
+                    config.document, case["expected"]["document"],
+                    "{}",
+                    case["id"]
+                );
+                assert_eq!(
+                    json!(config.workspace),
+                    case["expected"]["workspace"],
+                    "{}",
+                    case["id"]
+                );
+                assert_eq!(
+                    json!(config.publish),
+                    case["expected"]["publish"],
+                    "{}",
+                    case["id"]
+                );
+                assert_eq!(
+                    json!(config.unpublish),
+                    case["expected"]["unpublish"],
+                    "{}",
+                    case["id"]
+                );
+                if case["id"] == "all-item-types" {
+                    assert_eq!(config.item_types.len(), 33);
+                    assert_eq!(
+                        json!(config.item_types),
+                        case["expected"]["workspace"]["item_types_in_scope"]
+                    );
+                }
+            }
+        } else {
+            let config = DeploymentConfig::from_document(&json!({
+                "core": { "workspace_id": "11111111-1111-1111-1111-111111111111", "repository_directory": "repository" },
+            }), "dev", None).unwrap();
+            let caller_flags = case["flags"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap().to_owned())
+                .collect();
+            let command = config
+                .command_configuration(CommandOptions {
+                    features: caller_flags,
+                    ..CommandOptions::default()
+                })
+                .unwrap();
+            let mut features = command.features().to_vec();
+            features.sort();
+            assert_eq!(json!(features), case["expected"]);
+        }
+    }
+}
+
+#[test]
 fn all_twenty_two_source_environment_flags_and_scoped_overrides_match() {
     let fixture: Value = serde_json::from_str(include_str!("flag_protocol_source.json")).unwrap();
     assert_eq!(fixture["cases"].as_array().unwrap().len(), 22);

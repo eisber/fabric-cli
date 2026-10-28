@@ -285,9 +285,6 @@ pub(super) fn snapshot(
         }
     };
     for feature in options.features {
-        if feature.trim().is_empty() {
-            return Err(invalid("Caller feature names must be nonempty"));
-        }
         add(feature);
     }
     if options.bulk_publish {
