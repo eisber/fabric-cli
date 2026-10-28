@@ -4,7 +4,7 @@
 //! CLI-owned schedule-removal confirmation; SDK consumers never open a terminal.
 
 use fabric_cli_output::CommandError;
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 
 fn io_error(error: std::io::Error) -> CommandError {
     CommandError::new(Some(error.to_string()), Some("LocalIOError".into()))
@@ -24,7 +24,13 @@ pub fn confirm_with(
         .and_then(|()| prompt.flush())
         .map_err(io_error)?;
     let mut answer = String::new();
-    input.read_line(&mut answer).map_err(io_error)?;
+    input.take(4097).read_line(&mut answer).map_err(io_error)?;
+    if answer.len() > 4096 {
+        return Err(CommandError::new(
+            Some("The terminal confirmation answer exceeds its input bound".into()),
+            Some("InvalidInput".into()),
+        ));
+    }
     Ok(matches!(
         answer.trim().to_ascii_lowercase().as_str(),
         "y" | "yes"

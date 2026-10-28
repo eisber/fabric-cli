@@ -2,6 +2,14 @@
 
 # Job command compatibility
 
+The additive [source command response policy](job-command-response-policy.md)
+supersedes the former family restrictions on successful response statuses,
+status/schedule response objects and list row shapes described historically
+below. It preserves strict default SDK consumers and the existing 155/396
+expectations. Native unlimited-wait and terminal-confirmation mounts remain
+integration-owned; their exact seams and actual validation status are recorded
+there rather than asserted complete by this family increment.
+
 ## Source and ownership
 
 Python authority: `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.

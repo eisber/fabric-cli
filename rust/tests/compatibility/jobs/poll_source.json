@@ -1,0 +1,875 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "rows": [
+    {
+      "input": {
+        "name": "poll/nonstring/0",
+        "leaf": "run",
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run"
+            }
+          },
+          {
+            "status": 204,
+            "body": null
+          },
+          {
+            "status": 200,
+            "body": {
+              "status": null
+            }
+          }
+        ],
+        "waits": [
+          10
+        ]
+      },
+      "format": "json",
+      "observed": {
+        "exit": 0,
+        "stdout": "status\n------\nNone\n",
+        "stderr": "Running job (sync) for 'Book.Notebook'...\n\u221f Job instance 'run' created\n\u221f Timeout: no timeout specified\n! Job instance 'run' unknown status: None\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=RunNotebook",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": [
+          10
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "poll/nonstring/1",
+        "leaf": "run",
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run"
+            }
+          },
+          {
+            "status": 204,
+            "body": null
+          },
+          {
+            "status": 200,
+            "body": {
+              "status": null
+            }
+          }
+        ],
+        "waits": [
+          10
+        ]
+      },
+      "format": "text",
+      "observed": {
+        "exit": 0,
+        "stdout": "status\n------\nNone\n",
+        "stderr": "Running job (sync) for 'Book.Notebook'...\n\u221f Job instance 'run' created\n\u221f Timeout: no timeout specified\n! Job instance 'run' unknown status: None\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=RunNotebook",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": [
+          10
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "poll/nonstring/2",
+        "leaf": "run",
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run"
+            }
+          },
+          {
+            "status": 204,
+            "body": null
+          },
+          {
+            "status": 200,
+            "body": {
+              "status": false
+            }
+          }
+        ],
+        "waits": [
+          10
+        ]
+      },
+      "format": "json",
+      "observed": {
+        "exit": 0,
+        "stdout": "status\n------\nFalse\n",
+        "stderr": "Running job (sync) for 'Book.Notebook'...\n\u221f Job instance 'run' created\n\u221f Timeout: no timeout specified\n! Job instance 'run' unknown status: False\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=RunNotebook",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": [
+          10
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "poll/nonstring/3",
+        "leaf": "run",
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run"
+            }
+          },
+          {
+            "status": 204,
+            "body": null
+          },
+          {
+            "status": 200,
+            "body": {
+              "status": false
+            }
+          }
+        ],
+        "waits": [
+          10
+        ]
+      },
+      "format": "text",
+      "observed": {
+        "exit": 0,
+        "stdout": "status\n------\nFalse\n",
+        "stderr": "Running job (sync) for 'Book.Notebook'...\n\u221f Job instance 'run' created\n\u221f Timeout: no timeout specified\n! Job instance 'run' unknown status: False\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=RunNotebook",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": [
+          10
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "poll/nonstring/4",
+        "leaf": "run",
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run"
+            }
+          },
+          {
+            "status": 204,
+            "body": null
+          },
+          {
+            "status": 200,
+            "body": {
+              "status": 7
+            }
+          }
+        ],
+        "waits": [
+          10
+        ]
+      },
+      "format": "json",
+      "observed": {
+        "exit": 0,
+        "stdout": "status\n------\n7\n",
+        "stderr": "Running job (sync) for 'Book.Notebook'...\n\u221f Job instance 'run' created\n\u221f Timeout: no timeout specified\n! Job instance 'run' unknown status: 7\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=RunNotebook",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": [
+          10
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "poll/nonstring/5",
+        "leaf": "run",
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run"
+            }
+          },
+          {
+            "status": 204,
+            "body": null
+          },
+          {
+            "status": 200,
+            "body": {
+              "status": 7
+            }
+          }
+        ],
+        "waits": [
+          10
+        ]
+      },
+      "format": "text",
+      "observed": {
+        "exit": 0,
+        "stdout": "status\n------\n7\n",
+        "stderr": "Running job (sync) for 'Book.Notebook'...\n\u221f Job instance 'run' created\n\u221f Timeout: no timeout specified\n! Job instance 'run' unknown status: 7\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=RunNotebook",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": [
+          10
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "poll/nonstring/6",
+        "leaf": "run",
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run"
+            }
+          },
+          {
+            "status": 204,
+            "body": null
+          },
+          {
+            "status": 200,
+            "body": {
+              "status": []
+            }
+          }
+        ],
+        "waits": [
+          10
+        ]
+      },
+      "format": "json",
+      "observed": {
+        "exit": 0,
+        "stdout": "status\n------\n[]\n",
+        "stderr": "Running job (sync) for 'Book.Notebook'...\n\u221f Job instance 'run' created\n\u221f Timeout: no timeout specified\n! Job instance 'run' unknown status: []\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=RunNotebook",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": [
+          10
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "poll/nonstring/7",
+        "leaf": "run",
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run"
+            }
+          },
+          {
+            "status": 204,
+            "body": null
+          },
+          {
+            "status": 200,
+            "body": {
+              "status": []
+            }
+          }
+        ],
+        "waits": [
+          10
+        ]
+      },
+      "format": "text",
+      "observed": {
+        "exit": 0,
+        "stdout": "status\n------\n[]\n",
+        "stderr": "Running job (sync) for 'Book.Notebook'...\n\u221f Job instance 'run' created\n\u221f Timeout: no timeout specified\n! Job instance 'run' unknown status: []\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=RunNotebook",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": [
+          10
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "poll/nonstring/8",
+        "leaf": "run",
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run"
+            }
+          },
+          {
+            "status": 204,
+            "body": null
+          },
+          {
+            "status": 200,
+            "body": {
+              "status": {}
+            }
+          }
+        ],
+        "waits": [
+          10
+        ]
+      },
+      "format": "json",
+      "observed": {
+        "exit": 0,
+        "stdout": "status\n------\n{}\n",
+        "stderr": "Running job (sync) for 'Book.Notebook'...\n\u221f Job instance 'run' created\n\u221f Timeout: no timeout specified\n! Job instance 'run' unknown status: {}\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=RunNotebook",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": [
+          10
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "poll/nonstring/9",
+        "leaf": "run",
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run"
+            }
+          },
+          {
+            "status": 204,
+            "body": null
+          },
+          {
+            "status": 200,
+            "body": {
+              "status": {}
+            }
+          }
+        ],
+        "waits": [
+          10
+        ]
+      },
+      "format": "text",
+      "observed": {
+        "exit": 0,
+        "stdout": "status\n------\n{}\n",
+        "stderr": "Running job (sync) for 'Book.Notebook'...\n\u221f Job instance 'run' created\n\u221f Timeout: no timeout specified\n! Job instance 'run' unknown status: {}\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=RunNotebook",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": [
+          10
+        ]
+      }
+    }
+  ]
+}

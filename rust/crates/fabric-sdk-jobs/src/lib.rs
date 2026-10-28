@@ -7,12 +7,14 @@
 //! `client/fab_api_jobs.py` and `utils/fab_cmd_job_utils.py`. Credentials,
 //! transport, asynchronous time and cancellation belong to the caller.
 
+mod command;
 mod headers;
 mod operations;
 use azure_core::{
     credentials::AccessToken,
     http::{Method, Url},
 };
+pub use command::JobCommandRoute;
 pub use fabric_core::{Audience, CredentialSelection, TokenCredential};
 pub use fabric_sdk_operations::OperationError;
 use fabric_sdk_paging::TokenPager;
@@ -308,7 +310,17 @@ pub struct JobStatus {
 impl JobStatus {
     /// The source status string.
     pub fn status(&self) -> &str {
-        self.value["status"].as_str().expect("validated status")
+        // Typed status reads require a string. Only the explicit command policy
+        // can retain a source non-string status, which classifies as unknown.
+        self.value["status"].as_str().unwrap_or("")
+    }
+
+    /// Original status value for the opt-in source command policy.
+    ///
+    /// Typed SDK status reads still require a string; command consumers may
+    /// need to display Python's unknown null/bool/number/container status.
+    pub fn status_value(&self) -> &Value {
+        &self.value["status"]
     }
 
     /// Interpret known statuses without rejecting future service states.
@@ -766,6 +778,37 @@ impl JobClient {
         mut observe: impl FnMut(&JobStatus) -> Result<(), JobError> + Send,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<JobStatus, JobError> {
+        self.wait_inner(handle, options, &mut observe, false, None, cancelled)
+            .await
+    }
+
+    /// Wait with the source CLI's permissive status-response policy.
+    ///
+    /// Missing status remains an error. Present non-string statuses reach the
+    /// unknown-status observer unchanged. Successful non-200 responses continue
+    /// the source loop without a fabricated terminal result or extra sleep.
+    /// Shared operation reconciliation is conditional on actual response headers.
+    pub async fn wait_for_command(
+        &self,
+        handle: &RunHandle,
+        options: WaitOptions,
+        mut observe: impl FnMut(&JobStatus) -> Result<(), JobError> + Send,
+        operations: Option<&dyn JobOperationReconciler>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<JobStatus, JobError> {
+        self.wait_inner(handle, options, &mut observe, true, operations, cancelled)
+            .await
+    }
+
+    async fn wait_inner(
+        &self,
+        handle: &RunHandle,
+        options: WaitOptions,
+        observe: &mut (impl FnMut(&JobStatus) -> Result<(), JobError> + Send),
+        command_policy: bool,
+        operations: Option<&dyn JobOperationReconciler>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<JobStatus, JobError> {
         options.validate()?;
         cancellable(cancelled, async {
             if options.timeout.is_some_and(|timeout| timeout < 0) {
@@ -786,8 +829,34 @@ impl JobClient {
                 .is_none_or(|timeout| elapsed < timeout as u64)
             {
                 let started = Instant::now();
-                let status = self.status_inner(&handle.target, &handle.id).await?;
-                elapsed = elapsed.saturating_add(started.elapsed().as_secs());
+                let status = if command_policy {
+                    let response = self
+                        .response_for_command(
+                            &handle.target,
+                            JobCommandRoute::Status(&handle.id),
+                            None,
+                            true,
+                            operations,
+                            std::future::pending(),
+                        )
+                        .await?;
+                    elapsed = elapsed.saturating_add(started.elapsed().as_secs());
+                    if response.status != 200 {
+                        continue;
+                    }
+                    let value = decode_object(&response)?;
+                    if value.get("status").is_none() {
+                        return Err(JobError::InvalidResponse);
+                    }
+                    JobStatus {
+                        value,
+                        headers: response.headers,
+                    }
+                } else {
+                    let status = self.status_inner(&handle.target, &handle.id).await?;
+                    elapsed = elapsed.saturating_add(started.elapsed().as_secs());
+                    status
+                };
                 observe(&status)?;
                 match status.state() {
                     JobState::Completed

@@ -107,7 +107,7 @@ def discovery(resource: str) -> list[dict[str, Any]]:
 
 
 def check(probe: Path | None) -> None:
-    """Compare bytes, requests, scopes and exits; gaps cannot pass as exact cases."""
+    """Compare bytes, requests, scopes and exits, including the former API gaps."""
     manifest = json.loads((HERE / "cases.json").read_text(encoding="utf-8"))
     inputs: list[dict[str, Any]] = []
     expectations: list[tuple[str, dict[str, Any], str | None]] = []
@@ -133,13 +133,20 @@ def check(probe: Path | None) -> None:
                     expectations.append((f"{case['name']}/{resource}/{schedule}/{output_format}", observed, None))
     for case in manifest["gaps"]:
         observed, _ = source_observation(case, "Notebook", case.get("schedule", False), "json")
+        observed["requests"] = [
+            f"{ORIGIN}/workspaces", f"{ORIGIN}/workspaces/w/items", *observed["requests"],
+        ]
+        observed["scopes"] = [["https://api.fabric.microsoft.com/.default"]] * 3
         command = ["job", case["leaf"], "Demo.Workspace/Book.Notebook"]
         if case["leaf"] == "run-status":
             command += ["--id=run"]
         if case.get("schedule"):
             command += ["--schedule"]
-        inputs.append({"command": command, "responses": [*discovery("Notebook"), case["response"]]})
-        expectations.append((case["name"], observed, case["native_error"]))
+        inputs.append({
+            "command": command, "responses": [*discovery("Notebook"), case["response"]],
+            "timestamp": manifest["timestamp"],
+        })
+        expectations.append((case["name"], observed, None))
     for leaf in ("run-list", "run-status"):
         case = next(case for case in manifest["exact"] if case["leaf"] == leaf)
         observed, _ = source_observation(case, "Notebook", False, "json")
@@ -159,7 +166,7 @@ def check(probe: Path | None) -> None:
     frozen = copy.deepcopy(expectations)
     assert len(frozen) == 68
     if probe is None:
-        print("PASS 64 independently pinned source job read observations; 4 declared API gaps")
+        print("PASS 68 independently pinned source job read observations; includes 4 former API gaps")
         return
     environment = {k: v for k, v in os.environ.items() if k.upper() in ("SYSTEMROOT", "WINDIR", "TEMP", "TMP")}
     result = subprocess.run(
@@ -178,7 +185,7 @@ def check(probe: Path | None) -> None:
             assert row["requests"][:2] == [f"{ORIGIN}/workspaces", f"{ORIGIN}/workspaces/w/items"]
             assert len(row["requests"]) == len(row["scopes"]) == 3
     assert expectations == frozen, "source expectations were mutated during native execution"
-    print("PASS 64 exact native job read comparisons; 4 explicit API gaps fail nonzero")
+    print("PASS 68 exact native job read comparisons; all former API gaps match unchanged source")
 
 
 if __name__ == "__main__":

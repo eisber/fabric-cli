@@ -104,6 +104,26 @@ fn setting<'a>(
     }
 }
 
+/// Select the host watchdog without truncating source-unlimited job waits.
+///
+/// Per-exchange, paging and generic-operation bounds remain unchanged. The
+/// native host must race `None` against a pending future, while retaining Ctrl+C.
+/// A negative runtime reaches the source negative-sleep failure in the handler,
+/// rather than acquiring an unrelated implicit host deadline.
+pub(crate) fn command_watchdog(
+    job: Option<&JobCommand>,
+    config: JobConfig,
+) -> Result<Option<Duration>, SelectionError> {
+    if job.is_some_and(|command| {
+        (command.kind == JobKind::Run && command.timeout.is_none_or(|timeout| timeout < 0))
+            || (command.kind == JobKind::Cancel && command.wait)
+    }) {
+        Ok(None)
+    } else {
+        command_deadline(job, config).map(Some)
+    }
+}
+
 /// Keep the preview cap except for synchronous runs with an explicit finite timeout.
 ///
 /// The family still owns its timeout, polling and remote cancellation. This is

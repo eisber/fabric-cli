@@ -179,7 +179,8 @@ pub fn observe(input: &Value) -> Value {
     let command = match parse_args(std::iter::once("fab-rs").chain(args)).unwrap() {
         Invocation::JobRun(command) => command.family_command(),
         Invocation::JobMutation(command) => command.family_command(),
-        _ => panic!("a job execution or mutation leaf is required"),
+        Invocation::JobRead(command) => command.family_command(),
+        _ => panic!("a job leaf is required"),
     };
     let credential = Arc::new(reads::Credential::default());
     let sdk = reads::sdk(credential.clone());
