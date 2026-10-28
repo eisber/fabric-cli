@@ -7,6 +7,7 @@
 //! No HTTP implementation, deployment algorithm or second front door lives here.
 
 mod files;
+mod import_environment;
 mod local;
 mod parser;
 
@@ -94,6 +95,19 @@ pub struct TransferContext {
 
 /// Existing context owner resolves paths asynchronously and checks command support.
 pub trait TransferMetadata: Send + Sync {
+    /// Validate source path classification before local import I/O or prompting.
+    ///
+    /// Python recognizes OneLake paths but deliberately rejects remote import;
+    /// it never downloads them. A metadata-backed caller must preserve that
+    /// classification and source errors. Local-only injected callers may retain
+    /// this default and leave containment/existence checks to their file policy.
+    fn validate_import_input<'a>(
+        &'a self,
+        _input: &'a str,
+    ) -> TransferFuture<'a, Result<(), CommandError>> {
+        Box::pin(async { Ok(()) })
+    }
+
     /// Reuse existing discovery/cache policy; never hide network I/O in a sync lookup.
     ///
     /// Import resolution allows a missing destination item but requires its real
@@ -108,6 +122,27 @@ pub trait TransferMetadata: Send + Sync {
 
 /// Definition file policy plus caller-owned path selection and emptiness checks.
 pub trait TransferFiles: DefinitionFileSystem + DefinitionImportFileSystem + Send {
+    /// Resolve an import directory or regular file on an appropriate file worker.
+    ///
+    /// The default retains existing directory-only injected adapters. OS-backed
+    /// async callers invoke this synchronous capability only on their worker.
+    fn resolve_import(&mut self, input: &str) -> io::Result<PathBuf> {
+        self.resolve_directory(input)
+    }
+
+    /// Resolve an existing confined import directory or regular file.
+    ///
+    /// The pinned source's `os.walk(file)` yields an empty parts array; it does
+    /// not import the file's contents. Async OS hosts must override this method
+    /// on their existing worker, retaining link/device/network/containment checks.
+    /// The default preserves existing directory-only injected adapters.
+    fn resolve_import_async<'a>(
+        &'a mut self,
+        input: &'a str,
+    ) -> TransferFuture<'a, io::Result<PathBuf>> {
+        self.resolve_directory_async(input)
+    }
+
     /// Resolve a source local directory inside the caller's explicitly owned roots.
     ///
     /// Remote Fabric paths must fail explicitly, never become local directories.
@@ -206,6 +241,30 @@ pub trait TransferFiles: DefinitionFileSystem + DefinitionImportFileSystem + Sen
     ) -> TransferFuture<'a, Result<PreparedImport, DefinitionError>> {
         Box::pin(async move {
             definitions::prepare_import(
+                &mut files::ImportFiles(self),
+                root,
+                target,
+                selector,
+                true,
+                limits,
+            )
+        })
+    }
+
+    /// Prepare Environment parts on the caller's filesystem worker.
+    ///
+    /// This opts into the command's separate readiness/publish lifecycle without
+    /// weakening the legacy standalone generic import contract. OS-backed hosts
+    /// must override it, retaining stop checks and original typed loader errors.
+    fn prepare_environment_import_async<'a>(
+        &'a mut self,
+        root: &'a Path,
+        target: ImportTarget<'a>,
+        selector: Option<&'a str>,
+        limits: DefinitionLimits,
+    ) -> TransferFuture<'a, Result<PreparedImport, DefinitionError>> {
+        Box::pin(async move {
+            PreparedImport::prepare_environment(
                 &mut files::ImportFiles(self),
                 root,
                 target,
@@ -781,7 +840,20 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
                 .as_deref()
                 .ok_or_else(|| invalid("Input path is required"))?,
         );
-        let root = phase(self.directory(&input), cancelled).await?;
+        phase(self.metadata.validate_import_input(&input), cancelled).await?;
+        if input.is_empty() {
+            return Err(command_error("InvalidPath", "No such file or directory").into());
+        }
+        let root = phase(
+            async {
+                self.files
+                    .resolve_import_async(&input)
+                    .await
+                    .map_err(local_error)
+            },
+            cancelled,
+        )
+        .await?;
         if !command.force && !phase(self.ui.confirm("Are you sure?"), cancelled).await? {
             return Ok(TransferResult {
                 declined: true,
@@ -793,22 +865,31 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             .filter(|parent| parent.kind() == NodeKind::Folder)
             .map(|parent| require_id(parent))
             .transpose()?;
-        let prepared = phase(
-            self.files.prepare_import_async(
+        let target = ImportTarget {
+            workspace_id: require_id(&workspace)?,
+            item_id: item.id(),
+            item_type,
+            display_name: item.short_name(),
+            folder_id,
+        };
+        let preparation = if item_type == "Environment" {
+            self.files.prepare_environment_import_async(
                 &root,
-                ImportTarget {
-                    workspace_id: require_id(&workspace)?,
-                    item_id: item.id(),
-                    item_type,
-                    display_name: item.short_name(),
-                    folder_id,
-                },
+                target,
                 command.format.as_deref(),
                 self.definition_limits,
-            ),
-            cancelled,
-        )
-        .await?;
+            )
+        } else {
+            self.files.prepare_import_async(
+                &root,
+                target,
+                command.format.as_deref(),
+                self.definition_limits,
+            )
+        };
+        let prepared = phase(preparation, cancelled)
+            .await
+            .map_err(import_environment::source_definition_error)?;
         if item.id().is_some() {
             self.ui.emit(TransferEvent::Warning(
                 "An item with the same name exists".into(),
@@ -830,20 +911,55 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             root.display(),
             item.path(),
         )))?;
-        let mut session = OperationSession::new(
-            self.client.credential().as_ref(),
-            self.client.selection(),
+        let mut session = OperationSession::with_context(
+            self.client.context(),
             BorrowedExecutor(self.executor),
             self.operation_limits,
             cancelled.as_mut(),
         );
+        if item_type == "Environment"
+            && let Some(id) = item.id()
+        {
+            import_environment::ready(
+                &mut session,
+                self.executor,
+                require_id(&workspace)?,
+                id,
+                self.ui,
+                self.operation_limits.max_poll_delay,
+            )
+            .await?;
+        }
         let outcome = prepared.execute(&mut session).await?;
+        drop(session);
+        let effect = ImportCacheEffect {
+            target: item.clone(),
+            item_id: outcome.item_id,
+        };
+        if item_type == "Environment" {
+            let mut session = OperationSession::with_context(
+                self.client.context(),
+                BorrowedExecutor(self.executor),
+                self.operation_limits,
+                cancelled.as_mut(),
+            );
+            import_environment::publish(
+                &mut session,
+                self.executor,
+                require_id(&workspace)?,
+                &effect.item_id,
+                self.ui,
+                self.operation_limits.max_poll_delay,
+            )
+            .await
+            .map_err(|mut error| {
+                error.effects.push(effect.clone());
+                error
+            })?;
+        }
         Ok(TransferResult {
             outputs: vec![message(format!("'{}' imported", item.name()))],
-            effects: vec![ImportCacheEffect {
-                target: item.clone(),
-                item_id: outcome.item_id,
-            }],
+            effects: vec![effect],
             excluded_paths: outcome.excluded_paths,
             ..TransferResult::default()
         })

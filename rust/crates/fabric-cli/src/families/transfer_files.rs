@@ -144,6 +144,62 @@ impl TokioTransferFiles {
         })
     }
 
+    fn prepare_import_work<'a>(
+        &'a mut self,
+        root: &'a Path,
+        target: ImportTarget<'a>,
+        selector: Option<&'a str>,
+        limits: DefinitionLimits,
+        environment_lifecycle: bool,
+    ) -> TransferFuture<'a, Result<PreparedImport, DefinitionError>> {
+        let root = root.to_owned();
+        let workspace_id = target.workspace_id.to_owned();
+        let item_id = target.item_id.map(str::to_owned);
+        let item_type = target.item_type.to_owned();
+        let display_name = target.display_name.to_owned();
+        let folder_id = target.folder_id.map(str::to_owned);
+        let selector = selector.map(str::to_owned);
+        let limits = DefinitionLimits {
+            max_bytes: limits.max_bytes.min(self.limits.max_bytes),
+            max_files: limits.max_files.min(self.limits.max_files),
+            max_depth: limits.max_depth.min(self.limits.max_depth),
+            max_path_bytes: limits.max_path_bytes.min(self.limits.max_path_bytes),
+        };
+        Box::pin(async move {
+            self.run(move |files, stop| {
+                let mut filesystem = ImportWorker { files, stop };
+                let target = ImportTarget {
+                    workspace_id: &workspace_id,
+                    item_id: item_id.as_deref(),
+                    item_type: &item_type,
+                    display_name: &display_name,
+                    folder_id: folder_id.as_deref(),
+                };
+                Ok(if environment_lifecycle {
+                    PreparedImport::prepare_environment(
+                        &mut filesystem,
+                        &root,
+                        target,
+                        selector.as_deref(),
+                        true,
+                        limits,
+                    )
+                } else {
+                    definitions::prepare_import(
+                        &mut filesystem,
+                        &root,
+                        target,
+                        selector.as_deref(),
+                        true,
+                        limits,
+                    )
+                })
+            })
+            .await
+            .map_err(DefinitionErrorKind::FileSystem)?
+        })
+    }
+
     fn bounded(&self, files: &[DefinitionFile]) -> io::Result<()> {
         if files.len() > self.limits.max_files.get() {
             return Err(worker_error(TransferWorkerError::Limit));
@@ -198,6 +254,14 @@ impl TransferFiles for TokioTransferFiles {
     ) -> TransferFuture<'a, io::Result<PathBuf>> {
         let input = input.to_owned();
         self.run(move |files, _| files.resolve_directory(&input))
+    }
+
+    fn resolve_import_async<'a>(
+        &'a mut self,
+        input: &'a str,
+    ) -> TransferFuture<'a, io::Result<PathBuf>> {
+        let input = input.to_owned();
+        self.run(move |files, _| files.resolve_import(&input))
     }
 
     fn is_empty_async<'a>(&'a mut self, root: &'a Path) -> TransferFuture<'a, io::Result<bool>> {
@@ -282,39 +346,17 @@ impl TransferFiles for TokioTransferFiles {
         selector: Option<&'a str>,
         limits: DefinitionLimits,
     ) -> TransferFuture<'a, Result<PreparedImport, DefinitionError>> {
-        let root = root.to_owned();
-        let workspace_id = target.workspace_id.to_owned();
-        let item_id = target.item_id.map(str::to_owned);
-        let item_type = target.item_type.to_owned();
-        let display_name = target.display_name.to_owned();
-        let folder_id = target.folder_id.map(str::to_owned);
-        let selector = selector.map(str::to_owned);
-        let limits = DefinitionLimits {
-            max_bytes: limits.max_bytes.min(self.limits.max_bytes),
-            max_files: limits.max_files.min(self.limits.max_files),
-            max_depth: limits.max_depth.min(self.limits.max_depth),
-            max_path_bytes: limits.max_path_bytes.min(self.limits.max_path_bytes),
-        };
-        Box::pin(async move {
-            self.run(move |files, stop| {
-                Ok(definitions::prepare_import(
-                    &mut ImportWorker { files, stop },
-                    &root,
-                    ImportTarget {
-                        workspace_id: &workspace_id,
-                        item_id: item_id.as_deref(),
-                        item_type: &item_type,
-                        display_name: &display_name,
-                        folder_id: folder_id.as_deref(),
-                    },
-                    selector.as_deref(),
-                    true,
-                    limits,
-                ))
-            })
-            .await
-            .map_err(DefinitionErrorKind::FileSystem)?
-        })
+        self.prepare_import_work(root, target, selector, limits, false)
+    }
+
+    fn prepare_environment_import_async<'a>(
+        &'a mut self,
+        root: &'a Path,
+        target: ImportTarget<'a>,
+        selector: Option<&'a str>,
+        limits: DefinitionLimits,
+    ) -> TransferFuture<'a, Result<PreparedImport, DefinitionError>> {
+        self.prepare_import_work(root, target, selector, limits, true)
     }
 }
 
