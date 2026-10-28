@@ -11,6 +11,7 @@
 //! Cancellation drops the answer future without cancelling an OS read; the
 //! native runtime's bounded shutdown still applies. No credentials are selected.
 
+use fabric_cli_mutations::{CommandFuture, MutationError, MutationUi, NoticeKind};
 use fabric_cli_resources::{CommandError, Confirmation};
 use std::{future::Future, io, pin::Pin, sync::Arc};
 
@@ -61,6 +62,103 @@ impl Confirmation for NativeAccessConfirmation {
                     )
                 })?
                 .map_err(|error| CommandError::new("ConfirmationInputFailed", error.to_string()))
+        })
+    }
+}
+
+type NoticeWriter = dyn Fn(&[fabric_cli_output::RenderPlan]) -> io::Result<()> + Send + Sync;
+
+pub(crate) struct NativeMutationUi {
+    pub(crate) records: Vec<fabric_cli_output::RenderPlan>,
+    confirmation: NativeAccessConfirmation,
+    writer: Arc<NoticeWriter>,
+}
+
+impl Default for NativeMutationUi {
+    fn default() -> Self {
+        Self {
+            records: Vec::new(),
+            confirmation: NativeAccessConfirmation::default(),
+            writer: Arc::new(|records| {
+                use io::Write;
+                let mut stdout = io::stdout().lock();
+                let mut stderr = io::stderr().lock();
+                for record in records {
+                    record.write_to(&mut stdout, &mut stderr)?;
+                }
+                stdout.flush()?;
+                stderr.flush()
+            }),
+        }
+    }
+}
+
+impl NativeMutationUi {
+    #[cfg(test)]
+    pub(crate) fn scripted(
+        reader: impl Fn(&str) -> io::Result<bool> + Send + Sync + 'static,
+        writer: impl Fn(&[fabric_cli_output::RenderPlan]) -> io::Result<()> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            records: Vec::new(),
+            confirmation: NativeAccessConfirmation::scripted(reader),
+            writer: Arc::new(writer),
+        }
+    }
+}
+
+impl MutationUi for NativeMutationUi {
+    fn notice(&mut self, kind: NoticeKind, message: &str) {
+        use fabric_cli_output::{
+            OutputStream,
+            text::{self, Presentation, Style},
+        };
+        let plan = match kind {
+            NoticeKind::Warning => text::render_notice(
+                text::Notice::Warning(message),
+                None,
+                Presentation::default(),
+            ),
+            _ => text::render_line(
+                message,
+                Style::Grey,
+                OutputStream::Stderr,
+                Presentation::default(),
+            ),
+        };
+        self.records.extend(plan.records);
+    }
+
+    fn confirm<'a>(&'a mut self, _: &'a str) -> CommandFuture<'a, bool> {
+        // The legacy infallible boundary never reads native input. All resource
+        // consumers use confirm_result, where prompt failures remain observable.
+        Box::pin(async { false })
+    }
+
+    fn confirm_result<'a>(
+        &'a mut self,
+        message: &'a str,
+    ) -> CommandFuture<'a, Result<bool, MutationError>> {
+        Box::pin(async move {
+            let records = std::mem::take(&mut self.records);
+            if !records.is_empty() {
+                let writer = Arc::clone(&self.writer);
+                tokio::task::spawn_blocking(move || writer(&records))
+                    .await
+                    .map_err(|_| {
+                        MutationError::new(
+                            "ConfirmationWorkerFailed",
+                            "The confirmation output worker did not complete",
+                        )
+                    })?
+                    .map_err(|error| {
+                        MutationError::new("ConfirmationOutputFailed", error.to_string())
+                    })?;
+            }
+            self.confirmation
+                .confirm(message)
+                .await
+                .map_err(|error| MutationError::new(&error.code, error.message))
         })
     }
 }

@@ -46,7 +46,7 @@ impl MutationHost<'_> {
             NoticeKind::Warning,
             "Modifying properties may lead to unintended consequences",
         );
-        if !force && !self.ui.confirm("Are you sure?").await {
+        if !force && !self.ui.confirm_result("Are you sure?").await? {
             return Ok(MutationResult {
                 declined: true,
                 ..MutationResult::default()

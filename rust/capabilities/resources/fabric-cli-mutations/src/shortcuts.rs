@@ -130,7 +130,7 @@ impl OneLakeShortcutHost<'_> {
                 NoticeKind::Warning,
                 "Modifying properties may lead to unintended consequences",
             );
-            if !force && !self.ui.confirm("Are you sure?").await {
+            if !force && !self.ui.confirm_result("Are you sure?").await? {
                 return Ok(ShortcutUpdateResult {
                     declined: true,
                     ..ShortcutUpdateResult::default()
@@ -196,7 +196,7 @@ impl OneLakeShortcutHost<'_> {
         destination: &ShortcutCreateDestination,
         options: &ShortcutCreateOptions,
     ) -> Result<MutationResult, MutationError> {
-        if !options.force && !self.ui.confirm("Are you sure?").await {
+        if !options.force && !self.ui.confirm_result("Are you sure?").await? {
             return Ok(MutationResult {
                 declined: true,
                 ..MutationResult::default()
@@ -308,7 +308,7 @@ impl OneLakeShortcutHost<'_> {
         force: bool,
         verbose: bool,
     ) -> Result<MutationResult, MutationError> {
-        if !force && !self.ui.confirm("Are you sure?").await {
+        if !force && !self.ui.confirm_result("Are you sure?").await? {
             if verbose {
                 self.ui
                     .notice(NoticeKind::Warning, "Resource delete cancelled");

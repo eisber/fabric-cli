@@ -19,6 +19,15 @@ shared HTTP executor. Generic mutations and deployment share the same operation
 reconciliation policy. Credentials, prompts, configuration, clocks and streams
 are always caller-owned.
 
+Production handlers call `MutationUi::confirm_result` and
+`RemovalUi::select_result`. Their defaults wrap the legacy infallible methods,
+so existing adapters keep their behavior. Terminal hosts override the fallible
+methods to propagate EOF, cancellation, input and writer failures as
+`MutationError`; those failures are not ordinary declines or empty selections.
+Force bypasses confirmation only where the source handler already permits it,
+without bypassing earlier validation or reads. Storage and removal keep their
+typed error and partial-result wrappers.
+
 ## Mutation behavior
 
 - Creation validates resource support, parameters and duplicates before dispatch.

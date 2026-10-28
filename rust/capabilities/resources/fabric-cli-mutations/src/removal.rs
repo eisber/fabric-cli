@@ -22,6 +22,19 @@ pub trait RemovalUi: MutationUi {
         prompt: &'a str,
         names: &'a [String],
     ) -> CommandFuture<'a, Vec<String>>;
+
+    /// Select with observable input, cancellation and prompt-delivery failures.
+    ///
+    /// Existing infallible adapters retain their behavior through this default.
+    /// Fallible hosts must override this method rather than return an empty list
+    /// on failure. Production consumers use this boundary to retain partial work.
+    fn select_result<'a>(
+        &'a mut self,
+        prompt: &'a str,
+        names: &'a [String],
+    ) -> CommandFuture<'a, Result<Vec<String>, MutationError>> {
+        Box::pin(async move { Ok(self.select(prompt, names).await) })
+    }
 }
 
 /// Existing catalog/read host's complete resource snapshots for removal commands.
@@ -172,7 +185,7 @@ impl RemovalHost<'_> {
                 }
             });
             let names = supported.iter().map(|item| item.name()).collect::<Vec<_>>();
-            let selected = self.ui.select("Select items:", &names).await;
+            let selected = self.ui.select_result("Select items:", &names).await?;
             if selected.is_empty() {
                 result.declined = true;
                 return Ok(());
@@ -182,7 +195,7 @@ impl RemovalHost<'_> {
             }
             self.ui
                 .notice(NoticeKind::Progress, "------------------------------");
-            if !self.ui.confirm("Are you sure?").await {
+            if !self.ui.confirm_result("Are you sure?").await? {
                 result.declined = true;
                 return Ok(());
             }
@@ -259,7 +272,7 @@ impl RemovalHost<'_> {
                 .iter()
                 .map(|workspace| workspace.name())
                 .collect::<Vec<_>>();
-            let selected = self.ui.select("Select workspaces:", &names).await;
+            let selected = self.ui.select_result("Select workspaces:", &names).await?;
             if selected.is_empty() {
                 result.declined = true;
                 return Ok(());
@@ -269,7 +282,7 @@ impl RemovalHost<'_> {
             }
             self.ui
                 .notice(NoticeKind::Progress, "------------------------------");
-            if !self.ui.confirm("Are you sure?").await {
+            if !self.ui.confirm_result("Are you sure?").await? {
                 result.declined = true;
                 return Ok(());
             }

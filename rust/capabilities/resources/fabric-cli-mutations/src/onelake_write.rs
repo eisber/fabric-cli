@@ -154,7 +154,13 @@ impl OneLakeWriteHost<'_> {
                 "Shortcut deletion requires the Fabric shortcut handler",
             ));
         }
-        if !force && !self.ui.confirm("Are you sure?").await {
+        if !force
+            && !self
+                .ui
+                .confirm_result("Are you sure?")
+                .await
+                .map_err(OneLakeWriteError::Command)?
+        {
             self.ui
                 .notice(NoticeKind::Warning, "Resource delete cancelled");
             return Ok(declined());
@@ -213,7 +219,13 @@ impl OneLakeWriteHost<'_> {
                 "Invalid paths. Only supported within /Files",
             ));
         }
-        if !force && !self.ui.confirm("Are you sure?").await {
+        if !force
+            && !self
+                .ui
+                .confirm_result("Are you sure?")
+                .await
+                .map_err(OneLakeWriteError::Command)?
+        {
             return Ok(declined());
         }
         self.ui.notice(

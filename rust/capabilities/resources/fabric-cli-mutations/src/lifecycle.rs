@@ -110,7 +110,7 @@ impl MutationHost<'_> {
             }
         }
         let action = if start { &START } else { &STOP };
-        if !self.confirm_action(&element.name(), force, action).await {
+        if !self.confirm_action(&element.name(), force, action).await? {
             return Ok(declined());
         }
         let outcome = if start {
@@ -141,7 +141,7 @@ impl MutationHost<'_> {
                 "Capacity can only be assigned to a workspace",
             ));
         }
-        if !self.confirm_action(capacity_name, force, &ASSIGN).await {
+        if !self.confirm_action(capacity_name, force, &ASSIGN).await? {
             return Ok(declined());
         }
         let outcome = WorkspaceMutations::assign_capacity(
@@ -193,7 +193,7 @@ impl MutationHost<'_> {
                 "Cannot unassign capacity: Workspace not linked to it",
             ));
         }
-        if !self.confirm_action(capacity_name, force, &UNASSIGN).await {
+        if !self.confirm_action(capacity_name, force, &UNASSIGN).await? {
             return Ok(declined());
         }
         let outcome =
@@ -201,13 +201,18 @@ impl MutationHost<'_> {
         Ok(action_result(outcome, capacity_name, &UNASSIGN))
     }
 
-    async fn confirm_action(&mut self, name: &str, force: bool, action: &Action) -> bool {
-        if !force && !self.ui.confirm("Are you sure?").await {
+    async fn confirm_action(
+        &mut self,
+        name: &str,
+        force: bool,
+        action: &Action,
+    ) -> Result<bool, MutationError> {
+        if !force && !self.ui.confirm_result("Are you sure?").await? {
             self.ui.notice(
                 NoticeKind::Warning,
                 &format!("Resource {} cancelled", action.label),
             );
-            return false;
+            return Ok(false);
         }
         if force {
             self.ui.notice(
@@ -219,7 +224,7 @@ impl MutationHost<'_> {
             NoticeKind::Progress,
             &format!("{} '{name}'...", action.progress),
         );
-        true
+        Ok(true)
     }
 }
 

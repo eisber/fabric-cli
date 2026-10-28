@@ -8,13 +8,25 @@
 #[path = "../src/native_terminal_ui.rs"]
 mod terminal_ui;
 
+use fabric_cli_context::{Element, ItemType, NodeKind, WorkspaceType};
+use fabric_cli_mutations::{
+    CommandFuture, MutationError, MutationHost, MutationMetadata, MutationUi, NoticeKind,
+};
 use fabric_cli_resources::Confirmation;
+use fabric_sdk_workspaces::mutations::{
+    ResourceError, ResourceOperation, ResourceOperations, ResourceOutcome,
+};
+use serde_json::Value;
 use std::{
     io::{self, Cursor, Write},
-    sync::{Arc, Mutex, mpsc},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+        mpsc,
+    },
     time::Duration,
 };
-use terminal_ui::NativeAccessConfirmation;
+use terminal_ui::{NativeAccessConfirmation, NativeMutationUi};
 
 #[tokio::test(flavor = "current_thread")]
 async fn access_questions_and_entered_answers_reach_the_existing_source_reader() {
@@ -141,4 +153,237 @@ async fn a_pending_prompt_does_not_block_the_runtime_or_turn_cancellation_into_c
         .await
         .unwrap()
         .unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn resource_confirmation_delivers_prior_notices_before_reading_input_once() {
+    let transcript = Arc::new(Mutex::new(Vec::new()));
+    let mut prompt = NativeMutationUi::scripted(
+        {
+            let transcript = Arc::clone(&transcript);
+            move |question| {
+                fabric_cli::console::read_confirmation(
+                    &mut Cursor::new(b"no\n"),
+                    &mut *transcript.lock().unwrap(),
+                    question,
+                )
+            }
+        },
+        {
+            let transcript = Arc::clone(&transcript);
+            move |records| {
+                for record in records {
+                    record.write_to(&mut Vec::new(), &mut *transcript.lock().unwrap())?;
+                }
+                Ok(())
+            }
+        },
+    );
+    prompt.notice(
+        NoticeKind::Warning,
+        "Modifying properties may lead to unintended consequences",
+    );
+    let prior = prompt
+        .records
+        .iter()
+        .flat_map(|record| record.payload.clone())
+        .collect::<Vec<_>>();
+    assert!(!prompt.confirm_result("Are you sure?").await.unwrap());
+    assert!(prompt.records.is_empty());
+    let expected = [prior.as_slice(), b"Are you sure? [Y/n] "].concat();
+    assert_eq!(*transcript.lock().unwrap(), expected);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn resource_prompt_failure_preserves_its_error_class_instead_of_declining() {
+    for (answer, expected) in [
+        (Some("yes\n"), Some(true)),
+        (Some("n\n"), Some(false)),
+        (None, None),
+    ] {
+        let mut prompt = NativeMutationUi::scripted(
+            move |question| {
+                fabric_cli::console::read_confirmation(
+                    &mut Cursor::new(answer.unwrap_or_default()),
+                    &mut Vec::new(),
+                    question,
+                )
+            },
+            |_| Ok(()),
+        );
+        let result = prompt.confirm_result("Are you sure?").await;
+        match expected {
+            Some(answer) => assert_eq!(result.unwrap(), answer),
+            None => {
+                let error = result.unwrap_err();
+                assert_eq!(error.code, "ConfirmationInputFailed");
+                assert!(error.operation.is_none());
+            }
+        }
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn notice_delivery_failure_never_reaches_resource_input_or_replays_the_notice() {
+    for panicking in [false, true] {
+        let inputs = Arc::new(AtomicUsize::new(0));
+        let deliveries = Arc::new(AtomicUsize::new(0));
+        let mut prompt = NativeMutationUi::scripted(
+            {
+                let inputs = Arc::clone(&inputs);
+                move |_| {
+                    inputs.fetch_add(1, Ordering::SeqCst);
+                    Ok(true)
+                }
+            },
+            {
+                let deliveries = Arc::clone(&deliveries);
+                move |_| {
+                    deliveries.fetch_add(1, Ordering::SeqCst);
+                    assert!(!panicking, "synthetic output worker failure");
+                    Err(io::Error::new(io::ErrorKind::BrokenPipe, "notice failed"))
+                }
+            },
+        );
+        prompt.notice(NoticeKind::Warning, "Resource warning");
+        let error = prompt.confirm_result("Are you sure?").await.unwrap_err();
+        assert_eq!(
+            error.code,
+            if panicking {
+                "ConfirmationWorkerFailed"
+            } else {
+                "ConfirmationOutputFailed"
+            }
+        );
+        assert_eq!(inputs.load(Ordering::SeqCst), 0);
+        assert_eq!(deliveries.load(Ordering::SeqCst), 1);
+        assert!(prompt.records.is_empty());
+    }
+}
+
+struct Operations(usize);
+impl ResourceOperations for Operations {
+    fn execute(
+        &mut self,
+        _: ResourceOperation,
+    ) -> CommandFuture<'_, Result<ResourceOutcome, ResourceError>> {
+        self.0 += 1;
+        Box::pin(async {
+            Ok(ResourceOutcome::Completed {
+                status: 200,
+                data: None,
+            })
+        })
+    }
+}
+
+struct Metadata;
+impl MutationMetadata for Metadata {
+    fn read<'a>(
+        &'a mut self,
+        _: &'a Arc<Element>,
+    ) -> CommandFuture<'a, Result<Value, MutationError>> {
+        panic!("delete must not read SET metadata")
+    }
+}
+
+fn delete_target() -> Arc<Element> {
+    let workspace = Element::child(
+        "Team",
+        Some("ws".into()),
+        NodeKind::Workspace(WorkspaceType::Workspace),
+        Element::tenant("Tenant", "tenant"),
+    )
+    .unwrap();
+    Element::child(
+        "Book",
+        Some("item".into()),
+        NodeKind::Item(ItemType::parse("Notebook").unwrap()),
+        workspace,
+    )
+    .unwrap()
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn native_resource_delete_requires_explicit_consent_unless_force_is_selected() {
+    let target = delete_target();
+    for (answer, force, expected_writes) in [
+        ("yes\n", false, 1),
+        ("no\n", false, 0),
+        ("", false, 0),
+        ("", true, 1),
+    ] {
+        let mut ui = NativeMutationUi::scripted(
+            move |question| {
+                fabric_cli::console::read_confirmation(
+                    &mut Cursor::new(answer),
+                    &mut Vec::new(),
+                    question,
+                )
+            },
+            |_| Ok(()),
+        );
+        let mut operations = Operations(0);
+        let mut metadata = Metadata;
+        let result = MutationHost {
+            operations: &mut operations,
+            ui: &mut ui,
+            metadata: &mut metadata,
+        }
+        .remove(&target, force)
+        .await;
+        assert_eq!(operations.0, expected_writes);
+        if !force && answer.is_empty() {
+            assert_eq!(result.unwrap_err().code, "ConfirmationInputFailed");
+        } else {
+            let result = result.unwrap();
+            assert_eq!(result.declined, expected_writes == 0);
+            assert_eq!(result.outcome.is_some(), expected_writes == 1);
+        }
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn cancelling_native_resource_input_cannot_dispatch_after_a_late_yes() {
+    let (release, wait) = mpsc::channel();
+    let wait = Mutex::new(wait);
+    let (started, mut observed) = tokio::sync::mpsc::unbounded_channel();
+    let (finished, completion) = tokio::sync::oneshot::channel();
+    let finished = Mutex::new(Some(finished));
+    let mut ui = NativeMutationUi::scripted(
+        move |_| {
+            started.send(()).unwrap();
+            wait.lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(5))
+                .map_err(io::Error::other)?;
+            finished.lock().unwrap().take().unwrap().send(()).unwrap();
+            Ok(true)
+        },
+        |_| Ok(()),
+    );
+    let target = delete_target();
+    let mut operations = Operations(0);
+    let mut metadata = Metadata;
+    let mut host = MutationHost {
+        operations: &mut operations,
+        ui: &mut ui,
+        metadata: &mut metadata,
+    };
+    let mut pending = Box::pin(host.remove(&target, false));
+    tokio::select! {
+        result = &mut pending => panic!("Delete completed without input: {result:?}"),
+        result = observed.recv() => assert_eq!(result, Some(())),
+    }
+    tokio::select! {
+        result = &mut pending => panic!("Delete completed without input: {result:?}"),
+        _ = tokio::time::sleep(Duration::from_millis(1)) => {},
+    }
+    drop(pending);
+    release.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(5), completion)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(operations.0, 0);
 }

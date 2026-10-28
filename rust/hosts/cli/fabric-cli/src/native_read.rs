@@ -32,6 +32,9 @@ mod deploy_inputs;
 #[path = "native_terminal_ui.rs"]
 mod terminal_ui;
 
+#[cfg(windows)]
+use terminal_ui::NativeMutationUi;
+
 #[derive(Clone, Copy)]
 #[cfg_attr(
     not(windows),
@@ -636,7 +639,6 @@ async fn execute_family(
 ) -> Result<fabric_cli_output::text::TextPlan, fabric_cli_output::text::TextError> {
     use fabric_cli_context::PathElement;
     use fabric_cli_local::NavigationState;
-    use fabric_cli_mutations::frontdoor::ResourceCommand;
     use fabric_cli_output::text::{self, OutputFormat, Presentation, TextOptions};
 
     let result = async {
@@ -684,24 +686,6 @@ async fn execute_family(
                     })
                     .collect(),
             );
-        }
-        if matches!(
-            command,
-            Invocation::Resource(
-                ResourceCommand::Remove { force: false, .. }
-                    | ResourceCommand::Set { force: false, .. }
-                    | ResourceCommand::Link { force: false, .. }
-                    | ResourceCommand::Start { force: false, .. }
-                    | ResourceCommand::Stop { force: false, .. }
-                    | ResourceCommand::Assign { force: false, .. }
-                    | ResourceCommand::Unassign { force: false, .. }
-                    | ResourceCommand::Move { force: false, .. }
-            )
-        ) {
-            return Err(fabric_cli_local::LocalError::command(
-                "NotSupported",
-                "Native resource confirmation requires an injected UI; use --force explicitly",
-            ));
         }
         let mut mutations = NativeMutationUi::default();
         let mut confirmation = terminal_ui::NativeAccessConfirmation::default();
@@ -861,39 +845,6 @@ impl fabric_cli_local::LocalEffects for NativeLocalEffects {
     }
     fn clear_terminal(&mut self) -> Result<(), fabric_cli_local::LocalError> {
         self.base.clear_terminal()
-    }
-}
-
-#[cfg(windows)]
-#[derive(Default)]
-struct NativeMutationUi {
-    records: Vec<fabric_cli_output::RenderPlan>,
-}
-
-#[cfg(windows)]
-impl fabric_cli_mutations::MutationUi for NativeMutationUi {
-    fn notice(&mut self, kind: fabric_cli_mutations::NoticeKind, message: &str) {
-        use fabric_cli_output::{
-            OutputStream,
-            text::{self, Presentation, Style},
-        };
-        let plan = match kind {
-            fabric_cli_mutations::NoticeKind::Warning => text::render_notice(
-                text::Notice::Warning(message),
-                None,
-                Presentation::default(),
-            ),
-            _ => text::render_line(
-                message,
-                Style::Grey,
-                OutputStream::Stderr,
-                Presentation::default(),
-            ),
-        };
-        self.records.extend(plan.records);
-    }
-    fn confirm<'a>(&'a mut self, _: &'a str) -> fabric_cli_mutations::CommandFuture<'a, bool> {
-        Box::pin(async { false })
     }
 }
 

@@ -71,7 +71,21 @@ pub trait MutationUi: Send {
     fn notice(&mut self, kind: NoticeKind, message: &str);
 
     /// Confirm a consequential operation; a declined prompt sends no mutation.
+    ///
+    /// Retained for existing infallible adapters. Production consumers use
+    /// [`Self::confirm_result`] so terminal failures cannot become declines.
     fn confirm<'a>(&'a mut self, message: &'a str) -> CommandFuture<'a, bool>;
+
+    /// Confirm with explicit input, cancellation and prompt-delivery failures.
+    ///
+    /// Existing infallible adapters retain their behavior through this default.
+    /// Fallible hosts must override this method, never turn an error into `false`.
+    fn confirm_result<'a>(
+        &'a mut self,
+        message: &'a str,
+    ) -> CommandFuture<'a, Result<bool, MutationError>> {
+        Box::pin(async move { Ok(self.confirm(message).await) })
+    }
 }
 
 /// Enriched metadata provider composed by the existing read-command host.
@@ -290,7 +304,7 @@ impl MutationHost<'_> {
         } else {
             "Are you sure?".into()
         };
-        if !force && !self.ui.confirm(&prompt).await {
+        if !force && !self.ui.confirm_result(&prompt).await? {
             self.ui
                 .notice(NoticeKind::Warning, "Resource delete cancelled");
             return Ok(MutationResult {
