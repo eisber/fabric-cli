@@ -590,8 +590,13 @@ impl ParameterProgram {
         if let Some(key) = self.item_settings.keys().find(|key| {
             !sections.contains(&key.as_str())
                 && !(key.as_str() == "gateway_binding"
-                    && self.item_settings.contains_key("semantic_model_binding")
-                    && sections.contains(&"semantic_model_binding"))
+                    && (self
+                        .item_settings
+                        .get(key.as_str())
+                        .and_then(Value::as_array)
+                        .is_some_and(Vec::is_empty)
+                        || (self.item_settings.contains_key("semantic_model_binding")
+                            && sections.contains(&"semantic_model_binding"))))
         }) {
             return Err(TransformError::Invalid(format!(
                 "Unconsumed item-specific parameter section: {key}"

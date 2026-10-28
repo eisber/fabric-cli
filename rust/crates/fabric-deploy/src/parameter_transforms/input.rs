@@ -144,6 +144,12 @@ pub fn prepare_parameter_document(
     let Some(templates) = templates else {
         return Ok(output);
     };
+    if !super::context::truthy(&templates) {
+        return Err(TransformError::Invalid(
+            "Source leaves a falsey extend key unprocessed, which is an invalid parameter name"
+                .into(),
+        ));
+    }
     let Some(templates) = templates.as_array() else {
         output.skipped_templates.push("extend is not a list".into());
         return Ok(output);

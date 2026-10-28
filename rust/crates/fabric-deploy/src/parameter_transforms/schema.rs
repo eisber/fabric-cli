@@ -184,34 +184,36 @@ pub(super) fn item_settings(
     }
     let mut semantic = document.get("semantic_model_binding").cloned();
     if let Some(gateways) = document.get("gateway_binding") {
-        let gateways = gateways
-            .as_array()
-            .ok_or_else(|| invalid("gateway_binding must be a list"))?;
-        result.insert("gateway_binding".into(), Value::Array(gateways.clone()));
-        if !gateways.is_empty() && semantic.as_ref().is_none_or(Value::is_array) {
-            let mut entries = semantic
-                .take()
-                .and_then(|value| value.as_array().cloned())
-                .unwrap_or_default();
-            for entry in gateways {
-                let entry = entry
-                    .as_object()
-                    .ok_or_else(|| invalid("Gateway binding entry must be a dictionary"))?;
-                entries.push(Value::Object(Map::from_iter([
-                    (
-                        "connection_id".into(),
-                        entry.get("gateway_id").cloned().unwrap_or(Value::Null),
-                    ),
-                    (
-                        "semantic_model_name".into(),
-                        entry
-                            .get("dataset_name")
-                            .cloned()
-                            .unwrap_or_else(|| Value::Array(Vec::new())),
-                    ),
-                ])));
+        result.insert("gateway_binding".into(), gateways.clone());
+        if !truthy(gateways) || semantic.as_ref().is_none_or(Value::is_array) {
+            let gateways = gateways
+                .as_array()
+                .ok_or_else(|| invalid("gateway_binding must be a list"))?;
+            if !gateways.is_empty() {
+                let mut entries = semantic
+                    .take()
+                    .and_then(|value| value.as_array().cloned())
+                    .unwrap_or_default();
+                for entry in gateways {
+                    let entry = entry
+                        .as_object()
+                        .ok_or_else(|| invalid("Gateway binding entry must be a dictionary"))?;
+                    entries.push(Value::Object(Map::from_iter([
+                        (
+                            "connection_id".into(),
+                            entry.get("gateway_id").cloned().unwrap_or(Value::Null),
+                        ),
+                        (
+                            "semantic_model_name".into(),
+                            entry
+                                .get("dataset_name")
+                                .cloned()
+                                .unwrap_or_else(|| Value::Array(Vec::new())),
+                        ),
+                    ])));
+                }
+                semantic = Some(Value::Array(entries));
             }
-            semantic = Some(Value::Array(entries));
         }
     }
     if let Some(semantic) = semantic {
