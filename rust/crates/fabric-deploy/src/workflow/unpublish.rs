@@ -13,7 +13,7 @@ pub(super) async fn run<E: OperationExecutor>(
     base: &str,
 ) -> Result<(), WorkflowFailure> {
     let deployed = deployed_items(io.list(&format!("{base}/items")).await?)?;
-    for item_type in crate::deployment_config::ITEM_TYPES.iter().rev() {
+    for item_type in context.type_order().iter().rev() {
         if !config.item_types.iter().any(|scope| scope == item_type)
             || !context.can_unpublish(item_type)
         {
@@ -35,6 +35,7 @@ pub(super) async fn run<E: OperationExecutor>(
             }
         }
         if *item_type == "DataPipeline" {
+            let filename = context.dependency_file("DataPipeline")?;
             let mut edges = Vec::new();
             for index in &orphans {
                 let id = &deployed[*index].id;
@@ -50,7 +51,7 @@ pub(super) async fn run<E: OperationExecutor>(
                     .and_then(Value::as_array)
                     .ok_or_else(|| invalid("Missing deployed pipeline definition parts"))?;
                 let Some(part) = parts.iter().find(|part| {
-                    part.get("path").and_then(Value::as_str) == Some("pipeline-content.json")
+                    part.get("path").and_then(Value::as_str) == Some(filename.as_str())
                 }) else {
                     continue;
                 };
@@ -61,8 +62,15 @@ pub(super) async fn run<E: OperationExecutor>(
                 let bytes = STANDARD
                     .decode(encoded)
                     .map_err(|_| invalid("Invalid deployed pipeline base64"))?;
-                let content = serde_json::from_slice(&bytes)
-                    .map_err(|_| invalid("Invalid deployed pipeline JSON"))?;
+                let content = if filename.ends_with(".json") {
+                    serde_json::from_slice(&bytes)
+                        .map_err(|_| invalid("Invalid deployed pipeline JSON"))?
+                } else {
+                    Value::String(
+                        String::from_utf8(bytes)
+                            .map_err(|_| invalid("Invalid deployed pipeline UTF-8"))?,
+                    )
+                };
                 for reference in pipeline_references(&content) {
                     if let Some(dependency) = deployed
                         .iter()
@@ -99,6 +107,13 @@ pub(super) async fn run<E: OperationExecutor>(
                     }
                     error => return Err(error),
                 }
+            } else {
+                io.collect(
+                    "unpublish",
+                    &item.item_type,
+                    &item.name,
+                    io.last_response.clone(),
+                );
             }
         }
     }

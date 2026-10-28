@@ -15,8 +15,10 @@ fn dependency(
     if !path.ends_with(".pq") {
         return Ok(None);
     }
-    let pattern = Regex::new(r#"(PowerPlatform\.Dataflows)(?:\(\[\]\))?[\s\S]*?workspaceId\s*=\s*"(.*?)"[\s\S]*?dataflowId\s*=\s*"(.*?)""#)
-        .map_err(|_| invalid("Invalid source Dataflow reference pattern"))?;
+    let pattern = Regex::new(context.text_constant(
+        "DATAFLOW_SOURCE_REGEX",
+        r#"(PowerPlatform\.Dataflows)(?:\(\[\]\))?[\s\S]*?workspaceId\s*=\s*"(.*?)"[\s\S]*?dataflowId\s*=\s*"(.*?)""#,
+    )).map_err(|_| invalid("Invalid source Dataflow reference pattern"))?;
     let Some(captures) = pattern
         .captures(content)
         .map_err(|_| invalid("Dataflow reference pattern exceeded its bound"))?
@@ -155,5 +157,5 @@ pub(super) fn preprocess(
     };
     Ok(content
         .replace(&id, &repository.items[index].logical_id)
-        .replace(&workspace, crate::transforms::DEFAULT_GUID))
+        .replace(&workspace, context.default_guid()))
 }

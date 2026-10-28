@@ -5,7 +5,6 @@ use super::*;
 use crate::{
     model::RepositoryItem,
     parameter_transforms::{TransformBudget, TransformLimits},
-    transforms::{NotebookTransforms, replace_workspace_ids},
 };
 
 mod bulk;
@@ -40,17 +39,13 @@ pub(super) async fn publish<E: OperationExecutor>(
         deployed,
         ..
     } = publication;
-    let bulk = context.bulk_publish
-        && !config
-            .item_types
-            .iter()
-            .any(|item_type| ["Warehouse", "DataBuildToolJob"].contains(&item_type.as_str()));
-    if bulk && !super::parameters::has_unfiltered_item_variable(context) {
+    let bulk = context.bulk_publish && context.bulk_admits(&config.item_types);
+    if bulk && !super::parameters::has_unfiltered_item_variable(context, &config.environment) {
         return bulk::publish(io, publication, ids).await;
     }
     let mut environments = Vec::new();
     let mut current_deployed = deployed.to_vec();
-    for item_type in crate::deployment_config::ITEM_TYPES {
+    for item_type in context.type_order() {
         let mut indices: Vec<_> = plan
             .order
             .iter()
@@ -152,29 +147,40 @@ async fn publish_one<E: OperationExecutor>(
             .map(|item| item.id.clone())
     });
     let mut item = source.clone();
-    if !processor.shell_only() {
+    if !context.shell_only(&source.item_type) {
         preprocess(io, publication, &mut item, ids, false).await?;
     }
     let folder_id = folders
         .get(&item.folder_path)
         .map(String::as_str)
         .unwrap_or("");
-    let body = mutation_body(
+    let body = crate::processors::mutation_body_with_policy(
         processor,
         &item,
         existing.is_some(),
         folder_id,
         context.enabled("enable_purge_data"),
+        context.shell_only(&item.item_type),
+        if context.shell_only(&item.item_type) {
+            None
+        } else {
+            Some(crate::processors::definition_with_context(
+                processor, &item, context, false,
+            )?)
+        },
     )?;
     let (method, path) = match &existing {
         None => (ResourceMethod::Post, format!("{base}/items")),
-        Some(id) if processor.shell_only() => (ResourceMethod::Patch, format!("{base}/items/{id}")),
+        Some(id) if context.shell_only(&item.item_type) => {
+            (ResourceMethod::Patch, format!("{base}/items/{id}"))
+        }
         Some(id) => (
             ResourceMethod::Post,
             format!("{base}/items/{id}/updateDefinition?updateMetadata=True"),
         ),
     };
     let response = io.request(method, &path, Some(body)).await?;
+    let mut collected = io.last_response.clone();
     let id = existing.clone().map(Ok).unwrap_or_else(|| {
         response
             .get("id")
@@ -198,7 +204,11 @@ async fn publish_one<E: OperationExecutor>(
     });
     if existing.is_some()
         && !context.enabled("disable_workspace_folder_publish")
-        && item.item_type != "OrgAppAudience"
+        && !context.listed(
+            "NON_MOVABLE_ITEM_TYPES",
+            &["OrgAppAudience"],
+            &item.item_type,
+        )
         && deployed
             .iter()
             .find(|target| target.id == id)
@@ -210,7 +220,14 @@ async fn publish_one<E: OperationExecutor>(
             Some(json!({"targetFolderId": folder_id})),
         )
         .await?;
+        if let Some(moved) = io.last_response.clone() {
+            collected = Some(match collected {
+                Some(published) => json!({"publish_response":published,"move_response":moved}),
+                None => moved,
+            });
+        }
     }
+    io.collect("publish", &item.item_type, &item.name, collected);
     match processor {
         Processor::VariableLibrary => activate_value_set(io, config, source, base, &id).await?,
         Processor::Lakehouse => lakehouse::readiness(io, base, &id).await?,
@@ -287,23 +304,19 @@ async fn preprocess<E: OperationExecutor>(
     } = publication;
     let repository = &plan.repository;
     let processor = Processor::for_type(&item.item_type)?;
-    let transforms = NotebookTransforms {
-        logical_ids: repository
-            .items
-            .iter()
-            .map(|source| {
-                (
-                    source.logical_id.clone(),
-                    ids.get(&identity_key(source)).cloned().unwrap_or_default(),
-                )
-            })
-            .collect(),
-        literals: Vec::new(),
-    };
     let snapshot = item.clone();
     let mut budget = TransformBudget::new(TransformLimits::default(), &|| false);
     for file in &mut item.files {
-        if !file.text || file.path.ends_with(".platform") || processor.excludes(&file.path) {
+        if !file.text
+            || file.path.ends_with(".platform")
+            || crate::processors::excludes_with_context(
+                processor,
+                &item.item_type,
+                &file.path,
+                context,
+                bulk,
+            )?
+        {
             continue;
         }
         let mut content = file.content()?.to_owned();
@@ -327,11 +340,7 @@ async fn preprocess<E: OperationExecutor>(
             _ => {}
         }
         if !bulk && processor != Processor::VariableLibrary {
-            content = transforms
-                .logical_content(&content, TransformLimits::default().max_bytes)
-                .map_err(|_| {
-                    invalid("Referenced logical ID is not yet deployed or output bound exceeded")
-                })?;
+            content = super::text::logical(&content, repository, ids, context)?;
         }
         content = super::parameters::apply(
             io,
@@ -344,15 +353,7 @@ async fn preprocess<E: OperationExecutor>(
         )
         .await?;
         if !bulk && processor != Processor::VariableLibrary {
-            content =
-                replace_workspace_ids(&content, workspace, TransformLimits::default().max_bytes)
-                    .map_err(|_| invalid("Workspace replacement exceeded its output bound"))?;
-            if item.item_type == "Reflex" {
-                content = content.replace(
-                    &format!("\\\"name\\\":\\\"workspaceId\\\",\\\"type\\\":\\\"string\\\",\\\"value\\\":\\\"{}", crate::transforms::DEFAULT_GUID),
-                    &format!("\\\"name\\\":\\\"workspaceId\\\",\\\"type\\\":\\\"string\\\",\\\"value\\\":\\\"{workspace}"),
-                );
-            }
+            content = super::text::workspace(&content, &item.item_type, workspace, context)?;
         }
         file.bytes = content.into_bytes();
     }

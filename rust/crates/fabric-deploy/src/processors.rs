@@ -187,11 +187,35 @@ pub fn mutation_body(
     folder_id: &str,
     purge_data: bool,
 ) -> Result<Value, ConfigurationError> {
+    mutation_body_with_policy(
+        processor,
+        item,
+        existing,
+        folder_id,
+        purge_data,
+        processor.shell_only(),
+        None,
+    )
+}
+
+/// Source mutation body with an explicit invocation-local shell-only policy.
+///
+/// # Errors
+/// Retains malformed creation metadata before request dispatch.
+pub fn mutation_body_with_policy(
+    processor: Processor,
+    item: &RepositoryItem,
+    existing: bool,
+    folder_id: &str,
+    purge_data: bool,
+    shell_only: bool,
+    definition_override: Option<Value>,
+) -> Result<Value, ConfigurationError> {
     if existing {
-        if processor.shell_only() {
+        if shell_only {
             return Ok(json!({"displayName": item.name, "description": item.description}));
         }
-        let mut body = json!({"definition": definition(processor, item)});
+        let mut body = json!({"definition": definition_override.unwrap_or_else(|| definition(processor, item))});
         if processor == Processor::SemanticModel && purge_data {
             body["options"] = json!({"allowPurgeData": true});
         }
@@ -201,9 +225,110 @@ pub fn mutation_body(
         json!({"displayName": item.name, "type": item.item_type, "description": item.description});
     if let Some(payload) = processor.creation_payload(item)? {
         body["creationPayload"] = payload;
-    } else if !processor.shell_only() {
-        body["definition"] = definition(processor, item);
+    } else if !shell_only {
+        body["definition"] = definition_override.unwrap_or_else(|| definition(processor, item));
     }
     body["folderId"] = folder_id.into();
     Ok(body)
+}
+
+/// Source-selected definition format and exclusion policy within one invocation.
+///
+/// # Errors
+/// Invalid configured source patterns fail before dispatch instead of being ignored.
+pub fn definition_with_context(
+    processor: Processor,
+    item: &RepositoryItem,
+    context: &crate::planner::EngineContext,
+    bulk: bool,
+) -> Result<Value, ConfigurationError> {
+    let mut prepared = item.clone();
+    prepared.files.clear();
+    for file in &item.files {
+        if !excludes_with_context(processor, &item.item_type, &file.path, context, bulk)? {
+            prepared.files.push(file.clone());
+        }
+    }
+    let mut definition = definition(
+        if bulk {
+            Processor::Definition
+        } else if processor == Processor::Notebook {
+            Processor::Notebook
+        } else {
+            Processor::Definition
+        },
+        &prepared,
+    );
+    if matches!(processor, Processor::SparkJob)
+        || (processor == Processor::Notebook
+            && item
+                .files
+                .iter()
+                .any(|file| file.name().ends_with(".ipynb")))
+    {
+        let format = context
+            .constants
+            .get("API_FORMAT_MAPPING")
+            .and_then(Value::as_object)
+            .map(|mapping| mapping.get(&item.item_type).cloned())
+            .unwrap_or_else(|| match processor {
+                Processor::SparkJob => Some("SparkJobDefinitionV2".into()),
+                Processor::Notebook => Some("ipynb".into()),
+                _ => None,
+            });
+        if let Some(format) = format.filter(|value| {
+            !value.is_null() && value.as_str() != Some("") && value.as_bool() != Some(false)
+        }) {
+            let parts = definition["parts"].take();
+            definition = json!({"format":format,"parts":parts});
+        } else if let Some(mapping) = definition.as_object_mut() {
+            mapping.remove("format");
+        }
+    }
+    Ok(definition)
+}
+
+pub(crate) fn excludes_with_context(
+    processor: Processor,
+    item_type: &str,
+    path: &str,
+    context: &crate::planner::EngineContext,
+    bulk: bool,
+) -> Result<bool, ConfigurationError> {
+    if !bulk
+        && !matches!(
+            processor,
+            Processor::Parent
+                | Processor::Report
+                | Processor::SemanticModel
+                | Processor::ExcludePbi
+        )
+    {
+        return Ok(false);
+    }
+    if let Some(mapping) = context
+        .constants
+        .get("EXCLUDE_PATH_REGEX_MAPPING")
+        .and_then(Value::as_object)
+    {
+        let Some(pattern) = mapping.get(item_type) else {
+            return if bulk {
+                Ok(false)
+            } else {
+                Err(invalid(
+                    "Source publisher exclusion pattern was removed by configuration",
+                ))
+            };
+        };
+        let pattern = pattern
+            .as_str()
+            .ok_or_else(|| invalid("Source exclusion pattern must be a string"))?;
+        let pattern = fancy_regex::Regex::new(pattern)
+            .map_err(|_| invalid("Invalid source exclusion regex"))?;
+        return pattern
+            .find(path)
+            .map(|found| found.is_some_and(|found| found.start() == 0))
+            .map_err(|_| invalid("Source exclusion regex exceeded its matching bound"));
+    }
+    Ok(processor.excludes(path))
 }

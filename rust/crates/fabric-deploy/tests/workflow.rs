@@ -500,6 +500,51 @@ async fn real_report_kql_and_environment_preprocessors_match_captured_source_art
                     .all(|call| call.1.ends_with("/items"))
             );
         }
+
+        #[tokio::test]
+        async fn lakehouse_readiness_waits_use_actual_source_backoff_not_a_fixed_delay() {
+            let oracle: Value = serde_json::from_str(include_str!(
+                "../../../tests/compatibility/deploy_workflow/waits_source.json"
+            ))
+            .unwrap();
+            let executor = Executor::default();
+            executor.reply(200, json!({"capacityId":"assigned"}));
+            executor.reply(200, json!({"value":[]}));
+            executor.reply(201, json!({"id":ITEM}));
+            for _ in 0..3 {
+                executor.reply(200, json!({"properties":{"sqlEndpointProperties":{"provisioningStatus":"InProgress"}}}));
+            }
+            executor.reply(
+                200,
+                json!({"properties":{"sqlEndpointProperties":{"provisioningStatus":"Success"}}}),
+            );
+            let config = config(&["Lakehouse"], false);
+            deploy_repository(
+                &client(),
+                &executor,
+                &config,
+                DeploymentRepository {
+                    items: vec![item("Lakehouse", "Example", "lakehouse-logical")],
+                    folders: Vec::new(),
+                },
+                EngineContext::from_config(&config, false).unwrap(),
+                OperationLimits::default(),
+                pending(),
+            )
+            .await
+            .unwrap();
+            let waits: Vec<_> = executor
+                .waits
+                .lock()
+                .unwrap()
+                .iter()
+                .map(Duration::as_secs)
+                .collect();
+            assert_eq!(
+                json!(waits),
+                Value::Array(oracle["cases"][0]["seconds"].as_array().unwrap()[..3].to_vec())
+            );
+        }
         if kind == "Environment" {
             executor.reply(200, json!({"value": []}));
         }

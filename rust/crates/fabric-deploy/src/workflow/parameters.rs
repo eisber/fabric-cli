@@ -189,37 +189,48 @@ pub(super) fn item_variable(value: &str) -> Option<(&str, &str, &str)> {
     let attribute = attribute.strip_prefix('$').unwrap_or(attribute);
     (!name.is_empty()
         && crate::deployment_config::ITEM_TYPES.contains(&item_type)
-        && [
-            "id",
-            "sqlendpoint",
-            "sqlendpointfqdn",
-            "sqlendpointid",
-            "queryserviceuri",
-        ]
-        .contains(&attribute.to_lowercase().as_str()))
+        && !attribute.is_empty())
     .then_some((item_type, name, attribute))
 }
 
-pub(super) fn has_unfiltered_item_variable(context: &EngineContext) -> bool {
-    context
-        .parameter_document
-        .as_ref()
-        .and_then(Value::as_object)
-        .into_iter()
-        .flat_map(|document| document.values())
-        .filter_map(Value::as_array)
-        .flatten()
-        .any(|rule| {
-            rule.get("replace_value")
-                .and_then(Value::as_object)
-                .into_iter()
-                .flat_map(|values| values.values())
-                .filter_map(Value::as_str)
-                .any(|value| item_variable(value).is_some())
-                && ["item_type", "item_name", "file_path"]
-                    .iter()
-                    .all(|key| rule.get(key).is_none_or(Value::is_null))
-        })
+pub(super) fn has_unfiltered_item_variable(context: &EngineContext, environment: &str) -> bool {
+    let filters = context
+        .constants
+        .get("PARAMETER_FILE_FILTERS")
+        .and_then(Value::as_array)
+        .map(|values| values.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+        .unwrap_or_else(|| vec!["item_type", "item_name", "file_path"]);
+    for section in ["find_replace", "key_value_replace"] {
+        for rule in context
+            .parameter_document
+            .as_ref()
+            .and_then(|document| document.get(section))
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if environment_value(rule.get("replace_value"), environment)
+                .and_then(Value::as_str)
+                .and_then(item_variable)
+                .is_some()
+                && !filters.iter().any(|key| rule.get(*key).is_some_and(truthy))
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+pub(super) fn truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(value) => *value,
+        Value::Number(value) => value.as_f64() != Some(0.0),
+        Value::String(value) => !value.is_empty(),
+        Value::Array(values) => !values.is_empty(),
+        Value::Object(values) => !values.is_empty(),
+    }
 }
 
 pub(super) async fn apply<E: OperationExecutor>(
@@ -381,6 +392,19 @@ pub(super) async fn resolve<E: OperationExecutor>(
         } else {
             return Err(invalid("Invalid dynamic replacement variable").into());
         };
+    if !context.listed(
+        "ITEM_ATTR_LOOKUP",
+        &[
+            "id",
+            "sqlendpoint",
+            "sqlendpointfqdn",
+            "sqlendpointid",
+            "queryserviceuri",
+        ],
+        &attribute,
+    ) {
+        return Err(invalid("Invalid dynamic item attribute").into());
+    }
     let target_base = format!("/v1/workspaces/{target_workspace}");
     let deployed = deployed_items(io.list(&format!("{target_base}/items")).await?)?;
     let id = deployed
@@ -403,17 +427,8 @@ pub(super) async fn resolve<E: OperationExecutor>(
     if attribute == "id" {
         return Ok(id.into());
     }
-    let path = match (item_type.as_str(), attribute.as_str()) {
-        ("Lakehouse" | "MirroredDatabase", "sqlendpoint") => {
-            "/properties/sqlEndpointProperties/connectionString"
-        }
-        ("Lakehouse" | "MirroredDatabase", "sqlendpointid") => {
-            "/properties/sqlEndpointProperties/id"
-        }
-        ("Warehouse", "sqlendpoint") => "/properties/connectionString",
-        ("SQLDatabase", "sqlendpoint" | "sqlendpointfqdn") => "/properties/serverFqdn",
-        ("Eventhouse", "queryserviceuri") => "/properties/queryServiceUri",
-        _ => return Ok(Value::String(String::new())),
+    let Some(path) = context.attribute_pointer(&item_type, &attribute) else {
+        return Ok(Value::String(String::new()));
     };
     let metadata = io
         .request(
@@ -423,7 +438,7 @@ pub(super) async fn resolve<E: OperationExecutor>(
         )
         .await?;
     let value = metadata
-        .pointer(path)
+        .pointer(&path)
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| invalid("Dynamic item attribute is not available"))?;

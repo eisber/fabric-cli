@@ -102,7 +102,7 @@ pub(super) async fn bind<E: OperationExecutor>(
     if mapping.is_empty() {
         return Ok(());
     }
-    let connections = match io.list("/v1/connections").await {
+    let connections = match io.list_fabric("/v1/connections").await {
         Ok(connections) => connections,
         Err(WorkflowFailure::Operation(error))
             if !matches!(error.kind, OperationErrorKind::Cancelled) =>
@@ -136,7 +136,10 @@ pub(super) async fn bind<E: OperationExecutor>(
         if valid.is_empty() {
             continue;
         }
-        let item_connections = match io.list(&format!("{base}/items/{id}/connections")).await {
+        let item_connections = match io
+            .list_fabric(&format!("{base}/items/{id}/connections"))
+            .await
+        {
             Ok(connections) => connections,
             Err(WorkflowFailure::Operation(error))
                 if !matches!(error.kind, OperationErrorKind::Cancelled) =>
@@ -172,7 +175,7 @@ pub(super) async fn bind<E: OperationExecutor>(
                 },
             }});
             if let Err(error) = io
-                .request(
+                .request_fabric(
                     ResourceMethod::Post,
                     &format!("{base}/semanticModels/{id}/bindConnection"),
                     Some(body),

@@ -79,7 +79,21 @@ impl EngineContext {
                 }
             }
         }
-        context.bulk_publish |= context.enabled("enable_bulk_publish");
+        if let Some(flags) = context.constants.get("FEATURE_FLAG") {
+            context.features = flags
+                .as_array()
+                .ok_or_else(|| invalid("FEATURE_FLAG must be a list"))?
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .map(str::to_owned)
+                        .ok_or_else(|| invalid("FEATURE_FLAG entries must be strings"))
+                })
+                .collect::<Result<_, _>>()?;
+        }
+        context.bulk_publish = context.enabled("enable_bulk_publish");
+        context.validate_constants()?;
         for (section, key, required) in [
             (
                 &config.publish,
@@ -107,6 +121,12 @@ impl EngineContext {
                 "enable_shortcut_exclude",
             ),
         ] {
+            if section.get("skip").and_then(Value::as_bool) == Some(true)
+                || (key.starts_with("folder_")
+                    && context.enabled("disable_workspace_folder_publish"))
+            {
+                continue;
+            }
             if section.contains_key(key)
                 && (!context.enabled("enable_experimental_features") || !context.enabled(required))
             {
@@ -115,7 +135,10 @@ impl EngineContext {
                 ));
             }
         }
-        if context.bulk_publish && !context.enabled("enable_experimental_features") {
+        if !config.skip_publish()
+            && context.bulk_publish
+            && !context.enabled("enable_experimental_features")
+        {
             return Err(invalid(
                 "enable_bulk_publish requires enable_experimental_features",
             ));
@@ -136,6 +159,193 @@ impl EngineContext {
         self.features.contains(feature)
     }
 
+    fn validate_constants(&self) -> Result<(), ConfigurationError> {
+        for key in [
+            "SHELL_ONLY_PUBLISH",
+            "NON_MOVABLE_ITEM_TYPES",
+            "NO_ASSIGNED_CAPACITY_REQUIRED",
+            "BULK_ACCEPTED_ITEM_TYPES",
+            "BULK_UNSUPPORTED_ITEM_TYPES",
+            "ACCEPTED_ITEM_TYPES",
+            "ASYNC_PROVISIONED_ATTRIBUTES",
+            "PARAMETER_FILE_FILTERS",
+            "YAML_FILE_EXTENSIONS",
+            "ITEM_ATTR_LOOKUP",
+        ] {
+            if self.constants.get(key).is_some_and(|value| {
+                value
+                    .as_array()
+                    .is_none_or(|values| values.iter().any(|value| !value.is_string()))
+            }) {
+                return Err(invalid(
+                    "Runtime item/attribute policy constants must be lists of strings",
+                ));
+            }
+        }
+        for key in [
+            "EXCLUDE_PATH_REGEX_MAPPING",
+            "API_FORMAT_MAPPING",
+            "UNPUBLISH_FLAG_MAPPING",
+            "ITEM_TYPE_TO_FILE",
+            "PROPERTY_PATH_ATTR_MAPPING",
+        ] {
+            if self
+                .constants
+                .get(key)
+                .is_some_and(|value| !value.is_object())
+            {
+                return Err(invalid(
+                    "Runtime mapping policy constant must be a dictionary",
+                ));
+            }
+        }
+        for key in [
+            "DEFAULT_GUID",
+            "WORKSPACE_ID_REFERENCE_REGEX",
+            "REFLEX_WORKSPACE_ID_REFERENCE_REGEX",
+            "DATAFLOW_SOURCE_REGEX",
+            "INVALID_FOLDER_CHAR_REGEX",
+            "KQL_DATABASE_FOLDER_PATH_REGEX",
+            "ORG_APP_AUDIENCE_FOLDER_PATH_REGEX",
+            "VALID_GUID_REGEX",
+        ] {
+            if let Some(value) = self.constants.get(key) {
+                let value = value
+                    .as_str()
+                    .ok_or_else(|| invalid("Runtime reference constant must be a string"))?;
+                if key.ends_with("REGEX") {
+                    Regex::new(value).map_err(|_| invalid("Invalid runtime reference regex"))?;
+                }
+            }
+        }
+        if self
+            .constants
+            .get("BULK_ITEM_COUNT_LIMIT")
+            .is_some_and(|value| value.as_u64().is_none())
+        {
+            return Err(invalid(
+                "BULK_ITEM_COUNT_LIMIT must be a nonnegative integer",
+            ));
+        }
+        if let Some(order) = self.constants.get("SERIAL_ITEM_PUBLISH_ORDER") {
+            if !order.as_object().is_some_and(|order| order.is_empty()) {
+                return Err(invalid(
+                    "Pinned source publication order requires ItemType enum values, which safe configuration scalars cannot construct",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Selected scalar constant, after source environment selection.
+    pub fn text_constant<'a>(&'a self, key: &str, default: &'a str) -> &'a str {
+        self.constants
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or(default)
+    }
+
+    /// Membership in a selected source list constant.
+    pub fn listed(&self, key: &str, defaults: &[&str], value: &str) -> bool {
+        self.constants
+            .get(key)
+            .and_then(Value::as_array)
+            .map_or_else(
+                || defaults.contains(&value),
+                |values| values.iter().any(|entry| entry.as_str() == Some(value)),
+            )
+    }
+
+    /// Effective source placeholder, which need not be a service item ID.
+    pub fn default_guid(&self) -> &str {
+        self.text_constant("DEFAULT_GUID", DEFAULT_GUID)
+    }
+
+    /// Source shell-only policy, including configured replacements.
+    pub fn shell_only(&self, item_type: &str) -> bool {
+        self.listed(
+            "SHELL_ONLY_PUBLISH",
+            &["Lakehouse", "Warehouse", "SQLDatabase", "MLExperiment"],
+            item_type,
+        )
+    }
+
+    /// Whether the source bulk API admits every requested type.
+    pub fn bulk_admits(&self, types: &[String]) -> bool {
+        types.iter().all(|item_type| {
+            self.constants
+                .get("BULK_ACCEPTED_ITEM_TYPES")
+                .and_then(Value::as_array)
+                .map_or_else(
+                    || !["Warehouse", "DataBuildToolJob"].contains(&item_type.as_str()),
+                    |values| values.iter().any(|value| value.as_str() == Some(item_type)),
+                )
+        })
+    }
+
+    /// Source type order; an explicitly empty order schedules no types.
+    pub fn type_order(&self) -> &[&str] {
+        if self.constants.contains_key("SERIAL_ITEM_PUBLISH_ORDER") {
+            &[]
+        } else {
+            ITEM_TYPES
+        }
+    }
+
+    /// Definition file used by the source dependency publisher.
+    ///
+    /// # Errors
+    /// Missing mapping entries and paths outside the item capability are invalid.
+    pub fn dependency_file(&self, item_type: &str) -> Result<String, ConfigurationError> {
+        let path = if let Some(mapping) = self
+            .constants
+            .get("ITEM_TYPE_TO_FILE")
+            .and_then(Value::as_object)
+        {
+            mapping
+                .get(item_type)
+                .and_then(Value::as_str)
+                .ok_or_else(|| invalid("Missing dependency file mapping"))?
+        } else {
+            "pipeline-content.json"
+        };
+        let path = path.replace('\\', "/");
+        if path.is_empty()
+            || path.contains([':', '\0'])
+            || path.split('/').any(|part| matches!(part, "" | "." | ".."))
+        {
+            return Err(invalid(
+                "Dependency file mapping escapes the item capability",
+            ));
+        }
+        Ok(path)
+    }
+
+    /// Source metadata path for a dynamically resolved/provisioned item attribute.
+    pub fn attribute_pointer(&self, item_type: &str, attribute: &str) -> Option<String> {
+        let path = if let Some(mapping) = self
+            .constants
+            .get("PROPERTY_PATH_ATTR_MAPPING")
+            .and_then(Value::as_object)
+        {
+            mapping.get(item_type)?.get(attribute)?.as_str()?
+        } else {
+            match (item_type, attribute) {
+                ("Lakehouse" | "MirroredDatabase", "sqlendpoint") => {
+                    "body/properties/sqlEndpointProperties/connectionString"
+                }
+                ("Lakehouse" | "MirroredDatabase", "sqlendpointid") => {
+                    "body/properties/sqlEndpointProperties/id"
+                }
+                ("Warehouse", "sqlendpoint") => "body/properties/connectionString",
+                ("SQLDatabase", "sqlendpoint" | "sqlendpointfqdn") => "body/properties/serverFqdn",
+                ("Eventhouse", "queryserviceuri") => "body/properties/queryServiceUri",
+                _ => return None,
+            }
+        };
+        Some(format!("/{}", path.strip_prefix("body/").unwrap_or(path)))
+    }
+
     /// Attach explicit parameter source without rediscovering files or environment.
     pub fn with_parameter_document(mut self, document: Value) -> Self {
         self.parameter_document = Some(document);
@@ -144,6 +354,16 @@ impl EngineContext {
 
     /// Source unpublication feature gates protect provisioned/data-bearing items.
     pub fn can_unpublish(&self, item_type: &str) -> bool {
+        if let Some(mapping) = self
+            .constants
+            .get("UNPUBLISH_FLAG_MAPPING")
+            .and_then(Value::as_object)
+        {
+            return mapping
+                .get(item_type)
+                .and_then(Value::as_str)
+                .is_none_or(|feature| self.enabled(feature));
+        }
         let flag = match item_type {
             "Lakehouse" => "enable_lakehouse_unpublish",
             "Warehouse" => "enable_warehouse_unpublish",
@@ -304,22 +524,52 @@ impl DeploymentPlan {
     pub fn prepare(
         config: &DeploymentConfig,
         context: &EngineContext,
-        repository: DeploymentRepository,
+        mut repository: DeploymentRepository,
     ) -> Result<Self, ConfigurationError> {
+        for item in &mut repository.items {
+            let pattern = match item.item_type.as_str() {
+                "KQLDatabase" => Some(context.text_constant(
+                    "KQL_DATABASE_FOLDER_PATH_REGEX",
+                    r"(?i)^(.*)/[^/]+\.Eventhouse/\.children(?:/.*)?$",
+                )),
+                "OrgAppAudience" => Some(context.text_constant(
+                    "ORG_APP_AUDIENCE_FOLDER_PATH_REGEX",
+                    r"(?i)^(.*)/[^/]+\.OrgApp/\.children(?:/.*)?$",
+                )),
+                _ => None,
+            };
+            if let Some(pattern) = pattern {
+                let regex = Regex::new(pattern)
+                    .map_err(|_| invalid("Invalid parent-managed folder pattern"))?;
+                let path = format!("/{}", item.path);
+                item.folder_path = regex
+                    .captures(&path)
+                    .map_err(|_| invalid("Parent-managed folder pattern exceeded its bound"))?
+                    .and_then(|captures| captures.get(1).map(|capture| capture.as_str().to_owned()))
+                    .unwrap_or_default();
+            }
+        }
         let selection = PublishSelection::new(config, context)?;
         let mut selected = Vec::new();
         let mut logical = HashMap::new();
+        let mut seen_logical = HashSet::new();
         for (index, item) in repository.items.iter().enumerate() {
             Processor::for_type(&item.item_type)?;
-            if item.logical_id != DEFAULT_GUID {
+            if item.logical_id != context.default_guid() {
+                if !seen_logical.insert(item.logical_id.clone()) {
+                    return Err(invalid("Duplicate logicalId in repository"));
+                }
                 logical.insert(item.logical_id.as_str(), index);
             }
-            if config.item_types.contains(&item.item_type) && selection.includes(item)? {
+            if !config.skip_publish()
+                && config.item_types.contains(&item.item_type)
+                && selection.includes(item)?
+            {
                 selected.push(index);
             }
         }
         let mut order = Vec::new();
-        for item_type in ITEM_TYPES {
+        for item_type in context.type_order() {
             let indices: Vec<_> = selected
                 .iter()
                 .copied()
@@ -329,11 +579,16 @@ impl DeploymentPlan {
                 let mut edges = Vec::new();
                 for index in &indices {
                     let item = &repository.items[*index];
+                    let filename = context.dependency_file("DataPipeline")?;
                     let content = item
-                        .file("pipeline-content.json")
-                        .ok_or_else(|| invalid("Missing pipeline-content.json"))?;
-                    let content: Value = serde_json::from_slice(&content.bytes)
-                        .map_err(|_| invalid("Invalid pipeline-content.json"))?;
+                        .file(&filename)
+                        .ok_or_else(|| invalid("Missing pipeline dependency definition"))?;
+                    let content: Value = if filename.ends_with(".json") {
+                        serde_json::from_slice(&content.bytes)
+                            .map_err(|_| invalid("Invalid pipeline dependency JSON"))?
+                    } else {
+                        Value::String(content.content()?.into())
+                    };
                     for reference in pipeline_references(&content) {
                         if let Some(dependency) = logical.get(reference.as_str())
                             && repository.items[*dependency].item_type == "DataPipeline"

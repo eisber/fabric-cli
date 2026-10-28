@@ -9,6 +9,7 @@ pub(super) async fn readiness<E: OperationExecutor>(
     base: &str,
     id: &str,
 ) -> Result<(), WorkflowFailure> {
+    let mut attempt = 1u32;
     loop {
         let response = io
             .request(
@@ -30,7 +31,10 @@ pub(super) async fn readiness<E: OperationExecutor>(
                     })
                     .into());
             }
-            _ => io.wait(30).await?,
+            _ => {
+                io.wait(source_delay(attempt, 30)).await?;
+                attempt = attempt.saturating_add(1);
+            }
         }
     }
 }
@@ -70,22 +74,8 @@ pub(super) async fn shortcuts<E: OperationExecutor>(
             &mut budget,
         )
         .await?;
-        let transforms = NotebookTransforms {
-            logical_ids: repository
-                .items
-                .iter()
-                .map(|source| {
-                    (
-                        source.logical_id.clone(),
-                        ids.get(&identity_key(source)).cloned().unwrap_or_default(),
-                    )
-                })
-                .collect(),
-            literals: Vec::new(),
-        };
-        let content = transforms
-            .apply(&content, workspace, TransformLimits::default().max_bytes)
-            .map_err(|_| invalid("Shortcut logical/workspace reference could not be resolved"))?;
+        let content = super::super::text::logical(&content, repository, ids, context)?;
+        let content = super::super::text::workspace(&content, &item.item_type, workspace, context)?;
         let document: Value = serde_json::from_str(&content)
             .map_err(|_| invalid("Invalid shortcuts.metadata.json"))?;
         if document.is_null() {
@@ -155,7 +145,7 @@ pub(super) async fn shortcuts<E: OperationExecutor>(
         if shortcut
             .pointer("/target/oneLake/itemId")
             .and_then(Value::as_str)
-            == Some(crate::transforms::DEFAULT_GUID)
+            == Some(context.default_guid())
         {
             shortcut["target"]["oneLake"]["itemId"] = id.clone().into();
         }

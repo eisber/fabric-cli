@@ -8,7 +8,7 @@ use crate::{
     model::invalid,
     notebook::{DeploymentAction, DeploymentOutcome},
     planner::{DeploymentPlan, EngineContext},
-    processors::{Processor, mutation_body},
+    processors::Processor,
     publish::PublishedItem,
     repository::DeploymentRepository,
 };
@@ -31,17 +31,31 @@ use std::{
 
 mod families;
 mod parameters;
+mod text;
 mod unpublish;
 
 /// One confirmed source side effect, retained even if a later operation fails.
 #[derive(Clone, Debug)]
 pub struct DeploymentEffect {
-    /// Actual completed REST method.
+    /// Actual dispatched REST method; `pending` distinguishes acceptance.
     pub method: ResourceMethod,
     /// Validated relative API path.
     pub path: String,
     /// Actual service response status, never fabricated for acceptance.
     pub status: u16,
+    /// Accepted shared-operation ID, when the service supplied one.
+    pub operation_id: Option<String>,
+    /// Acceptance has not yet been confirmed by the owning processor's state check.
+    pub pending: bool,
+}
+
+/// Caller-bound clients for the source workspace and Fabric-specific API roots.
+#[derive(Clone, Copy)]
+pub struct DeploymentClients<'a> {
+    /// Source `DEFAULT_API_ROOT_URL` workspace operations.
+    pub workspace: &'a Client,
+    /// Source `FABRIC_API_ROOT_URL` connections/semantic-model operations.
+    pub fabric: &'a Client,
 }
 
 /// Final result of a command-local workflow, including nonfatal source warnings.
@@ -57,6 +71,8 @@ pub struct WorkflowResult {
     pub notices: Vec<String>,
     /// All failed source item publications, including later same-type attempts.
     pub item_failures: Vec<WorkflowFailure>,
+    /// Opt-in source publish/unpublish response trees; absent when none collected.
+    pub responses: Option<Value>,
 }
 
 /// Original failure, independent of presentation.
@@ -129,6 +145,7 @@ impl<E: OperationExecutor> OperationExecutor for CountedExecutor<'_, E> {
 
 struct ServiceIo<'a, E> {
     client: &'a Client,
+    fabric_client: &'a Client,
     executor: &'a E,
     limits: OperationLimits,
     requests: AtomicUsize,
@@ -137,6 +154,8 @@ struct ServiceIo<'a, E> {
     current: Option<String>,
     evidence: Option<OperationError>,
     headers: BTreeMap<String, String>,
+    collect_responses: bool,
+    last_response: Option<Value>,
 }
 
 impl<E: OperationExecutor> ServiceIo<'_, E> {
@@ -165,6 +184,22 @@ impl<E: OperationExecutor> ServiceIo<'_, E> {
             .await
     }
 
+    async fn request_fabric(
+        &mut self,
+        method: ResourceMethod,
+        path: &str,
+        body: Option<Value>,
+    ) -> Result<Value, WorkflowFailure> {
+        self.request_bound(
+            method,
+            path,
+            body,
+            CompletionPolicy::PythonSynchronous,
+            true,
+        )
+        .await
+    }
+
     async fn request_policy(
         &mut self,
         method: ResourceMethod,
@@ -172,13 +207,28 @@ impl<E: OperationExecutor> ServiceIo<'_, E> {
         body: Option<Value>,
         policy: CompletionPolicy,
     ) -> Result<Value, WorkflowFailure> {
+        self.request_bound(method, path, body, policy, false).await
+    }
+
+    async fn request_bound(
+        &mut self,
+        method: ResourceMethod,
+        path: &str,
+        body: Option<Value>,
+        policy: CompletionPolicy,
+        fabric: bool,
+    ) -> Result<Value, WorkflowFailure> {
         let body = body
             .map(|body| fabric_core_json::json_dumps(&body).into_bytes())
             .unwrap_or_default();
         let operation =
             FabricOperation::new(method, path, body, policy).map_err(|kind| self.error(kind))?;
         let mut session = OperationSession::with_context(
-            self.client.context(),
+            if fabric {
+                self.fabric_client.context()
+            } else {
+                self.client.context()
+            },
             CountedExecutor {
                 inner: self.executor,
                 requests: &self.requests,
@@ -199,17 +249,57 @@ impl<E: OperationExecutor> ServiceIo<'_, E> {
             serde_json::from_slice(&response.body)
                 .map_err(|_| session.evidence(OperationErrorKind::InvalidResponse))?
         };
+        if self.collect_responses {
+            self.last_response =
+                Some(json!({"header":self.headers,"body":value,"status_code":response.status}));
+        }
         if method != ResourceMethod::Get {
             self.result.effects.push(DeploymentEffect {
                 method,
                 path: path.into(),
                 status: response.status,
+                operation_id: self
+                    .evidence
+                    .as_ref()
+                    .and_then(|evidence| evidence.operation_id.clone()),
+                pending: response.status == 202,
             });
         }
         Ok(value)
     }
 
+    fn collect(&mut self, section: &str, item_type: &str, name: &str, response: Option<Value>) {
+        let Some(response) = response.filter(|_| self.collect_responses) else {
+            return;
+        };
+        let responses = self.result.responses.get_or_insert_with(|| json!({}));
+        if responses.get(section).is_none() {
+            responses[section] = json!({});
+        }
+        if responses[section].get(item_type).is_none() {
+            responses[section][item_type] = json!({});
+        }
+        responses[section][item_type][name] = response;
+    }
+
     async fn list(&mut self, path: &str) -> Result<Vec<Value>, WorkflowFailure> {
+        self.list_bound(path, false).await
+    }
+
+    async fn list_fabric(&mut self, path: &str) -> Result<Vec<Value>, WorkflowFailure> {
+        self.list_bound(path, true).await
+    }
+
+    async fn list_bound(
+        &mut self,
+        path: &str,
+        fabric: bool,
+    ) -> Result<Vec<Value>, WorkflowFailure> {
+        let client = if fabric {
+            self.fabric_client
+        } else {
+            self.client
+        };
         let mut next = path.to_owned();
         let mut seen = HashSet::new();
         let mut result = Vec::new();
@@ -217,7 +307,15 @@ impl<E: OperationExecutor> ServiceIo<'_, E> {
             if !seen.insert(next.clone()) {
                 return Err(self.error(OperationErrorKind::InvalidLink).into());
             }
-            let value = self.request(ResourceMethod::Get, &next, None).await?;
+            let value = self
+                .request_bound(
+                    ResourceMethod::Get,
+                    &next,
+                    None,
+                    CompletionPolicy::PythonSynchronous,
+                    fabric,
+                )
+                .await?;
             let values = value
                 .get("value")
                 .and_then(Value::as_array)
@@ -238,14 +336,13 @@ impl<E: OperationExecutor> ServiceIo<'_, E> {
             else {
                 break;
             };
-            let url = self
-                .client
+            let url = client
                 .context()
                 .endpoint()
                 .base_url()
                 .join(link)
                 .map_err(|_| self.error(OperationErrorKind::InvalidLink))?;
-            self.client
+            client
                 .context()
                 .endpoint()
                 .validate_url(&url)
@@ -269,7 +366,7 @@ impl<E: OperationExecutor> ServiceIo<'_, E> {
     }
 
     async fn wait(&mut self, seconds: u64) -> Result<(), WorkflowFailure> {
-        let delay = Duration::from_secs(seconds).min(self.limits.max_poll_delay);
+        let delay = Duration::from_secs(seconds);
         let mut work = pin!(self.executor.wait(delay));
         let result = poll_fn(|cx| {
             if self.cancelled.as_mut().poll(cx).is_ready() {
@@ -284,6 +381,11 @@ impl<E: OperationExecutor> ServiceIo<'_, E> {
     }
 }
 
+fn source_delay(attempt: u32, maximum: u64) -> u64 {
+    5u64.saturating_mul(1u64.checked_shl(attempt).unwrap_or(u64::MAX))
+        .min(maximum)
+}
+
 #[derive(Clone)]
 struct DeployedItem {
     id: String,
@@ -293,11 +395,7 @@ struct DeployedItem {
 }
 
 fn identity_key(item: &crate::model::RepositoryItem) -> String {
-    if item.logical_id == crate::transforms::DEFAULT_GUID {
-        format!("{}\0{}", item.item_type, item.name)
-    } else {
-        item.logical_id.clone()
-    }
+    format!("{}\0{}", item.item_type, item.name)
 }
 
 fn deployed_items(values: Vec<Value>) -> Result<Vec<DeployedItem>, ConfigurationError> {
@@ -464,8 +562,40 @@ pub async fn deploy_repository<E: OperationExecutor>(
     limits: OperationLimits,
     cancelled: impl Future<Output = ()> + Send,
 ) -> Result<WorkflowResult, WorkflowError> {
+    deploy_repository_with_clients(
+        DeploymentClients {
+            workspace: client,
+            fabric: client,
+        },
+        executor,
+        config,
+        repository,
+        context,
+        limits,
+        cancelled,
+    )
+    .await
+}
+
+/// Deploy with separately caller-bound workspace and Fabric API clients.
+///
+/// Neither endpoint selection nor credential discovery occurs in this function.
+/// Both clients reuse the injected executor and cancellation/request budget.
+///
+/// # Errors
+/// Retains the same partial-effect evidence as [`deploy_repository`].
+pub async fn deploy_repository_with_clients<E: OperationExecutor>(
+    clients: DeploymentClients<'_>,
+    executor: &E,
+    config: &DeploymentConfig,
+    repository: DeploymentRepository,
+    context: EngineContext,
+    limits: OperationLimits,
+    cancelled: impl Future<Output = ()> + Send,
+) -> Result<WorkflowResult, WorkflowError> {
     let mut io = ServiceIo {
-        client,
+        client: clients.workspace,
+        fabric_client: clients.fabric,
         executor,
         limits,
         requests: AtomicUsize::new(0),
@@ -474,6 +604,8 @@ pub async fn deploy_repository<E: OperationExecutor>(
         current: None,
         evidence: None,
         headers: BTreeMap::new(),
+        collect_responses: context.enabled("enable_response_collection"),
+        last_response: None,
     };
     match run(&mut io, config, repository, &context).await {
         Ok(()) => Ok(io.result),
@@ -491,6 +623,27 @@ async fn run<E: OperationExecutor>(
     repository: DeploymentRepository,
     context: &EngineContext,
 ) -> Result<(), WorkflowFailure> {
+    for (name, client) in [
+        ("DEFAULT_API_ROOT_URL", io.client),
+        ("FABRIC_API_ROOT_URL", io.fabric_client),
+    ] {
+        if let Some(selected) = context.constants.get(name) {
+            let selected = selected
+                .as_str()
+                .ok_or_else(|| invalid("Deployment endpoint override must be a URL string"))?;
+            let bound = client.context().endpoint().base_url();
+            if !selected
+                .get(..8)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("https://"))
+                || !bound.join(selected).is_ok_and(|selected| selected == bound)
+            {
+                return Err(invalid(
+                    "Deployment endpoint override must match its caller-bound SDK client",
+                )
+                .into());
+            }
+        }
+    }
     let plan = DeploymentPlan::prepare(config, context, repository)?;
     parameters::validate(config, context)?;
     let workspace = workspace_id(io, config).await?;
@@ -503,17 +656,18 @@ async fn run<E: OperationExecutor>(
             .and_then(Value::as_str)
             .is_some_and(|id| !id.is_empty())
             && !config.item_types.iter().all(|item_type| {
-                ["SemanticModel", "Report", "PaginatedReport"].contains(&item_type.as_str())
+                context.listed(
+                    "NO_ASSIGNED_CAPACITY_REQUIRED",
+                    &["SemanticModel", "Report", "PaginatedReport"],
+                    item_type,
+                )
             })
         {
             return Err(invalid("Workspace does not have an assigned capacity").into());
         }
         let bulk = context.bulk_publish
-            && !config
-                .item_types
-                .iter()
-                .any(|item_type| ["Warehouse", "DataBuildToolJob"].contains(&item_type.as_str()))
-            && !parameters::has_unfiltered_item_variable(context);
+            && context.bulk_admits(&config.item_types)
+            && !parameters::has_unfiltered_item_variable(context, &config.environment);
         let folders = if context.enabled("disable_workspace_folder_publish") {
             HashMap::new()
         } else if bulk {

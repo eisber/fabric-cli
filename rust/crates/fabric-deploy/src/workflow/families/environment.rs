@@ -10,11 +10,13 @@ pub(super) async fn check<E: OperationExecutor>(
     names: &[String],
     initial: bool,
 ) -> Result<(), WorkflowFailure> {
+    let mut attempt = 1u32;
     loop {
         // The source emits a trailing slash; FabricOperation rejects empty path
         // segments, so the equivalent collection resource is used without it.
         let environments = io.list(&format!("{base}/environments")).await?;
         let mut running = false;
+        let mut completed = HashSet::new();
         for environment in environments {
             let Some(name) = environment.get("displayName").and_then(Value::as_str) else {
                 continue;
@@ -30,6 +32,17 @@ pub(super) async fn check<E: OperationExecutor>(
             if state == "running" {
                 running = true;
             }
+            if state == "success" {
+                completed.insert(name.to_owned());
+            }
+            if !initial
+                && !matches!(
+                    state.as_str(),
+                    "running" | "success" | "failed" | "cancelled"
+                )
+            {
+                return Err(io.error(OperationErrorKind::InvalidResponse).into());
+            }
             if !initial && matches!(state.as_str(), "failed" | "cancelled") {
                 return Err(io
                     .error(OperationErrorKind::OperationFailed {
@@ -39,10 +52,23 @@ pub(super) async fn check<E: OperationExecutor>(
                     .into());
             }
         }
+        if !initial && names.iter().any(|name| !completed.contains(name)) {
+            running = true;
+        }
         if !running {
+            if !initial {
+                for effect in &mut io.result.effects {
+                    if effect.path.starts_with(&format!("{base}/environments/"))
+                        && effect.path.ends_with("/staging/publish?beta=False")
+                    {
+                        effect.pending = false;
+                    }
+                }
+            }
             return Ok(());
         }
-        io.wait(120).await?;
+        io.wait(source_delay(attempt, 120)).await?;
+        attempt = attempt.saturating_add(1);
     }
 }
 

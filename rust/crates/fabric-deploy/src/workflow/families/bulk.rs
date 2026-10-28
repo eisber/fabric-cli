@@ -45,7 +45,13 @@ pub(super) async fn publish<E: OperationExecutor>(
                 for file in &mut item.files {
                     if !file.text
                         || file.path.ends_with(".platform")
-                        || processor.excludes(&file.path)
+                        || crate::processors::excludes_with_context(
+                            processor,
+                            &item.item_type,
+                            &file.path,
+                            context,
+                            true,
+                        )?
                     {
                         continue;
                     }
@@ -68,11 +74,16 @@ pub(super) async fn publish<E: OperationExecutor>(
                 .next()
                 .ok_or_else(|| invalid("Missing item directory name"))?;
             let prefix = format!("{}/{directory}", item.folder_path);
-            for file in item
-                .files
-                .iter()
-                .filter(|file| !processor.excludes(&file.path))
-            {
+            for file in &item.files {
+                if crate::processors::excludes_with_context(
+                    processor,
+                    &item.item_type,
+                    &file.path,
+                    context,
+                    true,
+                )? {
+                    continue;
+                }
                 parts.push(json!({"path": format!("{prefix}/{}", file.path), "payload": STANDARD.encode(&file.bytes), "payloadType": "InlineBase64"}));
             }
             if processor == Processor::SemanticModel && context.enabled("enable_purge_data") {
@@ -100,6 +111,7 @@ pub(super) async fn publish<E: OperationExecutor>(
             .ok_or_else(|| io.error(OperationErrorKind::InvalidResponse))?;
         for index in &batch {
             let item = &plan.repository.items[*index];
+            io.current = Some(format!("{}.{}", item.name, item.item_type));
             let detail = details
                 .iter()
                 .find(|detail| {
@@ -113,6 +125,10 @@ pub(super) async fn publish<E: OperationExecutor>(
                 .filter(|id| valid_guid(id))
                 .ok_or_else(|| io.error(OperationErrorKind::InvalidResponse))?;
             ids.insert(identity_key(item), id.into());
+            if let Some(mut response) = io.last_response.clone() {
+                response["body"] = detail.clone();
+                io.collect("publish", &item.item_type, &item.name, Some(response));
+            }
             io.result.published.push(PublishedItem {
                 name: item.name.clone(),
                 logical_id: item.logical_id.clone(),
@@ -131,7 +147,7 @@ pub(super) async fn publish<E: OperationExecutor>(
             for index in &batch {
                 let item = &plan.repository.items[*index];
                 for attribute in required_attributes(context, config, item) {
-                    wait_attribute(io, item, &attribute, base, ids).await?;
+                    wait_attribute(io, item, &attribute, base, ids, context).await?;
                 }
             }
             let _ = deployed_items(io.list(&format!("{base}/items")).await?)?;
@@ -189,7 +205,16 @@ fn required_attributes(
             .and_then(super::super::parameters::item_variable)
                 && kind == item.item_type
                 && name == item.name
-                && attribute != "id"
+                && context.listed(
+                    "ASYNC_PROVISIONED_ATTRIBUTES",
+                    &[
+                        "sqlendpoint",
+                        "sqlendpointfqdn",
+                        "sqlendpointid",
+                        "queryserviceuri",
+                    ],
+                    attribute,
+                )
                 && !result.iter().any(|value| value == attribute)
             {
                 result.push(attribute.into());
@@ -206,18 +231,11 @@ async fn wait_attribute<E: OperationExecutor>(
     attribute: &str,
     base: &str,
     ids: &HashMap<String, String>,
+    context: &EngineContext,
 ) -> Result<(), WorkflowFailure> {
-    let path = match (item.item_type.as_str(), attribute) {
-        ("Lakehouse" | "MirroredDatabase", "sqlendpoint") => {
-            "/properties/sqlEndpointProperties/connectionString"
-        }
-        ("Lakehouse" | "MirroredDatabase", "sqlendpointid") => {
-            "/properties/sqlEndpointProperties/id"
-        }
-        ("Warehouse", "sqlendpoint") => "/properties/connectionString",
-        ("SQLDatabase", "sqlendpoint" | "sqlendpointfqdn") => "/properties/serverFqdn",
-        ("Eventhouse", "queryserviceuri") => "/properties/queryServiceUri",
-        _ => return Ok(()),
+    let mut attempt = 1u32;
+    let Some(path) = context.attribute_pointer(&item.item_type, attribute) else {
+        return Ok(());
     };
     let id = ids
         .get(&identity_key(item))
@@ -231,7 +249,7 @@ async fn wait_attribute<E: OperationExecutor>(
             )
             .await?;
         if metadata
-            .pointer(path)
+            .pointer(&path)
             .and_then(Value::as_str)
             .is_some_and(|value| !value.is_empty())
         {
@@ -249,7 +267,8 @@ async fn wait_attribute<E: OperationExecutor>(
                 })
                 .into());
         }
-        io.wait(30).await?;
+        io.wait(source_delay(attempt, 30)).await?;
+        attempt = attempt.saturating_add(1);
     }
 }
 
@@ -263,7 +282,7 @@ fn batches(
         .repository
         .items
         .iter()
-        .any(|item| item.logical_id == crate::transforms::DEFAULT_GUID)
+        .any(|item| item.logical_id == context.default_guid())
     {
         return Err(invalid(
             "Bulk import requires unique, non-placeholder logical IDs",

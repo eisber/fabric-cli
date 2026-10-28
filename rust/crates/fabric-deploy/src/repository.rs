@@ -94,7 +94,6 @@ impl DeploymentRepository {
             .collect();
         let mut items = Vec::new();
         let mut names = HashSet::new();
-        let mut logical_ids = HashSet::new();
         let mut folders = Vec::new();
         for path in directories
             .iter()
@@ -183,11 +182,9 @@ impl DeploymentRepository {
             }
             let item = RepositoryItem::from_files(path.clone(), contents)
                 .map_err(RepositoryError::Configuration)?;
-            if !names.insert((item.item_type.clone(), item.name.clone()))
-                || (item.logical_id != DEFAULT_GUID && !logical_ids.insert(item.logical_id.clone()))
-            {
+            if !names.insert((item.item_type.clone(), item.name.clone())) {
                 return Err(RepositoryError::Configuration(invalid(
-                    "Duplicate display name/type or logicalId in repository",
+                    "Duplicate display name/type in repository",
                 )));
             }
             items.push(item);

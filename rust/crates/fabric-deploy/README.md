@@ -70,6 +70,23 @@ responses, and no credentials, package initialization or network. Its first
 The new native selectors are `--test publisher_source_contract --test workflow`.
 They have not yet been executed.
 
+The policy follow-up consumes selected source constants for shell-only updates,
+definition formats/exclusions, placeholder IDs and workspace/Reflex references,
+type/capacity/bulk gates, dependency files, provisioned attribute paths, parent
+folder patterns and unpublication features. Opt-in response collection retains
+source publish/unpublish response trees separately from the effect ledger.
+Lifecycle waits use the source's bounded exponential sequence, captured from
+actual `handle_retry` with an injected clock/environment in `waits_source.json`;
+no mutation is retried and no blocking sleep is installed.
+`deploy_repository_with_clients` additionally accepts immutable caller-bound
+workspace and Fabric-specific clients. Configured API-root overrides must match
+those injected bindings; the library neither retargets a credential nor creates a
+transport. Connection listing/binding uses the Fabric-specific client. Native
+host selection of these clients remains the integration owner's boundary.
+Accepted Environment staging effects retain their operation IDs and pending
+state until a successful processor state check; missing/unknown final state is
+not reported as completed.
+
 Acceptance still needs native compilation/strict Clippy, complete processor
 branch/lifecycle/cancellation/partial-failure source fixtures, full root mounting,
 source constant-override coverage, binary classification equivalence, and
