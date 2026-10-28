@@ -80,11 +80,11 @@ The same binding configures SDK workspace/item reads, folder discovery,
 long-LS capacity enrichment, the shared HTTP executor and source-synchronous
 workspace GET initial/poll/result requests. Active continuation/result links
 cannot switch back to public or another Microsoft host. Non-public native
-endpoints support `ls`/`dir`/`get`, all eight job commands, and
-`export`/`bulk-export`/`import`. Jobs and definition transfers retain the
+endpoints support `ls`/`dir`/`get`, all eight job commands,
+`deploy` and `export`/`bulk-export`/`import`. Jobs, deployment and definition transfers retain the
 same binding for metadata, skill-scoped clients, pages, status polls and
 generic-operation/result reconciliation. Remote export separately retains the
-explicit OneLake audience and storage endpoint. Deployment and other remote families fail
+explicit OneLake audience and storage endpoint. Other unmigrated remote families fail
 explicitly with `NotSupported` before credentials instead of routing silently
 to their not-yet-migrated public defaults. Unset/public configuration preserves
 existing family behavior. This is not a migration of every SDK family or any

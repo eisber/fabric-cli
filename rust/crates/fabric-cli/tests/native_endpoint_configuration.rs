@@ -125,6 +125,7 @@ fn migrated_job_leaves_require_explicit_identity_without_discovering_one() {
 #[test]
 fn migrated_definition_leaves_require_identity_before_filesystem_activation() {
     let invocations: &[&[&str]] = &[
+        &["deploy", "--config", "deploy.yml", "-f"],
         &["export", "Book.Notebook", "-o", "output", "-f"],
         &[
             "bulk-export",

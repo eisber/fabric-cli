@@ -46,6 +46,7 @@ enum NativeCommand<'a> {
 
 fn has_bound_context(command: NativeCommand<'_>) -> bool {
     match command {
+        NativeCommand::Family(Invocation::Deploy(_)) => true,
         NativeCommand::Family(Invocation::Transfer(transfer)) => {
             transfer.kind != fabric_cli_transfer::TransferKind::Deploy
         }
