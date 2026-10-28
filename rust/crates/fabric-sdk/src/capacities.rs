@@ -22,7 +22,7 @@ impl Client {
         limits: CapacityListLimits,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<CapacityList, CapacityListError> {
-        CapacityClient::new(self.credential().clone(), self.selection().clone())
+        CapacityClient::with_context(self.context().clone())
             .list_capacities(executor, limits, cancelled)
             .await
     }

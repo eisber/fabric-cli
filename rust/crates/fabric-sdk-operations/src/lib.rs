@@ -5,10 +5,15 @@
 //!
 //! Extracted from the existing Notebook policy. Endpoint clients and Notebook
 //! publication use one engine; no transport, HTTP retry stack or runtime is added.
+//! Sessions default to public Fabric; an explicit immutable request context binds
+//! the initial request, operation polling and result retrieval to one endpoint.
 
 use azure_core::{credentials::AccessToken, http::Url};
 pub use fabric_core::Audience;
-use fabric_core::{CredentialSelection, TokenCredential};
+use fabric_core::{
+    AuthenticatedExecution, AuthenticatedFuture, CredentialSelection, EndpointBinding,
+    RequestAuthentication, RequestContext, RequestError, ServiceOrigin, TokenCredential,
+};
 use fabric_sdk_workspaces::{
     FabricServiceError,
     mutations::{
@@ -26,12 +31,10 @@ use std::{
     time::Duration,
 };
 
-const ROOT: &str = "https://api.fabric.microsoft.com";
-
-/// Validated, fixed-origin operation specification.
+/// Validated relative Fabric operation, bound to an endpoint when executed.
 pub struct FabricOperation {
     method: ResourceMethod,
-    url: Url,
+    path: String,
     body: Vec<u8>,
     completion: CompletionPolicy,
     source_read_operation_ids: bool,
@@ -49,14 +52,12 @@ impl FabricOperation {
         body: Vec<u8>,
         completion: CompletionPolicy,
     ) -> Result<Self, OperationErrorKind> {
-        let url =
-            Url::parse(&format!("{ROOT}{path}")).map_err(|_| OperationErrorKind::InvalidInput)?;
+        let url = public_operation_url(path)?;
         let raw_path = path
             .split('?')
             .next()
             .ok_or(OperationErrorKind::InvalidInput)?;
         if !path.starts_with("/v1/")
-            || !valid_origin(&url)
             || url.path() != raw_path
             || raw_path.contains(['\\', '%'])
             || raw_path
@@ -73,7 +74,7 @@ impl FabricOperation {
         }
         Ok(Self {
             method,
-            url,
+            path: relative_operation_path(&url),
             body,
             completion,
             source_read_operation_ids: false,
@@ -91,14 +92,13 @@ impl FabricOperation {
             .transpose()
             .map_err(|_| OperationErrorKind::InvalidInput)?
             .unwrap_or_default();
-        let url = Url::parse(&format!("{ROOT}{}", operation.path()))
-            .map_err(|_| OperationErrorKind::InvalidInput)?;
-        if !valid_origin(&url) || !url.path().starts_with("/v1/") {
+        let url = public_operation_url(operation.path())?;
+        if !url.path().starts_with("/v1/") {
             return Err(OperationErrorKind::InvalidInput);
         }
         Ok(Self {
             method: operation.method(),
-            url,
+            path: relative_operation_path(&url),
             body,
             completion: operation.completion(),
             source_read_operation_ids: false,
@@ -110,7 +110,7 @@ impl FabricOperation {
     /// Default operations, Notebook calls, mutations and external acceptance
     /// reconciliation retain their GUID-only policy. This opt-in accepts at most
     /// 256 ASCII letters, digits, hyphens or underscores in a single response ID;
-    /// fixed origins, response bounds and the existing shared poller are unchanged.
+    /// selected-origin checks, response bounds and the shared poller are unchanged.
     ///
     /// # Errors
     /// Rejects any method or completion policy except GET/PythonSynchronous.
@@ -161,7 +161,7 @@ impl fmt::Debug for OperationRequest<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OperationRequest")
             .field("method", &self.method)
-            .field("origin", &ROOT)
+            .field("origin", &self.url.origin().ascii_serialization())
             .field("body", &"<resource>")
             .field("token", &"<injected>")
             .finish()
@@ -197,6 +197,8 @@ pub enum OperationExecutionError {
 /// Thin adapter to caller-owned shared HTTP execution and asynchronous time.
 pub trait OperationExecutor: Send + Sync {
     /// Execute one request; never replay POST/PATCH/DELETE mutations.
+    ///
+    /// Do not follow redirects: the URL is already bound to the selected endpoint.
     fn execute<'a>(
         &'a self,
         request: OperationRequest<'a>,
@@ -303,6 +305,7 @@ impl std::error::Error for OperationError {}
 pub struct OperationSession<'a, E> {
     credential: &'a dyn TokenCredential,
     selection: &'a CredentialSelection,
+    endpoint: EndpointBinding,
     executor: E,
     limits: OperationLimits,
     cancelled: Pin<Box<dyn Future<Output = ()> + Send + 'a>>,
@@ -323,6 +326,9 @@ pub enum OperationWarning {
 
 impl<'a, E: OperationExecutor> OperationSession<'a, E> {
     /// Store explicit caller inputs without any I/O or runtime initialization.
+    ///
+    /// Uses public Fabric. [`Self::with_context`] explicitly selects an endpoint
+    /// without changing this borrowed-credential constructor's default.
     pub fn new(
         credential: &'a dyn TokenCredential,
         selection: &'a CredentialSelection,
@@ -333,6 +339,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         Self {
             credential,
             selection,
+            endpoint: EndpointBinding::public(ServiceOrigin::Fabric),
             executor,
             limits,
             cancelled: Box::pin(cancelled),
@@ -343,6 +350,29 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             warnings: Vec::new(),
             raw_service_error: None,
         }
+    }
+
+    /// Bind every request, poll and result link to an explicit immutable context.
+    ///
+    /// The session borrows the caller's credential and selection and owns a clone
+    /// of its endpoint binding. Construction performs no I/O. Service, audience
+    /// and URL validation precede credential acquisition; no other host is trusted
+    /// implicitly and no mutation is replayed.
+    pub fn with_context(
+        context: &'a RequestContext,
+        executor: E,
+        limits: OperationLimits,
+        cancelled: impl Future<Output = ()> + Send + 'a,
+    ) -> Self {
+        let mut session = Self::new(
+            context.credential().as_ref(),
+            context.selection(),
+            executor,
+            limits,
+            cancelled,
+        );
+        session.endpoint = context.endpoint().clone();
+        session
     }
 
     /// Inspect reconciliation evidence without interpreting acceptance as completion.
@@ -440,6 +470,9 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             if self.selection.audience() != Audience::Fabric {
                 return Err(OperationErrorKind::InvalidAudience);
             }
+            if self.endpoint.origin() != ServiceOrigin::Fabric {
+                return Err(OperationErrorKind::InvalidInput);
+            }
             if response.body.len() > self.limits.max_response_bytes.get() {
                 return Err(OperationErrorKind::Limit);
             }
@@ -454,9 +487,10 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         operation: FabricOperation,
     ) -> Result<OperationResponse, OperationErrorKind> {
         let python = operation.completion == CompletionPolicy::PythonSynchronous;
+        let url = service_url(&self.endpoint, &operation.path)?;
         let response = if operation.method == ResourceMethod::Get && !python {
             let response = self
-                .request(operation.method, operation.url, operation.body)
+                .request(operation.method, url, operation.body, false)
                 .await?;
             ensure_status(&response, &[200, 201, 204])?;
             return Ok(response);
@@ -464,8 +498,13 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             if operation.method != ResourceMethod::Get && self.mutation_may_have_occurred {
                 return Err(OperationErrorKind::InvalidInput);
             }
-            self.request(operation.method, operation.url, operation.body)
-                .await?
+            self.request(
+                operation.method,
+                url,
+                operation.body,
+                operation.source_read_operation_ids,
+            )
+            .await?
         };
         if response.status != 202 {
             ensure_source_status(&response, &[200, 201, 204], python)?;
@@ -490,7 +529,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             if let Some(id) = accepted_id(&response)? {
                 self.operation_id = Some(id.clone());
                 if let Some(uri) = header(&response, "Location")? {
-                    validate_link(uri, &format!("/v1/operations/{id}"))?;
+                    validate_link(&self.endpoint, uri, &format!("/v1/operations/{id}"))?;
                 }
             }
             return Ok(response);
@@ -499,23 +538,15 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         let id = if python {
             let location = header(&response, "Location")?.unwrap_or("");
             let operation_id = header(&response, "x-ms-operation-id")?;
-            if source_read_operation_ids
-                && operation_id.is_some_and(|id| {
-                    id.is_empty()
-                        || id.len() > 256
-                        || !id
-                            .bytes()
-                            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-                })
-            {
+            if source_read_operation_ids && operation_id.is_some_and(|id| !valid_source_id(id)) {
                 return Err(OperationErrorKind::InvalidResponse);
             }
             let id = operation_id.unwrap_or("");
+            if !location.is_empty() {
+                validate_source_origin(&self.endpoint, location)?;
+            }
             if location.contains("/jobs/instances/") || (location.is_empty() && id.is_empty()) {
                 return Ok(response);
-            }
-            if !location.is_empty() {
-                validate_source_origin(location)?;
             }
             if source_read_operation_ids {
                 if id.is_empty() {
@@ -531,7 +562,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         let path = format!("/v1/operations/{id}");
         self.operation_id = (!id.is_empty()).then_some(id);
         if !python && let Some(uri) = header(&response, "Location")? {
-            validate_link(uri, &path)?;
+            validate_link(&self.endpoint, uri, &path)?;
         }
         loop {
             if self.requests >= self.limits.max_requests.get() {
@@ -557,9 +588,19 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             .await?
             .map_err(OperationErrorKind::Execution)?;
             response = self
-                .request(ResourceMethod::Get, service_url(&path)?, Vec::new())
+                .request(
+                    ResourceMethod::Get,
+                    service_url(&self.endpoint, &path)?,
+                    Vec::new(),
+                    false,
+                )
                 .await?;
             ensure_source_status(&response, &[200], python)?;
+            if python
+                && let Some(uri) = header(&response, "Location")?.filter(|uri| !uri.is_empty())
+            {
+                validate_source_origin(&self.endpoint, uri)?;
+            }
             let state: serde_json::Value = serde_json::from_slice(&response.body)
                 .map_err(|_| OperationErrorKind::InvalidResponse)?;
             if !state.is_object() {
@@ -568,23 +609,25 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             match state.get("status").and_then(serde_json::Value::as_str) {
                 Some("NotStarted" | "Running") if !python => {
                     if let Some(uri) = header(&response, "Location")? {
-                        validate_link(uri, &path)?;
+                        validate_link(&self.endpoint, uri, &path)?;
                     }
                 }
                 Some("Succeeded") | Some("Completed") if python => {
-                    let Some(uri) = header(&response, "Location")?.filter(|uri| !uri.is_empty())
-                    else {
+                    if header(&response, "Location")?
+                        .filter(|uri| !uri.is_empty())
+                        .is_none()
+                    {
                         let mut original =
                             original.take().ok_or(OperationErrorKind::InvalidResponse)?;
                         original.status = 200;
                         return Ok(original);
-                    };
-                    validate_source_origin(uri)?;
+                    }
                     let result = self
                         .request(
                             ResourceMethod::Get,
-                            service_url(&format!("{path}/result"))?,
+                            service_url(&self.endpoint, &format!("{path}/result"))?,
                             Vec::new(),
+                            false,
                         )
                         .await?;
                     match ensure_source_status(&result, &[200, 201, 202, 204], true) {
@@ -603,11 +646,16 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
                 Some("Succeeded") => {
                     let result_path = format!("{path}/result");
                     if let Some(uri) = header(&response, "Location")? {
-                        validate_link(uri, &result_path)?;
+                        validate_link(&self.endpoint, uri, &result_path)?;
                     }
                     if completion == CompletionPolicy::WaitForResult {
                         let result = self
-                            .request(ResourceMethod::Get, service_url(&result_path)?, Vec::new())
+                            .request(
+                                ResourceMethod::Get,
+                                service_url(&self.endpoint, &result_path)?,
+                                Vec::new(),
+                                false,
+                            )
                             .await?;
                         ensure_status(&result, &[200])?;
                         return Ok(result);
@@ -641,6 +689,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         method: ResourceMethod,
         url: Url,
         body: Vec<u8>,
+        source_read_operation_ids: bool,
     ) -> Result<OperationResponse, OperationErrorKind> {
         self.raw_service_error = None;
         Self::run(
@@ -655,40 +704,53 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         if self.requests >= self.limits.max_requests.get() {
             return Err(OperationErrorKind::Limit);
         }
-        let scopes = [Audience::Fabric.scope()];
-        let token = Self::run(
-            &mut self.cancelled,
-            &mut self.cancelled_observed,
-            self.credential.get_token(&scopes, None),
-        )
-        .await?
-        .map_err(|_| OperationErrorKind::Credential)?;
-        self.requests += 1;
-        let request = OperationRequest {
+        let authentication =
+            RequestAuthentication::new(self.credential, self.selection, &self.endpoint);
+        let mut execution = SessionExecution {
+            executor: &self.executor,
             method,
-            url,
             body,
-            token: &token,
             max_response_bytes: self.limits.max_response_bytes,
+            requests: &mut self.requests,
+            mutation_may_have_occurred: &mut self.mutation_may_have_occurred,
+            source_read_operation_ids,
+            accepted_operation_id: None,
         };
-        Self::run(
-            &mut self.cancelled,
-            &mut self.cancelled_observed,
-            std::future::ready(()),
-        )
-        .await?;
-        if method != ResourceMethod::Get {
-            self.mutation_may_have_occurred = true;
+        let cancelled = &mut self.cancelled;
+        let observed = &mut self.cancelled_observed;
+        let mut cancelled = pin!(poll_fn(|cx| {
+            if *observed {
+                return Poll::Ready(());
+            }
+            let result = cancelled.as_mut().poll(cx);
+            if result.is_ready() {
+                *observed = true;
+            }
+            result
+        }));
+        let response = authentication
+            .execute(
+                ServiceOrigin::Fabric,
+                &url,
+                &mut execution,
+                cancelled.as_mut(),
+            )
+            .await;
+        if matches!(&response, Err(RequestError::Cancelled))
+            && self.operation_id.is_none()
+            && let Some(id) = execution.accepted_operation_id.take()
+        {
+            self.operation_id = Some(id);
         }
-        let response = Self::run(
-            &mut self.cancelled,
-            &mut self.cancelled_observed,
-            self.executor.execute(request),
-        )
-        .await?
-        .map_err(|error| match error {
-            OperationExecutionError::ResponseLimit => OperationErrorKind::Limit,
-            error => OperationErrorKind::Execution(error),
+        let response = response.map_err(|error| match error {
+            RequestError::InvalidAudience => OperationErrorKind::InvalidAudience,
+            RequestError::InvalidEndpoint => OperationErrorKind::InvalidInput,
+            RequestError::Credential => OperationErrorKind::Credential,
+            RequestError::Execution(OperationExecutionError::ResponseLimit) => {
+                OperationErrorKind::Limit
+            }
+            RequestError::Execution(error) => OperationErrorKind::Execution(error),
+            RequestError::Cancelled => OperationErrorKind::Cancelled,
         })?;
         if response.body.len() > self.limits.max_response_bytes.get() {
             return Err(OperationErrorKind::Limit);
@@ -716,6 +778,57 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             future.as_mut().poll(cx).map(Ok)
         })
         .await
+    }
+}
+
+struct SessionExecution<'a, E> {
+    executor: &'a E,
+    method: ResourceMethod,
+    body: Vec<u8>,
+    max_response_bytes: NonZeroUsize,
+    requests: &'a mut usize,
+    mutation_may_have_occurred: &'a mut bool,
+    source_read_operation_ids: bool,
+    accepted_operation_id: Option<String>,
+}
+
+impl<E: OperationExecutor> AuthenticatedExecution for SessionExecution<'_, E> {
+    type Response = OperationResponse;
+    type Error = OperationExecutionError;
+
+    fn execute<'a>(
+        &'a mut self,
+        url: &'a Url,
+        token: &'a AccessToken,
+    ) -> AuthenticatedFuture<'a, Self::Response, Self::Error> {
+        Box::pin(async move {
+            *self.requests += 1;
+            if self.method != ResourceMethod::Get {
+                *self.mutation_may_have_occurred = true;
+            }
+            let response = self
+                .executor
+                .execute(OperationRequest {
+                    method: self.method,
+                    url: url.clone(),
+                    body: std::mem::take(&mut self.body),
+                    token,
+                    max_response_bytes: self.max_response_bytes,
+                })
+                .await?;
+            if response.status == 202 {
+                self.accepted_operation_id = if self.source_read_operation_ids {
+                    header(&response, "x-ms-operation-id")
+                        .ok()
+                        .flatten()
+                        .filter(|id| valid_source_id(id))
+                        .map(str::to_owned)
+                } else {
+                    accepted_id(&response).ok().flatten()
+                };
+            }
+            Ok(response)
+        })
     }
 }
 
@@ -801,24 +914,43 @@ fn resource_error(error: OperationError) -> ResourceError {
     result
 }
 
-fn validate_source_origin(uri: &str) -> Result<(), OperationErrorKind> {
-    let url = Url::parse(ROOT)
-        .map_err(|_| OperationErrorKind::InvalidLink)?
-        .join(uri)
-        .map_err(|_| OperationErrorKind::InvalidLink)?;
-    if !valid_origin(&url) {
+fn validate_source_origin(endpoint: &EndpointBinding, uri: &str) -> Result<(), OperationErrorKind> {
+    if uri
+        .chars()
+        .any(|character| character.is_control() || character == '\\')
+    {
         return Err(OperationErrorKind::InvalidLink);
     }
-    Ok(())
+    let url = endpoint
+        .base_url()
+        .join(uri)
+        .map_err(|_| OperationErrorKind::InvalidLink)?;
+    endpoint
+        .validate_url(&url)
+        .map_err(|_| OperationErrorKind::InvalidLink)
 }
 
-fn valid_origin(url: &Url) -> bool {
-    url.scheme() == "https"
-        && url.host_str() == Some("api.fabric.microsoft.com")
-        && url.port_or_known_default() == Some(443)
-        && url.username().is_empty()
-        && url.password().is_none()
-        && url.fragment().is_none()
+fn public_operation_url(path: &str) -> Result<Url, OperationErrorKind> {
+    let endpoint = EndpointBinding::public(ServiceOrigin::Fabric);
+    let url = Url::parse(&format!(
+        "{}{path}",
+        endpoint.base_url().as_str().trim_end_matches('/')
+    ))
+    .map_err(|_| OperationErrorKind::InvalidInput)?;
+    endpoint
+        .validate_url(&url)
+        .map_err(|_| OperationErrorKind::InvalidInput)?;
+    Ok(url)
+}
+
+fn relative_operation_path(url: &Url) -> String {
+    format!(
+        "{}{}",
+        url.path(),
+        url.query()
+            .map(|query| format!("?{query}"))
+            .unwrap_or_default()
+    )
 }
 
 fn source_poll_delay(
@@ -883,16 +1015,29 @@ fn valid_id(id: &str) -> bool {
         })
 }
 
-fn service_url(path: &str) -> Result<Url, OperationErrorKind> {
-    Url::parse(&format!("{ROOT}{path}")).map_err(|_| OperationErrorKind::InvalidInput)
+fn valid_source_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 256
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
-fn validate_link(uri: &str, path: &str) -> Result<(), OperationErrorKind> {
-    let url = Url::parse(uri).map_err(|_| OperationErrorKind::InvalidLink)?;
-    if !valid_origin(&url) || url.path() != path || url.query().is_some() {
-        return Err(OperationErrorKind::InvalidLink);
-    }
-    Ok(())
+fn service_url(endpoint: &EndpointBinding, path: &str) -> Result<Url, OperationErrorKind> {
+    endpoint
+        .url(path)
+        .map_err(|_| OperationErrorKind::InvalidInput)
+}
+
+fn validate_link(
+    endpoint: &EndpointBinding,
+    uri: &str,
+    path: &str,
+) -> Result<(), OperationErrorKind> {
+    endpoint
+        .validate_link(uri, path)
+        .map(|_| ())
+        .map_err(|_| OperationErrorKind::InvalidLink)
 }
 
 fn header<'a>(

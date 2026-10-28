@@ -12,7 +12,7 @@ mod folders;
 pub mod models;
 pub mod mutations;
 
-pub use fabric_core::{CredentialSelection, TokenCredential};
+pub use fabric_core::{CredentialSelection, RequestContext, TokenCredential};
 pub use fabric_sdk_items::{
     ItemExecutionError as FolderExecutionError, ItemResponse as FolderResponse,
 };
@@ -29,27 +29,33 @@ use std::{fmt, sync::Arc};
 /// The caller must bind the credential to the explicitly selected account/tenant.
 #[derive(Clone)]
 pub struct FolderClient {
-    credential: Arc<dyn TokenCredential>,
-    selection: CredentialSelection,
+    context: RequestContext,
 }
 
 impl FolderClient {
     /// Stores the provider and selection without requesting a token or doing I/O.
     pub fn new(credential: Arc<dyn TokenCredential>, selection: CredentialSelection) -> Self {
-        Self {
-            credential,
-            selection,
-        }
+        Self::with_context(RequestContext::new(credential, selection))
+    }
+
+    /// Stores explicit endpoint and credential metadata without performing I/O.
+    pub fn with_context(context: RequestContext) -> Self {
+        Self { context }
+    }
+
+    /// Returns the immutable request context without acquiring credentials.
+    pub fn context(&self) -> &RequestContext {
+        &self.context
     }
 
     /// Returns the injected provider without acquiring a token.
     pub fn credential(&self) -> &Arc<dyn TokenCredential> {
-        &self.credential
+        self.context.credential()
     }
 
     /// Returns the explicit account, tenant and audience selection.
     pub fn selection(&self) -> &CredentialSelection {
-        &self.selection
+        self.context.selection()
     }
 }
 
@@ -57,7 +63,7 @@ impl fmt::Debug for FolderClient {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FolderClient")
             .field("credential", &"<injected>")
-            .field("selection", &self.selection)
+            .field("context", &self.context)
             .finish()
     }
 }

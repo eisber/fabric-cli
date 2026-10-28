@@ -1,13 +1,23 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Credential interoperability and shared typed identity failures.
+//! Credential interoperability, explicit endpoints, and request authentication.
 //!
 //! This crate does not select an identity backend, acquire ambient credentials,
 //! initialize a runtime, or configure an HTTP transport.
 
 pub use azure_core::credentials::{AccessToken, TokenCredential, TokenRequestOptions};
+pub use endpoint::{EndpointBinding, EndpointError, ServiceOrigin};
+pub use request::{
+    AuthenticatedExecution, AuthenticatedFuture, Cancelled, RequestAuthentication, RequestContext,
+    RequestError, cancel_with,
+};
 use thiserror::Error;
+
+/// Explicit service origins and validated endpoint bindings.
+pub mod endpoint;
+/// Runtime-neutral authentication and cancellation for injected execution.
+pub mod request;
 
 /// Public-cloud token audiences. Sovereign-cloud configuration is not yet supported.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

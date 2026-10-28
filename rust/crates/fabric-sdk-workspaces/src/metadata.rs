@@ -204,7 +204,11 @@ impl WorkspaceClient {
             if self.selection().audience() != Audience::Fabric {
                 return Err(WorkspaceListErrorKind::InvalidAudience.into());
             }
-            let url = metadata_url(workspace_id, WorkspaceMetadataStep::Primary)?;
+            let url = metadata_url(
+                self.context().endpoint(),
+                workspace_id,
+                WorkspaceMetadataStep::Primary,
+            )?;
             let value = self
                 .metadata_value(executor, url, limits, false, cancelled.as_mut())
                 .await?;
@@ -242,7 +246,7 @@ impl WorkspaceClient {
         let mut step = WorkspaceMetadataStep::Primary;
         let mut enrichments = Vec::new();
         let result = async {
-            metadata_url(workspace_id, step)?;
+            metadata_url(self.context().endpoint(), workspace_id, step)?;
             if self.selection().audience() != Audience::Fabric {
                 return Err(WorkspaceListErrorKind::InvalidAudience.into());
             }
@@ -256,7 +260,7 @@ impl WorkspaceClient {
                 let value = self
                     .metadata_value(
                         executor,
-                        metadata_url(workspace_id, step)?,
+                        metadata_url(self.context().endpoint(), workspace_id, step)?,
                         limits,
                         step != WorkspaceMetadataStep::SparkSettings,
                         cancelled.as_mut(),
@@ -355,7 +359,7 @@ impl WorkspaceClient {
             let page: crate::Page<Value> = serde_json::from_value(value)
                 .map_err(|_| WorkspaceListErrorKind::InvalidResponse)?;
             saw_ok |= response.status == 200;
-            if !progress.append(page, &response, limits, &path)? {
+            if !progress.append(page, &response, limits, &path, self.context().endpoint())? {
                 if response.status != 200 {
                     // Python discards a trailing 201 subtree. Do not expose the
                     // earlier pages as an apparently complete collection.
@@ -384,7 +388,11 @@ impl From<WorkspaceListErrorKind> for WorkspaceMetadataErrorKind {
     }
 }
 
-fn metadata_url(id: &str, step: WorkspaceMetadataStep) -> Result<Url, WorkspaceMetadataErrorKind> {
+fn metadata_url(
+    endpoint: &fabric_core::EndpointBinding,
+    id: &str,
+    step: WorkspaceMetadataStep,
+) -> Result<Url, WorkspaceMetadataErrorKind> {
     if id.is_empty()
         || matches!(id, "." | "..")
         || id
@@ -393,8 +401,7 @@ fn metadata_url(id: &str, step: WorkspaceMetadataStep) -> Result<Url, WorkspaceM
     {
         return Err(WorkspaceMetadataErrorKind::InvalidIdentifier);
     }
-    let mut url = Url::parse("https://api.fabric.microsoft.com")
-        .map_err(|_| WorkspaceMetadataErrorKind::InvalidIdentifier)?;
+    let mut url = endpoint.base_url();
     url.path_segments_mut()
         .map_err(|_| WorkspaceMetadataErrorKind::InvalidIdentifier)?
         .extend(["v1", "workspaces", id])

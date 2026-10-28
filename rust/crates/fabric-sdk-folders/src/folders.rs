@@ -3,7 +3,10 @@
 
 use crate::{FabricServiceError, Folder, FolderClient, FolderExecutionError, FolderResponse};
 use azure_core::{credentials::AccessToken, http::Url};
-use fabric_core::Audience;
+use fabric_core::{
+    Audience, AuthenticatedExecution, AuthenticatedFuture, EndpointBinding, RequestError,
+    ServiceOrigin,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -14,8 +17,6 @@ use std::{
     pin::{Pin, pin},
     task::Poll,
 };
-
-const ORIGIN: &str = "https://api.fabric.microsoft.com";
 
 /// A validated read-only request. Debug excludes identifiers, query and credentials.
 pub struct FolderRequest<'a> {
@@ -49,7 +50,7 @@ impl fmt::Debug for FolderRequest<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FolderRequest")
             .field("method", &"GET")
-            .field("origin", &ORIGIN)
+            .field("host", &self.url.host_str())
             .field("token", &"<injected>")
             .field("max_response_bytes", &self.max_response_bytes)
             .finish()
@@ -303,7 +304,7 @@ impl FolderClient {
     ) -> Result<(), FolderErrorKind> {
         or_cancel(std::future::ready(()), cancelled.as_mut()).await?;
         self.validate_audience()?;
-        let base = folder_url(workspace_id, None)?;
+        let base = folder_url(self.context().endpoint(), workspace_id, None)?;
         let mut query = list_query(&options)?;
         let mut seen = HashSet::new();
         if let Some((_, token)) = query.iter().find(|(key, _)| key == "continuationToken")
@@ -344,7 +345,9 @@ impl FolderClient {
                 return Ok(());
             };
             match body.get("continuationUri") {
-                Some(Value::String(uri)) => validate_continuation(uri, base.path())?,
+                Some(Value::String(uri)) => {
+                    validate_continuation(uri, base.path(), self.context().endpoint())?
+                }
                 None | Some(Value::Null) => {}
                 _ => return Err(FolderErrorKind::InvalidResponse),
             }
@@ -394,7 +397,7 @@ impl FolderClient {
     ) -> Result<Folder, FolderErrorKind> {
         or_cancel(std::future::ready(()), cancelled.as_mut()).await?;
         self.validate_audience()?;
-        let mut url = folder_url(workspace_id, Some(folder_id))?;
+        let mut url = folder_url(self.context().endpoint(), workspace_id, Some(folder_id))?;
         apply_query(&mut url, &query_strings(&options.query));
         let response = self
             .read(
@@ -426,27 +429,25 @@ impl FolderClient {
         limit: NonZeroUsize,
         mut cancelled: Pin<&mut (impl Future<Output = ()> + Send)>,
     ) -> Result<FolderResponse, FolderErrorKind> {
-        let token = or_cancel(
-            self.credential()
-                .get_token(&[Audience::Fabric.scope()], None),
-            cancelled.as_mut(),
-        )
-        .await?
-        .map_err(|_| FolderErrorKind::Credential)?;
-        let response = or_cancel(
-            executor.execute(FolderRequest {
-                url,
-                token: &token,
-                max_response_bytes: limit,
-            }),
-            cancelled.as_mut(),
-        )
-        .await?
-        .map_err(|error| match error {
-            FolderExecutionError::ResponseLimit => FolderErrorKind::ResponseLimit,
-            error => FolderErrorKind::Execution(error),
-        })?;
-        or_cancel(std::future::ready(()), cancelled.as_mut()).await?;
+        let response = self
+            .context()
+            .execute(
+                ServiceOrigin::Fabric,
+                &url,
+                &mut FolderRead { executor, limit },
+                cancelled.as_mut(),
+            )
+            .await
+            .map_err(|error| match error {
+                RequestError::InvalidAudience => FolderErrorKind::InvalidAudience,
+                RequestError::InvalidEndpoint => FolderErrorKind::InvalidContinuation,
+                RequestError::Credential => FolderErrorKind::Credential,
+                RequestError::Cancelled => FolderErrorKind::Cancelled,
+                RequestError::Execution(FolderExecutionError::ResponseLimit) => {
+                    FolderErrorKind::ResponseLimit
+                }
+                RequestError::Execution(error) => FolderErrorKind::Execution(error),
+            })?;
         if response.body.len() > limit.get() {
             return Err(FolderErrorKind::ResponseLimit);
         }
@@ -455,6 +456,28 @@ impl FolderClient {
             202 | 204 => Err(FolderErrorKind::UnsupportedStatus(response.status)),
             _ => Err(service_failure(&response)),
         }
+    }
+}
+
+struct FolderRead<'a> {
+    executor: &'a dyn FolderExecutor,
+    limit: NonZeroUsize,
+}
+
+impl AuthenticatedExecution for FolderRead<'_> {
+    type Response = FolderResponse;
+    type Error = FolderExecutionError;
+
+    fn execute<'a>(
+        &'a mut self,
+        url: &'a Url,
+        token: &'a AccessToken,
+    ) -> AuthenticatedFuture<'a, Self::Response, Self::Error> {
+        self.executor.execute(FolderRequest {
+            url: url.clone(),
+            token,
+            max_response_bytes: self.limit,
+        })
     }
 }
 
@@ -484,7 +507,11 @@ async fn yield_once() {
     })
     .await
 }
-fn folder_url(workspace: &str, folder: Option<&str>) -> Result<Url, FolderErrorKind> {
+fn folder_url(
+    endpoint: &EndpointBinding,
+    workspace: &str,
+    folder: Option<&str>,
+) -> Result<Url, FolderErrorKind> {
     for id in std::iter::once(workspace).chain(folder) {
         if id.is_empty()
             || matches!(id, "." | "..")
@@ -495,7 +522,7 @@ fn folder_url(workspace: &str, folder: Option<&str>) -> Result<Url, FolderErrorK
             return Err(FolderErrorKind::InvalidIdentifier);
         }
     }
-    let mut url = Url::parse(ORIGIN).map_err(|_| FolderErrorKind::InvalidIdentifier)?;
+    let mut url = endpoint.base_url();
     {
         let mut path = url
             .path_segments_mut()
@@ -618,21 +645,17 @@ fn service_failure(response: &FolderResponse) -> FolderErrorKind {
         headers: response.headers.clone(),
     }
 }
-fn validate_continuation(uri: &str, path: &str) -> Result<(), FolderErrorKind> {
+fn validate_continuation(
+    uri: &str,
+    path: &str,
+    endpoint: &EndpointBinding,
+) -> Result<(), FolderErrorKind> {
     let url = Url::parse(uri).map_err(|_| FolderErrorKind::InvalidContinuation)?;
     let raw_path = uri
         .split_once("://")
         .and_then(|(_, rest)| rest.find('/').map(|start| &rest[start..]))
         .and_then(|rest| rest.split(['?', '#']).next());
-    if url.scheme() != "https"
-        || url.host_str() != Some("api.fabric.microsoft.com")
-        || url.port_or_known_default() != Some(443)
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.fragment().is_some()
-        || url.path() != path
-        || raw_path != Some(path)
-    {
+    if endpoint.validate_url(&url).is_err() || url.path() != path || raw_path != Some(path) {
         return Err(FolderErrorKind::InvalidContinuation);
     }
     Ok(())

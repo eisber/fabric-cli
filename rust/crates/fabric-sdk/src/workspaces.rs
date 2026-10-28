@@ -31,7 +31,7 @@ impl Client {
         limits: WorkspaceListLimits,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<WorkspaceMetadataResult, WorkspaceMetadataError> {
-        WorkspaceClient::new(self.credential().clone(), self.selection().clone())
+        WorkspaceClient::with_context(self.context().clone())
             .enrich_workspace_metadata(executor, workspace_id, metadata, limits, cancelled)
             .await
     }
@@ -52,7 +52,7 @@ impl Client {
         limits: WorkspaceListLimits,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<WorkspaceMetadataResult, WorkspaceMetadataError> {
-        WorkspaceClient::new(self.credential().clone(), self.selection().clone())
+        WorkspaceClient::with_context(self.context().clone())
             .get_workspace_metadata(executor, workspace_id, limits, cancelled)
             .await
     }
@@ -94,7 +94,7 @@ impl Client {
         limits: WorkspaceListLimits,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<WorkspaceList, WorkspaceListError> {
-        WorkspaceClient::new(self.credential().clone(), self.selection().clone())
+        WorkspaceClient::with_context(self.context().clone())
             .list_workspaces(executor, limits, cancelled)
             .await
     }

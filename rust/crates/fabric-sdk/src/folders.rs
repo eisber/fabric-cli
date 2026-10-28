@@ -23,7 +23,7 @@ impl Client {
         options: FolderListOptions,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<FolderList, FolderListError> {
-        FolderClient::new(self.credential().clone(), self.selection().clone())
+        FolderClient::with_context(self.context().clone())
             .list_folders(executor, workspace_id, options, cancelled)
             .await
     }
@@ -41,7 +41,7 @@ impl Client {
         options: FolderGetOptions,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Folder, FolderError> {
-        FolderClient::new(self.credential().clone(), self.selection().clone())
+        FolderClient::with_context(self.context().clone())
             .get_folder(executor, workspace_id, folder_id, options, cancelled)
             .await
     }
