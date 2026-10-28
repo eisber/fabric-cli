@@ -43,7 +43,12 @@ async fn selected_import_endpoint_binds_discovery_mutation_poll_and_result() {
         input(&host);
         host.metadata_with_id(WORKSPACE, json!([]));
         host.headers(202, json!({}), &[("x-ms-operation-id", OPERATION)]);
-        host.reply(200, json!({"status":"Succeeded"}));
+        let result_url = format!("https://{hostname}/v1/operations/{OPERATION}/result");
+        host.headers(
+            200,
+            json!({"status":"Succeeded"}),
+            &[("Location", &result_url)],
+        );
         host.reply(200, json!({"id":CREATED}));
 
         let output = host
