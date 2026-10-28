@@ -334,19 +334,17 @@ fn operation(
                 .as_object()
                 .map_or_else(|| vec![value], |mapping| mapping.values().collect());
             for value in values {
-                if key.ends_with("regex") {
-                    if let Some(pattern) = value.as_str() {
-                        if let Err(error) =
-                            crate::parameter_transforms::SourceRegex::compile(pattern, budget)
-                        {
-                            match error {
-                                crate::parameter_transforms::TransformError::Invalid(message) => {
-                                    errors.push(format!("'{name}.{key}': {message}"))
-                                }
-                                error => {
-                                    return Err(ConfigurationError::Transform(Box::new(error)));
-                                }
-                            }
+                if key.ends_with("regex")
+                    && let Some(pattern) = value.as_str()
+                    && let Err(error) =
+                        crate::parameter_transforms::SourceRegex::compile(pattern, budget)
+                {
+                    match error {
+                        crate::parameter_transforms::TransformError::Invalid(message) => {
+                            errors.push(format!("'{name}.{key}': {message}"))
+                        }
+                        error => {
+                            return Err(ConfigurationError::Transform(Box::new(error)));
                         }
                     }
                 }

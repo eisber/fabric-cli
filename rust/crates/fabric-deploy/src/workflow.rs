@@ -290,7 +290,7 @@ impl<E: OperationExecutor> ServiceIo<'_, E> {
         if method != ResourceMethod::Get {
             self.result.effects.push(DeploymentEffect {
                 method,
-                path: path.into(),
+                path,
                 status: response.status,
                 operation_id: self
                     .evidence

@@ -41,8 +41,7 @@ pub(super) async fn bind<E: OperationExecutor>(
             _ => Vec::new(),
         }
     };
-    let names =
-        |value: Option<&Value>| -> Vec<String> { value.map(&normalize).unwrap_or_default() };
+    let names = |value: Option<&Value>| -> Vec<String> { value.map(normalize).unwrap_or_default() };
     if let Some(entries) = bindings.as_array() {
         for entry in entries {
             let Some(connection) = entry

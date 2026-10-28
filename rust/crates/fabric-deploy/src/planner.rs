@@ -75,10 +75,9 @@ impl EngineContext {
                 if let Some(value) =
                     get_config_value(&Value::Object(constants.clone()), key, &config.environment)
                         .map_err(|_| invalid("Invalid constant environment selection"))?
+                    && !value.is_null()
                 {
-                    if !value.is_null() {
-                        context.constants.insert(key.clone(), value.clone());
-                    }
+                    context.constants.insert(key.clone(), value.clone());
                 }
             }
         }
@@ -230,12 +229,12 @@ impl EngineContext {
                 "BULK_ITEM_COUNT_LIMIT must be a nonnegative integer",
             ));
         }
-        if let Some(order) = self.constants.get("SERIAL_ITEM_PUBLISH_ORDER") {
-            if !order.as_object().is_some_and(|order| order.is_empty()) {
-                return Err(invalid(
-                    "Pinned source publication order requires ItemType enum values, which safe configuration scalars cannot construct",
-                ));
-            }
+        if let Some(order) = self.constants.get("SERIAL_ITEM_PUBLISH_ORDER")
+            && !order.as_object().is_some_and(|order| order.is_empty())
+        {
+            return Err(invalid(
+                "Pinned source publication order requires ItemType enum values, which safe configuration scalars cannot construct",
+            ));
         }
         Ok(())
     }
