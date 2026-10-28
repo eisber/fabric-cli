@@ -38,6 +38,8 @@ pub enum DeploymentError {
     AmbiguousTarget,
     /// SDK service failure with mutation/operation reconciliation evidence.
     Service(Box<NotebookError>),
+    /// Parameter preparation failed with original typed bounded-work evidence.
+    Transform(Box<crate::parameter_transforms::TransformError>),
 }
 
 impl fmt::Display for DeploymentError {
@@ -51,6 +53,7 @@ impl fmt::Display for DeploymentError {
             Self::UndeployedLogicalId => "a referenced logical item is not deployed",
             Self::AmbiguousTarget => "multiple deployed Notebooks match the exact name",
             Self::Service(_) => "Notebook deployment failed or is incomplete",
+            Self::Transform(_) => "Notebook parameter preparation failed",
         })
     }
 }
@@ -60,6 +63,7 @@ impl std::error::Error for DeploymentError {
         match self {
             Self::Io(error) => Some(error),
             Self::Service(error) => Some(error.as_ref()),
+            Self::Transform(error) => Some(error.as_ref()),
             _ => None,
         }
     }
@@ -264,6 +268,39 @@ impl LocalNotebook {
         workspace: &str,
         transforms: &NotebookTransforms,
     ) -> Result<PreparedNotebook, DeploymentError> {
+        self.prepare_with(workspace, |_, content, remaining| {
+            transforms.apply(content, workspace, remaining)
+        })
+    }
+
+    /// Prepare through the same codec with a validated bounded parameter program.
+    ///
+    /// Retains item preprocessing order: logical IDs, key/value rules, find rules,
+    /// then default workspace IDs. `.platform` bypasses parameterization.
+    ///
+    /// # Errors
+    /// Returns original parameter domain/cancellation/resource failures before I/O.
+    pub fn prepare_parameters(
+        &self,
+        workspace: &str,
+        transforms: &NotebookTransforms,
+        program: &crate::parameter_transforms::ParameterProgram,
+        budget: &mut crate::parameter_transforms::TransformBudget<'_>,
+    ) -> Result<PreparedNotebook, DeploymentError> {
+        self.prepare_with(workspace, |path, content, remaining| {
+            let content = transforms.logical_content(content, remaining)?;
+            let content = program
+                .apply(&content, path, budget)
+                .map_err(|error| DeploymentError::Transform(Box::new(error)))?;
+            crate::transforms::replace_workspace_ids(&content, workspace, remaining)
+        })
+    }
+
+    fn prepare_with(
+        &self,
+        workspace: &str,
+        mut transform: impl FnMut(&str, &str, usize) -> Result<String, DeploymentError>,
+    ) -> Result<PreparedNotebook, DeploymentError> {
         if workspace.trim().is_empty() {
             return Err(DeploymentError::InvalidInput);
         }
@@ -273,7 +310,7 @@ impl LocalNotebook {
             let content = if path == ".platform" {
                 content.clone()
             } else {
-                transforms.apply(content, workspace, remaining)?
+                transform(path, content, remaining)?
             };
             validate_json_file(path, &content)?;
             remaining = remaining

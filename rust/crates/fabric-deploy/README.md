@@ -31,20 +31,32 @@ work, and applied after logical IDs and before workspace IDs. Direct library
 consumers must call `DeploymentConfig::resolve_parameters` for a configured file;
 unresolved parameters fail preflight rather than disappearing.
 
-Other processors, nonliteral parameter branches,
+The additive `parameter_transforms` follow-up writes bounded capture-only regex,
+case-insensitive literal and typed JSONPath rules into the same configured-file
+program and Notebook preparation path. Its new code/dependency graph requires a
+separate native run; the earlier 7970 checkpoint does not validate it.
+See the [pending adapter ledger](../../docs/deployment-compatibility.md#bounded-parameter-adapter-follow-up-pending-native-validation)
+for exact supported syntax, source proof and finite limits.
+
+Other processors, unported parameter branches,
 folder moves, features/constants, filters, bulk publication and unpublication
 fail explicitly before writes; they are not silently ignored or counted as a
 completed full deployment port. See the [field/type ledger](../../docs/deployment-compatibility.md#config-driven-checkpoint-october-27).
 
-This checkpoint is source-ready; native compilation and execution results must
-be recorded separately. New source-derived receipts cover twelve real config
-validator/settings cases and two actual Notebook publisher request bodies.
-Source captures, native test registration and a passing native run are distinct.
+The bounded source checkpoint `7970f9fc25a8fc4be4f3f66837b836fac459da3e`
+has actual Linux x64 compile/strict-Clippy evidence, 87 deployment integration
+tests plus one doctest, 16 production-root deploy tests and three CLI parameter
+tests passing. All 43 new test declarations were also verified in native
+registration. Source captures, test registration and passing execution are
+recorded separately in the [compatibility ledger](../../docs/deployment-compatibility.md#verified-bounded-linux-checkpoint).
+These bounded results are not full config/item-type/transform/unpublish parity,
+the complete command/workspace regression gates, other-platform proof or live
+deployment authorization.
 Further additive pinned source receipts cover wrapper/JSON typing, scalar
 resolution, skip orchestration, optional-environment warnings and literal
-parameter validation/transformed parts. Regex, ignore-case, filters, templates,
+parameter validation/transformed parts. Unproven regex/JSONPath branches, filters, templates,
 dynamic variables and missing parameter-environment skip notices remain explicit
-unsupported branches; a literal subset does not establish full parameter parity.
+unsupported branches; bounded adapters do not establish full parameter parity.
 
 The additive `definitions` module supplies generic ordered definition reads,
 caller-injected local export and raw copy/SET codec APIs. It is not the full
