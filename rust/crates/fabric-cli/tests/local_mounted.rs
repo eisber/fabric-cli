@@ -333,11 +333,31 @@ fn named_version_never_creates_configuration_and_desc_is_a_handler() {
     success(&version);
     assert!(String::from_utf8_lossy(&version.stdout).contains(env!("CARGO_PKG_VERSION")));
     assert!(!root.0.join("config.json").exists());
-    let desc = invoke(&root.0, &["desc", ".Notebook", "--output_format", "json"]);
-    success(&desc);
-    assert!(String::from_utf8_lossy(&desc.stdout).contains("Notebook"));
-    let value: serde_json::Value = serde_json::from_slice(&desc.stdout).unwrap();
-    assert_eq!(value["command"], "desc");
+    let expected: String = serde_json::from_str(include_str!(
+        "../../fabric-cli-local/tests/fixtures/notebook-desc.json"
+    ))
+    .unwrap();
+    for format in ["text", "json"] {
+        let desc = invoke(&root.0, &["desc", ".Notebook", "--output_format", format]);
+        assert_eq!(
+            desc.status.code(),
+            Some(0),
+            "{format}: stdout={:?} stderr={:?}",
+            desc.stdout,
+            desc.stderr,
+        );
+        assert_eq!(
+            desc.stderr, b"",
+            "{format}: stdout={:?} stderr={:?}",
+            desc.stdout, desc.stderr,
+        );
+        assert_eq!(
+            desc.stdout,
+            expected.as_bytes(),
+            "{format}: stderr={:?}",
+            desc.stderr,
+        );
+    }
     let extension = invoke(&root.0, &["extension"]);
     success(&extension);
     assert!(!extension.stderr.is_empty());
