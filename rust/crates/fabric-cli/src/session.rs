@@ -115,9 +115,10 @@ impl<'session> ReadSession<'session> {
     /// Execute a parsed read through real discovery, SDK, query and rendering.
     ///
     /// JSON remains the preview default. Explicit text uses the shared pure
-    /// renderer with no colors and ASCII terminal-width properties. Non-ASCII
-    /// text requiring unavailable Python properties fails explicitly; JSON is
-    /// unrestricted by the terminal-width provider.
+    /// renderer with no colors and ASCII terminal-width properties. GET uses
+    /// source raw-data presentation, not key/value rows. Non-ASCII text requiring
+    /// unavailable Python properties fails explicitly; JSON is unrestricted by
+    /// the terminal-width provider.
     ///
     /// Ordinary service/path/cancellation failures retain product envelopes and
     /// exit codes. Rendering errors, including partial text, remain errors.
@@ -154,7 +155,6 @@ impl<'session> ReadSession<'session> {
             format,
             &TextOptions {
                 subcommand: Some(&command.name),
-                key_value: command.name == "get",
                 ..TextOptions::default()
             },
             &text::ascii_width,

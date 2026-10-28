@@ -337,11 +337,15 @@ timeout. Change-aware selection requires a narrower cancellation policy:
   then select no crates. This deliberately permits the same-branch push overlap
   observed above rather than dropping required evidence. Cross-push
   deduplication would need a separate validated-baseline protocol.
-- `timeout-minutes: 15` bounds each native job if dependency restore or a future
-  test stalls. The longest observed job above was 105 seconds. Fifteen minutes
-  leaves substantial headroom but is an owner-confirmed resource budget, not a
-  performance guarantee; revisit it with measured evidence as the port grows.
-  The lightweight selection and final-gate jobs have the same upper bound.
+- Native jobs have a finite 25-minute bound. The original 15-minute budget
+  covered the earlier 105-second slice, not the combined default, broker,
+  native-read, deployment, transport, and source-comparison graph. On October 27,
+  the complete Windows endpoint gate at `c7eb7e8` took 989 seconds in
+  [run 40572621694](https://github.com/eisber/fabric-cli/actions/runs/40572621694),
+  exceeding that earlier ceiling. The October 28 integration therefore retains
+  every check and single-job build setting while allowing the expanded suite
+  to finish. This is a validation resource bound, not a performance target.
+  Selection and final-gate jobs retain their 15-minute upper bounds.
 
 The native matrix, dependencies, lockfile, toolchain, artifact formats, and pinned
 direct Actions remain unchanged; no cache or installer is added.
