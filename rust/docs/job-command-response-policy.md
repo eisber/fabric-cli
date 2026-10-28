@@ -106,3 +106,21 @@ Local evidence is source-only and rustfmt/diff inspection until integration
 grants a named serialized Cargo slot or returns actual CI diagnostics. No Cargo
 check/test/build success, native mount, service execution or live workload
 acceptance is inferred from metadata or formatting.
+
+The local source runs passed the preserved 155/396 suites, 58 skill-header and
+25 operation-output contracts, 68 read observations, 38 execution and 64 mutation
+observations, and the 210/10/11 additive captures. These counts overlap in scope
+and are not a command-completion or coverage sum.
+
+Minimal serialized Cargo commands for integration, from `rust/` (not run by
+this lane without a named slot):
+
+```text
+cargo test --locked -p fabric-sdk-jobs -p fabric-cli-jobs
+cargo test --locked -p fabric-cli --test job_command_parity --test job_numeric_parity --test job_watchdog --test job_terminal
+```
+
+The existing read, execution, mutation, selected-settings, shared-operation and
+skill consumers, strict Clippy, and native-read feature compilation must also
+remain green in root CI. The lane will repair actual returned diagnostics;
+source capture, metadata and formatting do not replace that author-fix loop.
