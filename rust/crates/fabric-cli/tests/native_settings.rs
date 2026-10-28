@@ -36,12 +36,11 @@ fn saved(value: Value) -> Map<String, Value> {
 }
 
 fn job(args: &[&str]) -> fabric_cli_jobs::JobCommand {
-    match parse_args(std::iter::once("fab-rs").chain(args.iter().copied())).unwrap() {
-        Invocation::JobRun(command) => command.family_command(),
-        Invocation::JobMutation(command) => command.family_command(),
-        Invocation::JobRead(command) => command.family_command(),
-        _ => panic!("job required"),
-    }
+    let root = fabric_cli::parser::command()
+        .try_get_matches_from(std::iter::once("fab-rs").chain(args.iter().copied()))
+        .unwrap();
+    fabric_cli_jobs::command_from_matches(root.subcommand_matches("job").expect("job required"))
+        .unwrap()
 }
 
 #[test]
