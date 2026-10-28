@@ -19,10 +19,18 @@ REST implementation, identity backend, query language or CLI namespace.
 | `fab_item_util.sort_ws_elems_by_config` | Stable lowercase short-name / Python enum-member-name ordering in both modes |
 | `fab_cmd_ls_utils.format_and_print_output` | Default source columns or injected query before column filtering |
 | `fab_item_util.get_item_with_definition` | Generic metadata helper boundary only, not definitions/specialized endpoints |
-| `fab_cmd_get_utils.query_and_export` | Injected GET query/path discovery; no export or silent identity replacement |
+| `fab_cmd_get_utils.query_and_export` | Injected GET query/path discovery; source-silent empty projected containers/string; no export or silent identity replacement |
 | `fab_decorators.handle_exceptions` / `fab_ui` | Existing JSON envelope/streams/exits with fixed host time and explicit writer failures |
 
 ## Independent evidence
+
+The [SRC3 output repair](output-text-compatibility.md#src3-silent-empty-get-projections)
+retains the independent October 27 empty-GET capture and adds actual parsed
+production-session and folder-wrapper regressions. Silence is decided at item
+GET after projection, never by rewriting the shared envelope or query engine.
+False/null/missing/zero scalar query strings remain printable, JSON LS retains
+its empty envelope, and job empty-result messages are unchanged. Native
+after-fix CI remains required; the repair does not close the broader GET gaps.
 
 The [query-argument follow-on](query-argument-compatibility.md) separately
 executes actual original registration and raw native `parse_args`. The original

@@ -62,10 +62,11 @@ fn dispatch(
     cancelled: impl Future<Output = ()> + Send,
 ) -> TextPlan {
     let invocation = parse_args(std::iter::once("fab-rs").chain(args.iter().copied())).unwrap();
+    let request_count = replies.len();
     let http = Arc::new(Http::new(replies));
     let executor = executor(http.clone(), Arc::new(Timer::default()));
     let credential = Arc::new(Credential::default());
-    let sdk = sdk(credential);
+    let sdk = sdk(credential.clone());
     let reads = ReadSession {
         sdk: &sdk,
         executor: &executor,
@@ -88,7 +89,27 @@ fn dispatch(
         _ => panic!("read or job read required"),
     };
     http.assert_consumed();
+    assert_eq!(http.requests.lock().unwrap().len(), request_count);
+    let scopes = credential.scopes.lock().unwrap();
+    assert_eq!(scopes.len(), request_count);
+    for scope in scopes.iter() {
+        assert_eq!(scope, &["https://api.fabric.microsoft.com/.default"]);
+    }
     plan
+}
+
+fn get_replies() -> Vec<Reply> {
+    vec![
+        folder_support::reply(
+            json!({"value":[{"id":"w","displayName":"Demo","type":"Workspace"}]}),
+        ),
+        folder_support::reply(json!({"value":[{"id":"n","displayName":"Book","type":"Notebook"}]})),
+        folder_support::reply(json!({
+            "id":"n", "displayName":"Book", "parts":[], "settings":{},
+            "description":"", "enabled":false, "nullable":null, "zero":0,
+            "title":"hello", "values":["part"]
+        })),
+    ]
 }
 
 #[test]
@@ -187,6 +208,177 @@ fn empty_get_projection_is_silent_at_the_actual_command_boundary() {
         pending(),
     );
     assert_capture(&plan, "get-query-empty-source");
+}
+
+#[test]
+fn get_empty_containers_and_string_are_silent_in_both_formats() {
+    for format in ["text", "json"] {
+        for expression in ["parts", "settings", "description"] {
+            let plan = dispatch(
+                &[
+                    "get",
+                    "Demo.Workspace/Book.Notebook",
+                    "-q",
+                    expression,
+                    "--output_format",
+                    format,
+                ],
+                get_replies(),
+                pending(),
+            );
+            assert_capture(&plan, "get-query-empty-source");
+            assert!(plan.records.is_empty());
+            plan.write_to(
+                &mut family_support::BrokenWriter,
+                &mut family_support::BrokenWriter,
+            )
+            .unwrap();
+        }
+    }
+}
+
+#[test]
+fn get_false_null_missing_zero_and_nonempty_values_remain_visible_after_query() {
+    for (expression, expected) in [
+        ("enabled", "False"),
+        ("nullable", "None"),
+        ("missing", "None"),
+        ("zero", "0"),
+        ("title", "hello"),
+        ("values", "part"),
+    ] {
+        for format in ["text", "json"] {
+            let plan = dispatch(
+                &[
+                    "get",
+                    "Demo.Workspace/Book.Notebook",
+                    "-q",
+                    expression,
+                    "--output_format",
+                    format,
+                ],
+                get_replies(),
+                pending(),
+            );
+            let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+            plan.write_to(&mut stdout, &mut stderr).unwrap();
+            assert_eq!(plan.exit_code, 0);
+            assert!(stderr.is_empty());
+            if format == "json" {
+                let expected_json = format!(
+                    "{{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"get\",\n    \"result\": {{\n        \"data\": [\n            \"{expected}\"\n        ]\n    }}\n}}\n"
+                );
+                assert_eq!(stdout, expected_json.as_bytes(), "{expression}");
+                if expected == "False" {
+                    assert_capture(&plan, "get-query-false-source");
+                } else if expected == "None" {
+                    assert_capture(&plan, "get-scalar-null");
+                }
+            } else {
+                assert_eq!(stdout, format!("{expected}\n").as_bytes(), "{expression}");
+            }
+            assert!(
+                plan.write_to(&mut family_support::BrokenWriter, &mut stderr)
+                    .is_err()
+            );
+            assert!(stderr.is_empty());
+        }
+    }
+}
+
+#[test]
+fn empty_ls_query_still_has_data_and_empty_jobs_still_report_no_runs() {
+    let ls = dispatch(
+        &["ls", "/", "-q", "[].missing", "--output_format", "json"],
+        vec![folder_support::reply(
+            json!({"value":[{"id":"w","displayName":"Demo","type":"Workspace"}]}),
+        )],
+        pending(),
+    );
+    assert_capture(&ls, "ls-empty");
+    for format in ["text", "json"] {
+        let job = dispatch(
+            &[
+                "job",
+                "run-list",
+                "Demo.Workspace/Book.Notebook",
+                "--output_format",
+                format,
+            ],
+            vec![
+                folder_support::reply(
+                    json!({"value":[{"id":"w","displayName":"Demo","type":"Workspace"}]}),
+                ),
+                folder_support::reply(
+                    json!({"value":[{"id":"n","displayName":"Book","type":"Notebook"}]}),
+                ),
+                folder_support::reply(json!({"value":[]})),
+            ],
+            pending(),
+        );
+        if format == "json" {
+            assert_capture(&job, "job-empty");
+        } else {
+            let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+            job.write_to(&mut stdout, &mut stderr).unwrap();
+            assert_eq!(job.exit_code, 0);
+            assert_eq!(stdout, b"\n* No runs found\n\n");
+            assert!(stderr.is_empty());
+        }
+    }
+}
+
+#[test]
+fn get_query_and_endpoint_failures_are_never_silenced_or_presented_as_success() {
+    for format in ["text", "json"] {
+        for service_failure in [false, true] {
+            let mut replies = get_replies();
+            if service_failure {
+                *replies.last_mut().unwrap() = Reply {
+                    status: 401,
+                    body: json!({"errorCode":"Unauthorized","message":"private"}),
+                    headers: Default::default(),
+                };
+            }
+            let plan = dispatch(
+                &[
+                    "get",
+                    "Demo.Workspace/Book.Notebook",
+                    "-q",
+                    if service_failure { "parts" } else { "[" },
+                    "--output_format",
+                    format,
+                ],
+                replies,
+                pending(),
+            );
+            let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+            plan.write_to(&mut stdout, &mut stderr).unwrap();
+            let (code, message, exit) = if service_failure {
+                ("Unauthorized", "Access is unauthorized", 4)
+            } else {
+                (
+                    "InvalidInput",
+                    "Invalid jmespath query (https://jmespath.org)",
+                    1,
+                )
+            };
+            assert_eq!(plan.exit_code, exit);
+            assert!(stderr.is_empty());
+            if format == "json" {
+                assert_eq!(
+                    serde_json::from_slice::<Value>(&stdout).unwrap(),
+                    json!({
+                        "timestamp":"2026-01-02T03:04:05.000006Z",
+                        "status":"Failure", "command":"get",
+                        "result":{"error_code":code,"message":message},
+                    })
+                );
+            } else {
+                assert_eq!(stdout, format!("x get: [{code}] {message}\n").as_bytes());
+            }
+        }
+    }
 }
 
 #[tokio::test]

@@ -372,6 +372,18 @@ impl ReadHost<'_> {
                     command.query.as_deref().filter(|query| !query.is_empty()),
                     false,
                 )?;
+                // query_and_export tests the projected value, not raw metadata.
+                let print = match &data {
+                    Value::Null => false,
+                    Value::Bool(value) => *value,
+                    Value::Number(value) => value.as_f64() != Some(0.0),
+                    Value::String(value) => !value.is_empty(),
+                    Value::Array(value) => !value.is_empty(),
+                    Value::Object(value) => !value.is_empty(),
+                };
+                if !print {
+                    return Ok(None);
+                }
                 (data, None)
             }
             (ReadKind::Get, NodeKind::Tenant) => {

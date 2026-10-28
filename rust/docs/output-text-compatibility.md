@@ -72,6 +72,28 @@ all four config leaves, absent-value silence, real setting/context files and
 failure paths. This repairs grouped local output, not all grouped command
 families or complete Python terminal parity.
 
+### SRC3: silent empty GET projections
+
+The generic item GET consumer now preserves `query_and_export`'s conditional
+printing **after** query evaluation. Empty lists, objects and strings return
+no output input, not a successful empty envelope. Source query results for
+false, null/missing and zero are the nonempty strings `"False"`, `"None"` and
+`"0"` and therefore remain visible. The shared envelope/query libraries and
+LS behavior are unchanged: JSON LS still emits `Success` with `data: []`.
+The existing job empty-result message is not changed or suppressed. In the
+adopted source and current job host it is a successful `"No runs found"` message,
+not a `NoRunsFound` failure code.
+
+The folder wrapper already delegates GET's optional output unchanged; no
+additional envelope or folder request is introduced. Additive real-query
+consumer tests cover empty/container/scalar distinctions, both text/JSON
+production-session outputs, folder delegation, exact request counts/scopes,
+query/service failures and caller-owned writer failures. The original frozen
+`get-query-empty-source` capture and mounted failing regression are retained.
+These are bounded output repairs, not completion of GET export, definitions,
+enrichment, metadata operations or live host acceptance. See the
+[self-review and pending native CI selectors](../reviews/20261028/output-consistency-self-review.md).
+
 ## Explicit boundaries still requiring completion
 
 This slice does not certify full text parity. Unicode width is injected as the
