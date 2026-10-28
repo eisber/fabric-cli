@@ -30,6 +30,7 @@ use std::{
 };
 
 mod families;
+mod parameter_context;
 mod parameters;
 mod text;
 mod unpublish;
@@ -158,6 +159,7 @@ struct ServiceIo<'a, E> {
     last_response: Option<Value>,
     remaining_definition_bytes: usize,
     processed_items: HashMap<String, crate::model::RepositoryItem>,
+    attribute_cache: HashMap<(String, String, String, String, String), String>,
 }
 
 impl<E: OperationExecutor> ServiceIo<'_, E> {
@@ -644,10 +646,30 @@ pub async fn deploy_repository_with_clients<E: OperationExecutor>(
     executor: &E,
     config: &DeploymentConfig,
     repository: DeploymentRepository,
-    context: EngineContext,
+    mut context: EngineContext,
     limits: OperationLimits,
     cancelled: impl Future<Output = ()> + Send,
 ) -> Result<WorkflowResult, WorkflowError> {
+    if context.program.is_none()
+        && let Some(document) = &context.parameter_document
+    {
+        context.program = Some(
+            crate::parameter_transforms::ParameterProgram::from_document_with_features(
+                document,
+                &config.environment,
+                context.enabled("enable_environment_variable_replacement"),
+                &mut crate::parameter_transforms::TransformBudget::new(
+                    crate::parameter_transforms::TransformLimits::default(),
+                    &|| false,
+                ),
+            )
+            .map_err(|error| WorkflowError {
+                failure: ConfigurationError::Transform(Box::new(error)).into(),
+                partial: Box::default(),
+                current_item: None,
+            })?,
+        );
+    }
     let mut io = ServiceIo {
         client: clients.workspace,
         fabric_client: clients.fabric,
@@ -663,9 +685,17 @@ pub async fn deploy_repository_with_clients<E: OperationExecutor>(
         last_response: None,
         remaining_definition_bytes: context.definition_limits.max_bytes.get(),
         processed_items: HashMap::new(),
+        attribute_cache: HashMap::new(),
     };
     match run(&mut io, config, repository, &context).await {
-        Ok(()) => Ok(io.result),
+        Ok(()) => match context.scope_exit_error() {
+            None => Ok(io.result),
+            Some(error) => Err(WorkflowError {
+                failure: error.into(),
+                partial: Box::new(io.result),
+                current_item: io.current,
+            }),
+        },
         Err(failure) => Err(WorkflowError {
             failure,
             partial: Box::new(io.result),

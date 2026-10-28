@@ -231,11 +231,11 @@ fn required_attributes(
                         "sqlendpointid",
                         "queryserviceuri",
                     ],
-                    attribute,
+                    &attribute,
                 )
-                && !result.iter().any(|value| value == attribute)
+                && !result.contains(&attribute)
             {
-                result.push(attribute.into());
+                result.push(attribute);
             }
         }
     }
@@ -343,11 +343,20 @@ fn batches(
                     continue;
                 }
                 let item = &plan.repository.items[*index];
-                if !item
-                    .files
-                    .iter()
-                    .any(|file| super::super::parameters::rule_applies(rule, item, &file.path))
-                {
+                let mut applies = false;
+                for file in &item.files {
+                    if super::super::parameters::rule_applies(
+                        rule,
+                        item,
+                        &file.path,
+                        context,
+                        &plan.repository,
+                    )? {
+                        applies = true;
+                        break;
+                    }
+                }
+                if !applies {
                     continue;
                 }
                 let dependency = dependency

@@ -17,9 +17,10 @@ Bulk mode uses real `bulkImportDefinitions` parts, source fallback conditions,
 logical-ID publish units and dependency stages.
 
 This is an **unvalidated implementation checkpoint**, not full deployment parity
-or a replacement for the existing Notebook API. The root CLI still uses the
-bounded Notebook preparation capability; mounting the broader workflow requires
-the transfer owner's additive asynchronous full-repository snapshot method.
+or a replacement for the existing Notebook API. The CLI consumer follow-up
+targets ROOT's assembled `1f93fb1` config and asynchronous full-snapshot APIs.
+It preserves the original exact bounded Notebook route where applicable and
+routes broader configurations through the same complete workflow.
 No native Cargo test/build slot has been granted to this lane. Source capture,
 Rust formatting and locked no-dependency metadata checks are distinct from native
 compilation and passing tests.
@@ -131,6 +132,23 @@ Source type pre-hooks still refresh metadata when selective publication yields
 no items. Those refreshes do not retarget an initially absent item to a new
 concurrently discovered ID; `refresh_source.json` captures the actual source
 selection/refresh/create boundary. Native comparisons are pending ROOT.
+
+The broad CLI loader embeds `CommandConfiguration` rather than duplicating its
+schema. It expands caller-injected environment values before parameter YAML,
+loads templates through the existing asynchronous file capability, validates the
+complete parameter program and freezes it before publication. Scoped evaluation
+uses the configuration owner's `apply_scoped` and path/name primitives. A
+bounded cooperative host adapter suspends only missing metadata capabilities,
+performs their SDK reads asynchronously, and retains results by call occurrence:
+no-match rules do not eagerly resolve metadata, repeated occurrences preserve
+source refresh boundaries, and local pure reevaluation never replays mutations.
+`DeployHost::execute_with_inputs` accepts explicit environment values; the native
+composition must inject these without adding a credential fallback.
+
+Selected `FEATURE_FLAG` override scope cleanup failures are represented after
+completed work without modifying globals; confirmed IDs/effects remain on the
+failure. This preserves the source-error observation rather than silently making
+the failing source scope succeed.
 
 Acceptance still needs native compilation/strict Clippy, complete processor
 branch/lifecycle/cancellation/partial-failure source fixtures, full root mounting,

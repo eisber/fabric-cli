@@ -697,3 +697,124 @@ async fn type_pre_hook_refresh_does_not_retarget_an_initially_absent_item() {
     );
     assert!(!executor.calls()[3].1.contains("updateDefinition"));
 }
+
+#[tokio::test]
+async fn scoped_dynamic_no_match_never_resolves_missing_metadata() {
+    let executor = Executor::default();
+    executor.reply(200, json!({"capacityId":"assigned"}));
+    executor.reply(200, json!({"value":[]}));
+    executor.reply(201, json!({"id":ITEM}));
+    let mut config=DeploymentConfig::from_document(&json!({
+                    "core":{"workspace_id":WORKSPACE,"repository_directory":".","item_types_in_scope":["CopyJob"],"parameter":"p.yml"},
+                    "unpublish":{"skip":true},"features":["disable_workspace_folder_publish"],
+                }),"test",None).unwrap();
+    config
+        .resolve_parameters(&json!({"find_replace":[{
+            "find_value":"ABSENT","replace_value":{"test":"$items.Notebook.Missing.$id"},
+            "item_type":"CopyJob",
+        }]}))
+        .unwrap();
+    let result = deploy_repository(
+        &client(),
+        &executor,
+        &config,
+        DeploymentRepository {
+            items: vec![item("CopyJob", "Example", "copy-logical")],
+            folders: Vec::new(),
+        },
+        EngineContext::from_config(&config, false).unwrap(),
+        OperationLimits::default(),
+        pending(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.published[0].outcome.item_id, ITEM);
+    assert_eq!(executor.calls().len(), 3);
+}
+
+#[tokio::test]
+async fn scoped_dynamic_occurrences_refresh_metadata_without_replaying_mutations() {
+    let executor = Executor::default();
+    executor.reply(200, json!({"capacityId":"assigned"}));
+    executor.reply(200, json!({"value":[]}));
+    for _ in 0..2 {
+        executor.reply(
+            200,
+            json!({"value":[{"id":SECOND,"displayName":"Target","type":"Notebook"}]}),
+        );
+    }
+
+    executor.reply(201, json!({"id":ITEM}));
+    let mut config=DeploymentConfig::from_document(&json!({
+                    "core":{"workspace_id":WORKSPACE,"repository_directory":".","item_types_in_scope":["CopyJob"],"parameter":"p.yml"},
+                    "unpublish":{"skip":true},"features":["disable_workspace_folder_publish"],
+                }),"test",None).unwrap();
+    config
+        .resolve_parameters(&json!({"find_replace":[
+            {"find_value":"old","replace_value":{"test":"$items.Notebook.Target.$id"}},
+            {"find_value":"second","replace_value":{"test":"$items.Notebook.Target.$id"}},
+        ]}))
+        .unwrap();
+    let mut source = item("CopyJob", "Example", "copy-logical");
+    source.files[1].bytes = br#"{"value":"old second"}"#.to_vec();
+    deploy_repository(
+        &client(),
+        &executor,
+        &config,
+        DeploymentRepository {
+            items: vec![source],
+            folders: Vec::new(),
+        },
+        EngineContext::from_config(&config, false).unwrap(),
+        OperationLimits::default(),
+        pending(),
+    )
+    .await
+    .unwrap();
+    let calls = executor.calls();
+    assert_eq!(calls.len(), 5);
+    assert!(calls[..4].iter().all(|call| call.0 == ResourceMethod::Get));
+    assert_eq!(calls[4].0, ResourceMethod::Post);
+    let actual = String::from_utf8(
+        STANDARD
+            .decode(
+                calls[4].2["definition"]["parts"][1]["payload"]
+                    .as_str()
+                    .unwrap(),
+            )
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(actual, format!("{{\"value\":\"{SECOND} {SECOND}\"}}"));
+}
+
+#[tokio::test]
+async fn source_feature_list_scope_failure_keeps_completed_effects_without_globals() {
+    let executor = Executor::default();
+    executor.reply(200, json!({"capacityId":"assigned"}));
+    executor.reply(200, json!({"value":[]}));
+    executor.reply(201, json!({"id":ITEM}));
+    let config=DeploymentConfig::from_document(&json!({
+                        "core":{"workspace_id":WORKSPACE,"repository_directory":".","item_types_in_scope":["CopyJob"]},
+                        "unpublish":{"skip":true},"features":["disable_workspace_folder_publish"],
+                        "constants":{"FEATURE_FLAG":{"test":["disable_workspace_folder_publish"]}},
+                    }),"test",None).unwrap();
+    let error = deploy_repository(
+        &client(),
+        &executor,
+        &config,
+        DeploymentRepository {
+            items: vec![item("CopyJob", "Example", "copy-logical")],
+            folders: Vec::new(),
+        },
+        EngineContext::from_config(&config, false).unwrap(),
+        OperationLimits::default(),
+        pending(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.partial.published[0].outcome.item_id, ITEM);
+    assert_eq!(error.partial.effects.len(), 1);
+    assert!(matches!(error.failure, WorkflowFailure::Configuration(_)));
+    assert_eq!(executor.calls().len(), 3);
+}
