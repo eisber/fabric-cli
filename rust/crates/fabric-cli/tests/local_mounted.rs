@@ -32,6 +32,10 @@ impl Drop for Root {
 }
 
 fn invoke(root: &Path, args: &[&str]) -> Output {
+    invoke_in(root, root, args)
+}
+
+fn invoke_in(root: &Path, directory: &Path, args: &[&str]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_fab-rs"));
     command.env_clear();
     for name in ["SystemRoot", "WINDIR", "TEMP", "TMP"] {
@@ -42,10 +46,20 @@ fn invoke(root: &Path, args: &[&str]) -> Output {
     command
         .env("FAB_RUST_CONFIG_ROOT", root)
         .env("FAB_RUST_SESSION_ID", "37")
-        .current_dir(root)
+        .current_dir(directory)
         .args(args)
         .output()
         .unwrap()
+}
+
+fn expected_cwd(directory: &Path) -> String {
+    // POSIX getcwd resolves symlinks; Windows getcwd does not add canonicalize's verbatim prefix.
+    let path = if cfg!(windows) {
+        directory.to_path_buf()
+    } else {
+        fs::canonicalize(directory).unwrap()
+    };
+    path.to_string_lossy().into_owned()
 }
 
 fn success(output: &Output) {
@@ -291,7 +305,25 @@ fn navigation_persists_only_its_explicit_session_and_pwd_uses_stderr() {
         .strip_prefix("! Command context path: root\n")
         .expect("restored context warning must precede pwd data");
     let output: serde_json::Value = serde_json::from_str(data).unwrap();
-    assert_eq!(output["local_path"], root.0.to_string_lossy().as_ref(),);
+    assert_eq!(output["local_path"], expected_cwd(&root.0));
+}
+
+#[test]
+fn pwd_reports_process_cwd_not_the_config_root_or_a_parent_component_alias() {
+    let root = Root::new();
+    let directory = root.0.join("working");
+    let nested = directory.join("nested");
+    fs::create_dir_all(&nested).unwrap();
+    let alias = nested.join("..").join(".");
+    let pwd = invoke_in(&root.0, &alias, &["pwd"]);
+    success(&pwd);
+    assert!(pwd.stdout.is_empty());
+    let output: serde_json::Value = serde_json::from_slice(&pwd.stderr).unwrap();
+    assert_eq!(output["local_path"], expected_cwd(&directory));
+    assert_ne!(output["local_path"], expected_cwd(&root.0));
+    assert!(root.0.join("config.json").is_file());
+    assert!(!directory.join("config.json").exists());
+    assert!(!root.0.join("context-37.json").exists());
 }
 
 #[test]

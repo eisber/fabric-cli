@@ -102,7 +102,43 @@ claiming a passing candidate. No commits were pushed or merged into the root.
 
 The macOS job `122675675518` also exposed a pre-existing, independent
 `navigation_persists_only_its_explicit_session_and_pwd_uses_stderr` assertion:
-canonical `/private/var/...` versus `/var/...` spelling. This repair leaves that
-oracle and navigation behavior unchanged; it is a separate integration issue.
+canonical `/private/var/...` versus `/var/...` spelling. The SRC2/SRC3 production
+repairs leave navigation unchanged; the subsequently authorized test-only
+correction is recorded below.
 GET export/definitions, broader enrichment/operation epochs, Unicode providers,
 format-default composition and full command parity remain outside this repair.
+
+## Authorized mounted PWD cwd-expectation correction
+
+The integration owner explicitly approved this separate, source-grounded test
+contract correction after the actual macOS failure above. Root's preserved
+`integration-c6eff52-macos-failure.log` records the failure around line 1089:
+the emitted local path starts `/private/var/folders/`, while the fixture's
+logical temporary-directory spelling starts `/var/folders/`.
+
+Python `commands/fs/fab_fs.py::_print_context` uses **`os.getcwd()`**, not the
+configuration-store path. Its complete source Git blob is
+`8de0d21acab9abf1d2d012008bfb2d1fc0a9899b` at the authoritative Python pin.
+The native local host injects `std::env::current_dir()` into `NavigationState`;
+`PrintDirectory` prints that value unchanged. `ConfigStore::new` retains the
+explicit root independently. None of those production contracts change.
+
+The mounted assertion still parses JSON and compares the entire `local_path`
+exactly. POSIX expects `fs::canonicalize` of the fixture directory, matching
+the physical process cwd. Windows retains its existing drive/UNC spelling,
+avoiding the extended verbatim prefix added by Rust's Windows `canonicalize`.
+The original context-file equality and stdout/stderr assertions remain.
+
+An additional all-platform mounted test starts the executable in a distinct
+`working/nested/../.` directory while keeping its configuration root separate.
+It asserts exact process-cwd JSON, stderr-only output, and configuration/context
+file effects. It requires no symlink privilege, external shell or platform skip;
+macOS's existing temporary-directory symlink is exercised by both assertions.
+The production containment and symlink code is untouched.
+
+Bounded verification passed: Python 3.13 executed the complete blob-pinned
+`_print_context` definition using real `os.getcwd()` from a project-local
+`nested/../.` cwd, with exact JSON equality and private synthetic Fabric context;
+Rustfmt and diff integrity passed. The source-check directory was removed.
+No local Cargo build/test was run. CI must rerun the `local_mounted` selectors
+above in default/native-read builds on Windows, Linux and macOS.

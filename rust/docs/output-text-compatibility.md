@@ -72,6 +72,13 @@ all four config leaves, absent-value silence, real setting/context files and
 failure paths. This repairs grouped local output, not all grouped command
 families or complete Python terminal parity.
 
+The mounted PWD fixture separately follows source `_print_context`'s OS cwd
+contract: physical directory spelling on POSIX and native cwd spelling on
+Windows. Its exact parsed-JSON assertion and portable parent-component cwd
+regression do not change production path resolution, containment or symlink
+behavior. The owner-authorized test correction and source blob proof are
+recorded in the [self-review](../reviews/20261028/output-consistency-self-review.md#authorized-mounted-pwd-cwd-expectation-correction).
+
 ### SRC3: silent empty GET projections
 
 The generic item GET consumer now preserves `query_and_export`'s conditional
