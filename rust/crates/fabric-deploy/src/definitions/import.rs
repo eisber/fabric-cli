@@ -19,6 +19,10 @@ use std::{
     path::Path,
 };
 
+#[cfg(test)]
+#[path = "import_tests.rs"]
+mod tests;
+
 /// One local directory entry, not an ambient filesystem discovery result.
 #[derive(Clone, Debug)]
 pub struct DefinitionEntry {
@@ -51,6 +55,24 @@ pub trait DefinitionImportFileSystem {
 
 impl DefinitionImportFileSystem for LocalDefinitionFileSystem {
     fn entries(&mut self, root: &Path, relative: &str) -> io::Result<Vec<DefinitionEntry>> {
+        if relative.is_empty()
+            && let Some(parent) = root.parent()
+        {
+            directory_chain(parent)?;
+            let metadata = fs::symlink_metadata(root)?;
+            if !regular(&metadata) {
+                return Err(invalid_path());
+            }
+            if metadata.is_file() {
+                let name = root
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .ok_or_else(invalid_path)?;
+                validate_part_path(name, self.limits).map_err(|_| invalid_path())?;
+                // Python os.walk accepts an existing file but visits no entries.
+                return Ok(Vec::new());
+            }
+        }
         directory_chain(root)?;
         let current = if relative.is_empty() {
             root.to_path_buf()

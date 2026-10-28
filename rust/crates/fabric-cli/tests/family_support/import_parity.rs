@@ -4,13 +4,22 @@
 //! Pinned Python import requests through the actual root/session/HTTP/files path.
 
 #![cfg(feature = "native-read")]
+#![deny(unnameable_test_items)]
 
 use crate::family_support::{Harness, success};
 use fabric_cli::families::FamilyEvidence;
 use fabric_cli_output::CommandError;
 use fabric_cli_transfer::{TransferEvent, TransferFuture, TransferUi};
 use serde_json::{Value, json};
-use std::{future::pending, sync::Mutex};
+use std::{
+    future::{Future, pending},
+    pin::Pin,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    task::{Context, Poll, Waker},
+};
 
 const WORKSPACE: &str = "11111111-1111-1111-1111-111111111111";
 const ITEM: &str = "22222222-2222-2222-2222-222222222222";
@@ -21,10 +30,41 @@ struct Ui {
     events: Mutex<Vec<TransferEvent>>,
     questions: Mutex<Vec<String>>,
     answers: Mutex<std::collections::VecDeque<bool>>,
+    cancel_on_progress: Option<Cancel>,
+}
+
+#[derive(Default)]
+struct Signal {
+    set: AtomicBool,
+    waker: Mutex<Option<Waker>>,
+}
+
+#[derive(Clone, Default)]
+struct Cancel(Arc<Signal>);
+
+impl Future for Cancel {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        *self.0.waker.lock().unwrap() = Some(cx.waker().clone());
+        if self.0.set.load(Ordering::Acquire) {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    }
 }
 
 impl TransferUi for Ui {
     fn emit(&self, event: TransferEvent) -> Result<(), CommandError> {
+        if matches!(&event, TransferEvent::Grey(text) if text.contains("Checking again"))
+            && let Some(cancel) = &self.cancel_on_progress
+        {
+            cancel.0.set.store(true, Ordering::Release);
+            if let Some(waker) = cancel.0.waker.lock().unwrap().take() {
+                waker.wake();
+            }
+        }
         self.events.lock().unwrap().push(event);
         Ok(())
     }
@@ -265,6 +305,162 @@ async fn report_connection_is_raw_and_bypath_is_source_invalid_payload_before_ca
             assert_eq!(host.requests().len(), 2);
             assert!(
                 matches!(&output.evidence, FamilyEvidence::Transfer(Err(error)) if error.effects.is_empty())
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn environment_create_and_publish_use_shared_lro_results_without_replaying_posts() {
+    const CREATE_OPERATION: &str = "44444444-4444-4444-4444-444444444444";
+    const PUBLISH_OPERATION: &str = "55555555-5555-5555-5555-555555555555";
+    let mut host = Harness::new();
+    input(&host);
+    host.metadata_with_id(WORKSPACE, json!([]));
+    for (operation, result) in [
+        (CREATE_OPERATION, json!({"id":CREATED})),
+        (PUBLISH_OPERATION, json!({})),
+    ] {
+        let location = format!("https://api.fabric.microsoft.com/v1/operations/{operation}");
+        let result_location = format!("{location}/result");
+        host.headers(
+            202,
+            Value::Null,
+            &[
+                ("Location", &location),
+                ("x-ms-operation-id", operation),
+                ("Retry-After", "0"),
+            ],
+        );
+        host.headers(
+            200,
+            json!({"status":"Succeeded"}),
+            &[("Location", &result_location)],
+        );
+        host.reply(200, result);
+    }
+    host.reply(
+        200,
+        json!({"properties":{"publishDetails":{"state":"success"}}}),
+    );
+    let output = host
+        .execute(&[
+            "import",
+            "Demo.Workspace/Synthetic.Environment",
+            "-i",
+            "input",
+            "-f",
+        ])
+        .await;
+    success(&output);
+    assert!(matches!(
+        &output.evidence,
+        FamilyEvidence::Transfer(Ok(result)) if result.effects[0].item_id == CREATED
+    ));
+    let requests = host.requests();
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request["method"] == "POST")
+            .count(),
+        2
+    );
+    assert_eq!(requests.len(), 9);
+    assert!(
+        requests[5]["url"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!("/environments/{CREATED}/staging/publish"))
+    );
+}
+
+#[tokio::test]
+async fn environment_local_cancel_during_publish_backoff_keeps_create_effect_and_uncertainty() {
+    let mut host = Harness::new();
+    input(&host);
+    host.metadata_with_id(WORKSPACE, json!([]));
+    host.reply(201, json!({"id":CREATED}));
+    host.reply(200, Value::Null);
+    host.reply(
+        200,
+        json!({"properties":{"publishDetails":{"state":"running"}}}),
+    );
+    let cancel = Cancel::default();
+    let ui = Ui {
+        cancel_on_progress: Some(cancel.clone()),
+        ..Ui::default()
+    };
+    let output = host
+        .execute_with_capabilities(
+            &[
+                "import",
+                "Demo.Workspace/Synthetic.Environment",
+                "-i",
+                "input",
+                "-f",
+            ],
+            cancel,
+            &ui,
+        )
+        .await;
+    let FamilyEvidence::Transfer(Err(error)) = &output.evidence else {
+        panic!("cancelled publication must not succeed")
+    };
+    assert_eq!(error.effects[0].item_id, CREATED);
+    let fabric_cli_transfer::TransferFailure::Definition(error) = &error.failure else {
+        panic!("original shared operation evidence must survive")
+    };
+    let fabric_deploy::definitions::DefinitionErrorKind::Operation(error) = &error.kind else {
+        panic!("original shared operation evidence must survive")
+    };
+    assert_eq!(
+        error.kind,
+        fabric_sdk_operations::OperationErrorKind::Cancelled
+    );
+    assert!(error.mutation_may_have_occurred);
+    assert_eq!(host.requests().len(), 5);
+}
+
+#[tokio::test]
+async fn environment_readiness_permission_and_malformed_publish_state_are_not_success() {
+    for existing in [false, true] {
+        let mut host = Harness::new();
+        input(&host);
+        host.metadata_with_id(
+            WORKSPACE,
+            if existing {
+                json!([{"id":ITEM,"displayName":"Synthetic","type":"Environment"}])
+            } else {
+                json!([])
+            },
+        );
+        if existing {
+            host.reply(403, json!({"errorCode":"Denied","message":"synthetic"}));
+        } else {
+            host.reply(201, json!({"id":CREATED}));
+            host.reply(200, Value::Null);
+            host.reply(200, json!({"properties":{"publishDetails":{"state":null}}}));
+        }
+        let output = host
+            .execute(&[
+                "import",
+                "Demo.Workspace/Synthetic.Environment",
+                "-i",
+                "input",
+                "-f",
+            ])
+            .await;
+        assert_ne!(output.plan.exit_code, 0);
+        let FamilyEvidence::Transfer(Err(error)) = &output.evidence else {
+            panic!("real permission and malformed response errors must not succeed")
+        };
+        assert_eq!(error.effects.len(), usize::from(!existing));
+        assert_eq!(host.requests().len(), if existing { 3 } else { 5 });
+        if existing {
+            assert!(
+                host.requests()
+                    .iter()
+                    .all(|request| request["method"] != "POST")
             );
         }
     }

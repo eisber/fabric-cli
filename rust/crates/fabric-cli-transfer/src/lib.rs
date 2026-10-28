@@ -95,6 +95,19 @@ pub struct TransferContext {
 
 /// Existing context owner resolves paths asynchronously and checks command support.
 pub trait TransferMetadata: Send + Sync {
+    /// Validate source path classification before local import I/O or prompting.
+    ///
+    /// Python recognizes OneLake paths but deliberately rejects remote import;
+    /// it never downloads them. A metadata-backed caller must preserve that
+    /// classification and source errors. Local-only injected callers may retain
+    /// this default and leave containment/existence checks to their file policy.
+    fn validate_import_input<'a>(
+        &'a self,
+        _input: &'a str,
+    ) -> TransferFuture<'a, Result<(), CommandError>> {
+        Box::pin(async { Ok(()) })
+    }
+
     /// Reuse existing discovery/cache policy; never hide network I/O in a sync lookup.
     ///
     /// Import resolution allows a missing destination item but requires its real
@@ -109,6 +122,19 @@ pub trait TransferMetadata: Send + Sync {
 
 /// Definition file policy plus caller-owned path selection and emptiness checks.
 pub trait TransferFiles: DefinitionFileSystem + DefinitionImportFileSystem + Send {
+    /// Resolve an existing confined import directory or regular file.
+    ///
+    /// The pinned source's `os.walk(file)` yields an empty parts array; it does
+    /// not import the file's contents. Async OS hosts must override this method
+    /// on their existing worker, retaining link/device/network/containment checks.
+    /// The default preserves existing directory-only injected adapters.
+    fn resolve_import_async<'a>(
+        &'a mut self,
+        input: &'a str,
+    ) -> TransferFuture<'a, io::Result<PathBuf>> {
+        self.resolve_directory_async(input)
+    }
+
     /// Resolve a source local directory inside the caller's explicitly owned roots.
     ///
     /// Remote Fabric paths must fail explicitly, never become local directories.
@@ -806,7 +832,20 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
                 .as_deref()
                 .ok_or_else(|| invalid("Input path is required"))?,
         );
-        let root = phase(self.directory(&input), cancelled).await?;
+        phase(self.metadata.validate_import_input(&input), cancelled).await?;
+        if input.is_empty() {
+            return Err(command_error("InvalidPath", "No such file or directory").into());
+        }
+        let root = phase(
+            async {
+                self.files
+                    .resolve_import_async(&input)
+                    .await
+                    .map_err(local_error)
+            },
+            cancelled,
+        )
+        .await?;
         if !command.force && !phase(self.ui.confirm("Are you sure?"), cancelled).await? {
             return Ok(TransferResult {
                 declined: true,
@@ -879,6 +918,7 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
                 require_id(&workspace)?,
                 id,
                 self.ui,
+                self.operation_limits.max_poll_delay,
             )
             .await?;
         }
@@ -901,6 +941,7 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
                 require_id(&workspace)?,
                 &effect.item_id,
                 self.ui,
+                self.operation_limits.max_poll_delay,
             )
             .await
             .map_err(|mut error| {

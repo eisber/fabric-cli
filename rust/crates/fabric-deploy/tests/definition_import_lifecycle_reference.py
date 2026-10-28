@@ -29,6 +29,7 @@ class Response:
         self.text = json.dumps(value)
 
     def json(self) -> dict:
+        """Return the synthetic HTTP boundary's supplied response document."""
         return self.value
 
 

@@ -44,8 +44,9 @@ pub(crate) async fn ready<E: OperationExecutor, W: OperationExecutor + ?Sized>(
     workspace: &str,
     item: &str,
     ui: &dyn TransferUi,
+    max_delay: Duration,
 ) -> Result<(), TransferError> {
-    wait_state(session, executor, workspace, item, true, ui).await
+    wait_state(session, executor, workspace, item, true, ui, max_delay).await
 }
 
 pub(crate) async fn publish<E: OperationExecutor, W: OperationExecutor + ?Sized>(
@@ -54,10 +55,11 @@ pub(crate) async fn publish<E: OperationExecutor, W: OperationExecutor + ?Sized>
     workspace: &str,
     item: &str,
     ui: &dyn TransferUi,
+    max_delay: Duration,
 ) -> Result<(), TransferError> {
     PreparedImport::trigger_environment_publish(session, workspace, item).await?;
     ui.emit(TransferEvent::Grey("Environment publish triggered".into()))?;
-    wait_state(session, executor, workspace, item, false, ui).await?;
+    wait_state(session, executor, workspace, item, false, ui, max_delay).await?;
     ui.emit(TransferEvent::Grey("Environment publish completed".into()))?;
     Ok(())
 }
@@ -69,6 +71,7 @@ async fn wait_state<E: OperationExecutor, W: OperationExecutor + ?Sized>(
     item: &str,
     readiness: bool,
     ui: &dyn TransferUi,
+    max_delay: Duration,
 ) -> Result<(), TransferError> {
     for attempt in 1..=60 {
         let state = PreparedImport::environment_publish_state(session, workspace, item).await?;
@@ -88,6 +91,9 @@ async fn wait_state<E: OperationExecutor, W: OperationExecutor + ?Sized>(
             return Err(operation_error(session, OperationErrorKind::Limit));
         }
         let delay = 60.min(5 * 2_u64.pow(attempt.min(4)));
+        if Duration::from_secs(delay) > max_delay {
+            return Err(operation_error(session, OperationErrorKind::Limit));
+        }
         let prefix = if readiness {
             "Existing Environment publish is in progress"
         } else {
