@@ -34,7 +34,16 @@ fn dynamic_name_encoding_consumes_unchanged_original_source_receipt() {
 
 #[test]
 fn all_twenty_six_path_filters_match_actual_source_filesystem_capture() {
-    let fixture: Value = serde_json::from_str(include_str!("path_filter_source.json")).unwrap();
+    assert_path_capture(include_str!("path_filter_source.json"));
+}
+
+#[test]
+fn all_twenty_six_posix_path_filters_match_actual_source_filesystem_capture() {
+    assert_path_capture(include_str!("path_filter_posix_source.json"));
+}
+
+fn assert_path_capture(receipt: &str) {
+    let fixture: Value = serde_json::from_str(receipt).unwrap();
     assert_eq!(fixture["cases"].as_array().unwrap().len(), 26);
     let options = PathFilterOptions {
         windows_paths: fixture["windowsPaths"].as_bool().unwrap(),

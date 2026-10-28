@@ -17,6 +17,13 @@ types when preprocessed for either standard or bulk publication; plain string
 emission is checked by the existing YAML parser rather than inferred from a
 partial list of reserved characters.
 
+Path-filter receipts retain separate native Windows and POSIX host policies.
+The additive POSIX receipt was captured from unchanged pinned source in hosted
+run `40724582466` before its Rust consumer was added. All 26 file results match
+the original Windows cases; only the declared native path/case policy differs.
+Each host rechecks its own immutable source receipt, while Rust exercises both
+explicit policies on every platform. The original Windows fixture is unchanged.
+
 ## Command-scoped configuration handoff (October 28)
 
 `DeploymentConfig::command_configuration(CommandOptions)` provides immutable

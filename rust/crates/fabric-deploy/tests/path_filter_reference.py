@@ -122,7 +122,9 @@ def main() -> None:
             json.dump(result, file, ensure_ascii=True, indent=2)
             file.write("\n")
     elif result != json.loads(
-        Path(__file__).with_name("path_filter_source.json").read_text(encoding="utf-8")
+        Path(__file__).with_name(
+            "path_filter_source.json" if os.name == "nt" else "path_filter_posix_source.json"
+        ).read_text(encoding="utf-8")
     ):
         raise AssertionError("Pinned path filters differ from immutable receipt")
     print(json.dumps({"cases": len(result["cases"]), "status": "passed"}))

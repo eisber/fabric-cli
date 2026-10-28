@@ -1,0 +1,174 @@
+{
+  "source": "microsoft/fabric-cicd@5ca096c00a9a878c646c59fe537b883eba951329",
+  "sourceHashes": {
+    "constants.py": "9db94078b1152f137b0c44a60626460575280455642a81d8a932035b251c9535",
+    "_common\\_exceptions.py": "22cc6ce5ca4dcf209c1d7c1c056c1c2b40cdc8ca397d36c9c68d108d0c89440e",
+    "_common\\_check_utils.py": "f60444e11a5f3424b5afb63cc4b69c7cd68a2fd4aff268913061e96c4000f39c",
+    "_common\\_config_utils.py": "acdb203d4db08687c438c811598f696c7aed69674c3e3d42b81a3ad627396f2f",
+    "_parameter\\_parameter.py": "32d603cfaf2b891194a5ea170dcd952d3c492a8420a3df0595ce84c682b07daf",
+    "_parameter\\_utils.py": "2d8b79c6d7d737595b346da0466790308e46b9cbed46bfaf1b3cde8a189e69d6",
+    "fabric_workspace.py": "10bae33f95026065fc22d558dc02b8ee17929cac77fa0dde298cc4d41ac7a890"
+  },
+  "dependencies": {
+    "PyYAML": "6.0.3",
+    "jsonpath-ng": "1.9.1"
+  },
+  "windowsPaths": false,
+  "caseSensitive": true,
+  "boundary": "Actual process_input_path/glob/path validation over owned synthetic local files; no service, credentials, ambient environment, external repository reads or temporary-directory APIs.",
+  "files": [
+    "content.py",
+    "REPORT.json",
+    "sub/content.py",
+    "sub/other.json",
+    "sub/deep/last.py",
+    "{a,b}.txt"
+  ],
+  "cases": [
+    {
+      "pattern": "content.py",
+      "expected": [
+        "content.py"
+      ]
+    },
+    {
+      "pattern": "/content.py",
+      "expected": [
+        "content.py"
+      ]
+    },
+    {
+      "pattern": "\\content.py",
+      "expected": [
+        "content.py"
+      ]
+    },
+    {
+      "pattern": "./content.py",
+      "expected": [
+        "content.py"
+      ]
+    },
+    {
+      "pattern": "sub/../content.py",
+      "expected": [
+        "content.py"
+      ]
+    },
+    {
+      "pattern": "missing",
+      "expected": []
+    },
+    {
+      "pattern": "*.py",
+      "expected": [
+        "content.py"
+      ]
+    },
+    {
+      "pattern": "*.json",
+      "expected": [
+        "REPORT.json"
+      ]
+    },
+    {
+      "pattern": "**/*.py",
+      "expected": [
+        "content.py",
+        "sub/content.py",
+        "sub/deep/last.py"
+      ]
+    },
+    {
+      "pattern": "sub/*.py",
+      "expected": [
+        "sub/content.py"
+      ]
+    },
+    {
+      "pattern": "sub/**/*.py",
+      "expected": [
+        "sub/content.py",
+        "sub/deep/last.py"
+      ]
+    },
+    {
+      "pattern": "sub/**",
+      "expected": [
+        "sub/content.py",
+        "sub/deep/last.py",
+        "sub/other.json"
+      ]
+    },
+    {
+      "pattern": "**",
+      "expected": []
+    },
+    {
+      "pattern": "sub/**/**",
+      "expected": []
+    },
+    {
+      "pattern": "sub//*.py",
+      "expected": []
+    },
+    {
+      "pattern": "[c]*.py",
+      "expected": [
+        "content.py"
+      ]
+    },
+    {
+      "pattern": "[!x]*.py",
+      "expected": [
+        "content.py"
+      ]
+    },
+    {
+      "pattern": "[]*.py",
+      "expected": []
+    },
+    {
+      "pattern": "[-x]*.py",
+      "expected": []
+    },
+    {
+      "pattern": "{a,b}.txt",
+      "expected": [
+        "{a,b}.txt"
+      ]
+    },
+    {
+      "pattern": "*{a,b}.txt",
+      "expected": [
+        "{a,b}.txt"
+      ]
+    },
+    {
+      "pattern": "*{a}.txt",
+      "expected": []
+    },
+    {
+      "pattern": "../*.py",
+      "expected": []
+    },
+    {
+      "pattern": "sub\\*.py",
+      "expected": [
+        "sub/content.py"
+      ]
+    },
+    {
+      "pattern": "sub/[co]*.py",
+      "expected": [
+        "sub/content.py"
+      ]
+    },
+    {
+      "pattern": "{ROOT}/sub/*.py",
+      "expected": [
+        "sub/content.py"
+      ]
+    }
+  ]
+}
