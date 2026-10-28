@@ -3,6 +3,10 @@
 
 //! Bounded local transfer work on the caller's existing Tokio blocking executor.
 
+mod deploy_files;
+
+pub use deploy_files::TokioDeployFiles;
+
 use fabric_cli_transfer::{LocalTransferFiles, TransferFiles, TransferFuture};
 use fabric_deploy::definitions::{
     self, DefinitionEntry, DefinitionError, DefinitionErrorKind, DefinitionFile,
@@ -72,6 +76,26 @@ fn check_stop(stop: &AtomicBool) -> io::Result<()> {
     } else {
         Ok(())
     }
+}
+
+fn serialized_work<'a, S: Send + 'static, T: Send + 'static>(
+    state: Arc<Mutex<S>>,
+    runtime: Handle,
+    operation: impl FnOnce(&mut S, &AtomicBool) -> io::Result<T> + Send + 'static,
+) -> TransferFuture<'a, io::Result<T>> {
+    Box::pin(async move {
+        // The blocking operation retains the owned permit after future drop.
+        let mut state = state.lock_owned().await;
+        let stop = Stop(Arc::new(AtomicBool::new(false)));
+        let flag = stop.0.clone();
+        runtime
+            .spawn_blocking(move || {
+                check_stop(&flag)?;
+                operation(&mut state, &flag)
+            })
+            .await
+            .map_err(|_| worker_error(TransferWorkerError::Unavailable))?
+    })
 }
 
 fn selected_import_directory(source: &Path, limits: DefinitionLimits) -> io::Result<PathBuf> {
@@ -328,20 +352,7 @@ impl TokioTransferFiles {
         &mut self,
         operation: impl FnOnce(&mut WorkerFiles, &AtomicBool) -> io::Result<T> + Send + 'static,
     ) -> TransferFuture<'_, io::Result<T>> {
-        Box::pin(async move {
-            // Acquire before spawning: dropped operations keep their permit until
-            // the actual worker exits, so another call cannot queue another task.
-            let mut files = self.files.clone().lock_owned().await;
-            let stop = Stop(Arc::new(AtomicBool::new(false)));
-            let flag = stop.0.clone();
-            self.runtime
-                .spawn_blocking(move || {
-                    check_stop(&flag)?;
-                    operation(&mut files, &flag)
-                })
-                .await
-                .map_err(|_| worker_error(TransferWorkerError::Unavailable))?
-        })
+        serialized_work(self.files.clone(), self.runtime.clone(), operation)
     }
 
     fn prepare_import_work<'a>(
