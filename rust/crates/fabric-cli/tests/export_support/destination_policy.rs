@@ -33,15 +33,12 @@ async fn pinned_sjd_destination_decisions_do_not_invent_remote_resources_support
             WS,
             json!([{"id":LAKE,"displayName":"Job","type":"SparkJobDefinition"}]),
         );
-        let mut files = TokioTransferFiles::new(
-            host.root.clone(),
-            None,
+        let mut files = TokioTransferFiles::defer_export_root(
+            host.root.join(input),
+            input.into(),
             Default::default(),
             tokio::runtime::Handle::current(),
-        )
-        .await
-        .unwrap()
-        .with_local_export_selection(input.into(), host.root.clone(), None);
+        );
         let http = host.http.clone();
         let output = injected_export_with_http(
             &mut host,
