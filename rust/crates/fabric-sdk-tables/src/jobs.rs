@@ -257,6 +257,7 @@ fn job_error(error: JobError, id: Option<&str>, submitted: bool) -> TableError {
             content: None,
         },
         JobError::InvalidAudience
+        | JobError::InvalidEndpoint
         | JobError::InvalidIdentifier
         | JobError::InvalidRequestHeaders => TableErrorKind::InvalidInput,
         JobError::RequestHeadersUnsupported => TableErrorKind::Maintenance {
@@ -282,5 +283,20 @@ fn job_error(error: JobError, id: Option<&str>, submitted: bool) -> TableError {
         kind,
         operation_id: id.map(str::to_owned),
         mutation_may_have_occurred: may_have_mutated,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_job_endpoint_is_input_failure_without_dispatch_uncertainty() {
+        for (submitted, id) in [(false, None), (true, Some("existing-instance"))] {
+            let error = job_error(JobError::InvalidEndpoint, id, submitted);
+            assert!(matches!(error.kind, TableErrorKind::InvalidInput));
+            assert_eq!(error.operation_id.as_deref(), id);
+            assert!(!error.mutation_may_have_occurred);
+        }
     }
 }
