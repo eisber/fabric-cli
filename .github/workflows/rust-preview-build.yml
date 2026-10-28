@@ -167,7 +167,7 @@ jobs:
             const invalid = {
               error: {
                 code: 'invalid_arguments',
-                message: 'Only --help, --version, ls, dir, and get are recognized in this preview.'
+                message: 'Invalid arguments. Run fab-rs --help for available commands and usage.'
               }
             };
             const smoke = [];

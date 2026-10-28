@@ -71,12 +71,21 @@ fn invalid_commands_fail_with_sanitized_json_on_stderr() {
         let stderr = String::from_utf8(output.stderr).unwrap();
         assert!(!stderr.contains("must-not-be-echoed"));
         assert!(stderr.ends_with('\n'));
+        let message = match args.as_slice() {
+            ["deploy"] => {
+                "Missing required argument(s): --config <config>. Run fab-rs --help for available commands and usage."
+            }
+            ["auth", "login"] if cfg!(feature = "windows-broker") => {
+                "Missing required argument(s): --tenant <TENANT_GUID>, --account <WORK_ACCOUNT_UPN>. Run fab-rs --help for available commands and usage."
+            }
+            _ => "Invalid arguments. Run fab-rs --help for available commands and usage.",
+        };
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&stderr).unwrap(),
             serde_json::json!({
                 "error": {
                     "code": "invalid_arguments",
-                    "message": fabric_cli::parser::INVALID_ARGUMENTS
+                    "message": message
                 }
             })
         );

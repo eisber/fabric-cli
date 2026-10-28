@@ -11,7 +11,7 @@ mod native_read;
 
 #[cfg(not(feature = "native-read"))]
 use fabric_cli::HostError;
-use fabric_cli::parser::{INVALID_ARGUMENTS, Invocation, parse_args};
+use fabric_cli::parser::{Invocation, invalid_arguments_message, parse_args};
 use serde::Serialize;
 use std::{
     io::{self, Write},
@@ -94,10 +94,10 @@ fn run() -> io::Result<ExitCode> {
         ),
         #[cfg(feature = "windows-broker")]
         Ok(Invocation::Auth(command)) => return auth::run(&command),
-        Err(_) => (
+        Err(error) => (
             CommandError {
                 code: "invalid_arguments",
-                message: INVALID_ARGUMENTS.into(),
+                message: invalid_arguments_message(&error),
             },
             2,
         ),

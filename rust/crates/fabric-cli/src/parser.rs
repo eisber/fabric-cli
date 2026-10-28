@@ -6,6 +6,9 @@
 use clap::{Arg, ArgAction, Command, error::ErrorKind};
 use std::ffi::OsString;
 
+mod diagnostics;
+pub use diagnostics::invalid_arguments_message;
+
 mod jobs;
 pub use jobs::{JobMutationCommand, JobMutationKind, JobReadCommand, JobReadKind, JobRunCommand};
 
@@ -77,9 +80,9 @@ pub enum Invocation {
     Auth(AuthCommand),
 }
 
-/// Static diagnostic for invalid invocations; supplied values are never echoed.
+/// Truthful fallback when no schema-controlled argument diagnostic is available.
 pub const INVALID_ARGUMENTS: &str =
-    "Only --help, --version, ls, dir, and get are recognized in this preview.";
+    "Invalid arguments. Run fab-rs --help for available commands and usage.";
 
 /// Build the Clap schema/help without reading configuration or the environment.
 ///
@@ -156,7 +159,7 @@ pub fn command() -> Command {
 /// Parse arguments including argv[0], without printing or exiting.
 ///
 /// Invalid-input errors are retained for programmatic classification. Executable
-/// callers must use the static diagnostic rather than echoing Clap's raw error.
+/// callers must use [`invalid_arguments_message`] rather than echoing raw errors.
 pub fn parse_args<I, T>(args: I) -> Result<Invocation, clap::Error>
 where
     I: IntoIterator<Item = T>,
@@ -200,7 +203,7 @@ where
     } else {
         args.clone()
     };
-    let matches = match parser.try_get_matches_from(source_args) {
+    let matches = match parser.try_get_matches_from_mut(source_args) {
         Ok(matches) => matches,
         Err(error)
             if matches!(
@@ -210,6 +213,16 @@ where
         {
             return Ok(Invocation::Display(error.to_string()));
         }
+        Err(error) if error.kind() == ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => {
+            if let Some(group) = root
+                .and_then(|index| args[index].to_str())
+                .and_then(|name| parser.find_subcommand_mut(name))
+                .filter(|group| group.has_subcommands())
+            {
+                return Ok(Invocation::Display(group.render_help().to_string()));
+            }
+            return Err(error);
+        }
         Err(error) => return Err(error),
     };
     let Some((name, values)) = matches.subcommand() else {
@@ -218,6 +231,13 @@ where
             INVALID_ARGUMENTS,
         ));
     };
+    if values.subcommand_name().is_none()
+        && let Some(group) = parser.find_subcommand_mut(name).filter(|group| {
+            group.has_subcommands() && (group.is_arg_required_else_help_set() || name == "config")
+        })
+    {
+        return Ok(Invocation::Display(group.render_help().to_string()));
+    }
     if name == "job" {
         let mut invocation = jobs::parse(values)?;
         let output = match &mut invocation {
@@ -441,7 +461,7 @@ fn source_read_arguments(
                     index += 1;
                 }
                 if first == index {
-                    return Err(invalid_arguments());
+                    return Err(diagnostics::missing_value(option));
                 }
                 let tokens: Vec<_> = args[first..index]
                     .iter()
