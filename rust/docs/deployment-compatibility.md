@@ -15,6 +15,21 @@ them or call `require_no_extensions()` before mutation, never silently drop them
 The existing Notebook-only preflight remains a legacy consumer, not a restriction
 on the full configuration model.
 
+The constructor also accepts `&CommandOptions`. `CommandOptions::new(bulk,
+kwargs)` is the two-input command construction path; kwargs contain only
+noncredential metadata and the CLI wrapper overwrites `host_app`. Earlier
+optional caller-global `features`/`constants` inputs remain compatible. Unknown
+kwargs remain source-ignored metadata, not invented deployment behavior.
+No `onboard_missing_items` behavior is introduced.
+
+`CommandConfiguration` exposes documented fields through a read-only
+`CommandConfigurationData` view: `workspace`, `repository_directory`,
+`parameter_file_path`, `item_types`, `publish`, `unpublish`, `features`,
+`constants`, `extensions`, `raw_document`, `environment` and `kwargs`. Nested
+operation fields are also readable. The view is shared behind a private `Arc`
+without `DerefMut`; it cannot be mutated through the frozen snapshot. Existing
+getters remain supported, and no existing `DeploymentConfig` fields change.
+
 The configured `find_replace.is_regex` and `ignore_case` flags accept strings or
 null, not YAML booleans. Only `lower() == "true"` enables either flag: there is no
 whitespace stripping or `"yes"`/`"1"` truthiness. Every other string is valid false;
@@ -59,7 +74,8 @@ Native consumers now have these explicit primitives:
 
 - `ParameterProgram::apply_for_item` (also exposed as `apply_scoped`) applies
   key/value rules before find rules with exact item/name/path conjunction.
-  `ParameterResolver` supplies metadata
+  Both methods are async and borrow `&mut dyn ParameterResolver`; the caller
+  awaits them using its existing runtime. `ParameterResolver` supplies metadata
   and concrete path capabilities; no library reads credentials, files or process
   environment. Dynamic replacements resolve only after a match, once per
   selected JSONPath location. `encode_dynamic_name` retains the source UTF-8
@@ -99,6 +115,30 @@ the pinned config validator resolves paths relative to the config directory and
 checks existence/type/git-root consistency; it does not expand `~` or `$ENV:`
 within these config path fields. No planner, CLI host, publisher or item processor
 is modified by this configuration-only lane.
+
+### Source-conditional asynchronous parameter metadata
+
+`ParameterResolver: Send` exposes
+`resolve<'a>(&'a mut self, &'a DynamicVariable) -> ParameterResolution<'a>`,
+where the result is a boxed standard `Future<Output = Result<Value,
+TransformError>> + Send`. The pure inventory `resolve_paths` method stays
+synchronous. No `Sync` bound, mutex, global state, runtime construction,
+unconditional prefetch or default metadata cache is introduced.
+
+Find replacements await resolution only after filter/environment/match selection;
+key/value rules await once per concrete selected path, preserving repeated source
+refresh points. Dynamic **find** expressions retain a distinct source quirk:
+their resolution precedes the find helper's filter/environment skip decisions.
+Unexpanded `$ENV:` find patterns remain literal, as the pinned source dictates.
+Seventeen new actual-source consumer traces capture these points before the
+asynchronous native test expectations.
+
+Legacy context-free `apply` and public JSONPath primitives remain synchronous.
+The former uses exactly one ready poll with a resolver incapable of I/O, never
+a blocking executor or loop. Actual metadata always requires the async API.
+Callers own I/O deadlines/cancellation; the explicit transform budget checks
+elapsed time before/after awaits and must be sized for the complete preparation.
+Existing dependency versions/features and all protected receipts are unchanged.
 
 The initial slice inventories reference behavior and adds synthetic offline
 fixtures. The owner subsequently approved a native single-Notebook implementation,

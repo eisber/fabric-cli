@@ -4,11 +4,15 @@
 use super::{
     DynamicVariable, FindReplacement, JsonPathReplacement, ParameterItem, ParameterResolver,
     TransformBudget, TransformError, TransformLimits,
-    context::{Filters, NoResolver},
+    context::{Filters, NoResolver, truthy},
 };
 use crate::{config::process_environment_key, parameters::ParameterNotice};
 use serde_json::{Map, Value};
-use std::fmt;
+use std::{
+    fmt,
+    future::Future,
+    task::{Context, Poll, Waker},
+};
 
 #[derive(Clone)]
 struct FindRule {
@@ -275,7 +279,7 @@ impl ParameterProgram {
                     .ok_or_else(|| invalid("Missing or empty find_value"))?;
                 let is_regex = flag(rule, "is_regex")?;
                 let ignore_case = flag(rule, "ignore_case")?;
-                let dynamic_find = if find.starts_with('$') {
+                let dynamic_find = if find.starts_with('$') && !find.starts_with("$ENV:") {
                     if find.starts_with("$items.") || (is_regex && find.starts_with("$workspace."))
                     {
                         return Err(invalid(
@@ -392,30 +396,45 @@ impl ParameterProgram {
                 "item-specific parameters require caller processor",
             ));
         }
-        self.apply_for_item(
+        let mut resolver = NoResolver;
+        let mut future = std::pin::pin!(self.apply_for_item(
             content,
             ParameterItem {
                 item_type: "",
                 item_name: "",
                 file_path: file_name,
             },
-            &NoResolver,
+            &mut resolver,
             budget,
-        )
+        ));
+        // This restricted resolver never performs I/O or returns Pending.
+        // One ready poll preserves the legacy API without creating a runtime.
+        match future
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+        {
+            Poll::Ready(result) => result,
+            Poll::Pending => Err(TransformError::Unsupported(
+                "context-free parameter evaluation cannot await metadata",
+            )),
+        }
     }
 
     /// Apply source-ordered rules with caller-injected item, metadata and path context.
     ///
     /// Item-specific settings are deliberately exposed separately for their
     /// processor and never interpreted as text replacement rules.
+    /// Metadata is awaited exactly at source conditional points, without
+    /// prefetching/caching. The caller owns I/O deadlines and cancellation;
+    /// the transform budget observes elapsed time before and after each await.
     ///
     /// # Errors
     /// Preserves filter resolution, dynamic metadata and bounded transform failures.
-    pub fn apply_for_item(
+    pub async fn apply_for_item(
         &self,
         content: &str,
         item: ParameterItem<'_>,
-        resolver: &dyn ParameterResolver,
+        resolver: &mut dyn ParameterResolver,
         budget: &mut TransformBudget<'_>,
     ) -> Result<String, TransformError> {
         budget.text(content)?;
@@ -453,13 +472,16 @@ impl ParameterProgram {
                         }
                     }
                 }
-                content = rule.query.apply_resolving(
-                    &content,
-                    rule.replacement.as_ref(),
-                    !json,
-                    |value, budget| resolve(value, resolver, budget),
-                    budget,
-                )?;
+                content = rule
+                    .query
+                    .apply_resolving_async(
+                        &content,
+                        rule.replacement.as_ref(),
+                        !json,
+                        resolver,
+                        budget,
+                    )
+                    .await?;
             }
         }
         for rule in &self.find_rules {
@@ -467,7 +489,16 @@ impl ParameterProgram {
             let resolved_find;
             let dynamic_query;
             let query = if let Some(variable) = &rule.dynamic_find {
-                resolved_find = resolver.resolve_dynamic(variable)?;
+                budget.checkpoint()?;
+                let value = resolver.resolve(variable).await?;
+                budget.checkpoint()?;
+                if !truthy(&value) {
+                    continue;
+                }
+                resolved_find = value
+                    .as_str()
+                    .ok_or_else(|| invalid("Dynamic find_value must resolve to a string"))?
+                    .to_owned();
                 budget.text(&resolved_find)?;
                 if resolved_find.is_empty() {
                     continue;
@@ -482,10 +513,16 @@ impl ParameterProgram {
                 continue;
             }
             if let Some(replacement) = &rule.replacement {
-                let replacement = resolve(&Value::String(replacement.clone()), resolver, budget)?;
+                let replacement =
+                    resolve_value(&Value::String(replacement.clone()), resolver, budget).await?;
+                if !truthy(&replacement) {
+                    continue;
+                }
                 content = query.apply(
                     &content,
-                    replacement.as_str().expect("resolved string"),
+                    replacement.as_str().ok_or_else(|| {
+                        invalid("Dynamic find replacement must resolve to a string")
+                    })?,
                     filter_match,
                     budget,
                 )?;
@@ -501,14 +538,14 @@ impl ParameterProgram {
     ///
     /// # Errors
     /// Preserves the same syntax, resolver, schema and bounded-work failures.
-    pub fn apply_scoped(
+    pub async fn apply_scoped(
         &self,
         content: &str,
         item: ParameterItem<'_>,
-        resolver: &dyn ParameterResolver,
+        resolver: &mut dyn ParameterResolver,
         budget: &mut TransformBudget<'_>,
     ) -> Result<String, TransformError> {
-        self.apply_for_item(content, item, resolver, budget)
+        self.apply_for_item(content, item, resolver, budget).await
     }
 
     /// Ordered source notice outcomes; caller owns delivery and failures.
@@ -585,18 +622,23 @@ fn validate_variables(
     Ok(())
 }
 
-fn resolve(
+pub(super) async fn resolve_value(
     value: &Value,
-    resolver: &dyn ParameterResolver,
+    resolver: &mut dyn ParameterResolver,
     budget: &mut TransformBudget<'_>,
 ) -> Result<Value, TransformError> {
     if let Some(value) = value
         .as_str()
         .filter(|value| value.starts_with('$') && !value.starts_with("$ENV:"))
     {
-        let resolved = resolver.resolve_dynamic(&DynamicVariable::parse(value)?)?;
-        budget.text(&resolved)?;
-        return Ok(Value::String(resolved));
+        let variable = DynamicVariable::parse(value)?;
+        budget.checkpoint()?;
+        let resolved = resolver.resolve(&variable).await?;
+        budget.checkpoint()?;
+        if let Some(value) = resolved.as_str() {
+            budget.text(value)?;
+        }
+        return Ok(resolved);
     }
     Ok(value.clone())
 }

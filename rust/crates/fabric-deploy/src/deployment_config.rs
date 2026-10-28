@@ -8,7 +8,10 @@ use serde_json::{Map, Value};
 use std::fmt;
 
 mod model;
-pub use model::{CommandConfiguration, CommandOptions, OperationSettings, WorkspaceTarget};
+pub use model::{
+    CommandConfiguration, CommandConfigurationData, CommandOptions, OperationSettings,
+    WorkspaceTarget,
+};
 
 /// Exact CICD serial publication order, independent of user scope ordering.
 pub const ITEM_TYPES: &[&str] = &[
@@ -705,14 +708,17 @@ impl DeploymentConfig {
     ///
     /// Unlike the legacy Notebook preflight, this retains every source setting
     /// for the orchestrator and never installs process-global flags or constants.
+    /// Borrowed options are supported without removing the earlier owned call
+    /// form. The snapshot owns its immutable copy of noncredential metadata.
     ///
     /// # Errors
     /// Rejects inconsistent caller options; extension fields are retained and
     /// consumers must explicitly acknowledge them before executing mutations.
     pub fn command_configuration(
         &self,
-        options: CommandOptions,
+        options: impl std::borrow::Borrow<CommandOptions>,
     ) -> Result<CommandConfiguration, ConfigurationError> {
-        model::snapshot(self, options)
+        let options: &CommandOptions = options.borrow();
+        model::snapshot(self, options.clone())
     }
 }

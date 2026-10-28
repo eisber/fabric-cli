@@ -3,6 +3,7 @@
 
 use super::{TransformBudget, TransformError};
 use serde_json::Value;
+use std::{future::Future, pin::Pin};
 
 /// Encode a resolved workspace name like source `urllib.parse.quote(safe="")`.
 ///
@@ -166,13 +167,20 @@ pub struct ParameterItem<'a> {
     pub file_path: &'a str,
 }
 
-/// Command-local metadata and filesystem capabilities, never ambient reads.
-pub trait ParameterResolver {
+/// Caller-owned asynchronous metadata resolution, without a library runtime.
+pub type ParameterResolution<'a> =
+    Pin<Box<dyn Future<Output = Result<Value, TransformError>> + Send + 'a>>;
+
+/// Command-local async metadata and pure inventory capabilities.
+///
+/// The mutable borrow allows source-conditional SDK reads without shared mutable
+/// globals or a mutex. No Sync bound or unconditional prefetch/cache is imposed.
+pub trait ParameterResolver: Send {
     /// Resolve a validated variable, refreshing deployed metadata as source requires.
     ///
     /// # Errors
     /// Preserve discovery, missing item/attribute, cancellation and limit failures.
-    fn resolve_dynamic(&self, variable: &DynamicVariable) -> Result<String, TransformError>;
+    fn resolve<'a>(&'a mut self, variable: &'a DynamicVariable) -> ParameterResolution<'a>;
     /// Expand source path/glob filters to validated concrete repository file paths.
     ///
     /// The caller owns the source path syntax, repository confinement, file
@@ -300,10 +308,10 @@ impl Filters {
 
 pub(super) struct NoResolver;
 impl ParameterResolver for NoResolver {
-    fn resolve_dynamic(&self, _: &DynamicVariable) -> Result<String, TransformError> {
-        Err(TransformError::Unsupported(
+    fn resolve<'a>(&'a mut self, _: &'a DynamicVariable) -> ParameterResolution<'a> {
+        Box::pin(std::future::ready(Err(TransformError::Unsupported(
             "dynamic variable requires caller metadata resolver",
-        ))
+        ))))
     }
     fn resolve_paths(&self, _: &[String]) -> Result<Vec<String>, TransformError> {
         Err(TransformError::Unsupported(
