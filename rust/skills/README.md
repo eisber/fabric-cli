@@ -1,24 +1,20 @@
 <!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
 
-# Rust CLI workflow skills
+# CLI workflow skills
 
-This directory reserves the documentation boundary for future Rust CLI workflows.
-No service or deployment skills are implemented in this scaffold. The existing
-Python CLI skills elsewhere in the repository remain unchanged; Rust workflows
-must not depend on their scripts at product runtime.
+This directory is the documentation location for workflows that compose
+`fab-rs` commands. No executable skill bundles are installed from this directory.
 
-Skills compose CLI invocations and interpret documented JSON/exit-code contracts.
-They must not duplicate SDK service logic, acquire credentials independently,
-embed secrets, or depend on an agent runtime being installed with the CLI.
-Direct SDK consumers remain supported independently of skills and the CLI.
+Skills invoke documented CLI operations and interpret their JSON output, exit
+codes and partial-effect evidence. They do not duplicate SDK service logic,
+acquire credentials independently, embed secrets or require an agent runtime to
+be installed with the CLI. Applications can use the SDK independently of skills.
 
-Today `fab-rs` implements help and version only. Do not describe authentication,
-service operations, or deployment as available. New command namespaces and
-workflow skills require separate design and compatibility review.
+A workflow must declare its required commands, host features and input
+capabilities. It must handle authorization failures, cancellation and accepted
+operations without treating them as successful completion.
 
-Skills are not executable plugins and do not imply external command discovery or
-a runtime loader. Use a workflow only once its required CLI operations and
-machine-readable contracts exist; Python skill examples do not establish Rust
-capability. See [extension and workflow boundaries](../docs/extensions-and-skills.md)
-for the source-backed options and confirmed first-party consumer priority; no
-plugin architecture is selected there.
+Skills are not executable plugins. This directory does not enable external
+command discovery or a runtime loader. See the
+[extension boundaries](../docs/extensions-and-skills.md) for the applicable
+design constraints.

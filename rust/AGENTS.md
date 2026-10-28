@@ -93,7 +93,11 @@ CLA, required checks, restricted-area review, and authority boundaries still app
 Run the pinned checks from this directory, not the repository root. There is no
 fixed crate count. Prefer focused crates that enable independent ownership,
 implementation, and testing, with explicit interfaces and acyclic dependencies.
-Crates under `crates/` are discovered automatically; declare each crate's
+Crates under `capabilities/*/*`, `hosts/*/*`, `infrastructure/*/*`, and `sdk/*`
+are discovered automatically. Group service clients and command adapters by
+capability; keep host composition and shared infrastructure separate. Physical
+grouping does not change architectural layers or permit new dependency edges.
+Declare each crate's
 `package.metadata.fabric.layer` and add safe crates to `default-members` as
 described in the architecture guide. The owner-approved optional
 `fabric-identity-windows` native boundary stays outside default members.

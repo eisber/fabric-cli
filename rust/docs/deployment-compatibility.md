@@ -304,7 +304,7 @@ The owner-selected milestone is implemented in `fabric-deploy` and the additive
 `c07228b5ed5266b899ff3d2b37c7a3778cb855b8` was fetched from the published owner
 branch and ancestry-aware merged, preserving the initial local fixture commit.
 The workspace-list implementation, its models/tests, core and identity were not
-rewritten. See the [native consumer guide](../crates/fabric-deploy/README.md).
+rewritten. See the [native consumer guide](../capabilities/deployment/fabric-deploy/README.md).
 
 The path loads a stable local Notebook directory, parses `.platform`, orders
 definition files, normalizes universal newlines, applies ordered explicit
@@ -454,8 +454,8 @@ scalar domains and cross-platform fixture-path metadata remain separate limits.
 Run from `rust/` with an authorized build lease:
 
 ```text
-python -B crates/fabric-deploy/tests/config_reference.py --reference-root <exact-cicd-checkout>
-python -B crates/fabric-deploy/tests/publish_reference.py --reference-root <exact-cicd-checkout>
+python -B capabilities/deployment/fabric-deploy/tests/config_reference.py --reference-root <exact-cicd-checkout>
+python -B capabilities/deployment/fabric-deploy/tests/publish_reference.py --reference-root <exact-cicd-checkout>
 cargo test --offline --locked -p fabric-deploy
 cargo test --offline --locked -p fabric-cli --features native-read --test deploy_mount
 cargo clippy --offline --locked -p fabric-deploy -p fabric-cli --all-targets --features native-read -- -D warnings

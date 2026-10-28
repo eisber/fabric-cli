@@ -16,7 +16,7 @@ from typing import Any
 def check_reference() -> None:
     """Check source header truthiness, audience binding, request order and job routes."""
     root = Path(__file__).resolve().parents[4]
-    released = root / "rust/crates/fabric-cli-mutations/tests"
+    released = root / "rust/capabilities/resources/fabric-cli-mutations/tests"
     sys.path.insert(0, str(released))
     spec = importlib.util.spec_from_file_location("released_skill_source", released / "error_reference.py")
     assert spec and spec.loader

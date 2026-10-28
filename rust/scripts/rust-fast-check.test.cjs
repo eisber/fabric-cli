@@ -28,7 +28,7 @@ test('only full source IDs and finite lanes are accepted', () => {
 
 test('argv repair isolates four feature binaries and preserves all actual before/after captures', () => {
   const commands = plan('audit', {lane: 'argv-repair', packages: ['fabric-cli']},
-    '/target', '/receipts');
+    '/target', '/receipts').slice(1, -1);
   assert.equal(commands.length, 13);
   for (const index of [0, 2]) {
     for (const target of ['argv_contract', 'cli_contract', 'job_cli_contract',
@@ -90,7 +90,7 @@ test('baseline audits run both finite output targets without granting full compa
 
 test('orchestration evidence retains source capture, guards, exact probe build and actual execution', () => {
   const commands = plan('audit', {lane: 'orchestration-audit', source: 'a'.repeat(40), packages: ['fabric-cli']},
-    '/target', '/receipts');
+    '/target', '/receipts').slice(1, -1);
   assert.equal(commands.length, 4);
   assert.ok(commands[0].args.includes('tests/compatibility/orchestration/capture.py'));
   assert.ok(commands[0].stdout.endsWith('orchestration-python.json'));
@@ -104,7 +104,7 @@ test('orchestration evidence retains source capture, guards, exact probe build a
 
 test('REQ015 repair checks only released stale-root semantics and rejects missing actual evidence', () => {
   const commands = plan('audit', {lane: 'request015-audit', source: 'a'.repeat(40),
-    packages: ['fabric-cli']}, '/target', '/receipts');
+    packages: ['fabric-cli']}, '/target', '/receipts').slice(1, -1);
   assert.equal(commands.length, 6);
   assert.ok(commands[0].args.includes('read_session') && commands[0].args.includes('source_operations'));
   assert.ok(commands.at(-1).args.includes('REQ-015'));
@@ -191,19 +191,19 @@ test('deploy preflight first runs actual library then native root consumer, neve
   assert.ok(plan('clippy', manifest)[1].args.includes('native-read'));
   const family = plan('family', manifest, '/target', '/receipts',
     file => !file.endsWith('transform_program_reference.py'));
-  assert.equal(family.length, 27);
+  assert.equal(family.length, 29);
   assert.ok(family.some(item => item.program === 'git' &&
     item.args.slice(-4).join(' ') === 'config --local core.autocrlf true'));
-  assert.ok(family.at(-1).args.includes('--doc'));
-  assert.ok(family.some(item => item.args.includes('crates/fabric-deploy/tests/orchestration_reference.py')));
-  assert.ok(family.some(item => item.args.includes('crates/fabric-cli/tests/deploy_wrapper_reference.py')));
-  assert.ok(family.some(item => item.args.includes('crates/fabric-deploy/tests/definition_import_reference_checks.py')));
-  assert.ok(family.some(item => item.args.includes('crates/fabric-deploy/tests/operation_result_reference.py')));
-  const operation = family.find(item => item.args.includes('crates/fabric-deploy/tests/operation_result_reference.py'));
+  assert.ok(family.at(-2).args.includes('--doc'));
+  assert.ok(family.some(item => item.args.includes('capabilities/deployment/fabric-deploy/tests/orchestration_reference.py')));
+  assert.ok(family.some(item => item.args.includes('hosts/cli/fabric-cli/tests/deploy_wrapper_reference.py')));
+  assert.ok(family.some(item => item.args.includes('capabilities/deployment/fabric-deploy/tests/definition_import_reference_checks.py')));
+  assert.ok(family.some(item => item.args.includes('capabilities/deployment/fabric-deploy/tests/operation_result_reference.py')));
+  const operation = family.find(item => item.args.includes('capabilities/deployment/fabric-deploy/tests/operation_result_reference.py'));
   assert.ok(operation.args.includes('--cli-reference-root') && operation.args.includes('--cicd-reference-root'));
   assert.ok(!operation.args.includes('--reference-root'));
-  const scalar = family.find(item => item.args.includes('crates/fabric-deploy/tests/yaml_scalar_reference.py'));
-  assert.deepEqual(scalar.args, ['-B', 'crates/fabric-deploy/tests/yaml_scalar_reference.py']);
+  const scalar = family.find(item => item.args.includes('capabilities/deployment/fabric-deploy/tests/yaml_scalar_reference.py'));
+  assert.deepEqual(scalar.args, ['-B', 'capabilities/deployment/fabric-deploy/tests/yaml_scalar_reference.py']);
   for (const item of [...commands, ...family]) {
     assert.ok(!item.args.includes('run') && !item.args.includes('--config'));
   }
@@ -218,7 +218,7 @@ test('released parameter transform target runs first and retains its source comp
   assert.ok(tests[0].args.includes('parameter_transforms'));
   assert.ok(tests[1].args.includes('parameter_transforms') && tests[1].args.includes('--list'));
   const family = plan('family', manifest, '/target', '/receipts', () => true);
-  assert.ok(family.some(item => item.args.includes('crates/fabric-deploy/tests/transform_program_reference.py')));
+  assert.ok(family.some(item => item.args.includes('capabilities/deployment/fabric-deploy/tests/transform_program_reference.py')));
 });
 
 test('released full deployment consumer and parameter source captures cannot be omitted', () => {
@@ -238,12 +238,53 @@ test('released full deployment consumer and parameter source captures cannot be 
   for (const name of ['configured_flags', 'flag_protocol', 'config_value_edges', 'parameter_context',
     'parameter_pipeline', 'path_filter', 'selected_constants', 'parameter_resolution',
     'parameter_schema_edges', 'config_extensions_execution']) {
-    assert.ok(family.some(item => item.args.includes(`crates/fabric-deploy/tests/${name}_reference.py`)));
+    assert.ok(family.some(item => item.args.includes(`capabilities/deployment/fabric-deploy/tests/${name}_reference.py`)));
   }
-  const paths = family.find(item => item.args.includes('crates/fabric-deploy/tests/path_filter_reference.py'));
+  const paths = family.find(item => item.args.includes('capabilities/deployment/fabric-deploy/tests/path_filter_reference.py'));
   assert.ok(paths.args.includes('--observations'));
   assert.ok(paths.args.includes(path.join('/receipts', 'path-filter-observed.json')));
 });
+
+test('capability layout preserves every released filesystem-selected deployment and auth check', () => {
+  const expected = new Set([
+    'capabilities/deployment/fabric-deploy/tests/parameter_transforms.rs',
+    'hosts/cli/fabric-cli/tests/deploy_mount.rs',
+    'hosts/cli/fabric-cli/tests/export_parity_mount.rs',
+    'hosts/cli/fabric-cli/tests/deploy_full.rs',
+    'hosts/cli/fabric-cli/tests/native_deploy_inputs.rs',
+    'hosts/cli/fabric-cli/tests/deploy_inputs_debug.rs',
+    'hosts/cli/fabric-cli/tests/auth_commands.rs',
+    'hosts/cli/fabric-cli/tests/table_mounted.rs',
+    'infrastructure/identity/fabric-identity-windows/src/native.rs',
+    ...['transform_program', 'configured_flags', 'flag_protocol', 'config_value_edges',
+      'parameter_context', 'parameter_pipeline', 'path_filter', 'selected_constants',
+      'parameter_resolution', 'parameter_schema_edges', 'config_extensions_execution']
+      .map(name => `capabilities/deployment/fabric-deploy/tests/${name}_reference.py`),
+  ]);
+  const seen = new Set();
+  const exists = file => {
+    if (file.startsWith('tests/')) return true;
+    assert.ok(expected.has(file), `Unexpected operational path: ${file}`);
+    seen.add(file);
+    return expected.has(file);
+  };
+  const deploy = {lane: 'deploy-mount', packages: ['fabric-deploy', 'fabric-cli']};
+  const commands = plan('test', deploy, '/target', '/receipts', exists);
+  for (const selector of ['parameter_transforms', 'export_parity_mount', 'deploy_full',
+    'native_deploy_inputs', 'deploy_inputs_debug']) {
+    assert.equal(commands.filter(item => item.args.includes(selector)).length, 2, selector);
+  }
+  const family = plan('family', deploy, '/target', '/receipts', exists);
+  assert.equal(family.length, 30);
+  for (const lane of ['windows-auth', 'cli-auth', 'cli-95']) {
+    plan('family', {lane, packages: ['fabric-cli']}, '/target', '/receipts', exists);
+  }
+  assert.deepEqual(seen, expected);
+  for (const file of expected) {
+    assert.ok(fs.existsSync(path.join(__dirname, '..', file)), `Released input missing: ${file}`);
+  }
+});
+
 test('Windows native lane, host and dedicated validation namespace must agree', () => {
   const ref = 'refs/heads/validation/rust-fast-windows-03fab';
   runnerLane('windows-auth', 'x86_64-pc-windows-msvc', ref);
@@ -389,10 +430,11 @@ test('SDK/value lane retains in-boundary consumers without certifying central CL
 
 test('CI composition cannot modify product, old workflow, lock or oracle', () => {
   ciDelta(['.github/workflows/rust-fast-check.yml', 'rust/scripts/rust-fast-check.cjs',
+    'rust/scripts/pinned_python_source.py', 'rust/scripts/test_pinned_python_source.py',
     'rust/tests/performance/startup.py', 'rust/tests/performance/test_startup.py',
     'rust/tests/performance/measurement-request.json', 'rust/docs/performance-baseline.md']);
   for (const file of ['rust/Cargo.lock', '.github/workflows/rust-ci.yml',
-    'rust/crates/fabric-cli/src/main.rs', 'rust/tests/compatibility/jobs/reference.py']) {
+    'rust/hosts/cli/fabric-cli/src/main.rs', 'rust/tests/compatibility/jobs/reference.py']) {
     assert.throws(() => ciDelta([file]));
   }
 });
@@ -483,10 +525,105 @@ test('job and import source receipts remain required for their command consumers
   for (const packages of [['fabric-cli'], ['fabric-cli-transfer'], ['fabric-deploy']]) {
     const commands = plan('family', {lane: 'baseline', packages}, '/target', '/receipts', () => true);
     assert.ok(commands.some(item => item.program === 'python' &&
-      item.args.includes('crates/fabric-deploy/tests/definition_import_reference_checks.py')));
+      item.args.includes('capabilities/deployment/fabric-deploy/tests/definition_import_reference_checks.py')));
     assert.ok(commands.some(item => item.program === 'python' &&
       item.args.includes('tests/compatibility/run_export_source_parity.py')));
   }
+});
+
+test('source plans isolate frozen Python while retaining candidate native binaries and cicd inputs', () => {
+  const repository = path.resolve(__dirname, '../..');
+  const output = path.resolve('private-receipts');
+  const target = path.resolve('private-target');
+  const artifact = path.join(output, 'pinned-python-source');
+  const checkout = path.join(artifact, 'source');
+  for (const [stage, manifest] of [
+    ['family', {lane: 'baseline', packages: ['fabric-cli', 'fabric-cli-mutations']}],
+    ['family', {lane: 'deploy-mount', packages: ['fabric-deploy', 'fabric-cli']}],
+    ['audit', {lane: 'argv-repair', packages: ['fabric-cli']}],
+    ['audit', {lane: 'orchestration-audit', packages: ['fabric-cli'], source: 'a'.repeat(40)}],
+  ]) {
+    const commands = plan(stage, manifest, target, output, () => true);
+    assert.deepEqual(commands[0], {program: 'python', cwd: path.join(repository, 'rust'),
+      failFast: true, args: ['-B', 'scripts/pinned_python_source.py', 'prepare',
+        '--candidate-root', repository, '--output', artifact]});
+    assert.deepEqual(commands.at(-1), {program: 'python', cwd: path.join(repository, 'rust'),
+      failFast: true, args: ['-B', 'scripts/pinned_python_source.py', 'verify', '--output', artifact]});
+    for (const item of commands.slice(1, -1)) {
+      if (item.program !== 'python') {
+        assert.equal(item.cwd, undefined, 'Native commands must keep the candidate working directory');
+        continue;
+      }
+      assert.equal(item.cwd, path.join(checkout, 'rust'));
+      for (const flag of ['--read-probe', '--query-probe', '--folder-probe', '--rust-probe',
+        '--probe', '--probes', '--rust-binary']) {
+        if (!item.args.includes(flag)) continue;
+        const probe = item.args[item.args.indexOf(flag) + 1];
+        assert.ok(path.isAbsolute(probe));
+        assert.ok(probe.startsWith(target + path.sep), `Probe left candidate target: ${probe}`);
+      }
+      if (item.args.includes('--cli-reference-root')) {
+        assert.equal(item.args[item.args.indexOf('--cli-reference-root') + 1], checkout);
+        assert.equal(item.args[item.args.indexOf('--cicd-reference-root') + 1], path.join(output, 'cicd-source'));
+      }
+      if (item.args.includes('hosts/cli/fabric-cli/tests/deploy_wrapper_reference.py')) {
+        assert.equal(item.args[item.args.indexOf('--reference-root') + 1], checkout);
+      }
+      if (item.args.includes('tests/compatibility/run_export_source_parity.py')) {
+        assert.equal(item.args[item.args.indexOf('--artifacts') + 1],
+          path.join(checkout, '.oracle-artifacts', 'export-source-receipts'));
+      }
+    }
+  }
+});
+
+test('isolated Python setup failures stop even audit collection and execution records actual cwd', () => {
+  const commands = plan('audit', {lane: 'orchestration-audit', source: 'a'.repeat(40),
+    packages: ['fabric-cli']}, path.resolve('target'), path.resolve('receipts'));
+  const calls = [];
+  const results = execute(commands, 'candidate-rust', (program, args, options) => {
+    calls.push({program, args, options});
+    return {status: 1};
+  }, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.cwd, commands[0].cwd);
+  assert.equal(results[0].cwd, commands[0].cwd);
+  const source = {...commands[1], stdout: undefined};
+  const passed = execute([source], 'candidate-rust', (program, args, options) => {
+    assert.equal(options.cwd, source.cwd);
+    return {status: 0};
+  });
+  assert.equal(passed[0].cwd, source.cwd);
+});
+
+test('definition examples use unique native filenames and retain both unchanged byte comparators', () => {
+  const manifest = {lane: 'native-values', packages: ['fabric-core-json', 'fabric-cli-output']};
+  const commands = plan('family', manifest, '/target', '/receipts', () => true);
+  const definitions = commands.filter(item =>
+    item.args.includes('tests/compatibility/output/definition_reference.py') ||
+    item.args.includes('core_definition_json') || item.args.includes('definition_json'));
+  assert.equal(definitions.length, 4);
+  for (const [index, pkg, example] of [
+    [0, 'fabric-core-json', 'core_definition_json'],
+    [2, 'fabric-cli-output', 'definition_json'],
+  ]) {
+    assert.deepEqual(definitions[index].args, [
+      'run', '--quiet', '--offline', '--locked', '-p', pkg, '--example', example,
+    ]);
+    assert.equal(definitions[index].stdout, path.join('/receipts', `${example}-${pkg}.json`));
+    assert.deepEqual(definitions[index + 1].args, [
+      '-B', 'tests/compatibility/output/definition_reference.py', '--observed',
+      definitions[index].stdout,
+    ]);
+  }
+  const workflow = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/rust-ci.yml'), 'utf8');
+  assert.ok(workflow.includes('-p fabric-core-json --example core_definition_json > "$RUNNER_TEMP/core-definition-json.json"'));
+  assert.ok(workflow.includes('-p fabric-cli-output --example definition_json > "$RUNNER_TEMP/cli-definition-json.json"'));
+  assert.ok(!workflow.includes('-p fabric-core-json --example definition_json'));
+  const coreExamples = path.resolve(__dirname, '../infrastructure/core/fabric-core-json/examples');
+  assert.ok(fs.existsSync(path.join(coreExamples, 'core_definition_json.rs')));
+  assert.ok(!fs.existsSync(path.join(coreExamples, 'definition_json.rs')));
+  assert.ok(fs.existsSync(path.resolve(__dirname, '../hosts/cli/fabric-cli-output/examples/definition_json.rs')));
 });
 
 test('native-values requires native and text observations without weakening oracle', () => {
@@ -575,6 +712,27 @@ test('full native matrix restores the pinned deployment oracle before comparison
   assert.ok(step.includes('-r scripts/rust-fast-requirements.txt'));
 });
 
+test('full native workflow routes every oracle through isolated source and absolute candidate probes', () => {
+  const workflow = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/rust-ci.yml'), 'utf8');
+  assert.ok(workflow.includes('scripts/pinned_python_source.py prepare'));
+  assert.ok(workflow.includes('--candidate-root "$GITHUB_WORKSPACE"'));
+  assert.ok(workflow.includes('scripts/pinned_python_source.py verify'));
+  assert.ok(workflow.includes('unittest discover -s scripts -p test_pinned_python_source.py -v'));
+  assert.ok(workflow.includes("if: always() && steps.pinned-python.outcome == 'success'"));
+  const calls = workflow.split('\n').filter(line => line.includes('python -B') &&
+    !line.includes('scripts/pinned_python_source.py') && !line.includes('test_pinned_python_source.py'));
+  assert.equal(calls.length, 32);
+  assert.ok(calls.every(line => line.includes('(cd "$PINNED_RUST_ROOT" && python -B ')));
+  assert.ok(!workflow.includes('--probes target/'));
+  assert.ok(!/--(?:read-probe|query-probe|folder-probe|rust-probe|probe) "target\//.test(workflow));
+  assert.equal((workflow.match(/\$GITHUB_WORKSPACE\/rust\/target\/debug\/examples/g) || []).length, 9);
+  const assertions = workflow.slice(workflow.indexOf("            const assert = require("),
+    workflow.indexOf('            const root = process.env.GITHUB_WORKSPACE;'));
+  const info = [];
+  new Function('require', 'core', assertions)(require, {info: value => info.push(value)});
+  assert.deepEqual(info, ['Affected-crate selection assertions passed']);
+});
+
 test('workflow limits runner context to steps and retains pinned bounded push gate', () => {
   const workflow = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/rust-fast-check.yml'), 'utf8');
   const beforeSteps = workflow.split('    steps:')[0];
@@ -590,6 +748,14 @@ test('workflow limits runner context to steps and retains pinned bounded push ga
   assert.ok(workflow.indexOf('run check') < workflow.indexOf('run clippy'));
   assert.ok(workflow.indexOf('run check') < workflow.indexOf('run test'));
   assert.ok(workflow.indexOf('tests/performance') < workflow.indexOf('run check'));
+  assert.ok(workflow.indexOf('test_pinned_python_source.py') < workflow.indexOf('run check'));
+  const audit = workflow.slice(workflow.indexOf('\n  audit:'), workflow.indexOf('\n  wheelhouse:'));
+  assert.ok(audit.includes('unittest discover -s scripts -p test_pinned_python_source.py -v'));
+  assert.ok(audit.indexOf('test_pinned_python_source.py') < audit.indexOf('run audit'));
+  const wheelhouse = workflow.slice(workflow.indexOf('\n  wheelhouse:'));
+  assert.ok(wheelhouse.includes('unittest discover -s rust/scripts -p test_pinned_python_source.py -v'));
+  assert.ok(wheelhouse.indexOf('test_pinned_python_source.py') < wheelhouse.indexOf('rust-fast-wheelhouse.py --output'));
+  assert.ok(wheelhouse.includes('test_rust_fast_wheelhouse.py -v\n          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'));
   for (const action of workflow.matchAll(/uses: ([^\s]+)/g)) {
     assert.match(action[1], /@[a-f0-9]{40}$/);
   }

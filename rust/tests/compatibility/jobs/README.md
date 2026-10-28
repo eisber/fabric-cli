@@ -1,81 +1,37 @@
 <!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
 
-# Independent job-family expectations
+# Job command contracts
 
-`command_source.py` and `poll_source.py` add 210 command-response and ten
-non-string/HTTP-204 polling observations captured from actual unchanged source.
-Their JSON captures predate native expected-output assertions; default execution
-compares fresh source observations with the frozen captures. The root
-`job_command_parity` integration test consumes them through the production
-parser, session and shared HTTP executor. Existing 155/396 fixtures are unchanged.
-See the [source command response policy](../../../docs/job-command-response-policy.md)
-for typed-SDK separation, intentional numeric/security failures and root seams.
-`numeric_source.py` separately captures eleven bounded Unicode numeric
-observations and the actual Python 3.13/Unicode 15.1 decimal inventory. No
-arbitrary-size or non-finite JSON value is reclassified as safe by this increment.
-`endpoint_reference.py` executes unchanged pinned job API and HTTP bodies with
-explicit public/daily/MSIT snapshots, all five job types and three skill states;
-all 540 requests retain the fixed Fabric audience. Native endpoint consumers use
-the production root parser/session/shared HTTP and reject cross-host continuation,
-submission and operation links without sending a foreign request.
+This suite verifies all eight job commands with synthetic HTTP, time, UI and
+configuration. Fixtures are immutable; native results never generate expected
+values.
 
-`cases.json` is hand-authored from Python source
-`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`, not generated from Rust.
-`reference.py` uses only the Python standard library. Before executing selected
-functions, it checks their source AST against `git show` at the exact pin.
-It imports no product initialization and uses synthetic HTTP, time, UI and
-configuration boundaries. No credential, cache or service is accessed.
+| Runner | Contracts |
+| --- | --- |
+| `reference.py` | Execution data, schedules, routes, output and polling |
+| `branches_reference.py` | Resource support, parameter and status branches |
+| `command_source.py` | Command-specific raw response interpretation |
+| `poll_source.py` | Non-string states and non-200 polling responses |
+| `numeric_source.py` | Checked numeric spelling and decimal-character inventory |
+| `endpoint_reference.py` | Public, Daily and MSIT routing with fixed audiences |
+| `operation_output_reference.py` | Shared operation errors and retained evidence |
+| `skill_headers_reference.py` | Explicit header propagation and isolation |
 
-Run from the repository root:
+From the repository root:
 
 ```text
-python rust/tests/compatibility/jobs/reference.py
+python -B rust\tests\compatibility\jobs\reference.py
 ```
 
-The cases cover execution-data construction, schedule configuration, every
-Python job API function, actual command-handler outputs and the polling
-algorithm. Failed/unknown status tables, no-envelope terminal states,
-cancel-on-timeout and schedule-removal confirmation are independent contracts.
-Existing command inventory, HTTP and other-family fixtures remain unchanged.
+The repository validation plans run the related references and native consumers.
+The native path includes parser, command session, jobs SDK, shared HTTP and
+operation reconciliation. Unexpected requests and mutation replay fail tests.
 
-Rust public integration tests consume the same expectations through the real
-job SDK, shared HTTP executor, injected synthetic HTTP and real CLI handlers.
-`support.rs` supplies only offline credentials, HTTP and a deterministic
-caller-owned timer; it is not a production backend or successful service stub.
-An unexpected request, including mutation replay, fails the test.
+Failed or unknown states, cancellation, timeout policy, confirmation and silent
+responses remain distinct contracts. Header and endpoint safety checks occur
+before mutation. These are offline checks, not live credential or tenant-policy
+acceptance.
 
-Resumed branch work adds `branches.json` and `branches_reference.py`; the
-released `cases.json` and `reference.py` are unchanged. The additive source
-suite inventories all 44 pinned item types, executes the unchanged hierarchy
-support functions for every type and job leaf, and covers additional parameter,
-schedule, retry-header and wrapper-progress cases. Native tests exercise the
-same values through the actual handlers and shared executor, rejecting
-unsupported resources before HTTP.
-
-`branch_ledger.py --output <absolute-json-path>` runs both unchanged-source suites
-and records exact pinned file/function/line decisions, raise expressions,
-measured source lines and observed line arcs beside the immutable full argument
-inventory. Decision-line observation is not full branch coverage, byte-for-byte
-parity or proof that shared host/numeric/header integration is complete.
-
-`operation_output.json` adds 25 independent generic-operation error contracts.
-`operation_output_reference.py` executes the released, unchanged Python
-HTTP/exception/decorator oracle over those values rather than implementing
-another Python representation formatter. The native `operation_output` tests
-exercise actual job cancellation and timeout cancellation through the shared
-HTTP/operation engine, then the borrowed shared CLI formatter. They cover
-Failed/Cancelled structured, list, scalar, Unicode and null errors, HTTP
-authorization/code precedence and a period-only message that must stay empty
-after its first normalization. Original SDK reconciliation evidence remains
-inspectable after repeated output projections.
-
-`skill_headers.json` and `skill_headers_reference.py` execute the pinned
-`do_request` and every job API body with an explicitly injected synthetic
-context. They check header absence/empty truthiness, exact value preservation,
-Fabric-only audience selection, source precedence over an explicit raw header,
-wire routes/bodies and follow-up URLs. Existing source expectations are not
-rewritten. Native SDK/CLI tests add all eight leaves across the five source
-resource types and skill variants, shared HTTP reads/retries/pages/polls,
-generic-operation errors/results, concurrent isolation and capability/syntax
-rejection before mutation. The synthetic header consumer does not certify
-live-service acceptance or new credential/identity behavior.
+Branch ledgers record observed decisions and inventory, not blanket coverage or
+whole-command completion percentages. Keep new observations separate from fixed
+expectations and preserve unsupported-domain classifications.

@@ -76,53 +76,53 @@ jobs:
             }
 
             const fixture = [
-              {name: 'fabric-core', directory: 'rust/crates/fabric-core/', dependencies: []},
-              {name: 'fabric-identity', directory: 'rust/crates/fabric-identity/', dependencies: ['fabric-core']},
-              {name: 'fabric-sdk', directory: 'rust/crates/fabric-sdk/', dependencies: ['fabric-core']},
-              {name: 'fabric-deploy', directory: 'rust/crates/fabric-deploy/', dependencies: []},
-              {name: 'fabric-cli', directory: 'rust/crates/fabric-cli/', dependencies: []}
+              {name: 'fabric-core', directory: 'rust/infrastructure/core/fabric-core/', dependencies: []},
+              {name: 'fabric-identity', directory: 'rust/infrastructure/identity/fabric-identity/', dependencies: ['fabric-core']},
+              {name: 'fabric-sdk', directory: 'rust/sdk/fabric-sdk/', dependencies: ['fabric-core']},
+              {name: 'fabric-deploy', directory: 'rust/capabilities/deployment/fabric-deploy/', dependencies: []},
+              {name: 'fabric-cli', directory: 'rust/hosts/cli/fabric-cli/', dependencies: []}
             ];
             const allNames = fixture.map(pkg => pkg.name).sort();
-            assert.deepEqual(select(['rust/crates/fabric-identity/src/lib.rs'], fixture).names, ['fabric-identity']);
-            assert.deepEqual(select(['rust/crates/fabric-core/src/lib.rs'], fixture).names,
+            assert.deepEqual(select(['rust/infrastructure/identity/fabric-identity/src/lib.rs'], fixture).names, ['fabric-identity']);
+            assert.deepEqual(select(['rust/infrastructure/core/fabric-core/src/lib.rs'], fixture).names,
               ['fabric-core', 'fabric-identity', 'fabric-sdk']);
             const future = fixture.map(pkg => pkg.name === 'fabric-cli'
               ? {...pkg, dependencies: ['fabric-identity']} : pkg);
-            assert.deepEqual(select(['rust/crates/fabric-core/src/lib.rs'], future).names,
+            assert.deepEqual(select(['rust/infrastructure/core/fabric-core/src/lib.rs'], future).names,
               ['fabric-cli', 'fabric-core', 'fabric-identity', 'fabric-sdk']);
-            assert.deepEqual(select(['rust/crates/fabric-identity/src/lib.rs'], future).names,
+            assert.deepEqual(select(['rust/infrastructure/identity/fabric-identity/src/lib.rs'], future).names,
               ['fabric-cli', 'fabric-identity']);
             assert.deepEqual(select(['rust/docs/build-validation.md', 'src/fabric_cli/fab.py'], fixture).names, []);
-            assert.deepEqual(select(['rust/crates/fabric-cli/tests/cli_contract.rs'], fixture).names, ['fabric-cli']);
-            assert.deepEqual(select(['rust/crates/fabric-sdk/examples/injected_credentials.rs',
-              'rust/crates/fabric-identity/src/lib.rs'], fixture).names, ['fabric-identity', 'fabric-sdk']);
-            assert.deepEqual(select(['rust/crates/fabric-sdk/src/deleted.rs',
-              'rust/crates/fabric-deploy/src/renamed.rs'], fixture).names, ['fabric-deploy', 'fabric-sdk']);
-            assert.deepEqual(select(['rust/crates/fabric-identity/README.md'], fixture).names, ['fabric-identity']);
+            assert.deepEqual(select(['rust/hosts/cli/fabric-cli/tests/cli_contract.rs'], fixture).names, ['fabric-cli']);
+            assert.deepEqual(select(['rust/sdk/fabric-sdk/examples/injected_credentials.rs',
+              'rust/infrastructure/identity/fabric-identity/src/lib.rs'], fixture).names, ['fabric-identity', 'fabric-sdk']);
+            assert.deepEqual(select(['rust/sdk/fabric-sdk/src/deleted.rs',
+              'rust/capabilities/deployment/fabric-deploy/src/renamed.rs'], fixture).names, ['fabric-deploy', 'fabric-sdk']);
+            assert.deepEqual(select(['rust/infrastructure/identity/fabric-identity/README.md'], fixture).names, ['fabric-identity']);
             for (const file of [workflow, 'rust/Cargo.toml', 'rust/Cargo.lock', 'rust/rust-toolchain.toml',
               'rust/rustfmt.toml', 'rust/tests/fixtures/workspaces-page.json',
-              'rust/crates/fabric-identity/Cargo.toml', 'rust/new-build-input',
-              'rust/docs/new-tool.rs', 'rust/crates/fabric-identity-extra/src/lib.rs']) {
+              'rust/infrastructure/identity/fabric-identity/Cargo.toml', 'rust/new-build-input',
+              'rust/docs/new-tool.rs', 'rust/infrastructure/identity/fabric-identity-extra/src/lib.rs']) {
               assert.deepEqual(select([file], fixture).names, allNames);
             }
             assert.deepEqual(select([], fixture, 'Manual full validation').names, allNames);
             const integrated = [
-              {name: 'fabric-core', directory: 'rust/crates/fabric-core/', dependencies: []},
-              {name: 'fabric-identity-windows', directory: 'rust/crates/fabric-identity-windows/', dependencies: []},
-              {name: 'fabric-identity', directory: 'rust/crates/fabric-identity/',
+              {name: 'fabric-core', directory: 'rust/infrastructure/core/fabric-core/', dependencies: []},
+              {name: 'fabric-identity-windows', directory: 'rust/infrastructure/identity/fabric-identity-windows/', dependencies: []},
+              {name: 'fabric-identity', directory: 'rust/infrastructure/identity/fabric-identity/',
                 dependencies: ['fabric-core', 'fabric-identity-windows']},
-              {name: 'fabric-sdk-workspaces', directory: 'rust/crates/fabric-sdk-workspaces/',
+              {name: 'fabric-sdk-workspaces', directory: 'rust/capabilities/resources/fabric-sdk-workspaces/',
                 dependencies: ['fabric-core']},
-              {name: 'fabric-sdk', directory: 'rust/crates/fabric-sdk/',
+              {name: 'fabric-sdk', directory: 'rust/sdk/fabric-sdk/',
                 dependencies: ['fabric-core', 'fabric-sdk-workspaces']},
-              {name: 'fabric-deploy', directory: 'rust/crates/fabric-deploy/', dependencies: ['fabric-sdk']},
-              {name: 'fabric-cli', directory: 'rust/crates/fabric-cli/', dependencies: []}
+              {name: 'fabric-deploy', directory: 'rust/capabilities/deployment/fabric-deploy/', dependencies: ['fabric-sdk']},
+              {name: 'fabric-cli', directory: 'rust/hosts/cli/fabric-cli/', dependencies: []}
             ];
-            assert.deepEqual(select(['rust/crates/fabric-identity-windows/src/native.rs'], integrated).names,
+            assert.deepEqual(select(['rust/infrastructure/identity/fabric-identity-windows/src/native.rs'], integrated).names,
               ['fabric-identity', 'fabric-identity-windows']);
-            assert.deepEqual(select(['rust/crates/fabric-sdk-workspaces/src/workspaces.rs'], integrated).names,
+            assert.deepEqual(select(['rust/capabilities/resources/fabric-sdk-workspaces/src/workspaces.rs'], integrated).names,
               ['fabric-deploy', 'fabric-sdk', 'fabric-sdk-workspaces']);
-            assert.deepEqual(select(['rust/crates/fabric-core/src/lib.rs'], integrated).names,
+            assert.deepEqual(select(['rust/infrastructure/core/fabric-core/src/lib.rs'], integrated).names,
               ['fabric-core', 'fabric-deploy', 'fabric-identity', 'fabric-sdk', 'fabric-sdk-workspaces']);
             assert.deepEqual(select([workflow], integrated).names, integrated.map(pkg => pkg.name).sort());
             core.info('Affected-crate selection assertions passed');
@@ -221,6 +221,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Set up the development-only Python oracle
+        id: oracle-python
         if: >-
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli') ||
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-deploy') ||
@@ -247,6 +248,19 @@ jobs:
       - name: Restore pinned deployment oracle dependencies
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-deploy')
         run: python -m pip install --disable-pip-version-check -r scripts/rust-fast-requirements.txt
+      - name: Prepare isolated frozen Python source and candidate oracle overlays
+        id: pinned-python
+        if: steps.oracle-python.outcome == 'success'
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python -B -m unittest discover -s scripts -p test_pinned_python_source.py -v
+          python -B scripts/pinned_python_source.py prepare \
+            --candidate-root "$GITHUB_WORKSPACE" \
+            --output "$RUNNER_TEMP/rust-pinned-python" > "$RUNNER_TEMP/rust-pinned-python-receipt.json"
+          node -e 'const fs = require("node:fs"); const receipt = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); fs.appendFileSync(process.env.GITHUB_ENV, `PINNED_PYTHON_OUTPUT=${process.argv[2]}\nPINNED_RUST_ROOT=${receipt.rust_root}\n`);' \
+            "$RUNNER_TEMP/rust-pinned-python-receipt.json" "$RUNNER_TEMP/rust-pinned-python"
       - name: Use repository-pinned toolchain and record actual host
         run: |
           cargo --version
@@ -316,13 +330,13 @@ jobs:
           cargo build --offline --locked -p fabric-cli -p fabric-cli-query --examples
           suffix=""
           if [[ "$RUNNER_OS" == Windows ]]; then suffix=".exe"; fi
-          python -B -m unittest discover -s tests/compatibility -p test_run_read_parity.py -v
-          python -B -m unittest discover -s tests/compatibility/commands -p test_inventory.py -v
-          python -B tests/compatibility/run_read_parity.py \
-            --read-probe "target/debug/examples/read_probe${suffix}" \
-            --query-probe "target/debug/examples/projection_output${suffix}" \
-            --folder-probe "target/debug/examples/folder_read_probe${suffix}" \
-            --artifacts "$RUNNER_TEMP/read-parity"
+          (cd "$PINNED_RUST_ROOT" && python -B -m unittest discover -s tests/compatibility -p test_run_read_parity.py -v)
+          (cd "$PINNED_RUST_ROOT" && python -B -m unittest discover -s tests/compatibility/commands -p test_inventory.py -v)
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/run_read_parity.py \
+            --read-probe "$GITHUB_WORKSPACE/rust/target/debug/examples/read_probe${suffix}" \
+            --query-probe "$GITHUB_WORKSPACE/rust/target/debug/examples/projection_output${suffix}" \
+            --folder-probe "$GITHUB_WORKSPACE/rust/target/debug/examples/folder_read_probe${suffix}" \
+            --artifacts "$RUNNER_TEMP/read-parity")
       - name: Require shared core and CLI JSON byte compatibility
         if: >-
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-core-json') ||
@@ -331,21 +345,21 @@ jobs:
           PYTHONUTF8: "1"
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
-          cargo run --quiet --offline --locked -p fabric-core-json --example definition_json > "$RUNNER_TEMP/core-definition-json.json"
+          cargo run --quiet --offline --locked -p fabric-core-json --example core_definition_json > "$RUNNER_TEMP/core-definition-json.json"
           cargo run --quiet --offline --locked -p fabric-cli-output --example definition_json > "$RUNNER_TEMP/cli-definition-json.json"
           cargo run --quiet --offline --locked -p fabric-cli-output --example compatibility_probe > "$RUNNER_TEMP/output-json.json"
           cargo run --quiet --offline --locked -p fabric-core-json --example unicode_json > "$RUNNER_TEMP/unicode-json.json"
           cargo run --quiet --offline --locked -p fabric-core-json --example native_json > "$RUNNER_TEMP/native-json.json"
           cargo run --quiet --offline --locked -p fabric-cli-output --example text_probe > "$RUNNER_TEMP/core-text-observations.json"
-          python -B tests/compatibility/output/definition_reference.py --observed "$RUNNER_TEMP/core-definition-json.json"
-          python -B tests/compatibility/output/definition_reference.py --observed "$RUNNER_TEMP/cli-definition-json.json"
-          python -B tests/compatibility/output/reference.py --observed "$RUNNER_TEMP/output-json.json"
-          python -B tests/compatibility/output/unicode_reference.py --observed "$RUNNER_TEMP/unicode-json.json"
-          python -B tests/compatibility/output/native_reference.py --encoding-only --observed "$RUNNER_TEMP/native-json.json"
-          python -B tests/compatibility/output/text_reference.py --observed "$RUNNER_TEMP/core-text-observations.json"
-          python -B -m unittest discover -s tests/compatibility/output -p test_reference.py -v
-          python -B -m unittest discover -s tests/compatibility/output -p test_unicode_reference.py -v
-          python -B -m unittest discover -s tests/compatibility/output -p test_native_reference.py -v
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/output/definition_reference.py --observed "$RUNNER_TEMP/core-definition-json.json")
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/output/definition_reference.py --observed "$RUNNER_TEMP/cli-definition-json.json")
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/output/reference.py --observed "$RUNNER_TEMP/output-json.json")
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/output/unicode_reference.py --observed "$RUNNER_TEMP/unicode-json.json")
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/output/native_reference.py --encoding-only --observed "$RUNNER_TEMP/native-json.json")
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/output/text_reference.py --observed "$RUNNER_TEMP/core-text-observations.json")
+          (cd "$PINNED_RUST_ROOT" && python -B -m unittest discover -s tests/compatibility/output -p test_reference.py -v)
+          (cd "$PINNED_RUST_ROOT" && python -B -m unittest discover -s tests/compatibility/output -p test_unicode_reference.py -v)
+          (cd "$PINNED_RUST_ROOT" && python -B -m unittest discover -s tests/compatibility/output -p test_native_reference.py -v)
       - name: Check optional broker and safe-code consumer without authenticating
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-identity') || contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
         run: |
@@ -364,14 +378,14 @@ jobs:
           PYTHONUTF8: "1"
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
-          python -B tests/compatibility/jobs/reference.py
-          python -B tests/compatibility/jobs/branches_reference.py
-          python -B tests/compatibility/jobs/operation_output_reference.py
-          python -B tests/compatibility/jobs/skill_headers_reference.py
-          python -B tests/compatibility/jobs/command_source.py
-          python -B tests/compatibility/jobs/poll_source.py
-          python -B tests/compatibility/jobs/numeric_source.py
-          python -B tests/compatibility/jobs/endpoint_reference.py
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/jobs/reference.py)
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/jobs/branches_reference.py)
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/jobs/operation_output_reference.py)
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/jobs/skill_headers_reference.py)
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/jobs/command_source.py)
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/jobs/poll_source.py)
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/jobs/numeric_source.py)
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/jobs/endpoint_reference.py)
           cargo run --offline --locked -p fabric-cli-jobs --example offline_job
       - name: Require released definition source receipts and native transfer consumers
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-deploy')
@@ -379,8 +393,8 @@ jobs:
           PYTHONUTF8: "1"
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
-          python -B -m unittest discover -s tests/compatibility -p test_run_definition_parity.py -v
-          python -B tests/compatibility/run_definition_parity.py --artifacts "$RUNNER_TEMP/definition-parity"
+          (cd "$PINNED_RUST_ROOT" && python -B -m unittest discover -s tests/compatibility -p test_run_definition_parity.py -v)
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/run_definition_parity.py --artifacts "$RUNNER_TEMP/definition-parity")
           cargo test --offline --locked -p fabric-deploy --test definitions
       - name: Require immutable import input and Environment lifecycle source receipts
         if: >-
@@ -390,7 +404,7 @@ jobs:
         env:
           PYTHONUTF8: "1"
           PYTHONDONTWRITEBYTECODE: "1"
-        run: python -B crates/fabric-deploy/tests/definition_import_reference_checks.py
+        run: (cd "$PINNED_RUST_ROOT" && python -B capabilities/deployment/fabric-deploy/tests/definition_import_reference_checks.py)
       - name: Require immutable configuration and scoped parameter source receipts
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-deploy')
         timeout-minutes: 5
@@ -405,7 +419,7 @@ jobs:
           git -C "$source" fetch --depth=1 https://github.com/microsoft/fabric-cicd.git "$pin"
           git -C "$source" checkout --detach "$pin"
           for name in configured_flags flag_protocol config_value_edges parameter_context parameter_pipeline path_filter selected_constants parameter_resolution parameter_schema_edges config_extensions_execution; do
-            python -B "crates/fabric-deploy/tests/${name}_reference.py" --reference-root "$source"
+            (cd "$PINNED_RUST_ROOT" && python -B "capabilities/deployment/fabric-deploy/tests/${name}_reference.py" --reference-root "$source")
           done
       - name: Require immutable export storage and metadata source receipts
         if: >-
@@ -416,7 +430,7 @@ jobs:
         env:
           PYTHONUTF8: "1"
           PYTHONDONTWRITEBYTECODE: "1"
-        run: python -B tests/compatibility/run_export_source_parity.py --artifacts target/export-source-receipts
+        run: (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/run_export_source_parity.py --artifacts "$PINNED_RUST_ROOT/../.oracle-artifacts/export-source-receipts")
       - name: Require opt-in native read host without authentication
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
         env:
@@ -428,8 +442,8 @@ jobs:
           cargo build --offline --locked -p fabric-cli --examples --features native-read
           suffix=""
           if [[ "$RUNNER_OS" == Windows ]]; then suffix=".exe"; fi
-          python -B tests/compatibility/read_session/consumer.py --rust-probe "target/debug/examples/read_session_probe${suffix}"
-          python -B tests/compatibility/job_reads/compare.py --probe "target/debug/examples/job_read_session_probe${suffix}"
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/read_session/consumer.py --rust-probe "$GITHUB_WORKSPACE/rust/target/debug/examples/read_session_probe${suffix}")
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/job_reads/compare.py --probe "$GITHUB_WORKSPACE/rust/target/debug/examples/job_read_session_probe${suffix}")
       - name: Require extended context and actual text output observations
         if: >-
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli') ||
@@ -440,9 +454,9 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
           cargo run --quiet --offline --locked -p fabric-cli-context --example extended_resolve
-          python -B tests/compatibility/context/extended_reference.py
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/context/extended_reference.py)
           cargo run --quiet --offline --locked -p fabric-cli-output --example text_probe > "$RUNNER_TEMP/text-observations.json"
-          python -B tests/compatibility/output/text_reference.py --observed "$RUNNER_TEMP/text-observations.json"
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/output/text_reference.py --observed "$RUNNER_TEMP/text-observations.json")
       - name: Preserve read and query source comparisons with broker feature enabled
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
         env:
@@ -452,11 +466,11 @@ jobs:
           cargo build --offline --locked -p fabric-cli -p fabric-cli-query --examples --features fabric-cli/windows-broker
           suffix=""
           if [[ "$RUNNER_OS" == Windows ]]; then suffix=".exe"; fi
-          python -B tests/compatibility/run_read_parity.py \
-            --read-probe "target/debug/examples/read_probe${suffix}" \
-            --query-probe "target/debug/examples/projection_output${suffix}" \
-            --folder-probe "target/debug/examples/folder_read_probe${suffix}" \
-            --artifacts "$RUNNER_TEMP/read-parity-windows-broker"
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/run_read_parity.py \
+            --read-probe "$GITHUB_WORKSPACE/rust/target/debug/examples/read_probe${suffix}" \
+            --query-probe "$GITHUB_WORKSPACE/rust/target/debug/examples/projection_output${suffix}" \
+            --folder-probe "$GITHUB_WORKSPACE/rust/target/debug/examples/folder_read_probe${suffix}" \
+            --artifacts "$RUNNER_TEMP/read-parity-windows-broker")
       - name: Run independent offline SDK example
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-sdk')
         run: cargo run --offline --locked -p fabric-sdk --example injected_credentials
@@ -472,10 +486,16 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
           cargo build --offline --locked -p fabric-cli-mutations -p fabric-sdk-operations --examples
-          python -B -m unittest discover -s tests/compatibility -p test_run_resource_parity.py -v
-          python -B tests/compatibility/run_resource_parity.py \
-            --probes target/debug/examples \
-            --artifacts "$RUNNER_TEMP/resource-parity"
+          (cd "$PINNED_RUST_ROOT" && python -B -m unittest discover -s tests/compatibility -p test_run_resource_parity.py -v)
+          (cd "$PINNED_RUST_ROOT" && python -B tests/compatibility/run_resource_parity.py \
+            --probes "$GITHUB_WORKSPACE/rust/target/debug/examples" \
+            --artifacts "$RUNNER_TEMP/resource-parity")
+      - name: Verify frozen source and candidate oracle overlays remain unchanged
+        if: always() && steps.pinned-python.outcome == 'success'
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python -B scripts/pinned_python_source.py verify --output "$PINNED_PYTHON_OUTPUT"
       - name: Check CLI help
         if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
         run: cargo run --offline --locked -p fabric-cli -- --help

@@ -37,6 +37,10 @@ COMPARISONS = (
     ("fabric-cli-mutations", "creation_value_reference.py", "offline_mutation", True),
     ("fabric-sdk-operations", "continuation_reference.py", "continuation_query", False),
 )
+REFERENCE_DIRECTORIES = {
+    "fabric-cli-mutations": WORKSPACE / "capabilities" / "resources" / "fabric-cli-mutations",
+    "fabric-sdk-operations": WORKSPACE / "infrastructure" / "execution" / "fabric-sdk-operations",
+}
 
 
 def run(probes: Path, artifacts: Path) -> None:
@@ -91,7 +95,7 @@ def run(probes: Path, artifacts: Path) -> None:
             arguments = [
                 sys.executable,
                 "-B",
-                str(WORKSPACE / "crates" / package / "tests" / reference),
+                str(REFERENCE_DIRECTORIES[package] / "tests" / reference),
                 "--probe",
                 str(executables[name]),
             ]

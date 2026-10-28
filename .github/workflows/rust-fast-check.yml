@@ -59,6 +59,8 @@ jobs:
           python-version: "3.13"
       - name: Test synthetic performance harness contracts without measurements
         run: python -B -m unittest discover -s tests/performance -p 'test_*.py' -v
+      - name: Test isolated frozen Python source contracts without building Rust
+        run: python -B -m unittest discover -s scripts -p test_pinned_python_source.py -v
       - name: Check formatting
         run: node scripts/rust-fast-check.cjs run fmt
       - name: Restore isolated locked Cargo cache
@@ -129,6 +131,8 @@ jobs:
           python-version: "3.13"
       - name: Restore only the pinned development capture dependencies
         run: python -m pip install --disable-pip-version-check -r tests/compatibility/requirements.txt
+      - name: Test isolated frozen Python source contracts before observations
+        run: python -B -m unittest discover -s scripts -p test_pinned_python_source.py -v
       - name: Restore locked dependencies before independent observations
         run: node scripts/rust-fast-check.cjs run fetch
       - name: Execute every finite audit command and retain each actual exit
@@ -164,6 +168,8 @@ jobs:
           node --test rust/scripts/rust-fast-check.test.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -B -m unittest discover -s rust/scripts -p test_rust_fast_wheelhouse.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -B -m unittest discover -s rust/scripts -p test_pinned_python_source.py -v
       - name: Prepare public hash-verified source wheel and Windows dependencies
         run: python -B rust/scripts/rust-fast-wheelhouse.py --output "${{ runner.temp }}\rust-wheelhouse"
       - name: Retain wheelhouse provenance and failed preparation evidence

@@ -183,8 +183,30 @@ class ConsumerReferenceTests(unittest.TestCase):
                 ):
                     REFERENCE.validate_manifest(manifest, raw)
 
-    def test_prior_70_fixtures_runner_guards_and_docs_remain_immutable(self) -> None:
+    def test_prior_70_fixtures_runner_guards_and_archive_remain_immutable(self) -> None:
         self.assertEqual(len(REFERENCE.IMMUTABLE_BASE_BLOBS), 7)
+        self.assertEqual(
+            set(REFERENCE.IMMUTABLE_BASE_BLOBS),
+            {
+                "reference.py",
+                "test_reference.py",
+                "cases.json",
+                "status-cases.json",
+                "truthiness-cases.json",
+                "frozen-baseline-evidence.md",
+                "requirements.txt",
+            },
+        )
+        self.assertEqual(
+            REFERENCE.IMMUTABLE_BASE_BLOBS["frozen-baseline-evidence.md"],
+            "c2244a67620c7f65f7294162440a280be126968d",
+        )
+        self.assertEqual(
+            REFERENCE.blob_identity(
+                (HERE / "frozen-baseline-evidence.md").read_bytes()
+            ),
+            "c2244a67620c7f65f7294162440a280be126968d",
+        )
         self.assertEqual(
             REFERENCE.BASE_REFERENCE_BLOB,
             "2c2166f14b793e91b86bafe389fb3ce40a60cb50",
@@ -209,6 +231,55 @@ class ConsumerReferenceTests(unittest.TestCase):
         with patch.object(Path, "read_bytes", changed):
             with self.assertRaisesRegex(AssertionError, "70-case evidence"):
                 REFERENCE.verify_immutable_base()
+
+    def test_changed_archived_evidence_fails_both_integrity_guards(self) -> None:
+        original = Path.read_bytes
+        evidence = HERE / "frozen-baseline-evidence.md"
+
+        def changed(path: Path) -> bytes:
+            raw = original(path)
+            return raw + b"\nEditorial change\n" if path == evidence else raw
+
+        for guard in (REFERENCE._source_reference, REFERENCE.verify_immutable_base):
+            with self.subTest(guard=guard.__name__):
+                with patch.object(Path, "read_bytes", changed):
+                    with self.assertRaisesRegex(
+                        AssertionError,
+                        r"70-case evidence changed: frozen-baseline-evidence\.md",
+                    ):
+                        guard()
+
+    def test_missing_archived_evidence_fails_both_integrity_guards(self) -> None:
+        original = Path.read_bytes
+        evidence = HERE / "frozen-baseline-evidence.md"
+
+        def missing(path: Path) -> bytes:
+            if path == evidence:
+                raise FileNotFoundError(str(evidence))
+            return original(path)
+
+        for guard in (REFERENCE._source_reference, REFERENCE.verify_immutable_base):
+            with self.subTest(guard=guard.__name__):
+                with patch.object(Path, "read_bytes", missing):
+                    with self.assertRaises(FileNotFoundError):
+                        guard()
+
+    def test_readme_editorial_changes_do_not_affect_integrity_guards(self) -> None:
+        original = Path.read_bytes
+        reads: list[Path] = []
+
+        def edited_readme(path: Path) -> bytes:
+            reads.append(path)
+            return (
+                b"# Updated workspace metadata contracts\n"
+                if path == HERE / "README.md"
+                else original(path)
+            )
+
+        with patch.object(Path, "read_bytes", edited_readme):
+            REFERENCE._source_reference()
+            REFERENCE.verify_immutable_base()
+        self.assertNotIn(HERE / "README.md", reads)
 
     def test_native_inputs_have_no_expected_values_or_fixture_logic(self) -> None:
         for case in self.manifest["cases"]:

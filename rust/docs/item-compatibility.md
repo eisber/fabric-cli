@@ -6,7 +6,7 @@ This bounded SDK slice follows the handwritten REST decision, not a generator
 or full Python/CLI parity claim. Reference source is Python
 `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`; implementation starts from exact
 shared-HTTP checkpoint `4e822a3b760214f37e789d8a016e8cd7635f2f7f`.
-See the [item SDK](../crates/fabric-sdk-items/README.md) for API semantics and
+See the [item SDK](../capabilities/resources/fabric-sdk-items/README.md) for API semantics and
 the [independent source oracle](../tests/compatibility/items/README.md) for
 source digests, case inventory and observed quirks. Existing workspace eight-case
 goldens, their source hashes and expectations are untouched.

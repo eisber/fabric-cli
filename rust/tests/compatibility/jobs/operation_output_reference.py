@@ -13,7 +13,7 @@ from typing import Any
 def check_reference() -> None:
     """Reuse the released source oracle without duplicating its error formatter."""
     root = Path(__file__).resolve().parents[4]
-    released = root / "rust/crates/fabric-cli-mutations/tests"
+    released = root / "rust/capabilities/resources/fabric-cli-mutations/tests"
     sys.path.insert(0, str(released))
     spec = importlib.util.spec_from_file_location("released_error_reference", released / "error_reference.py")
     assert spec and spec.loader

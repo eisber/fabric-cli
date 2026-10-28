@@ -32,6 +32,7 @@ const CI_FILES = [
   'rust/scripts/rust-fast-check.cjs', 'rust/scripts/rust-fast-check.test.cjs',
   'rust/scripts/rust-fast-requirements.txt',
   'rust/scripts/rust-fast-wheelhouse.py', 'rust/scripts/test_rust_fast_wheelhouse.py',
+  'rust/scripts/pinned_python_source.py', 'rust/scripts/test_pinned_python_source.py',
   'rust/scripts/rust-fast-windows-constraints.txt',
   'rust/docs/fast-check.md', 'rust/docs/build-validation.md',
   'rust/tests/performance/startup.py', 'rust/tests/performance/test_startup.py',
@@ -168,6 +169,28 @@ function prepare() {
   console.log(JSON.stringify(manifest, null, 2));
 }
 function plan(stage, manifest, target, output, exists = file => fs.existsSync(path.join(rust, file))) {
+  const commands = candidatePlan(stage, manifest, target, output, exists);
+  if (!commands.some(item => item.program === 'python')) return commands;
+  const artifact = path.join(output, 'pinned-python-source');
+  const checkout = path.join(artifact, 'source');
+  const wrapper = (...args) => ({program: 'python',
+    args: ['-B', 'scripts/pinned_python_source.py', ...args], cwd: rust, failFast: true});
+  return [
+    wrapper('prepare', '--candidate-root', root, '--output', artifact),
+    ...commands.map(item => {
+      if (item.program !== 'python') return item;
+      const args = item.args.map((value, index) =>
+        value === root && ['--reference-root', '--cli-reference-root'].includes(item.args[index - 1])
+          ? checkout : value);
+      if (args.includes('tests/compatibility/run_export_source_parity.py')) {
+        args[args.indexOf('--artifacts') + 1] = path.join(checkout, '.oracle-artifacts', 'export-source-receipts');
+      }
+      return {...item, args, cwd: path.join(checkout, 'rust')};
+    }),
+    wrapper('verify', '--output', artifact),
+  ];
+}
+function candidatePlan(stage, manifest, target, output, exists) {
   const packages = manifest.packages.flatMap(name => ['--package', name]);
   const cargo = (...args) => ({program: 'cargo', args});
   const python = (...args) => ({program: 'python', args: ['-B', ...args]});
@@ -294,28 +317,28 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       cargo('test', '--offline', '--locked', ...packages, '--doc', '--', '--test-threads=1'),
     ];
     if (manifest.lane === 'deploy-mount') return [
-      ...(exists('crates/fabric-deploy/tests/parameter_transforms.rs') ? [
+      ...(exists('capabilities/deployment/fabric-deploy/tests/parameter_transforms.rs') ? [
         cargo('test', '--offline', '--locked', '-p', 'fabric-deploy',
           '--test', 'parameter_transforms', '--', '--test-threads=1'),
       ] : []),
       cargo('test', '--offline', '--locked', '-p', 'fabric-deploy',
         '--test', 'config', '--test', 'repository', '--test', 'parameters', '--test', 'yaml',
-        ...(exists('crates/fabric-deploy/tests/parameter_transforms.rs') ? ['--test', 'parameter_transforms'] : []),
+        ...(exists('capabilities/deployment/fabric-deploy/tests/parameter_transforms.rs') ? ['--test', 'parameter_transforms'] : []),
         '--', '--list'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
         '--test', 'deploy_parameters', '--test', 'deploy_mount', '--test', 'family_mounts',
-        ...(exists('crates/fabric-cli/tests/export_parity_mount.rs') ? ['--test', 'export_parity_mount'] : []),
-        ...(exists('crates/fabric-cli/tests/deploy_full.rs') ? ['--test', 'deploy_full'] : []),
-        ...(exists('crates/fabric-cli/tests/native_deploy_inputs.rs') ? ['--test', 'native_deploy_inputs'] : []),
-        ...(exists('crates/fabric-cli/tests/deploy_inputs_debug.rs') ? ['--test', 'deploy_inputs_debug'] : []),
+        ...(exists('hosts/cli/fabric-cli/tests/export_parity_mount.rs') ? ['--test', 'export_parity_mount'] : []),
+        ...(exists('hosts/cli/fabric-cli/tests/deploy_full.rs') ? ['--test', 'deploy_full'] : []),
+        ...(exists('hosts/cli/fabric-cli/tests/native_deploy_inputs.rs') ? ['--test', 'native_deploy_inputs'] : []),
+        ...(exists('hosts/cli/fabric-cli/tests/deploy_inputs_debug.rs') ? ['--test', 'deploy_inputs_debug'] : []),
         '--', '--list'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-deploy', '--', '--test-threads=1'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
         '--test', 'deploy_parameters', '--test', 'deploy_mount', '--test', 'family_mounts',
-        ...(exists('crates/fabric-cli/tests/export_parity_mount.rs') ? ['--test', 'export_parity_mount'] : []),
-        ...(exists('crates/fabric-cli/tests/deploy_full.rs') ? ['--test', 'deploy_full'] : []),
-        ...(exists('crates/fabric-cli/tests/native_deploy_inputs.rs') ? ['--test', 'native_deploy_inputs'] : []),
-        ...(exists('crates/fabric-cli/tests/deploy_inputs_debug.rs') ? ['--test', 'deploy_inputs_debug'] : []),
+        ...(exists('hosts/cli/fabric-cli/tests/export_parity_mount.rs') ? ['--test', 'export_parity_mount'] : []),
+        ...(exists('hosts/cli/fabric-cli/tests/deploy_full.rs') ? ['--test', 'deploy_full'] : []),
+        ...(exists('hosts/cli/fabric-cli/tests/native_deploy_inputs.rs') ? ['--test', 'native_deploy_inputs'] : []),
+        ...(exists('hosts/cli/fabric-cli/tests/deploy_inputs_debug.rs') ? ['--test', 'deploy_inputs_debug'] : []),
         '--', '--test-threads=1'),
     ];
     if (windowsAuth) return [
@@ -367,19 +390,19 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
   }
   requireThat(stage === 'family', `Unknown stage: ${stage}`);
   if (manifest.lane === 'deploy-mount') {
-    requireThat(exists('crates/fabric-cli/tests/deploy_mount.rs'),
+    requireThat(exists('hosts/cli/fabric-cli/tests/deploy_mount.rs'),
       'Released offline deployment root consumer is missing');
     const source = path.join(output, 'cicd-source');
     const cicd = '5ca096c00a9a878c646c59fe537b883eba951329';
     const references = ['config_reference', 'config_warning_reference',
       'orchestration_reference', 'operation_section_reference', 'literal_parameter_reference',
       'literal_parameter_payload_reference', 'transform_adapter_reference'];
-    if (exists('crates/fabric-deploy/tests/transform_program_reference.py')) references.push('transform_program_reference');
+    if (exists('capabilities/deployment/fabric-deploy/tests/transform_program_reference.py')) references.push('transform_program_reference');
     for (const name of ['configured_flags_reference', 'flag_protocol_reference',
       'config_value_edges_reference', 'parameter_context_reference', 'parameter_pipeline_reference',
       'path_filter_reference', 'selected_constants_reference', 'parameter_resolution_reference',
       'parameter_schema_edges_reference', 'config_extensions_execution_reference']) {
-      if (exists(`crates/fabric-deploy/tests/${name}.py`)) references.push(name);
+      if (exists(`capabilities/deployment/fabric-deploy/tests/${name}.py`)) references.push(name);
     }
     return [
       {program: 'git', args: ['init', source]},
@@ -387,14 +410,14 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
       {program: 'git', args: ['-C', source, 'fetch', '--depth=1',
         'https://github.com/microsoft/fabric-cicd.git', cicd]},
       {program: 'git', args: ['-C', source, 'checkout', '--detach', cicd]},
-      ...references.map(name => python(`crates/fabric-deploy/tests/${name}.py`,
+      ...references.map(name => python(`capabilities/deployment/fabric-deploy/tests/${name}.py`,
         '--reference-root', source,
         ...(name === 'path_filter_reference' ? ['--observations', path.join(output, 'path-filter-observed.json')] : []))),
-      python('crates/fabric-deploy/tests/yaml_scalar_reference.py'),
-      python('crates/fabric-deploy/tests/operation_result_reference.py',
+      python('capabilities/deployment/fabric-deploy/tests/yaml_scalar_reference.py'),
+      python('capabilities/deployment/fabric-deploy/tests/operation_result_reference.py',
         '--cli-reference-root', root, '--cicd-reference-root', source),
-      python('crates/fabric-cli/tests/deploy_wrapper_reference.py', '--reference-root', root),
-      python('crates/fabric-deploy/tests/definition_import_reference_checks.py'),
+      python('hosts/cli/fabric-cli/tests/deploy_wrapper_reference.py', '--reference-root', root),
+      python('capabilities/deployment/fabric-deploy/tests/definition_import_reference_checks.py'),
       python('tests/compatibility/run_export_source_parity.py',
         '--artifacts', path.join(rust, 'target', 'export-source-receipts')),
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
@@ -402,22 +425,22 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     ];
   }
   if (windowsAuth) {
-    for (const file of ['crates/fabric-cli/tests/auth_commands.rs',
-      'crates/fabric-identity-windows/src/native.rs']) {
+    for (const file of ['hosts/cli/fabric-cli/tests/auth_commands.rs',
+      'infrastructure/identity/fabric-identity-windows/src/native.rs']) {
       requireThat(exists(file), `Reviewed native offline auth consumer is missing: ${file}`);
     }
     return [cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
       '--features', 'windows-broker', '--doc', '--', '--test-threads=1')];
   }
   if (cliAuth) {
-    requireThat(exists('crates/fabric-cli/tests/auth_commands.rs'),
+    requireThat(exists('hosts/cli/fabric-cli/tests/auth_commands.rs'),
       'Released offline auth command consumer is missing');
     return [cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
       '--features', 'windows-broker', '--doc', '--', '--test-threads=1')];
   }
   if (manifest.lane === 'cli-95') {
-    for (const file of ['crates/fabric-cli/tests/table_mounted.rs',
-      'crates/fabric-cli/tests/auth_commands.rs']) {
+    for (const file of ['hosts/cli/fabric-cli/tests/table_mounted.rs',
+      'hosts/cli/fabric-cli/tests/auth_commands.rs']) {
       requireThat(exists(file), `Released combined CLI consumer is missing: ${file}`);
     }
   }
@@ -431,7 +454,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     }
   }
   if (has('fabric-core-json') || has('fabric-cli-output')) {
-    observation('fabric-core-json', 'definition_json', 'definition_reference.py');
+    observation('fabric-core-json', 'core_definition_json', 'definition_reference.py');
     observation('fabric-cli-output', 'definition_json', 'definition_reference.py');
     observation('fabric-cli-output', 'compatibility_probe', 'reference.py');
     observation('fabric-core-json', 'unicode_json', 'unicode_reference.py');
@@ -492,7 +515,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     commands.push(python('tests/compatibility/run_definition_parity.py', '--artifacts', path.join(output, 'definition')));
   }
   if (has('fabric-cli') || has('fabric-cli-transfer') || has('fabric-deploy')) {
-    commands.push(python('crates/fabric-deploy/tests/definition_import_reference_checks.py'),
+    commands.push(python('capabilities/deployment/fabric-deploy/tests/definition_import_reference_checks.py'),
       python('tests/compatibility/run_export_source_parity.py',
         '--artifacts', path.join(rust, 'target', 'export-source-receipts')));
   }
@@ -516,7 +539,7 @@ function execute(commands, cwd, run = spawnSync, collectFailures = false) {
     const err = item.stderr ? fs.openSync(item.stderr, 'wx') : undefined;
     let result;
     try {
-      result = run(item.program, item.args, {cwd, shell: false, timeout: item.timeout || 300000,
+      result = run(item.program, item.args, {cwd: item.cwd || cwd, shell: false, timeout: item.timeout || 300000,
         ...(item.environment ? {env: {...process.env, ...item.environment}} : {}),
         stdio: ['ignore', fd === undefined ? 'inherit' : fd, err === undefined ? 'inherit' : err]});
     } finally {
@@ -526,8 +549,8 @@ function execute(commands, cwd, run = spawnSync, collectFailures = false) {
     results.push({program: item.program, args: item.args, startedAt,
       completedAt: new Date().toISOString(), exit: result.status, signal: result.signal,
       error: result.error?.message, stdout: item.stdout, stderr: item.stderr,
-      environment: item.environment, timeout: item.timeout || 300000});
-    if (!collectFailures && (result.error || result.signal || result.status !== 0)) break;
+      cwd: item.cwd || cwd, environment: item.environment, timeout: item.timeout || 300000});
+    if ((!collectFailures || item.failFast) && (result.error || result.signal || result.status !== 0)) break;
   }
   return results;
 }

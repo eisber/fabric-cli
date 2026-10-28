@@ -6,7 +6,7 @@ Source: `microsoft/fabric-cli` at
 `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
 Base: `eisber/fabric-cli` `feature/rust` exact
 `e0be370e6aade9d61ea46561e36a53b0ddc9bdec`.
-Implementation: [`fabric-cli-query`](../crates/fabric-cli-query/README.md),
+Implementation: [`fabric-cli-query`](../hosts/cli/fabric-cli-query/README.md),
 CLI layer; no SDK or deployment behavior changes.
 
 ## Source mapping

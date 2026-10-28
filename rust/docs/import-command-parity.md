@@ -66,7 +66,7 @@ protected source fixture was modified.
 Re-execute both captures from `rust/`:
 
 ```text
-python -B crates/fabric-deploy/tests/definition_import_reference_checks.py
+python -B capabilities/deployment/fabric-deploy/tests/definition_import_reference_checks.py
 ```
 
 The checker uses a newly created caller-workspace directory, removes only that
@@ -196,18 +196,18 @@ live Fabric and non-Windows native runs remain unexecuted.
 
 ## Changed files
 
-- `rust/crates/fabric-deploy/src/definitions/import.rs`
-- `rust/crates/fabric-deploy/src/definitions/import_tests.rs`
-- `rust/crates/fabric-deploy/tests/definition_import_lifecycle_reference.py`
-- `rust/crates/fabric-deploy/tests/definition_import_lifecycle_source.json`
-- `rust/crates/fabric-deploy/tests/definition_import_inputs_reference.py`
-- `rust/crates/fabric-deploy/tests/definition_import_inputs_source.json`
-- `rust/crates/fabric-deploy/tests/definition_import_reference_checks.py`
-- `rust/crates/fabric-cli-transfer/src/lib.rs`
-- `rust/crates/fabric-cli-transfer/src/import_environment.rs`
-- `rust/crates/fabric-cli-transfer/src/local.rs` (import resolution and checks)
-- `rust/crates/fabric-cli/src/families/transfer_files.rs` (import worker methods)
-- `rust/crates/fabric-cli/tests/family_mounts.rs` (additive test registration only)
-- `rust/crates/fabric-cli/tests/family_support/import_parity.rs`
-- `rust/crates/fabric-cli/tests/family_support/import_roots.rs`
+- `rust/capabilities/deployment/fabric-deploy/src/definitions/import.rs`
+- `rust/capabilities/deployment/fabric-deploy/src/definitions/import_tests.rs`
+- `rust/capabilities/deployment/fabric-deploy/tests/definition_import_lifecycle_reference.py`
+- `rust/capabilities/deployment/fabric-deploy/tests/definition_import_lifecycle_source.json`
+- `rust/capabilities/deployment/fabric-deploy/tests/definition_import_inputs_reference.py`
+- `rust/capabilities/deployment/fabric-deploy/tests/definition_import_inputs_source.json`
+- `rust/capabilities/deployment/fabric-deploy/tests/definition_import_reference_checks.py`
+- `rust/capabilities/deployment/fabric-cli-transfer/src/lib.rs`
+- `rust/capabilities/deployment/fabric-cli-transfer/src/import_environment.rs`
+- `rust/capabilities/deployment/fabric-cli-transfer/src/local.rs` (import resolution and checks)
+- `rust/hosts/cli/fabric-cli/src/families/transfer_files.rs` (import worker methods)
+- `rust/hosts/cli/fabric-cli/tests/family_mounts.rs` (additive test registration only)
+- `rust/hosts/cli/fabric-cli/tests/family_support/import_parity.rs`
+- `rust/hosts/cli/fabric-cli/tests/family_support/import_roots.rs`
 - `rust/docs/import-command-parity.md`

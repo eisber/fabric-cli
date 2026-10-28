@@ -2,39 +2,39 @@
 # Licensed under the MIT License.
 
 [workspace]
-members = ["crates/*"]
+members = ["capabilities/*/*", "hosts/*/*", "infrastructure/*/*", "sdk/*"]
 default-members = [
-    "crates/fabric-core",
-    "crates/fabric-core-json",
-    "crates/fabric-identity",
-    "crates/fabric-sdk",
-    "crates/fabric-sdk-workspaces",
-    "crates/fabric-sdk-items",
-    "crates/fabric-sdk-capacities",
-    "crates/fabric-sdk-folders",
-    "crates/fabric-sdk-onelake",
-    "crates/fabric-sdk-onelake-http",
-    "crates/fabric-sdk-operations",
-    "crates/fabric-sdk-http",
-    "crates/fabric-sdk-transport",
-    "crates/fabric-deploy",
-    "crates/fabric-cli",
-    "crates/fabric-cli-output",
-    "crates/fabric-cli-context",
-    "crates/fabric-cli-query",
-    "crates/fabric-sdk-jobs",
-    "crates/fabric-cli-jobs",
-    "crates/fabric-sdk-paging",
-    "crates/fabric-cli-mutations",
-    "crates/fabric-sdk-api",
-    "crates/fabric-sdk-access",
-    "crates/fabric-sdk-catalog",
-    "crates/fabric-cli-resources",
-    "crates/fabric-cli-storage-files",
-    "crates/fabric-cli-local",
-    "crates/fabric-cli-transfer",
-    "crates/fabric-cli-tables",
-    "crates/fabric-sdk-tables",
+    "infrastructure/core/fabric-core",
+    "infrastructure/core/fabric-core-json",
+    "infrastructure/identity/fabric-identity",
+    "sdk/fabric-sdk",
+    "capabilities/resources/fabric-sdk-workspaces",
+    "capabilities/resources/fabric-sdk-items",
+    "capabilities/resources/fabric-sdk-capacities",
+    "capabilities/resources/fabric-sdk-folders",
+    "capabilities/storage/fabric-sdk-onelake",
+    "capabilities/storage/fabric-sdk-onelake-http",
+    "infrastructure/execution/fabric-sdk-operations",
+    "infrastructure/http/fabric-sdk-http",
+    "infrastructure/http/fabric-sdk-transport",
+    "capabilities/deployment/fabric-deploy",
+    "hosts/cli/fabric-cli",
+    "hosts/cli/fabric-cli-output",
+    "hosts/cli/fabric-cli-context",
+    "hosts/cli/fabric-cli-query",
+    "capabilities/jobs/fabric-sdk-jobs",
+    "capabilities/jobs/fabric-cli-jobs",
+    "infrastructure/execution/fabric-sdk-paging",
+    "capabilities/resources/fabric-cli-mutations",
+    "capabilities/resources/fabric-sdk-api",
+    "capabilities/resources/fabric-sdk-access",
+    "capabilities/resources/fabric-sdk-catalog",
+    "capabilities/resources/fabric-cli-resources",
+    "capabilities/storage/fabric-cli-storage-files",
+    "capabilities/local/fabric-cli-local",
+    "capabilities/deployment/fabric-cli-transfer",
+    "capabilities/tables/fabric-cli-tables",
+    "capabilities/tables/fabric-sdk-tables",
 ]
 resolver = "3"
 
@@ -46,37 +46,37 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
-fabric-cli-context = { path = "crates/fabric-cli-context" }
-fabric-core = { path = "crates/fabric-core" }
-fabric-core-json = { path = "crates/fabric-core-json" }
-fabric-identity = { path = "crates/fabric-identity" }
-fabric-cli-output = { path = "crates/fabric-cli-output" }
-fabric-cli-query = { path = "crates/fabric-cli-query" }
-fabric-cli-jobs = { path = "crates/fabric-cli-jobs" }
-fabric-sdk-jobs = { path = "crates/fabric-sdk-jobs" }
-fabric-sdk-paging = { path = "crates/fabric-sdk-paging" }
-fabric-cli-mutations = { path = "crates/fabric-cli-mutations" }
-fabric-sdk-api = { path = "crates/fabric-sdk-api" }
-fabric-sdk-access = { path = "crates/fabric-sdk-access" }
-fabric-sdk-catalog = { path = "crates/fabric-sdk-catalog" }
-fabric-cli-resources = { path = "crates/fabric-cli-resources" }
-fabric-cli-storage-files = { path = "crates/fabric-cli-storage-files" }
-fabric-cli-local = { path = "crates/fabric-cli-local" }
-fabric-cli-transfer = { path = "crates/fabric-cli-transfer" }
-fabric-cli-tables = { path = "crates/fabric-cli-tables" }
-fabric-sdk-tables = { path = "crates/fabric-sdk-tables" }
-fabric-deploy = { path = "crates/fabric-deploy" }
-fabric-sdk = { path = "crates/fabric-sdk" }
-fabric-sdk-workspaces = { path = "crates/fabric-sdk-workspaces" }
-fabric-sdk-items = { path = "crates/fabric-sdk-items" }
-fabric-sdk-capacities = { path = "crates/fabric-sdk-capacities" }
-fabric-sdk-folders = { path = "crates/fabric-sdk-folders" }
-fabric-sdk-onelake = { path = "crates/fabric-sdk-onelake" }
-fabric-sdk-onelake-http = { path = "crates/fabric-sdk-onelake-http" }
-fabric-sdk-operations = { path = "crates/fabric-sdk-operations" }
-fabric-sdk-http = { path = "crates/fabric-sdk-http" }
-fabric-sdk-transport = { path = "crates/fabric-sdk-transport", default-features = false }
-fabric-identity-windows = { path = "crates/fabric-identity-windows" }
+fabric-cli-context = { path = "hosts/cli/fabric-cli-context" }
+fabric-core = { path = "infrastructure/core/fabric-core" }
+fabric-core-json = { path = "infrastructure/core/fabric-core-json" }
+fabric-identity = { path = "infrastructure/identity/fabric-identity" }
+fabric-cli-output = { path = "hosts/cli/fabric-cli-output" }
+fabric-cli-query = { path = "hosts/cli/fabric-cli-query" }
+fabric-cli-jobs = { path = "capabilities/jobs/fabric-cli-jobs" }
+fabric-sdk-jobs = { path = "capabilities/jobs/fabric-sdk-jobs" }
+fabric-sdk-paging = { path = "infrastructure/execution/fabric-sdk-paging" }
+fabric-cli-mutations = { path = "capabilities/resources/fabric-cli-mutations" }
+fabric-sdk-api = { path = "capabilities/resources/fabric-sdk-api" }
+fabric-sdk-access = { path = "capabilities/resources/fabric-sdk-access" }
+fabric-sdk-catalog = { path = "capabilities/resources/fabric-sdk-catalog" }
+fabric-cli-resources = { path = "capabilities/resources/fabric-cli-resources" }
+fabric-cli-storage-files = { path = "capabilities/storage/fabric-cli-storage-files" }
+fabric-cli-local = { path = "capabilities/local/fabric-cli-local" }
+fabric-cli-transfer = { path = "capabilities/deployment/fabric-cli-transfer" }
+fabric-cli-tables = { path = "capabilities/tables/fabric-cli-tables" }
+fabric-sdk-tables = { path = "capabilities/tables/fabric-sdk-tables" }
+fabric-deploy = { path = "capabilities/deployment/fabric-deploy" }
+fabric-sdk = { path = "sdk/fabric-sdk" }
+fabric-sdk-workspaces = { path = "capabilities/resources/fabric-sdk-workspaces" }
+fabric-sdk-items = { path = "capabilities/resources/fabric-sdk-items" }
+fabric-sdk-capacities = { path = "capabilities/resources/fabric-sdk-capacities" }
+fabric-sdk-folders = { path = "capabilities/resources/fabric-sdk-folders" }
+fabric-sdk-onelake = { path = "capabilities/storage/fabric-sdk-onelake" }
+fabric-sdk-onelake-http = { path = "capabilities/storage/fabric-sdk-onelake-http" }
+fabric-sdk-operations = { path = "infrastructure/execution/fabric-sdk-operations" }
+fabric-sdk-http = { path = "infrastructure/http/fabric-sdk-http" }
+fabric-sdk-transport = { path = "infrastructure/http/fabric-sdk-transport", default-features = false }
+fabric-identity-windows = { path = "infrastructure/identity/fabric-identity-windows" }
 azure_core = { version = "1.1.0", default-features = false }
 base64 = "0.22.1"
 yaml-rust2 = { version = "=0.10.4", default-features = false }

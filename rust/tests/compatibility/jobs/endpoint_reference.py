@@ -19,7 +19,7 @@ ROOT = HERE.parents[3]
 
 def check() -> None:
     """Prove selected hosts retain fixed Fabric scopes and explicit skill truthiness."""
-    location = ROOT / "rust/crates/fabric-cli-mutations/tests"
+    location = ROOT / "rust/capabilities/resources/fabric-cli-mutations/tests"
     sys.path.insert(0, str(location))
     spec = importlib.util.spec_from_file_location("job_endpoint_source", location / "error_reference.py")
     assert spec and spec.loader

@@ -10,6 +10,34 @@ It is not a full port, release contract, or replacement for the Python product.
 
 ## Crate boundaries
 
+### Physical organization
+
+The workspace is capability-first. Related service clients and CLI adapters
+live together without merging their packages or changing their architectural
+layers:
+
+| Location | Ownership |
+| --- | --- |
+| `capabilities/resources/` | Workspace, item, folder, capacity, catalog, access and explicit API clients; resource command adapters |
+| `capabilities/jobs/` | Job service clients and command adapters |
+| `capabilities/storage/` | OneLake models, HTTP adapter and file commands |
+| `capabilities/tables/` | Table service clients and command adapters |
+| `capabilities/deployment/` | Deployment workflows and definition transfer adapters |
+| `capabilities/local/` | Local configuration, navigation and platform commands |
+| `hosts/cli/` | Executable composition and CLI-specific context, query and presentation |
+| `infrastructure/core/` | Shared contracts and ordered JSON encoding |
+| `infrastructure/identity/` | Credential selection and isolated Windows interop |
+| `infrastructure/http/` | Shared HTTP execution and optional native transport |
+| `infrastructure/execution/` | Shared paging and operation reconciliation |
+| `sdk/` | Public SDK facade |
+
+Each directory contains existing named crates. There are no empty MCP or
+Azure DevOps task packages. Future front-ends should compose reusable APIs and
+provide their own input, confirmation and output adapters; they must not launch
+the CLI or depend on CLI-specific types simply to reuse service operations.
+Extracting additional front-end-neutral workflows requires separate interface
+review, not relabeling CLI crates or relaxing the layer rules below.
+
 | Layer (initial crate) | Ownership | Allowed dependency layers |
 | --- | --- | --- |
 | `core` (`fabric-core`) | Credential interoperability, shared errors; future request context and HTTP policies | `core` |
@@ -65,8 +93,9 @@ The same composition mounts cancellation and all three schedule mutations throug
 explicit injected confirmation. Native non-forced removal remains unsupported,
 not an implicit yes or blocking library prompt.
 The initial five crates are not a fixed count or a maximum. Workspace membership
-uses `crates/*`, so a new crate directory does not require editing a central
-member list. Default members explicitly include safe crates and exclude the
+uses `capabilities/*/*`, `hosts/*/*`, `infrastructure/*/*`, and `sdk/*`, so
+crates are discovered within their capability or shared ownership group.
+Default members explicitly include safe crates and exclude the
 optional `fabric-identity-windows` native boundary. Add new safe crates to
 `default-members`. Each crate declares its architectural layer in its own manifest:
 
@@ -117,14 +146,17 @@ the workspace architecture contract. Workspace-wide CI already includes new
 members. Shared-host build-slot rules still apply; additional crates are not a
 grant to start concurrent heavy builds.
 
-The eventual call direction is:
+The composition direction is:
 
 ```text
-Agents and skills -> CLI -> SDK -> Fabric / OneLake / required ARM
-                      |      ^
-                      +-> deployment library
-Direct SDK consumer ---------+
+CLI host -> capability command adapters -> SDK -> Fabric / OneLake / required ARM
+                    |                       ^
+                    +-> deployment library -+
+Direct SDK consumer ------------------------+
 ```
+
+MCP and Azure DevOps task hosts are potential additional consumers of the SDK
+and deployment workflows, not implemented hosts or new dependency exceptions.
 
 ### Focused workspace SDK
 
@@ -363,7 +395,7 @@ Notebook service requests. It accepts a caller-owned Azure `HttpClient` and
 asynchronous timer, with bounded streaming, deadlines, read-status retries and
 no mutation replay. It depends on the SDK facade, not the reverse, so focused
 SDK consumers remain free to inject other executors. See its
-[source mapping and compatibility limits](../crates/fabric-sdk-http/README.md).
+[source mapping and compatibility limits](../infrastructure/http/fabric-sdk-http/README.md).
 It does not install a production HTTP/TLS backend or create a runtime.
 
 Libraries must not prompt implicitly, exit the process, initialize a global logger, create
@@ -378,7 +410,7 @@ STA thread is a WinRT/UI requirement, not an independent async runtime.
 
 `azure_core` default features remain disabled. Direct SDK consumers still
 exclude HTTP/TLS implementations. The optional
-[`fabric-sdk-transport`](../crates/fabric-sdk-transport/README.md) SDK-layer crate
+[`fabric-sdk-transport`](../infrastructure/http/fabric-sdk-transport/README.md) SDK-layer crate
 has no default backend; its `hyper-rustls` feature selects one pooled Hyper
 client, Rustls with a per-client ring provider, explicit platform/additional
 trust, a direct/static-HTTP-proxy policy and bounded decoded streaming.

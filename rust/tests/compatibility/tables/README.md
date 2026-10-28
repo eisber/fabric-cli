@@ -1,86 +1,29 @@
 <!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
 
-# Independent TABLE source oracle
+# Table contracts
 
-Authority: Python `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`, not the
-preserved upstream ancestry of this lane. `reference.py` reads exact Git blobs,
-checks their content identity and compiles unchanged selected function bodies.
-No product imports, authentication, network, real tempfiles or real sleeps are
-used. There is no recording/update mode and no Rust-generated expectation.
+This suite covers table load options, maintenance configuration, Delta schema
+selection, resource eligibility, retention, request bytes and presentation.
+All inputs and expected results are synthetic and fixed.
 
-`presentation_reference.py` additionally executes unchanged pinned output/UI
-definitions to verify the central consumer's status placement, singleton-data
-list wrapping and literal lowercase schema headers. These correct new central
-test assumptions, not the protected source oracle or product behavior. The
-existing `terminal-location-fetches-result` lifecycle case remains the authority
-for supplying a terminal Location when a test expects a result GET.
+Lifecycle fixtures distinguish bare acceptance, operation-ID polling, result
+retrieval, failure, cancellation and unknown states. Native consumers traverse
+the actual HEAD/load/shared-operation/output chain without replaying requests.
 
-`cases.json` contains 31 independently hand-authored load option, maintenance
-configuration and Delta schema cases. Both the Python source and native public
-consumers assert those expectations. The maintenance path executes the actual
-source temporary-file wrapper against an in-memory filesystem and checks cleanup.
-Native code passes execution data directly to the jobs boundary instead of
-reproducing that Python-only tempfile bridge.
+Storage paging cases require complete log listings before schema selection.
+Wire cases compare ordered JSON bytes, not only parsed-value equality.
+Unicode retention inputs and digit limits remain explicit validation boundaries.
 
-`lifecycle.json` contains eight separate conditional Fabric LRO source cases:
-bare acceptance, operation-ID completion, Completed alias, conditional result
-retrieval, failure, remote cancellation, the Location-only empty-ID quirk and
-unknown-running states. The new native SDK/shared-HTTP/shared-operation consumer
-also exercises all eight shapes. Its opaque operation ID is replaced by a
-canonical GUID to satisfy the existing native ID boundary, and only that ID is
-normalized back for request comparison; expected states, requests and waits are
-not rewritten. This is SDK operation evidence, not blanket CLI message parity.
+Reference execution uses injected HTTP, credentials, time and an in-memory
+filesystem. Recorded identities are verified before executing cases.
+No live service, application initialization or real credential store is used.
 
-The same eight lifecycle cases additionally traverse the actual Python TABLE
-handler, table/OneLake clients and complete `do_request`/operation/result stack,
-with a synthetic session and two explicitly injected auth/context imports.
-They assert the source HEAD/POST/GET sequence, scopes, waits and final table
-messages. Those are eight additional observations, not eight new cases.
-
-`storage-paging.json` adds two independent cross-page schema cases. Original
-schema and OneLake client functions execute together with the unchanged
-`_handle_successful_response` and `ApiResponse.append_text` accumulation. The
-native TABLE consumer traverses the released generic OneLake pager before
-sorting/reading logs against the same expected fields and read order.
-
-`branches.json` adds20 request/status/schema/retention/Z-Order branch cases;
-`errors.json` adds five complete original handler/client error-message cases,
-including ordered dictionaries, lists, null/string details and normalized empty
-messages. The real native HEAD/load/shared-LRO/output path uses the same
-independent expectations through the released pure shared formatter.
-
-`retention-unicode.json` adds five Unicode15.1/numeric validation cases. Original
-integer conversion additionally verifies the exact4300-digit boundary and plus
-one, without changing process globals. Unicode data is explicit and pinned to
-the Python3.13 development oracle, not an assumption about every Python release.
-
-`resources.json` and `resource_reference.py` separately execute the original
-FabricElement/_BaseItem/OneLakeItem class support checks and source command
-lookup functions, with exact pinned support-YAML list facts. They demonstrate
-that OneLakeItem inherits the element check, not the owning-item TABLE allowlist;
-they also verify nested job support and the actual job-type overwrite. Earlier
-Rust-only mock assumptions are corrected at their context boundary, not by
-rewriting the original Python oracle. Source filesystem eligibility/existence
-still belongs to the caller's context host.
-
-`wire.json` adds five independently hand-authored literal `json.dumps` request
-bodies. The unchanged Python load handler and the real native
-HEAD/load202/shared-LRO/result/output path both assert the original spaces,
-key order, ASCII escapes, surrogate pairs, quotes and control characters.
-The SDK delegates encoding to the released core-layer encoder; the fixture is
-not generated by native output or satisfied only by parsing the payload back
-into equal JSON values.
-
-See `rust/docs/table-branch-ledger.json` for per-branch source function/line,
-native evidence, explicit safety/runtime boundaries and remaining owner gates.
-
-The harness forbids ordinary file/network/process entry points while executing
-source. Only the initial read-only `git show` source acquisition uses a process.
-New oracle files are additive; protected command inventory and previous family
-fixtures are untouched. Fixture attribution is Microsoft Corporation, MIT.
-
-Run from `rust`, under the coordinator's validation mutex on a shared host:
+From `rust/`, through the applicable validation gate:
 
 ```text
-python tests\compatibility\tables\reference.py
+python -B tests\compatibility\tables\reference.py
 ```
+
+Related presentation and resource runners verify stream placement, table
+headers, nested job-type selection and normalized errors. Fixtures are not
+regenerated from native output; observed reports remain separate artifacts.

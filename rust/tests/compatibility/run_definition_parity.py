@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 WORKSPACE = Path(__file__).resolve().parents[2]
-TESTS = WORKSPACE / "crates" / "fabric-deploy" / "tests"
+TESTS = WORKSPACE / "capabilities" / "deployment" / "fabric-deploy" / "tests"
 SOURCE = "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4"
 TIMEOUT_SECONDS = 120
 COMPARISONS = (

@@ -44,7 +44,7 @@ IMMUTABLE_BASE_BLOBS = {
     "cases.json": "f63fd4307f8712504c23c38e381c6ea994696e9e",
     "status-cases.json": "fb605e652be16b395c59d51ff9f22b6726744276",
     "truthiness-cases.json": "3cf5447ad47fe7afd23080be37961e0de16d09b9",
-    "README.md": "c2244a67620c7f65f7294162440a280be126968d",
+    "frozen-baseline-evidence.md": "c2244a67620c7f65f7294162440a280be126968d",
     "requirements.txt": "731b164f490a4799a05b59476b658d5fc291abcc",
 }
 PRUNED_RESPONSE_COUNTS = {
@@ -103,7 +103,7 @@ def inputs_for(
 
 
 def verify_immutable_base() -> None:
-    """Enforce the previous source runner and all three original fixture pins."""
+    """Enforce original runner, tests, fixtures, dependencies and archived evidence."""
     for name, expected in IMMUTABLE_BASE_BLOBS.items():
         if blob_identity((HERE / name).read_bytes()) != expected:
             raise AssertionError(f"Verified 70-case evidence changed: {name}")

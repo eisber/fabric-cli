@@ -12,6 +12,42 @@ The [bounded candidate preflight](fast-check.md) documents the separate Linux
 fast workflow, immutable product/CI receipts, and guarded native-dispatch relay.
 Fast success is not a replacement for the three native OS gates.
 
+## Frozen references alongside current upstream source
+
+The integration branch includes upstream `main` through
+`b79bb7f699b7df16c41a0156860ef757f89d276d`. Synchronizing upstream history does
+not advance the Rust compatibility baseline or automatically implement upstream
+item-type and long-running-operation changes.
+
+The independent references retain source commit
+`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`, original source/tree identities,
+and existing expected outputs. References that check the complete source tree
+must run against that historical source, not against an altered current checkout.
+Prepare an isolated local checkout with the workspace helper:
+
+```text
+python -B scripts/pinned_python_source.py prepare --candidate-root <absolute-repository-root> --output <new-absolute-artifact-directory>
+```
+
+The JSON receipt identifies the historical checkout and its `rust_root`.
+Run reference commands from that `rust_root`, using absolute paths to native
+probes built from the current candidate. Cargo checks, builds and tests continue
+to run in the candidate workspace. A separately pinned `fabric-cicd` reference
+root remains separate; it is not replaced by this checkout.
+
+The helper overlays candidate reference scripts and fixtures byte-for-byte,
+without substituting old Rust implementations or changing source expectations.
+After the comparisons, verify both source and overlay integrity:
+
+```text
+python -B scripts/pinned_python_source.py verify --output <absolute-artifact-directory>
+```
+
+Use a fresh artifact directory when candidate reference files change. Missing
+objects, changed source, changed overlays and stale candidate inventories are
+errors, not permission to fall back to current source or regenerate expectations.
+The native matrix and bounded validation runner use this separation directly.
+
 ## Historical provider checkpoint
 
 Re-read on 2026-10-22 using GitHub's run metadata, job logs, and artifact API:
@@ -162,7 +198,7 @@ the existing fail-closed native/final gates and do not waive source parity check
 The feature enables explicit platform/additional trust and unauthenticated static
 HTTP proxy support, not general enterprise proxy, broker, live-service or
 installation certification. See the
-[native transport contract](../crates/fabric-sdk-transport/README.md).
+[native transport contract](../infrastructure/http/fabric-sdk-transport/README.md).
 
 ### Executable source-parity gate
 

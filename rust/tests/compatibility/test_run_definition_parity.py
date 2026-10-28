@@ -25,6 +25,19 @@ RUNNER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(RUNNER)
 
 
+class DefinitionParityPathTests(unittest.TestCase):
+    """Keep live definition captures in the deployment capability."""
+
+    def test_released_capture_directory_tracks_capability_layout(self) -> None:
+        self.assertEqual(
+            RUNNER.TESTS,
+            RUNNER.WORKSPACE / "capabilities" / "deployment" / "fabric-deploy" / "tests",
+        )
+        for family, fixture, _ in RUNNER.COMPARISONS:
+            self.assertTrue((RUNNER.TESTS / f"definition_{family}_reference.py").is_file())
+            self.assertTrue((RUNNER.TESTS / fixture).is_file())
+
+
 class DefinitionParityRunnerTests(unittest.TestCase):
     """No capture, source pin, request ordering or failure can be skipped."""
 

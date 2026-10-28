@@ -136,7 +136,7 @@ rather than waiting indefinitely for a blocked OS syscall. Cancellation and
 watchdog diagnostics explicitly retain uncertainty about unfinished effects.
 Cancellation is not syscall cancellation
 or rollback; an in-flight write can still complete after its future is dropped.
-The [transfer contract](../crates/fabric-cli-transfer/README.md#asynchronous-local-filesystem-boundary-td03)
+The [transfer contract](../capabilities/deployment/fabric-cli-transfer/README.md#asynchronous-local-filesystem-boundary-td03)
 records task/byte bounds, partial progress and the independent source pin.
 Deployment mounts a separate zero-I/O `TokioDeployFiles` capability pinned to
 the explicit configuration argument. Configuration, parameter and template reads

@@ -87,6 +87,12 @@ class ResourceParityRunnerTests(unittest.TestCase):
             self.assertEqual(call.kwargs["cwd"], RUNNER.WORKSPACE)
             probe = Path(call.args[0][4])
             self.assertEqual(probe.parent, self.probes.resolve())
+        for call, (package, reference, _, _) in zip(calls[1:], RUNNER.COMPARISONS):
+            self.assertEqual(
+                Path(call.args[0][2]),
+                RUNNER.REFERENCE_DIRECTORIES[package] / "tests" / reference,
+            )
+            self.assertTrue(Path(call.args[0][2]).is_file())
         self.assertEqual(list(self.artifacts.iterdir()), [])
 
     def test_every_failed_stage_stops_without_fallback(self) -> None:

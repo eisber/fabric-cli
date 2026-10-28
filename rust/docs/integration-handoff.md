@@ -150,7 +150,7 @@ evidence. Select `ResourceTransferHost` and injected `ResourceFiles` for storage
 `cp`/`mv`; preserve the separate `OneLakeWriteResult`/`OneLakeWriteError`
 create/append/flush and partial-effect evidence. These are eleven bounded
 family-adapter leaves, not eleven new mounted executable paths. See the
-[resource host contract](../crates/fabric-cli-mutations/src/frontdoor/README.md)
+[resource host contract](../capabilities/resources/fabric-cli-mutations/src/frontdoor/README.md)
 for unsupported branches and source argument limitations.
 
 The transfer API is
@@ -162,7 +162,7 @@ deferred import cache effects, original `TransferError` operation uncertainty,
 and shared `render_result`/`render_error`/`write_result` stream failures.
 `LocalTransferFiles` requires an explicit stable local root. Full config-driven
 `deploy` remains an explicit `NotSupported` gap, not a fourth happy leaf.
-See the [transfer contract](../crates/fabric-cli-transfer/README.md).
+See the [transfer contract](../capabilities/deployment/fabric-cli-transfer/README.md).
 
 Cargo composition adds the safe transfer default member, its centralized local
 path declarations and package block, and the resource crate's existing Clap
@@ -236,7 +236,7 @@ navigation uses `HierarchyLookup`/`PathElement`; access borrows
 metadata session to these released boundaries, not add another resolver,
 runtime, HTTP engine or credential fallback. ACL export and access skill-header
 binding remain explicitly unsupported; REPL/batch and platform debt are not
-closed by source composition. See the [local host contract](../crates/fabric-cli-local/README.md)
+closed by source composition. See the [local host contract](../capabilities/local/fabric-cli-local/README.md)
 and [access host contract](access-frontdoor.md).
 
 #### Source readiness is not merged-head validation
@@ -369,8 +369,8 @@ steps and local-write evidence, not only its formatted message. The actual sourc
 lease survives upload; cancellation is cooperative, not rollback. This crate
 does not add recursive copies, local-to-local copies, physical moves, parent
 directory creation or cleanup deletion. See its
-[host contract](../crates/fabric-cli-storage-files/HOST-CONTRACT.md) and
-[source branches](../crates/fabric-cli-storage-files/SOURCE-BRANCHES.md).
+[host contract](../capabilities/storage/fabric-cli-storage-files/HOST-CONTRACT.md) and
+[source branches](../capabilities/storage/fabric-cli-storage-files/SOURCE-BRANCHES.md).
 
 #### Actual validation and remaining gate
 
@@ -618,7 +618,7 @@ certification. PAC/system/authenticated proxies, client certificates,
 enterprise revocation certification, HTTP/2/3, additional codecs and live Fabric
 proof remain outside this slice. Unsupported encoding chains, raw deflate and
 response trailers fail explicitly. See the
-[complete transport contract](../crates/fabric-sdk-transport/README.md).
+[complete transport contract](../infrastructure/http/fabric-sdk-transport/README.md).
 
 ### Enriched workspace metadata GET integration
 

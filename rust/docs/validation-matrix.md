@@ -60,7 +60,7 @@ The integration checkpoint executes this reference on Windows x64 with Python
 3.13.15. See [validation baselines](validation-baselines.md) for the actual
 results and environment. No full CLI Rust adapter, live API, authentication, or
 native-platform parity is claimed. The SDK's narrower raw-wire comparisons are
-documented in its [README](../crates/fabric-sdk/README.md); they do not replace
+documented in its [README](../sdk/fabric-sdk/README.md); they do not replace
 this independent Python/CLI contract.
 
 The reference deliberately selects the product's headless print fallback, not

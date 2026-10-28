@@ -5,7 +5,7 @@
 Source: Python `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`,
 `fab_api_folders.py::{list_folders,get_folder}` plus actual
 `fab_api_client.py::{do_request,_handle_successful_response}` and
-`fab_api_types.py::ApiResponse`. The [focused crate](../crates/fabric-sdk-folders/README.md),
+`fab_api_types.py::ApiResponse`. The [focused crate](../capabilities/resources/fabric-sdk-folders/README.md),
 additive facade and thin shared HTTP adapter are SDK-layer consumers, not a CLI
 folder implementation or a generator/bridge.
 

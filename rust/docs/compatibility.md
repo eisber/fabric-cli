@@ -150,7 +150,7 @@ are not complete. See [manual login instructions](../README.md#run-an-actual-win
 | Installation | Authentication and deployment without installed Azure CLI, Azure Developer CLI, or Python |
 | Platforms | Native Windows/macOS/Linux execution and packaging evidence |
 
-The [bounded Notebook deployment implementation](../crates/fabric-deploy/README.md)
+The [bounded Notebook deployment implementation](../capabilities/deployment/fabric-deploy/README.md)
 is native Rust, not a permanent Python subprocess bridge. Broad configuration,
 transforms, planning and Git behavior remain compatibility gates; the single
 Notebook path is not a full deployment port.
@@ -181,10 +181,10 @@ Notebook operation/result retrieval. Seven source-pinned Python HTTPS retry
 traces are checked independently by
 [`tests/compatibility/http/reference.py`](../tests/compatibility/http/README.md).
 This is a bounded SDK execution slice, not CLI parity. The adapter's
-[compatibility limits](../crates/fabric-sdk-http/README.md) explicitly retain
+[compatibility limits](../infrastructure/http/fabric-sdk-http/README.md) explicitly retain
 the no-mutation-replay exception and enumerate unported HTTP behavior.
 
-The separately selected [native transport](../crates/fabric-sdk-transport/README.md)
+The separately selected [native transport](../infrastructure/http/fabric-sdk-transport/README.md)
 now has offline Hyper/Rustls wire evidence with the actual SDK/shared executor,
 bounded decoding, explicit trust/static proxy settings, cancellation and no
 backend replay. The facade still has no default transport. These checks do not
