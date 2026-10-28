@@ -5,6 +5,9 @@
 
 pub(crate) mod snapshot;
 
+#[path = "get_options.rs"]
+pub mod get_options;
+
 use crate::{PythonQuery, ReadConfig, ReadHost, errors, parser::ReadCommand};
 use fabric_cli_context::{Element, HomeContext};
 use fabric_cli_output::{
@@ -178,11 +181,7 @@ impl<'session> ReadSession<'session> {
                 "Invalid selected read context",
             ));
         }
-        if command.output.is_some() || command.force || command.verbose {
-            return Err(errors::unsupported(
-                "GET export, verbose and definition/confirmation options are not ported",
-            ));
-        }
+        get_options::preflight(command)?;
         let mut cancelled = pin!(cancelled);
         let mut snapshot = snapshot::Snapshot::default();
         // Keep the parser's exact token joining and quote trimming contract.
@@ -195,9 +194,10 @@ impl<'session> ReadSession<'session> {
                 .resolve(self, &self.tenant, self.current_path, cancelled.as_mut())
                 .await?
         };
-        snapshot
+        let target = snapshot
             .resolve(self, &current, path, cancelled.as_mut())
             .await?;
+        get_options::validate_target(command, &target)?;
         let host = ReadHost {
             sdk: self.sdk,
             workspaces: self.executor,

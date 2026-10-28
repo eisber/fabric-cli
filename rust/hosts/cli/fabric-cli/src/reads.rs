@@ -175,16 +175,13 @@ impl ReadHost<'_> {
                 "Only JSON output is implemented for bounded reads",
             ));
         }
-        if command.output.is_some() || command.force || command.verbose {
-            return Err(errors::unsupported(
-                "GET export, verbose and definition/confirmation options are not ported",
-            ));
-        }
+        crate::session::get_options::preflight(command)?;
         let tokens: Vec<_> = command.path.iter().map(String::as_str).collect();
         let resolver = Resolver::new(self.lookup, Arc::clone(&self.current), self.home.clone());
         let target = resolver
             .resolve(PathInput::Tokens(&tokens), ResolveOptions::default())
             .map_err(|error| errors::error(&error.code, error.message))?;
+        crate::session::get_options::validate_target(command, &target)?;
         let show_hidden = command.all || self.config.show_hidden;
         let (data, hidden_data) = match (command.kind, target.kind()) {
             (ReadKind::List, NodeKind::Tenant) => {
