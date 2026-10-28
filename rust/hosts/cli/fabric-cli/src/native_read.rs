@@ -28,6 +28,10 @@ mod transfer_paths;
 #[path = "native_deploy_inputs.rs"]
 mod deploy_inputs;
 
+#[cfg(windows)]
+#[path = "native_terminal_ui.rs"]
+mod terminal_ui;
+
 #[derive(Clone, Copy)]
 #[cfg_attr(
     not(windows),
@@ -700,6 +704,7 @@ async fn execute_family(
             ));
         }
         let mut mutations = NativeMutationUi::default();
+        let mut confirmation = terminal_ui::NativeAccessConfirmation::default();
         let mut files: Box<dyn fabric_cli_transfer::TransferFiles> =
             if let Invocation::Deploy(deploy) = command {
                 let argument = deploy.config.clone().ok_or_else(|| {
@@ -788,7 +793,7 @@ async fn execute_family(
             navigation: &mut navigation,
             local: &mut effects,
             mutations: &mut mutations,
-            confirmation: None,
+            confirmation: Some(&mut confirmation),
             transfer_ui: &NativeTransferUi,
             transfer_files: Some(files.as_mut()),
             resource_files: None,
