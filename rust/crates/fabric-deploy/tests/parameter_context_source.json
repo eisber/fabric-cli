@@ -1,0 +1,341 @@
+{
+  "source": "microsoft/fabric-cicd@5ca096c00a9a878c646c59fe537b883eba951329",
+  "sourceHashes": {
+    "constants.py": "9db94078b1152f137b0c44a60626460575280455642a81d8a932035b251c9535",
+    "_common\\_exceptions.py": "22cc6ce5ca4dcf209c1d7c1c056c1c2b40cdc8ca397d36c9c68d108d0c89440e",
+    "_common\\_check_utils.py": "f60444e11a5f3424b5afb63cc4b69c7cd68a2fd4aff268913061e96c4000f39c",
+    "_common\\_config_utils.py": "acdb203d4db08687c438c811598f696c7aed69674c3e3d42b81a3ad627396f2f",
+    "_parameter\\_parameter.py": "32d603cfaf2b891194a5ea170dcd952d3c492a8420a3df0595ce84c682b07daf",
+    "_parameter\\_utils.py": "2d8b79c6d7d737595b346da0466790308e46b9cbed46bfaf1b3cde8a189e69d6",
+    "fabric_workspace.py": "10bae33f95026065fc22d558dc02b8ee17929cac77fa0dde298cc4d41ac7a890"
+  },
+  "dependencies": {
+    "PyYAML": "6.0.3",
+    "jsonpath-ng": "1.9.1"
+  },
+  "boundary": "Unmodified source functions with synthetic concrete path lists, in-memory merge inputs, and injected environment mapping. No filesystem discovery, service/auth or ambient environment reads.",
+  "cases": [
+    {
+      "kind": "filter",
+      "type": null,
+      "name": null,
+      "paths": null,
+      "expected": true
+    },
+    {
+      "kind": "filter",
+      "type": "Notebook",
+      "name": null,
+      "paths": null,
+      "expected": true
+    },
+    {
+      "kind": "filter",
+      "type": "notebook",
+      "name": null,
+      "paths": null,
+      "expected": false
+    },
+    {
+      "kind": "filter",
+      "type": [
+        "Report",
+        "Notebook"
+      ],
+      "name": "Book",
+      "paths": null,
+      "expected": true
+    },
+    {
+      "kind": "filter",
+      "type": [],
+      "name": null,
+      "paths": null,
+      "expected": false
+    },
+    {
+      "kind": "filter",
+      "type": false,
+      "name": null,
+      "paths": null,
+      "expected": false
+    },
+    {
+      "kind": "filter",
+      "type": "",
+      "name": null,
+      "paths": null,
+      "expected": false
+    },
+    {
+      "kind": "filter",
+      "type": null,
+      "name": "",
+      "paths": null,
+      "expected": false
+    },
+    {
+      "kind": "filter",
+      "type": null,
+      "name": [
+        "Other"
+      ],
+      "paths": null,
+      "expected": false
+    },
+    {
+      "kind": "filter",
+      "type": null,
+      "name": [
+        "Other",
+        "Book"
+      ],
+      "paths": [
+        "content.py"
+      ],
+      "expected": true
+    },
+    {
+      "kind": "filter",
+      "type": null,
+      "name": null,
+      "paths": [],
+      "expected": false
+    },
+    {
+      "kind": "filter",
+      "type": null,
+      "name": null,
+      "paths": [
+        "other.py"
+      ],
+      "expected": false
+    },
+    {
+      "kind": "dynamic",
+      "variable": "$workspace.$id",
+      "expected": {
+        "kind": "workspace",
+        "attribute": "id",
+        "workspace_name": null,
+        "item_type": null,
+        "item_name": null
+      }
+    },
+    {
+      "kind": "dynamic",
+      "variable": "$workspace.id",
+      "expected": {
+        "kind": "workspace",
+        "attribute": "id",
+        "workspace_name": null,
+        "item_type": null,
+        "item_name": null
+      }
+    },
+    {
+      "kind": "dynamic",
+      "variable": "$workspace.$name",
+      "expected": {
+        "kind": "workspace",
+        "attribute": "name",
+        "workspace_name": null,
+        "item_type": null,
+        "item_name": null
+      }
+    },
+    {
+      "kind": "dynamic",
+      "variable": "$workspace.$name_encoded",
+      "expected": {
+        "kind": "workspace",
+        "attribute": "name_encoded",
+        "workspace_name": null,
+        "item_type": null,
+        "item_name": null
+      }
+    },
+    {
+      "kind": "dynamic",
+      "variable": "$workspace.Other Workspace.$id",
+      "expected": {
+        "kind": "workspace",
+        "attribute": "id",
+        "workspace_name": "Other Workspace",
+        "item_type": null,
+        "item_name": null
+      }
+    },
+    {
+      "kind": "dynamic",
+      "variable": "$workspace.Other.Workspace",
+      "expected": {
+        "kind": "workspace",
+        "attribute": "id",
+        "workspace_name": "Other.Workspace",
+        "item_type": null,
+        "item_name": null
+      }
+    },
+    {
+      "kind": "dynamic",
+      "variable": "$items.Notebook.Book.$id",
+      "expected": {
+        "kind": "item",
+        "attribute": "id",
+        "workspace_name": null,
+        "item_type": "Notebook",
+        "item_name": "Book"
+      }
+    },
+    {
+      "kind": "dynamic",
+      "variable": "$items.Notebook.Book.with.dots.$NAME",
+      "expected": null
+    },
+    {
+      "kind": "dynamic",
+      "variable": "$workspace.Other.$items.Notebook.Book.$id",
+      "expected": {
+        "kind": "item",
+        "attribute": "id",
+        "workspace_name": "Other",
+        "item_type": "Notebook",
+        "item_name": "Book"
+      }
+    },
+    {
+      "kind": "dynamic",
+      "variable": "$items.notebook.Book.$id",
+      "expected": null
+    },
+    {
+      "kind": "dynamic",
+      "variable": "$items.Notebook..$id",
+      "expected": null
+    },
+    {
+      "kind": "dynamic",
+      "variable": "$workspace.$bad",
+      "expected": null
+    },
+    {
+      "kind": "dynamic",
+      "variable": "$unsupported",
+      "expected": null
+    },
+    {
+      "kind": "merge",
+      "base": {
+        "find_replace": [
+          {
+            "a": 1
+          }
+        ]
+      },
+      "template": {
+        "find_replace": [
+          {
+            "b": 2
+          }
+        ]
+      },
+      "expected": {
+        "find_replace": [
+          {
+            "a": 1
+          },
+          {
+            "b": 2
+          }
+        ]
+      }
+    },
+    {
+      "kind": "merge",
+      "base": {
+        "x": {
+          "a": [
+            1
+          ]
+        }
+      },
+      "template": {
+        "x": {
+          "a": [
+            2
+          ],
+          "b": false
+        }
+      },
+      "expected": {
+        "x": {
+          "a": [
+            1,
+            2
+          ],
+          "b": false
+        }
+      }
+    },
+    {
+      "kind": "merge",
+      "base": {
+        "x": "base"
+      },
+      "template": {
+        "x": {
+          "value": "template"
+        }
+      },
+      "expected": {
+        "x": [
+          "base",
+          {
+            "value": "template"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "merge",
+      "base": {
+        "x": 1
+      },
+      "template": {
+        "extend": [
+          "ignored.yml"
+        ],
+        "other": 2
+      },
+      "expected": {
+        "x": 1,
+        "other": 2
+      }
+    },
+    {
+      "kind": "environment",
+      "enabled": false,
+      "input": "$ENV:DEFINED $ENV:MISSING $ENV:EMPTY",
+      "expected": "$ENV:DEFINED $ENV:MISSING $ENV:EMPTY"
+    },
+    {
+      "kind": "environment",
+      "enabled": false,
+      "input": "$env:DEFINED $ENV:DEFINED.suffix",
+      "expected": "$env:DEFINED $ENV:DEFINED.suffix"
+    },
+    {
+      "kind": "environment",
+      "enabled": true,
+      "input": "$ENV:DEFINED $ENV:MISSING $ENV:EMPTY",
+      "expected": "resolved $ENV:MISSING "
+    },
+    {
+      "kind": "environment",
+      "enabled": true,
+      "input": "$env:DEFINED $ENV:DEFINED.suffix",
+      "expected": "$env:DEFINED resolved.suffix"
+    }
+  ]
+}

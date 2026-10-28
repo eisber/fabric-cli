@@ -93,9 +93,6 @@ impl LiteralParameters {
                     if value.eq_ignore_ascii_case("true") {
                         return Err(unsupported(&format!("parameter.find_replace.{flag}")));
                     }
-                    if !value.is_empty() && !value.eq_ignore_ascii_case("false") {
-                        return Err(unsupported("noncanonical parameter flag warnings"));
-                    }
                     if flag == "is_regex" && !value.is_empty() {
                         notices.push(ParameterNotice::RegexIgnored);
                     }

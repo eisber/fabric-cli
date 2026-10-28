@@ -7,6 +7,9 @@ use crate::config::{extract_workspace_settings, get_config_value};
 use serde_json::{Map, Value};
 use std::fmt;
 
+mod model;
+pub use model::{CommandConfiguration, CommandOptions, OperationSettings, WorkspaceTarget};
+
 /// Exact CICD serial publication order, independent of user scope ordering.
 pub const ITEM_TYPES: &[&str] = &[
     "VariableLibrary",
@@ -126,6 +129,7 @@ fn invalid(message: impl Into<String>) -> ConfigurationError {
 
 /// Validate the same UUID spelling accepted by the pinned config validator.
 pub(crate) fn valid_guid(value: &str) -> bool {
+    let value = value.strip_suffix('\n').unwrap_or(value);
     value.len() == 36
         && value.bytes().enumerate().all(|(index, ch)| {
             if matches!(index, 8 | 13 | 18 | 23) {
@@ -150,7 +154,7 @@ fn apply_overrides(
     overrides: Option<&Value>,
     environment: &str,
 ) -> Result<(), ConfigurationError> {
-    let Some(overrides) = overrides.filter(|value| !value.is_null()) else {
+    let Some(overrides) = overrides.filter(|value| override_present(value)) else {
         return Ok(());
     };
     let overrides = overrides
@@ -241,6 +245,17 @@ fn apply_overrides(
     }
 }
 
+fn override_present(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(value) => *value,
+        Value::Number(value) => value.as_f64() != Some(0.0),
+        Value::String(value) => !value.is_empty(),
+        Value::Array(value) => !value.is_empty(),
+        Value::Object(value) => !value.is_empty(),
+    }
+}
+
 fn check_values(value: &Value, name: &str, accepted: fn(&Value) -> bool, errors: &mut Vec<String>) {
     if let Some(mapping) = value.as_object() {
         if mapping.is_empty() {
@@ -282,13 +297,14 @@ fn operation(
     name: &str,
     environment: &str,
     errors: &mut Vec<String>,
-) -> Map<String, Value> {
+    budget: &mut crate::parameter_transforms::TransformBudget<'_>,
+) -> Result<Map<String, Value>, ConfigurationError> {
     let Some(section) = document.get(name) else {
-        return Map::new();
+        return Ok(Map::new());
     };
     if !section.is_object() {
         errors.push(format!("'{name}' section must be a dictionary"));
-        return Map::new();
+        return Ok(Map::new());
     }
     if name == "unpublish" {
         for field in ["folder_exclude_regex", "folder_path_to_include"] {
@@ -311,17 +327,49 @@ fn operation(
                 _ => nonempty_string,
             };
             check_values(value, &format!("{name}.{key}"), accepts, errors);
+            let values = value
+                .as_object()
+                .map_or_else(|| vec![value], |mapping| mapping.values().collect());
+            for value in values {
+                if key.ends_with("regex") {
+                    if let Some(pattern) = value.as_str() {
+                        if let Err(error) =
+                            crate::parameter_transforms::SourceRegex::compile(pattern, budget)
+                        {
+                            match error {
+                                crate::parameter_transforms::TransformError::Invalid(message) => {
+                                    errors.push(format!("'{name}.{key}': {message}"))
+                                }
+                                error => {
+                                    return Err(ConfigurationError::Transform(Box::new(error)));
+                                }
+                            }
+                        }
+                    }
+                }
+                if *key == "folder_path_to_include"
+                    && value.as_array().is_some_and(|paths| {
+                        paths
+                            .iter()
+                            .any(|path| path.as_str().is_some_and(|path| !path.starts_with('/')))
+                    })
+                {
+                    errors.push(format!("'{name}.{key}' paths must start with '/'"));
+                }
+            }
             if let Some(value) = selected(section, key, environment) {
                 result.insert((*key).into(), value);
             }
         }
     }
-    if result.contains_key("folder_exclude_regex") && result.contains_key("folder_path_to_include")
+    if !section.get("skip").is_some_and(Value::is_boolean)
+        && result.contains_key("folder_exclude_regex")
+        && result.contains_key("folder_path_to_include")
     {
         errors.push(format!("'{name}.folder_exclude_regex' and '{name}.folder_path_to_include' are mutually exclusive"));
     }
     result.entry("skip").or_insert(Value::Bool(false));
-    result
+    Ok(result)
 }
 
 impl DeploymentConfig {
@@ -338,9 +386,6 @@ impl DeploymentConfig {
         environment: &str,
         overrides: Option<&Value>,
     ) -> Result<Self, ConfigurationError> {
-        if environment.is_empty() {
-            return Err(invalid("environment must be a non-empty string"));
-        }
         let mut document = document
             .as_object()
             .cloned()
@@ -394,8 +439,19 @@ impl DeploymentConfig {
                 &mut errors,
             );
         }
-        let publish = operation(&document, "publish", environment, &mut errors);
-        let unpublish = operation(&document, "unpublish", environment, &mut errors);
+        let mut budget = crate::parameter_transforms::TransformBudget::new(
+            crate::parameter_transforms::TransformLimits::default(),
+            &|| false,
+        );
+        let publish = operation(&document, "publish", environment, &mut errors, &mut budget)?;
+        let unpublish = operation(
+            &document,
+            "unpublish",
+            environment,
+            &mut errors,
+            &mut budget,
+        )?;
+        model::validate_sections(&document, environment, &mut errors);
         for (section_name, keys) in [
             ("core", CORE),
             ("publish", PUBLISH),
@@ -436,7 +492,7 @@ impl DeploymentConfig {
                     .collect()
             })
             .unwrap_or_else(|| ITEM_TYPES.iter().map(|value| (*value).to_owned()).collect());
-        let warnings = ["item_types_in_scope", "parameter"]
+        let mut warnings: Vec<_> = ["item_types_in_scope", "parameter"]
             .into_iter()
             .filter_map(|field| {
                 document["core"]
@@ -450,6 +506,30 @@ impl DeploymentConfig {
                     })
             })
             .collect();
+        if let Some(mapping) = document.get("features").and_then(Value::as_object)
+            && !mapping.contains_key(environment)
+        {
+            warnings.push(EnvironmentWarning {
+                field: "features".into(),
+                environment: environment.into(),
+                available: mapping.keys().cloned().collect(),
+            });
+        }
+        if environment != "N/A"
+            && let Some(constants) = document.get("constants").and_then(Value::as_object)
+        {
+            for (key, value) in constants {
+                if let Some(mapping) = value.as_object()
+                    && !mapping.contains_key(environment)
+                {
+                    warnings.push(EnvironmentWarning {
+                        field: format!("constants.{key}"),
+                        environment: environment.into(),
+                        available: mapping.keys().cloned().collect(),
+                    });
+                }
+            }
+        }
         Ok(Self {
             document,
             workspace,
@@ -544,9 +624,11 @@ impl DeploymentConfig {
             ));
         }
         self.parameters = Some(
-            crate::parameter_transforms::ParameterProgram::from_document(
+            crate::parameter_transforms::ParameterProgram::from_document_with_features(
                 document,
                 &self.environment,
+                self.command_configuration(CommandOptions::default())?
+                    .feature_enabled("enable_environment_variable_replacement"),
                 budget,
             )
             .map_err(|error| ConfigurationError::Transform(Box::new(error)))?,
@@ -557,5 +639,80 @@ impl DeploymentConfig {
     /// Explicitly validated source parameters, never an ambient auto-discovery.
     pub fn parameters(&self) -> Option<&crate::parameter_transforms::ParameterProgram> {
         self.parameters.as_ref()
+    }
+
+    /// Full prepared parameter source after explicit successful resolution.
+    ///
+    /// No source is auto-discovered or read here. None also follows a failed
+    /// resolution, so a stale previously validated document cannot be reused.
+    pub fn raw_parameter_document(&self) -> Option<&Value> {
+        self.parameters()
+            .map(crate::parameter_transforms::ParameterProgram::source_document)
+    }
+
+    /// Select configured constant overrides for the exact target environment.
+    ///
+    /// Every dictionary is an environment mapping, including runtime mappings
+    /// such as API_FORMAT_MAPPING: those require an environment-wrapped value.
+    /// Missing environments and null values are omitted; false, zero and empty
+    /// strings remain values. The returned snapshot neither recomputes aliases
+    /// nor changes caller globals or this validated source document.
+    pub fn selected_constants(&self) -> Map<String, Value> {
+        model::selected_constants(self)
+    }
+
+    /// Resolve templates and parameter features through caller-owned capabilities.
+    ///
+    /// The host decodes each template with parameter duplicate-key policy after
+    /// injected environment-token expansion. This method never reads files or
+    /// environment variables and returns skipped-template outcomes to the caller.
+    ///
+    /// # Errors
+    /// Clears any prior program, then preserves host, syntax, schema and resource
+    /// errors. A configured parameter path is required; absence never auto-discovers.
+    pub fn resolve_parameters_with_host(
+        &mut self,
+        document: &Value,
+        host: &dyn crate::parameter_transforms::ParameterFileHost,
+        options: CommandOptions,
+        budget: &mut crate::parameter_transforms::TransformBudget<'_>,
+    ) -> Result<crate::parameter_transforms::PreparedParameters, ConfigurationError> {
+        self.parameters = None;
+        if !self.workspace.contains_key("parameter_file_path") {
+            return Err(invalid(
+                "No parameter file was configured for this environment",
+            ));
+        }
+        let enabled = self
+            .command_configuration(options)?
+            .feature_enabled("enable_environment_variable_replacement");
+        let prepared =
+            crate::parameter_transforms::prepare_parameter_document(document, host, budget)
+                .map_err(|error| ConfigurationError::Transform(Box::new(error)))?;
+        self.parameters = Some(
+            crate::parameter_transforms::ParameterProgram::from_document_with_features(
+                &prepared.document,
+                &self.environment,
+                enabled,
+                budget,
+            )
+            .map_err(|error| ConfigurationError::Transform(Box::new(error)))?,
+        );
+        Ok(prepared)
+    }
+
+    /// Freeze selected configuration and caller-owned global options for one command.
+    ///
+    /// Unlike the legacy Notebook preflight, this retains every source setting
+    /// for the orchestrator and never installs process-global flags or constants.
+    ///
+    /// # Errors
+    /// Rejects inconsistent caller options; extension fields are retained and
+    /// consumers must explicitly acknowledge them before executing mutations.
+    pub fn command_configuration(
+        &self,
+        options: CommandOptions,
+    ) -> Result<CommandConfiguration, ConfigurationError> {
+        model::snapshot(self, options)
     }
 }

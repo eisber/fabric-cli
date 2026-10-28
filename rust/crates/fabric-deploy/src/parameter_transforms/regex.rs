@@ -5,6 +5,109 @@ use super::{TransformBudget, TransformError};
 use fancy_regex::{Expr, Regex, RegexBuilder};
 use std::fmt;
 
+/// Bounded Python-source regex subset for configuration filters.
+///
+/// Unlike find/replace rules, filter patterns permit any capture count. The
+/// source syntax translator and explicit unsupported classifications still apply;
+/// a raw library compile is never treated as proof of Python equivalence.
+#[derive(Clone)]
+pub struct SourceRegex {
+    regex: Regex,
+}
+
+impl fmt::Debug for SourceRegex {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SourceRegex")
+            .finish_non_exhaustive()
+    }
+}
+
+impl SourceRegex {
+    /// Validate supported Python regex syntax with caller-owned finite bounds.
+    ///
+    /// # Errors
+    /// Preserves invalid source syntax, unsupported advanced features and limits.
+    pub fn compile(
+        pattern: &str,
+        budget: &mut TransformBudget<'_>,
+    ) -> Result<Self, TransformError> {
+        budget.checkpoint()?;
+        if pattern.len() > budget.limits.max_pattern_bytes {
+            return Err(TransformError::Limit);
+        }
+        let mut depth = 0_usize;
+        let mut escaped = false;
+        let mut in_class = false;
+        for character in pattern.chars() {
+            budget.checkpoint()?;
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match character {
+                '\\' => escaped = true,
+                '[' => in_class = true,
+                ']' => in_class = false,
+                '(' if !in_class => {
+                    depth = depth.checked_add(1).ok_or(TransformError::Limit)?;
+                    budget.depth(depth)?;
+                }
+                ')' if !in_class => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+        }
+        let translated = translate(pattern, false)?;
+        let tree = Expr::parse_tree(&translated).map_err(|error| compile_error(error, pattern))?;
+        validate_tree(&tree.expr, budget, 0)?;
+        let regex = RegexBuilder::new(&translated)
+            .backtrack_limit(budget.limits.max_backtracks)
+            .delegate_size_limit(budget.limits.max_regex_bytes)
+            .delegate_dfa_size_limit(budget.limits.max_regex_bytes)
+            .build()
+            .map_err(|error| compile_error(error, pattern))?;
+        budget.checkpoint()?;
+        Ok(Self { regex })
+    }
+
+    /// Source `re.search` semantics, used by folder exclusions.
+    ///
+    /// # Errors
+    /// Preserves bounded search/cancellation/resource errors.
+    pub fn search(
+        &self,
+        text: &str,
+        budget: &mut TransformBudget<'_>,
+    ) -> Result<bool, TransformError> {
+        budget.text(text)?;
+        let result = self
+            .regex
+            .is_match(text)
+            .map_err(|_| TransformError::Limit)?;
+        budget.checkpoint()?;
+        Ok(result)
+    }
+
+    /// Source `re.match` semantics, used by item-name and shortcut exclusions.
+    ///
+    /// # Errors
+    /// Preserves bounded search/cancellation/resource errors.
+    pub fn matches_start(
+        &self,
+        text: &str,
+        budget: &mut TransformBudget<'_>,
+    ) -> Result<bool, TransformError> {
+        budget.text(text)?;
+        let result = self
+            .regex
+            .find(text)
+            .map_err(|_| TransformError::Limit)?
+            .is_some_and(|matched| matched.start() == 0);
+        budget.checkpoint()?;
+        Ok(result)
+    }
+}
+
 /// Compiled source find rule; replacements are always literal, never templates.
 #[derive(Clone)]
 pub struct FindReplacement {
@@ -25,6 +128,46 @@ impl fmt::Debug for FindReplacement {
 }
 
 impl FindReplacement {
+    pub(super) fn has_matches(
+        &self,
+        content: &str,
+        filter_match: bool,
+        budget: &mut TransformBudget<'_>,
+    ) -> Result<bool, TransformError> {
+        budget.text(content)?;
+        if !filter_match {
+            return Ok(false);
+        }
+        if !self.capture_only {
+            return Ok(if self.ignore_case {
+                content
+                    .to_lowercase()
+                    .contains(&self.pattern.to_lowercase())
+            } else {
+                content.contains(&self.pattern)
+            });
+        }
+        let captures = self
+            .regex
+            .as_ref()
+            .expect("compiled regex")
+            .captures(content)
+            .map_err(|_| TransformError::Limit)?;
+        if let Some(captures) = captures {
+            if captures
+                .get(1)
+                .is_none_or(|value| value.as_str().is_empty())
+            {
+                return Err(TransformError::Invalid(format!(
+                    "Regex pattern '{}' captured an empty value.",
+                    self.pattern
+                )));
+            }
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
     /// Validate/compile even if a later file filter excludes this rule.
     ///
     /// # Errors

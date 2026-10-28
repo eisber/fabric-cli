@@ -181,6 +181,23 @@ impl JsonPathReplacement {
         is_yaml: bool,
         budget: &mut TransformBudget<'_>,
     ) -> Result<String, TransformError> {
+        self.apply_resolving(
+            content,
+            replacement,
+            is_yaml,
+            |value, _| Ok(value.clone()),
+            budget,
+        )
+    }
+
+    pub(super) fn apply_resolving(
+        &self,
+        content: &str,
+        replacement: Option<&Value>,
+        is_yaml: bool,
+        mut resolve: impl FnMut(&Value, &mut TransformBudget<'_>) -> Result<Value, TransformError>,
+        budget: &mut TransformBudget<'_>,
+    ) -> Result<String, TransformError> {
         budget.text(content)?;
         let mut data = if is_yaml {
             yaml::decode(
@@ -192,8 +209,15 @@ impl JsonPathReplacement {
                     max_nodes: budget.limits.max_visits,
                 },
             )
-            .map_err(|_| {
-                TransformError::Unsupported("YAML value outside the parameter JSON domain")
+            .map_err(|error| match error {
+                crate::deployment_config::ConfigurationError::Invalid(errors) => {
+                    TransformError::Invalid(errors.join("; "))
+                }
+                crate::deployment_config::ConfigurationError::Limit => TransformError::Limit,
+                crate::deployment_config::ConfigurationError::Transform(error) => *error,
+                crate::deployment_config::ConfigurationError::Unsupported(_) => {
+                    TransformError::Unsupported("YAML value outside the parameter JSON domain")
+                }
             })?
         } else {
             serde_json::from_str(content)
@@ -232,13 +256,15 @@ impl JsonPathReplacement {
                 }
             }
         }
-        let replacement_length = fabric_core_json::json_dumps(replacement).len();
         let mut encoded_length = fabric_core_json::json_dumps(&data).len();
         if encoded_length > budget.limits.max_bytes {
             return Err(TransformError::Limit);
         }
         for path in paths {
             budget.matched()?;
+            let replacement = resolve(replacement, budget)?;
+            validate_value(&replacement, budget, 0)?;
+            let replacement_length = fabric_core_json::json_dumps(&replacement).len();
             // jsonpath_ng Root.update returns a value; the source caller ignores
             // that return but still marks replacement_made and emits JSON.
             if path.is_empty() {
@@ -252,7 +278,7 @@ impl JsonPathReplacement {
                 .and_then(|length| length.checked_add(replacement_length))
                 .filter(|length| *length <= budget.limits.max_bytes)
                 .ok_or(TransformError::Limit)?;
-            *target = replacement.clone();
+            *target = replacement;
         }
         budget.checkpoint()?;
         let output = if is_yaml {
