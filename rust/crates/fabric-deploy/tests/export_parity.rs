@@ -11,6 +11,47 @@ use fabric_deploy::definitions::{
 };
 use serde_json::Value;
 
+#[test]
+fn noncanonical_base64_source_domain_is_explicitly_rejected_not_wrong_byte_fallback() {
+    let receipt: Value =
+        serde_json::from_str(include_str!("definition_export_base64_source.json")).unwrap();
+    assert_eq!(
+        receipt["source"],
+        "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4"
+    );
+    for case in receipt["cases"].as_array().unwrap() {
+        let result = decode_export_files_for_storage(
+            &case["input"],
+            false,
+            DefinitionLimits::default(),
+            ExportStorage::Local,
+        );
+        if case["name"] == "canonical" || case["name"] == "source-error-original-payload" {
+            let files = result.unwrap();
+            assert_eq!(
+                STANDARD.encode(&files[0].bytes),
+                case["expected_base64"].as_str().unwrap()
+            );
+        } else {
+            assert!(
+                case["source_part_error"].is_null(),
+                "Python accepted this domain"
+            );
+            let error = result.unwrap_err();
+            assert!(
+                matches!(
+                    error.kind,
+                    fabric_deploy::definitions::DefinitionErrorKind::InvalidDefinition
+                ),
+                "{}",
+                case["name"]
+            );
+            assert!(error.completed_paths.is_empty());
+            assert!(error.incomplete_path.is_none());
+        }
+    }
+}
+
 fn expected(encoded: &Value, binary: bool) -> Vec<u8> {
     let bytes = STANDARD.decode(encoded.as_str().unwrap()).unwrap();
     #[cfg(windows)]

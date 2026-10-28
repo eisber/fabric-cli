@@ -19,6 +19,19 @@ POST, no OneLake storage requests/scopes for rejected SJD outputs, and actual lo
 bytes for the legitimate fallback. It also retains the existing positive
 Lakehouse create/append/flush consumers. These Rust cases remain **NOT RUN**.
 
+The additive `definition_export_base64_source.json` captures Python's actual
+permissive `%`, whitespace, pad-bit and excess-padding behavior before native
+policy assertions. Python decodes those examples to `x`/`f`; native export
+intentionally rejects them with `InvalidDefinition` under the approved strict
+base64 safety policy. It must not report success while writing the original
+encoded string or silently different bytes. A separate actual source-error
+example (`a`) retains Python's original-payload fallback, and canonical input
+still writes the captured bytes. Root consumers put a valid part before each
+noncanonical part and require failure with zero completed files, no item
+directory, no mutation replay and no exported IDs. No production decoder guard
+or existing receipt is changed to satisfy these new tests. Rust execution is
+still **NOT RUN** locally.
+
 Status: the bounded read/export/copy/SET codec library is compiled and tested on
 Windows x64. The exact shared Unicode encoder
 commit `d72d68b5370ab5ab95c63815ba084513390d68e4` was surgically adopted as
@@ -117,7 +130,7 @@ coincidentally named local directory. Ordinary local path-resolution fallback
 is retained, and the original failure still fails closed.
 
 These changes are not a Rust validation receipt: tests/builds are **NOT RUN**
-pending the integrator's serialized grant. Eight additive actual-source captures
+pending the integrator's serialized grant. Nine additive actual-source captures
 reproduce independently before Rust expectations; the new offline argv consumer
 covers generic/default/explicit formats, workspace selection/execution ordering,
 nested folder Selective requests, workspace response-index filtering, malformed

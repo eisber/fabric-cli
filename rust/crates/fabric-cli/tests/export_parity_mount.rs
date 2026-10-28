@@ -6,6 +6,8 @@
 #![cfg(feature = "native-read")]
 #![deny(unnameable_test_items)]
 
+#[path = "export_support/base64_policy.rs"]
+mod base64_policy;
 #[path = "family_support/deferred_export.rs"]
 mod deferred_export;
 #[path = "family_support/deploy_paths.rs"]
