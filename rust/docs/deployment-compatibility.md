@@ -140,6 +140,13 @@ Callers own I/O deadlines/cancellation; the explicit transform budget checks
 elapsed time before/after awaits and must be sized for the complete preparation.
 Existing dependency versions/features and all protected receipts are unchanged.
 
+An additional loader/schema edge receipt preserves two source quirks: falsey
+`extend` entries remain unprocessed upstream and fail parameter-name validation,
+while truthy legacy gateway aliases are ignored when the new semantic-binding
+dictionary format is present. Original ignored alias data remains available;
+normalized semantic settings do not merge it. An empty gateway list is a known
+source no-op, not an unconsumed-processor failure.
+
 The initial slice inventories reference behavior and adds synthetic offline
 fixtures. The owner subsequently approved a native single-Notebook implementation,
 described below. It is not the full `fab deploy` command, a planner, unpublication,

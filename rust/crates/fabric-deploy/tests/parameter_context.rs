@@ -297,6 +297,52 @@ impl ParameterFileHost for Templates {
     }
 }
 
+struct EdgeTemplates;
+impl ParameterFileHost for EdgeTemplates {
+    fn template(&self, reference: &str) -> Result<Option<Value>, TransformError> {
+        Ok((reference == "template.yml").then(|| json!({"find_replace": []})))
+    }
+}
+
+#[test]
+fn eighteen_actual_source_loader_and_ignored_gateway_shapes_match() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("parameter_schema_edges_source.json")).unwrap();
+    assert_eq!(fixture["cases"].as_array().unwrap().len(), 18);
+    for case in fixture["cases"].as_array().unwrap() {
+        let prepared = prepare_parameter_document(
+            &case["document"],
+            &EdgeTemplates,
+            &mut TransformBudget::new(TransformLimits::default(), &|| false),
+        );
+        let result = prepared
+            .and_then(|prepared| ParameterProgram::with_default_limits(&prepared.document, "dev"));
+        assert_eq!(
+            result.is_ok(),
+            case["valid"].as_bool().unwrap(),
+            "{}",
+            case["id"]
+        );
+        if let Ok(program) = result {
+            if let Some(expected) = case["expected"].get("semantic_model_binding") {
+                assert_eq!(
+                    &program.item_settings()["semantic_model_binding"],
+                    expected,
+                    "{}",
+                    case["id"]
+                );
+                program
+                    .require_item_settings_consumed(&["semantic_model_binding"])
+                    .unwrap();
+            }
+            if case["id"] == "empty-gateway-only" {
+                program.require_item_settings_consumed(&[]).unwrap();
+                assert_eq!(program.source_document()["gateway_binding"], json!([]));
+            }
+        }
+    }
+}
+
 #[test]
 fn templates_are_loaded_once_in_order_and_bad_templates_are_reported() {
     let prepared = prepare_parameter_document(
