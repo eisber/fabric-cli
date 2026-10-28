@@ -670,3 +670,11 @@ The existing bounded visitor, source ordering, no-create mutation, cancellation
 and resource limits remain in force. Dependencies, features, lock and independent
 Python fixtures are unchanged. This repair needs its own exact-head compilation,
 strict Clippy and regression run; the earlier 7970 checkpoint does not validate it.
+
+Combined source `c4bcf91d0177462154402d634cdc98302b8cc385`, hosted Linux run
+`40647335381`, job `122679211740`, passed default and native all-target checks:
+the private-import E0603 failure is resolved. Strict Clippy then rejected
+identical error assertions in the additive transform consumer. Combining their
+predicates preserves both unsupported cases and every fixed expected error
+without changing assertions or fixtures. Tests had not run at that failure;
+the follow-up still needs exact-head Clippy and runtime validation.
