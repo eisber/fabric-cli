@@ -19,7 +19,9 @@ use fabric_cli_local::{
 use fabric_cli_mutations::{CommandFuture, MutationUi, NoticeKind};
 use fabric_cli_output::{CommandError, Timestamp};
 use fabric_cli_transfer::{TransferEvent, TransferFuture, TransferUi};
-use fabric_sdk::{Audience, Client, CredentialSelection};
+use fabric_sdk::{
+    Audience, Client, CredentialSelection, EndpointBinding, RequestContext, ServiceOrigin,
+};
 use fabric_sdk_http::{ExecutionFuture, ExecutionOptions, ExecutionTimer, HttpExecutor};
 use serde_json::{Value, json};
 use std::{
@@ -188,6 +190,7 @@ pub struct Harness {
     pub credential: Arc<Credential>,
     pub http: Arc<Http>,
     pub effects: Effects,
+    endpoint: EndpointBinding,
 }
 
 impl Harness {
@@ -212,7 +215,13 @@ impl Harness {
                 requests: Mutex::default(),
             }),
             effects: Effects::default(),
+            endpoint: EndpointBinding::public(ServiceOrigin::Fabric),
         }
+    }
+
+    pub fn with_endpoint(mut self, host: &str) -> Self {
+        self.endpoint = EndpointBinding::with_host(ServiceOrigin::Fabric, host).unwrap();
+        self
     }
 
     pub fn reply(&self, status: u16, body: Value) {
@@ -250,16 +259,18 @@ impl Harness {
         transfer_ui: &dyn TransferUi,
     ) -> FamilyOutput {
         let invocation = parse_args(std::iter::once("fab-rs").chain(args.iter().copied())).unwrap();
-        let sdk = Client::new(
+        let sdk = Client::with_context(RequestContext::with_endpoint(
             self.credential.clone(),
             CredentialSelection::new("offline-account", "tenant", Audience::Fabric).unwrap(),
-        );
+            self.endpoint.clone(),
+        ));
         let executor = HttpExecutor::new(
             self.http.clone(),
             Arc::new(Timer),
             ExecutionOptions::default(),
         )
-        .unwrap();
+        .unwrap()
+        .with_endpoint(self.endpoint.clone());
         let tenant = Element::tenant("Tenant", "tenant");
         let reads = ReadSession {
             sdk: &sdk,

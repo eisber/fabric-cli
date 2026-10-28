@@ -10,6 +10,8 @@ mod family_metadata;
 mod family_support;
 #[path = "family_support/import_parity.rs"]
 mod import_parity;
+#[path = "family_support/selected_endpoint.rs"]
+mod selected_endpoint;
 use fabric_cli::families::FamilyEvidence;
 use family_support::{Harness, success};
 use serde_json::json;
