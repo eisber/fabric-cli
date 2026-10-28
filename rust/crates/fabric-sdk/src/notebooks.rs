@@ -6,6 +6,7 @@
 use crate::{Client, Page, models::FabricServiceError};
 use azure_core::{credentials::AccessToken, http::Url};
 use base64::{Engine, engine::general_purpose::STANDARD};
+use fabric_core::EndpointBinding;
 use fabric_sdk_operations::{
     FabricOperation, OperationErrorKind, OperationExecutionError, OperationExecutor,
     OperationLimits, OperationRequest, OperationResponse, OperationSession,
@@ -21,8 +22,6 @@ use std::{
     pin::Pin,
     time::Duration,
 };
-
-const ROOT: &str = "https://api.fabric.microsoft.com";
 
 /// One inline, base64-encoded definition file.
 #[derive(Clone, Serialize)]
@@ -116,7 +115,7 @@ impl fmt::Debug for NotebookRequest<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("NotebookRequest")
             .field("method", &self.method)
-            .field("origin", &ROOT)
+            .field("origin", &self.url.origin().ascii_serialization())
             .field("body", &"<definition>")
             .field("token", &"<injected>")
             .finish()
@@ -257,6 +256,7 @@ impl std::error::Error for NotebookError {}
 /// Shared bounded state for a single caller-driven Notebook deployment.
 pub struct NotebookSession<'a> {
     limits: NotebookLimits,
+    endpoint: EndpointBinding,
     operations: OperationSession<'a, NotebookOperationAdapter<'a>>,
 }
 
@@ -273,9 +273,9 @@ impl Client {
     ) -> NotebookSession<'a> {
         NotebookSession {
             limits,
-            operations: OperationSession::new(
-                self.credential().as_ref(),
-                self.selection(),
+            endpoint: self.context().endpoint().clone(),
+            operations: OperationSession::with_context(
+                self.context(),
                 NotebookOperationAdapter(executor),
                 OperationLimits {
                     max_requests: limits.max_requests,
@@ -311,7 +311,7 @@ impl NotebookSession<'_> {
         let mut seen = HashSet::new();
         let mut items = Vec::new();
         loop {
-            let mut url = service_url(&path)?;
+            let mut url = service_url(&self.endpoint, &path)?;
             if let Some(token) = &token {
                 url.query_pairs_mut()
                     .append_pair("continuationToken", token);
@@ -331,7 +331,7 @@ impl NotebookSession<'_> {
                 return Ok(items);
             };
             if let Some(uri) = page.continuation_uri {
-                validate_link(&uri, &path)?;
+                validate_link(&self.endpoint, &uri, &path)?;
             }
             if !seen.insert(next.clone()) {
                 return Err(NotebookErrorKind::RepeatedContinuation);
@@ -361,7 +361,9 @@ impl NotebookSession<'_> {
                 "displayName": name, "description": description,
                 "type": "Notebook", "definition": definition
             });
-            let response = self.mutate(service_url(&path)?, body, true).await?;
+            let response = self
+                .mutate(service_url(&self.endpoint, &path)?, body, true)
+                .await?;
             let item: NotebookItem = decode(&response.body)?;
             if !valid_id(&item.id) || item.item_type != "Notebook" || item.display_name != name {
                 return Err(NotebookErrorKind::InvalidResponse);
@@ -388,9 +390,10 @@ impl NotebookSession<'_> {
                 return Err(NotebookErrorKind::InvalidInput);
             }
             validate_definition(definition)?;
-            let url = service_url(&format!(
-                "{path}/{item}/updateDefinition?updateMetadata=True"
-            ))?;
+            let url = service_url(
+                &self.endpoint,
+                &format!("{path}/{item}/updateDefinition?updateMetadata=True"),
+            )?;
             self.mutate(url, json!({"definition": definition}), false)
                 .await?;
             Ok(())
@@ -592,21 +595,22 @@ fn valid_id(id: &str) -> bool {
         })
 }
 
-fn service_url(path: &str) -> Result<Url, NotebookErrorKind> {
-    Url::parse(&format!("{ROOT}{path}")).map_err(|_| NotebookErrorKind::InvalidInput)
+fn service_url(endpoint: &EndpointBinding, path: &str) -> Result<Url, NotebookErrorKind> {
+    endpoint
+        .url(path)
+        .map_err(|_| NotebookErrorKind::InvalidInput)
 }
 
-fn validate_link(uri: &str, path: &str) -> Result<(), NotebookErrorKind> {
+fn validate_link(
+    endpoint: &EndpointBinding,
+    uri: &str,
+    path: &str,
+) -> Result<(), NotebookErrorKind> {
     let url = Url::parse(uri).map_err(|_| NotebookErrorKind::InvalidLink)?;
-    if url.scheme() != "https"
-        || url.host_str() != Some("api.fabric.microsoft.com")
-        || url.port_or_known_default() != Some(443)
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.fragment().is_some()
-        || url.path() != path
-        || (!path.ends_with("/items") && url.query().is_some())
-    {
+    endpoint
+        .validate_url(&url)
+        .map_err(|_| NotebookErrorKind::InvalidLink)?;
+    if url.path() != path || (!path.ends_with("/items") && url.query().is_some()) {
         return Err(NotebookErrorKind::InvalidLink);
     }
     Ok(())

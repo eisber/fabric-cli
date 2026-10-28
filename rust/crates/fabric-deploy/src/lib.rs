@@ -12,10 +12,14 @@
 pub mod config;
 pub mod definitions;
 pub mod deployment_config;
+pub mod model;
 pub mod notebook;
 pub mod parameter_transforms;
 pub mod parameters;
+pub mod planner;
+pub mod processors;
 pub mod publish;
 pub mod repository;
 pub mod transforms;
+pub mod workflow;
 pub mod yaml;

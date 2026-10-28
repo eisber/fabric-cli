@@ -203,4 +203,43 @@ mod tests {
         assert_eq!(requests.len(), 1);
         assert!(matches!(requests[0].body(), Body::Bytes(bytes) if bytes.is_empty()));
     }
+
+    #[tokio::test]
+    async fn deployment_metadata_adapter_preserves_public_daily_and_msit_contexts() {
+        use fabric_sdk::{EndpointBinding, RequestContext, ServiceOrigin};
+        for host in [
+            "api.fabric.microsoft.com",
+            "dailyapi.fabric.microsoft.com",
+            "msitapi.fabric.microsoft.com",
+        ] {
+            let endpoint = EndpointBinding::with_host(ServiceOrigin::Fabric, host).unwrap();
+            let http = Arc::new(Http::default());
+            let shared =
+                HttpExecutor::new(http.clone(), Arc::new(Timer), ExecutionOptions::default())
+                    .unwrap()
+                    .with_endpoint(endpoint.clone());
+            let executor = DeployHttp(&shared);
+            let client = Client::with_context(RequestContext::with_endpoint(
+                Arc::new(Credential),
+                CredentialSelection::new("offline", "tenant", Audience::Fabric).unwrap(),
+                endpoint,
+            ));
+            client
+                .list_items(
+                    &executor,
+                    "11111111-1111-1111-1111-111111111111",
+                    ItemListOptions::default(),
+                    pending(),
+                )
+                .await
+                .unwrap();
+            let requests = http.0.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0].url().host_str(), Some(host));
+            assert_eq!(
+                requests[0].url().path(),
+                "/v1/workspaces/11111111-1111-1111-1111-111111111111/items"
+            );
+        }
+    }
 }
