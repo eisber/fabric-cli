@@ -1,0 +1,1837 @@
+{
+  "source_commit": "5ca096c00a9a878c646c59fe537b883eba951329",
+  "workspace_id": "11111111-1111-1111-1111-111111111111",
+  "item_id": "22222222-2222-2222-2222-222222222222",
+  "cases": [
+    {
+      "type": "Reflex",
+      "update": false,
+      "source": "_items/_activator.py:ActivatorPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "Reflex",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "Reflex",
+      "update": true,
+      "source": "_items/_activator.py:ActivatorPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "ApacheAirflowJob",
+      "update": false,
+      "source": "_items/_apacheairflowjob.py:ApacheAirflowJobPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "ApacheAirflowJob",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "ApacheAirflowJob",
+      "update": true,
+      "source": "_items/_apacheairflowjob.py:ApacheAirflowJobPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "CopyJob",
+      "update": false,
+      "source": "_items/_copyjob.py:CopyJobPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "CopyJob",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "CopyJob",
+      "update": true,
+      "source": "_items/_copyjob.py:CopyJobPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "CosmosDBDatabase",
+      "update": false,
+      "source": "_items/_cosmosdbdatabase.py:CosmosDBDatabasePublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "CosmosDBDatabase",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "CosmosDBDatabase",
+      "update": true,
+      "source": "_items/_cosmosdbdatabase.py:CosmosDBDatabasePublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "DataAgent",
+      "update": false,
+      "source": "_items/_dataagent.py:DataAgentPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "DataAgent",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "DataAgent",
+      "update": true,
+      "source": "_items/_dataagent.py:DataAgentPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "DataBuildToolJob",
+      "update": false,
+      "source": "_items/_databuildtooljob.py:DataBuildToolJobPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "DataBuildToolJob",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "DataBuildToolJob",
+      "update": true,
+      "source": "_items/_databuildtooljob.py:DataBuildToolJobPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "Dataflow",
+      "update": false,
+      "source": "_items/_dataflowgen2.py:DataflowPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "Dataflow",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "Dataflow",
+      "update": true,
+      "source": "_items/_dataflowgen2.py:DataflowPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "DataPipeline",
+      "update": false,
+      "source": "_items/_datapipeline.py:DataPipelinePublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "DataPipeline",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "DataPipeline",
+      "update": true,
+      "source": "_items/_datapipeline.py:DataPipelinePublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "Environment",
+      "update": false,
+      "source": "_items/_environment.py:EnvironmentPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "Environment",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        },
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/22222222-2222-2222-2222-222222222222/staging/publish?beta=False",
+          "poll_long_running": false
+        }
+      ]
+    },
+    {
+      "type": "Environment",
+      "update": true,
+      "source": "_items/_environment.py:EnvironmentPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/22222222-2222-2222-2222-222222222222/staging/publish?beta=False",
+          "poll_long_running": false
+        }
+      ]
+    },
+    {
+      "type": "Eventhouse",
+      "update": false,
+      "source": "_items/_eventhouse.py:EventhousePublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "Eventhouse",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "Eventhouse",
+      "update": true,
+      "source": "_items/_eventhouse.py:EventhousePublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "Eventstream",
+      "update": false,
+      "source": "_items/_eventstream.py:EventstreamPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "Eventstream",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "Eventstream",
+      "update": true,
+      "source": "_items/_eventstream.py:EventstreamPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "GraphModel",
+      "update": false,
+      "source": "_items/_graphmodel.py:GraphModelPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "GraphModel",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "GraphModel",
+      "update": true,
+      "source": "_items/_graphmodel.py:GraphModelPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "GraphQLApi",
+      "update": false,
+      "source": "_items/_graphqlapi.py:GraphQLApiPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "GraphQLApi",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "GraphQLApi",
+      "update": true,
+      "source": "_items/_graphqlapi.py:GraphQLApiPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "KQLDashboard",
+      "update": false,
+      "source": "_items/_kqldashboard.py:KQLDashboardPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "KQLDashboard",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "ewogICJkYXRhU291cmNlcyI6IFtdLAogICJxdWVyeXNldCI6IHt9Cn0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "KQLDashboard",
+      "update": true,
+      "source": "_items/_kqldashboard.py:KQLDashboardPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "ewogICJkYXRhU291cmNlcyI6IFtdLAogICJxdWVyeXNldCI6IHt9Cn0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "KQLDatabase",
+      "update": false,
+      "source": "_items/_kqldatabase.py:KQLDatabasePublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "KQLDatabase",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "KQLDatabase",
+      "update": true,
+      "source": "_items/_kqldatabase.py:KQLDatabasePublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "KQLQueryset",
+      "update": false,
+      "source": "_items/_kqlqueryset.py:KQLQuerysetPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "KQLQueryset",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "KQLQueryset",
+      "update": true,
+      "source": "_items/_kqlqueryset.py:KQLQuerysetPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "Lakehouse",
+      "update": false,
+      "source": "_items/_lakehouse.py:LakehousePublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "Lakehouse",
+            "description": "source fixture",
+            "folderId": ""
+          }
+        },
+        {
+          "method": "GET",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/lakehouses/22222222-2222-2222-2222-222222222222"
+        }
+      ]
+    },
+    {
+      "type": "Lakehouse",
+      "update": true,
+      "source": "_items/_lakehouse.py:LakehousePublisher.publish_one",
+      "calls": [
+        {
+          "method": "PATCH",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222",
+          "body": {
+            "displayName": "Example",
+            "description": "source fixture"
+          }
+        },
+        {
+          "method": "GET",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/lakehouses/22222222-2222-2222-2222-222222222222"
+        }
+      ]
+    },
+    {
+      "type": "Map",
+      "update": false,
+      "source": "_items/_map.py:MapPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "Map",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "Map",
+      "update": true,
+      "source": "_items/_map.py:MapPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "MirroredDatabase",
+      "update": false,
+      "source": "_items/_mirroreddatabase.py:MirroredDatabasePublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "MirroredDatabase",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "MirroredDatabase",
+      "update": true,
+      "source": "_items/_mirroreddatabase.py:MirroredDatabasePublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "MLExperiment",
+      "update": false,
+      "source": "_items/_mlexperiment.py:MLExperimentPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "MLExperiment",
+            "description": "source fixture",
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "MLExperiment",
+      "update": true,
+      "source": "_items/_mlexperiment.py:MLExperimentPublisher.publish_one",
+      "calls": [
+        {
+          "method": "PATCH",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222",
+          "body": {
+            "displayName": "Example",
+            "description": "source fixture"
+          }
+        }
+      ]
+    },
+    {
+      "type": "MountedDataFactory",
+      "update": false,
+      "source": "_items/_mounteddatafactory.py:MountedDataFactoryPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "MountedDataFactory",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "MountedDataFactory",
+      "update": true,
+      "source": "_items/_mounteddatafactory.py:MountedDataFactoryPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "Notebook",
+      "update": false,
+      "source": "_items/_notebook.py:NotebookPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "Notebook",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "Notebook",
+      "update": true,
+      "source": "_items/_notebook.py:NotebookPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "Ontology",
+      "update": false,
+      "source": "_items/_ontology.py:OntologyPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "Ontology",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "Ontology",
+      "update": true,
+      "source": "_items/_ontology.py:OntologyPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "OrgApp",
+      "update": false,
+      "source": "_items/_orgapp.py:OrgAppPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "OrgApp",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "OrgApp",
+      "update": true,
+      "source": "_items/_orgapp.py:OrgAppPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "OrgAppAudience",
+      "update": false,
+      "source": "_items/_orgappaudience.py:OrgAppAudiencePublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "OrgAppAudience",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "OrgAppAudience",
+      "update": true,
+      "source": "_items/_orgappaudience.py:OrgAppAudiencePublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "PaginatedReport",
+      "update": false,
+      "source": "_items/_paginatedreport.py:PaginatedReportPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "PaginatedReport",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "PaginatedReport",
+      "update": true,
+      "source": "_items/_paginatedreport.py:PaginatedReportPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "Report",
+      "update": false,
+      "source": "_items/_report.py:ReportPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "Report",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "Report",
+      "update": true,
+      "source": "_items/_report.py:ReportPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "SemanticModel",
+      "update": false,
+      "source": "_items/_semanticmodel.py:SemanticModelPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "SemanticModel",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "SemanticModel",
+      "update": true,
+      "source": "_items/_semanticmodel.py:SemanticModelPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "SparkJobDefinition",
+      "update": false,
+      "source": "_items/_sparkjobdefinition.py:SparkJobDefinitionPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "SparkJobDefinition",
+            "description": "source fixture",
+            "definition": {
+              "format": "SparkJobDefinitionV2",
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "SparkJobDefinition",
+      "update": true,
+      "source": "_items/_sparkjobdefinition.py:SparkJobDefinitionPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "format": "SparkJobDefinitionV2",
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "SQLDatabase",
+      "update": false,
+      "source": "_items/_sqldatabase.py:SQLDatabasePublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "SQLDatabase",
+            "description": "source fixture",
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "SQLDatabase",
+      "update": true,
+      "source": "_items/_sqldatabase.py:SQLDatabasePublisher.publish_one",
+      "calls": [
+        {
+          "method": "PATCH",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222",
+          "body": {
+            "displayName": "Example",
+            "description": "source fixture"
+          }
+        }
+      ]
+    },
+    {
+      "type": "UserDataFunction",
+      "update": false,
+      "source": "_items/_userdatafunction.py:UserDataFunctionPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "UserDataFunction",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "UserDataFunction",
+      "update": true,
+      "source": "_items/_userdatafunction.py:UserDataFunctionPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "VariableLibrary",
+      "update": false,
+      "source": "_items/_variablelibrary.py:VariableLibraryPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "VariableLibrary",
+            "description": "source fixture",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "VariableLibrary",
+      "update": true,
+      "source": "_items/_variablelibrary.py:VariableLibraryPublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6IHsiZGlzcGxheU5hbWUiOiAiRXhhbXBsZSJ9fQ==",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "content.json",
+                  "payload": "eyJkYXRhU291cmNlcyI6IFtdLCAicXVlcnlzZXQiOiB7fX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "Warehouse",
+      "update": false,
+      "source": "_items/_warehouse.py:WarehousePublisher.publish_one",
+      "calls": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Example",
+            "type": "Warehouse",
+            "description": "source fixture",
+            "folderId": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "Warehouse",
+      "update": true,
+      "source": "_items/_warehouse.py:WarehousePublisher.publish_one",
+      "calls": [
+        {
+          "method": "PATCH",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222",
+          "body": {
+            "displayName": "Example",
+            "description": "source fixture"
+          }
+        }
+      ]
+    }
+  ]
+}

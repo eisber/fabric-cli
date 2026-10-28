@@ -258,6 +258,25 @@ impl LocalNotebook {
         &self.logical_id
     }
 
+    /// Convert a legacy bounded Notebook snapshot into the full deployment model.
+    ///
+    /// This does not discover additional files or expand the legacy codec's scope.
+    pub fn into_repository_item(self) -> crate::model::RepositoryItem {
+        crate::model::RepositoryItem {
+            path: format!("{}.Notebook", self.name),
+            name: self.name,
+            item_type: "Notebook".into(),
+            description: self.description,
+            logical_id: self.logical_id,
+            folder_path: String::new(),
+            files: self
+                .files
+                .into_iter()
+                .map(|(path, content)| crate::model::ItemFile::new(path, content.into_bytes()))
+                .collect(),
+        }
+    }
+
     /// Applies the supported transforms and encodes exact ordered definition parts.
     ///
     /// # Errors
