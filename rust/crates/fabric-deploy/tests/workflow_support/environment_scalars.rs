@@ -31,7 +31,7 @@ async fn environment_publication_preserves_quoted_yaml_indicators_in_both_modes(
             "Example",
             "33333333-3333-3333-3333-333333333333",
         );
-        let settings = "instance_pool_id: 22222222-2222-2222-2222-222222222222\nspark_conf:\n  spark.custom.pattern: '*'\n  anchor: '&value'\n  octal: '012'\n";
+        let settings = "instance_pool_id: 22222222-2222-2222-2222-222222222222\nspark_conf:\n  spark.custom.pattern: '*'\n  '<<': literal\n  anchor: '&value'\n  octal: '012'\n";
         source.files.push(ItemFile::new(
             "Setting/Sparkcompute.yml".into(),
             settings.as_bytes().to_vec(),

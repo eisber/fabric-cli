@@ -136,7 +136,7 @@ pub(super) async fn preprocess<E: OperationExecutor>(
 }
 
 fn emit_yaml(value: &Value) -> String {
-    fn scalar(value: &Value) -> String {
+    fn scalar(value: &Value, mapping_key: bool) -> String {
         match value {
             Value::Null => "null".into(),
             Value::String(value) => {
@@ -150,12 +150,23 @@ fn emit_yaml(value: &Value) -> String {
                         .contains(&value.to_lowercase().as_str())
                     || value.parse::<f64>().is_ok()
                     || !yaml::decode(
-                        &format!("value: {value}\n"),
+                        &if mapping_key {
+                            format!("{value}: scalar\n")
+                        } else {
+                            format!("value: {value}\n")
+                        },
                         YamlPolicy::Config,
                         YamlLimits::default(),
                     )
                     .is_ok_and(|document| {
-                        document.get("value") == Some(&Value::String(value.clone()))
+                        if mapping_key {
+                            document.as_object().is_some_and(|mapping| {
+                                mapping.len() == 1
+                                    && mapping.get(value).and_then(Value::as_str) == Some("scalar")
+                            })
+                        } else {
+                            document.get("value") == Some(&Value::String(value.clone()))
+                        }
                     });
                 if ambiguous {
                     format!("'{}'", value.replace('\'', "''"))
@@ -171,7 +182,7 @@ fn emit_yaml(value: &Value) -> String {
             Value::Object(mapping) => {
                 for (key, value) in mapping {
                     output.push_str(&" ".repeat(depth));
-                    output.push_str(&scalar(&Value::String(key.clone())));
+                    output.push_str(&scalar(&Value::String(key.clone()), true));
                     output.push(':');
                     if value.is_object() || value.is_array() {
                         if value.as_array().is_some_and(Vec::is_empty) {
@@ -188,7 +199,7 @@ fn emit_yaml(value: &Value) -> String {
                         }
                     } else {
                         output.push(' ');
-                        output.push_str(&scalar(value));
+                        output.push_str(&scalar(value, false));
                         output.push('\n');
                     }
                 }
@@ -201,13 +212,13 @@ fn emit_yaml(value: &Value) -> String {
                         output.push('\n');
                         emit(value, depth + 2, output);
                     } else {
-                        output.push_str(&scalar(value));
+                        output.push_str(&scalar(value, false));
                         output.push('\n');
                     }
                 }
             }
             value => {
-                output.push_str(&scalar(value));
+                output.push_str(&scalar(value, false));
                 output.push('\n');
             }
         }
@@ -227,6 +238,7 @@ mod tests {
             "instance_pool_id": "22222222-2222-2222-2222-222222222222",
             "spark_conf": {
                 "*": "*",
+                "<<": "literal",
                 "anchor": "&value",
                 "tag": "!value",
                 "block": "|",
