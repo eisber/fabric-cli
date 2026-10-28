@@ -1,0 +1,122 @@
+{
+  "source": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "type": "SparkJobDefinition",
+      "folder": "Resources",
+      "input": "Demo.Workspace/Job.SparkJobDefinition/Resources",
+      "local_exists": false,
+      "source_folders": [
+        "Libs",
+        "Main",
+        "Snapshots"
+      ],
+      "destination": null,
+      "error": {
+        "code": "InvalidPath",
+        "message": "No such file or directory"
+      },
+      "context_errors": [
+        {
+          "code": "NotSupported",
+          "message": "The folder 'Resources' could not be found in item 'Job.SparkJobDefinition'. Valid folders are: Libs, Main, Snapshots"
+        }
+      ],
+      "remote_write_calls": [],
+      "local_write_calls": []
+    },
+    {
+      "type": "SparkJobDefinition",
+      "folder": "Libs",
+      "input": "Demo.Workspace/Job.SparkJobDefinition/Libs",
+      "local_exists": false,
+      "source_folders": [
+        "Libs",
+        "Main",
+        "Snapshots"
+      ],
+      "destination": null,
+      "error": {
+        "code": "NotSupported",
+        "message": "Only supported for Lakehouse/Files"
+      },
+      "context_errors": [],
+      "remote_write_calls": [],
+      "local_write_calls": []
+    },
+    {
+      "type": "SparkJobDefinition",
+      "folder": "Main",
+      "input": "Demo.Workspace/Job.SparkJobDefinition/Main",
+      "local_exists": false,
+      "source_folders": [
+        "Libs",
+        "Main",
+        "Snapshots"
+      ],
+      "destination": null,
+      "error": {
+        "code": "NotSupported",
+        "message": "Only supported for Lakehouse/Files"
+      },
+      "context_errors": [],
+      "remote_write_calls": [],
+      "local_write_calls": []
+    },
+    {
+      "type": "SparkJobDefinition",
+      "folder": "Resources",
+      "input": "Demo.Workspace/Job.SparkJobDefinition/Resources",
+      "local_exists": true,
+      "source_folders": [
+        "Libs",
+        "Main",
+        "Snapshots"
+      ],
+      "destination": {
+        "type": "local",
+        "path": "Demo.Workspace/Job.SparkJobDefinition/Resources"
+      },
+      "error": null,
+      "context_errors": [
+        {
+          "code": "NotSupported",
+          "message": "The folder 'Resources' could not be found in item 'Job.SparkJobDefinition'. Valid folders are: Libs, Main, Snapshots"
+        }
+      ],
+      "remote_write_calls": [],
+      "local_write_calls": [
+        {
+          "type": "local",
+          "path": "Demo.Workspace/Job.SparkJobDefinition/Resources/Book.DataPipeline/part.txt",
+          "payload": "x"
+        }
+      ]
+    },
+    {
+      "type": "Lakehouse",
+      "folder": "Files",
+      "input": "Demo.Workspace/Job.Lakehouse/Files",
+      "local_exists": false,
+      "source_folders": [
+        "Files",
+        "Tables",
+        "TableMaintenance"
+      ],
+      "destination": {
+        "type": "lakehouse",
+        "path": "Demo.Workspace/Job.Lakehouse/Files"
+      },
+      "error": null,
+      "context_errors": [],
+      "remote_write_calls": [
+        {
+          "type": "lakehouse",
+          "path": "Demo.Workspace/Job.Lakehouse/Files/Book.DataPipeline/part.txt",
+          "payload": "x"
+        }
+      ],
+      "local_write_calls": []
+    }
+  ]
+}

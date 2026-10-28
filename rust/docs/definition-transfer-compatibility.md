@@ -2,6 +2,23 @@
 
 # Definition transfer: bounded native library contract
 
+Pinned destination-policy clarification (`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`):
+SparkJobDefinition/Resources is **not** a remote export destination. The additive
+`definition_export_destination_source.json` independently executes the actual
+item-folder enums/map, `Item.get_folders`, `_handle_path_in_item`,
+`get_export_path`, `export_single_item`, decoder and storage dispatcher. SJD root
+folders are exactly Libs/Main/Snapshots; Resources fails context resolution, then
+fails with `InvalidPath` when no same-spelled local directory exists. Recognized
+SJD Libs/Main contexts fail with source `NotSupported` ("Only supported for
+Lakehouse/Files"). `_write_to_sjd` existing elsewhere does not make it reachable
+from this export selector. A same-spelled existing Resources directory is a
+genuine **local** fallback, not SJD remote support.
+
+The new root SDK/filesystem consumer mirrors those decisions: one definition
+POST, no OneLake storage requests/scopes for rejected SJD outputs, and actual local
+bytes for the legitimate fallback. It also retains the existing positive
+Lakehouse create/append/flush consumers. These Rust cases remain **NOT RUN**.
+
 Status: the bounded read/export/copy/SET codec library is compiled and tested on
 Windows x64. The exact shared Unicode encoder
 commit `d72d68b5370ab5ab95c63815ba084513390d68e4` was surgically adopted as
@@ -100,7 +117,7 @@ coincidentally named local directory. Ordinary local path-resolution fallback
 is retained, and the original failure still fails closed.
 
 These changes are not a Rust validation receipt: tests/builds are **NOT RUN**
-pending the integrator's serialized grant. Seven additive actual-source captures
+pending the integrator's serialized grant. Eight additive actual-source captures
 reproduce independently before Rust expectations; the new offline argv consumer
 covers generic/default/explicit formats, workspace selection/execution ordering,
 nested folder Selective requests, workspace response-index filtering, malformed

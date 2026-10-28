@@ -450,9 +450,14 @@ impl TransferError {
                         DefinitionErrorKind::Unsupported(branch) => {
                             ("NotSupported", format!("Unported source branch: {branch}"))
                         }
-                        DefinitionErrorKind::FileSystem(error) => {
-                            ("InvalidPath", error.to_string())
-                        }
+                        DefinitionErrorKind::FileSystem(error) => (
+                            if error.kind() == io::ErrorKind::Unsupported {
+                                "NotSupported"
+                            } else {
+                                "InvalidPath"
+                            },
+                            error.to_string(),
+                        ),
                         DefinitionErrorKind::Operation(_) => unreachable!(),
                     };
                     OutputInput {

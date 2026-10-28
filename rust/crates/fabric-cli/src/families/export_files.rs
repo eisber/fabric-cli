@@ -219,8 +219,8 @@ impl TransferFiles for ExportFiles<'_, '_> {
                 }
 
                 Ok(_) => Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "Export is only supported for local directories or Lakehouse Files",
+                    io::ErrorKind::Unsupported,
+                    "Only supported for Lakehouse/Files",
                 )),
             }
         })

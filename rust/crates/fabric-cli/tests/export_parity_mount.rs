@@ -10,6 +10,8 @@
 mod deferred_export;
 #[path = "family_support/deploy_paths.rs"]
 mod deploy_paths;
+#[path = "export_support/destination_policy.rs"]
+mod destination_policy;
 #[path = "family_support/metadata_snapshot.rs"]
 mod family_metadata;
 mod family_support;

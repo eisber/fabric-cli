@@ -31,6 +31,7 @@ def main() -> None:
         ("definition_export_index", False),
         ("definition_export_precondition", False),
         ("definition_transfer_input", False),
+        ("definition_export_destination", False),
     ]:
         observed = artifacts / f"{stem}.json"
         command = [sys.executable, "-B", str(CASES / f"{stem}_reference.py"), str(observed)]
