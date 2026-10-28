@@ -41,16 +41,6 @@ pub struct FabricOperation {
 }
 
 impl FabricOperation {
-    /// Validated method, without executing the operation.
-    pub const fn method(&self) -> ResourceMethod {
-        self.method
-    }
-
-    /// Validated relative API path and encoded query, never an arbitrary origin.
-    pub fn path(&self) -> &str {
-        &self.path
-    }
-
     /// Construct a public Fabric operation, never an arbitrary origin.
     ///
     /// # Errors
@@ -74,65 +64,13 @@ impl FabricOperation {
                 .split('/')
                 .skip(1)
                 .any(|segment| segment.is_empty())
+            || (method == ResourceMethod::Get && !body.is_empty())
+            || (method != ResourceMethod::Get
+                && !body.is_empty()
+                && !serde_json::from_slice::<serde_json::Value>(&body)
+                    .is_ok_and(|body| body.is_object()))
         {
             return Err(OperationErrorKind::InvalidInput);
-        }
-        validate_operation_body(method, &body)?;
-        Ok(Self {
-            method,
-            path: relative_operation_path(&url),
-            body,
-            completion,
-            source_read_operation_ids: false,
-        })
-    }
-
-    /// Build a relative Fabric operation from literal path and query components.
-    ///
-    /// This constructor does not accept a URL, hostname, pre-encoded path or
-    /// traversal. Unicode, spaces and literal percent characters are encoded as
-    /// component data. Execution remains bound to the caller's operation session.
-    /// The raw-path constructor's stricter percent policy is unchanged.
-    ///
-    /// # Errors
-    /// Rejects paths outside `v1`, empty/dot/traversing components, separators,
-    /// control characters, empty query names and invalid operation bodies.
-    pub fn from_path_segments(
-        method: ResourceMethod,
-        segments: &[&str],
-        query: &[(&str, &str)],
-        body: Vec<u8>,
-        completion: CompletionPolicy,
-    ) -> Result<Self, OperationErrorKind> {
-        if segments.first() != Some(&"v1")
-            || segments.len() < 2
-            || segments.len() > 256
-            || segments.iter().any(|segment| {
-                segment.is_empty()
-                    || matches!(*segment, "." | "..")
-                    || segment.contains(['/', '\\'])
-                    || segment.chars().any(char::is_control)
-            })
-            || query.iter().any(|(name, value)| {
-                name.is_empty() || name.chars().chain(value.chars()).any(char::is_control)
-            })
-        {
-            return Err(OperationErrorKind::InvalidInput);
-        }
-        validate_operation_body(method, &body)?;
-        let mut url = EndpointBinding::public(ServiceOrigin::Fabric).base_url();
-        {
-            let mut path = url
-                .path_segments_mut()
-                .map_err(|_| OperationErrorKind::InvalidInput)?;
-            path.clear();
-            path.extend(segments);
-        }
-        if !query.is_empty() {
-            url.query_pairs_mut().extend_pairs(query.iter().copied());
-        }
-        if url.as_str().len() > 16 * 1024 {
-            return Err(OperationErrorKind::Limit);
         }
         Ok(Self {
             method,
@@ -165,21 +103,6 @@ impl FabricOperation {
             completion: operation.completion(),
             source_read_operation_ids: false,
         })
-    }
-
-    fn validate_operation_body(
-        method: ResourceMethod,
-        body: &[u8],
-    ) -> Result<(), OperationErrorKind> {
-        if (method == ResourceMethod::Get && !body.is_empty())
-            || (method != ResourceMethod::Get
-                && !body.is_empty()
-                && !serde_json::from_slice::<serde_json::Value>(body)
-                    .is_ok_and(|body| body.is_object()))
-        {
-            return Err(OperationErrorKind::InvalidInput);
-        }
-        Ok(())
     }
 
     /// Permit bounded opaque operation IDs for an explicit source-synchronous GET.

@@ -17,7 +17,7 @@ use fabric_sdk_operations::{
     FabricOperation, OperationError, OperationErrorKind, OperationExecutionError,
     OperationExecutor, OperationLimits, OperationRequest, OperationResponse, OperationSession,
 };
-use fabric_sdk_workspaces::mutations::{CompletionPolicy, ResourceMethod};
+use fabric_sdk_workspaces::mutations::{CompletionPolicy, ResourceMethod, ResourceOperation};
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -225,6 +225,8 @@ impl<E: OperationExecutor> ServiceIo<'_, E> {
             FabricOperation::new(method, path, body, policy).map_err(|kind| self.error(kind))?;
         self.dispatch(
             operation,
+            method,
+            path.to_owned(),
             fabric,
             policy == CompletionPolicy::ReturnAccepted,
         )
@@ -236,25 +238,23 @@ impl<E: OperationExecutor> ServiceIo<'_, E> {
         method: ResourceMethod,
         segments: &[&str],
     ) -> Result<Value, WorkflowFailure> {
-        let operation = FabricOperation::from_path_segments(
-            method,
-            segments,
-            &[],
-            Vec::new(),
-            CompletionPolicy::PythonSynchronous,
-        )
-        .map_err(|kind| self.error(kind))?;
-        self.dispatch(operation, false, false).await
+        let resource =
+            ResourceOperation::encoded(method, segments, None, CompletionPolicy::PythonSynchronous)
+                .map_err(|_| self.error(OperationErrorKind::InvalidInput))?;
+        let operation =
+            FabricOperation::from_resource(&resource).map_err(|kind| self.error(kind))?;
+        self.dispatch(operation, method, resource.path().to_owned(), false, false)
+            .await
     }
 
     async fn dispatch(
         &mut self,
         operation: FabricOperation,
+        method: ResourceMethod,
+        path: String,
         fabric: bool,
         allow_accepted: bool,
     ) -> Result<Value, WorkflowFailure> {
-        let method = operation.method();
-        let path = operation.path().to_owned();
         let mut session = OperationSession::with_context(
             if fabric {
                 self.fabric_client.context()
