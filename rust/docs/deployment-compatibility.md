@@ -63,10 +63,10 @@ Native consumers now have these explicit primitives:
   explicitly consume these settings (`require_item_settings_consumed`), not
   silently treat them as text rules.
 - `SourceRegex` shares the existing bounded Python syntax translator without
-  find-rule capture-count restrictions. Item-name exclusion uses `matches_start`
-  (`re.match`), while folder exclusion uses `search`. Advanced syntax remains an
-  explicit unsupported classification, not a dropped setting or a claim that the
-  Rust regex/JSONPath crates implement Python completely.
+  find-rule capture-count restrictions. Item-name and shortcut exclusions use
+  `matches_start` (`re.match`), while folder exclusion uses `search`. Advanced
+  syntax remains an explicit unsupported classification, not a dropped setting
+  or a claim that the Rust regex/JSONPath crates implement Python completely.
 
 The orchestrator must freeze `command_configuration` after parameter resolution,
 call `require_no_extensions` and `validate_operation_features` before mutation,

@@ -70,7 +70,7 @@ impl SourceRegex {
         Ok(Self { regex })
     }
 
-    /// Source `re.search` semantics, used by folder and shortcut exclusions.
+    /// Source `re.search` semantics, used by folder exclusions.
     ///
     /// # Errors
     /// Preserves bounded search/cancellation/resource errors.
@@ -88,7 +88,7 @@ impl SourceRegex {
         Ok(result)
     }
 
-    /// Source `re.match` semantics, used by item-name exclusions.
+    /// Source `re.match` semantics, used by item-name and shortcut exclusions.
     ///
     /// # Errors
     /// Preserves bounded search/cancellation/resource errors.
