@@ -55,13 +55,23 @@ Guide users through the contribution workflow:
 
 ### Contribution Process
 
-All PRs must follow this process:
+For upstream contributions, follow the process in
+[`CONTRIBUTING.md`](CONTRIBUTING.md):
 
 1. **Find or create an issue** — Search [GitHub Issues](https://github.com/microsoft/fabric-cli/issues) first
 2. **Look for `help-wanted` label** — Required before starting work
 3. **Comment on the issue** — Describe your planned approach and wait for acknowledgment
 4. **Link PR to issue** — Start PR description with `- Resolves #issue-number`
 5. **Add changie entry** — Run `changie new` and select the appropriate change type
+
+Explicitly authorized Rust migration work in the owner's fork follows the
+[agent-operated delivery instructions](rust/docs/agentic-delivery.md). Research,
+implement, review, validate, and repair within the assigned scope without another
+routine human acknowledgment. Link a relevant existing issue when available;
+do not create one solely for fork publication. This exception does not waive
+upstream contribution rules, CLA, required checks, restricted-area review, or
+publication authority. Record an actionable blocker when intent, authority,
+required evidence, or the bounded repair budget prevents progress.
 
 ### Experimental Rust Workspace
 
@@ -82,10 +92,15 @@ shortcuts. The [identity backend decision](rust/docs/decisions/identity-backend.
 remains unresolved and authentication/core changes still require team review.
 
 The shared Rust integration branch is `feature/rust` in the owner's existing
-`eisber/fabric-cli` fork, not upstream. Only the integration owner advances it.
+`eisber/fabric-cli` fork, not upstream. Divide ownership and review by crate family,
+but integrate small changes through one trunk rather than a hierarchy of merger
+branches. The assigned integration owner remains the only writer until separately
+authorized automation replaces that role; these instructions do not enable it.
 Lane work stays on separate branches and adopts an exact validated checkpoint
 without resetting or force-pushing. See the
-[integration handoff](rust/docs/integration-handoff.md) for safe synchronization.
+[integration handoff](rust/docs/integration-handoff.md) for safe synchronization
+and [agent-operated delivery](rust/docs/agentic-delivery.md) for stage-specific
+independent reviews, revision-bound evidence, repair limits, and escalation.
 
 ### Code Standards to Enforce
 

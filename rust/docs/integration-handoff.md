@@ -9,6 +9,23 @@ Lane owners continue on separate branches and adopt an exact validated checkpoin
 Upstream `microsoft/fabric-cli` is not the push destination. The former scaffold
 branch remains intact; references to it in dated evidence are historical.
 
+## Current delivery instructions
+
+Follow [agent-operated delivery](agentic-delivery.md) for new work. Divide crate
+ownership and independent review, but target one trunk with small changes rather
+than extending the historical merger chains below. At each stage, use distinct
+review perspectives and record actual evidence tied to the immutable subject.
+Source unions and old component checks do not prove a combined executable.
+
+Within authorized scope, research, implement, validate, and repair without routine
+human handoffs. Use the bounded repair and blocker protocol when intent, authority,
+or required evidence is missing. The assigned integration owner remains the only
+shared-branch writer until authorized automation replaces that role. This document
+neither enables that automation nor grants a build slot, push, merge, or release.
+
+The dated sections below preserve historical evidence, commands, custody, and
+limitations; they are not current assignments or renewed publication authority.
+
 ## Read-command, query and folder integration
 
 ### October 27 released endpoint and native-value source union

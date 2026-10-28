@@ -16,6 +16,12 @@ and performance regressions. Its results are not performance promises for Fabric
 We adopt the process lessons, not its Node/FFI/runtime architecture or automation
 prompts.
 
+For current authorized work, follow [agent-operated delivery](agentic-delivery.md):
+independent perspectives at each stage, revision-bound evidence, bounded repair,
+and humans only for unresolved blockers outside established authority.
+The historical lane remits and checkpoints below are provenance, not a requirement
+to repeat kickoff approvals or create layers of merger branches.
+
 ## Preserve behavior before changing it
 
 For each bounded slice, record its source commit, entry points, consumers,
@@ -93,11 +99,19 @@ counts or lines translated.
 
 ## Coordinate parallel work without annexing peers
 
-The integration session owns shared layout, core interfaces, manifest/lockfile
-and toolchain policy, integration, and cutover. Lane branches use an exact
+The assigned integration role coordinates shared layout, core interfaces,
+manifest/lockfile and toolchain policy, integration, and cutover. It can be
+performed by an authorized agent; it is not a routine human approval step.
+Crate-family owners and independent reviewers divide implementation and review,
+not the final merge path. Lane branches use an exact
 committed checkpoint of `feature/rust`; the branch is the
 shared code handoff, not a substitute for delivered instructions or approval.
 Do not independently push competing lane changes to that shared branch.
+Use small changes targeting that trunk directly; use atomic cross-crate changes
+or compatible interface migrations rather than permanent family-merger chains.
+
+The initial assignments below are historical. The current task and protected
+contracts determine authority; these rows do not expand or revoke an assignment.
 
 | Lane | Initial bounded remit | Outside its initial authority |
 | --- | --- | --- |
@@ -119,7 +133,9 @@ reconstruct a missing shared scaffold.
 
 The owner standardized the integration branch as `feature/rust` in
 `eisber/fabric-cli` on October 23, 2026. Only the integration owner advances that
-branch. Lane owners continue on separate branches and merge the exact published,
+branch until separately authorized automation takes that role. This instruction
+update installs no controller or merge queue. Lane owners continue on separate
+branches and merge the exact published,
 validated checkpoint into their own clean worktrees. Preserve divergent commits
 and unrelated edits; do not reset, force-push, commandeer peer worktrees, or
 silently chase a moving branch tip. See the
@@ -212,7 +228,11 @@ belong in this guidance, contributor instructions, a protected contract, or
 tooling rather than repeated conversational reminders. Keep evidence references
 and decisions durable so context compaction does not erase them.
 
-Before integrating a slice, review semantics and completeness, independent
-oracle results, dependency/native prerequisites, actual validation and platform
-coverage, resource/lifecycle behavior, and upstream drift. Human approval remains
-the gate for contract exceptions, high-risk architecture, and release decisions.
+Before integrating a slice, apply the independent stage reviews for semantics
+and completeness, oracle results, dependency/native prerequisites, actual
+validation and platform coverage, resource/lifecycle behavior, and upstream drift.
+Repair findings within the task's budget instead of requesting routine human
+approval. Contract exceptions, high-risk architecture, and releases still require
+their established decision authority and restricted-area team review. Escalate
+only when that authority or required evidence is absent or repair is exhausted;
+these instructions do not grant it.
