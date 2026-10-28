@@ -23,7 +23,7 @@ pub fn read_confirmation(
     output.write_all(b" [Y/n] ")?;
     output.flush()?;
     let mut answer = String::new();
-    let count = input.take(ANSWER_LIMIT + 1).read_line(&mut answer)?;
+    let count = io::Read::take(&mut *input, ANSWER_LIMIT + 1).read_line(&mut answer)?;
     if count == 0 {
         return Err(io::Error::new(
             io::ErrorKind::UnexpectedEof,
