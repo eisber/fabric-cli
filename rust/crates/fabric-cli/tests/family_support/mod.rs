@@ -168,7 +168,7 @@ impl MutationUi for MutationUiCapture {
 }
 
 #[derive(Default)]
-struct TransferUiCapture(Mutex<Vec<TransferEvent>>);
+pub(super) struct TransferUiCapture(Mutex<Vec<TransferEvent>>);
 impl TransferUi for TransferUiCapture {
     fn emit(&self, event: TransferEvent) -> Result<(), CommandError> {
         self.0.lock().unwrap().push(event);
@@ -253,6 +253,22 @@ impl Harness {
         cancelled: impl Future<Output = ()> + Send,
         transfer_ui: &dyn TransferUi,
     ) -> FamilyOutput {
+        self.execute_with_capabilities_and_deploy_inputs(
+            args,
+            cancelled,
+            transfer_ui,
+            &fabric_cli::deploy::DeployInputs::default(),
+        )
+        .await
+    }
+
+    pub(super) async fn execute_with_capabilities_and_deploy_inputs(
+        &mut self,
+        args: &[&str],
+        cancelled: impl Future<Output = ()> + Send,
+        transfer_ui: &dyn TransferUi,
+        inputs: &fabric_cli::deploy::DeployInputs,
+    ) -> FamilyOutput {
         let invocation = parse_args(std::iter::once("fab-rs").chain(args.iter().copied())).unwrap();
         let sdk = Client::with_context(RequestContext::with_endpoint(
             self.credential.clone(),
@@ -306,7 +322,7 @@ impl Harness {
             transfer_files: Some(&mut files),
             resource_files: None,
         }
-        .dispatch(&invocation, cancelled)
+        .dispatch_with_deploy_inputs(&invocation, inputs, cancelled)
         .await
         .unwrap();
         assert!(

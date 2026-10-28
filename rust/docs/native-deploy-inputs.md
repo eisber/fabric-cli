@@ -26,9 +26,11 @@ errors that contain no offending input. No entry is silently discarded.
 
 The snapshot function is the sole process-environment reader and is invoked
 only explicitly by the native binary. It captures command-owned parameter
-inputs, not global mutable state. Root owns its module registration and the
-native/`FamilySession` dispatch injection; this lane does not edit native
-runtime or family dispatch code and adds no required fields to those hosts.
+inputs, not global mutable state. The native deployment branch registers this
+module, obtains the checked snapshot and passes it through the additive
+`FamilySession::dispatch_with_deploy_inputs` entry point. Invalid Unicode becomes
+an explicit input failure before deployment dispatch. No required fields are
+added to the family host.
 The existing explicit-map `DeployInputs` API and its empty default remain valid.
 Root's additive `FamilySession::dispatch_with_deploy_inputs` seam accepts this
 map by reference. Existing `dispatch` keeps its empty-map default; only the
@@ -70,6 +72,7 @@ The smallest requested root validation command, from `rust/`, is:
 cargo test --locked -p fabric-cli --test native_deploy_inputs --test deploy_inputs_debug
 ```
 
-Actual binary/family dispatch mounting and source flag/parameter-YAML integration
-remain separate root validation gates. The snapshot is never invoked by these
-offline tests.
+The full root consumer additionally injects synthetic environment input and
+checks expansion before YAML decoding and publication. Actual binary mounting,
+that integration case and the helper/debug cases still require executed native
+validation. The process snapshot is never invoked by these offline tests.

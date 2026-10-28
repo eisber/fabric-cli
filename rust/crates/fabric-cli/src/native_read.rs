@@ -24,6 +24,10 @@ mod settings;
 #[path = "native_transfer_paths.rs"]
 mod transfer_paths;
 
+#[cfg(windows)]
+#[path = "native_deploy_inputs.rs"]
+mod deploy_inputs;
+
 #[derive(Clone, Copy)]
 #[cfg_attr(
     not(windows),
@@ -758,7 +762,16 @@ async fn execute_family(
             transfer_files: Some(&mut files),
             resource_files: None,
         };
-        let mut output = families.dispatch(command, std::future::pending()).await?;
+        let mut output = if matches!(command, Invocation::Deploy(_)) {
+            let inputs = deploy_inputs::snapshot_environment().map_err(|error| {
+                fabric_cli_local::LocalError::command("InvalidInput", error.to_string())
+            })?;
+            families
+                .dispatch_with_deploy_inputs(command, &inputs, std::future::pending())
+                .await?
+        } else {
+            families.dispatch(command, std::future::pending()).await?
+        };
         let mut notices = std::mem::take(&mut mutations.records);
         notices.append(&mut output.plan.records);
         output.plan.records = notices;

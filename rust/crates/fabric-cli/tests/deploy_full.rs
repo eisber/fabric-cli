@@ -147,6 +147,7 @@ async fn full_root_publication_and_bulk_preserve_the_callers_fabric_binding() {
             } else {
                 host.reply(201, json!({"id":ITEM}));
             }
+
             let mut args = vec!["deploy", "--config", "deploy.yml", "-f"];
             if bulk {
                 args.push("--bulk_publish");
@@ -170,4 +171,67 @@ async fn full_root_publication_and_bulk_preserve_the_callers_fabric_binding() {
             );
         }
     }
+}
+
+#[tokio::test]
+async fn explicit_root_environment_inputs_expand_before_yaml_without_identity_selection() {
+    let mut host = Harness::new();
+    input(&host, true);
+    let config = host.root.join("deploy.yml");
+    let source = std::fs::read_to_string(&config).unwrap().replace(
+        "features: [disable_workspace_folder_publish]",
+        "features: [disable_workspace_folder_publish, enable_environment_variable_replacement]",
+    );
+    std::fs::write(config, source).unwrap();
+    std::fs::write(
+        host.root.join("parameter.yml"),
+        "find_replace:\n  - find_value: original\n    replace_value: $ENV:REPLACEMENT\n",
+    )
+    .unwrap();
+    metadata(&host);
+    host.reply(201, json!({"id":ITEM}));
+    let inputs = fabric_cli::deploy::DeployInputs {
+        environment: std::collections::BTreeMap::from([(
+            "REPLACEMENT".into(),
+            "{test: final}".into(),
+        )]),
+    };
+    let output = host
+        .execute_with_capabilities_and_deploy_inputs(
+            &[
+                "deploy",
+                "--config",
+                "deploy.yml",
+                "--target_env",
+                "test",
+                "-f",
+            ],
+            std::future::pending(),
+            &family_support::TransferUiCapture::default(),
+            &inputs,
+        )
+        .await;
+    success(&output);
+    let requests = host.requests();
+    assert_eq!(requests.len(), 3);
+    let part = requests[2]["body"]["definition"]["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|part| part["path"] == "content.json")
+        .unwrap();
+    let expected = serde_json::to_value(
+        fabric_sdk::notebooks::DefinitionPart::inline("content.json", br#"{"value":"final"}"#)
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(part["payload"], expected["payload"]);
+    assert!(
+        host.credential
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|scopes| scopes == &[fabric_sdk::Audience::Fabric.scope()])
+    );
 }
