@@ -11,7 +11,7 @@ use fabric_deploy::definitions::{
 };
 use fabric_deploy::{
     notebook::DefinitionLimits as NotebookDefinitionLimits,
-    repository::{NotebookRepository, RepositoryError},
+    repository::{DeploymentRepository, NotebookRepository, RepositoryError},
 };
 use std::{
     fmt, io,
@@ -435,6 +435,31 @@ impl TransferFiles for TokioTransferFiles {
         Box::pin(async move {
             self.run(move |files, stop| {
                 Ok(NotebookRepository::discover(
+                    &mut ImportWorker { files, stop },
+                    &root,
+                    limits,
+                    max_entries,
+                ))
+            })
+            .await
+            .map_err(RepositoryError::FileSystem)?
+        })
+    }
+
+    fn prepare_deployment_repository_async<'a>(
+        &'a mut self,
+        root: &'a Path,
+        limits: NotebookDefinitionLimits,
+        max_entries: usize,
+    ) -> TransferFuture<'a, Result<DeploymentRepository, RepositoryError>> {
+        let root = root.to_owned();
+        let limits = NotebookDefinitionLimits {
+            max_bytes: limits.max_bytes.min(self.limits.max_bytes),
+        };
+        let max_entries = max_entries.min(self.limits.max_files.get());
+        Box::pin(async move {
+            self.run(move |files, stop| {
+                Ok(DeploymentRepository::discover(
                     &mut ImportWorker { files, stop },
                     &root,
                     limits,
