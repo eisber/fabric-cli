@@ -313,8 +313,11 @@ impl CommandConfiguration {
 
     /// Refuse extension emission until the consumer explicitly implements it.
     ///
-    /// Source parsing permits unknown fields. Native consumers must not silently
-    /// discard them when constructing an executable plan.
+    /// Opt into rejecting source-ignored fields for a stricter embedded caller.
+    ///
+    /// The pinned deployment wrapper extracts only known settings and ignores
+    /// these properties during execution. The source-compatible CLI therefore
+    /// retains them in the snapshot without invoking this optional policy.
     ///
     /// # Errors
     /// Returns the first unconsumed property path, before any mutation.

@@ -401,7 +401,7 @@ jobs:
           git -C "$source" config --local core.autocrlf true
           git -C "$source" fetch --depth=1 https://github.com/microsoft/fabric-cicd.git "$pin"
           git -C "$source" checkout --detach "$pin"
-          for name in configured_flags flag_protocol config_value_edges parameter_context parameter_pipeline path_filter selected_constants parameter_resolution parameter_schema_edges; do
+          for name in configured_flags flag_protocol config_value_edges parameter_context parameter_pipeline path_filter selected_constants parameter_resolution parameter_schema_edges config_extensions_execution; do
             python -B "crates/fabric-deploy/tests/${name}_reference.py" --reference-root "$source"
           done
       - name: Require immutable export storage and metadata source receipts

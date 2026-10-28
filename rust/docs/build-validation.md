@@ -132,7 +132,7 @@ additional comparisons alongside their existing checks.
 
 When released, `deploy_full` must be both listed and executed by the bounded
 deployment preflight, alongside the retained legacy mounted consumers. The
-configuration/scoped-parameter gate re-executes all nine additive references
+configuration/scoped-parameter gate re-executes all ten additive references
 against the pinned `fabric-cicd` source without regenerating expected receipts.
 The full native matrix retains those comparisons as a separate finite step.
 Export storage, fallback, hierarchy, response-index, precondition and input

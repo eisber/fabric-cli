@@ -191,7 +191,7 @@ test('deploy preflight first runs actual library then native root consumer, neve
   assert.ok(plan('clippy', manifest)[1].args.includes('native-read'));
   const family = plan('family', manifest, '/target', '/receipts',
     file => !file.endsWith('transform_program_reference.py'));
-  assert.equal(family.length, 26);
+  assert.equal(family.length, 27);
   assert.ok(family.some(item => item.program === 'git' &&
     item.args.slice(-4).join(' ') === 'config --local core.autocrlf true'));
   assert.ok(family.at(-1).args.includes('--doc'));
@@ -236,7 +236,8 @@ test('released full deployment consumer and parameter source captures cannot be 
   }
   const family = plan('family', manifest, '/target', '/receipts', () => true);
   for (const name of ['configured_flags', 'flag_protocol', 'config_value_edges', 'parameter_context',
-    'parameter_pipeline', 'path_filter', 'selected_constants', 'parameter_resolution', 'parameter_schema_edges']) {
+    'parameter_pipeline', 'path_filter', 'selected_constants', 'parameter_resolution',
+    'parameter_schema_edges', 'config_extensions_execution']) {
     assert.ok(family.some(item => item.args.includes(`crates/fabric-deploy/tests/${name}_reference.py`)));
   }
 });

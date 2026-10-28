@@ -2,6 +2,13 @@
 
 # Deployment configuration and transform compatibility
 
+The source-compatible CLI retains unknown configuration fields as immutable
+extension metadata without rejecting them. The pinned deployment wrapper uses
+explicit known-setting extraction for construction and publication; six
+independent execution receipts verify that extra top/core/publish/unpublish
+properties do not change those calls. `require_no_extensions` remains available
+only as an explicit stricter embedded-caller policy, not the CLI default.
+
 ## Command-scoped configuration handoff (October 28)
 
 `DeploymentConfig::command_configuration(CommandOptions)` provides immutable

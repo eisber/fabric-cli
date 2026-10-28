@@ -6,6 +6,8 @@
 #![cfg(feature = "native-read")]
 #![deny(unnameable_test_items)]
 
+#[path = "deploy_support/extensions.rs"]
+mod extensions;
 mod family_support;
 use family_support::{Harness, success};
 use serde_json::{Value, json};

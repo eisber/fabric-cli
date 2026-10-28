@@ -652,7 +652,6 @@ impl<E: OperationExecutor + ItemExecutor> DeployHost<'_, E> {
         let snapshot = config
             .command_configuration(options)
             .map_err(configuration)?;
-        snapshot.require_no_extensions().map_err(configuration)?;
         snapshot
             .validate_operation_features()
             .map_err(configuration)?;

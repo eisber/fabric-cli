@@ -71,7 +71,6 @@ impl EngineContext {
     pub fn from_configuration(
         configuration: CommandConfiguration,
     ) -> Result<Self, ConfigurationError> {
-        configuration.require_no_extensions()?;
         configuration.validate_operation_features()?;
         let context = Self {
             features: configuration.features().iter().cloned().collect(),

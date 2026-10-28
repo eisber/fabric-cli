@@ -378,7 +378,7 @@ function plan(stage, manifest, target, output, exists = file => fs.existsSync(pa
     for (const name of ['configured_flags_reference', 'flag_protocol_reference',
       'config_value_edges_reference', 'parameter_context_reference', 'parameter_pipeline_reference',
       'path_filter_reference', 'selected_constants_reference', 'parameter_resolution_reference',
-      'parameter_schema_edges_reference']) {
+      'parameter_schema_edges_reference', 'config_extensions_execution_reference']) {
       if (exists(`crates/fabric-deploy/tests/${name}.py`)) references.push(name);
     }
     return [
