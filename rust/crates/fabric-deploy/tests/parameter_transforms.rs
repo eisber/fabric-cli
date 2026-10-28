@@ -211,9 +211,8 @@ fn additive_source_edges_match_or_remain_explicit_unported_branches() {
         if matches!(
             case["id"].as_str().unwrap(),
             "inline-ignore-case" | "negative-index"
-        ) {
-            assert!(actual.is_err(), "{}", case["id"]);
-        } else if case["expected"].get("error").is_some() {
+        ) || case["expected"].get("error").is_some()
+        {
             assert!(actual.is_err(), "{}", case["id"]);
         } else {
             assert_eq!(
