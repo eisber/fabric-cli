@@ -107,6 +107,34 @@ pub struct RemovalHost<'a> {
 }
 
 impl RemovalHost<'_> {
+    /// Delete one explicitly forced workspace without requiring a selection UI.
+    ///
+    /// The complete item catalog is still read and validated before the delete.
+    /// This does not authorize tenant-wide removal or supply implicit consent.
+    ///
+    /// # Errors
+    /// Catalog and operation failures retain their original uncertainty evidence.
+    pub async fn forced_workspace(
+        operations: &mut dyn ResourceOperations,
+        ui: &mut dyn MutationUi,
+        catalog: &mut dyn RemovalCatalog,
+        workspace: &Arc<Element>,
+    ) -> Result<RemovalResult, RemovalError> {
+        let mut result = RemovalResult::default();
+        let operation = async {
+            let items = workspace_items(catalog, workspace).await?;
+            delete_workspace_forced(operations, ui, workspace, items.len(), &mut result).await
+        }
+        .await;
+        match operation {
+            Ok(()) => Ok(result),
+            Err(error) => Err(RemovalError {
+                error: Box::new(error),
+                partial: Box::new(result),
+            }),
+        }
+    }
+
     /// Execute source workspace `rm` behavior, including non-force item selection.
     ///
     /// Without force this removes only selected supported ITEMS, never the
@@ -125,16 +153,7 @@ impl RemovalHost<'_> {
     ) -> Result<RemovalResult, RemovalError> {
         let mut result = RemovalResult::default();
         let operation = async {
-            if !matches!(workspace.kind(), NodeKind::Workspace(_)) {
-                return Err(MutationError::new(
-                    "InvalidInput",
-                    "Expected a workspace removal target",
-                ));
-            }
-            let items = self.catalog.items(workspace).await?;
-            for item in &items {
-                validate_catalog_item(workspace, item)?;
-            }
+            let items = workspace_items(self.catalog, workspace).await?;
             if items.is_empty() && !force {
                 return Err(MutationError::new(
                     "NotSupported",
@@ -142,29 +161,14 @@ impl RemovalHost<'_> {
                 ));
             }
             if force {
-                self.ui.notice(
-                    NoticeKind::Progress,
-                    &format!("This will delete {} underlying items", items.len()),
-                );
-                self.ui
-                    .notice(NoticeKind::Warning, "Executing force delete...");
-                self.ui.notice(
-                    NoticeKind::Progress,
-                    &format!("Deleting '{}'...", workspace.name()),
-                );
-                let outcome =
-                    WorkspaceMutations::delete(self.operations, require_id(workspace)?).await?;
-                if source_deleted(&outcome) {
-                    result.source_deleted_count += 1;
-                    result
-                        .outputs
-                        .push(message(delete_text(&workspace.name(), &outcome)));
-                    result.effects.push(CacheEffect::Deleted {
-                        target: Arc::clone(workspace),
-                    });
-                }
-                result.responses.push(outcome);
-                return Ok(());
+                return delete_workspace_forced(
+                    self.operations,
+                    self.ui,
+                    workspace,
+                    items.len(),
+                    &mut result,
+                )
+                .await;
             }
             let mut supported = items
                 .into_iter()
@@ -325,6 +329,53 @@ impl RemovalHost<'_> {
             }),
         }
     }
+}
+
+async fn workspace_items(
+    catalog: &mut dyn RemovalCatalog,
+    workspace: &Arc<Element>,
+) -> Result<Vec<Arc<Element>>, MutationError> {
+    if !matches!(workspace.kind(), NodeKind::Workspace(_)) {
+        return Err(MutationError::new(
+            "InvalidInput",
+            "Expected a workspace removal target",
+        ));
+    }
+    let items = catalog.items(workspace).await?;
+    for item in &items {
+        validate_catalog_item(workspace, item)?;
+    }
+    Ok(items)
+}
+
+async fn delete_workspace_forced(
+    operations: &mut dyn ResourceOperations,
+    ui: &mut dyn MutationUi,
+    workspace: &Arc<Element>,
+    count: usize,
+    result: &mut RemovalResult,
+) -> Result<(), MutationError> {
+    ui.notice(
+        NoticeKind::Progress,
+        &format!("This will delete {count} underlying items"),
+    );
+    ui.notice(NoticeKind::Warning, "Executing force delete...");
+    ui.notice(
+        NoticeKind::Progress,
+        &format!("Deleting '{}'...", workspace.name()),
+    );
+    let outcome = WorkspaceMutations::delete(operations, require_id(workspace)?).await?;
+    if source_deleted(&outcome) {
+        result.source_deleted_count += 1;
+        result
+            .outputs
+            .push(message(delete_text(&workspace.name(), &outcome)));
+        result.effects.push(CacheEffect::Deleted {
+            target: Arc::clone(workspace),
+        });
+    }
+    result.responses.push(outcome);
+    Ok(())
 }
 
 fn validate_catalog_item(

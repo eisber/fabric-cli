@@ -30,12 +30,22 @@ targets; removal and updates require existing resources.
 separately from Fabric mutation outcomes. A host without transfer capabilities
 rejects copy/move explicitly.
 
+Workspace and tenant `rm` need a complete `RemovalCatalog` and `RemovalHost`
+rather than the single-resource `ResourceHost` entry point. The central
+`FamilySession` mounts that orchestration, with `dispatch_with_removal_ui` for
+selection-dependent branches. The default dispatcher permits explicitly forced
+single-workspace removal through `RemovalHost::forced_workspace`; it still
+loads and validates the full item catalog before dispatching a delete. Tenant
+force retains both source prompts. No missing UI is interpreted as consent.
+
 ## Results
 
 `MutationResult` retains presentation intent, cache effects, declined prompts,
-accepted/completed outcomes and dependency evidence. The central host applies
-effects and context changes, selects output format, and writes shared JSON or
-text output. Output failure must not discard earlier creation evidence or
+accepted/completed outcomes and dependency evidence. The caller must apply
+effects and context changes; the central host selects output format and returns
+a shared JSON/text plan with original evidence. Workspace/tenant removal uses
+`FamilyEvidence::Removal` to retain ordered earlier outputs, responses and cache
+work on a later failure. Output failure must not discard earlier evidence or
 replay a request.
 
 ## Limits

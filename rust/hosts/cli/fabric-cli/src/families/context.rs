@@ -6,10 +6,11 @@ use crate::{
     session::{ReadSession, snapshot::Snapshot},
 };
 use fabric_cli_context::{
-    ContextError, Element, HierarchyLookup, Lookup, LookupKind, LookupRequest, OneLakeProperties,
-    PathElement, PathInput, PathKind, PathResolver, ResolveOptions, VirtualLookupRequest,
-    VirtualWorkspaceKind,
+    ContextError, Element, HierarchyLookup, ItemType, Lookup, LookupKind, LookupRequest, NodeKind,
+    OneLakeProperties, PathElement, PathInput, PathKind, PathResolver, ResolveOptions,
+    VirtualLookupRequest, VirtualWorkspaceKind, WorkspaceType,
 };
+use fabric_cli_mutations::{CommandFuture, MutationError, RemovalCatalog};
 use fabric_cli_output::CommandError;
 use fabric_sdk_http::HttpExecutor;
 use fabric_sdk_onelake::{OneLakeError, OneLakeLimits, OneLakePath};
@@ -113,6 +114,110 @@ impl HierarchyLookup for Loading<'_> {
 }
 
 impl CommandContext {
+    pub(crate) async fn removal_catalog(
+        &self,
+        reads: &ReadSession<'_>,
+        target: &Arc<Element>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<RemovalSnapshot, CommandError> {
+        let mut cancelled = pin!(cancelled);
+        let mut elements = Vec::new();
+        if target.kind() == NodeKind::Tenant {
+            let list = reads
+                .sdk
+                .list_workspaces(reads.executor, Default::default(), cancelled.as_mut())
+                .await
+                .map_err(|error| errors::workspace(&error.kind))?;
+            for workspace in list.value {
+                let kind = match workspace.workspace_type.to_ascii_lowercase().as_str() {
+                    "workspace" => WorkspaceType::Workspace,
+                    "personal" => WorkspaceType::Personal,
+                    _ => continue,
+                };
+                elements.push(
+                    Element::child(
+                        &workspace.display_name,
+                        Some(workspace.id),
+                        NodeKind::Workspace(kind),
+                        target.clone(),
+                    )
+                    .map_err(|error| errors::error(&error.code, error.message))?,
+                );
+            }
+        } else if matches!(target.kind(), NodeKind::Workspace(_)) {
+            let id = target
+                .id()
+                .ok_or_else(|| errors::error("NotFound", "Workspace has no ID"))?;
+            let list = reads
+                .sdk
+                .list_items(reads.executor, id, Default::default(), cancelled.as_mut())
+                .await
+                .map_err(|error| errors::item(&error.kind))?;
+            let folders = if list
+                .value
+                .iter()
+                .any(|item| item.additional_fields.contains_key("folderId"))
+            {
+                if let Some(folders) = self.cached_folders(target.clone())? {
+                    folders
+                } else {
+                    let list = reads
+                        .sdk
+                        .list_folders(reads.executor, id, Default::default(), cancelled.as_mut())
+                        .await
+                        .map_err(|error| crate::folder_reads::folder_error(&error.kind))?;
+                    crate::folder_reads::FolderGraph::new(list.value)
+                        .map_err(|error| error.command_error())?
+                        .elements(target.clone())
+                        .map_err(|error| errors::error(&error.code, error.message))?
+                }
+            } else {
+                Vec::new()
+            };
+            for item in list.value {
+                // Source resolves folder parents before classifying item types.
+                let parent = match item.additional_fields.get("folderId") {
+                    None => target.clone(),
+                    Some(id) => folders
+                        .iter()
+                        .find(|folder| folder.id() == id.as_str())
+                        .filter(|_| id.is_string())
+                        .cloned()
+                        .ok_or_else(|| {
+                            errors::error(
+                                "InvalidResponse",
+                                "Item folder metadata is missing or invalid",
+                            )
+                        })?,
+                };
+                if !item.additional_fields.contains_key("type") {
+                    return Err(errors::error(
+                        "InvalidResponse",
+                        "Fabric returned an item without its type",
+                    ));
+                }
+                let Some(kind) = item.item_type().and_then(|kind| ItemType::parse(kind).ok()) else {
+                    continue;
+                };
+                elements.push(
+                    Element::child(
+                        &item.display_name,
+                        Some(item.id),
+                        NodeKind::Item(kind),
+                        parent,
+                    )
+                    .map_err(|error| errors::error(&error.code, error.message))?,
+                );
+            }
+        } else {
+            return Err(errors::error("InvalidInput", "Expected a workspace or tenant"));
+        }
+        Ok(RemovalSnapshot {
+            target: target.clone(),
+            elements,
+        })
+    }
+
     pub(crate) fn cached_folders(
         &self,
         workspace: Arc<Element>,
@@ -246,5 +351,38 @@ impl CommandContext {
         Err(errors::unsupported(
             "Path exceeds the command metadata-scope bound",
         ))
+    }
+}
+
+pub(crate) struct RemovalSnapshot {
+    target: Arc<Element>,
+    elements: Vec<Arc<Element>>,
+}
+
+impl RemovalSnapshot {
+    fn elements(&self, target: &Arc<Element>) -> Result<Vec<Arc<Element>>, MutationError> {
+        if target != &self.target {
+            return Err(MutationError::new(
+                "InvalidContext",
+                "Removal snapshot belongs to another resource",
+            ));
+        }
+        Ok(self.elements.clone())
+    }
+}
+
+impl RemovalCatalog for RemovalSnapshot {
+    fn workspaces<'a>(
+        &'a mut self,
+        tenant: &'a Arc<Element>,
+    ) -> CommandFuture<'a, Result<Vec<Arc<Element>>, MutationError>> {
+        Box::pin(std::future::ready(self.elements(tenant)))
+    }
+
+    fn items<'a>(
+        &'a mut self,
+        workspace: &'a Arc<Element>,
+    ) -> CommandFuture<'a, Result<Vec<Arc<Element>>, MutationError>> {
+        Box::pin(std::future::ready(self.elements(workspace)))
     }
 }

@@ -16,7 +16,8 @@ use fabric_cli_context::{
 use fabric_cli_local::{ConfigStore, LocalEffects, NavigationHost, NavigationState};
 use fabric_cli_mutations::{
     FabricMutationBackend, MutationError, MutationHost, MutationMetadata, MutationResult,
-    OneLakeWriteError, OneLakeWriteHost, OneLakeWriteResult,
+    OneLakeWriteError, OneLakeWriteHost, OneLakeWriteResult, RemovalError, RemovalHost,
+    RemovalResult, RemovalSort, RemovalUi,
     frontdoor::{
         ResourceCommand, ResourceConfig, ResourceContext, ResourceFiles, ResourceHost,
         ResourceTransferHost,
@@ -55,6 +56,8 @@ pub enum FamilyEvidence {
     Access(Result<fabric_cli_resources::CommandValue, fabric_cli_resources::CommandError>),
     /// Fabric mutation result retains earlier creation and cache evidence.
     Resource(Result<MutationResult, MutationError>),
+    /// Ordered workspace/tenant removal, including partial outputs and cache work.
+    Removal(Result<RemovalResult, RemovalError>),
     /// Storage evidence remains distinct from Fabric mutation evidence.
     Storage(Result<OneLakeWriteResult, OneLakeWriteError>),
     /// Definition transfer retains original operation IDs and file progress.
@@ -130,6 +133,37 @@ impl FamilySession<'_, '_> {
         &mut self,
         invocation: &Invocation,
         inputs: &crate::deploy::DeployInputs,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<FamilyOutput, TextError> {
+        self.dispatch_with_resource_ui(invocation, inputs, None, cancelled)
+            .await
+    }
+
+    /// Dispatch with explicit workspace/tenant removal selection and confirmation.
+    ///
+    /// Existing callers need no additional capability for forced single-workspace
+    /// removal. Non-forced workspace and all tenant removal require this adapter;
+    /// tenant force never bypasses source selection or confirmation.
+    pub async fn dispatch_with_removal_ui(
+        &mut self,
+        invocation: &Invocation,
+        ui: &mut dyn RemovalUi,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<FamilyOutput, TextError> {
+        self.dispatch_with_resource_ui(
+            invocation,
+            &crate::deploy::DeployInputs::default(),
+            Some(ui),
+            cancelled,
+        )
+        .await
+    }
+
+    async fn dispatch_with_resource_ui(
+        &mut self,
+        invocation: &Invocation,
+        inputs: &crate::deploy::DeployInputs,
+        removal_ui: Option<&mut dyn RemovalUi>,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<FamilyOutput, TextError> {
         let mut cancelled = std::pin::pin!(cancelled);
@@ -373,7 +407,7 @@ impl FamilySession<'_, '_> {
                     ),
                     supports_local_path: false,
                 };
-                if let Err(error) = context
+                let target = match context
                     .resolve(
                         self.reads,
                         self.http,
@@ -387,7 +421,87 @@ impl FamilySession<'_, '_> {
                     )
                     .await
                 {
-                    return self.command_failure(error, invocation, format);
+                    Ok(target) => target,
+                    Err(error) => return self.command_failure(error, invocation, format),
+                };
+                if let ResourceCommand::Remove { force, hard, .. } = command
+                    && let Some(element) = target.fabric()
+                    && matches!(element.kind(), NodeKind::Workspace(_) | NodeKind::Tenant)
+                {
+                    if command.args().skill.is_some() {
+                        return self.command_failure(
+                            errors::unsupported(
+                                "--skill requires shared resource request-header plumbing",
+                            ),
+                            invocation,
+                            format,
+                        );
+                    }
+                    if removal_ui.is_none() && (!*force || element.kind() == NodeKind::Tenant) {
+                        return self.command_failure(
+                            errors::unsupported(
+                                "Workspace/tenant removal requires an explicit selection UI",
+                            ),
+                            invocation,
+                            format,
+                        );
+                    }
+                    let mut catalog = match context
+                        .removal_catalog(self.reads, element, cancelled.as_mut())
+                        .await
+                    {
+                        Ok(catalog) => catalog,
+                        Err(error) => return self.command_failure(error, invocation, format),
+                    };
+                    let mut backend = FabricMutationBackend::new(
+                        self.reads.sdk.credential().clone(),
+                        self.reads.sdk.selection().clone(),
+                        self.http,
+                        OperationLimits::default(),
+                        cancelled.as_mut(),
+                    );
+                    let result = if let Some(ui) = removal_ui {
+                        let mut host = RemovalHost {
+                            operations: &mut backend,
+                            ui,
+                            catalog: &mut catalog,
+                            sort: if settings
+                                .get("output_item_sort_criteria")
+                                .and_then(Value::as_str)
+                                == Some("bytype")
+                            {
+                                RemovalSort::ByType
+                            } else {
+                                RemovalSort::ByName
+                            },
+                        };
+                        if element.kind() == NodeKind::Tenant {
+                            host.tenant(element).await
+                        } else {
+                            host.workspace(element, *force, *hard).await
+                        }
+                    } else {
+                        RemovalHost::forced_workspace(
+                            &mut backend,
+                            self.mutations,
+                            &mut catalog,
+                            element,
+                        )
+                        .await
+                    };
+                    let outputs = match &result {
+                        Ok(result) => result.outputs.clone(),
+                        Err(error) => {
+                            let mut outputs = error.partial.outputs.clone();
+                            outputs.push(error.error.output());
+                            outputs
+                        }
+                    };
+                    let plan = render_outputs(outputs, command.name(), timestamp, format, false)?;
+                    return Ok(FamilyOutput {
+                        plan,
+                        evidence: FamilyEvidence::Removal(result),
+                    });
                 }
                 let other = match command {
                     ResourceCommand::Copy { destination, .. }
@@ -838,7 +952,33 @@ impl MutationMetadata for Metadata<'_, '_> {
                             mutation_error(error, &self.reads.timestamp)
                         })
                 }
-
+                NodeKind::Folder => {
+                    let workspace = element
+                        .workspace()
+                        .and_then(|workspace| workspace.id().map(str::to_owned))
+                        .ok_or_else(|| {
+                            MutationError::new("InvalidPath", "Folder has no workspace")
+                        })?;
+                    let folder = self
+                        .reads
+                        .sdk
+                        .get_folder(
+                            self.reads.executor,
+                            &workspace,
+                            id,
+                            Default::default(),
+                            pending(),
+                        )
+                        .await
+                        .map_err(|error| {
+                            mutation_error(
+                                crate::folder_reads::folder_error(&error.kind),
+                                &self.reads.timestamp,
+                            )
+                        })?;
+                    serde_json::to_value(folder)
+                        .map_err(|_| MutationError::new("InvalidJson", "Invalid folder metadata"))
+                }
                 _ => Err(MutationError::new(
                     "NotSupported",
                     "Metadata update for this path is not mounted",

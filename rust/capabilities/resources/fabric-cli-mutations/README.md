@@ -51,6 +51,26 @@ asynchronous selection. Non-forced workspace removal deletes selected supported
 items, not the workspace itself. Tenant selection remains explicit even when
 force is supplied.
 
+The central `fabric_cli::families::FamilySession` now composes these handlers
+with complete bounded SDK catalogs. Its existing dispatch entry points support
+forced single-workspace removal without selection; an unreadable or incomplete
+item catalog fails before deletion, even with force. Supply
+`dispatch_with_removal_ui` for non-forced workspace and all tenant removal.
+That adapter is removal-only; ordinary metadata updates continue to use the
+session's `MutationUi`. Tenant `--force` never bypasses selection or confirmation.
+`FamilyEvidence::Removal` preserves every earlier response, output and cache
+effect when a later item fails. Effects remain caller-owned; acceptance and
+writer delivery do not prove deletion or that a cache effect was applied.
+
+Folder SET in the central host uses the existing folder SDK GET after confirmation,
+then the existing metadata PATCH handler. Only HTTP 200 produces the source
+`Folder updated` output and rename effect. The independent additive
+`tests/resource_release_gaps_reference.py` executes frozen Python
+`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4` handlers before comparison;
+`rust/hosts/cli/fabric-cli/tests/resource_release_gaps.rs` exercises the root
+parser, actual family composition and offline shared HTTP executor. Existing
+fixtures and expected outputs are unchanged.
+
 `create_with_template_enumeration` accepts a complete ordered template tree.
 See [creation templates](templates/README.md) for path validation, dependent
 creation and ordering rules.
@@ -72,3 +92,10 @@ Command support depends on the resolved resource and supplied adapter. Hidden
 administrative mutations, recursive storage operations, ARM lifecycle and domain
 assignment are not implied by registering a verb. Resource skill headers
 currently fail explicitly when requested.
+
+The native terminal selection adapter is a separate host integration step;
+without it the selection-dependent branches fail explicitly rather than
+choosing every resource. The next source-backed resource slice is shortcut
+`ln --target` resolution with source prompt/validation ordering. Local file
+resource copy, virtual-domain APIs, GET, skills and regex remain outside this
+slice.
