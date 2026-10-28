@@ -41,8 +41,9 @@ Native consumers now have these explicit primitives:
   with exact item/name/path conjunction. `ParameterResolver` supplies metadata
   and concrete path capabilities; no library reads credentials, files or process
   environment. Dynamic replacements resolve only after a match, once per
-  selected JSONPath location. Missing parameter environments produce typed skip
-  outcomes rather than an unsupported-field stub.
+  selected JSONPath location. `encode_dynamic_name` retains the source UTF-8
+  percent-encoding contract for `name_encoded`. Missing parameter environments
+  produce typed skip outcomes rather than an unsupported-field stub.
 - `resolve_parameter_paths` evaluates source regular paths and glob filters over
   caller-validated repository-relative regular-file inventories. Source bracket,
   recursive wildcard, literal-brace, casing, confinement and invalid-pattern

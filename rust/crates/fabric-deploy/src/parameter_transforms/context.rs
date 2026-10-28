@@ -4,6 +4,38 @@
 use super::{TransformBudget, TransformError};
 use serde_json::Value;
 
+/// Encode a resolved workspace name like source `urllib.parse.quote(safe="")`.
+///
+/// UTF-8 bytes use uppercase percent escapes; spaces are not converted to `+`.
+/// Caller-owned metadata resolution supplies the name, never ambient discovery.
+///
+/// # Errors
+/// Preserves input/output/work bounds, timeout and caller cancellation.
+pub fn encode_dynamic_name(
+    name: &str,
+    budget: &mut TransformBudget<'_>,
+) -> Result<String, TransformError> {
+    budget.text(name)?;
+    let mut output = String::new();
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    for byte in name.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            budget.push(&mut output, &char::from(byte).to_string())?;
+        } else {
+            let token = [
+                b'%',
+                HEX[usize::from(byte >> 4)],
+                HEX[usize::from(byte & 15)],
+            ];
+            budget.push(
+                &mut output,
+                std::str::from_utf8(&token).expect("ASCII percent escape"),
+            )?;
+        }
+    }
+    Ok(output)
+}
+
 /// Source dynamic variable category, independent of its metadata resolver.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DynamicVariableKind {

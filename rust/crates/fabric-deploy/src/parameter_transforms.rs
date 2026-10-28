@@ -12,7 +12,7 @@ mod regex;
 mod schema;
 
 pub use context::{
-    DynamicVariable, DynamicVariableKind, ParameterItem, ParameterResolver,
+    DynamicVariable, DynamicVariableKind, ParameterItem, ParameterResolver, encode_dynamic_name,
     matches_parameter_filters,
 };
 pub use input::{

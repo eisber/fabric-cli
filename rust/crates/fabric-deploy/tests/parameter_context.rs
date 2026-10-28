@@ -6,13 +6,31 @@
 use fabric_deploy::parameter_transforms::{
     DynamicVariable, DynamicVariableKind, ParameterFileHost, ParameterItem, ParameterProgram,
     ParameterResolver, PathFilterOptions, TransformBudget, TransformError, TransformLimits,
-    expand_parameter_environment, matches_parameter_filters, merge_parameter_template,
-    prepare_parameter_document, resolve_parameter_paths,
+    encode_dynamic_name, expand_parameter_environment, matches_parameter_filters,
+    merge_parameter_template, prepare_parameter_document, resolve_parameter_paths,
 };
 use serde_json::{Value, json};
 use std::{cell::Cell, collections::BTreeMap};
 
 const GUID: &str = "11111111-1111-1111-1111-111111111111";
+
+#[test]
+fn dynamic_name_encoding_consumes_unchanged_original_source_receipt() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../tests/fixtures/deploy/ids.json")).unwrap();
+    let case = fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["id"] == "current-workspace-name-url-encoded")
+        .unwrap();
+    let result = encode_dynamic_name(
+        "Synthetic / Workspace",
+        &mut TransformBudget::new(TransformLimits::default(), &|| false),
+    )
+    .unwrap();
+    assert_eq!(json!(result), case["expected"]);
+}
 
 #[test]
 fn all_twenty_six_path_filters_match_actual_source_filesystem_capture() {
