@@ -41,6 +41,54 @@ pub struct ResourceTransferHost<'a> {
 }
 
 impl ResourceTransferHost<'_> {
+    /// Resolve copy/move paths with the source's local fallback on both sides.
+    ///
+    /// The caller hydrates remote metadata and explicit local snapshots first.
+    /// This performs no filesystem discovery and does not authorize local I/O.
+    /// In particular, resolving a local move does not authorize copy/delete.
+    ///
+    /// # Errors
+    /// Preserves source-before-destination resolution failures without retry.
+    pub fn resolve_paths(
+        context: &mut dyn ResourceContext,
+        command: &ResourceCommand,
+    ) -> Result<(Arc<PathElement>, Arc<PathElement>), MutationError> {
+        let destination = match command {
+            ResourceCommand::Copy { destination, .. }
+            | ResourceCommand::Move { destination, .. } => destination,
+            _ => return Err(parser::invalid("Expected a copy or move command")),
+        };
+        let source = context.resolve(
+            &command.args().path,
+            ResolveOptions {
+                raise_error: true,
+                supports_local_path: true,
+            },
+        )?;
+        let target = context.resolve(
+            destination,
+            ResolveOptions {
+                raise_error: false,
+                supports_local_path: true,
+            },
+        )?;
+        Ok((source, target))
+    }
+
+    /// Convert already resolved OneLake metadata using the shared path policy.
+    ///
+    /// Physical file consumers use the same IDs, kind and display path as remote
+    /// transfers; this does not resolve or probe a native path.
+    ///
+    /// # Errors
+    /// Rejects non-storage metadata and invalid workspace/item/resource paths.
+    pub fn storage_target(
+        command: &ResourceCommand,
+        target: &Arc<PathElement>,
+    ) -> Result<OneLakeWriteTarget, OneLakeWriteError> {
+        storage_target(command, target)
+    }
+
     /// Execute a OneLake copy/move or local-file upload using the existing helpers.
     ///
     /// Source and destination resolution, local classification, progress and
@@ -55,64 +103,34 @@ impl ResourceTransferHost<'_> {
         command: &ResourceCommand,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<OneLakeWriteResult, OneLakeWriteError> {
-        let (destination, moving, force, recursive, collision) = match command {
-            ResourceCommand::Copy {
-                destination,
-                force,
-                recursive,
-                block_on_path_collision,
-                ..
-            } => (
-                destination,
-                false,
-                *force,
-                *recursive,
-                *block_on_path_collision,
-            ),
-            ResourceCommand::Move {
-                destination,
-                force,
-                recursive,
-                ..
-            } => (destination, true, *force, *recursive, false),
-            _ => return Err(local(parser::invalid("Expected a copy or move command"))),
-        };
-        if command.args().skill.is_some() {
-            return Err(local(gap(command, "--skill storage request headers")));
-        }
-        if recursive || collision {
-            return Err(local(gap(
-                command,
-                "recursive/collision-policy transfer options",
-            )));
-        }
-        let source = self
-            .context
-            .resolve(
-                &command.args().path,
-                ResolveOptions {
-                    raise_error: true,
-                    supports_local_path: !moving,
-                },
-            )
-            .map_err(local)?;
-        let target = self
-            .context
-            .resolve(
-                destination,
-                ResolveOptions {
-                    raise_error: false,
-                    supports_local_path: !moving,
-                },
-            )
-            .map_err(local)?;
+        transfer_options(command)?;
+        let (source, target) = Self::resolve_paths(self.context, command).map_err(local)?;
+        self.execute_resolved(command, &source, &target, cancelled)
+            .await
+    }
+
+    /// Execute against the exact metadata already resolved by the command owner.
+    ///
+    /// This avoids repeated resolution/diagnostics in physical-file composition.
+    /// The original remote option policy and result/error types are unchanged.
+    ///
+    /// # Errors
+    /// Same unsupported branches and storage uncertainty as [`Self::execute`].
+    pub async fn execute_resolved(
+        &mut self,
+        command: &ResourceCommand,
+        source: &Arc<PathElement>,
+        target: &Arc<PathElement>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<OneLakeWriteResult, OneLakeWriteError> {
+        let (moving, force) = transfer_options(command)?;
         if !matches!(target.kind(), PathKind::OneLake(_)) {
             return Err(local(gap(
                 command,
                 "Fabric definition or local-destination transfer",
             )));
         }
-        let target = storage_target(command, &target)?;
+        let target = storage_target(command, target)?;
         let mut result = if moving {
             if !matches!(source.kind(), PathKind::OneLake(_)) {
                 return Err(local(gap(
@@ -121,16 +139,11 @@ impl ResourceTransferHost<'_> {
                 )));
             }
             self.storage
-                .rename(
-                    &storage_target(command, &source)?,
-                    &target,
-                    force,
-                    cancelled,
-                )
+                .rename(&storage_target(command, source)?, &target, force, cancelled)
                 .await?
         } else if matches!(source.kind(), PathKind::OneLake(_)) {
             self.storage
-                .copy_file(&storage_target(command, &source)?, &target, cancelled)
+                .copy_file(&storage_target(command, source)?, &target, cancelled)
                 .await?
         } else {
             validate_copy_destination(&target)?;
@@ -177,6 +190,31 @@ impl ResourceTransferHost<'_> {
         }
         Ok(result)
     }
+}
+
+fn transfer_options(command: &ResourceCommand) -> Result<(bool, bool), OneLakeWriteError> {
+    let (moving, force, recursive, collision) = match command {
+        ResourceCommand::Copy {
+            force,
+            recursive,
+            block_on_path_collision,
+            ..
+        } => (false, *force, *recursive, *block_on_path_collision),
+        ResourceCommand::Move {
+            force, recursive, ..
+        } => (true, *force, *recursive, false),
+        _ => return Err(local(parser::invalid("Expected a copy or move command"))),
+    };
+    if command.args().skill.is_some() {
+        return Err(local(gap(command, "--skill storage request headers")));
+    }
+    if recursive || collision {
+        return Err(local(gap(
+            command,
+            "recursive/collision-policy transfer options",
+        )));
+    }
+    Ok((moving, force))
 }
 
 fn storage_target(

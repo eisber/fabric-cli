@@ -11,6 +11,53 @@ ancestry nor a peer's uncommitted changes are required.
 
 ## Composition and route selection
 
+### Additive typed resource composition
+
+`ResourceFileHost { context, storage, files }` is the resource-command consumer.
+`context` is the existing `ResourceContext`, `storage` is the existing
+`OneLakeWriteHost`, and `files` is `Option<&dyn LocalFileSystem>`. No public
+`ResourceFiles` trait or existing host struct literal has been removed/changed.
+The legacy byte-reader path remains available to existing consumers; new physical
+composition must use this retained-source-lease/download-capable adapter instead.
+The existing context dependency moves from dev-only to regular use in this crate;
+the root manifest, dependency versions and lock remain untouched.
+
+`ResourceTransferHost::resolve_paths` exposes the source-first/destination-second
+local-fallback flags. `ResourceTransferHost::storage_target` exposes the same
+validated metadata-to-OneLake conversion to the physical consumer.
+`ResourceTransferHost::execute_resolved` consumes the resolved pair without a
+second resolver call, preserving the original remote-only option/error policy.
+The new adapter selects physical routes before that remote recursive/collision
+option gate; it must not reject physical-file flags globally.
+
+The central owner must hydrate remote metadata before local fallback, preserve
+authentication/service/paging/cancellation failures, and use the existing
+command-support and token-splitting policy. A string that resembles a native path
+is not sufficient authorization or classification. Local snapshots must retain
+the original input and expose actual caller-classified metadata, not fake remote
+IDs or successful existence. Native probing remains asynchronous and explicit.
+
+After classification, activate only the selected local route's capability with
+`SelectedFileSystem::defer(boundary, absolute_candidate, runtime_handle)` and
+optionally `.with_input(original_spelling)`. Both are I/O-free. All actual
+metadata/open/read/write/flush and canonicalization use `OsFileSystem` on the
+existing runtime's blocking pool. Preserve its existing link/traversal policy;
+do not replace it with a drive-wide root adapter or definition-transfer policy.
+Empty input is not the selected directory. No local-source deletion is possible.
+
+Use an additive family evidence variant containing
+`Result<ResourceFileResult, ResourceFileError>`. Borrow `result.outputs()` or
+`error.output()` for rendering and retain the original value across writer
+failure. `ResourceFileResult::Upload.upload` and
+`ResourceFileError::Copy.kind::Upload` keep all real SDK response/partial-effect
+evidence; do not flatten them into a remote completed outcome or a string.
+Immediate UI delivery failures remain the caller's existing UI error boundary,
+not consent, transfer success or permission to replay.
+
+The central integration patch is intentionally handed to the parent separately;
+this lane does not edit `families.rs`, `native_read.rs`, `local_host`, resource
+`frontdoor/mod.rs`, or the definition-transfer crate.
+
 The existing central host owns argument parsing, `cp`/`copy` aliases, Fabric-first
 context resolution, multi-token path extraction, support checks and output mode.
 After those source checks, select only these physical routes:

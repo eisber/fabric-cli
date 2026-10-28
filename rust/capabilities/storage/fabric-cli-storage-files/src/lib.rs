@@ -7,7 +7,11 @@
 //! credentials, start a runtime, or implement a second HTTP/operation engine.
 
 mod local;
+mod resource;
+mod selected;
 mod upload;
+pub use resource::{ResourceFileError, ResourceFileHost, ResourceFileResult};
+pub use selected::SelectedFileSystem;
 pub use upload::UploadResult;
 
 pub use local::{

@@ -14,6 +14,7 @@ description = "Source-pinned local filesystem and OneLake copy consumers"
 layer = "cli"
 
 [dependencies]
+fabric-cli-context.workspace = true
 fabric-cli-mutations.workspace = true
 fabric-cli-output.workspace = true
 fabric-sdk-onelake.workspace = true
@@ -22,7 +23,6 @@ tokio.workspace = true
 [dev-dependencies]
 azure_core.workspace = true
 async-trait.workspace = true
-fabric-cli-context.workspace = true
 fabric-sdk-http.workspace = true
 fabric-sdk-onelake-http.workspace = true
 fabric-sdk-workspaces.workspace = true

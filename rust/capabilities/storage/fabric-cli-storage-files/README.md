@@ -11,6 +11,38 @@ runtime and performs no blocking filesystem work on the async worker. The caller
 supplies credentials, storage audience, transport, timing, cancellation and output.
 See the [host contract](HOST-CONTRACT.md) for composition details.
 
+## Resource command adapter
+
+`ResourceFileHost` composes typed resource `cp`/`mv` commands with the existing
+physical handlers and remote `ResourceTransferHost`. It resolves source first
+(`raise_error: true`) and destination second (`false`), allowing caller-owned
+local fallback on both sides. `execute_resolved` accepts the metadata owner's
+already support-checked objects without repeating resolution or notices.
+
+Local-to-OneLake and OneLake-to-local copies ignore force, recursive and collision
+flags exactly as the pinned file handlers do. This does not enable recursion:
+directory/shortcut/table sources retain their source-specific rejection.
+Local-to-local copies and **every move involving a local path** are rejected.
+No copy-then-delete emulation or local deletion capability exists.
+
+`ResourceFileResult` and `ResourceFileError` retain original remote, upload and
+download receipts separately from rendered output. The host must keep that
+evidence if presentation or stream delivery fails; output failure never retries
+a transfer. A missing file capability, metadata failure or unsupported `--skill`
+header path remains an explicit error.
+
+`SelectedFileSystem::defer` binds one absolute native candidate and an explicit
+boundary without touching the filesystem. `with_input` binds its exact original
+spelling, including relative input, without cwd lookup. Only that alias can be
+inspected/read/written; a selected existing directory additionally permits one
+direct download basename. The underlying `OsFileSystem` still enforces its
+unchanged canonical-ancestor, symlink and basename policy. Boundary selection
+does not grant access to sibling files, a drive or recursive descendants.
+
+Central native metadata/LocalLookup hydration, family evidence and host selection
+belong to the integration owner; this crate does not enable the executable by
+itself. There is no dependency on definition import/export or its file policy.
+
 ## Download
 
 A directory destination uses the remote basename; a file destination is used as
@@ -61,3 +93,18 @@ cargo run --offline --locked -p fabric-cli-storage-files --example offline_copy
 The example accepts JSON objects on stdin and requires an existing disposable
 `root`. It uses synthetic HTTP responses and real local fixture files without
 contacting a service or acquiring tokens.
+
+The new rejected-route fixtures have an independent, standard-library Python
+oracle over unchanged `cp`/`mv` dispatchers at
+`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`:
+
+```text
+python capabilities/storage/fabric-cli-storage-files/tests/resource_dispatch_reference.py
+cargo test --locked -p fabric-cli-storage-files --test resource_command --test selected_adapter
+```
+
+`tests/resource-routes.json` is synthetic, not a regenerated source fixture.
+The Rust tests exercise the resource adapter with injected HTTP and private OS
+files; existing upload/download suites cover detailed status, bound and
+interruption behavior. These commands require actual controller execution before
+claiming Rust checks passed; the Python oracle alone is not Rust execution.
