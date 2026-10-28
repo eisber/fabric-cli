@@ -6,6 +6,7 @@
 //! The caller owns discovery, credentials, runtime, local roots, UI and cache.
 //! No HTTP implementation, deployment algorithm or second front door lives here.
 
+mod files;
 mod local;
 mod parser;
 
@@ -22,7 +23,7 @@ use fabric_cli_output::{
 use fabric_deploy::definitions::{
     self, BulkExportSnapshot, BulkItem, BulkScope, CommandSupport, DefinitionError,
     DefinitionErrorKind, DefinitionFile, DefinitionFileSystem, DefinitionImportFileSystem,
-    DefinitionLimits, DefinitionTarget, ImportTarget,
+    DefinitionLimits, DefinitionTarget, ImportTarget, PreparedImport,
 };
 use fabric_sdk::Client;
 use fabric_sdk_operations::{
@@ -109,6 +110,77 @@ pub trait TransferFiles: DefinitionFileSystem + DefinitionImportFileSystem + Sen
     fn resolve_directory(&mut self, input: &str) -> io::Result<PathBuf>;
     /// Check the selected existing directory, without unbounded enumeration.
     fn is_empty(&mut self, root: &Path) -> io::Result<bool>;
+
+    /// Resolve a directory on the caller's filesystem worker.
+    ///
+    /// The default preserves synchronous injected adapters. OS-backed async hosts
+    /// must override these methods to keep filesystem work off runtime threads.
+    fn resolve_directory_async<'a>(
+        &'a mut self,
+        input: &'a str,
+    ) -> TransferFuture<'a, io::Result<PathBuf>> {
+        Box::pin(async move { self.resolve_directory(input) })
+    }
+
+    /// Check emptiness on the caller's worker, preserving bounded entry policy.
+    fn is_empty_async<'a>(&'a mut self, root: &'a Path) -> TransferFuture<'a, io::Result<bool>> {
+        Box::pin(async move { self.is_empty(root) })
+    }
+
+    /// Preflight all destinations before any write, returning the unchanged plan.
+    ///
+    /// Owned bounded bytes let a worker take the plan without an extra copy.
+    fn preflight_async<'a>(
+        &'a mut self,
+        root: &'a Path,
+        files: Vec<DefinitionFile>,
+    ) -> TransferFuture<'a, io::Result<Vec<DefinitionFile>>> {
+        Box::pin(async move {
+            self.preflight(root, &files)?;
+            Ok(files)
+        })
+    }
+
+    /// Create an item directory, including an empty definition.
+    fn create_directory_async<'a>(
+        &'a mut self,
+        root: &'a Path,
+        name: &'a str,
+    ) -> TransferFuture<'a, io::Result<()>> {
+        Box::pin(async move { self.create_directory(root, name) })
+    }
+
+    /// Write one exact bounded file; cancellation/drop is not rollback.
+    fn write_async<'a>(
+        &'a mut self,
+        root: &'a Path,
+        file: DefinitionFile,
+    ) -> TransferFuture<'a, io::Result<()>> {
+        Box::pin(async move { self.write(root, &file) })
+    }
+
+    /// Prepare a complete import before mutation using the released file loader.
+    ///
+    /// Worker implementations must retain traversal, exclusion and raw-byte
+    /// semantics, finite bounds, and the original typed preparation errors.
+    fn prepare_import_async<'a>(
+        &'a mut self,
+        root: &'a Path,
+        target: ImportTarget<'a>,
+        selector: Option<&'a str>,
+        limits: DefinitionLimits,
+    ) -> TransferFuture<'a, Result<PreparedImport, DefinitionError>> {
+        Box::pin(async move {
+            definitions::prepare_import(
+                &mut files::ImportFiles(self),
+                root,
+                target,
+                selector,
+                true,
+                limits,
+            )
+        })
+    }
 }
 
 /// Source cache upsert after import, including declined overwrite of an existing item.
@@ -258,8 +330,8 @@ impl<E: OperationExecutor + ?Sized> OperationExecutor for BorrowedExecutor<'_, E
 
 type Cancellation<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 
-async fn phase<T>(
-    work: impl Future<Output = Result<T, CommandError>>,
+async fn phase<T, E: Into<TransferError>>(
+    work: impl Future<Output = Result<T, E>>,
     cancelled: &mut Cancellation<'_>,
 ) -> Result<T, TransferError> {
     let mut work = pin!(work);
@@ -301,9 +373,10 @@ pub struct TransferHost<'a, E: ?Sized> {
 impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
     /// Execute a family leaf; returned effects are real, not planned CLI coverage.
     ///
-    /// Synchronous local filesystem work must run on the caller's appropriate
-    /// worker. Cancellation drops metadata/UI phases; SDK sessions retain original
-    /// dispatch evidence. No request or partial write is retried or rolled back.
+    /// OS-backed hosts override the asynchronous file capabilities with a bounded
+    /// caller-owned worker. Cancellation drops metadata/UI phases; SDK sessions
+    /// retain original dispatch evidence. No request or write is retried or rolled
+    /// back, and dropping a worker future cannot interrupt an OS syscall.
     pub async fn execute(
         &mut self,
         command: &TransferCommand,
@@ -323,7 +396,11 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             .into());
         }
         let mut cancelled: Cancellation<'_> = Box::pin(cancelled);
-        phase(std::future::ready(Ok(())), &mut cancelled).await?;
+        phase(
+            std::future::ready(Ok::<_, CommandError>(())),
+            &mut cancelled,
+        )
+        .await?;
         let context = phase(
             self.metadata.resolve(command.kind, &command.path),
             &mut cancelled,
@@ -371,7 +448,7 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
         let mut result = TransferResult::default();
         if !workspace {
             if command.force || phase(self.ui.confirm(SINGLE_CONFIRM), cancelled).await? {
-                let root = self.directory(&output)?;
+                let root = phase(self.directory(&output), cancelled).await?;
                 result.completed_paths = self
                     .export_one(&context.target, command, &root, cancelled)
                     .await?;
@@ -399,7 +476,7 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             )
             .into());
         }
-        let root = self.directory(&output)?;
+        let root = phase(self.directory(&output), cancelled).await?;
         let names = &context.selection_order;
         let mut expected = supported
             .iter()
@@ -480,13 +557,8 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             root.display(),
             item.name(),
         );
-        let mut files = NotifyingFiles {
-            inner: self.files,
-            ui: self.ui,
-            progress: Some(progress),
-            at_directory: true,
-        };
-        let outcome = definitions::export_item(
+        let mut files = files::ExportFiles::default();
+        definitions::export_item(
             &mut session,
             &mut files,
             DefinitionTarget {
@@ -500,8 +572,11 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             true,
             self.definition_limits,
         )
-        .await?;
-        Ok(outcome.completed_paths)
+        .await
+        .map_err(files::ExportFiles::preparation_error)?;
+        Ok(files
+            .write(&mut session, self.files, root, self.ui, progress)
+            .await?)
     }
 
     async fn bulk(
@@ -527,8 +602,12 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
                 .as_deref()
                 .ok_or_else(|| invalid("Output path is required"))?,
         );
-        let root = self.directory(&output)?;
-        let nonempty = !self.files.is_empty(&root).map_err(local_error)?;
+        let root = phase(self.directory(&output), cancelled).await?;
+        let nonempty = !phase(
+            async { self.files.is_empty_async(&root).await.map_err(local_error) },
+            cancelled,
+        )
+        .await?;
         if nonempty
             && !command.force
             && !phase(
@@ -600,17 +679,13 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             self.operation_limits,
             cancelled.as_mut(),
         );
-        let mut files = NotifyingFiles {
-            inner: self.files,
-            ui: self.ui,
-            progress: Some(format!(
-                "Bulk-exporting '{}' \u{2192} '{}'...",
-                snapshot.from_path,
-                root.display()
-            )),
-            at_directory: false,
-        };
-        let outcome = definitions::bulk_export(
+        let progress = format!(
+            "Bulk-exporting '{}' \u{2192} '{}'...",
+            snapshot.from_path,
+            root.display()
+        );
+        let mut files = files::ExportFiles::default();
+        let mut outcome = definitions::bulk_export(
             &mut session,
             &mut files,
             snapshot,
@@ -619,7 +694,11 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             true,
             self.definition_limits,
         )
-        .await?;
+        .await
+        .map_err(files::ExportFiles::preparation_error)?;
+        outcome.completed_paths = files
+            .write(&mut session, self.files, &root, self.ui, progress)
+            .await?;
         let exported = type_counts(&outcome.supported_ids, &items)?;
         let skipped = type_counts(&outcome.skipped_ids, &items)?;
         let mut summary = format!(
@@ -668,7 +747,7 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
                 .as_deref()
                 .ok_or_else(|| invalid("Input path is required"))?,
         );
-        let root = self.directory(&input)?;
+        let root = phase(self.directory(&input), cancelled).await?;
         if !command.force && !phase(self.ui.confirm("Are you sure?"), cancelled).await? {
             return Ok(TransferResult {
                 declined: true,
@@ -680,20 +759,22 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             .filter(|parent| parent.kind() == NodeKind::Folder)
             .map(|parent| require_id(parent))
             .transpose()?;
-        let prepared = definitions::prepare_import(
-            self.files,
-            &root,
-            ImportTarget {
-                workspace_id: require_id(&workspace)?,
-                item_id: item.id(),
-                item_type,
-                display_name: item.short_name(),
-                folder_id,
-            },
-            command.format.as_deref(),
-            true,
-            self.definition_limits,
-        )?;
+        let prepared = phase(
+            self.files.prepare_import_async(
+                &root,
+                ImportTarget {
+                    workspace_id: require_id(&workspace)?,
+                    item_id: item.id(),
+                    item_type,
+                    display_name: item.short_name(),
+                    folder_id,
+                },
+                command.format.as_deref(),
+                self.definition_limits,
+            ),
+            cancelled,
+        )
+        .await?;
         if item.id().is_some() {
             self.ui.emit(TransferEvent::Warning(
                 "An item with the same name exists".into(),
@@ -734,11 +815,14 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
         })
     }
 
-    fn directory(&mut self, input: &str) -> Result<PathBuf, TransferError> {
+    async fn directory(&mut self, input: &str) -> Result<PathBuf, TransferError> {
         if input.is_empty() {
             return Err(command_error("InvalidPath", "No such file or directory").into());
         }
-        self.files.resolve_directory(input).map_err(local_error)
+        self.files
+            .resolve_directory_async(input)
+            .await
+            .map_err(local_error)
     }
 }
 
@@ -790,43 +874,6 @@ fn type_counts(ids: &[String], items: &[BulkItem]) -> Result<Map<String, Value>,
         );
     }
     Ok(counts)
-}
-
-struct NotifyingFiles<'a> {
-    inner: &'a mut dyn TransferFiles,
-    ui: &'a dyn TransferUi,
-    progress: Option<String>,
-    at_directory: bool,
-}
-
-impl NotifyingFiles<'_> {
-    fn notify(&mut self) -> io::Result<()> {
-        if let Some(progress) = self.progress.take() {
-            self.ui
-                .emit(TransferEvent::Grey(progress))
-                .map_err(|_| io::Error::other("Transfer progress output failed"))?;
-        }
-        Ok(())
-    }
-}
-
-impl DefinitionFileSystem for NotifyingFiles<'_> {
-    fn preflight(&mut self, root: &Path, files: &[DefinitionFile]) -> io::Result<()> {
-        self.inner.preflight(root, files)?;
-        if !self.at_directory {
-            self.notify()?;
-        }
-        Ok(())
-    }
-
-    fn create_directory(&mut self, root: &Path, name: &str) -> io::Result<()> {
-        self.inner.create_directory(root, name)?;
-        self.notify()
-    }
-
-    fn write(&mut self, root: &Path, file: &DefinitionFile) -> io::Result<()> {
-        self.inner.write(root, file)
-    }
 }
 
 /// Render actual outputs using the existing shared JSON/text implementation.

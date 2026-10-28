@@ -69,9 +69,18 @@ metadata/selection/stream proof does not establish native WAM, MFA, Conditional
 Access or cross-platform authentication; see
 [auth command evidence](auth-command-evidence.md).
 
-The native definition file adapter uses the explicitly selected OS working
+The definition file adapter uses the explicitly selected OS working
 directory as its stable owned root. Paths outside that root fail rather than
-silently expanding filesystem authority. Native confirmation and workspace export
+silently expanding filesystem authority. The asynchronous family capabilities
+accept the CLI-owned `families::transfer_files::TokioTransferFiles`, which awaits
+the existing runtime's blocking executor for root checks, bounded directory
+enumeration, import preparation and ordered export writes. Native setup must
+await that adapter's construction and use bounded runtime shutdown, not wait
+indefinitely for a blocked OS syscall. Cancellation is not syscall cancellation
+or rollback; an in-flight write can still complete after its future is dropped.
+The [transfer contract](../crates/fabric-cli-transfer/README.md#asynchronous-local-filesystem-boundary-td03)
+records task/byte bounds, partial progress and the independent source pin.
+Native confirmation and workspace export
 selection need an injected UI; use the corresponding explicit force/all options
 for supported noninteractive branches. Resource notices are buffered in source
 order and delivered with the final output, so write failures remain observable.
