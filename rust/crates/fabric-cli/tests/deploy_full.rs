@@ -48,6 +48,15 @@ async fn root_copy_job_reaches_real_broad_deploy_publication() {
         .execute(&["deploy", "--config", "deploy.yml", "-f"])
         .await;
     success(&output);
+    assert!(
+        output
+            .write_to(&mut family_support::BrokenWriter, &mut Vec::new())
+            .is_err()
+    );
+    assert!(
+        matches!(&output.evidence, fabric_cli::families::FamilyEvidence::Deploy(Ok(result))
+            if result.completed.len() == 1 && result.completed[0].outcome.item_id == ITEM)
+    );
     let requests = host.requests();
     assert_eq!(requests.len(), 3);
     assert_eq!(requests[2]["body"]["type"], "CopyJob");
