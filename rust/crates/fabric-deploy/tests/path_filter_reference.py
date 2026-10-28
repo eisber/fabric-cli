@@ -110,8 +110,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--reference-root", type=Path, required=True)
     parser.add_argument("--capture", type=Path)
+    parser.add_argument("--observations", type=Path)
     args = parser.parse_args()
     result = json.loads(json.dumps(capture(args.reference_root)))
+    if args.observations:
+        with args.observations.open("x", encoding="utf-8", newline="\n") as file:
+            json.dump(result, file, ensure_ascii=True, indent=2)
+            file.write("\n")
     if args.capture:
         with args.capture.open("x", encoding="utf-8", newline="\n") as file:
             json.dump(result, file, ensure_ascii=True, indent=2)

@@ -240,6 +240,9 @@ test('released full deployment consumer and parameter source captures cannot be 
     'parameter_schema_edges', 'config_extensions_execution']) {
     assert.ok(family.some(item => item.args.includes(`crates/fabric-deploy/tests/${name}_reference.py`)));
   }
+  const paths = family.find(item => item.args.includes('crates/fabric-deploy/tests/path_filter_reference.py'));
+  assert.ok(paths.args.includes('--observations'));
+  assert.ok(paths.args.includes(path.join('/receipts', 'path-filter-observed.json')));
 });
 test('Windows native lane, host and dedicated validation namespace must agree', () => {
   const ref = 'refs/heads/validation/rust-fast-windows-03fab';
