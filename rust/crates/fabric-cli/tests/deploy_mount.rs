@@ -6,6 +6,8 @@
 #![cfg(feature = "native-read")]
 #![deny(unnameable_test_items)]
 
+#[path = "deploy_support/expanded_scope.rs"]
+mod expanded_scope;
 mod family_support;
 use fabric_cli::{deploy::DeployFailure, families::FamilyEvidence};
 use fabric_deploy::publish::PublishFailure;
@@ -245,13 +247,13 @@ async fn root_deploy_retains_accepted_failed_operation_without_replay_or_delete(
 }
 
 #[tokio::test]
-async fn source_default_unpublish_and_unsupported_payload_fail_before_http() {
+async fn invalid_skip_invalid_item_scope_and_missing_parameter_fail_before_http() {
     for body in [
         format!(
-            "core:\n  workspace_id: {WORKSPACE}\n  repository_directory: repository\n  item_types_in_scope: [Notebook]\n"
+            "core:\n  workspace_id: {WORKSPACE}\n  repository_directory: repository\n  item_types_in_scope: [Notebook]\nunpublish:\n  skip: 'invalid-boolean'\n"
         ),
         format!(
-            "core:\n  workspace_id: {WORKSPACE}\n  repository_directory: repository\n  item_types_in_scope: [Notebook, DataPipeline]\nunpublish:\n  skip: true\n"
+            "core:\n  workspace_id: {WORKSPACE}\n  repository_directory: repository\n  item_types_in_scope: [Notebook, NotASourceItemType]\nunpublish:\n  skip: true\n"
         ),
         format!(
             "core:\n  workspace_id: {WORKSPACE}\n  repository_directory: repository\n  item_types_in_scope: [Notebook]\n  parameter: parameter.yml\nunpublish:\n  skip: true\n"

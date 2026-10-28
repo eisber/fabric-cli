@@ -199,7 +199,9 @@ fn legacy_parameters(
 ) -> bool {
     fn dynamic(value: &Value) -> bool {
         match value {
-            Value::String(value) => value.starts_with('$'),
+            Value::String(value) => {
+                fabric_deploy::parameter_transforms::DynamicVariable::parse(value).is_ok()
+            }
             Value::Array(values) => values.iter().any(dynamic),
             Value::Object(values) => values.values().any(dynamic),
             _ => false,
