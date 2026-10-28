@@ -22,7 +22,7 @@ fn target() -> ImportTarget<'static> {
 
 #[tokio::test]
 async fn selected_import_roots_bind_only_exact_source_alias_on_the_actual_worker() {
-    for file in [false, true] {
+    for (file, deferred) in [(false, false), (true, false), (false, true), (true, true)] {
         let host = Harness::new();
         let source = host
             .root
@@ -35,14 +35,23 @@ async fn selected_import_roots_bind_only_exact_source_alias_on_the_actual_worker
         }
         let alias = format!("~{}selected", std::path::MAIN_SEPARATOR);
         let limits = DefinitionLimits::default();
-        let mut files = TokioTransferFiles::for_import_root(
-            source.clone(),
-            alias.clone(),
-            limits,
-            tokio::runtime::Handle::current(),
-        )
-        .await
-        .unwrap();
+        let mut files = if deferred {
+            TokioTransferFiles::defer_import_root(
+                source.clone(),
+                alias.clone(),
+                limits,
+                tokio::runtime::Handle::current(),
+            )
+        } else {
+            TokioTransferFiles::for_import_root(
+                source.clone(),
+                alias.clone(),
+                limits,
+                tokio::runtime::Handle::current(),
+            )
+            .await
+            .unwrap()
+        };
         assert_eq!(files.resolve_import_async(&alias).await.unwrap(), source);
         assert!(files.resolve_import_async("another-input").await.is_err());
         assert!(files.resolve_directory_async(&alias).await.is_err());
@@ -61,6 +70,46 @@ async fn selected_import_roots_bind_only_exact_source_alias_on_the_actual_worker
         );
         assert!(host.requests().is_empty());
     }
+}
+
+#[tokio::test]
+async fn deferred_import_waits_for_matching_resolution_without_a_cwd_preflight() {
+    let host = Harness::new();
+    let source = host.root.join("created-after-construction");
+    let limits = DefinitionLimits::default();
+    let mut files = TokioTransferFiles::defer_import_root(
+        source.clone(),
+        "explicit-input".into(),
+        limits,
+        tokio::runtime::Handle::current(),
+    );
+    assert!(
+        files
+            .prepare_import_async(&source, target(), None, limits)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        files
+            .resolve_import_async("different-input")
+            .await
+            .unwrap_err()
+            .kind(),
+        std::io::ErrorKind::InvalidInput
+    );
+    std::fs::create_dir(&source).unwrap();
+    std::fs::write(source.join("b.whl"), [0, 255, 13, 10]).unwrap();
+    assert_eq!(
+        files.resolve_import_async("explicit-input").await.unwrap(),
+        source
+    );
+    let prepared = files
+        .prepare_import_async(&source, target(), None, limits)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(prepared.body()).unwrap();
+    assert_eq!(body["definition"]["parts"][0]["payload"], "AP8NCg==");
+    assert!(host.requests().is_empty());
 }
 
 #[tokio::test]
