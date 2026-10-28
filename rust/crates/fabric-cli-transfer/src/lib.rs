@@ -644,9 +644,8 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
     ) -> Result<Vec<String>, TransferError> {
         let (workspace, item_type) = item_parts(item)?;
         let item_id = require_id(item)?;
-        let mut session = OperationSession::new(
-            self.client.credential().as_ref(),
-            self.client.selection(),
+        let mut session = OperationSession::with_context(
+            self.client.context(),
             BorrowedExecutor(self.executor),
             self.operation_limits,
             cancelled.as_mut(),
@@ -819,9 +818,8 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             scope,
             items: &items,
         };
-        let mut session = OperationSession::new(
-            self.client.credential().as_ref(),
-            self.client.selection(),
+        let mut session = OperationSession::with_context(
+            self.client.context(),
             BorrowedExecutor(self.executor),
             self.operation_limits,
             cancelled.as_mut(),

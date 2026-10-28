@@ -159,13 +159,6 @@ impl FamilySession<'_, '_> {
         if let Invocation::Deploy(command) = invocation {
             let executor = deploy_http::DeployHttp(self.http);
             let result = if let Some(files) = self.transfer_files.as_deref_mut() {
-                let mut export_files;
-                let files: &mut dyn TransferFiles = if command.kind == TransferKind::Import {
-                    files
-                } else {
-                    export_files = export_files::ExportFiles::new(files, self.reads, self.http);
-                    &mut export_files
-                };
                 crate::deploy::DeployHost {
                     client: self.reads.sdk,
                     executor: &executor,
@@ -503,6 +496,16 @@ impl FamilySession<'_, '_> {
                     },
                 };
                 let result = if let Some(files) = self.transfer_files.as_deref_mut() {
+                    let mut export_files;
+                    let files: &mut dyn TransferFiles = if matches!(
+                        command.kind,
+                        TransferKind::Export | TransferKind::BulkExport
+                    ) {
+                        export_files = export_files::ExportFiles::new(files, self.reads, self.http);
+                        &mut export_files
+                    } else {
+                        files
+                    };
                     TransferHost {
                         client: self.reads.sdk,
                         executor: self.http,

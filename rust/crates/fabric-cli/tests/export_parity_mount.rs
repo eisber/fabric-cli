@@ -917,7 +917,26 @@ async fn injected_export_with_http(
     args: &[&str],
     client: Arc<dyn azure_core::http::HttpClient>,
 ) -> fabric_cli::families::FamilyOutput {
-    let sdk = fabric_sdk::Client::new(
+    injected_export_at_endpoint(
+        host,
+        files,
+        cancelled,
+        args,
+        client,
+        fabric_sdk::EndpointBinding::public(fabric_sdk::ServiceOrigin::Fabric),
+    )
+    .await
+}
+
+async fn injected_export_at_endpoint(
+    host: &mut Harness,
+    files: &mut dyn fabric_cli_transfer::TransferFiles,
+    cancelled: impl std::future::Future<Output = ()> + Send,
+    args: &[&str],
+    client: Arc<dyn azure_core::http::HttpClient>,
+    endpoint: fabric_sdk::EndpointBinding,
+) -> fabric_cli::families::FamilyOutput {
+    let sdk = fabric_sdk::Client::with_context(fabric_sdk::RequestContext::with_endpoint(
         host.credential.clone(),
         fabric_sdk::CredentialSelection::new(
             "offline-account",
@@ -925,9 +944,11 @@ async fn injected_export_with_http(
             fabric_sdk::Audience::Fabric,
         )
         .unwrap(),
-    );
-    let http =
-        fabric_sdk_http::HttpExecutor::new(client, Arc::new(Timer), Default::default()).unwrap();
+        endpoint.clone(),
+    ));
+    let http = fabric_sdk_http::HttpExecutor::new(client, Arc::new(Timer), Default::default())
+        .unwrap()
+        .with_endpoint(endpoint);
     let tenant = fabric_cli_context::Element::tenant("Tenant", "tenant");
     let reads = fabric_cli::session::ReadSession {
         sdk: &sdk,
@@ -1154,4 +1175,236 @@ async fn remote_binary_upload_preserves_exact_bytes_at_real_azure_http_boundary(
         matches!(&output.evidence,FamilyEvidence::Transfer(Ok(result))
         if result.completed_paths == ["Book.DataPipeline/bytes.bin"] && result.exported_ids == [NOTEBOOK])
     );
+}
+
+fn paged_metadata(host: &Harness) {
+    host.reply(
+        200,
+        json!({"value":[{"id":WS,"displayName":"Demo","type":"Workspace"}]}),
+    );
+    host.reply(200, json!({"value":[],"continuationToken":"next+/="}));
+    host.reply(
+        200,
+        json!({"value":[{"id":PIPELINE,"displayName":"Book","type":"DataPipeline"}]}),
+    );
+}
+
+#[tokio::test]
+async fn selected_context_binds_export_and_bulk_initial_pages_poll_and_result() {
+    for selected in [
+        "api.fabric.microsoft.com",
+        "dailyapi.fabric.microsoft.com",
+        "msitapi.fabric.microsoft.com",
+    ] {
+        for bulk in [false, true] {
+            let mut host = host();
+            paged_metadata(&host);
+            if !bulk {
+                host.reply(200, json!({"id":PIPELINE}));
+            }
+            let root = format!("https://{selected}");
+            let poll = format!("{root}/v1/operations/{OPERATION}");
+            let result = format!("{poll}/result");
+            host.headers(
+                202,
+                Value::Null,
+                &[
+                    ("Location", &poll),
+                    ("x-ms-operation-id", OPERATION),
+                    ("Retry-After", "0"),
+                ],
+            );
+            host.headers(200, json!({"status":"Succeeded"}), &[("Location", &result)]);
+            host.reply(
+                200,
+                if bulk {
+                    json!({
+                        "definitionParts":[{"path":"/Book.DataPipeline/part.txt","payload":"eA=="}],
+                        "itemDefinitionsIndex":[{"id":PIPELINE,"rootPath":"/Book.DataPipeline"}],
+                    })
+                } else {
+                    definition("part.txt", "eA==")
+                },
+            );
+            let mut files = fabric_cli::families::transfer_files::TokioTransferFiles::new(
+                host.root.clone(),
+                None,
+                Default::default(),
+                tokio::runtime::Handle::current(),
+            )
+            .await
+            .unwrap();
+            let http = host.http.clone();
+            let args: &[&str] = if bulk {
+                &[
+                    "fab-rs",
+                    "bulk-export",
+                    "Demo.Workspace",
+                    "--recursive",
+                    "-f",
+                    "-o",
+                    "output",
+                ]
+            } else {
+                &[
+                    "fab-rs",
+                    "export",
+                    "Demo.Workspace/Book.DataPipeline",
+                    "-f",
+                    "-o",
+                    "output",
+                ]
+            };
+            let output = injected_export_at_endpoint(
+                &mut host,
+                &mut files,
+                pending(),
+                args,
+                http,
+                fabric_sdk::EndpointBinding::with_host(fabric_sdk::ServiceOrigin::Fabric, selected)
+                    .unwrap(),
+            )
+            .await;
+            success(&output);
+            let requests = host.requests();
+            assert_eq!(requests.len(), if bulk { 6 } else { 7 });
+            assert!(requests.iter().all(|request| {
+                request["url"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with(&format!("{root}/"))
+            }));
+            assert!(
+                requests[2]["url"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with("continuationToken=next%2B%2F%3D")
+            );
+            assert_eq!(requests[requests.len() - 2]["url"], poll);
+            assert_eq!(requests.last().unwrap()["url"], result);
+            assert_eq!(
+                fs::read(
+                    host.root
+                        .join("output")
+                        .join("Book.DataPipeline")
+                        .join("part.txt")
+                )
+                .unwrap(),
+                b"x"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn selected_export_context_rejects_foreign_poll_or_result_without_fallback_or_replay() {
+    for bulk in [false, true] {
+        for foreign_result in [false, true] {
+            let mut host = host();
+            paged_metadata(&host);
+            if !bulk {
+                host.reply(200, json!({"id":PIPELINE}));
+            }
+            let root = "https://msitapi.fabric.microsoft.com";
+            let poll = format!("{root}/v1/operations/{OPERATION}");
+            let foreign = format!("https://api.fabric.microsoft.com/v1/operations/{OPERATION}");
+            host.headers(
+                202,
+                Value::Null,
+                &[
+                    ("Location", if foreign_result { &poll } else { &foreign }),
+                    ("x-ms-operation-id", OPERATION),
+                    ("Retry-After", "0"),
+                ],
+            );
+            if foreign_result {
+                host.headers(
+                    200,
+                    json!({"status":"Succeeded"}),
+                    &[("Location", &format!("{foreign}/result"))],
+                );
+            }
+            let mut files = fabric_cli::families::transfer_files::TokioTransferFiles::new(
+                host.root.clone(),
+                None,
+                Default::default(),
+                tokio::runtime::Handle::current(),
+            )
+            .await
+            .unwrap();
+            let http = host.http.clone();
+            let args: &[&str] = if bulk {
+                &[
+                    "fab-rs",
+                    "bulk-export",
+                    "Demo.Workspace",
+                    "--recursive",
+                    "-f",
+                    "-o",
+                    "output",
+                ]
+            } else {
+                &[
+                    "fab-rs",
+                    "export",
+                    "Demo.Workspace/Book.DataPipeline",
+                    "-f",
+                    "-o",
+                    "output",
+                ]
+            };
+            let output = injected_export_at_endpoint(
+                &mut host,
+                &mut files,
+                pending(),
+                args,
+                http,
+                fabric_sdk::EndpointBinding::with_host(
+                    fabric_sdk::ServiceOrigin::Fabric,
+                    "msitapi.fabric.microsoft.com",
+                )
+                .unwrap(),
+            )
+            .await;
+            failed(&output);
+            let requests = host.requests();
+            assert_eq!(
+                requests.len(),
+                (if bulk { 4 } else { 5 }) + usize::from(foreign_result)
+            );
+            assert!(
+                requests
+                    .iter()
+                    .all(|request| request["url"].as_str().unwrap().starts_with(root))
+            );
+            assert_eq!(
+                requests
+                    .iter()
+                    .filter(|request| request["method"] == "POST")
+                    .count(),
+                1
+            );
+            assert!(
+                fs::read_dir(host.root.join("output"))
+                    .unwrap()
+                    .next()
+                    .is_none()
+            );
+            let FamilyEvidence::Transfer(Err(error)) = &output.evidence else {
+                unreachable!()
+            };
+            let TransferFailure::Definition(error) = &error.failure else {
+                unreachable!()
+            };
+            let fabric_deploy::definitions::DefinitionErrorKind::Operation(error) = &error.kind
+            else {
+                unreachable!()
+            };
+            assert_eq!(
+                error.operation_id.as_deref(),
+                foreign_result.then_some(OPERATION)
+            );
+            assert!(error.mutation_may_have_occurred);
+        }
+    }
 }

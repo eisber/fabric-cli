@@ -43,6 +43,23 @@ Metadata's additive `resolve_target`/`complete_snapshot` phases preserve that
 warning/precondition order without breaking already-complete injected snapshots.
 Folder collection reuses the resolver's validated command-local folder graph;
 it does not fetch another hierarchy, install a TTL cache or duplicate paging.
+The export wrapper belongs only in `Invocation::Transfer` for Export/BulkExport.
+Import and Deploy must receive their original async file capability unchanged;
+in particular, deployment's `read_async` and `prepare_repository_async` must not
+fall back through an export-only wrapper.
+
+Export/bulk operation sessions borrow `reads.sdk`'s existing request context via
+`OperationSession::with_context(self.client.context(), ...)`, not a freshly
+constructed public-origin context. The caller must inject a coherent selected
+`Client::with_context` and `HttpExecutor::with_endpoint` pair. Initial metadata,
+continuation pages, definition POST, polling and result retrieval all remain on
+the selected public/daily/MSIT Fabric origin. Foreign poll/result links fail
+closed without a public-host fallback or replay. Storage still uses the existing
+explicit OneLake adapter/audience, not a second Fabric endpoint or credential.
+The new offline consumer covers all three Fabric selections and rejected foreign
+poll/result links; these Rust cases remain **NOT RUN** pending ROOT validation.
+Native MSIT dispatch restrictions and native endpoint/console construction remain
+ROOT-owned and are not changed here.
 
 `export_read_item` separates an already-completed definition read from output
 resolution without replaying the POST. Source storage decoding uses the shared
