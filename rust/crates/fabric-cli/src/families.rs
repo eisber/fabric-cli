@@ -5,6 +5,7 @@
 
 pub(crate) mod context;
 mod deploy_http;
+pub mod transfer_files;
 
 use crate::{errors, parser::Invocation, session::ReadSession};
 use context::CommandContext;

@@ -24,7 +24,10 @@ use fabric_cli_transfer::{
     TransferUi, command_from_matches, render_error, render_result, transfer_subcommands,
     write_result,
 };
-use fabric_deploy::definitions::{CommandSupport, DefinitionErrorKind, DefinitionLimits};
+use fabric_deploy::definitions::{
+    CommandSupport, DefinitionEntry, DefinitionErrorKind, DefinitionFile, DefinitionFileSystem,
+    DefinitionImportFileSystem, DefinitionLimits,
+};
 use fabric_sdk::{Audience, Client, CredentialSelection};
 use fabric_sdk_http::{
     ExecutionError, ExecutionFuture, ExecutionOptions, ExecutionTimer, HttpExecutor,
@@ -332,6 +335,90 @@ struct Harness {
     executor: SharedHttp,
     metadata: Metadata,
     ui: Ui,
+}
+
+struct AsyncWrites {
+    local: LocalTransferFiles,
+    writes: Vec<String>,
+    interrupt_second: Option<tokio::sync::oneshot::Sender<()>>,
+    fail_second: bool,
+}
+
+impl DefinitionFileSystem for AsyncWrites {
+    fn preflight(&mut self, root: &Path, files: &[DefinitionFile]) -> io::Result<()> {
+        assert!(self.writes.is_empty(), "all preflight precedes writes");
+        self.local.preflight(root, files)
+    }
+
+    fn create_directory(&mut self, root: &Path, name: &str) -> io::Result<()> {
+        self.local.create_directory(root, name)
+    }
+
+    fn write(&mut self, _: &Path, _: &DefinitionFile) -> io::Result<()> {
+        panic!("the transfer host must call the async file capability")
+    }
+}
+
+impl DefinitionImportFileSystem for AsyncWrites {
+    fn entries(&mut self, root: &Path, relative: &str) -> io::Result<Vec<DefinitionEntry>> {
+        self.local.entries(root, relative)
+    }
+
+    fn read(&mut self, root: &Path, relative: &str, max_bytes: usize) -> io::Result<Vec<u8>> {
+        self.local.read(root, relative, max_bytes)
+    }
+}
+
+impl TransferFiles for AsyncWrites {
+    fn resolve_directory(&mut self, input: &str) -> io::Result<PathBuf> {
+        self.local.resolve_directory(input)
+    }
+
+    fn is_empty(&mut self, root: &Path) -> io::Result<bool> {
+        self.local.is_empty(root)
+    }
+
+    fn write_async<'a>(
+        &'a mut self,
+        root: &'a Path,
+        file: DefinitionFile,
+    ) -> TransferFuture<'a, io::Result<()>> {
+        Box::pin(async move {
+            tokio::task::yield_now().await;
+            self.writes.push(file.path.clone());
+            if self.writes.len() == 2 && (self.fail_second || self.interrupt_second.is_some()) {
+                self.local.write(
+                    root,
+                    &DefinitionFile {
+                        path: file.path,
+                        bytes: file.bytes[..1].to_vec(),
+                    },
+                )?;
+                if let Some(interrupt) = self.interrupt_second.take() {
+                    interrupt.send(()).unwrap();
+                    pending::<()>().await;
+                }
+                return Err(io::Error::from(io::ErrorKind::WriteZero));
+            }
+            self.local.write(root, &file)
+        })
+    }
+}
+
+fn ordered_definition() -> Value {
+    json!({"definition":{"parts":[
+        {"path":"z.bin", "payload":"AAE=", "payloadType":"InlineBase64"},
+        {"path":"a.bin", "payload":"Av8=", "payloadType":"InlineBase64"},
+        {"path":"z.bin", "payload":"BAU=", "payloadType":"InlineBase64"},
+    ]}})
+}
+
+fn exported_file(directory: &Directory, name: &str) -> PathBuf {
+    directory
+        .0
+        .join("output")
+        .join("Pipe.DataPipeline")
+        .join(name)
 }
 
 impl Harness {
@@ -772,6 +859,154 @@ async fn ready_cancellation_precedes_metadata_and_does_not_read_or_mutate() {
     );
     assert_eq!(harness.metadata.calls.load(Ordering::SeqCst), 0);
     harness.no_requests();
+}
+
+#[tokio::test]
+async fn async_file_dispatch_retains_service_order_duplicate_overwrites_and_raw_bytes() {
+    let directory = Directory::new();
+    let harness = Harness::new(
+        context(false, true),
+        vec![
+            reply(200, json!({"id":ITEM})),
+            reply(200, ordered_definition()),
+        ],
+    );
+    let mut files = AsyncWrites {
+        local: directory.files(),
+        writes: Vec::new(),
+        interrupt_second: None,
+        fail_second: false,
+    };
+    let command = parse(&[
+        "export",
+        "Demo.Workspace/Pipe.DataPipeline",
+        "-o",
+        "output",
+        "-f",
+    ]);
+    let result = harness
+        .host(&mut files)
+        .execute(&command, pending())
+        .await
+        .unwrap();
+    assert_eq!(
+        result.completed_paths,
+        [
+            "Pipe.DataPipeline/z.bin",
+            "Pipe.DataPipeline/a.bin",
+            "Pipe.DataPipeline/z.bin"
+        ],
+    );
+    assert_eq!(files.writes, result.completed_paths);
+    assert_eq!(
+        fs::read(exported_file(&directory, "z.bin")).unwrap(),
+        [4, 5]
+    );
+    assert_eq!(
+        fs::read(exported_file(&directory, "a.bin")).unwrap(),
+        [2, 255]
+    );
+}
+
+#[tokio::test]
+async fn async_write_error_keeps_completed_and_partial_paths_without_replay_or_cleanup() {
+    let directory = Directory::new();
+    let harness = Harness::new(
+        context(false, true),
+        vec![
+            reply(200, json!({"id":ITEM})),
+            reply(200, ordered_definition()),
+        ],
+    );
+    let mut files = AsyncWrites {
+        local: directory.files(),
+        writes: Vec::new(),
+        interrupt_second: None,
+        fail_second: true,
+    };
+    let command = parse(&[
+        "export",
+        "Demo.Workspace/Pipe.DataPipeline",
+        "-o",
+        "output",
+        "-f",
+    ]);
+    let error = harness
+        .host(&mut files)
+        .execute(&command, pending())
+        .await
+        .unwrap_err();
+    assert_eq!(error.completed_paths, ["Pipe.DataPipeline/z.bin"]);
+    let TransferFailure::Definition(definition) = &error.failure else {
+        panic!("original definition error")
+    };
+    assert_eq!(
+        definition.incomplete_path.as_deref(),
+        Some("Pipe.DataPipeline/a.bin")
+    );
+    assert!(
+        matches!(&definition.kind, DefinitionErrorKind::FileSystem(error)
+        if error.kind() == io::ErrorKind::WriteZero)
+    );
+    assert_eq!(files.writes.len(), 2);
+    assert_eq!(
+        fs::read(exported_file(&directory, "z.bin")).unwrap(),
+        [0, 1]
+    );
+    assert_eq!(fs::read(exported_file(&directory, "a.bin")).unwrap(), [2]);
+    assert_eq!(harness.http.requests.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn cancellation_of_pending_async_write_keeps_uncertain_path_and_prior_bytes() {
+    let directory = Directory::new();
+    let harness = Harness::new(
+        context(false, true),
+        vec![
+            reply(200, json!({"id":ITEM})),
+            reply(200, ordered_definition()),
+        ],
+    );
+    let (interrupt, cancelled) = tokio::sync::oneshot::channel();
+    let mut files = AsyncWrites {
+        local: directory.files(),
+        writes: Vec::new(),
+        interrupt_second: Some(interrupt),
+        fail_second: false,
+    };
+    let command = parse(&[
+        "export",
+        "Demo.Workspace/Pipe.DataPipeline",
+        "-o",
+        "output",
+        "-f",
+    ]);
+    let error = harness
+        .host(&mut files)
+        .execute(&command, async {
+            cancelled.await.unwrap();
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(error.completed_paths, ["Pipe.DataPipeline/z.bin"]);
+    let TransferFailure::Definition(definition) = &error.failure else {
+        panic!("original definition error")
+    };
+    assert_eq!(
+        definition.incomplete_path.as_deref(),
+        Some("Pipe.DataPipeline/a.bin")
+    );
+    assert!(
+        matches!(&definition.kind, DefinitionErrorKind::Operation(operation)
+        if operation.kind == fabric_sdk_operations::OperationErrorKind::Cancelled)
+    );
+    assert_eq!(files.writes.len(), 2);
+    assert_eq!(
+        fs::read(exported_file(&directory, "z.bin")).unwrap(),
+        [0, 1]
+    );
+    assert_eq!(fs::read(exported_file(&directory, "a.bin")).unwrap(), [2]);
+    assert_eq!(harness.http.requests.lock().unwrap().len(), 2);
 }
 
 #[tokio::test]

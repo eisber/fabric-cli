@@ -204,6 +204,43 @@ async fn root_import_preserves_actual_create_id_and_deferred_cache_after_failed_
 }
 
 #[tokio::test]
+async fn root_import_worker_keeps_raw_bytes_file_before_directory_order_and_exclusions() {
+    let mut host = Harness::new();
+    let input = host.root.join("input");
+    std::fs::create_dir(&input).unwrap();
+    std::fs::create_dir(input.join("a-dir")).unwrap();
+    std::fs::write(input.join("z.bin"), b"z").unwrap();
+    std::fs::write(input.join("a.bin"), [0, 255, 13, 10]).unwrap();
+    std::fs::write(input.join("cache.abf"), b"excluded").unwrap();
+    std::fs::write(input.join("a-dir").join("nested.bin"), b"n").unwrap();
+    host.metadata_with_id(WORKSPACE, json!([]));
+    host.reply(201, json!({"id":CREATED}));
+    let output = host
+        .execute(&[
+            "import",
+            "Demo.Workspace/Book.DataPipeline",
+            "-i",
+            "input",
+            "-f",
+        ])
+        .await;
+    success(&output);
+    let requests = host.requests();
+    assert_eq!(
+        requests[2]["body"]["definition"]["parts"],
+        json!([
+            {"path":"a.bin", "payload":"AP8NCg==", "payloadType":"InlineBase64"},
+            {"path":"z.bin", "payload":"eg==", "payloadType":"InlineBase64"},
+            {"path":"a-dir/nested.bin", "payload":"bg==", "payloadType":"InlineBase64"},
+        ]),
+    );
+    assert!(
+        matches!(&output.evidence, FamilyEvidence::Transfer(Ok(result))
+        if result.excluded_paths == ["cache.abf"] && result.effects[0].item_id == CREATED)
+    );
+}
+
+#[tokio::test]
 async fn root_acl_read_and_mutation_leaves_preserve_requests_and_streams() {
     let rows = json!({"value":[{"id":"assignment","role":"Admin","principal":{
         "id":"person","type":"User","displayName":"Alice","userDetails":{"userPrincipalName":"alice@example.test"},
