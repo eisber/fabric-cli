@@ -5,7 +5,7 @@ use super::{TransformBudget, TransformError};
 use crate::yaml::{self, YamlLimits, YamlPolicy};
 use jsonpath_rust::{
     JsonPath,
-    parser::model::{FilterExpression, FilterSign, JsonPathIndex, Operand},
+    parser::{FilterExpression, JsonPathIndex, Operand},
 };
 use serde_json::Value;
 use std::{cmp::Ordering, fmt};
@@ -18,10 +18,70 @@ enum Segment {
 
 type Location = Vec<Segment>;
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Comparison {
+    Equal,
+    Unequal,
+    Less,
+    Greater,
+    LeOrEq,
+    GrOrEq,
+}
+
+#[derive(Clone)]
+struct ComparisonOperators(Vec<(Comparison, JsonPath)>);
+
+impl ComparisonOperators {
+    fn parse(budget: &mut TransformBudget<'_>) -> Result<Self, TransformError> {
+        let mut operators = Vec::new();
+        for (comparison, expression) in [
+            (Comparison::Equal, "$[?(@ == 0)]"),
+            (Comparison::Unequal, "$[?(@ != 0)]"),
+            (Comparison::Less, "$[?(@ < 0)]"),
+            (Comparison::Greater, "$[?(@ > 0)]"),
+            (Comparison::LeOrEq, "$[?(@ <= 0)]"),
+            (Comparison::GrOrEq, "$[?(@ >= 0)]"),
+        ] {
+            budget.checkpoint()?;
+            let path = JsonPath::try_from(expression).map_err(|_| {
+                TransformError::Invalid("Invalid JSONPath comparison reference".into())
+            })?;
+            operators.push((comparison, path));
+        }
+        Ok(Self(operators))
+    }
+
+    fn classify(
+        &self,
+        filter: &FilterExpression<Value>,
+        budget: &mut TransformBudget<'_>,
+    ) -> Result<Comparison, TransformError> {
+        let FilterExpression::Atom(_, sign, _) = filter else {
+            return Err(TransformError::Unsupported("compound JSONPath filter"));
+        };
+        // 0.7.5 exposes Atom but not its operator's type. Compare the inferred
+        // operator values through PartialEq, never Debug/Display or evaluation.
+        for (comparison, reference) in &self.0 {
+            budget.checkpoint()?;
+            if let JsonPath::Chain(parts) = reference
+                && let [
+                    JsonPath::Root,
+                    JsonPath::Index(JsonPathIndex::Filter(FilterExpression::Atom(_, expected, _))),
+                ] = parts.as_slice()
+                && sign == expected
+            {
+                return Ok(*comparison);
+            }
+        }
+        Err(TransformError::Unsupported("JSONPath filter operator"))
+    }
+}
+
 /// Parsed JSONPath mutation, not CLI JMESPath or an unbounded crate evaluator.
 #[derive(Clone)]
 pub struct JsonPathReplacement {
     path: JsonPath,
+    operators: ComparisonOperators,
 }
 
 impl fmt::Debug for JsonPathReplacement {
@@ -99,8 +159,9 @@ impl JsonPathReplacement {
                 "repeated or non-leading JSONPath root",
             ));
         }
-        validate(&path, budget, 0)?;
-        Ok(Self { path })
+        let operators = ComparisonOperators::parse(budget)?;
+        validate(&path, &operators, budget, 0)?;
+        Ok(Self { path, operators })
     }
 
     /// Mutate only existing selected concrete paths, preserving no-op input bytes.
@@ -145,7 +206,14 @@ impl JsonPathReplacement {
         if let Some(replacement) = replacement {
             validate_value(replacement, budget, 0)?;
         }
-        let paths = select(&self.path, &data, vec![Vec::new()], budget, 0)?;
+        let paths = select(
+            &self.path,
+            &data,
+            vec![Vec::new()],
+            &self.operators,
+            budget,
+            0,
+        )?;
         let Some(replacement) = replacement.filter(|_| !paths.is_empty()) else {
             return Ok(content.into());
         };
@@ -199,6 +267,7 @@ impl JsonPathReplacement {
 
 fn validate(
     path: &JsonPath,
+    operators: &ComparisonOperators,
     budget: &mut TransformBudget<'_>,
     depth: usize,
 ) -> Result<(), TransformError> {
@@ -211,17 +280,17 @@ fn validate(
         | JsonPath::Empty => {}
         JsonPath::Chain(parts) => {
             for part in parts {
-                validate(part, budget, depth + 1)?;
+                validate(part, operators, budget, depth + 1)?;
             }
         }
-        JsonPath::Current(part) => validate(part, budget, depth + 1)?,
+        JsonPath::Current(part) => validate(part, operators, budget, depth + 1)?,
         JsonPath::Index(index) => match index {
             JsonPathIndex::Single(value) if value.as_u64().is_some() => {}
             JsonPathIndex::UnionKeys(_) => {}
             JsonPathIndex::UnionIndex(values)
                 if values.iter().all(|value| value.as_u64().is_some()) => {}
             JsonPathIndex::Slice(_, _, step) if *step != 0 => {}
-            JsonPathIndex::Filter(filter) => validate_filter(filter, budget, depth + 1)?,
+            JsonPathIndex::Filter(filter) => validate_filter(filter, operators, budget, depth + 1)?,
             _ => return Err(TransformError::Unsupported("JSONPath index domain")),
         },
         _ => {
@@ -235,27 +304,17 @@ fn validate(
 
 fn validate_filter(
     filter: &FilterExpression<Value>,
+    operators: &ComparisonOperators,
     budget: &mut TransformBudget<'_>,
     depth: usize,
 ) -> Result<(), TransformError> {
     budget.depth(depth)?;
-    let FilterExpression::Atom(Operand::Dynamic(path), sign, Operand::Static(value)) = filter
-    else {
+    let FilterExpression::Atom(Operand::Dynamic(path), _, Operand::Static(value)) = filter else {
         return Err(TransformError::Unsupported(
             "compound or dynamic-right JSONPath filter",
         ));
     };
-    if !matches!(
-        sign,
-        FilterSign::Equal
-            | FilterSign::Unequal
-            | FilterSign::Less
-            | FilterSign::Greater
-            | FilterSign::LeOrEq
-            | FilterSign::GrOrEq
-    ) {
-        return Err(TransformError::Unsupported("JSONPath filter operator"));
-    }
+    operators.classify(filter, budget)?;
     if value.is_array() || value.is_object() {
         return Err(TransformError::Unsupported(
             "structured JSONPath filter comparison",
@@ -404,6 +463,7 @@ fn select(
     query: &JsonPath,
     data: &Value,
     input: Vec<Location>,
+    operators: &ComparisonOperators,
     budget: &mut TransformBudget<'_>,
     depth: usize,
 ) -> Result<Vec<Location>, TransformError> {
@@ -411,12 +471,12 @@ fn select(
     if let JsonPath::Chain(parts) = query {
         let mut current = input;
         for part in parts {
-            current = select(part, data, current, budget, depth + 1)?;
+            current = select(part, data, current, operators, budget, depth + 1)?;
         }
         return Ok(current);
     }
     if let JsonPath::Current(path) = query {
-        return select(path, data, input, budget, depth + 1);
+        return select(path, data, input, operators, budget, depth + 1);
     }
     if matches!(query, JsonPath::Root | JsonPath::Empty) {
         return Ok(input);
@@ -516,7 +576,7 @@ fn select(
                 }
                 JsonPathIndex::Filter(filter) => {
                     for candidate in children(data, &path, budget)? {
-                        if matches_filter(filter, data, &candidate, budget, depth + 1)? {
+                        if matches_filter(filter, data, &candidate, operators, budget, depth + 1)? {
                             append(&mut output, candidate, budget)?;
                         }
                     }
@@ -532,14 +592,23 @@ fn matches_filter(
     filter: &FilterExpression<Value>,
     data: &Value,
     candidate: &[Segment],
+    operators: &ComparisonOperators,
     budget: &mut TransformBudget<'_>,
     depth: usize,
 ) -> Result<bool, TransformError> {
-    let FilterExpression::Atom(Operand::Dynamic(path), sign, Operand::Static(expected)) = filter
+    let FilterExpression::Atom(Operand::Dynamic(path), _, Operand::Static(expected)) = filter
     else {
         return Err(TransformError::Unsupported("JSONPath filter"));
     };
-    for path in select(path, data, vec![candidate.to_vec()], budget, depth + 1)? {
+    let comparison = operators.classify(filter, budget)?;
+    for path in select(
+        path,
+        data,
+        vec![candidate.to_vec()],
+        operators,
+        budget,
+        depth + 1,
+    )? {
         budget.checkpoint()?;
         let actual = get(data, &path).expect("selected existing filter path");
         let converted;
@@ -574,16 +643,15 @@ fn matches_filter(
             actual
         };
         let order = compare(actual, expected)?;
-        let matched = match sign {
-            FilterSign::Equal => order == Some(Ordering::Equal),
-            FilterSign::Unequal => order != Some(Ordering::Equal),
-            FilterSign::Less => order == Some(Ordering::Less),
-            FilterSign::Greater => order == Some(Ordering::Greater),
-            FilterSign::LeOrEq => matches!(order, Some(Ordering::Less | Ordering::Equal)),
-            FilterSign::GrOrEq => matches!(order, Some(Ordering::Greater | Ordering::Equal)),
-            _ => return Err(TransformError::Unsupported("JSONPath comparison operator")),
+        let matched = match comparison {
+            Comparison::Equal => order == Some(Ordering::Equal),
+            Comparison::Unequal => order != Some(Ordering::Equal),
+            Comparison::Less => order == Some(Ordering::Less),
+            Comparison::Greater => order == Some(Ordering::Greater),
+            Comparison::LeOrEq => matches!(order, Some(Ordering::Less | Ordering::Equal)),
+            Comparison::GrOrEq => matches!(order, Some(Ordering::Greater | Ordering::Equal)),
         };
-        if order.is_none() && !matches!(sign, FilterSign::Equal | FilterSign::Unequal) {
+        if order.is_none() && !matches!(comparison, Comparison::Equal | Comparison::Unequal) {
             return Err(TransformError::Invalid(
                 "JSONPath comparison has incompatible source types".into(),
             ));

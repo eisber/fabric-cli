@@ -12,6 +12,100 @@ use fabric_deploy::parameter_transforms::{
 use serde_json::Value;
 use std::time::Duration;
 
+#[test]
+fn pinned_jsonpath_public_ast_supports_typed_operator_comparison() {
+    use jsonpath_rust::{
+        JsonPath,
+        parser::{FilterExpression, JsonPathIndex, Operand},
+    };
+
+    fn filter(path: &JsonPath) -> &FilterExpression<Value> {
+        let JsonPath::Chain(parts) = path else {
+            panic!("expected parsed chain");
+        };
+        let [
+            JsonPath::Root,
+            JsonPath::Index(JsonPathIndex::Filter(filter)),
+        ] = parts.as_slice()
+        else {
+            panic!("expected absolute filter");
+        };
+        filter
+    }
+
+    let first = JsonPath::try_from("$[?(@.n >= 2)]").unwrap();
+    let same_operator = JsonPath::try_from("$[?(@.other >= 3)]").unwrap();
+    let different_operator = JsonPath::try_from("$[?(@.n > 2)]").unwrap();
+    let FilterExpression::Atom(Operand::Dynamic(_), first_sign, Operand::Static(value)) =
+        filter(&first)
+    else {
+        panic!("expected dynamic/static comparison");
+    };
+    assert_eq!(value, &Value::from(2));
+    let FilterExpression::Atom(_, same_sign, _) = filter(&same_operator) else {
+        panic!("expected atom");
+    };
+    let FilterExpression::Atom(_, different_sign, _) = filter(&different_operator) else {
+        panic!("expected atom");
+    };
+    assert_eq!(first_sign, same_sign);
+    assert_ne!(first_sign, different_sign);
+}
+
+#[test]
+fn bounded_public_ast_filters_preserve_all_six_comparison_operators() {
+    for (operator, selected) in [
+        ("==", vec![1]),
+        ("!=", vec![0, 2]),
+        ("<", vec![0]),
+        (">", vec![2]),
+        ("<=", vec![0, 1]),
+        (">=", vec![1, 2]),
+    ] {
+        let active = || false;
+        let mut budget = TransformBudget::new(TransformLimits::default(), &active);
+        let query = JsonPathReplacement::compile(
+            &format!("$.items[?(@.n {operator} 2)].value"),
+            &mut budget,
+        )
+        .unwrap();
+        let input = r#"{"items":[{"n":1,"value":"first"},{"n":2,"value":"second"},{"n":3,"value":"third"},{"value":"missing"}]}"#;
+        let replacement = serde_json::json!({"changed": true});
+        let output = query
+            .apply(input, Some(&replacement), false, &mut budget)
+            .unwrap();
+        let mut expected: Value = serde_json::from_str(input).unwrap();
+        for index in selected {
+            expected["items"][index]["value"] = replacement.clone();
+        }
+        assert_eq!(
+            output,
+            fabric_core_json::json_dumps(&expected),
+            "{operator}"
+        );
+    }
+}
+
+#[test]
+fn public_ast_still_rejects_advanced_filters_before_content_or_writes() {
+    for expression in [
+        "$.items[?(@.n ~= '2')]",
+        "$.items[?(@.n)]",
+        "$.items[?(@.n >= 2 && @.n < 4)]",
+        "$.items[?(@.n == @.other)]",
+    ] {
+        let active = || false;
+        let mut budget = TransformBudget::new(TransformLimits::default(), &active);
+        assert!(
+            matches!(
+                JsonPathReplacement::compile(expression, &mut budget),
+                Err(TransformError::Unsupported(_))
+            ),
+            "{expression}"
+        );
+    }
+}
+
 fn flag(value: Option<&Value>) -> bool {
     value.is_some_and(|value| {
         value == true

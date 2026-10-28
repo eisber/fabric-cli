@@ -649,3 +649,24 @@ interprets them identically. Python word-boundary and named-character escapes
 also remain explicit unsupported until their Unicode semantics are proven.
 The syntax guard tests enforce refusal; they do not label every refused pattern
 invalid Python or establish equivalence for untested regex grammar.
+
+### Pinned JSONPath public API compile repair
+
+Hosted run `40575687429` rejected the new adapter's private
+`jsonpath_rust::parser::model` imports with E0603. In the actual pinned 0.7.5
+source, `parser` publicly reexports `FilterExpression`, `JsonPathIndex` and
+`Operand`; `JsonPath` is also reexported at the crate root. `FilterSign` has no
+public import path. The adapter now imports only those public AST types.
+It recognizes the six supported comparisons by comparing inferred operator
+values with operators in six bounded, parsed reference ASTs through their public
+`PartialEq` implementation. It does not stringify/debug the AST, evaluate sample
+data, access private modules, fork the crate, or delegate traversal to the
+unbounded query evaluator. Reference parse failures remain explicit typed errors.
+
+The public consumer regression compiles and destructures these actual exported
+types, including inferred operator equality. Additional executable regressions
+exercise all six comparisons and preserve typed refusal of advanced filters.
+The existing bounded visitor, source ordering, no-create mutation, cancellation
+and resource limits remain in force. Dependencies, features, lock and independent
+Python fixtures are unchanged. This repair needs its own exact-head compilation,
+strict Clippy and regression run; the earlier 7970 checkpoint does not validate it.
