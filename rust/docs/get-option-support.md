@@ -35,7 +35,9 @@ workspace and metadata-only item GET, where no definition prompt occurs.
 
 `fabric_cli::session::get_options::is_metadata_property_query` exposes the source
 classifier. Both `ReadSession` and direct `ReadHost` enforce the same option
-policy; no new native dispatch or module-export change is needed for this slice.
+policy. The native executable shares `preflight` for early option checks and
+defers context-sensitive flags to that target validation; it does not reject
+force or verbose before the session can apply the metadata policy.
 The original unconfigured/default-host contract remains unchanged.
 
 Full item definition GET still requires the source decoded-value codec, including

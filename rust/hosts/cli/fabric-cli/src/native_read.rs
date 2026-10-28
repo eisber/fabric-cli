@@ -66,6 +66,17 @@ fn failure(code: &'static str, message: impl Into<String>, exit: u8) -> Failure 
     (code, message.into(), exit)
 }
 
+#[cfg(windows)]
+fn selected_read_options(command: &ReadCommand) -> Result<(), Failure> {
+    fabric_cli::session::get_options::preflight(command).map_err(|_| {
+        failure(
+            "NotSupported",
+            "This GET option combination is not supported by the native host.",
+            1,
+        )
+    })
+}
+
 #[cfg(any(windows, test))]
 fn interrupted_failure(code: &'static str, message: &str, exit: u8) -> Failure {
     failure(
@@ -200,6 +211,39 @@ fn run_selected(
 #[cfg(test)]
 mod endpoint_tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn native_get_option_gate_defers_metadata_flags_but_rejects_file_output() {
+        for flag in ["--force", "--verbose"] {
+            let Invocation::Read(command) = fabric_cli::parser::parse_args([
+                "fab-rs",
+                "get",
+                "Demo.Workspace/Book.Notebook",
+                "-q",
+                "id",
+                flag,
+            ])
+            .unwrap() else {
+                panic!("expected GET invocation");
+            };
+            selected_read_options(&command).unwrap();
+        }
+        let Invocation::Read(command) = fabric_cli::parser::parse_args([
+            "fab-rs",
+            "get",
+            "Demo.Workspace",
+            "--output",
+            "private-output-path",
+        ])
+        .unwrap() else {
+            panic!("expected GET invocation");
+        };
+        let (code, message, exit) = selected_read_options(&command).unwrap_err();
+        assert_eq!(code, "NotSupported");
+        assert_eq!(exit, 1);
+        assert!(!message.contains("private-output-path"));
+    }
 
     #[test]
     fn default_public_daily_and_msit_keep_one_fabric_scope() {
@@ -371,14 +415,8 @@ fn run_selected(
         },
         selected_home,
     )?;
-    if let NativeCommand::Read(command) = command
-        && (command.output.is_some() || command.force || command.verbose)
-    {
-        return Err(failure(
-            "NotSupported",
-            "GET export, verbose and definition/confirmation options are not ported.",
-            1,
-        ));
+    if let NativeCommand::Read(command) = command {
+        selected_read_options(command)?;
     }
     let skill = match command {
         NativeCommand::Read(_) => None,

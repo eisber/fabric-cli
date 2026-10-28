@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Metadata GET flags through direct hosts and the production read session.
+
 #![deny(unnameable_test_items)]
 
 #[allow(dead_code)]
@@ -129,14 +131,20 @@ fn metadata_flags_preserve_no_option_bytes_requests_and_empty_silence() {
                 "--output_format",
                 format,
             ]);
-            let (expected, expected_requests, _) =
-                session(&baseline, vec![workspaces(), items(), metadata()], pending());
+            let (expected, expected_requests, _) = session(
+                &baseline,
+                vec![workspaces(), items(), metadata()],
+                pending(),
+            );
             for (force, verbose) in [(true, false), (false, true), (true, true)] {
                 let mut selected = baseline.clone();
                 selected.force = force;
                 selected.verbose = verbose;
-                let (actual, requests, _) =
-                    session(&selected, vec![workspaces(), items(), metadata()], pending());
+                let (actual, requests, _) = session(
+                    &selected,
+                    vec![workspaces(), items(), metadata()],
+                    pending(),
+                );
                 assert_eq!(actual.exit_code, expected.exit_code);
                 assert_eq!(streams(&actual), streams(&expected));
                 assert_eq!(requests, expected_requests);
@@ -211,12 +219,7 @@ fn definition_queries_stay_explicitly_unsupported_after_target_resolution() {
 #[test]
 fn output_combinations_never_fall_through_to_success_or_file_io() {
     for output in ["", "not-written.json"] {
-        for (force, verbose) in [
-            (false, false),
-            (true, false),
-            (false, true),
-            (true, true),
-        ] {
+        for (force, verbose) in [(false, false), (true, false), (false, true), (true, true)] {
             let mut selected = command(&["get", "Demo.Workspace", "-q", "id"]);
             selected.output = Some(output.into());
             selected.force = force;
@@ -285,7 +288,8 @@ fn service_failure_remains_failure_with_its_existing_exit_and_stream_contract() 
             "-f",
             "-v",
         ]);
-        let (plan, requests, _) = session(&selected, vec![workspaces(), items(), denied], pending());
+        let (plan, requests, _) =
+            session(&selected, vec![workspaces(), items(), denied], pending());
         assert_eq!(plan.exit_code, if status == 401 { 4 } else { 1 });
         assert_eq!(failure_code(&plan), code);
         assert!(!String::from_utf8_lossy(&streams(&plan).0).contains("private-service-detail"));
@@ -317,7 +321,11 @@ fn failed_output_delivery_remains_an_error_not_a_successful_write() {
         "-f",
         "-v",
     ]);
-    let (plan, _, _) = session(&selected, vec![workspaces(), items(), metadata()], pending());
+    let (plan, _, _) = session(
+        &selected,
+        vec![workspaces(), items(), metadata()],
+        pending(),
+    );
     assert_eq!(
         plan.write_to(&mut BrokenWriter, &mut Vec::new())
             .unwrap_err()
@@ -380,13 +388,8 @@ fn direct_read_host_uses_the_same_option_gate_without_a_session_wrapper() {
             .exit_code,
         1
     );
-    let error = complete(host.run(
-        &selected,
-        pending(),
-        &mut BrokenWriter,
-        &mut Vec::new(),
-    ))
-    .unwrap_err();
+    let error =
+        complete(host.run(&selected, pending(), &mut BrokenWriter, &mut Vec::new())).unwrap_err();
     assert!(matches!(error, WriteError::Io(error) if error.kind() == io::ErrorKind::BrokenPipe));
     assert_eq!(http.requests.lock().unwrap().len(), 2);
     http.assert_consumed();

@@ -24,8 +24,7 @@ pub fn is_metadata_property_query(query: &str) -> bool {
     matches!(
         query.split('.').next(),
         Some(
-            "id"
-                | "type"
+            "id" | "type"
                 | "displayName"
                 | "description"
                 | "workspaceId"
@@ -35,7 +34,14 @@ pub fn is_metadata_property_query(query: &str) -> bool {
     )
 }
 
-pub(crate) fn preflight(command: &ReadCommand) -> Result<(), CommandError> {
+/// Validate options before metadata discovery or native credential setup.
+///
+/// Context-sensitive force and verbose handling is checked after resolving the
+/// target. Result-file output remains unsupported and never reaches file I/O.
+///
+/// # Errors
+/// Rejects result-file output and GET-only flags on listing commands.
+pub fn preflight(command: &ReadCommand) -> Result<(), CommandError> {
     if command.output.is_some() {
         return Err(errors::unsupported(
             "GET result-file output requires the source storage serializer and an explicit file host",

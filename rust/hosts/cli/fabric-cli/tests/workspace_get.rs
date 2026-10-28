@@ -345,7 +345,7 @@ impl io::Write for BrokenWriter {
 }
 
 #[test]
-fn completed_workspace_metadata_propagates_writer_failure_and_keeps_unsupported_flags_explicit() {
+fn completed_workspace_metadata_propagates_writer_failure_and_keeps_output_unsupported() {
     let http = Arc::new(Http::new(basic()));
     let executor = executor(http.clone(), Arc::new(Timer::default()));
     let sdk = sdk(Arc::default());
@@ -376,20 +376,14 @@ fn completed_workspace_metadata_propagates_writer_failure_and_keeps_unsupported_
     );
     assert!(stderr.is_empty());
     http.assert_consumed();
-    for option in ["--force", "--verbose", "--output"] {
-        let mut args = vec!["get", "."];
-        args.push(option);
-        if option == "--output" {
-            args.push("ignored");
-        }
-        let plan = complete(host.dispatch(&parse(&args), pending())).unwrap();
-        assert_eq!(plan.exit_code, 1);
-        assert!(
-            String::from_utf8(plan.payload)
-                .unwrap()
-                .contains("NotSupported")
-        );
-    }
+    let plan =
+        complete(host.dispatch(&parse(&["get", ".", "--output", "ignored"]), pending())).unwrap();
+    assert_eq!(plan.exit_code, 1);
+    assert!(
+        String::from_utf8(plan.payload)
+            .unwrap()
+            .contains("NotSupported")
+    );
     let plan = complete(host.dispatch(&parse(&["get", "."]), ready(()))).unwrap();
     assert_eq!(plan.exit_code, 1);
 }
