@@ -94,6 +94,19 @@ pub struct TransferContext {
 
 /// Existing context owner resolves paths asynchronously and checks command support.
 pub trait TransferMetadata: Send + Sync {
+    /// Validate source path classification before local import I/O or prompting.
+    ///
+    /// Python recognizes OneLake paths but deliberately rejects remote import;
+    /// it never downloads them. A metadata-backed caller must preserve that
+    /// classification and source errors. Local-only injected callers may retain
+    /// this default and leave containment/existence checks to their file policy.
+    fn validate_import_input<'a>(
+        &'a self,
+        _input: &'a str,
+    ) -> TransferFuture<'a, Result<(), CommandError>> {
+        Box::pin(async { Ok(()) })
+    }
+
     /// Resolve only the source target before warnings and export preconditions.
     ///
     /// Existing immutable injected snapshots remain compatible through `resolve`.

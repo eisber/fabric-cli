@@ -849,6 +849,18 @@ struct TransferTargets<'a, 'session> {
 }
 
 impl TransferMetadata for TransferTargets<'_, '_> {
+    fn validate_import_input<'a>(
+        &'a self,
+        input: &'a str,
+    ) -> fabric_cli_transfer::TransferFuture<'a, Result<(), CommandError>> {
+        Box::pin(validate_local_import_input(
+            self.reads,
+            self.http,
+            input,
+            pending(),
+        ))
+    }
+
     fn resolve<'a>(
         &'a self,
         kind: TransferKind,

@@ -133,12 +133,14 @@ remote/Fabric inputs fail with the captured source message before file I/O/UI.
 Direct consumers cover selected MSIT metadata versus public OneLake HEAD,
 authentication failure without local fallback and pre-discovery cancellation.
 
-This seam must be connected to the import peer's new
-`TransferMetadata::validate_import_input` after that shared API is unioned:
-delegate with
-`Box::pin(validate_local_import_input(self.reads, self.http, input, pending()))`.
-That trait is not redeclared or copied into this lane; the existing import
-function is untouched. Until the override and worker bindings are attached,
+The central `TransferTargets::validate_import_input` override now delegates to
+that seam. Only the exact default trait declaration/docs are adopted from import
+commit `d9c51de23877c7c047d42f3528c2098c8b308c11`, after SDK peer coordination;
+ROOT must deduplicate that identical declaration when unioning both lanes.
+The import function itself is untouched here: the actual after-format/before-
+filesystem invocation belongs to that import commit, following
+`18c1a86e73674f14e6c0c92f370d32e41130ab78`. ROOT must still integrate those
+calls and file-aware/environment worker bindings. Until that union is validated,
 these direct helper cases are not a front-door import completion claim.
 
 Do not silently reparent a single requested item from a raw `folderId`:
