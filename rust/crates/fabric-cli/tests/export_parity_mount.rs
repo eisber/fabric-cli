@@ -6,6 +6,8 @@
 #![cfg(feature = "native-read")]
 #![deny(unnameable_test_items)]
 
+#[path = "family_support/deferred_export.rs"]
+mod deferred_export;
 #[path = "family_support/metadata.rs"]
 mod family_metadata;
 mod family_support;
@@ -52,6 +54,7 @@ fn host() -> Harness {
     fs::create_dir(root.join("output")).unwrap();
     Harness {
         root,
+        endpoint: fabric_sdk::EndpointBinding::public(fabric_sdk::ServiceOrigin::Fabric),
         credential: Arc::default(),
         http: Arc::new(family_support::Http {
             replies: Mutex::default(),
