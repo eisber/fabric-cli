@@ -83,6 +83,59 @@ fn config_set_get_list_and_cache_have_real_file_effects_without_identity() {
 }
 
 #[test]
+fn config_success_json_preserves_the_frozen_source_group_name() {
+    let root = Root::new();
+    let output = invoke(
+        &root.0,
+        &["config", "get", "output_format", "--output_format", "json"],
+    );
+    success(&output);
+    assert!(output.stderr.is_empty());
+    let actual: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let captures: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../reviews/20261027/python-output-captures.json"
+    ))
+    .unwrap();
+    let capture = captures["observations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|capture| capture["name"] == "config-value")
+        .unwrap();
+    let expected: serde_json::Value =
+        serde_json::from_str(capture["stdout"].as_str().unwrap()).unwrap();
+    for key in ["command", "status", "result"] {
+        assert_eq!(actual[key], expected[key], "{key}");
+    }
+    let settings: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.0.join("config.json")).unwrap()).unwrap();
+    assert_eq!(settings["output_format"], "text");
+}
+
+#[test]
+fn local_failure_text_keeps_the_leaf_prefix_and_json_failure_fields() {
+    let root = Root::new();
+    for format in ["text", "json"] {
+        let output = invoke(&root.0, &["config", "get", "bad", "--output_format", format]);
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stderr.is_empty());
+        let message = "'bad' is not a recognized configuration key. Please check the available configuration keys";
+        if format == "text" {
+            assert_eq!(
+                std::str::from_utf8(&output.stdout).unwrap(),
+                format!("x config get: [InvalidInput] {message}\n"),
+            );
+        } else {
+            let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(value["status"], "Failure");
+            assert_eq!(value["command"], "config get");
+            assert_eq!(value["result"]["error_code"], "InvalidInput");
+            assert_eq!(value["result"]["message"], message);
+        }
+    }
+}
+
+#[test]
 fn navigation_persists_only_its_explicit_session_and_pwd_uses_stderr() {
     let root = Root::new();
     success(&invoke(

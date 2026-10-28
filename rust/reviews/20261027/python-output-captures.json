@@ -1,0 +1,331 @@
+{
+  "python_pin": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "timestamp": "2026-01-02T03:04:05.000006Z",
+  "source_blobs": {
+    "commands/config/fab_config_get.py": "dd25e31c88f3a83b4232712dea37daa52e6b1b18",
+    "commands/jobs/fab_jobs_run_list.py": "d5e729cdd31f329e9957c4fe67f332112d5bb411",
+    "commands/tables/fab_tables_schema.py": "74f3b39ddfba1616bc041bf0d84dc6109332a6d5",
+    "commands/acls/fab_acls_ls.py": "0516c72f069b01b6ee44ebd581f215b748572b2d",
+    "commands/auth/fab_auth.py": "e40908b0bd333995c465da58815d369f4c5af8f1",
+    "utils/fab_cmd_ls_utils.py": "f843a06e03ecf6cf1892f79793d0b3132e5bdd22",
+    "utils/fab_cmd_get_utils.py": "4d69ad98696e1e788c56ec52d9355d0308e53830"
+  },
+  "observations": [
+    {
+      "name": "config-value",
+      "boundary": "config-command",
+      "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"config\",\n    \"result\": {\n        \"data\": [\n            \"text\"\n        ]\n    }\n}\n",
+      "stderr": "",
+      "exit": 0,
+      "effects": []
+    },
+    {
+      "name": "config-empty",
+      "boundary": "config-command",
+      "stdout": "",
+      "stderr": "",
+      "exit": 0,
+      "effects": []
+    },
+    {
+      "name": "ls-text",
+      "boundary": "ls-output-utility",
+      "stdout": "Demo.Workspace\n",
+      "stderr": "",
+      "exit": 0,
+      "effects": []
+    },
+    {
+      "name": "ls-empty",
+      "boundary": "ls-output-utility",
+      "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"ls\",\n    \"result\": {\n        \"data\": []\n    }\n}\n",
+      "stderr": "",
+      "exit": 0,
+      "effects": []
+    },
+    {
+      "name": "ls-unicode",
+      "boundary": "ls-output-utility",
+      "stdout": "\u754c.Workspace\n",
+      "stderr": "",
+      "exit": 0,
+      "effects": []
+    },
+    {
+      "name": "ls-unicode-long",
+      "boundary": "ls-output-utility",
+      "stdout": "name           id\n-----------------\n\u754c.Workspace   w\n",
+      "stderr": "",
+      "exit": 0,
+      "effects": []
+    },
+    {
+      "name": "get-scalar-false",
+      "stream": "stdout",
+      "exit": 0,
+      "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"get\",\n    \"result\": {\n        \"data\": [\n            \"False\"\n        ]\n    }\n}\n",
+      "stderr": "",
+      "boundary": "json-output"
+    },
+    {
+      "name": "get-scalar-null",
+      "stream": "stdout",
+      "exit": 0,
+      "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"get\",\n    \"result\": {\n        \"data\": [\n            \"None\"\n        ]\n    }\n}\n",
+      "stderr": "",
+      "boundary": "json-output"
+    },
+    {
+      "name": "get-empty-list",
+      "stream": "stdout",
+      "exit": 0,
+      "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"get\",\n    \"result\": {\n        \"data\": []\n    }\n}\n",
+      "stderr": "",
+      "boundary": "json-output"
+    },
+    {
+      "name": "get-query-empty-source",
+      "boundary": "get-output-utility",
+      "stdout": "",
+      "stderr": "",
+      "exit": 0,
+      "effects": []
+    },
+    {
+      "name": "get-query-false-source",
+      "boundary": "get-output-utility",
+      "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"get\",\n    \"result\": {\n        \"data\": [\n            \"False\"\n        ]\n    }\n}\n",
+      "stderr": "",
+      "exit": 0,
+      "effects": []
+    },
+    {
+      "name": "get-export-source",
+      "boundary": "get-output-utility",
+      "stdout": "",
+      "stderr": "",
+      "exit": 0,
+      "effects": [
+        {
+          "synthetic_file_output": {
+            "data": {
+              "id": "offline-item"
+            },
+            "file_name": "offline.json",
+            "output": "offline-output"
+          }
+        }
+      ]
+    },
+    {
+      "name": "get-order-numeric-unicode",
+      "stream": "stdout",
+      "exit": 0,
+      "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"get\",\n    \"result\": {\n        \"data\": [\n            {\n                \"z\": 18446744073709551615,\n                \"a\": [\n                    1.0,\n                    -0.0,\n                    2.9802322387695312e-08\n                ],\n                \"text\": \"caf\\u00e9 \\ud83d\\ude80\"\n            }\n        ]\n    }\n}\n",
+      "stderr": "",
+      "boundary": "json-output"
+    },
+    {
+      "name": "get-nested-text",
+      "boundary": "text-output",
+      "stdout": "Nested: ['caf\u00e9']\n",
+      "stderr": "",
+      "exit": 0,
+      "effects": []
+    },
+    {
+      "name": "get-text-error",
+      "boundary": "decorated-error",
+      "stdout": "x get: [Unauthorized] Denied\n",
+      "stderr": "",
+      "exit": 4,
+      "effects": []
+    },
+    {
+      "name": "ls-text-query-error",
+      "boundary": "decorated-error",
+      "stdout": "x ls: [InvalidInput] Invalid jmespath query (https://jmespath.org)\n",
+      "stderr": "",
+      "exit": 1,
+      "effects": []
+    },
+    {
+      "name": "read-text-cancel",
+      "boundary": "decorated-error",
+      "stdout": "x get: [LongRunningOperationCancelled] Operation cancelled\n",
+      "stderr": "",
+      "exit": 1,
+      "effects": []
+    },
+    {
+      "name": "job-text-cancel",
+      "boundary": "decorated-error",
+      "stdout": "x job run-list: [LongRunningOperationCancelled] Operation cancelled\n",
+      "stderr": "",
+      "exit": 1,
+      "effects": []
+    },
+    {
+      "name": "table-text-cancel",
+      "boundary": "decorated-error",
+      "stdout": "x table optimize: [LongRunningOperationCancelled] Operation cancelled\n",
+      "stderr": "",
+      "exit": 1,
+      "effects": []
+    },
+    {
+      "name": "read-json-cancel",
+      "stream": "stdout",
+      "exit": 1,
+      "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Failure\",\n    \"command\": \"get\",\n    \"result\": {\n        \"error_code\": \"LongRunningOperationCancelled\",\n        \"message\": \"Operation cancelled\"\n    }\n}\n",
+      "stderr": "",
+      "boundary": "json-output"
+    },
+    {
+      "name": "job-json-cancel",
+      "stream": "stdout",
+      "exit": 1,
+      "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Failure\",\n    \"command\": \"job run-list\",\n    \"result\": {\n        \"error_code\": \"LongRunningOperationCancelled\",\n        \"message\": \"Operation cancelled\"\n    }\n}\n",
+      "stderr": "",
+      "boundary": "json-output"
+    },
+    {
+      "name": "table-json-cancel",
+      "stream": "stdout",
+      "exit": 1,
+      "stdout": "{\n    \"timestamp\": \"2026-10-27T07:00:00Z\",\n    \"status\": \"Failure\",\n    \"command\": \"table optimize\",\n    \"result\": {\n        \"error_code\": \"LongRunningOperationCancelled\",\n        \"message\": \"Operation cancelled\"\n    }\n}\n",
+      "stderr": "",
+      "boundary": "json-output"
+    },
+    {
+      "name": "ls-text-service",
+      "boundary": "decorated-error",
+      "stdout": "x ls: [Unauthorized] Access is unauthorized\n",
+      "stderr": "",
+      "exit": 4,
+      "effects": []
+    },
+    {
+      "name": "get-text-service",
+      "boundary": "decorated-error",
+      "stdout": "x get: [Unauthorized] Access is unauthorized\n",
+      "stderr": "",
+      "exit": 4,
+      "effects": []
+    },
+    {
+      "name": "job-text-service",
+      "boundary": "decorated-error",
+      "stdout": "x job run-list: [Unauthorized] Access is unauthorized\n",
+      "stderr": "",
+      "exit": 4,
+      "effects": []
+    },
+    {
+      "name": "config-text-error",
+      "boundary": "decorated-error",
+      "stdout": "x config get: [InvalidInput] Unknown configuration key 'bad'\n",
+      "stderr": "",
+      "exit": 1,
+      "effects": []
+    },
+    {
+      "name": "job-text-error",
+      "boundary": "decorated-error",
+      "stdout": "x job run-list: [Unauthorized] Denied\n",
+      "stderr": "",
+      "exit": 4,
+      "effects": []
+    },
+    {
+      "name": "job-empty",
+      "boundary": "job-command",
+      "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"job\",\n    \"result\": {\n        \"message\": \"No runs found\"\n    }\n}\n",
+      "stderr": "",
+      "exit": 0,
+      "effects": []
+    },
+    {
+      "name": "job-columns",
+      "boundary": "job-command",
+      "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"job\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"z\",\n                \"status\": null\n            },\n            {\n                \"id\": \"a\"\n            }\n        ]\n    }\n}\n",
+      "stderr": "",
+      "exit": 0,
+      "effects": []
+    },
+    {
+      "name": "acl-empty",
+      "boundary": "acl-command",
+      "stdout": "",
+      "stderr": "",
+      "exit": 0,
+      "effects": []
+    },
+    {
+      "name": "acl-text-error",
+      "boundary": "decorated-error",
+      "stdout": "x acl get: [Unauthorized] Denied\n",
+      "stderr": "",
+      "exit": 4,
+      "effects": []
+    },
+    {
+      "name": "resource-text-error",
+      "boundary": "decorated-error",
+      "stdout": "x mkdir: [Unauthorized] Denied\n",
+      "stderr": "",
+      "exit": 4,
+      "effects": []
+    },
+    {
+      "name": "table-schema",
+      "boundary": "table-command",
+      "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"table\",\n    \"result\": {\n        \"data\": [\n            {\n                \"name\": \"id\",\n                \"type\": \"long\",\n                \"nullable\": false\n            }\n        ]\n    }\n}\n",
+      "stderr": "Schema extracted successfully\n",
+      "exit": 0,
+      "effects": []
+    },
+    {
+      "name": "table-text-error",
+      "boundary": "table-command",
+      "stdout": "x table schema: [InvalidDeltaTable] Failed to extract the table schema. Please ensure the path points to a valid Delta table\n",
+      "stderr": "",
+      "exit": 1,
+      "effects": []
+    },
+    {
+      "name": "auth-logout",
+      "boundary": "auth-logout-command",
+      "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"auth\",\n    \"result\": {\n        \"message\": \"Logged out of Fabric account\"\n    }\n}\n",
+      "stderr": "",
+      "exit": 0,
+      "effects": [
+        "synthetic application logout"
+      ]
+    },
+    {
+      "name": "auth-text-error",
+      "boundary": "decorated-error",
+      "stdout": "x auth status: [Unauthorized] Denied\n",
+      "stderr": "",
+      "exit": 4,
+      "effects": []
+    },
+    {
+      "name": "auth-json-error",
+      "stream": "stdout",
+      "exit": 4,
+      "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Failure\",\n    \"command\": \"auth status\",\n    \"result\": {\n        \"error_code\": \"Unauthorized\",\n        \"message\": \"Denied\"\n    }\n}\n",
+      "stderr": "",
+      "boundary": "json-output"
+    },
+    {
+      "name": "invalid-output-json",
+      "stream": "stdout",
+      "exit": 1,
+      "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Failure\",\n    \"result\": {\n        \"error_code\": \"InvalidJson\",\n        \"message\": \"Invalid JSON format\"\n    }\n}\n",
+      "stderr": "",
+      "boundary": "json-output"
+    }
+  ]
+}

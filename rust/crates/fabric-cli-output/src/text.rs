@@ -8,7 +8,7 @@
 //! avoiding an ambient Unicode database or silently approximate width tables.
 
 use crate::{
-    CommandError, Indent, OutputEnvelope, OutputError, OutputStream, RenderPlan, encoding,
+    CommandError, Indent, OutputEnvelope, OutputError, OutputStatus, OutputStream, RenderPlan, encoding,
 };
 use serde_json::{Map, Value};
 use std::io::{self, Write};
@@ -314,6 +314,9 @@ impl Printer {
 }
 
 /// Render an envelope in the selected format; JSON keeps its existing exact API.
+///
+/// Failure text uses the shared error renderer, not success data/message routing.
+/// Error fields are already normalized; empty messages and trailing periods remain.
 pub fn render(
     envelope: &OutputEnvelope,
     format: OutputFormat,
@@ -329,6 +332,19 @@ pub fn render(
         });
     }
     let result = envelope.result();
+    if envelope.status == OutputStatus::Failure {
+        return Ok(render_error(
+            &CommandError {
+                message: result.message().unwrap_or_default().to_owned(),
+                code: result
+                    .error_code()
+                    .expect("failure envelope has a normalized error code")
+                    .to_owned(),
+            },
+            envelope.command.as_deref(),
+            presentation,
+        ));
+    }
     if result.data().is_none() && result.hidden_data().is_none() && result.message().is_none() {
         return Err(TextError::InvalidResult);
     }
