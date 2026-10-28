@@ -183,6 +183,117 @@ pub struct ImportOutcome {
 }
 
 impl PreparedImport {
+    /// Read the Environment publish state using the caller's bound SDK session.
+    ///
+    /// Missing properties retain Python's `Unknown` state. Explicit null,
+    /// scalar objects and non-string states fail rather than becoming success.
+    /// This performs one read; the caller owns readiness versus completion policy.
+    ///
+    /// # Errors
+    /// Retains validation, structured service, cancellation and operation evidence.
+    pub async fn environment_publish_state<E: OperationExecutor>(
+        session: &mut OperationSession<'_, E>,
+        workspace_id: &str,
+        item_id: &str,
+    ) -> Result<String, DefinitionError> {
+        validate_id(workspace_id)?;
+        validate_id(item_id)?;
+        let operation = FabricOperation::new(
+            ResourceMethod::Get,
+            &format!("/v1/workspaces/{workspace_id}/environments/{item_id}"),
+            Vec::new(),
+            CompletionPolicy::PythonSynchronous,
+        )
+        .map_err(|kind| Kind::Operation(Box::new(session.evidence(kind))))?;
+        let response = session
+            .execute(operation)
+            .await
+            .map_err(|error| Kind::Operation(Box::new(error)))?;
+        let invalid = || {
+            Kind::Operation(Box::new(
+                session.evidence(fabric_sdk_operations::OperationErrorKind::InvalidResponse),
+            ))
+        };
+        let data = super::object(&response.body).map_err(|_| invalid())?;
+        let mut current = &data;
+        for field in ["properties", "publishDetails"] {
+            match current.get(field) {
+                None => return Ok("unknown".into()),
+                Some(value) => {
+                    if !value.is_object() {
+                        return Err(invalid().into());
+                    }
+                    current = value;
+                }
+            }
+        }
+        match current.get("state") {
+            None => Ok("unknown".into()),
+            Some(Value::String(state)) => Ok(state.to_lowercase()),
+            Some(_) => Err(invalid().into()),
+        }
+    }
+
+    /// Trigger staging publish exactly once through the existing SDK LRO policy.
+    ///
+    /// Use a fresh session after the definition mutation; a used mutation session
+    /// is deliberately not reset. Completion of this POST does not establish
+    /// Environment publish success: the caller must poll its publish state.
+    ///
+    /// # Errors
+    /// Preserves actual service/accepted-operation errors and mutation uncertainty.
+    pub async fn trigger_environment_publish<E: OperationExecutor>(
+        session: &mut OperationSession<'_, E>,
+        workspace_id: &str,
+        item_id: &str,
+    ) -> Result<(), DefinitionError> {
+        validate_id(workspace_id)?;
+        validate_id(item_id)?;
+        let operation = FabricOperation::new(
+            ResourceMethod::Post,
+            &format!("/v1/workspaces/{workspace_id}/environments/{item_id}/staging/publish"),
+            Vec::new(),
+            CompletionPolicy::PythonSynchronous,
+        )
+        .map_err(|kind| Kind::Operation(Box::new(session.evidence(kind))))?;
+        let response = session
+            .execute(operation)
+            .await
+            .map_err(|error| Kind::Operation(Box::new(error)))?;
+        if response.status == 202 {
+            return Err(Kind::Operation(Box::new(
+                session.evidence(fabric_sdk_operations::OperationErrorKind::InvalidResponse),
+            ))
+            .into());
+        }
+        Ok(())
+    }
+
+    /// Prepare Environment definition bytes for a caller-owned publish lifecycle.
+    ///
+    /// Unlike [`prepare_import`], which retains its original standalone generic
+    /// contract, this entry point permits Environment definitions. The caller
+    /// must check publish readiness before updating, execute the prepared item
+    /// mutation once, then publish staging and wait for its terminal state.
+    /// Preparation alone does not upload, publish, or claim command completion.
+    ///
+    /// # Errors
+    /// Rejects non-Environment targets and retains the generic loader's complete
+    /// validation, confirmation, raw-byte, ordering and finite-bound errors.
+    pub fn prepare_environment(
+        filesystem: &mut dyn DefinitionImportFileSystem,
+        root: &Path,
+        target: ImportTarget<'_>,
+        selector: Option<&str>,
+        confirmed: bool,
+        limits: DefinitionLimits,
+    ) -> Result<Self, DefinitionError> {
+        if target.item_type != "Environment" {
+            return Err(Kind::InvalidInput.into());
+        }
+        prepare_import_inner(filesystem, root, target, selector, confirmed, limits, true)
+    }
+
     /// Exact default Python-ASCII-spaced request bytes, useful for callers/tests.
     pub fn body(&self) -> &[u8] {
         &self.body
@@ -278,6 +389,22 @@ pub fn prepare_import(
     confirmed: bool,
     limits: DefinitionLimits,
 ) -> Result<PreparedImport, DefinitionError> {
+    prepare_import_inner(filesystem, root, target, selector, confirmed, limits, false)
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "The lifecycle opt-in preserves the existing generic preparation API."
+)]
+fn prepare_import_inner(
+    filesystem: &mut dyn DefinitionImportFileSystem,
+    root: &Path,
+    target: ImportTarget<'_>,
+    selector: Option<&str>,
+    confirmed: bool,
+    limits: DefinitionLimits,
+    environment_lifecycle: bool,
+) -> Result<PreparedImport, DefinitionError> {
     if !confirmed {
         return Err(Kind::ConfirmationRequired.into());
     }
@@ -288,7 +415,7 @@ pub fn prepare_import(
     if target.display_name.is_empty() || target.item_type.is_empty() {
         return Err(Kind::InvalidInput.into());
     }
-    if target.item_type == "Environment" {
+    if target.item_type == "Environment" && !environment_lifecycle {
         return Err(Kind::Unsupported("Environment readiness/publish lifecycle").into());
     }
     let format = super::resolve_format(target.item_type, selector)?;

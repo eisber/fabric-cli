@@ -7,6 +7,7 @@
 //! No HTTP implementation, deployment algorithm or second front door lives here.
 
 mod files;
+mod import_environment;
 mod local;
 mod parser;
 
@@ -206,6 +207,30 @@ pub trait TransferFiles: DefinitionFileSystem + DefinitionImportFileSystem + Sen
     ) -> TransferFuture<'a, Result<PreparedImport, DefinitionError>> {
         Box::pin(async move {
             definitions::prepare_import(
+                &mut files::ImportFiles(self),
+                root,
+                target,
+                selector,
+                true,
+                limits,
+            )
+        })
+    }
+
+    /// Prepare Environment parts on the caller's filesystem worker.
+    ///
+    /// This opts into the command's separate readiness/publish lifecycle without
+    /// weakening the legacy standalone generic import contract. OS-backed hosts
+    /// must override it, retaining stop checks and original typed loader errors.
+    fn prepare_environment_import_async<'a>(
+        &'a mut self,
+        root: &'a Path,
+        target: ImportTarget<'a>,
+        selector: Option<&'a str>,
+        limits: DefinitionLimits,
+    ) -> TransferFuture<'a, Result<PreparedImport, DefinitionError>> {
+        Box::pin(async move {
+            PreparedImport::prepare_environment(
                 &mut files::ImportFiles(self),
                 root,
                 target,
@@ -793,22 +818,31 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             .filter(|parent| parent.kind() == NodeKind::Folder)
             .map(|parent| require_id(parent))
             .transpose()?;
-        let prepared = phase(
-            self.files.prepare_import_async(
+        let target = ImportTarget {
+            workspace_id: require_id(&workspace)?,
+            item_id: item.id(),
+            item_type,
+            display_name: item.short_name(),
+            folder_id,
+        };
+        let preparation = if item_type == "Environment" {
+            self.files.prepare_environment_import_async(
                 &root,
-                ImportTarget {
-                    workspace_id: require_id(&workspace)?,
-                    item_id: item.id(),
-                    item_type,
-                    display_name: item.short_name(),
-                    folder_id,
-                },
+                target,
                 command.format.as_deref(),
                 self.definition_limits,
-            ),
-            cancelled,
-        )
-        .await?;
+            )
+        } else {
+            self.files.prepare_import_async(
+                &root,
+                target,
+                command.format.as_deref(),
+                self.definition_limits,
+            )
+        };
+        let prepared = phase(preparation, cancelled)
+            .await
+            .map_err(import_environment::source_definition_error)?;
         if item.id().is_some() {
             self.ui.emit(TransferEvent::Warning(
                 "An item with the same name exists".into(),
@@ -830,20 +864,53 @@ impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
             root.display(),
             item.path(),
         )))?;
-        let mut session = OperationSession::new(
-            self.client.credential().as_ref(),
-            self.client.selection(),
+        let mut session = OperationSession::with_context(
+            self.client.context(),
             BorrowedExecutor(self.executor),
             self.operation_limits,
             cancelled.as_mut(),
         );
+        if item_type == "Environment"
+            && let Some(id) = item.id()
+        {
+            import_environment::ready(
+                &mut session,
+                self.executor,
+                require_id(&workspace)?,
+                id,
+                self.ui,
+            )
+            .await?;
+        }
         let outcome = prepared.execute(&mut session).await?;
+        drop(session);
+        let effect = ImportCacheEffect {
+            target: item.clone(),
+            item_id: outcome.item_id,
+        };
+        if item_type == "Environment" {
+            let mut session = OperationSession::with_context(
+                self.client.context(),
+                BorrowedExecutor(self.executor),
+                self.operation_limits,
+                cancelled.as_mut(),
+            );
+            import_environment::publish(
+                &mut session,
+                self.executor,
+                require_id(&workspace)?,
+                &effect.item_id,
+                self.ui,
+            )
+            .await
+            .map_err(|mut error| {
+                error.effects.push(effect.clone());
+                error
+            })?;
+        }
         Ok(TransferResult {
             outputs: vec![message(format!("'{}' imported", item.name()))],
-            effects: vec![ImportCacheEffect {
-                target: item.clone(),
-                item_id: outcome.item_id,
-            }],
+            effects: vec![effect],
             excluded_paths: outcome.excluded_paths,
             ..TransferResult::default()
         })
