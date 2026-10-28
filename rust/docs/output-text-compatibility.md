@@ -97,6 +97,14 @@ The existing job empty-result message is not changed or suppressed. In the
 adopted source and current job host it is a successful `"No runs found"` message,
 not a `NoRunsFound` failure code.
 
+For visible GET projections the read session uses raw-data text presentation,
+matching `query_and_export`'s call to `print_output_format` with the default
+`show_key_value_list=False`. Scalars and string lists print one value per line;
+object projections print raw JSON. The consumer must not force key/value mode:
+that separate source helper intentionally rejects string rows with an `items`
+attribute error. Its typed Rust `InvalidRow` guard and existing oracles remain
+unchanged.
+
 The folder wrapper already delegates GET's optional output unchanged; no
 additional envelope or folder request is introduced. Additive real-query
 consumer tests cover empty/container/scalar distinctions, both text/JSON

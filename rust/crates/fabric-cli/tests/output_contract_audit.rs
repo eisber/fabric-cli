@@ -79,17 +79,17 @@ fn dispatch(
         config: ReadConfig::default(),
     };
     let plan = match invocation {
-        Invocation::Read(command) => complete(reads.dispatch(&command, cancelled)).unwrap(),
+        Invocation::Read(command) => complete(reads.dispatch(&command, cancelled)),
         Invocation::JobRead(command) => complete(
             JobReadSession {
                 reads: &reads,
                 jobs: Arc::new(HttpJobExecutor::new(executor.clone())),
             }
             .dispatch(&command, cancelled),
-        )
-        .unwrap(),
+        ),
         _ => panic!("read or job read required"),
-    };
+    }
+    .unwrap_or_else(|error| panic!("dispatch {args:?}: {error:?}"));
     http.assert_consumed();
     assert_eq!(http.requests.lock().unwrap().len(), request_count);
     let scopes = credential.scopes.lock().unwrap();
@@ -109,7 +109,7 @@ fn get_replies() -> Vec<Reply> {
         folder_support::reply(json!({
             "id":"n", "displayName":"Book", "parts":[], "settings":{},
             "description":"", "enabled":false, "nullable":null, "zero":0,
-            "title":"hello", "values":["part"]
+            "title":"hello", "values":["part"], "details":{"id":"part"}
         })),
     ]
 }
@@ -270,14 +270,18 @@ fn get_false_null_missing_zero_and_nonempty_values_remain_visible_after_query() 
                 let expected_json = format!(
                     "{{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"get\",\n    \"result\": {{\n        \"data\": [\n            \"{expected}\"\n        ]\n    }}\n}}\n"
                 );
-                assert_eq!(stdout, expected_json.as_bytes(), "{expression}");
+                assert_eq!(stdout, expected_json.as_bytes(), "{expression}/{format}");
                 if expected == "False" {
                     assert_capture(&plan, "get-query-false-source");
                 } else if expected == "None" {
                     assert_capture(&plan, "get-scalar-null");
                 }
             } else {
-                assert_eq!(stdout, format!("{expected}\n").as_bytes(), "{expression}");
+                assert_eq!(
+                    stdout,
+                    format!("{expected}\n").as_bytes(),
+                    "{expression}/{format}"
+                );
             }
             assert!(
                 plan.write_to(&mut family_support::BrokenWriter, &mut stderr)
@@ -285,6 +289,34 @@ fn get_false_null_missing_zero_and_nonempty_values_remain_visible_after_query() 
             );
             assert!(stderr.is_empty());
         }
+    }
+}
+
+#[test]
+fn get_object_projection_uses_source_raw_json_text_not_key_value_rows() {
+    for format in ["text", "json"] {
+        let plan = dispatch(
+            &[
+                "get",
+                "Demo.Workspace/Book.Notebook",
+                "-q",
+                "details",
+                "--output_format",
+                format,
+            ],
+            get_replies(),
+            pending(),
+        );
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        plan.write_to(&mut stdout, &mut stderr).unwrap();
+        assert_eq!(plan.exit_code, 0, "details/{format}");
+        assert!(stderr.is_empty(), "details/{format}: stderr={stderr:?}");
+        let expected = if format == "text" {
+            "{\n  \"id\": \"part\"\n}\n"
+        } else {
+            "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"get\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"part\"\n            }\n        ]\n    }\n}\n"
+        };
+        assert_eq!(stdout, expected.as_bytes(), "details/{format}");
     }
 }
 
