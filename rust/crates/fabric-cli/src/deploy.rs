@@ -86,10 +86,20 @@ pub struct DeployResult {
 }
 
 /// Explicit process inputs for parameter loading; libraries do not discover them.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct DeployInputs {
     /// Caller-provided environment values, used only under the frozen source flag.
     pub environment: BTreeMap<String, String>,
+}
+
+impl fmt::Debug for DeployInputs {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DeployInputs")
+            .field("environment", &"<redacted>")
+            .field("environment_entries", &self.environment.len())
+            .finish()
+    }
 }
 
 /// Validated command snapshot plus caller-resolved, confined local paths.
