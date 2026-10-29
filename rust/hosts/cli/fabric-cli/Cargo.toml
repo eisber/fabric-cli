@@ -45,6 +45,7 @@ fabric-sdk-workspaces.workspace = true
 fabric-sdk-http = { workspace = true, optional = true }
 fabric-sdk-transport = { workspace = true, optional = true }
 azure_core.workspace = true
+futures-util.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 fabric-identity = { workspace = true, optional = true }

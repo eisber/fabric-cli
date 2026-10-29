@@ -10,6 +10,8 @@
 
 mod family_support;
 
+use async_trait::async_trait;
+use azure_core::http::{AsyncRawResponse, HttpClient, Request};
 use fabric_cli::{
     families::{FamilyEvidence, FamilyOutput, FamilySession},
     parser::parse_args,
@@ -23,7 +25,12 @@ use fabric_sdk::{Audience, Client, CredentialSelection};
 use fabric_sdk_http::{ExecutionFuture, ExecutionOptions, ExecutionTimer, HttpExecutor};
 use family_support::{Harness, success};
 use serde_json::{Value, json};
-use std::{future::pending, sync::Arc, time::Duration};
+use std::{
+    future::{Future, pending},
+    sync::Arc,
+    time::Duration,
+};
+use tokio::sync::{Notify, oneshot};
 
 #[derive(Default)]
 struct Ui {
@@ -68,17 +75,23 @@ impl ExecutionTimer for Timer {
 }
 
 async fn execute(host: &mut Harness, args: &[&str], ui: &mut Ui) -> FamilyOutput {
+    let http = host.http.clone();
+    execute_with_cancelled(host, args, ui, http, pending()).await
+}
+
+async fn execute_with_cancelled(
+    host: &mut Harness,
+    args: &[&str],
+    ui: &mut Ui,
+    http: Arc<dyn HttpClient>,
+    cancelled: impl Future<Output = ()> + Send,
+) -> FamilyOutput {
     let invocation = parse_args(std::iter::once("fab-rs").chain(args.iter().copied())).unwrap();
     let sdk = Client::new(
         host.credential.clone(),
         CredentialSelection::new("offline-account", "tenant", Audience::Fabric).unwrap(),
     );
-    let executor = HttpExecutor::new(
-        host.http.clone(),
-        Arc::new(Timer),
-        ExecutionOptions::default(),
-    )
-    .unwrap();
+    let executor = HttpExecutor::new(http, Arc::new(Timer), ExecutionOptions::default()).unwrap();
     let tenant = Element::tenant("Tenant", "tenant");
     let reads = ReadSession {
         sdk: &sdk,
@@ -123,10 +136,10 @@ async fn execute(host: &mut Harness, args: &[&str], ui: &mut Ui) -> FamilyOutput
     };
     let output = if removing {
         session
-            .dispatch_with_removal_ui(&invocation, ui, pending())
+            .dispatch_with_removal_ui(&invocation, ui, cancelled)
             .await
     } else {
-        session.dispatch(&invocation, pending()).await
+        session.dispatch(&invocation, cancelled).await
     }
     .unwrap();
     if !removing {
@@ -134,6 +147,30 @@ async fn execute(host: &mut Harness, args: &[&str], ui: &mut Ui) -> FamilyOutput
     }
     assert!(host.http.replies.lock().unwrap().is_empty());
     output
+}
+
+#[derive(Debug)]
+struct StalledMetadata {
+    inner: Arc<family_support::Http>,
+    suffix: &'static str,
+    started: Notify,
+}
+
+#[async_trait]
+impl HttpClient for StalledMetadata {
+    async fn execute_request(&self, request: &Request) -> azure_core::Result<AsyncRawResponse> {
+        if request.url().path().ends_with(self.suffix) {
+            assert_eq!(request.method().to_string(), "GET");
+            self.inner.requests.lock().unwrap().push(json!({
+                "method": request.method().to_string(),
+                "url": request.url().as_str(),
+            }));
+            self.started.notify_one();
+            pending().await
+        } else {
+            self.inner.execute_request(request).await
+        }
+    }
 }
 
 fn workspace(host: &Harness) {
@@ -150,7 +187,12 @@ fn folders(host: &Harness) {
 fn failure(output: &FamilyOutput, code: &str) {
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     assert_eq!(output.write_to(&mut stdout, &mut stderr).unwrap(), 1);
-    let error: Value = serde_json::from_slice(&stderr).unwrap();
+    assert!(stderr.is_empty());
+    let envelopes = serde_json::Deserializer::from_slice(&stdout)
+        .into_iter::<Value>()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let error = envelopes.last().unwrap();
     assert_eq!(error["result"]["error_code"], code);
 }
 
@@ -166,7 +208,13 @@ async fn folder_set_reads_after_confirmation_patches_only_selected_property_and_
     host.reply(200, json!({"id":"f","displayName":"After"}));
     let output = host
         .execute(&[
-            "set", "Demo.Workspace/Chosen.Folder", "-q", "displayName", "-i", "After", "-f",
+            "set",
+            "Demo.Workspace/Chosen.Folder",
+            "-q",
+            "displayName",
+            "-i",
+            "After",
+            "-f",
         ])
         .await;
     let stdout = success(&output);
@@ -204,7 +252,12 @@ async fn folder_set_decline_and_blocked_query_do_not_fetch_metadata_or_patch() {
         let output = execute(
             &mut host,
             &[
-                "set", "Demo.Workspace/Chosen.Folder", "-q", query, "-i", "After",
+                "set",
+                "Demo.Workspace/Chosen.Folder",
+                "-q",
+                query,
+                "-i",
+                "After",
             ],
             &mut ui,
         )
@@ -233,7 +286,13 @@ async fn folder_set_only_status_200_emits_success_and_rename() {
         host.reply(status, Value::Null);
         let output = host
             .execute(&[
-                "set", "Demo.Workspace/Chosen.Folder", "-q", "displayName", "-i", "After", "-f",
+                "set",
+                "Demo.Workspace/Chosen.Folder",
+                "-q",
+                "displayName",
+                "-i",
+                "After",
+                "-f",
             ])
             .await;
         assert!(success(&output).is_empty());
@@ -252,7 +311,13 @@ async fn folder_set_metadata_failure_never_dispatches_a_patch() {
     host.reply(403, json!({"errorCode":"Forbidden","message":"denied"}));
     let output = host
         .execute(&[
-            "set", "Demo.Workspace/Chosen.Folder", "-q", "displayName", "-i", "After", "-f",
+            "set",
+            "Demo.Workspace/Chosen.Folder",
+            "-q",
+            "displayName",
+            "-i",
+            "After",
+            "-f",
         ])
         .await;
     failure(&output, "Forbidden");
@@ -262,6 +327,82 @@ async fn folder_set_metadata_failure_never_dispatches_a_patch() {
             .iter()
             .all(|request| request["method"] == "GET")
     );
+}
+
+#[tokio::test]
+async fn set_cancelled_during_stalled_metadata_get_never_patches_or_invents_completion() {
+    for (path, suffix, confirmations) in [
+        ("Demo.Workspace/Chosen.Folder", "/workspaces/w/folders/f", 1),
+        (
+            "Demo.Workspace/Book.Notebook",
+            "/workspaces/w/notebooks/n",
+            1,
+        ),
+        ("Demo.Workspace", "/workspaces/w", 0),
+    ] {
+        let mut host = Harness::new();
+        workspace(&host);
+        if path.ends_with(".Folder") {
+            folders(&host);
+        } else if path.ends_with(".Notebook") {
+            host.reply(
+                200,
+                json!({"value":[{"id":"n","displayName":"Book","type":"Notebook"}]}),
+            );
+        }
+        let http = Arc::new(StalledMetadata {
+            inner: host.http.clone(),
+            suffix,
+            started: Notify::new(),
+        });
+        let mut ui = Ui {
+            confirmed: true,
+            ..Default::default()
+        };
+        let (cancel, cancelled) = oneshot::channel();
+        let args = ["set", path, "-q", "displayName", "-i", "After"];
+        let output = {
+            let dispatch = execute_with_cancelled(&mut host, &args, &mut ui, http.clone(), async {
+                cancelled.await.unwrap()
+            });
+            tokio::pin!(dispatch);
+            tokio::select! {
+                () = http.started.notified() => {}
+                _ = &mut dispatch => panic!("metadata GET must remain pending until cancelled"),
+                () = tokio::time::sleep(Duration::from_secs(2)) => panic!("metadata GET did not start"),
+            }
+            cancel.send(()).unwrap();
+            tokio::time::timeout(Duration::from_secs(2), &mut dispatch)
+                .await
+                .expect("stalled metadata GET ignored caller cancellation")
+        };
+        failure(&output, "LongRunningOperationCancelled");
+        assert!(
+            matches!(&output.evidence, FamilyEvidence::Resource(Err(error))
+            if error.code == "LongRunningOperationCancelled"
+                && error.operation.is_none() && error.creation.is_none())
+        );
+        assert_eq!(ui.confirmations.len(), confirmations);
+        assert!(
+            ui.confirmations
+                .iter()
+                .all(|prompt| prompt == "Are you sure?")
+        );
+        let requests = host.requests();
+        assert_eq!(requests.len(), if confirmations == 0 { 2 } else { 3 });
+        assert!(requests.iter().all(|request| request["method"] == "GET"));
+        assert!(
+            requests.last().unwrap()["url"]
+                .as_str()
+                .unwrap()
+                .ends_with(suffix)
+        );
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        output.write_to(&mut stdout, &mut stderr).unwrap();
+        let error: Value = serde_json::from_slice(&stdout).unwrap();
+        assert!(error["result"].get("data").is_none());
+        assert!(stderr.is_empty());
+    }
 }
 
 #[tokio::test]
@@ -320,21 +461,32 @@ async fn forced_workspace_must_finish_catalog_paging_before_deleting() {
     let output = host.execute(&["rm", "Demo.Workspace", "-f"]).await;
     failure(&output, "Forbidden");
     assert_eq!(host.requests().len(), 3);
-    assert!(host.requests().iter().all(|request| request["method"] == "GET"));
+    assert!(
+        host.requests()
+            .iter()
+            .all(|request| request["method"] == "GET")
+    );
 }
 
 #[tokio::test]
 async fn forced_workspace_invalid_item_parent_is_not_silently_counted_or_deleted() {
     let mut host = Harness::new();
     workspace(&host);
-    host.reply(200, json!({"value":[
-        {"id":"n","displayName":"Book","type":"Notebook","folderId":"missing"}
-    ]}));
+    host.reply(
+        200,
+        json!({"value":[
+            {"id":"n","displayName":"Book","type":"Notebook","folderId":"missing"}
+        ]}),
+    );
     host.reply(200, json!({"value":[]}));
     let output = host.execute(&["rm", "Demo.Workspace", "-f"]).await;
     failure(&output, "InvalidResponse");
     assert_eq!(host.requests().len(), 3);
-    assert!(host.requests().iter().all(|request| request["method"] == "GET"));
+    assert!(
+        host.requests()
+            .iter()
+            .all(|request| request["method"] == "GET")
+    );
 }
 
 #[tokio::test]
@@ -349,7 +501,11 @@ async fn missing_selection_capability_rejects_nonforce_workspace_and_forced_tena
         };
         let output = host.execute(&args).await;
         failure(&output, "NotSupported");
-        assert!(host.requests().iter().all(|request| request["method"] == "GET"));
+        assert!(
+            host.requests()
+                .iter()
+                .all(|request| request["method"] == "GET")
+        );
     }
 }
 
@@ -357,11 +513,14 @@ async fn missing_selection_capability_rejects_nonforce_workspace_and_forced_tena
 async fn workspace_selection_sorts_supported_nested_items_and_confirms_before_hard_delete() {
     let mut host = Harness::new();
     workspace(&host);
-    host.reply(200, json!({"value":[
-        {"id":"z","displayName":"zeta","type":"Notebook","folderId":"f"},
-        {"id":"a","displayName":"Alpha","type":"Report"},
-        {"id":"d","displayName":"blocked","type":"Dashboard"}
-    ]}));
+    host.reply(
+        200,
+        json!({"value":[
+            {"id":"z","displayName":"zeta","type":"Notebook","folderId":"f"},
+            {"id":"a","displayName":"Alpha","type":"Report"},
+            {"id":"d","displayName":"blocked","type":"Dashboard"}
+        ]}),
+    );
     folders(&host);
     host.reply(200, Value::Null);
     let mut ui = Ui {
@@ -375,10 +534,17 @@ async fn workspace_selection_sorts_supported_nested_items_and_confirms_before_ha
     assert_eq!(ui.choices[0].0, "Select items:");
     assert_eq!(ui.choices[0].1, ["Alpha.Report", "zeta.Notebook"]);
     assert_eq!(ui.confirmations, ["Are you sure?"]);
-    assert!(host.requests().last().unwrap()["url"].as_str().unwrap().ends_with("/items/z?hardDelete=true"));
-    assert!(matches!(&output.evidence, FamilyEvidence::Removal(Ok(result))
+    assert!(
+        host.requests().last().unwrap()["url"]
+            .as_str()
+            .unwrap()
+            .ends_with("/items/z?hardDelete=true")
+    );
+    assert!(
+        matches!(&output.evidence, FamilyEvidence::Removal(Ok(result))
         if matches!(&result.effects[..], [CacheEffect::Deleted { target }]
-            if target.parent().unwrap().kind() == fabric_cli_context::NodeKind::Folder)));
+            if target.parent().unwrap().kind() == fabric_cli_context::NodeKind::Folder))
+    );
 }
 
 #[tokio::test]
@@ -389,10 +555,13 @@ async fn workspace_type_sort_and_declined_confirmation_preserve_no_mutation() {
     settings.insert("output_item_sort_criteria".into(), json!("bytype"));
     store.write(&settings).unwrap();
     workspace(&host);
-    host.reply(200, json!({"value":[
-        {"id":"n","displayName":"Z","type":"Notebook"},
-        {"id":"r","displayName":"A","type":"Report"}
-    ]}));
+    host.reply(
+        200,
+        json!({"value":[
+            {"id":"n","displayName":"Z","type":"Notebook"},
+            {"id":"r","displayName":"A","type":"Report"}
+        ]}),
+    );
     let mut ui = Ui {
         selected: vec!["A.Report".into(), "Z.Notebook".into()],
         ..Default::default()
@@ -417,9 +586,16 @@ async fn empty_or_rejected_workspace_and_declined_selection_never_delete_workspa
         host.reply(200, json!({"value":items}));
         let mut ui = Ui::default();
         let output = execute(&mut host, &["rm", "Demo.Workspace"], &mut ui).await;
-        if items.as_array().unwrap().first().is_some_and(|item| item["type"] == "Notebook") {
+        if items
+            .as_array()
+            .unwrap()
+            .first()
+            .is_some_and(|item| item["type"] == "Notebook")
+        {
             success(&output);
-            assert!(matches!(&output.evidence, FamilyEvidence::Removal(Ok(result)) if result.declined));
+            assert!(
+                matches!(&output.evidence, FamilyEvidence::Removal(Ok(result)) if result.declined)
+            );
         } else {
             failure(&output, "NotSupported");
         }
@@ -431,11 +607,14 @@ async fn empty_or_rejected_workspace_and_declined_selection_never_delete_workspa
 #[tokio::test]
 async fn tenant_force_preserves_selection_confirmation_and_catalog_order_not_ui_order() {
     let mut host = Harness::new();
-    host.reply(200, json!({"value":[
-        {"id":"a","displayName":"a","type":"Workspace"},
-        {"id":"b","displayName":"B","type":"Workspace"},
-        {"id":"A","displayName":"A","type":"Workspace"}
-    ]}));
+    host.reply(
+        200,
+        json!({"value":[
+            {"id":"a","displayName":"a","type":"Workspace"},
+            {"id":"b","displayName":"B","type":"Workspace"},
+            {"id":"A","displayName":"A","type":"Workspace"}
+        ]}),
+    );
     host.reply(202, Value::Null);
     host.reply(200, Value::Null);
     let mut ui = Ui {
@@ -445,11 +624,24 @@ async fn tenant_force_preserves_selection_confirmation_and_catalog_order_not_ui_
     };
     let output = execute(&mut host, &["rm", "/", "-f"], &mut ui).await;
     assert!(success(&output).contains("2 workspaces deleted successfully"));
-    assert_eq!(ui.choices[0].1, ["A.Workspace", "B.Workspace", "a.Workspace"]);
+    assert_eq!(
+        ui.choices[0].1,
+        ["A.Workspace", "B.Workspace", "a.Workspace"]
+    );
     assert_eq!(ui.confirmations, ["Are you sure?"]);
     let requests = host.requests();
-    assert!(requests[1]["url"].as_str().unwrap().ends_with("/workspaces/b"));
-    assert!(requests[2]["url"].as_str().unwrap().ends_with("/workspaces/a"));
+    assert!(
+        requests[1]["url"]
+            .as_str()
+            .unwrap()
+            .ends_with("/workspaces/b")
+    );
+    assert!(
+        requests[2]["url"]
+            .as_str()
+            .unwrap()
+            .ends_with("/workspaces/a")
+    );
 }
 
 #[tokio::test]
@@ -471,10 +663,13 @@ async fn tenant_force_decline_does_not_skip_confirmation() {
 async fn ordered_batch_failure_keeps_prior_accepted_output_effects_and_original_error() {
     let mut host = Harness::new();
     workspace(&host);
-    host.reply(200, json!({"value":[
-        {"id":"a","displayName":"A","type":"Notebook"},
-        {"id":"b","displayName":"B","type":"Notebook"}
-    ]}));
+    host.reply(
+        200,
+        json!({"value":[
+            {"id":"a","displayName":"A","type":"Notebook"},
+            {"id":"b","displayName":"B","type":"Notebook"}
+        ]}),
+    );
     host.reply(202, Value::Null);
     host.reply(403, json!({"errorCode":"Forbidden","message":"denied"}));
     let mut ui = Ui {
@@ -489,8 +684,10 @@ async fn ordered_batch_failure_keeps_prior_accepted_output_effects_and_original_
     let stdout = String::from_utf8(stdout).unwrap();
     assert!(stdout.contains("'A.Notebook' deleted"));
     assert!(!stdout.contains("items deleted successfully"));
-    assert!(matches!(&output.evidence, FamilyEvidence::Removal(Err(error))
+    assert!(
+        matches!(&output.evidence, FamilyEvidence::Removal(Err(error))
         if error.partial.responses.len() == 1 && error.partial.effects.len() == 1
-            && error.error.operation.is_some()));
+            && error.error.operation.is_some())
+    );
     assert_eq!(host.requests().len(), 4);
 }

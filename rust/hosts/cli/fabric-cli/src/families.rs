@@ -39,6 +39,7 @@ use fabric_sdk_http::HttpExecutor;
 use fabric_sdk_onelake::{OneLakeClient, OneLakeLimits, OneLakeWriteLimits};
 use fabric_sdk_onelake_http::OneLakeHttpExecutor;
 use fabric_sdk_operations::OperationLimits;
+use futures_util::FutureExt;
 use serde_json::Value;
 use std::{
     future::{Future, pending},
@@ -566,14 +567,19 @@ impl FamilySession<'_, '_> {
                         evidence: FamilyEvidence::Storage(result),
                     });
                 }
+                // Both adapters must observe the same latched caller cancellation.
+                let cancelled = cancelled.as_mut().shared();
                 let mut backend = FabricMutationBackend::new(
                     self.reads.sdk.credential().clone(),
                     self.reads.sdk.selection().clone(),
                     self.http,
                     OperationLimits::default(),
-                    cancelled.as_mut(),
+                    cancelled.clone(),
                 );
-                let mut metadata = Metadata { reads: self.reads };
+                let mut metadata = Metadata {
+                    reads: self.reads,
+                    cancelled,
+                };
                 let result = ResourceHost {
                     context: &mut targets,
                     mutations: MutationHost {
@@ -888,11 +894,12 @@ impl ResourceContext for ResourceTargets<'_> {
     }
 }
 
-struct Metadata<'a, 'session> {
+struct Metadata<'a, 'session, C> {
     reads: &'a ReadSession<'session>,
+    cancelled: C,
 }
 
-impl MutationMetadata for Metadata<'_, '_> {
+impl<C: Future<Output = ()> + Send + Unpin> MutationMetadata for Metadata<'_, '_, C> {
     fn read<'a>(
         &'a mut self,
         element: &'a Arc<Element>,
@@ -905,7 +912,12 @@ impl MutationMetadata for Metadata<'_, '_> {
                 NodeKind::Workspace(_) => self
                     .reads
                     .sdk
-                    .get_workspace_metadata(self.reads.executor, id, Default::default(), pending())
+                    .get_workspace_metadata(
+                        self.reads.executor,
+                        id,
+                        Default::default(),
+                        &mut self.cancelled,
+                    )
                     .await
                     .map(|result| result.metadata.into_value())
                     .map_err(|error| {
@@ -943,7 +955,7 @@ impl MutationMetadata for Metadata<'_, '_> {
                             collection,
                             id,
                             Default::default(),
-                            pending(),
+                            &mut self.cancelled,
                         )
                         .await
                         .map(|metadata| metadata.into_value())
@@ -967,7 +979,7 @@ impl MutationMetadata for Metadata<'_, '_> {
                             &workspace,
                             id,
                             Default::default(),
-                            pending(),
+                            &mut self.cancelled,
                         )
                         .await
                         .map_err(|error| {

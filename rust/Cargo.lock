@@ -423,6 +423,7 @@ dependencies = [
  "fabric-sdk-tables",
  "fabric-sdk-transport",
  "fabric-sdk-workspaces",
+ "futures-util",
  "serde",
  "serde_json",
  "thiserror",
