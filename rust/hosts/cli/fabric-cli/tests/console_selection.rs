@@ -5,7 +5,7 @@
 
 //! Bounded stream contracts for the executable's item-selection adapter.
 
-use fabric_cli::console::{read_confirmation, read_selection};
+use fabric_cli::console::{read_confirmation, read_selection, read_selection_with_prompt};
 use std::io::{self, Cursor, Read, Write};
 
 fn names() -> Vec<String> {
@@ -84,6 +84,23 @@ fn selection_consumes_only_its_line_leaving_confirmation_to_the_caller() {
         ["Second.Report"]
     );
     assert!(!read_confirmation(&mut input, &mut Vec::new(), "Export?").unwrap());
+}
+
+#[test]
+fn supplied_workspace_prompt_preserves_the_shared_selection_and_confirmation_contract() {
+    let names = vec!["A.Workspace".into(), "B.Workspace".into()];
+    let mut input = Cursor::new("2,1,2\nno\n");
+    let mut output = Vec::new();
+    assert_eq!(
+        read_selection_with_prompt(&mut input, &mut output, "Select workspaces:", &names).unwrap(),
+        names
+    );
+    assert!(
+        String::from_utf8(output)
+            .unwrap()
+            .starts_with("Select workspaces:\n  1. A.Workspace\n  2. B.Workspace\n")
+    );
+    assert!(!read_confirmation(&mut input, &mut Vec::new(), "Are you sure?").unwrap());
 }
 
 #[test]

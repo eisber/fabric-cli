@@ -827,6 +827,18 @@ async fn execute_family(
             families
                 .dispatch_with_deploy_inputs(command, &inputs, std::future::pending())
                 .await?
+        } else if matches!(
+            command,
+            Invocation::Resource(fabric_cli_mutations::frontdoor::ResourceCommand::Remove { .. })
+        ) {
+            let mut removal = NativeMutationUi::default();
+            let mut output = families
+                .dispatch_with_removal_ui(command, &mut removal, std::future::pending())
+                .await?;
+            let mut notices = std::mem::take(&mut removal.records);
+            notices.append(&mut output.plan.records);
+            output.plan.records = notices;
+            output
         } else {
             families.dispatch(command, std::future::pending()).await?
         };

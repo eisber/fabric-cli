@@ -11,7 +11,7 @@
 //! Cancellation drops the answer future without cancelling an OS read; the
 //! native runtime's bounded shutdown still applies. No credentials are selected.
 
-use fabric_cli_mutations::{CommandFuture, MutationError, MutationUi, NoticeKind};
+use fabric_cli_mutations::{CommandFuture, MutationError, MutationUi, NoticeKind, RemovalUi};
 use fabric_cli_resources::{CommandError, Confirmation};
 use std::{future::Future, io, pin::Pin, sync::Arc};
 
@@ -64,10 +64,21 @@ impl Confirmation for NativeAccessConfirmation {
 }
 
 type NoticeWriter = dyn Fn(&[fabric_cli_output::RenderPlan]) -> io::Result<()> + Send + Sync;
+type SelectionReader = dyn Fn(&str, &[String]) -> io::Result<Vec<String>> + Send + Sync;
+
+fn read_native_selection(prompt: &str, names: &[String]) -> io::Result<Vec<String>> {
+    fabric_cli::console::read_selection_with_prompt(
+        &mut io::stdin().lock(),
+        &mut io::stderr(),
+        prompt,
+        names,
+    )
+}
 
 pub(crate) struct NativeMutationUi {
     pub(crate) records: Vec<fabric_cli_output::RenderPlan>,
     confirmation: NativeAccessConfirmation,
+    selection: Arc<SelectionReader>,
     writer: Arc<NoticeWriter>,
 }
 
@@ -91,11 +102,37 @@ impl NativeMutationUi {
         reader: impl Fn(&str) -> io::Result<bool> + Send + Sync + 'static,
         writer: impl Fn(&[fabric_cli_output::RenderPlan]) -> io::Result<()> + Send + Sync + 'static,
     ) -> Self {
+        Self::with_selection_io(reader, read_native_selection, writer)
+    }
+
+    pub(crate) fn with_selection_io(
+        reader: impl Fn(&str) -> io::Result<bool> + Send + Sync + 'static,
+        selection: impl Fn(&str, &[String]) -> io::Result<Vec<String>> + Send + Sync + 'static,
+        writer: impl Fn(&[fabric_cli_output::RenderPlan]) -> io::Result<()> + Send + Sync + 'static,
+    ) -> Self {
         Self {
             records: Vec::new(),
             confirmation: NativeAccessConfirmation::with_reader(reader),
+            selection: Arc::new(selection),
             writer: Arc::new(writer),
         }
+    }
+
+    async fn flush_notices(
+        &mut self,
+        worker_code: &str,
+        output_code: &str,
+        worker_message: &str,
+    ) -> Result<(), MutationError> {
+        let records = std::mem::take(&mut self.records);
+        if !records.is_empty() {
+            let writer = Arc::clone(&self.writer);
+            tokio::task::spawn_blocking(move || writer(&records))
+                .await
+                .map_err(|_| MutationError::new(worker_code, worker_message))?
+                .map_err(|error| MutationError::new(output_code, error.to_string()))?;
+        }
+        Ok(())
     }
 }
 
@@ -132,25 +169,50 @@ impl MutationUi for NativeMutationUi {
         message: &'a str,
     ) -> CommandFuture<'a, Result<bool, MutationError>> {
         Box::pin(async move {
-            let records = std::mem::take(&mut self.records);
-            if !records.is_empty() {
-                let writer = Arc::clone(&self.writer);
-                tokio::task::spawn_blocking(move || writer(&records))
-                    .await
-                    .map_err(|_| {
-                        MutationError::new(
-                            "ConfirmationWorkerFailed",
-                            "The confirmation output worker did not complete",
-                        )
-                    })?
-                    .map_err(|error| {
-                        MutationError::new("ConfirmationOutputFailed", error.to_string())
-                    })?;
-            }
+            self.flush_notices(
+                "ConfirmationWorkerFailed",
+                "ConfirmationOutputFailed",
+                "The confirmation output worker did not complete",
+            )
+            .await?;
             self.confirmation
                 .confirm(message)
                 .await
                 .map_err(|error| MutationError::new(&error.code, error.message))
+        })
+    }
+}
+
+impl RemovalUi for NativeMutationUi {
+    fn select<'a>(&'a mut self, _: &'a str, _: &'a [String]) -> CommandFuture<'a, Vec<String>> {
+        // Native input is only read at the fallible production boundary.
+        Box::pin(async { Vec::new() })
+    }
+
+    fn select_result<'a>(
+        &'a mut self,
+        prompt: &'a str,
+        names: &'a [String],
+    ) -> CommandFuture<'a, Result<Vec<String>, MutationError>> {
+        Box::pin(async move {
+            self.flush_notices(
+                "SelectionWorkerFailed",
+                "SelectionOutputFailed",
+                "The selection output worker did not complete",
+            )
+            .await?;
+            let reader = Arc::clone(&self.selection);
+            let prompt = prompt.to_owned();
+            let names = names.to_vec();
+            tokio::task::spawn_blocking(move || reader(&prompt, &names))
+                .await
+                .map_err(|_| {
+                    MutationError::new(
+                        "SelectionWorkerFailed",
+                        "The selection input worker did not complete",
+                    )
+                })?
+                .map_err(|error| MutationError::new("SelectionInputFailed", error.to_string()))
         })
     }
 }

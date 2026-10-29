@@ -64,10 +64,23 @@ pub fn read_selection(
     output: &mut impl Write,
     names: &[String],
 ) -> io::Result<Vec<String>> {
+    read_selection_with_prompt(input, output, "Select items:", names)
+}
+
+/// Choose names using the existing selection contract and a caller-owned prompt.
+///
+/// The prompt distinguishes item and workspace removal without changing parsing,
+/// display ordering, input limits, error handling or the default [`read_selection`].
+pub fn read_selection_with_prompt(
+    input: &mut impl BufRead,
+    output: &mut impl Write,
+    prompt: &str,
+    names: &[String],
+) -> io::Result<Vec<String>> {
     if names.is_empty() {
         return Ok(Vec::new());
     }
-    writeln!(output, "Select items:")?;
+    writeln!(output, "{prompt}")?;
     for (index, name) in names.iter().enumerate() {
         writeln!(output, "  {}. {}", index + 1, name.escape_debug())?;
     }

@@ -10,7 +10,7 @@ mod terminal_ui;
 
 use fabric_cli_context::{Element, ItemType, NodeKind, WorkspaceType};
 use fabric_cli_mutations::{
-    CommandFuture, MutationError, MutationHost, MutationMetadata, MutationUi, NoticeKind,
+    CommandFuture, MutationError, MutationHost, MutationMetadata, MutationUi, NoticeKind, RemovalUi,
 };
 use fabric_cli_resources::Confirmation;
 use fabric_sdk_workspaces::mutations::{
@@ -98,6 +98,77 @@ fn pending_default_confirmation_releases_diagnostic_output_before_input() {
     let diagnostic = String::from_utf8(output.stderr).unwrap();
     assert!(diagnostic.contains("Pending confirmation [Y/n] "));
     assert!(diagnostic.contains("confirmation timeout diagnostic"));
+}
+
+#[test]
+fn pending_default_selection_releases_diagnostic_output_before_input() {
+    const CHILD: &str = "FAB_TEST_PENDING_SELECTION_CHILD";
+    if std::env::var_os(CHILD).is_some() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+        let mut ui = NativeMutationUi::default();
+        let names = vec!["Demo.Workspace".into()];
+        let result = runtime.block_on(async {
+            tokio::time::timeout(
+                Duration::from_millis(250),
+                ui.select_result("Select workspaces:", &names),
+            )
+            .await
+        });
+        assert!(result.is_err(), "empty open stdin must remain pending");
+        runtime.shutdown_timeout(Duration::from_millis(100));
+        io::stderr()
+            .write_all(b"\nselection timeout diagnostic\n")
+            .unwrap();
+        return;
+    }
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command
+        .args([
+            "--exact",
+            "pending_default_selection_releases_diagnostic_output_before_input",
+            "--nocapture",
+        ])
+        .env_clear()
+        .env(CHILD, "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for key in ["SystemRoot", "WINDIR", "TEMP", "TMP"] {
+        if let Some(value) = std::env::var_os(key) {
+            command.env(key, value);
+        }
+    }
+    let mut child = command.spawn().unwrap();
+    let input = child.stdin.take().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let completed = loop {
+        if child.try_wait().unwrap().is_some() {
+            break true;
+        }
+        if Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            break false;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    drop(input);
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        completed,
+        "pending selection retained stderr after bounded shutdown"
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let diagnostic = String::from_utf8(output.stderr).unwrap();
+    assert!(diagnostic.contains("Select workspaces:\n"));
+    assert!(diagnostic.contains("selection timeout diagnostic"));
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -340,6 +411,86 @@ async fn notice_delivery_failure_never_reaches_resource_input_or_replays_the_not
     }
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn removal_selection_flushes_notices_and_preserves_input_worker_and_delivery_errors() {
+    let names = vec!["Demo.Workspace".into()];
+    let transcript = Arc::new(Mutex::new(Vec::new()));
+    let mut ui = NativeMutationUi::with_selection_io(
+        |_| panic!("selection must not ask for confirmation"),
+        {
+            let transcript = Arc::clone(&transcript);
+            move |prompt, names| {
+                fabric_cli::console::read_selection_with_prompt(
+                    &mut Cursor::new(b"1\n"),
+                    &mut *transcript.lock().unwrap(),
+                    prompt,
+                    names,
+                )
+            }
+        },
+        {
+            let transcript = Arc::clone(&transcript);
+            move |records| {
+                for record in records {
+                    record.write_to(&mut Vec::new(), &mut *transcript.lock().unwrap())?;
+                }
+                Ok(())
+            }
+        },
+    );
+    ui.notice(NoticeKind::Progress, "Existing notice");
+    assert_eq!(
+        ui.select_result("Select workspaces:", &names)
+            .await
+            .unwrap(),
+        names
+    );
+    let transcript = String::from_utf8(transcript.lock().unwrap().clone()).unwrap();
+    assert!(transcript.starts_with("Existing notice\nSelect workspaces:\n"));
+    assert!(ui.records.is_empty());
+
+    for panicking in [false, true] {
+        let reads = Arc::new(AtomicUsize::new(0));
+        let mut ui = NativeMutationUi::with_selection_io(
+            |_| panic!("failed selection must not confirm"),
+            {
+                let reads = Arc::clone(&reads);
+                move |_, _| {
+                    reads.fetch_add(1, Ordering::SeqCst);
+                    Ok(Vec::new())
+                }
+            },
+            move |_| {
+                assert!(!panicking, "synthetic output worker failure");
+                Err(io::Error::new(io::ErrorKind::BrokenPipe, "notice failed"))
+            },
+        );
+        ui.notice(NoticeKind::Warning, "Prior warning");
+        let error = ui.select_result("Select items:", &names).await.unwrap_err();
+        assert_eq!(
+            error.code,
+            if panicking {
+                "SelectionWorkerFailed"
+            } else {
+                "SelectionOutputFailed"
+            }
+        );
+        assert_eq!(reads.load(Ordering::SeqCst), 0);
+        assert!(ui.records.is_empty(), "failed output must not replay");
+    }
+    let mut ui = NativeMutationUi::with_selection_io(
+        |_| panic!("failed selection must not confirm"),
+        |_, _| panic!("synthetic input worker failure"),
+        |_| Ok(()),
+    );
+    assert_eq!(
+        ui.select_result("Select items:", &names)
+            .await
+            .unwrap_err()
+            .code,
+        "SelectionWorkerFailed"
+    );
+}
 struct Operations(usize);
 impl ResourceOperations for Operations {
     fn execute(

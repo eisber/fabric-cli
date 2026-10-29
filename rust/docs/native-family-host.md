@@ -180,8 +180,26 @@ empty selection is distinct from cancelled or unavailable input.
 Input runs on the existing runtime's blocking worker. The adapter releases stderr
 before waiting for input, so cancellation and error output remain deliverable.
 Dropping a prompt future cannot interrupt an OS read; bounded runtime shutdown
-and cancellation uncertainty still apply. No REPL, authentication change or
-unsupported resource-selection capability is implied.
+and cancellation uncertainty still apply. No REPL or authentication change is
+implied.
+
+### Terminal removal UI
+
+The Windows native removal entry point supplies the existing resource
+`RemovalUi` with fallible numbered selection and confirmation on the same
+blocking-worker boundary. Workspace removal without `--force` selects supported
+items and confirms before deleting only those items; it never deletes the
+workspace. Forced workspace removal still reads and counts the complete item
+catalog before deleting the workspace, without a selection or confirmation.
+Tenant removal, including `--force`, displays `Select workspaces:` and always
+requires explicit selection and confirmation. `Select items:` and
+`Select workspaces:` use the same bounded line reader as transfer selection.
+EOF, invalid input, failed prompt delivery and worker errors are not empty
+selections or declines. Notices are flushed before input without retaining a
+stderr lock while waiting. Partial outputs, cache effects and operation
+uncertainty remain owned by the resource family; dropping input waits does not
+interrupt an OS read or replay a deletion. These offline contracts do not prove
+live-service or all-platform acceptance.
 
 ## Bounded gaps and evidence
 
@@ -191,7 +209,7 @@ or live-service claim. The latest source-matched schema, lifecycle and profile
 cases must pass before publishing a parity milestone.
 
 ACL export, access/resource skill binding, virtual resources other than capacity, local-file
-resource copy, workspace removal selection and folder SET metadata are not
+resource copy and folder SET metadata are not
 implemented by this central adapter. These fail explicitly. Workspace SET uses
 the existing typed metadata API; it does not claim the source-synchronous
 workspace GET accepted-operation branch. REPL/batch and native
