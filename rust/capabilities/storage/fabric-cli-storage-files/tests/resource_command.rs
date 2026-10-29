@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Resource-command physical-copy routing with offline storage and local files.
+
 #![deny(unnameable_test_items)]
 
 mod support;
@@ -50,7 +52,10 @@ impl ResourceContext for Context {
     ) -> Result<Arc<PathElement>, MutationError> {
         self.calls.push((tokens.to_vec(), options));
         if self.fail == Some(self.calls.len()) {
-            return Err(MutationError::new("Forbidden", "Synthetic metadata failure"));
+            return Err(MutationError::new(
+                "Forbidden",
+                "Synthetic metadata failure",
+            ));
         }
         Ok(if tokens == ["from"] {
             self.source.clone()
@@ -318,10 +323,26 @@ async fn recursive_sources_reject_but_undefined_download_preserves_source_noop()
             remote(OneLakeKind::File),
             &files as &dyn LocalFileSystem,
         ),
-        (remote(OneLakeKind::Folder), local(fixture.path()), &NeverLocal),
-        (remote(OneLakeKind::Table), local(fixture.path()), &NeverLocal),
-        (remote(OneLakeKind::Shortcut), local(fixture.path()), &NeverLocal),
-        (remote(OneLakeKind::Undefined), local(fixture.path()), &NeverLocal),
+        (
+            remote(OneLakeKind::Folder),
+            local(fixture.path()),
+            &NeverLocal,
+        ),
+        (
+            remote(OneLakeKind::Table),
+            local(fixture.path()),
+            &NeverLocal,
+        ),
+        (
+            remote(OneLakeKind::Shortcut),
+            local(fixture.path()),
+            &NeverLocal,
+        ),
+        (
+            remote(OneLakeKind::Undefined),
+            local(fixture.path()),
+            &NeverLocal,
+        ),
     ] {
         let noop = from.kind() == PathKind::OneLake(OneLakeKind::Undefined);
         let mut context = Context::new(from, to);
@@ -335,7 +356,10 @@ async fn recursive_sources_reject_but_undefined_download_preserves_source_noop()
         } else {
             let output = result.unwrap_err().output();
             assert_eq!(output.error_code.as_deref(), Some("NotSupported"));
-            assert_eq!(output.message.as_deref(), Some("Recursive copy not supported"));
+            assert_eq!(
+                output.message.as_deref(),
+                Some("Recursive copy not supported")
+            );
         }
         assert!(network.requests.lock().unwrap().is_empty());
         assert!(ui.notices.is_empty());

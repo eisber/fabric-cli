@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Exact selected-path authority over the real offline OS adapter.
+
 #![deny(unnameable_test_items)]
 
 mod support;
@@ -22,7 +24,10 @@ async fn selected_path_is_deferred_and_sibling_paths_never_gain_boundary_authori
     assert_eq!(files.selected(), selected);
     drop(files.write(&selected, b"unpolled".to_vec()));
     assert!(!missing_root.exists());
-    let error = files.write(&selected, b"polled".to_vec()).await.unwrap_err();
+    let error = files
+        .write(&selected, b"polled".to_vec())
+        .await
+        .unwrap_err();
     assert!(matches!(error.kind, LocalErrorKind::Io(_)));
     assert!(!missing_root.exists());
 
@@ -40,7 +45,10 @@ async fn selected_path_is_deferred_and_sibling_paths_never_gain_boundary_authori
             .read(&neighbor, NonZeroUsize::new(8).unwrap())
             .await
             .unwrap_err(),
-        files.write(&neighbor, b"replace".to_vec()).await.unwrap_err(),
+        files
+            .write(&neighbor, b"replace".to_vec())
+            .await
+            .unwrap_err(),
         files
             .write(&selected.join("nested").join("target"), b"replace".to_vec())
             .await

@@ -105,7 +105,10 @@ impl LocalFileSystem for SelectedFileSystem {
     ) -> CommandFuture<'a, Result<LocalReadFile, LocalError>> {
         Box::pin(async move {
             self.exact(path)?;
-            self.activate().await?.read_for_copy(&self.selected, limit).await
+            self.activate()
+                .await?
+                .read_for_copy(&self.selected, limit)
+                .await
         })
     }
 
