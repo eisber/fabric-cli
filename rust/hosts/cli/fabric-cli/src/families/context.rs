@@ -196,7 +196,8 @@ impl CommandContext {
                         "Fabric returned an item without its type",
                     ));
                 }
-                let Some(kind) = item.item_type().and_then(|kind| ItemType::parse(kind).ok()) else {
+                let Some(kind) = item.item_type().and_then(|kind| ItemType::parse(kind).ok())
+                else {
                     continue;
                 };
                 elements.push(
@@ -210,7 +211,10 @@ impl CommandContext {
                 );
             }
         } else {
-            return Err(errors::error("InvalidInput", "Expected a workspace or tenant"));
+            return Err(errors::error(
+                "InvalidInput",
+                "Expected a workspace or tenant",
+            ));
         }
         Ok(RemovalSnapshot {
             target: target.clone(),

@@ -64,7 +64,10 @@ writer delivery do not prove deletion or that a cache effect was applied.
 
 Folder SET in the central host uses the existing folder SDK GET after confirmation,
 then the existing metadata PATCH handler. Only HTTP 200 produces the source
-`Folder updated` output and rename effect. The independent additive
+`Folder updated` output and rename effect. Workspace, item and folder metadata
+reads share the caller's latched cancellation with the mutation backend.
+Cancellation during a metadata read terminates without dispatching a PATCH or
+inventing operation completion. The independent additive
 `tests/resource_release_gaps_reference.py` executes frozen Python
 `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4` handlers before comparison;
 `rust/hosts/cli/fabric-cli/tests/resource_release_gaps.rs` exercises the root
