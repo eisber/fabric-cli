@@ -15,6 +15,58 @@ use serde_json::{Map, Value};
 use std::io::{self, Write};
 use thiserror::Error;
 
+/// Finite budgets enforced by the production Unicode formatter and data loader.
+#[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
+pub enum UnicodeResourceKind {
+    /// Bytes in the embedded or caller-supplied property database.
+    #[error("data bytes")]
+    DataBytes,
+    /// Aggregate UTF-8 bytes consumed by a formatting operation.
+    #[error("input bytes")]
+    InputBytes,
+    /// UTF-8 bytes produced by a formatting operation.
+    #[error("output bytes")]
+    OutputBytes,
+    /// Nested JSON container depth.
+    #[error("depth")]
+    Depth,
+    /// JSON values and object keys visited by a formatting operation.
+    #[error("nodes")]
+    Nodes,
+}
+
+/// Explicit invalid-data classes for the production Unicode provider.
+#[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
+pub enum UnicodeDataKind {
+    /// The property database is not valid JSON of the required schema.
+    #[error("malformed property database JSON")]
+    MalformedJson,
+    /// The source or Unicode versions and recorded provenance do not match.
+    #[error("version or provenance mismatch")]
+    Version,
+    /// The caller attempted to raise an operation budget above the hard caps.
+    #[error("operation limits exceed hard caps")]
+    Limits,
+    /// A property or mapping table exceeds the supported number of entries.
+    #[error("table size")]
+    TableSize,
+    /// A range overlaps, contains surrogates, or has invalid property values.
+    #[error("scalar coverage or property range")]
+    ScalarCoverage,
+    /// The database does not cover the complete valid-scalar domain.
+    #[error("incomplete scalar domain")]
+    IncompleteDomain,
+    /// Full casing mappings are invalid, oversized, or not strictly ordered.
+    #[error("case mapping")]
+    CaseMapping,
+    /// The Rich variation-selector widening set is invalid.
+    #[error("Rich VS16 data")]
+    RichVs16,
+    /// An integer input denotes a surrogate or exceeds U+10FFFF.
+    #[error("U+{0:04X} is not a Unicode scalar")]
+    InvalidScalar(u32),
+}
+
 /// Source-visible render failures; callers retain control of dispatch and exit.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum TextError {
@@ -57,6 +109,12 @@ pub enum TextError {
     /// Unicode repr printability was not supplied by a source-equivalent caller.
     #[error("Python repr properties are required for non-ASCII nested string '{0}'")]
     UnicodeRepr(String),
+    /// A production Unicode operation exceeded a finite budget.
+    #[error("Unicode {0} limit exceeded")]
+    UnicodeResource(#[source] UnicodeResourceKind),
+    /// The immutable production Unicode database could not be initialized.
+    #[error("Invalid Unicode provider data: {0}")]
+    UnicodeData(#[source] UnicodeDataKind),
     /// The format came from caller arguments/config but was not supported.
     #[error("Output format {0} not supported")]
     UnsupportedFormat(String),
@@ -79,6 +137,8 @@ impl TextError {
             Self::InvalidEntries | Self::InvalidTableEntries => "InvalidEntriesFormat",
             Self::UnsupportedFormat(_) => "NotSupported",
             Self::Json(_) => "InvalidJson",
+            Self::UnicodeResource(_) => "UnicodeResourceLimit",
+            Self::UnicodeData(_) => "UnicodeData",
             _ => "UnexpectedError",
         };
         CommandError::new(Some(self.to_string()), Some(code.to_owned()))
@@ -188,7 +248,7 @@ pub struct TextOptions<'a> {
     pub truncate_columns: &'a [String],
     /// Injected terminal width; absent reproduces table80/truncation120 fallbacks.
     pub terminal_width: Option<usize>,
-    /// Source-equivalent key formatter; defaults to the explicit ASCII-only helper.
+    /// Source-equivalent key formatter; defaults to the embedded Unicode provider.
     pub key_formatter: fn(&str) -> Result<String, TextError>,
     /// Source-equivalent Python str/repr formatter for JSON-domain data.
     pub value_formatter: fn(&Value) -> Result<String, TextError>,
@@ -202,8 +262,8 @@ impl Default for TextOptions<'_> {
             key_value: false,
             truncate_columns: &[],
             terminal_width: None,
-            key_formatter: title_key,
-            value_formatter: python_string,
+            key_formatter: crate::production_unicode::key_formatter,
+            value_formatter: crate::production_unicode::value_formatter,
         }
     }
 }
@@ -244,8 +304,8 @@ impl Printer {
             output: String::new(),
             records: Vec::new(),
             presentation,
-            key_formatter: title_key,
-            value_formatter: python_string,
+            key_formatter: crate::production_unicode::key_formatter,
+            value_formatter: crate::production_unicode::value_formatter,
         }
     }
 
@@ -453,6 +513,11 @@ fn visual(text: &str, widths: &impl CharacterWidth) -> Result<usize, TextError> 
         .sum()
 }
 
+fn source_trim_end(value: &str) -> Result<&str, TextError> {
+    let properties = crate::production_unicode::width_provider()?;
+    Ok(value.trim_end_matches(|character| properties.properties(character).whitespace))
+}
+
 fn wrap(text: &str, width: usize, widths: &impl CharacterWidth) -> Result<Vec<String>, TextError> {
     if width == 0 {
         return Ok(vec![text.to_owned()]);
@@ -495,7 +560,7 @@ fn padded_rows(
                 };
                 line.extend(std::iter::repeat_n(' ', size.saturating_sub(length) + 1));
             }
-            Ok(line.trim_end().to_owned())
+            Ok(source_trim_end(&line)?.to_owned())
         })
         .collect()
 }
@@ -642,13 +707,11 @@ fn truncate(
         for item in items.iter_mut() {
             let value = get(row(item, "get")?, column, formatter)?;
             if value.chars().count() > size {
-                let shortened = value
+                let prefix = value
                     .chars()
                     .take(size.saturating_sub(1))
-                    .collect::<String>()
-                    .trim_end()
-                    .to_owned()
-                    + "\u{2026}";
+                    .collect::<String>();
+                let shortened = source_trim_end(&prefix)?.to_owned() + "\u{2026}";
                 item.as_object_mut()
                     .unwrap()
                     .insert(column.to_owned(), Value::String(shortened));

@@ -409,6 +409,7 @@ dependencies = [
  "fabric-cli-output",
  "fabric-cli-query",
  "fabric-cli-resources",
+ "fabric-cli-storage-files",
  "fabric-cli-tables",
  "fabric-cli-transfer",
  "fabric-deploy",
@@ -424,6 +425,7 @@ dependencies = [
  "fabric-sdk-transport",
  "fabric-sdk-workspaces",
  "futures-util",
+ "rustix",
  "serde",
  "serde_json",
  "thiserror",
@@ -496,6 +498,7 @@ name = "fabric-cli-output"
 version = "0.1.0"
 dependencies = [
  "fabric-core-json",
+ "icu_properties",
  "serde",
  "serde_json",
  "thiserror",
@@ -1393,6 +1396,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
+name = "linux-raw-sys"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
+
+[[package]]
 name = "litemap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1710,6 +1719,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf0c4a6ece9950b9abdb62b1cfcf2a68b3b67a10ba445b3bb85be2a293d0632"
 dependencies = [
  "nom",
+]
+
+[[package]]
+name = "rustix"
+version = "1.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa"
+dependencies = [
+ "bitflags",
+ "errno",
+ "libc",
+ "linux-raw-sys",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

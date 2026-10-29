@@ -5,7 +5,7 @@
 //!
 //! Callers supply timestamps and already-projected JSON, then inspect a [`RenderPlan`]
 //! or write it to caller-owned streams. No terminal, environment, clock, logger,
-//! dispatcher, SDK, or process-global state is accessed. See the crate README for
+//! dispatcher, SDK, or mutable process-global configuration is accessed. See the crate README for
 //! the bounded numeric and Python-runtime compatibility contract.
 //! [`text`] separately exposes caller-injected text/table rendering and ordered
 //! mixed-stream plans without altering the existing JSON API.
@@ -29,6 +29,7 @@
 //! ```
 
 mod encoding;
+pub mod production_unicode;
 pub mod text;
 
 use serde::Serialize;

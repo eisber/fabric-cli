@@ -119,17 +119,29 @@ Native after-fix CI remains required.
 
 ## Explicit boundaries still requiring completion
 
-This slice does not certify full text parity. Unicode width is injected as the
-source East Asian F/W property (2, otherwise1), **not wcwidth/grapheme width**.
-The included ASCII provider explicitly rejects non-ASCII table width; tests
-inject the actual widths for their synthetic Unicode characters. A production
-caller must supply complete pinned Unicode data. `TextOptions::key_formatter`
-and `value_formatter` similarly accept source-equivalent key casing and Python
-str/repr behavior. Default helpers explicitly reject non-ASCII keys/nested repr
-strings rather than guessing; top-level raw Unicode strings remain unchanged.
-Source comparisons demonstrate injected Unicode title and printable versus
-nonprintable repr cases, not a built-in all-Unicode database. Complete provider
-composition remains a caller integration requirement.
+This slice does not certify full text or native-host parity. The output library
+now provides an immutable embedded database covering all 1,112,064 valid scalars,
+independently generated and verified against the pinned source runtime.
+`production_unicode::width_provider` supplies the existing scalar-width trait;
+`TextOptions` and the internal printer default to its typed key/value callbacks.
+Explicit legacy ASCII helper APIs and their old source expectations remain
+unchanged. Native central hosts still require separate parent-owned integration.
+
+The three policies remain distinct: CPython/UCD 15.1.0 controls source East Asian
+F/W width (2, otherwise 1), full key casing and nested repr printability; Rich
+14.3.3's explicit UCD 17.0.0 data controls the separate `rich_text_width` sequence
+API; ICU4X 2.4.0 exposes UCD 18.0.0 properties without silently changing either
+source policy. Combining marks, controls and joiners still count one for source
+tables; original scalar wrapping is not replaced by grapheme wrapping.
+
+Initialization failures and finite budgets propagate as typed Unicode data or
+resource errors, without ASCII fallback, Python runtime use or mutable
+per-command configuration. Formatting caps are 4 MiB aggregate input, 16 MiB
+output, depth 128 and 1,000,000 nodes. The scalar-only width trait cannot enforce
+whole-render allocation bounds; callers must budget complete render inputs.
+JSON bytes and numeric/string-domain contracts are unchanged. See the
+[Unicode contract](unicode-production-contract.md) for complete-domain counts,
+source-version differences, licensing, provenance and actual validation evidence.
 
 Color escape sequences are caller-supplied semantic-style framing; fake palette
 fixtures prove routing/suppression, not byte equivalence to every real

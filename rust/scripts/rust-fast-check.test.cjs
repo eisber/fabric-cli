@@ -730,7 +730,11 @@ test('full native workflow routes every oracle through isolated source and absol
   const calls = workflow.split('\n').filter(line => line.includes('python -B') &&
     !line.includes('scripts/pinned_python_source.py') && !line.includes('test_pinned_python_source.py') &&
     !candidateChecks.some(command => line.trim() === command));
-  assert.equal(calls.length, 32);
+  assert.equal(calls.length, 33);
+  const batch = workflow.slice(workflow.indexOf('      - name: Verify independent pinned batch observations'),
+    workflow.indexOf('      - name: Use repository-pinned toolchain'));
+  assert.ok(batch.includes("contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')"));
+  assert.ok(batch.includes('--check hosts/cli/fabric-cli/tests/batch_source.json'));
   assert.ok(calls.every(line => line.includes('(cd "$PINNED_RUST_ROOT" && python -B ')));
   assert.ok(!workflow.includes('--probes target/'));
   assert.ok(!/--(?:read-probe|query-probe|folder-probe|rust-probe|probe) "target\//.test(workflow));

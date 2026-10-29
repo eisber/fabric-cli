@@ -77,6 +77,11 @@ fn selected_read_options(command: &ReadCommand) -> Result<(), Failure> {
     })
 }
 
+#[cfg(windows)]
+fn consumes_definition_files(command: &Invocation) -> bool {
+    matches!(command, Invocation::Deploy(_) | Invocation::Transfer(_))
+}
+
 #[cfg(any(windows, test))]
 fn interrupted_failure(code: &'static str, message: &str, exit: u8) -> Failure {
     failure(
@@ -211,6 +216,27 @@ fn run_selected(
 #[cfg(test)]
 mod endpoint_tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn physical_copy_does_not_activate_the_definition_filesystem_boundary() {
+        for verb in ["cp", "mv"] {
+            let command =
+                fabric_cli::parser::parse_args(["fab-rs", verb, "source.bin", "target.bin"])
+                    .unwrap();
+            assert!(!consumes_definition_files(&command));
+        }
+        let command = fabric_cli::parser::parse_args([
+            "fab-rs",
+            "export",
+            "Demo.Workspace/Book.Notebook",
+            "-o",
+            "output",
+            "-f",
+        ])
+        .unwrap();
+        assert!(consumes_definition_files(&command));
+    }
 
     #[cfg(windows)]
     #[test]
@@ -683,6 +709,11 @@ async fn execute_family(
         let store = crate::local_host::store()?;
         store.initialize()?;
         let local_root = std::env::current_dir()?;
+        let physical_files =
+            fabric_cli::families::native_resource_files::NativeResourceFileInputs::new(
+                local_root.clone(),
+                tokio::runtime::Handle::current(),
+            );
         let mut navigation = NavigationState::new(
             PathElement::from_fabric(session.tenant.clone()),
             session.home.clone(),
@@ -727,59 +758,61 @@ async fn execute_family(
         }
         let mut mutations = NativeMutationUi::default();
         let mut confirmation = terminal_ui::NativeAccessConfirmation::default();
-        let mut files: Box<dyn fabric_cli_transfer::TransferFiles> =
-            if let Invocation::Deploy(deploy) = command {
-                let argument = deploy.config.clone().ok_or_else(|| {
-                    fabric_cli_local::LocalError::command(
-                        "InvalidInput",
-                        "A deployment configuration path is required",
-                    )
-                })?;
-                let home = transfer_paths::home_from_environment();
-                let candidate = transfer_paths::candidate(
-                    &argument,
-                    &local_root,
-                    home.as_deref(),
-                    std::env::var_os("USERNAME").as_deref(),
-                );
-                Box::new(
-                    fabric_cli::families::transfer_files::TokioDeployFiles::defer_config(
-                        candidate,
-                        argument,
-                        Default::default(),
-                        tokio::runtime::Handle::current(),
-                    ),
-                )
-            } else if let Invocation::Transfer(transfer) = command
-                && matches!(
-                    transfer.kind,
-                    fabric_cli_transfer::TransferKind::Import
-                        | fabric_cli_transfer::TransferKind::Export
-                        | fabric_cli_transfer::TransferKind::BulkExport
-                )
-            {
-                let tokens = if transfer.kind == fabric_cli_transfer::TransferKind::Import {
-                    transfer.input.as_deref()
-                } else {
-                    transfer.output.as_deref()
-                };
-                let input = tokens
-                    .map(fabric_cli_transfer::process_tokens)
-                    .ok_or_else(|| {
+        let mut files = if consumes_definition_files(command) {
+            let files: Box<dyn fabric_cli_transfer::TransferFiles> =
+                if let Invocation::Deploy(deploy) = command {
+                    let argument = deploy.config.clone().ok_or_else(|| {
                         fabric_cli_local::LocalError::command(
                             "InvalidInput",
-                            "A transfer path is required",
+                            "A deployment configuration path is required",
                         )
                     })?;
-                let home = transfer_paths::home_from_environment();
-                let candidate = transfer_paths::candidate(
-                    &input,
-                    &local_root,
-                    home.as_deref(),
-                    std::env::var_os("USERNAME").as_deref(),
-                );
-                if transfer.kind == fabric_cli_transfer::TransferKind::Import {
+                    let home = transfer_paths::home_from_environment();
+                    let candidate = transfer_paths::candidate(
+                        &argument,
+                        &local_root,
+                        home.as_deref(),
+                        std::env::var_os("USERNAME").as_deref(),
+                    );
                     Box::new(
+                        fabric_cli::families::transfer_files::TokioDeployFiles::defer_config(
+                            candidate,
+                            argument,
+                            Default::default(),
+                            tokio::runtime::Handle::current(),
+                        ),
+                    )
+                } else if let Invocation::Transfer(transfer) = command
+                    && matches!(
+                        transfer.kind,
+                        fabric_cli_transfer::TransferKind::Import
+                            | fabric_cli_transfer::TransferKind::Export
+                            | fabric_cli_transfer::TransferKind::BulkExport
+                    )
+                {
+                    let tokens = if transfer.kind == fabric_cli_transfer::TransferKind::Import {
+                        transfer.input.as_deref()
+                    } else {
+                        transfer.output.as_deref()
+                    };
+                    let input =
+                        tokens
+                            .map(fabric_cli_transfer::process_tokens)
+                            .ok_or_else(|| {
+                                fabric_cli_local::LocalError::command(
+                                    "InvalidInput",
+                                    "A transfer path is required",
+                                )
+                            })?;
+                    let home = transfer_paths::home_from_environment();
+                    let candidate = transfer_paths::candidate(
+                        &input,
+                        &local_root,
+                        home.as_deref(),
+                        std::env::var_os("USERNAME").as_deref(),
+                    );
+                    if transfer.kind == fabric_cli_transfer::TransferKind::Import {
+                        Box::new(
                         fabric_cli::families::transfer_files::TokioTransferFiles::defer_import_root(
                             candidate,
                             input,
@@ -787,8 +820,8 @@ async fn execute_family(
                             tokio::runtime::Handle::current(),
                         ),
                     )
-                } else {
-                    Box::new(
+                    } else {
+                        Box::new(
                         fabric_cli::families::transfer_files::TokioTransferFiles::defer_export_root(
                             candidate,
                             input,
@@ -796,18 +829,22 @@ async fn execute_family(
                             tokio::runtime::Handle::current(),
                         ),
                     )
-                }
-            } else {
-                Box::new(
-                    fabric_cli::families::transfer_files::TokioTransferFiles::new(
-                        local_root,
-                        None,
-                        Default::default(),
-                        tokio::runtime::Handle::current(),
+                    }
+                } else {
+                    Box::new(
+                        fabric_cli::families::transfer_files::TokioTransferFiles::new(
+                            local_root,
+                            None,
+                            Default::default(),
+                            tokio::runtime::Handle::current(),
+                        )
+                        .await?,
                     )
-                    .await?,
-                )
-            };
+                };
+            Some(files)
+        } else {
+            None
+        };
         let mut families = fabric_cli::families::FamilySession {
             reads: session,
             http: executor,
@@ -817,7 +854,9 @@ async fn execute_family(
             mutations: &mut mutations,
             confirmation: Some(&mut confirmation),
             transfer_ui: &NativeTransferUi,
-            transfer_files: Some(files.as_mut()),
+            transfer_files: files
+                .as_mut()
+                .map(|files| files.as_mut() as &mut dyn fabric_cli_transfer::TransferFiles),
             resource_files: None,
         };
         let mut output = if matches!(command, Invocation::Deploy(_)) {
@@ -839,6 +878,16 @@ async fn execute_family(
             notices.append(&mut output.plan.records);
             output.plan.records = notices;
             output
+        } else if matches!(
+            command,
+            Invocation::Resource(
+                fabric_cli_mutations::frontdoor::ResourceCommand::Copy { .. }
+                    | fabric_cli_mutations::frontdoor::ResourceCommand::Move { .. }
+            )
+        ) {
+            families
+                .dispatch_with_physical_files(command, &physical_files, std::future::pending())
+                .await?
         } else {
             families.dispatch(command, std::future::pending()).await?
         };

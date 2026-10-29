@@ -263,6 +263,11 @@ jobs:
             --output "$RUNNER_TEMP/rust-pinned-python" > "$RUNNER_TEMP/rust-pinned-python-receipt.json"
           node -e 'const fs = require("node:fs"); const receipt = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); fs.appendFileSync(process.env.GITHUB_ENV, `PINNED_PYTHON_OUTPUT=${process.argv[2]}\nPINNED_RUST_ROOT=${receipt.rust_root}\n`);' \
             "$RUNNER_TEMP/rust-pinned-python-receipt.json" "$RUNNER_TEMP/rust-pinned-python"
+      - name: Verify independent pinned batch observations
+        if: contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli')
+        run: >-
+          (cd "$PINNED_RUST_ROOT" && python -B hosts/cli/fabric-cli/tests/batch_reference.py
+          --check hosts/cli/fabric-cli/tests/batch_source.json)
       - name: Use repository-pinned toolchain and record actual host
         run: |
           cargo --version

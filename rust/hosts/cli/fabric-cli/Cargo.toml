@@ -20,7 +20,7 @@ path = "src/main.rs"
 [features]
 default = []
 windows-broker = ["dep:fabric-identity", "dep:tokio", "fabric-identity/windows-broker"]
-native-read = ["windows-broker", "dep:fabric-sdk-http", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls"]
+native-read = ["windows-broker", "dep:fabric-sdk-http", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls", "dep:rustix"]
 
 [dependencies]
 clap.workspace = true
@@ -33,6 +33,7 @@ fabric-cli-mutations.workspace = true
 fabric-cli-resources.workspace = true
 fabric-cli-transfer.workspace = true
 fabric-cli-tables.workspace = true
+fabric-cli-storage-files.workspace = true
 fabric-deploy.workspace = true
 fabric-sdk-api.workspace = true
 fabric-sdk-onelake.workspace = true
@@ -51,6 +52,9 @@ serde_json.workspace = true
 fabric-identity = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["signal"] }
 thiserror.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, optional = true }
 
 [dev-dependencies]
 async-trait.workspace = true

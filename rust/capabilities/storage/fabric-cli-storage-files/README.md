@@ -19,8 +19,8 @@ physical handlers and remote `ResourceTransferHost`. It resolves source first
 local fallback on both sides. `execute_resolved` accepts the metadata owner's
 already support-checked objects without repeating resolution or notices.
 
-Local-to-OneLake and OneLake-to-local copies ignore force, recursive and collision
-flags exactly as the pinned file handlers do. This does not enable recursion:
+Local-to-OneLake and OneLake-to-local copies do not use force, recursive or collision
+flags. This does not enable recursion:
 directory/shortcut/table sources retain their source-specific rejection.
 Local-to-local copies and **every move involving a local path** are rejected.
 No copy-then-delete emulation or local deletion capability exists.
@@ -39,9 +39,13 @@ direct download basename. The underlying `OsFileSystem` still enforces its
 unchanged canonical-ancestor, symlink and basename policy. Boundary selection
 does not grant access to sibling files, a drive or recursive descendants.
 
-Central native metadata/LocalLookup hydration, family evidence and host selection
-belong to the integration owner; this crate does not enable the executable by
-itself. There is no dependency on definition import/export or its file policy.
+The native host composes this adapter through explicit asynchronous local
+metadata snapshots and `SelectedFileSystem`. Fabric resolution precedes local
+classification; authorization, service and cancellation failures never become
+permission to inspect a local path. Existing embedded dispatchers do not acquire
+filesystem authority unless their caller supplies it.
+
+There is no dependency on definition import/export or its file policy.
 
 ## Download
 
@@ -94,17 +98,14 @@ The example accepts JSON objects on stdin and requires an existing disposable
 `root`. It uses synthetic HTTP responses and real local fixture files without
 contacting a service or acquiring tokens.
 
-The new rejected-route fixtures have an independent, standard-library Python
-oracle over unchanged `cp`/`mv` dispatchers at
-`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`:
+Run the resource routing comparisons and focused adapter tests:
 
 ```text
 python capabilities/storage/fabric-cli-storage-files/tests/resource_dispatch_reference.py
 cargo test --locked -p fabric-cli-storage-files --test resource_command --test selected_adapter
 ```
 
-`tests/resource-routes.json` is synthetic, not a regenerated source fixture.
 The Rust tests exercise the resource adapter with injected HTTP and private OS
-files; existing upload/download suites cover detailed status, bound and
-interruption behavior. These commands require actual controller execution before
-claiming Rust checks passed; the Python oracle alone is not Rust execution.
+files. Upload/download suites cover status, byte bounds, interruption and partial
+effects. Native host tests additionally exercise root argument dispatch, explicit
+local fallback, directory destinations, alias binding and stream delivery.

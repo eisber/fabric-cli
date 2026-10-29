@@ -62,3 +62,45 @@ The text renderer supports notices, tables, key/value layouts and command
 presentation. Callers supply formatting options, width measurement and writers.
 Keep output plans until delivery completes: a partial write is an error, not
 permission to retry the associated operation.
+
+## Unicode text
+
+The default text callbacks use an immutable embedded property database for full
+Unicode key casing and Python-compatible nested string representation. Obtain
+the source scalar-width implementation explicitly before rendering a table:
+
+```rust
+use fabric_cli_output::production_unicode::{key_formatter, value_formatter, width_provider};
+use serde_json::json;
+
+let widths = width_provider()?;
+assert_eq!(widths.source_text_width("e\u{301}")?, 2);
+assert_eq!(key_formatter("état_id")?, "État ID");
+assert_eq!(value_formatter(&json!(["\u{200b}"]))?, "['\\u200b']");
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Source formatting uses Unicode 15.1.0. Its table width is additive East Asian
+F/W width: combining marks, controls and joiners still count one. The separate
+`rich_text_width` API uses Rich's Unicode 17.0.0 scalar and ZWJ/VS16 sequence
+policy. `icu_properties` exposes current Unicode 18.0.0 properties independently.
+These policies are not interchangeable, and source wrapping remains scalar-based.
+All valid scalars, including noncharacters, private use and unassigned values,
+are covered; integer surrogate inputs are rejected.
+
+Initialization errors remain explicit. `TextError::UnicodeData` identifies
+invalid provider data and `TextError::UnicodeResource` identifies an exhausted
+budget. There is no ASCII fallback, environment-selected database, mutable
+per-command configuration or Python runtime dependency. The explicit legacy
+`text::title_key`, `text::python_string` and `text::ascii_width` helpers retain
+their ASCII-only contracts for callers that select them.
+
+Formatting is bounded to 4 MiB aggregate input, 16 MiB output, depth 128 and
+1,000,000 visited values and keys. Callers may tighten these limits. The scalar
+width trait cannot enforce whole-table allocation limits; render callers must
+budget their complete inputs. JSON encoding and numeric domains are unchanged.
+
+See the [Unicode tests](tests/production_unicode/README.md) for validation
+commands and supported limits, and the
+[Unicode contract](../../../docs/unicode-production-contract.md) for provenance,
+licensing and compatibility decisions.

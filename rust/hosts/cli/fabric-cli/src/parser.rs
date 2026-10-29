@@ -9,6 +9,8 @@ use std::ffi::OsString;
 mod diagnostics;
 pub use diagnostics::invalid_arguments_message;
 
+pub mod batch;
+
 mod jobs;
 pub use jobs::{JobMutationCommand, JobMutationKind, JobReadCommand, JobReadKind, JobRunCommand};
 
@@ -57,6 +59,8 @@ pub struct ReadCommand {
 pub enum Invocation {
     /// Help/version text, written to stdout without configuring a host.
     Display(String),
+    /// Ordered source `-c` strings, parsed individually immediately before dispatch.
+    Batch(batch::BatchInvocation),
     /// A command requiring explicitly supplied dependencies.
     Read(ReadCommand),
     /// Read-only job leaf; never submission, cancellation or schedule mutation.
@@ -97,6 +101,13 @@ pub fn command() -> Command {
         .after_help("Local commands use FAB_RUST_CONFIG_ROOT and explicit session context. Remote execution requires a caller-configured host; this default binary has no production authentication or HTTP transport. Config-driven deploy has a bounded native Notebook host; other deployment branches fail explicitly.")
         .arg_required_else_help(true)
         .args_override_self(true)
+        .arg(
+            Arg::new("batch_commands")
+                .short('c')
+                .long("command")
+                .action(ArgAction::Append)
+                .help("Run a command string in non-interactive mode; may be repeated"),
+        )
         .arg(
             Arg::new("output_format")
                 .long("output_format")
@@ -179,6 +190,17 @@ where
         }
     }
     let mut parser = command();
+    if batch::has_root_option(&args) {
+        // Python stores the root version flag but executes a supplied command
+        // list first. Keep the existing non-batch Clap version precedence.
+        parser = parser.disable_version_flag(true).arg(
+            Arg::new("batch_version")
+                .short('v')
+                .visible_short_alias('V')
+                .long("version")
+                .action(ArgAction::SetTrue),
+        );
+    }
     parser.build();
     if args
         .iter()
@@ -228,6 +250,12 @@ where
         Err(error) => return Err(error),
     };
     let Some((name, values)) = matches.subcommand() else {
+        if let Some(commands) = matches.get_many::<String>("batch_commands") {
+            return Ok(Invocation::Batch(batch::BatchInvocation {
+                commands: commands.cloned().collect(),
+                output_format: matches.get_one::<String>("output_format").cloned(),
+            }));
+        }
         return Err(clap::Error::raw(
             ErrorKind::MissingSubcommand,
             INVALID_ARGUMENTS,
@@ -257,9 +285,7 @@ where
         return family_invocation(&matches);
     }
     let list = name == "ls";
-    let spelling = args
-        .iter()
-        .find(|arg| matches!(arg.to_str(), Some("ls" | "dir" | "get")));
+    let spelling = root.and_then(|index| args.get(index));
     let name = if list && spelling.is_some_and(|arg| arg == "dir") {
         "dir"
     } else {
@@ -296,12 +322,17 @@ fn root_argument(args: &[OsString]) -> Option<usize> {
     let mut index = 1;
     while index < args.len() {
         let value = args[index].to_str()?;
-        if value == "--output_format" {
-            index += 2;
-        } else if value.starts_with("--output_format=") {
-            index += 1;
-        } else {
-            return Some(index);
+        match value {
+            "--output_format" | "-c" | "--command" => index += 2,
+            "--version" | "-v" | "-V" => index += 1,
+            value
+                if value.starts_with("--output_format=")
+                    || value.starts_with("--command=")
+                    || value.starts_with("-c") =>
+            {
+                index += 1
+            }
+            _ => return Some(index),
         }
     }
     None
@@ -350,10 +381,12 @@ fn source_read_arguments(
     parser: &Command,
     args: &[OsString],
 ) -> Result<Vec<OsString>, clap::Error> {
-    let Some(start) = args
-        .iter()
-        .position(|arg| matches!(arg.to_str(), Some("ls" | "dir" | "get" | "job" | "table")))
-    else {
+    let Some(start) = root_argument(args).filter(|index| {
+        matches!(
+            args[*index].to_str(),
+            Some("ls" | "dir" | "get" | "job" | "table")
+        )
+    }) else {
         return Ok(args.to_vec());
     };
     let name = args[start].to_str().expect("matched command");

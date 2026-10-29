@@ -50,6 +50,101 @@ Libraries do not discover credentials, create a runtime, install transport,
 read global state or terminate the process. Cancellation is a supplied future;
 partial pages never become successful complete results.
 
+## Source command batches
+
+Repeat `-c` or `--command` to execute ordered command strings through the same
+per-command parser and dispatcher:
+
+```text
+fab-rs -c "config set show_hidden true" -c "config get show_hidden"
+fab-rs --output_format json -c version -c version
+```
+
+This is the bounded translation of `main.py` and `core/fab_parser_setup.py` at
+Python `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`, not a shell-language
+implementation. Preserve these source oddities:
+
+- Split on Python Unicode whitespace, including U+001C through U+001F. Quotes
+  remain in tokens; semicolons and pipes are ordinary data, not separators.
+- Skip empty entries. After a returned nonempty entry, write the 30-hyphen
+  separator to stderr unless that entry has the last **raw list index**.
+- Continue after handled command errors; return the last executed command's exit
+  status. Stop on parser misuse, explicit help exits, uncaught failures or
+  cancellation; do not print the final summary after stopping.
+- After more than one executed entry, print two stdout newlines and a success
+  summary using the **raw list length**, even when earlier commands failed.
+  The JSON summary's `command` is the complete original string list.
+- The outer output override applies only to the summary. Each inner command
+  parses its own override or reads configuration at its execution point. The
+  summary reads the configuration after all commands return.
+- A normal subcommand following root batch options replaces the command list,
+  matching Python's shared destination. Root version does not replace a batch;
+  root help still exits before dispatch. Nested `-c` is rejected.
+
+The existing sanitized invalid-argument envelope remains an intentional
+compatibility exception. Unknown batch command keys stop with exit 1 and a
+sanitized `UnexpectedError`, never the source's echoed dictionary key. Debug
+formatting of batch invocations also omits command strings.
+
+`parser::batch::run` takes a `BatchInvocation` and caller-owned `BatchHost`.
+`execute` receives split arguments and returns `CommandOutcome::Returned(u8)` or
+`Stop(u8)`. `separator` and `summary` are ordered output callbacks; any callback
+error stops without replay. `parse_command` reuses the existing parser and
+distinguishes explicit help exits from returning bare-group help. No library
+runtime, process exit, prompt, environment access or mutable global is added.
+
+The binary retains one lazy local `NavigationState` throughout a batch; settings
+use the existing file store. Remote context-changing `cd` in native batches is
+explicitly unsupported until the native dispatcher exposes a shared context
+hook. Batch authentication is explicitly unsupported because the existing auth
+dispatcher erases cancellation into the same exit status as handled failure.
+Separate explicit authentication remains unchanged. Default local execution has
+no installed Ctrl+C handler; real OS-signal parity remains an integration gate,
+not evidence supplied by synthetic cancellation tests. These limits prevent a
+claim of complete source mode parity.
+
+New source-derived evidence is in `tests/batch_source.json`, captured by
+`tests/batch_reference.py` from immutable Git objects with synthetic handlers and
+state. The existing references and fixtures are unchanged. Recheck it without
+rewriting expected outputs:
+
+```text
+python hosts/cli/fabric-cli/tests/batch_reference.py --check hosts/cli/fabric-cli/tests/batch_source.json
+cargo test --offline --locked -p fabric-cli --test batch_commands --test batch_parser --test argv_contract --test local_mounted
+```
+
+The same executable selectors and an all-target check are also required with
+`--features native-read`. Source-only captures do not establish Rust compilation,
+actual native cancellation, remote context reuse or platform parity.
+
+## Interactive-shell decision boundary
+
+The pinned `core/fab_interactive.py` requires a styled, escaped current-context
+prompt, blinking cursor, in-memory editing/history with history search, and
+POSIX `shlex.split` input. It contains exact raw quit/help/version aliases,
+`fab` prefix guidance, per-command `SystemExit` containment and Ctrl+C
+hint-and-continue behavior. EOF is caught by the inner generic exception
+handler before the outer goodbye branch; padded aliases and malformed quotes
+also have source-specific behavior that must not be silently improved.
+
+No completer is supplied to `PromptSession`: command/path completion is not an
+implemented REPL requirement to invent. `argcomplete` belongs to command-line
+completion, and config completers are separate parser callbacks. The source
+depends on `prompt_toolkit>=3.0.41` and `argcomplete>=3.6.2`, without an upper
+version pin. Rust currently has no selected terminal editor dependency.
+
+| Option | Decision and impact |
+| --- | --- |
+| Keep the current no-argument contract until backend review | Recommended. No invented REPL, dependency, lock change or platform support claim. Batch delivery remains independent. |
+| Stdlib line-oriented shell | Can implement input and dispatch but cannot provide source-faithful portable editing/history-search/cursor/signal behavior. Requires explicit approval as a reduced contract, not REPL parity. |
+| Reviewed terminal editor/backend | Can target the complete source contract, but requires dependency/security/license review, Windows/macOS/Linux terminal and redirected-input tests, and an explicit cancellation/runtime design. No backend is selected here. |
+
+A complete source-faithful minimal REPL is therefore not feasible with only
+stdlib and existing APIs. Any future backend-neutral shell contract should own
+one mutable command session, inject input/prompt/history/output/cancellation,
+and keep source `shlex` rules distinct from batch whitespace rules. Parent review
+must establish this scope before central host redesign.
+
 ## Deployment and transfers
 
 `DeployHost` loads configuration, templates and parameters before preparing an

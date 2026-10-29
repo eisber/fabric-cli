@@ -6,10 +6,13 @@
 pub(crate) mod context;
 mod deploy_http;
 mod export_files;
+#[cfg(feature = "native-read")]
+pub mod native_resource_files;
+pub mod resource_files;
 pub mod transfer_files;
 
 use crate::{errors, parser::Invocation, session::ReadSession};
-use context::CommandContext;
+use context::{CommandContext, LocalResolution};
 use fabric_cli_context::{
     Element, NodeKind, PathElement, PathInput, PathResolver, ResolveOptions, Resolver,
 };
@@ -31,6 +34,7 @@ use fabric_cli_resources::{
     FamilyPresentation,
     frontdoor::{self, AccessHost, AccessKind, ApiClients},
 };
+use fabric_cli_storage_files::{ResourceFileError, ResourceFileHost, ResourceFileResult};
 use fabric_cli_transfer::{
     TransferContext, TransferError, TransferFiles, TransferHost, TransferKind, TransferMetadata,
     TransferResult, TransferUi,
@@ -61,6 +65,15 @@ pub enum FamilyEvidence {
     Removal(Result<RemovalResult, RemovalError>),
     /// Storage evidence remains distinct from Fabric mutation evidence.
     Storage(Result<OneLakeWriteResult, OneLakeWriteError>),
+    /// Physical-file progress and original local/remote failures.
+    ResourceFiles(Result<ResourceFileResult, ResourceFileError>),
+    /// Physical-copy receipts retained when rendering itself fails.
+    ResourceFilesRenderFailure {
+        /// Original result and any local or remote partial effects.
+        result: Result<ResourceFileResult, ResourceFileError>,
+        /// Actual renderer failure, not a transfer retry or rollback.
+        error: TextError,
+    },
     /// Definition transfer retains original operation IDs and file progress.
     Transfer(Result<TransferResult, TransferError>),
     /// Config deployment retains actual completed IDs and uncertain operations.
@@ -136,7 +149,7 @@ impl FamilySession<'_, '_> {
         inputs: &crate::deploy::DeployInputs,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<FamilyOutput, TextError> {
-        self.dispatch_with_resource_ui(invocation, inputs, None, cancelled)
+        self.dispatch_with_resource_ui(invocation, inputs, None, None, cancelled)
             .await
     }
 
@@ -155,6 +168,31 @@ impl FamilySession<'_, '_> {
             invocation,
             &crate::deploy::DeployInputs::default(),
             Some(ui),
+            None,
+            cancelled,
+        )
+        .await
+    }
+
+    /// Dispatch physical copy with explicit asynchronous local metadata and I/O.
+    ///
+    /// Fabric discovery always precedes local fallback. Existing methods retain
+    /// their contracts and never discover filesystem capabilities implicitly.
+    ///
+    /// # Errors
+    /// Preserves resolution, cancellation, local/remote partial effects and output
+    /// failures without retrying a transfer.
+    pub async fn dispatch_with_physical_files(
+        &mut self,
+        invocation: &Invocation,
+        files: &dyn resource_files::ResourceFileInputs,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<FamilyOutput, TextError> {
+        self.dispatch_with_resource_ui(
+            invocation,
+            &crate::deploy::DeployInputs::default(),
+            None,
+            Some(files),
             cancelled,
         )
         .await
@@ -165,6 +203,7 @@ impl FamilySession<'_, '_> {
         invocation: &Invocation,
         inputs: &crate::deploy::DeployInputs,
         removal_ui: Option<&mut dyn RemovalUi>,
+        physical_files: Option<&dyn resource_files::ResourceFileInputs>,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<FamilyOutput, TextError> {
         let mut cancelled = std::pin::pin!(cancelled);
@@ -399,6 +438,12 @@ impl FamilySession<'_, '_> {
                 })
             }
             Invocation::Resource(command) => {
+                let physical = physical_files.filter(|_| {
+                    matches!(
+                        command,
+                        ResourceCommand::Copy { .. } | ResourceCommand::Move { .. }
+                    )
+                });
                 let options = ResolveOptions {
                     raise_error: !matches!(
                         command,
@@ -406,18 +451,30 @@ impl FamilySession<'_, '_> {
                             | ResourceCommand::Mkdir { .. }
                             | ResourceCommand::Link { .. }
                     ),
-                    supports_local_path: false,
+                    supports_local_path: physical.is_some(),
                 };
+                let source_tokens = command
+                    .args()
+                    .path
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>();
+                let source_path = command.args().path.join(" ");
                 let target = match context
-                    .resolve(
+                    .resolve_path_with_files(
                         self.reads,
                         self.http,
-                        current
-                            .fabric()
-                            .cloned()
-                            .unwrap_or_else(|| self.reads.tenant.clone()),
-                        &command.args().path.join(" "),
-                        options,
+                        current.clone(),
+                        if physical.is_some() {
+                            PathInput::Tokens(&source_tokens)
+                        } else {
+                            PathInput::Scalar(&source_path)
+                        },
+                        LocalResolution {
+                            options,
+                            files: physical,
+                            ui: Some(self.mutations),
+                        },
                         cancelled.as_mut(),
                     )
                     .await
@@ -511,25 +568,35 @@ impl FamilySession<'_, '_> {
                     | ResourceCommand::Unassign { workspace, .. } => Some(workspace),
                     _ => None,
                 };
-                if let Some(path) = other
-                    && let Err(error) = context
-                        .resolve(
+                let mut destination = None;
+                if let Some(path) = other {
+                    let tokens = path.iter().map(String::as_str).collect::<Vec<_>>();
+                    let path = path.join(" ");
+                    match context
+                        .resolve_path_with_files(
                             self.reads,
                             self.http,
-                            current
-                                .fabric()
-                                .cloned()
-                                .unwrap_or_else(|| self.reads.tenant.clone()),
-                            &path.join(" "),
-                            ResolveOptions {
-                                raise_error: false,
-                                supports_local_path: false,
+                            current.clone(),
+                            if physical.is_some() {
+                                PathInput::Tokens(&tokens)
+                            } else {
+                                PathInput::Scalar(&path)
+                            },
+                            LocalResolution {
+                                options: ResolveOptions {
+                                    raise_error: false,
+                                    supports_local_path: physical.is_some(),
+                                },
+                                files: physical,
+                                ui: Some(self.mutations),
                             },
                             cancelled.as_mut(),
                         )
                         .await
-                {
-                    return self.command_failure(error, invocation, format);
+                    {
+                        Ok(value) => destination = Some(value),
+                        Err(error) => return self.command_failure(error, invocation, format),
+                    }
                 }
                 let resolver =
                     PathResolver::new(&context, current.clone(), self.reads.home.clone(), "ls")
@@ -541,6 +608,36 @@ impl FamilySession<'_, '_> {
                 ) {
                     let storage = storage_client(self.reads);
                     let adapter = OneLakeHttpExecutor::new(Arc::new(self.http.clone()));
+                    if physical.is_some() {
+                        let destination =
+                            destination.as_ref().ok_or(TextError::InvalidTableEntries)?;
+                        let selected = target
+                            .local_metadata()
+                            .or_else(|| destination.local_metadata());
+                        let files =
+                            selected.and_then(|selected| context.local_files(&selected.path));
+                        let result = ResourceFileHost {
+                            context: &mut targets,
+                            storage: OneLakeWriteHost {
+                                client: &storage,
+                                executor: &adapter,
+                                ui: self.mutations,
+                                read_limits: OneLakeLimits::default(),
+                                write_limits: OneLakeWriteLimits::default(),
+                            },
+                            files: files.as_deref(),
+                        }
+                        .execute_resolved(command, &target, destination, cancelled.as_mut())
+                        .await;
+                        return physical_output(
+                            result,
+                            timestamp.clone(),
+                            command.name(),
+                            |outputs| {
+                                render_outputs(outputs, command.name(), timestamp, format, false)
+                            },
+                        );
+                    }
                     let result = ResourceTransferHost {
                         context: &mut targets,
                         storage: OneLakeWriteHost {
@@ -827,6 +924,45 @@ pub(super) fn storage_client(reads: &ReadSession<'_>) -> OneLakeClient {
         )
         .expect("validated existing account and tenant"),
     )
+}
+
+fn physical_output(
+    result: Result<ResourceFileResult, ResourceFileError>,
+    timestamp: Timestamp,
+    command: &str,
+    render: impl FnOnce(Vec<OutputInput>) -> Result<TextPlan, TextError>,
+) -> Result<FamilyOutput, TextError> {
+    let outputs = match &result {
+        Ok(result) => result.outputs().to_vec(),
+        Err(error) => vec![error.output()],
+    };
+    match render(outputs) {
+        Ok(plan) => Ok(FamilyOutput {
+            plan,
+            evidence: FamilyEvidence::ResourceFiles(result),
+        }),
+        Err(error) => {
+            let mut plan = error.partial_output().cloned().unwrap_or(TextPlan {
+                records: Vec::new(),
+                exit_code: 1,
+            });
+            let failure = errors::error("OutputError", "Rendering resource-copy output failed")
+                .envelope(timestamp, Some(command.into()));
+            let diagnostic = text::render(
+                &failure,
+                OutputFormat::Json,
+                &TextOptions::default(),
+                &text::ascii_width,
+                Presentation::default(),
+            )?;
+            plan.records.extend(diagnostic.records);
+            plan.exit_code = 1;
+            Ok(FamilyOutput {
+                plan,
+                evidence: FamilyEvidence::ResourceFilesRenderFailure { result, error },
+            })
+        }
+    }
 }
 
 fn render_outputs(
@@ -1289,4 +1425,55 @@ fn folder_transfer_order(
         }
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod physical_output_tests {
+    use super::*;
+
+    #[test]
+    fn rendering_failure_retains_transfer_receipts_and_prior_output() {
+        let receipt = fabric_cli_storage_files::CopyResult {
+            outputs: Vec::new(),
+            local_path: "selected-target".into(),
+            storage_path: fabric_sdk_onelake::OneLakePath::new(
+                "11111111-1111-1111-1111-111111111111",
+                "22222222-2222-2222-2222-222222222222",
+                "Files/source.bin",
+            )
+            .unwrap(),
+            bytes_written: Some(2),
+            inspection_errors: Vec::new(),
+        };
+        let output = physical_output(
+            Ok(ResourceFileResult::Download(receipt)),
+            Timestamp::parse("2026-10-29T00:00:00Z").unwrap(),
+            "cp",
+            |_| {
+                Err(TextError::AfterOutput {
+                    error: Box::new(TextError::InvalidTableEntries),
+                    partial: Box::new(text::render_line(
+                        "prior notice",
+                        text::Style::Grey,
+                        fabric_cli_output::OutputStream::Stderr,
+                        Presentation::default(),
+                    )),
+                })
+            },
+        )
+        .unwrap();
+        assert_eq!(output.plan.exit_code, 1);
+        assert!(matches!(
+            &output.evidence,
+            FamilyEvidence::ResourceFilesRenderFailure {
+                result: Ok(ResourceFileResult::Download(receipt)), error: TextError::AfterOutput { .. }
+            } if receipt.bytes_written == Some(2)
+        ));
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        output.write_to(&mut stdout, &mut stderr).unwrap();
+        let envelope: Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(envelope["result"]["error_code"], "OutputError");
+        assert!(String::from_utf8(stderr).unwrap().contains("prior notice"));
+    }
 }

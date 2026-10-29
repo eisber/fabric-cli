@@ -12,6 +12,7 @@ description = "Pure Python-compatible Fabric CLI JSON envelopes and render plans
 
 [dependencies]
 fabric-core-json.workspace = true
+icu_properties.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

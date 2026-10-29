@@ -1,14 +1,16 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+use super::resource_files::{ResourceFileInputs, ResourceLocalSnapshot};
 use crate::{
     errors,
     session::{ReadSession, snapshot::Snapshot},
 };
 use fabric_cli_context::{
-    ContextError, Element, HierarchyLookup, ItemType, Lookup, LookupKind, LookupRequest, NodeKind,
-    OneLakeProperties, PathElement, PathInput, PathKind, PathResolver, ResolveOptions,
-    VirtualLookupRequest, VirtualWorkspaceKind, WorkspaceType,
+    ContextError, Element, HierarchyLookup, ItemType, LocalAccess, LocalLookup, LocalMetadata,
+    LocalProbe, Lookup, LookupKind, LookupRequest, NodeKind, OneLakeProperties, PathElement,
+    PathInput, PathKind, PathResolver, ResolveOptions, VirtualLookupRequest, VirtualWorkspaceKind,
+    WorkspaceType,
 };
 use fabric_cli_mutations::{CommandFuture, MutationError, RemovalCatalog};
 use fabric_cli_output::CommandError;
@@ -28,6 +30,13 @@ enum Needed {
     Fabric(Arc<Element>, LookupKind),
     Capacities,
     Properties(String),
+    Local(String),
+}
+
+pub(crate) struct LocalResolution<'a> {
+    pub options: ResolveOptions,
+    pub files: Option<&'a dyn ResourceFileInputs>,
+    pub ui: Option<&'a mut dyn fabric_cli_mutations::MutationUi>,
 }
 
 #[derive(Default)]
@@ -35,6 +44,7 @@ pub(crate) struct CommandContext {
     snapshot: Snapshot,
     capacities: Option<Vec<fabric_cli_local::Capacity>>,
     properties: BTreeMap<String, Option<OneLakeProperties>>,
+    local: BTreeMap<String, ResourceLocalSnapshot>,
 }
 
 impl Lookup for CommandContext {
@@ -50,7 +60,7 @@ impl HierarchyLookup for CommandContext {
     ) -> Result<Option<String>, ContextError> {
         if request.kind != PathKind::VirtualWorkspaceItem(VirtualWorkspaceKind::Capacity) {
             return Err(ContextError::lookup(
-                "NotSupported",
+                "HostCapabilityUnavailable",
                 "This virtual resource metadata is not mounted",
             ));
         }
@@ -113,7 +123,44 @@ impl HierarchyLookup for Loading<'_> {
     }
 }
 
+struct LocalLoading<'a> {
+    context: &'a CommandContext,
+    needed: &'a RefCell<Option<Needed>>,
+    path: &'a str,
+}
+
+impl LocalLoading<'_> {
+    fn snapshot(&self) -> Result<&ResourceLocalSnapshot, ContextError> {
+        self.context.local.get(self.path).ok_or_else(|| {
+            self.needed.replace(Some(Needed::Local(self.path.into())));
+            required()
+        })
+    }
+}
+
+impl LocalLookup for LocalLoading<'_> {
+    fn exists(&self, probe: LocalProbe<'_>) -> Result<bool, ContextError> {
+        self.snapshot()?.exists(probe)
+    }
+    fn access(&self, path: &str, mode: LocalAccess) -> Result<bool, ContextError> {
+        self.snapshot()?.access(path, mode)
+    }
+    fn dirname(&self, path: &str) -> Result<String, ContextError> {
+        self.snapshot()?.dirname(path)
+    }
+    fn describe(&self, path: &str) -> Result<LocalMetadata, ContextError> {
+        self.snapshot()?.describe(path)
+    }
+}
+
 impl CommandContext {
+    pub(crate) fn local_files(
+        &self,
+        path: &str,
+    ) -> Option<Arc<dyn fabric_cli_storage_files::LocalFileSystem>> {
+        self.local.get(path).map(|snapshot| snapshot.files.clone())
+    }
+
     pub(crate) async fn removal_catalog(
         &self,
         reads: &ReadSession<'_>,
@@ -258,6 +305,39 @@ impl CommandContext {
         options: ResolveOptions,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Arc<PathElement>, CommandError> {
+        self.resolve_path_with_files(
+            reads,
+            http,
+            current,
+            path,
+            LocalResolution {
+                options,
+                files: None,
+                ui: None,
+            },
+            cancelled,
+        )
+        .await
+    }
+
+    pub(crate) async fn resolve_path_with_files(
+        &mut self,
+        reads: &ReadSession<'_>,
+        http: &HttpExecutor,
+        current: Arc<PathElement>,
+        path: PathInput<'_>,
+        inputs: LocalResolution<'_>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<Arc<PathElement>, CommandError> {
+        let LocalResolution {
+            options,
+            files,
+            mut ui,
+        } = inputs;
+        let local_input = match path {
+            PathInput::Scalar(value) | PathInput::Local(value) => value.to_owned(),
+            PathInput::Tokens(values) => values.join(" ").trim_matches(['\'', '"']).to_owned(),
+        };
         let mut cancelled = pin!(cancelled);
         for _ in 0..128 {
             if poll_fn(|cx| Poll::Ready(cancelled.as_mut().poll(cx).is_ready())).await {
@@ -272,16 +352,31 @@ impl CommandContext {
                     context: self,
                     needed: &needed,
                 };
-                let resolver =
+                let mut resolver =
                     PathResolver::new(&loading, current.clone(), reads.home.clone(), "ls")
                         .map_err(|error| errors::error(&error.code, error.message))?;
+                let local = LocalLoading {
+                    context: self,
+                    needed: &needed,
+                    path: &local_input,
+                };
+                if files.is_some() {
+                    resolver = resolver.with_local(&local);
+                }
                 let result = resolver.resolve(path, options);
                 (result, needed.into_inner())
             };
             match needed {
                 None => {
                     return result.map(|result| result.element).map_err(|failure| {
-                        errors::error(&failure.error.code, failure.error.message)
+                        errors::error(
+                            if failure.error.code == "HostCapabilityUnavailable" {
+                                "NotSupported"
+                            } else {
+                                &failure.error.code
+                            },
+                            failure.error.message,
+                        )
                     });
                 }
                 Some(Needed::Fabric(parent, kind)) => {
@@ -349,6 +444,39 @@ impl CommandContext {
                         Err(error) => return Err(errors::error("OneLakeError", error.to_string())),
                     };
                     self.properties.insert(path, properties);
+                }
+                Some(Needed::Local(path)) => {
+                    if let Some(ui) = ui.as_deref_mut() {
+                        ui.notice(
+                            fabric_cli_mutations::NoticeKind::Progress,
+                            &format!("{path} not found in Fabric, checking local file system"),
+                        );
+                    }
+                    let files = files.ok_or_else(|| {
+                        errors::unsupported("Local metadata requires an explicit file capability")
+                    })?;
+                    let result = {
+                        let mut capture = std::pin::pin!(files.snapshot(&path));
+                        poll_fn(|cx| {
+                            if cancelled.as_mut().poll(cx).is_ready() {
+                                return Poll::Ready(Err(errors::error(
+                                    "LongRunningOperationCancelled",
+                                    "Operation cancelled",
+                                )));
+                            }
+                            capture.as_mut().poll(cx).map(|result| {
+                                result.map_err(|error| errors::error(&error.code, error.message))
+                            })
+                        })
+                        .await?
+                    };
+                    if result.metadata.path != path {
+                        return Err(errors::error(
+                            "InvalidContext",
+                            "Local metadata changed the selected input",
+                        ));
+                    }
+                    self.local.insert(path, result);
                 }
             }
         }

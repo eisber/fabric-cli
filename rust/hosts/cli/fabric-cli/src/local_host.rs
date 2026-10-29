@@ -80,7 +80,11 @@ impl LocalEffects for Effects {
     }
 }
 
-fn execute(command: &LocalInvocation, timestamp: Timestamp) -> Result<TextPlan, LocalError> {
+fn execute(
+    command: &LocalInvocation,
+    timestamp: Timestamp,
+    session: &mut Option<NavigationState>,
+) -> Result<TextPlan, LocalError> {
     if matches!(command.command, LocalCommand::Version) {
         return fabric_cli::local_commands::dispatch(
             command,
@@ -90,10 +94,8 @@ fn execute(command: &LocalInvocation, timestamp: Timestamp) -> Result<TextPlan, 
         );
     }
     let store = store()?;
-    let tenant = Element::tenant("", "");
-    let lookup = HierarchyCatalog::new(Catalog::new(Vec::new()), Vec::new(), Vec::new());
-    let mut state = NavigationState::new(
-        PathElement::from_fabric(tenant),
+    let mut initial = NavigationState::new(
+        PathElement::from_fabric(Element::tenant("", "")),
         HomeContext::Unspecified,
         std::env::current_dir()?.to_string_lossy().into_owned(),
         session_id()?,
@@ -105,17 +107,28 @@ fn execute(command: &LocalInvocation, timestamp: Timestamp) -> Result<TextPlan, 
             | LocalCommand::PrintDirectory
             | LocalCommand::Open { .. }
     ) || matches!(&command.command, LocalCommand::Describe { path } if path.is_empty() || !path.join(" ").starts_with('.'));
-    if navigation && context_selection()?.0 != "/" {
+    if !navigation {
+        return fabric_cli::local_commands::dispatch(command, &store, &mut Effects, timestamp);
+    }
+    if session.is_none() && context_selection()?.0 != "/" {
         return Err(LocalError::command(
             "NotConfigured",
             "This context requires the configured native metadata host",
         ));
     }
-    let restored = navigation && state.restore(&store, &lookup)?;
+    let lookup = HierarchyCatalog::new(Catalog::new(Vec::new()), Vec::new(), Vec::new());
+    let restored = if session.is_none() {
+        let restored = initial.restore(&store, &lookup)?;
+        *session = Some(initial);
+        restored
+    } else {
+        false
+    };
+    let state = session.as_mut().expect("navigation state initialized");
     let restored_path = state.current().path();
     let mut effects = Effects;
     let mut host = NavigationHost {
-        state: &mut state,
+        state,
         lookup: &lookup,
         store: &store,
         effects: &mut effects,
@@ -151,9 +164,12 @@ pub(crate) fn session_id() -> Result<u32, LocalError> {
     }
 }
 
-pub(crate) fn run(command: &LocalInvocation) -> io::Result<ExitCode> {
+pub(crate) fn run(
+    command: &LocalInvocation,
+    session: &mut Option<NavigationState>,
+) -> io::Result<ExitCode> {
     let timestamp = timestamp().map_err(io::Error::other)?;
-    let plan = match execute(command, timestamp.clone()) {
+    let plan = match execute(command, timestamp.clone(), session) {
         Ok(plan) => plan,
         Err(error) => text::render(
             &error

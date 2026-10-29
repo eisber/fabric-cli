@@ -1,0 +1,691 @@
+{
+  "python_pin": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "python_version": "3.13.7",
+  "source_sha256": {
+    "utils/fab_ui.py": "6b70b99437d2b94a72f0acf332de691a716adcda7d7b914702857254b8c124c9",
+    "core/fab_logger.py": "4efc167065a5c8be2d574da2e430b2a3d1ca4c24523f146e12501b5c9a460e16",
+    "utils/fab_error_parser.py": "fbc472e07fa9d058f68683dc979360f5ea4c4ec5d709bba1c3e4b5e6265d8d8f",
+    "core/fab_constant.py": "20dd87282310f0217b3f3724214c280c3dab123bec5f7fafa770e1c2c44bfff0",
+    "utils/fab_util.py": "b1facc2ca56501b74fd5e5ddc18a7c8e42d020cbd71549317b7a73948169db82",
+    "parsers/fab_parser_validators.py": "3a5387647f6ea398361414daa2a7f51fb55909815bbba76bc59a97265ce76faf",
+    "parsers/fab_jobs_parser.py": "b607f7af68e39c0d3770340c81e68d4dc2a273fc678098981849d761c7603ddb",
+    "parsers/fab_config_parser.py": "bc169d1a343c1656b104b21bea937e655bcbf5ea3967dc6757535bdd52ba152f",
+    "parsers/fab_fs_parser.py": "41098ff156988f6bac6b8a34d4057e1df1ce1ea6cc595d1ace8c3778b6c72d4b",
+    "parsers/fab_acls_parser.py": "213533c0912aef416295a849e096bd8d73e54db27ad7d5ad9a370a12210ec5f4",
+    "parsers/fab_labels_parser.py": "4895a96b8d28a0a23f925831ab9a8ff8cf89909769cbd4578a9ff58c94841794",
+    "parsers/fab_api_parser.py": "0c8fa7057e1461f09b15f333548c57598e63a2f1c8a64858286e4ba9a21c5310",
+    "parsers/fab_describe_parser.py": "642b97e2db271c688c84d5f6a13f4232060f898940b0d8e57f17313cb0a5eff2",
+    "parsers/fab_global_params.py": "08b5d49ae2bb896efcf60466ea48213449f192ddb19dc9d45b41de63113cf5db",
+    "core/fab_parser_setup.py": "80811f369be4f4c4f2f31717fae529b7a141e02cb8b89dbaa1c3e62a91d616ad",
+    "main.py": "7bf982b76d99fc1ef7283a26fd9eb5ac71865f8ed1bec9df34f86bc36e0a8338"
+  },
+  "scope": "Original pinned main.py and actual bounded argv schemas. Synthetic handlers/state/UI only; no auth, files, service, prompt_toolkit or product imports. Terminal styling and source error text are not captured.",
+  "cases": [
+    {
+      "id": "single",
+      "commands": [
+        "version"
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ]
+      ],
+      "exit": 0
+    },
+    {
+      "id": "repeated",
+      "commands": [
+        "version",
+        "version"
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "separator"
+        ],
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "blank"
+        ],
+        [
+          "summary",
+          2,
+          null
+        ]
+      ],
+      "exit": 0
+    },
+    {
+      "id": "empty-list-members",
+      "commands": [
+        "",
+        "version",
+        "  ",
+        "version",
+        ""
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "separator"
+        ],
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "separator"
+        ],
+        [
+          "blank"
+        ],
+        [
+          "summary",
+          5,
+          null
+        ]
+      ],
+      "exit": 0
+    },
+    {
+      "id": "only-empty",
+      "commands": [
+        "",
+        " \t\r\n"
+      ],
+      "output_format": null,
+      "events": [],
+      "exit": 0
+    },
+    {
+      "id": "trailing-empty",
+      "commands": [
+        "version",
+        ""
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "separator"
+        ]
+      ],
+      "exit": 0
+    },
+    {
+      "id": "handled-error-then-success",
+      "commands": [
+        "config set key return-1",
+        "version"
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "config",
+            "set",
+            "key",
+            "return-1"
+          ]
+        ],
+        [
+          "separator"
+        ],
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "blank"
+        ],
+        [
+          "summary",
+          2,
+          null
+        ]
+      ],
+      "exit": 0
+    },
+    {
+      "id": "success-then-handled-error",
+      "commands": [
+        "version",
+        "config set key return-4"
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "separator"
+        ],
+        [
+          "execute",
+          [
+            "config",
+            "set",
+            "key",
+            "return-4"
+          ]
+        ],
+        [
+          "blank"
+        ],
+        [
+          "summary",
+          2,
+          null
+        ]
+      ],
+      "exit": 4
+    },
+    {
+      "id": "error-then-error",
+      "commands": [
+        "config set key return-4",
+        "config set key return-1"
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "config",
+            "set",
+            "key",
+            "return-4"
+          ]
+        ],
+        [
+          "separator"
+        ],
+        [
+          "execute",
+          [
+            "config",
+            "set",
+            "key",
+            "return-1"
+          ]
+        ],
+        [
+          "blank"
+        ],
+        [
+          "summary",
+          2,
+          null
+        ]
+      ],
+      "exit": 1
+    },
+    {
+      "id": "unknown-stops",
+      "commands": [
+        "version",
+        "unknown-private-value",
+        "version"
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "separator"
+        ],
+        [
+          "error",
+          "UnexpectedError"
+        ]
+      ],
+      "exit": 1
+    },
+    {
+      "id": "parse-error-stops",
+      "commands": [
+        "version",
+        "get",
+        "version"
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "separator"
+        ]
+      ],
+      "exit": 2
+    },
+    {
+      "id": "help-stops",
+      "commands": [
+        "version",
+        "ls -help",
+        "version"
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "separator"
+        ]
+      ],
+      "exit": 0
+    },
+    {
+      "id": "bare-group-returns",
+      "commands": [
+        "config",
+        "version"
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "config"
+          ]
+        ],
+        [
+          "separator"
+        ],
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "blank"
+        ],
+        [
+          "summary",
+          2,
+          null
+        ]
+      ],
+      "exit": 0
+    },
+    {
+      "id": "cancellation-stops",
+      "commands": [
+        "version",
+        "config set key cancel",
+        "version"
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "separator"
+        ],
+        [
+          "execute",
+          [
+            "config",
+            "set",
+            "key",
+            "cancel"
+          ]
+        ],
+        [
+          "error",
+          "LongRunningOperationCancelled"
+        ]
+      ],
+      "exit": 2
+    },
+    {
+      "id": "unexpected-stops",
+      "commands": [
+        "version",
+        "config set key raise",
+        "version"
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "separator"
+        ],
+        [
+          "execute",
+          [
+            "config",
+            "set",
+            "key",
+            "raise"
+          ]
+        ],
+        [
+          "error",
+          "UnexpectedError"
+        ]
+      ],
+      "exit": 1
+    },
+    {
+      "id": "quotes-not-shell",
+      "commands": [
+        "get \"Demo Workspace/Book.Notebook\"",
+        "version"
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "get",
+            "\"Demo",
+            "Workspace/Book.Notebook\""
+          ]
+        ],
+        [
+          "separator"
+        ],
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "blank"
+        ],
+        [
+          "summary",
+          2,
+          null
+        ]
+      ],
+      "exit": 0
+    },
+    {
+      "id": "shell-characters-not-operators",
+      "commands": [
+        "get item;other | next && end",
+        "version"
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "get",
+            "item;other",
+            "|",
+            "next",
+            "&&",
+            "end"
+          ]
+        ],
+        [
+          "separator"
+        ],
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "blank"
+        ],
+        [
+          "summary",
+          2,
+          null
+        ]
+      ],
+      "exit": 0
+    },
+    {
+      "id": "unicode-whitespace",
+      "commands": [
+        "get\u001cDemo\u0085Workspace\u00a0Book",
+        "version"
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "get",
+            "Demo",
+            "Workspace",
+            "Book"
+          ]
+        ],
+        [
+          "separator"
+        ],
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "blank"
+        ],
+        [
+          "summary",
+          2,
+          null
+        ]
+      ],
+      "exit": 0
+    },
+    {
+      "id": "aliases",
+      "commands": [
+        "dir /",
+        "config dir"
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "dir",
+            "/"
+          ]
+        ],
+        [
+          "separator"
+        ],
+        [
+          "execute",
+          [
+            "config",
+            "dir"
+          ]
+        ],
+        [
+          "blank"
+        ],
+        [
+          "summary",
+          2,
+          null
+        ]
+      ],
+      "exit": 0
+    },
+    {
+      "id": "state-survives",
+      "commands": [
+        "config set key remember",
+        "config get key"
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "config",
+            "set",
+            "key",
+            "remember"
+          ]
+        ],
+        [
+          "separator"
+        ],
+        [
+          "execute",
+          [
+            "config",
+            "get",
+            "key"
+          ]
+        ],
+        [
+          "state",
+          "remember"
+        ],
+        [
+          "blank"
+        ],
+        [
+          "summary",
+          2,
+          null
+        ]
+      ],
+      "exit": 0
+    },
+    {
+      "id": "outer-format-not-inherited",
+      "commands": [
+        "version",
+        "config get output_format"
+      ],
+      "output_format": "json",
+      "events": [
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "separator"
+        ],
+        [
+          "execute",
+          [
+            "config",
+            "get",
+            "output_format"
+          ]
+        ],
+        [
+          "blank"
+        ],
+        [
+          "summary",
+          2,
+          "json"
+        ]
+      ],
+      "exit": 0
+    },
+    {
+      "id": "inner-format-independent",
+      "commands": [
+        "version --output_format text",
+        "version"
+      ],
+      "output_format": null,
+      "events": [
+        [
+          "execute",
+          [
+            "version",
+            "--output_format",
+            "text"
+          ]
+        ],
+        [
+          "separator"
+        ],
+        [
+          "execute",
+          [
+            "version"
+          ]
+        ],
+        [
+          "blank"
+        ],
+        [
+          "summary",
+          2,
+          null
+        ]
+      ],
+      "exit": 0
+    }
+  ]
+}
