@@ -10,6 +10,7 @@
 
 mod bulk;
 mod codec;
+mod get_value;
 mod import;
 mod local;
 mod source_codec;
@@ -22,6 +23,10 @@ pub use bulk::{
 pub use codec::{
     DefinitionFile, ExportStorage, decode_export_files, decode_export_files_for_storage,
     validate_part_path,
+};
+pub use get_value::{
+    GetDefinitionPreprocess, GetDefinitionValue, GetDefinitionValueError,
+    decode_get_definition_value,
 };
 pub use import::{
     DefinitionEntry, DefinitionEntryKind, DefinitionImportFileSystem, ImportAction,

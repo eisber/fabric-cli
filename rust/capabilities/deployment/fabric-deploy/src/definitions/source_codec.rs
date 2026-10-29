@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Export-only Python JSON parsing; formatting reuses the shared native encoder.
+//! Shared definition Python JSON parsing; export formatting uses the native encoder.
 
 use super::{DefinitionErrorKind as Kind, ExportStorage};
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -174,7 +174,7 @@ fn store(value: &PythonValue, storage: ExportStorage) -> Result<Vec<u8>, Kind> {
 
 #[derive(Debug)]
 enum ParseError {
-    Syntax,
+    Syntax(&'static str, usize),
     Native(PythonValueError),
     Limit,
 }
@@ -186,22 +186,9 @@ impl From<PythonValueError> for ParseError {
 }
 
 fn parse(text: &str, decoder_fallback: bool) -> Result<Option<PythonValue>, Kind> {
-    let mut parser = Parser {
-        text,
-        offset: 0,
-        nodes: 0,
-    };
-    let result = parser.value(0).and_then(|value| {
-        parser.whitespace();
-        if parser.offset == text.len() {
-            Ok(value)
-        } else {
-            Err(ParseError::Syntax)
-        }
-    });
-    match result {
+    match parse_value(text, false) {
         Ok(value) => Ok(Some(value)),
-        Err(ParseError::Syntax) => Ok(None),
+        Err(ParseError::Syntax(..)) => Ok(None),
         Err(ParseError::Native(PythonValueError::Limit {
             kind: fabric_core_json::LimitKind::DecimalDigits,
             ..
@@ -211,10 +198,52 @@ fn parse(text: &str, decoder_fallback: bool) -> Result<Option<PythonValue>, Kind
     }
 }
 
+/// The same parser, retaining the pinned JSONDecodeError text for GET parts.
+pub(super) fn parse_get(text: &str) -> Result<Result<PythonValue, String>, Kind> {
+    match parse_value(text, true) {
+        Ok(value) => Ok(Ok(value)),
+        Err(ParseError::Syntax(message, offset)) => {
+            let prefix = &text[..offset];
+            let line = prefix.bytes().filter(|byte| *byte == b'\n').count() + 1;
+            let column = prefix.rsplit('\n').next().unwrap_or("").chars().count() + 1;
+            let position = prefix.chars().count();
+            Ok(Err(format!(
+                "{message}: line {line} column {column} (char {position})"
+            )))
+        }
+        Err(ParseError::Native(error)) => Err(native_error(error)),
+        Err(ParseError::Limit) => Err(Kind::Limit),
+    }
+}
+
+fn parse_value(text: &str, get_diagnostics: bool) -> Result<PythonValue, ParseError> {
+    if text.starts_with('\u{feff}') {
+        return Err(ParseError::Syntax(
+            "Unexpected UTF-8 BOM (decode using utf-8-sig)",
+            0,
+        ));
+    }
+    let mut parser = Parser {
+        text,
+        offset: 0,
+        nodes: 0,
+        get_diagnostics,
+    };
+    parser.value(0).and_then(|value| {
+        parser.whitespace();
+        if parser.offset == text.len() {
+            Ok(value)
+        } else {
+            Err(ParseError::Syntax("Extra data", parser.offset))
+        }
+    })
+}
+
 struct Parser<'a> {
     text: &'a str,
     offset: usize,
     nodes: usize,
+    get_diagnostics: bool,
 }
 
 impl Parser<'_> {
@@ -257,25 +286,31 @@ impl Parser<'_> {
             Some(b'I') if self.take("Infinity") => Ok(PythonValue::Float(f64::INFINITY)),
             Some(b'-') if self.take("-Infinity") => Ok(PythonValue::Float(f64::NEG_INFINITY)),
             Some(b'-' | b'0'..=b'9') => self.number(),
-            _ => Err(ParseError::Syntax),
+            _ => Err(ParseError::Syntax("Expecting value", self.offset)),
         }
     }
 
     fn string(&mut self) -> Result<PythonString, ParseError> {
         if !self.take("\"") {
-            return Err(ParseError::Syntax);
+            return Err(ParseError::Syntax(
+                "Expecting property name enclosed in double quotes",
+                self.offset,
+            ));
         }
+        let start = self.offset - 1;
         let mut points = Vec::new();
         loop {
             let character = self.text[self.offset..]
                 .chars()
                 .next()
-                .ok_or(ParseError::Syntax)?;
+                .ok_or(ParseError::Syntax("Unterminated string starting at", start))?;
             self.offset += character.len_utf8();
             match character {
                 '"' => return PythonString::from_codepoints(points).map_err(Into::into),
                 '\\' => {
-                    let escape = self.peek().ok_or(ParseError::Syntax)?;
+                    let escape = self
+                        .peek()
+                        .ok_or(ParseError::Syntax("Unterminated string starting at", start))?;
                     self.offset += 1;
                     let point = match escape {
                         b'"' | b'\\' | b'/' => u32::from(escape),
@@ -304,11 +339,18 @@ impl Parser<'_> {
                                 high
                             }
                         }
-                        _ => return Err(ParseError::Syntax),
+                        _ => {
+                            return Err(ParseError::Syntax("Invalid \\escape", self.offset - 2));
+                        }
                     };
                     points.push(point);
                 }
-                character if character < '\u{20}' => return Err(ParseError::Syntax),
+                character if character < '\u{20}' => {
+                    return Err(ParseError::Syntax(
+                        "Invalid control character at",
+                        self.offset - character.len_utf8(),
+                    ));
+                }
                 character => points.push(u32::from(character)),
             }
             if points.len() > fabric_core_json::MAX_STRING_CODEPOINTS {
@@ -322,14 +364,20 @@ impl Parser<'_> {
             .text
             .as_bytes()
             .get(self.offset..self.offset + 4)
-            .ok_or(ParseError::Syntax)?;
+            .ok_or(ParseError::Syntax(
+                "Invalid \\uXXXX escape",
+                self.offset - 1,
+            ))?;
         if !bytes.iter().all(u8::is_ascii_hexdigit) {
-            return Err(ParseError::Syntax);
+            return Err(ParseError::Syntax(
+                "Invalid \\uXXXX escape",
+                self.offset - 1,
+            ));
         }
         self.offset += 4;
         let mut value = 0;
         for byte in bytes {
-            value = value * 16 + char::from(*byte).to_digit(16).ok_or(ParseError::Syntax)?;
+            value = value * 16 + char::from(*byte).to_digit(16).unwrap();
         }
         Ok(value)
     }
@@ -340,44 +388,52 @@ impl Parser<'_> {
         if self.take("0") {
         } else {
             if !self.peek().is_some_and(|byte| matches!(byte, b'1'..=b'9')) {
-                return Err(ParseError::Syntax);
+                return Err(ParseError::Syntax("Expecting value", start));
             }
             while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
                 self.offset += 1;
             }
         }
         let mut float = false;
+        let fraction = self.offset;
         if self.take(".") {
-            float = true;
-            self.digits()?;
+            if self.digits() {
+                float = true;
+            } else if self.get_diagnostics {
+                self.offset = fraction;
+            } else {
+                return Err(ParseError::Syntax("Expecting value", self.offset));
+            }
         }
+        let exponent = self.offset;
         if self.take("e") || self.take("E") {
-            float = true;
             if !self.take("+") {
                 self.take("-");
             }
-            self.digits()?;
+            if self.digits() {
+                float = true;
+            } else if self.get_diagnostics {
+                self.offset = exponent;
+            } else {
+                return Err(ParseError::Syntax("Expecting value", self.offset));
+            }
         }
         let token = &self.text[start..self.offset];
         if float {
-            Ok(PythonValue::Float(
-                token.parse().map_err(|_| ParseError::Syntax)?,
-            ))
+            Ok(PythonValue::Float(token.parse().map_err(|_| {
+                ParseError::Syntax("Expecting value", start)
+            })?))
         } else {
             Ok(PythonValue::Integer(DecimalInteger::parse(token)?))
         }
     }
 
-    fn digits(&mut self) -> Result<(), ParseError> {
+    fn digits(&mut self) -> bool {
         let start = self.offset;
         while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
             self.offset += 1;
         }
-        if start == self.offset {
-            Err(ParseError::Syntax)
-        } else {
-            Ok(())
-        }
+        start != self.offset
     }
 
     fn list(&mut self, depth: usize) -> Result<PythonValue, ParseError> {
@@ -393,8 +449,18 @@ impl Parser<'_> {
             if self.take("]") {
                 return Ok(PythonValue::List(values));
             }
+            let comma = self.offset;
             if !self.take(",") {
-                return Err(ParseError::Syntax);
+                return Err(ParseError::Syntax("Expecting ',' delimiter", self.offset));
+            }
+            if self.get_diagnostics {
+                self.whitespace();
+            }
+            if self.get_diagnostics && self.peek() == Some(b']') {
+                return Err(ParseError::Syntax(
+                    "Illegal trailing comma before end of array",
+                    comma,
+                ));
             }
         }
     }
@@ -411,15 +477,25 @@ impl Parser<'_> {
             let key = self.string()?;
             self.whitespace();
             if !self.take(":") {
-                return Err(ParseError::Syntax);
+                return Err(ParseError::Syntax("Expecting ':' delimiter", self.offset));
             }
             entries.push((key, self.value(depth + 1)?));
             self.whitespace();
             if self.take("}") {
                 return Ok(PythonValue::Dict(PythonDict::from_entries(entries)?));
             }
+            let comma = self.offset;
             if !self.take(",") {
-                return Err(ParseError::Syntax);
+                return Err(ParseError::Syntax("Expecting ',' delimiter", self.offset));
+            }
+            if self.get_diagnostics {
+                self.whitespace();
+            }
+            if self.get_diagnostics && self.peek() == Some(b'}') {
+                return Err(ParseError::Syntax(
+                    "Illegal trailing comma before end of object",
+                    comma,
+                ));
             }
         }
     }

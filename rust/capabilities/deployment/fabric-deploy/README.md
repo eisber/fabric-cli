@@ -71,6 +71,15 @@ format, byte, path, decoding and effect policies. Environment import retains its
 readiness and publication lifecycle. Remote import and unsupported Report
 references are invalid inputs.
 
+`definitions::decode_get_definition_value` is the separate, pure GET-value API.
+It merges caller-acquired specialized metadata and definition, decodes ordered
+parts with source per-part errors, and optionally cleans existing first-part
+Notebook outputs. Its value tree preserves binary payloads, native Python JSON
+domains and payload types without turning them into export files. Conversion to
+finite serde JSON is explicit and fallible. See
+[GET definition values](../../../docs/get-definition-values.md) for the pinned
+source contract, resource/domain limits and host integration boundary.
+
 The existing Notebook preparation/publication APIs remain available for focused
 consumers. They use the same authenticated execution and operation policies.
 
