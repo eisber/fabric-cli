@@ -158,6 +158,17 @@ impl ReadHost<'_> {
         operations: Option<&dyn fabric_sdk_operations::OperationExecutor>,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Option<OutputInput>, CommandError> {
+        self.execute_read(command, operations, false, cancelled)
+            .await
+    }
+
+    pub(crate) async fn execute_read(
+        &self,
+        command: &ReadCommand,
+        operations: Option<&dyn fabric_sdk_operations::OperationExecutor>,
+        result_files: bool,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<Option<OutputInput>, CommandError> {
         let mut cancelled = pin!(cancelled);
         let was_cancelled = poll_fn(|cx| Poll::Ready(cancelled.as_mut().poll(cx).is_ready())).await;
         if was_cancelled {
@@ -175,7 +186,11 @@ impl ReadHost<'_> {
                 "Only JSON output is implemented for bounded reads",
             ));
         }
-        crate::session::get_options::preflight(command)?;
+        if result_files {
+            crate::session::get_options::preflight_with_files(command)?;
+        } else {
+            crate::session::get_options::preflight(command)?;
+        }
         let tokens: Vec<_> = command.path.iter().map(String::as_str).collect();
         let resolver = Resolver::new(self.lookup, Arc::clone(&self.current), self.home.clone());
         let target = resolver
@@ -378,7 +393,7 @@ impl ReadHost<'_> {
                     Value::Array(value) => !value.is_empty(),
                     Value::Object(value) => !value.is_empty(),
                 };
-                if !print {
+                if !print && command.output.is_none() {
                     return Ok(None);
                 }
                 (data, None)

@@ -3,18 +3,53 @@
 
 //! Explicit opt-in binary composition. Libraries never read these host inputs.
 
+use crate::repl_state::{CommandOutcome, ReplState};
 use fabric_cli::{
     HostError,
     parser::{Invocation, JobMutationCommand, JobReadCommand, JobRunCommand, ReadCommand},
 };
 use fabric_sdk::{EndpointBinding, ServiceOrigin};
 use serde_json::json;
-use std::{
-    io::{self, Write},
-    process::ExitCode,
-};
+use std::io::{self, Write};
 
 type Failure = (&'static str, String, u8);
+
+struct NativeOutput {
+    plan: fabric_cli_output::text::TextPlan,
+    outcome: CommandOutcome,
+}
+
+#[cfg(windows)]
+impl NativeOutput {
+    fn read(output: fabric_cli::session::ReadDispatch) -> Self {
+        let outcome = output.error.as_ref().map_or(
+            CommandOutcome::from_code(output.output_error_code.as_deref(), output.plan.exit_code),
+            |error| crate::repl_state::error_outcome(error, output.plan.exit_code),
+        );
+        Self {
+            plan: output.plan,
+            outcome,
+        }
+    }
+
+    fn job(output: fabric_cli::jobs::JobDispatch) -> Self {
+        let outcome = output.error.as_ref().map_or(
+            CommandOutcome::Returned(output.plan.exit_code),
+            |error| {
+                let envelope = error.envelope(
+                    fabric_cli_output::Timestamp::parse("2000-01-01T00:00:00Z")
+                        .expect("constant timestamp"),
+                    None,
+                );
+                CommandOutcome::from_code(envelope.result().error_code(), output.plan.exit_code)
+            },
+        );
+        Self {
+            plan: output.plan,
+            outcome,
+        }
+    }
+}
 
 #[cfg(windows)]
 #[path = "native_settings.rs"]
@@ -68,7 +103,7 @@ fn failure(code: &'static str, message: impl Into<String>, exit: u8) -> Failure 
 
 #[cfg(windows)]
 fn selected_read_options(command: &ReadCommand) -> Result<(), Failure> {
-    fabric_cli::session::get_options::preflight(command).map_err(|_| {
+    fabric_cli::session::get_options::preflight_with_files(command).map_err(|_| {
         failure(
             "NotSupported",
             "This GET option combination is not supported by the native host.",
@@ -109,7 +144,72 @@ async fn wait_for_deadline(deadline: Option<std::time::Duration>) {
     }
 }
 
-fn write_error((code, message, exit): Failure) -> io::Result<ExitCode> {
+#[cfg(any(windows, test))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Interruption {
+    Cancelled,
+    TimedOut,
+    SignalFailed,
+}
+
+#[cfg(any(windows, test))]
+type NativeCancellation =
+    futures_util::future::Shared<futures_util::future::BoxFuture<'static, Interruption>>;
+
+#[cfg(any(windows, test))]
+fn cancellation_signal(
+    signal: impl std::future::Future<Output = io::Result<()>> + Send + 'static,
+    deadline: Option<std::time::Duration>,
+) -> NativeCancellation {
+    use futures_util::FutureExt;
+    async move {
+        tokio::select! {
+            biased;
+            signal = signal => match signal {
+                Ok(()) => Interruption::Cancelled,
+                Err(_) => Interruption::SignalFailed,
+            },
+            () = wait_for_deadline(deadline) => Interruption::TimedOut,
+        }
+    }
+    .boxed()
+    .shared()
+}
+
+#[cfg(any(windows, test))]
+async fn drive_native<T>(
+    command: NativeCommand<'_>,
+    cancelled: NativeCancellation,
+    execution: impl std::future::Future<Output = Result<T, Failure>>,
+) -> Result<T, Failure> {
+    let physical_transfer = matches!(
+        command,
+        NativeCommand::Family(Invocation::Resource(
+            fabric_cli_mutations::frontdoor::ResourceCommand::Copy { .. }
+                | fabric_cli_mutations::frontdoor::ResourceCommand::Move { .. }
+        ))
+    );
+    tokio::pin!(execution);
+    tokio::select! {
+        biased;
+        interruption = cancelled => {
+            if physical_transfer && interruption != Interruption::SignalFailed {
+                // The handler owns cleanup and reconciliation receipts. Its
+                // shared cancellation future is now ready; never drop it here.
+                execution.await
+            } else {
+                Err(match interruption {
+                    Interruption::Cancelled => interrupted_failure("cancelled", "Read cancelled.", 2),
+                    Interruption::TimedOut => interrupted_failure("timed_out", "The read command deadline elapsed.", 1),
+                    Interruption::SignalFailed => failure("signal_failed", "The cancellation handler could not start.", 1),
+                })
+            }
+        },
+        result = &mut execution => result,
+    }
+}
+
+fn write_error((code, message, exit): Failure) -> io::Result<CommandOutcome> {
     let mut stderr = io::stderr().lock();
     serde_json::to_writer(
         &mut stderr,
@@ -117,7 +217,13 @@ fn write_error((code, message, exit): Failure) -> io::Result<ExitCode> {
     )
     .map_err(io::Error::other)?;
     writeln!(stderr)?;
-    Ok(ExitCode::from(exit))
+    Ok(
+        if matches!(code, "invalid_configuration" | "invalid_arguments") {
+            CommandOutcome::Stop(exit)
+        } else {
+            CommandOutcome::from_code(Some(code), exit)
+        },
+    )
 }
 
 fn required(name: &str) -> Result<String, Failure> {
@@ -152,27 +258,45 @@ fn selected_endpoint(value: Option<std::ffi::OsString>) -> Result<EndpointBindin
     }
 }
 
-pub(crate) fn run(command: &ReadCommand) -> io::Result<ExitCode> {
-    run_command(NativeCommand::Read(command))
+pub(crate) fn run(command: &ReadCommand) -> io::Result<CommandOutcome> {
+    run_command(NativeCommand::Read(command), None)
 }
 
-pub(crate) fn run_job(command: &JobReadCommand) -> io::Result<ExitCode> {
-    run_command(NativeCommand::Job(command))
+pub(crate) fn run_job(command: &JobReadCommand) -> io::Result<CommandOutcome> {
+    run_command(NativeCommand::Job(command), None)
 }
 
-pub(crate) fn run_job_execution(command: &JobRunCommand) -> io::Result<ExitCode> {
-    run_command(NativeCommand::JobExecution(command))
+pub(crate) fn run_job_execution(command: &JobRunCommand) -> io::Result<CommandOutcome> {
+    run_command(NativeCommand::JobExecution(command), None)
 }
 
-pub(crate) fn run_job_mutation(command: &JobMutationCommand) -> io::Result<ExitCode> {
-    run_command(NativeCommand::JobMutation(command))
+pub(crate) fn run_job_mutation(command: &JobMutationCommand) -> io::Result<CommandOutcome> {
+    run_command(NativeCommand::JobMutation(command), None)
 }
 
-pub(crate) fn run_family(command: &Invocation) -> io::Result<ExitCode> {
-    run_command(NativeCommand::Family(command))
+pub(crate) fn run_family(command: &Invocation) -> io::Result<CommandOutcome> {
+    run_command(NativeCommand::Family(command), None)
 }
 
-fn run_command(command: NativeCommand<'_>) -> io::Result<ExitCode> {
+#[cfg(feature = "repl")]
+pub(crate) fn run_interactive(
+    command: &Invocation,
+    state: &mut ReplState,
+) -> io::Result<CommandOutcome> {
+    let command = match command {
+        Invocation::Read(command) => NativeCommand::Read(command),
+        Invocation::JobRead(command) => NativeCommand::Job(command),
+        Invocation::JobRun(command) => NativeCommand::JobExecution(command),
+        Invocation::JobMutation(command) => NativeCommand::JobMutation(command),
+        command => NativeCommand::Family(command),
+    };
+    run_command(command, Some(state))
+}
+
+fn run_command(
+    command: NativeCommand<'_>,
+    state: Option<&mut ReplState>,
+) -> io::Result<CommandOutcome> {
     let result = (|| {
         // Public selectors only, never token/secret environment inputs.
         let endpoint = selected_endpoint(std::env::var_os("FAB_API_ENDPOINT_FABRIC"))?;
@@ -187,12 +311,14 @@ fn run_command(command: NativeCommand<'_>) -> io::Result<ExitCode> {
         let tenant = required("FAB_RUST_TENANT")?;
         let account = required("FAB_RUST_ACCOUNT")?;
         let client = required("FAB_RUST_CLIENT_ID")?;
-        run_selected(command, &tenant, &account, &client, endpoint)
+        run_selected(command, &tenant, &account, &client, endpoint, state)
     })();
     match result {
-        Ok(plan) => {
-            plan.write_to(&mut io::stdout().lock(), &mut io::stderr().lock())?;
-            Ok(ExitCode::from(plan.exit_code))
+        Ok(output) => {
+            output
+                .plan
+                .write_to(&mut io::stdout().lock(), &mut io::stderr().lock())?;
+            Ok(output.outcome)
         }
         Err(error) => write_error(error),
     }
@@ -205,7 +331,8 @@ fn run_selected(
     _: &str,
     _: &str,
     _: EndpointBinding,
-) -> Result<fabric_cli_output::text::TextPlan, Failure> {
+    _: Option<&mut ReplState>,
+) -> Result<NativeOutput, Failure> {
     Err(failure(
         "unsupported",
         "Native read credentials currently require Windows.",
@@ -216,6 +343,49 @@ fn run_selected(
 #[cfg(test)]
 mod endpoint_tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn get_output_clock_never_substitutes_utc_when_local_offset_is_unavailable() {
+        let error = get_filename_clock(Err(time::error::IndeterminateOffset)).unwrap_err();
+        let output = error.envelope(
+            fabric_cli_output::Timestamp::parse("2000-01-01T00:00:00Z").unwrap(),
+            Some("get".into()),
+        );
+        assert_eq!(output.result().error_code(), Some("ClockFailed"));
+        assert!(
+            output
+                .result()
+                .message()
+                .unwrap()
+                .contains("Check system timezone")
+        );
+        assert!(
+            output
+                .result()
+                .message()
+                .unwrap()
+                .contains("No UTC fallback was used")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn get_output_selects_the_explicit_file_host_before_native_credentials() {
+        let Invocation::Read(command) = fabric_cli::parser::parse_args([
+            "fab-rs",
+            "get",
+            "Demo.Workspace",
+            "-q",
+            "id",
+            "-o",
+            "existing-directory",
+        ])
+        .unwrap() else {
+            panic!("read required")
+        };
+        assert!(selected_read_options(&command).is_ok());
+    }
 
     #[cfg(windows)]
     #[test]
@@ -240,35 +410,56 @@ mod endpoint_tests {
 
     #[cfg(windows)]
     #[test]
-    fn native_get_option_gate_defers_metadata_flags_but_rejects_file_output() {
-        for flag in ["--force", "--verbose"] {
-            let Invocation::Read(command) = fabric_cli::parser::parse_args([
-                "fab-rs",
-                "get",
-                "Demo.Workspace/Book.Notebook",
-                "-q",
-                "id",
-                flag,
-            ])
-            .unwrap() else {
-                panic!("expected GET invocation");
-            };
-            selected_read_options(&command).unwrap();
+    fn native_get_option_gate_allows_file_output_and_preserves_metadata_flags() {
+        for output in [None, Some("private-output-path")] {
+            for (force, verbose) in [(false, false), (true, false), (false, true), (true, true)] {
+                let mut args = vec!["fab-rs", "get", "Demo.Workspace/Book.Notebook", "-q", "id"];
+                if force {
+                    args.push("--force");
+                }
+                if verbose {
+                    args.push("--verbose");
+                }
+                if let Some(output) = output {
+                    args.extend(["--output", output]);
+                }
+                let Invocation::Read(command) = fabric_cli::parser::parse_args(args).unwrap()
+                else {
+                    panic!("expected GET invocation");
+                };
+                let original = command.clone();
+                selected_read_options(&command).unwrap();
+                assert_eq!(command, original);
+                assert_eq!(command.output.as_deref(), output);
+                assert_eq!(command.force, force);
+                assert_eq!(command.verbose, verbose);
+                assert_eq!(command.query.as_deref(), Some("id"));
+            }
         }
-        let Invocation::Read(command) = fabric_cli::parser::parse_args([
-            "fab-rs",
-            "get",
-            "Demo.Workspace",
-            "--output",
-            "private-output-path",
-        ])
-        .unwrap() else {
-            panic!("expected GET invocation");
+        let Invocation::Read(base) = fabric_cli::parser::parse_args(["fab-rs", "ls", "/"]).unwrap()
+        else {
+            panic!("expected listing invocation");
         };
-        let (code, message, exit) = selected_read_options(&command).unwrap_err();
-        assert_eq!(code, "NotSupported");
-        assert_eq!(exit, 1);
-        assert!(!message.contains("private-output-path"));
+        for (force, verbose, output) in [
+            (true, false, None),
+            (false, true, None),
+            (false, false, Some("private-output-path")),
+        ] {
+            let mut invalid = base.clone();
+            invalid.force = force;
+            invalid.verbose = verbose;
+            invalid.output = output.map(str::to_owned);
+            let original = invalid.clone();
+            let (code, message, exit) = selected_read_options(&invalid).unwrap_err();
+            assert_eq!(invalid, original);
+            assert_eq!(code, "NotSupported");
+            assert_eq!(exit, 1);
+            assert!(!message.contains("private-output-path"));
+        }
+        assert!(
+            fabric_cli::parser::parse_args(["fab-rs", "get", "Demo.Workspace", "--output",])
+                .is_err()
+        );
     }
 
     #[test]
@@ -416,6 +607,106 @@ mod runtime_tests {
             assert!(actual_message.contains("No rollback is implied"));
         }
     }
+
+    #[test]
+    fn executable_wrapper_awaits_physical_cancellation_and_preserves_partial_delete_receipts() {
+        use fabric_cli_storage_files::{TreeError, TreeFailure, TreePaths, TreeResult, TreeStage};
+        use std::{path::PathBuf, sync::atomic::AtomicUsize};
+
+        for verb in ["cp", "mv"] {
+            runtime().block_on(async {
+                let invocation =
+                    fabric_cli::parser::parse_args(["fab-rs", verb, "source.bin", "target.bin"])
+                        .unwrap();
+                let (interrupt, signal) = tokio::sync::oneshot::channel();
+                let registrations = Arc::new(AtomicUsize::new(0));
+                let registered = Arc::clone(&registrations);
+                let cancelled = cancellation_signal(
+                    async move {
+                        registered.fetch_add(1, Ordering::SeqCst);
+                        signal.await.map_err(io::Error::other)
+                    },
+                    None,
+                );
+                let handler_cancelled = cancelled.clone();
+                let cleanup_finished = Arc::new(AtomicBool::new(false));
+                let cleaned = Arc::clone(&cleanup_finished);
+                let execution = async move {
+                    interrupt.send(()).unwrap();
+                    assert_eq!(handler_cancelled.await, Interruption::Cancelled);
+                    tokio::task::yield_now().await;
+                    cleaned.store(true, Ordering::SeqCst);
+                    Ok(TreeError {
+                        stage: TreeStage::SourceDelete,
+                        failure: TreeFailure::Cancelled,
+                        partial: Box::new(TreeResult {
+                            local_writes: vec![(PathBuf::from("target/first.bin"), 3)],
+                            local_deletes: vec![PathBuf::from("source/first.bin")],
+                            ..TreeResult::default()
+                        }),
+                        source_delete_may_have_occurred: true,
+                        local_write_may_have_occurred: false,
+                        paths: Box::new(TreePaths {
+                            source: Some("source/second.bin".into()),
+                            destination: Some("target/second.bin".into()),
+                        }),
+                    })
+                };
+                let error = drive_native(NativeCommand::Family(&invocation), cancelled, execution)
+                    .await
+                    .unwrap();
+                assert!(cleanup_finished.load(Ordering::SeqCst));
+                assert_eq!(registrations.load(Ordering::SeqCst), 1);
+                assert_eq!(error.stage, TreeStage::SourceDelete);
+                assert!(matches!(error.failure, TreeFailure::Cancelled));
+                assert_eq!(error.partial.local_writes.len(), 1);
+                assert_eq!(
+                    error.partial.local_deletes,
+                    [PathBuf::from("source/first.bin")]
+                );
+                assert!(error.source_delete_may_have_occurred);
+                assert_eq!(error.paths.source.as_deref(), Some("source/second.bin"));
+                assert_eq!(
+                    error.paths.destination.as_deref(),
+                    Some("target/second.bin")
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn executable_wrapper_keeps_nonphysical_interrupts_and_signal_setup_failures_bounded() {
+        runtime().block_on(async {
+            let Invocation::Read(read) = fabric_cli::parser::parse_args(["fab-rs", "ls"]).unwrap()
+            else {
+                panic!("read required");
+            };
+            let result = drive_native(
+                NativeCommand::Read(&read),
+                cancellation_signal(async { Ok(()) }, None),
+                std::future::pending::<Result<(), Failure>>(),
+            )
+            .await;
+            assert_eq!(result.unwrap_err().0, "cancelled");
+            let invocation = fabric_cli::parser::parse_args(["fab-rs", "cp", "a", "b"]).unwrap();
+            let started = Arc::new(AtomicBool::new(false));
+            let invoked = Arc::clone(&started);
+            let result = drive_native(
+                NativeCommand::Family(&invocation),
+                cancellation_signal(
+                    async { Err(io::Error::other("synthetic setup failure")) },
+                    None,
+                ),
+                async move {
+                    invoked.store(true, Ordering::SeqCst);
+                    Ok(())
+                },
+            )
+            .await;
+            assert_eq!(result.unwrap_err().0, "signal_failed");
+            assert!(!started.load(Ordering::SeqCst));
+        });
+    }
 }
 
 #[cfg(windows)]
@@ -425,10 +716,15 @@ fn run_selected(
     account: &str,
     client: &str,
     endpoint: EndpointBinding,
-) -> Result<fabric_cli_output::text::TextPlan, Failure> {
+    mut state: Option<&mut ReplState>,
+) -> Result<NativeOutput, Failure> {
     let options = fabric_identity::LoginOptions::new(tenant, client, account)
         .map_err(|e| failure("invalid_configuration", e.to_string(), 2))?;
-    let (current, restored) = crate::local_host::context_selection()
+    let (current, restored) = state
+        .as_ref()
+        .map_or_else(crate::local_host::context_selection, |state| {
+            state.path().map(|path| (path, false))
+        })
         .map_err(|error| failure("invalid_configuration", error.to_string(), 2))?;
     let home = std::env::var("FAB_RUST_HOME").map_or_else(
         |e| match e {
@@ -441,6 +737,13 @@ fn run_selected(
         },
         selected_home,
     )?;
+    if let Some(state) = state.as_deref_mut()
+        && matches!(command, NativeCommand::Family(_))
+    {
+        state
+            .bind(tenant, account, client, home.clone())
+            .map_err(|error| failure("invalid_configuration", error.to_string(), 2))?;
+    }
     if let NativeCommand::Read(command) = command {
         selected_read_options(command)?;
     }
@@ -488,19 +791,21 @@ fn run_selected(
         .build()
         .map_err(|_| failure("runtime_failed", "The read runtime could not start.", 1))?;
     let result = runtime.block_on(async {
-        tokio::select! {
-            biased;
-            signal = tokio::signal::ctrl_c() => {
-                match signal {
-                    Ok(()) => Err(interrupted_failure("cancelled", "Read cancelled.", 2)),
-                    Err(_) => Err(failure("signal_failed", "The cancellation handler could not start.", 1)),
-                }
-            },
-            _ = wait_for_deadline(deadline) => {
-                Err(interrupted_failure("timed_out", "The read command deadline elapsed.", 1))
-            },
-            result = execute(command, options, &current, home, restored, endpoint, settings) => result,
-        }
+        let cancelled = cancellation_signal(tokio::signal::ctrl_c(), deadline);
+        drive_native(
+            command,
+            cancelled.clone(),
+            execute(
+                command,
+                options,
+                (&current, restored),
+                home,
+                endpoint,
+                (settings, cancelled),
+                state,
+            ),
+        )
+        .await
     });
     finish_runtime(runtime, result)
 }
@@ -526,12 +831,12 @@ fn selected_home(value: String) -> Result<fabric_cli_context::HomeContext, Failu
 async fn execute(
     command: NativeCommand<'_>,
     options: fabric_identity::LoginOptions,
-    current: &str,
+    context: (&str, bool),
     home: fabric_cli_context::HomeContext,
-    restored: bool,
     endpoint: EndpointBinding,
-    settings: settings::NativeSettings,
-) -> Result<fabric_cli_output::text::TextPlan, Failure> {
+    execution: (settings::NativeSettings, NativeCancellation),
+    state: Option<&mut ReplState>,
+) -> Result<NativeOutput, Failure> {
     use fabric_cli::session::ReadSession;
     use fabric_cli_context::Element;
     use fabric_sdk::{Audience, Client, CredentialSelection, RequestContext};
@@ -541,6 +846,8 @@ async fn execute(
     };
     use std::{num::NonZeroUsize, sync::Arc, time::Duration};
 
+    let (current, restored) = context;
+    let (settings, cancelled) = execution;
     let selection = CredentialSelection::new(options.account(), options.tenant(), Audience::Fabric)
         .map_err(|_| failure("invalid_configuration", "Invalid credential selection.", 2))?;
     let tenant = Element::tenant(options.tenant(), options.tenant());
@@ -612,10 +919,10 @@ async fn execute(
             let command = settings
                 .read_command(command)
                 .map_err(|error| failure("invalid_configuration", error.to_string(), 2))?;
-            session
-                .with_source_operations(&executor)
-                .dispatch(&command, std::future::pending())
-                .await
+            let default_format = settings
+                .output(None)
+                .map_err(|error| failure("invalid_configuration", error.to_string(), 2))?;
+            execute_read(&session, &executor, &command, &default_format).await
         }
         NativeCommand::Job(command) => {
             let mut command = command.clone();
@@ -628,8 +935,9 @@ async fn execute(
                 reads: &session,
                 jobs: Arc::new(fabric_cli_jobs::HttpJobExecutor::new(executor.clone())),
             }
-            .dispatch(&command, std::future::pending())
+            .dispatch_result(&command, std::future::pending())
             .await
+            .map(NativeOutput::job)
         }
         NativeCommand::JobExecution(command) => {
             let command = settings
@@ -643,10 +951,12 @@ async fn execute(
                 .map_err(|error| failure("invalid_configuration", error.to_string(), 2))?;
             execute_job(&session, &executor, &command, settings.jobs).await
         }
-        NativeCommand::Family(command) => execute_family(&session, &executor, command).await,
+        NativeCommand::Family(command) => {
+            execute_family(&session, &executor, command, state, cancelled).await
+        }
     };
     match result {
-        Ok(mut plan) => {
+        Ok(mut output) => {
             if restored {
                 use fabric_cli_output::text::{self, Presentation};
                 let message = format!(
@@ -658,10 +968,10 @@ async fn execute(
                     None,
                     Presentation::default(),
                 );
-                warning.records.append(&mut plan.records);
-                plan.records = warning.records;
+                warning.records.append(&mut output.plan.records);
+                output.plan.records = warning.records;
             }
-            Ok(plan)
+            Ok(output)
         }
         Err(error) => {
             // Retain source output-before-error, rather than silently dropping it.
@@ -678,12 +988,97 @@ async fn execute(
 }
 
 #[cfg(windows)]
+fn get_filename_clock(
+    local: Result<time::OffsetDateTime, time::error::IndeterminateOffset>,
+) -> Result<String, fabric_cli_output::CommandError> {
+    local
+        .map(fabric_cli::get_output::filename_stamp)
+        .map_err(|_| {
+            fabric_cli_output::CommandError::new(
+                Some(
+                    "The local timezone offset could not be determined for GET output. Check system timezone configuration and, on Unix, use a host where offset discovery is safe. No UTC fallback was used."
+                        .into(),
+                ),
+                Some("ClockFailed".into()),
+            )
+        })
+}
+
+#[cfg(windows)]
+async fn execute_read(
+    session: &fabric_cli::session::ReadSession<'_>,
+    executor: &fabric_sdk_http::HttpExecutor,
+    command: &ReadCommand,
+    default_output_format: &str,
+) -> Result<NativeOutput, fabric_cli_output::text::TextError> {
+    let Some(output) = command
+        .output
+        .as_deref()
+        .filter(|output| !output.is_empty())
+    else {
+        let mut command = command.clone();
+        command.output = None;
+        return session
+            .with_source_operations(executor)
+            .dispatch_result(&command, std::future::pending())
+            .await
+            .map(NativeOutput::read);
+    };
+    let current = match std::env::current_dir() {
+        Ok(current) => current,
+        Err(_) => {
+            use fabric_cli_output::{CommandError, text};
+            let error = CommandError::new(
+                Some("The local output directory could not be selected".into()),
+                Some("InvalidPath".into()),
+            );
+            let plan = text::render(
+                &error.envelope(session.timestamp.clone(), Some(command.name.clone())),
+                text::OutputFormat::resolve(command.output_format.as_deref(), Some("json"))?,
+                &text::TextOptions::default(),
+                &text::ascii_width,
+                text::Presentation::default(),
+            )?;
+            let outcome = crate::repl_state::error_outcome(&error, plan.exit_code);
+            return Ok(NativeOutput { plan, outcome });
+        }
+    };
+    let candidate = transfer_paths::candidate(
+        output,
+        &current,
+        transfer_paths::home_from_environment().as_deref(),
+        std::env::var_os("USERNAME").as_deref(),
+    );
+    let mut local = fabric_cli::families::transfer_files::TokioTransferFiles::defer_export_root(
+        candidate,
+        output.to_owned(),
+        Default::default(),
+        tokio::runtime::Handle::current(),
+    );
+    let mut files = fabric_cli::get_output::native_files(&mut local, session, executor);
+    let clock = || get_filename_clock(time::OffsetDateTime::now_local());
+    session
+        .with_source_operations(executor)
+        .dispatch_result_with_files(
+            command,
+            &mut fabric_cli::get_output::ResultFileHost {
+                files: &mut files,
+                clock: &clock,
+                default_output_format: Some(default_output_format),
+            },
+            std::future::pending(),
+        )
+        .await
+        .map(NativeOutput::read)
+}
+
+#[cfg(windows)]
 async fn execute_job(
     session: &fabric_cli::session::ReadSession<'_>,
     executor: &fabric_sdk_http::HttpExecutor,
     command: &fabric_cli_jobs::JobCommand,
     config: fabric_cli_jobs::JobConfig,
-) -> Result<fabric_cli_output::text::TextPlan, fabric_cli_output::text::TextError> {
+) -> Result<NativeOutput, fabric_cli_output::text::TextError> {
     fabric_cli::jobs::JobSession {
         reads: session,
         jobs: std::sync::Arc::new(fabric_cli_jobs::HttpJobExecutor::new(executor.clone())),
@@ -691,8 +1086,9 @@ async fn execute_job(
         ui: &NativeJobUi,
         config,
     }
-    .dispatch(command, std::future::pending())
+    .dispatch_result(command, std::future::pending())
     .await
+    .map(NativeOutput::job)
 }
 
 #[cfg(windows)]
@@ -700,11 +1096,17 @@ async fn execute_family(
     session: &fabric_cli::session::ReadSession<'_>,
     executor: &fabric_sdk_http::HttpExecutor,
     command: &Invocation,
-) -> Result<fabric_cli_output::text::TextPlan, fabric_cli_output::text::TextError> {
+    mut state: Option<&mut ReplState>,
+    cancelled: NativeCancellation,
+) -> Result<NativeOutput, fabric_cli_output::text::TextError> {
     use fabric_cli_context::PathElement;
     use fabric_cli_local::NavigationState;
     use fabric_cli_output::text::{self, OutputFormat, Presentation, TextOptions};
 
+    let before = state
+        .as_ref()
+        .and_then(|state| state.navigation.as_ref())
+        .map(|navigation| std::sync::Arc::clone(navigation.current()));
     let result = async {
         let store = crate::local_host::store()?;
         store.initialize()?;
@@ -719,8 +1121,15 @@ async fn execute_family(
             session.home.clone(),
             local_root.to_string_lossy().into_owned(),
             crate::local_host::session_id()?,
-            true,
+            state.is_none(),
         )?;
+        let navigation = match state.as_deref_mut() {
+            Some(state) => state
+                .navigation
+                .as_mut()
+                .expect("interactive native context bound"),
+            None => &mut navigation,
+        };
         let mut effects = NativeLocalEffects {
             base: crate::local_host::Effects,
             identity: fabric_cli_local::BrowserIdentity {
@@ -849,7 +1258,7 @@ async fn execute_family(
             reads: session,
             http: executor,
             store: &store,
-            navigation: &mut navigation,
+            navigation,
             local: &mut effects,
             mutations: &mut mutations,
             confirmation: Some(&mut confirmation),
@@ -886,7 +1295,9 @@ async fn execute_family(
             )
         ) {
             families
-                .dispatch_with_physical_files(command, &physical_files, std::future::pending())
+                .dispatch_with_physical_files(command, &physical_files, async {
+                    let _ = cancelled.await;
+                })
                 .await?
         } else {
             families.dispatch(command, std::future::pending()).await?
@@ -894,21 +1305,35 @@ async fn execute_family(
         let mut notices = std::mem::take(&mut mutations.records);
         notices.append(&mut output.plan.records);
         output.plan.records = notices;
-        Ok::<_, fabric_cli_local::LocalError>(output.plan)
+        let outcome = crate::repl_state::family_outcome(&output);
+        Ok::<_, fabric_cli_local::LocalError>(NativeOutput {
+            plan: output.plan,
+            outcome,
+        })
     }
     .await;
+    if let Some(state) = state
+        && let Some(before) = before
+    {
+        state.commit_navigation(&before);
+    }
     match result {
-        Ok(plan) => Ok(plan),
+        Ok(output) => Ok(output),
         Err(fabric_cli_local::LocalError::Text(error)) => Err(error),
-        Err(error) => text::render(
-            &error
-                .command_error()
-                .envelope(session.timestamp.clone(), None),
-            OutputFormat::Json,
-            &TextOptions::default(),
-            &text::ascii_width,
-            Presentation::default(),
-        ),
+        Err(error) => {
+            let outcome_error = error.command_error();
+            let plan = text::render(
+                &error
+                    .command_error()
+                    .envelope(session.timestamp.clone(), None),
+                OutputFormat::Json,
+                &TextOptions::default(),
+                &text::ascii_width,
+                Presentation::default(),
+            )?;
+            let outcome = crate::repl_state::error_outcome(&outcome_error, plan.exit_code);
+            Ok(NativeOutput { plan, outcome })
+        }
     }
 }
 
@@ -1039,6 +1464,30 @@ mod tests {
                 selected_home(name.into()).unwrap_err().0,
                 "invalid_configuration"
             );
+        }
+    }
+
+    #[test]
+    fn typed_read_control_is_retained_before_rendering_without_guessing_from_exit_two() {
+        use fabric_cli_output::{CommandError, text::TextPlan};
+        for (code, expected) in [
+            (
+                "LongRunningOperationCancelled",
+                CommandOutcome::Cancelled(2),
+            ),
+            ("ReadFailed", CommandOutcome::Returned(2)),
+        ] {
+            for source_output in [false, true] {
+                let output = fabric_cli::session::ReadDispatch {
+                    plan: TextPlan {
+                        records: Vec::new(),
+                        exit_code: 2,
+                    },
+                    error: (!source_output).then(|| CommandError::new(None, Some(code.into()))),
+                    output_error_code: source_output.then(|| code.into()),
+                };
+                assert_eq!(NativeOutput::read(output).outcome, expected);
+            }
         }
     }
 }

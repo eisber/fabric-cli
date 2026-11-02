@@ -164,8 +164,12 @@ Optional source omissions have typed SDK observations; identity, cancellation,
 execution and safety-bound failures remain explicit command failures.
 The folder wrapper delegates workspace GET to the same implementation.
 
-`get --output/--verbose/--force`, OneLake/virtual collection reads and folder
-GET fail explicitly. The additive folder wrapper implements folder-context LS
+The additive [GET result-file host](get-result-files.md) writes projected GET
+results through explicit local/Lakehouse export capabilities; sessions without
+that capability still reject `--output`. Its native local-clock capability
+fails explicitly if the offset is unavailable. Definition-specific
+`--verbose/--force`, OneLake/virtual collection reads and folder GET remain
+bounded separately. The additive folder wrapper implements folder-context LS
 and configured workspace folder presentation; the native session selects that
 wrapper. No live Fabric calls, installation, release or cross-platform parity
 is claimed. The optional host's bounded text and explicit HTTP/TLS/runtime/

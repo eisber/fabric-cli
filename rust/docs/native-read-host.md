@@ -37,7 +37,10 @@ fallbacks are not supported.
 `FAB_RUST_HOME` optionally supplies a full `Workspace`/`Personal` name, such as
 `Demo.Workspace`. There is no implicit personal-workspace or persisted current
 context discovery. Omitted home fails explicitly when `~` is used.
-No Python configuration/cache is read or written.
+No Python configuration/cache is read or written by this native host.
+Executable `deploy` is selected before this host and uses the separately
+documented [Python deployment backend](python-deployment-backend.md), including
+the Python CLI's own configuration and identity contract.
 An explicit `FAB_RUST_CONFIG_ROOT` selects the existing Rust local-family
 settings snapshot, including read display and output defaults; an omitted root
 retains JSON preview defaults. See the [native settings mapping](native-family-host.md#native-read-and-job-settings).
@@ -81,7 +84,7 @@ long-LS capacity enrichment, the shared HTTP executor and source-synchronous
 workspace GET initial/poll/result requests. Active continuation/result links
 cannot switch back to public or another Microsoft host. Non-public native
 endpoints support `ls`/`dir`/`get`, all eight job commands,
-`deploy` and `export`/`bulk-export`/`import`. Jobs, deployment and definition transfers retain the
+`export`/`bulk-export`/`import`. Jobs and definition transfers retain the
 same binding for metadata, skill-scoped clients, pages, status polls and
 generic-operation/result reconciliation. Remote export separately retains the
 explicit OneLake audience and storage endpoint. Other unmigrated remote families fail
@@ -152,6 +155,12 @@ shared renderer with no colors and fixed pure-renderer terminal defaults.
 ASCII table width/key/repr properties are supplied; non-ASCII requiring missing
 Unicode properties fails explicitly. JSON has no such text-property restriction.
 This is not full terminal/Unicode parity.
+
+The [GET result-file composition](get-result-files.md) now wires `--output`
+through the existing explicit export resolver and asynchronous file worker.
+It preserves projected data, source storage bytes, notices and overwrite
+behavior. Its explicitly selected CLI local-clock capability preserves source
+local filename time and fails without writing if the timezone offset is unknown.
 
 Definitions, exports, `--verbose`/`--force`, OneLake and hidden-collection reads,
 folder GET, unsupported item types, service-principal/managed identity, sovereign

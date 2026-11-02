@@ -453,17 +453,92 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cancellation_decline_and_unsupported_options_never_dispatch_mutations() {
+    async fn cancellation_decline_and_legacy_local_directory_never_dispatch_mutations() {
         for case in [
             json!({"argv":["mv",remote(),target()],"confirm":false,"replies":[]}),
             json!({"argv":["cp",remote(),target()],"cancelled":true,"replies":[]}),
-            json!({"argv":["cp",remote(),target(),"--recursive"],"replies":[]}),
-            json!({"argv":["cp",remote(),target(),"--block_on_path_collision"],"replies":[]}),
             json!({"argv":["cp","local.csv",target()],"local_kind":"directory","replies":[]}),
         ] {
             let trace = probe(&case).await.unwrap();
             assert_eq!(trace["requests"], json!([]), "{trace}");
             assert_eq!(trace["file_reads"], 0);
+            assert_eq!(trace["remaining_replies"], 0);
+            assert_eq!(trace["outputs"], json!([]));
+            if case["confirm"] == false {
+                assert_eq!(trace["declined"], true);
+                assert_eq!(trace["error"], Value::Null);
+                assert_eq!(trace["prompts"], json!(["Are you sure?"]));
+            } else {
+                assert_ne!(trace["error"], Value::Null);
+                assert_eq!(trace["plans"][0]["exit"], 1);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn remote_file_copy_flags_preserve_actual_requests_bytes_and_stage_evidence() {
+        for flags in [
+            vec!["--recursive"],
+            vec!["--block_on_path_collision"],
+            vec!["--recursive", "--block_on_path_collision"],
+        ] {
+            let mut argv = vec!["cp", remote(), target()];
+            argv.extend(flags);
+            let trace = probe(&json!({
+                "argv":argv,
+                "replies":[
+                    {"status":200,"body":[0,255,1],"headers":{"Content-Length":"3","Content-Type":"text/csv"}},
+                    {"status":201},{"status":202},{"status":200},
+                ],
+            })).await.unwrap();
+            assert_eq!(trace["error"], Value::Null, "{trace}");
+            assert_eq!(trace["remaining_replies"], 0);
+            assert_eq!(trace["file_reads"], 0);
+            assert_eq!(trace["prompts"], json!([]));
+            assert_eq!(trace["declined"], false);
+            let requests = trace["requests"].as_array().unwrap();
+            assert_eq!(
+                requests
+                    .iter()
+                    .map(|request| request["method"].as_str().unwrap())
+                    .collect::<Vec<_>>(),
+                ["get", "put", "patch", "patch"],
+            );
+            assert!(
+                requests[0]["url"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with("/Files/from.csv")
+            );
+            // This retained adapter keeps its original overwrite/header policy.
+            assert!(requests[1]["headers"].get("if-none-match").is_none());
+            assert!(
+                requests[1]["url"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with("/Files/to.csv/?resource=file")
+            );
+            assert_eq!(requests[2]["body"], json!([0, 255, 1]));
+            assert_eq!(requests[2]["headers"]["content-type"], "text/csv");
+            assert!(
+                requests[2]["url"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with("?action=append&position=0")
+            );
+            assert!(
+                requests[3]["url"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with("?action=flush&position=3")
+            );
+            assert_eq!(
+                trace["evidence"]["upload"],
+                json!({"create":201,"append":202,"flush":200}),
+            );
+            assert_eq!(trace["outputs"], json!(["Done"]));
+            assert_eq!(trace["plans"][0]["exit"], 0);
+            assert_eq!(trace["plans"][0]["stream"], "stdout");
         }
     }
 }

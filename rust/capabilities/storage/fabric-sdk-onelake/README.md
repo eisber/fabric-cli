@@ -46,6 +46,50 @@ Path, payload, media-type and header limits apply before mutation.
 Invalid native names and unsupported rename headers fail explicitly; response
 headers cannot override HTTP framing.
 
+## Incremental file I/O
+
+The additive `file_ranges` module supports files larger than 4 MiB without
+changing the buffered APIs or allocating the entire file. Its types are public
+under `fabric_sdk_onelake::file_ranges`; methods still use the same explicitly
+injected `OneLakeClient`, executor, credential selection and cancellation.
+
+| API | Contract |
+| --- | --- |
+| `file_version(executor, path, limits, cancelled)` | Validated `OneLakeFileVersion` with `len()`, strong `etag()` and optional `content_type()` |
+| `read_range(executor, path, version, offset, length, limits, cancelled)` | Exact bounded `OneLakeReadRange { offset, body, eof }` |
+| `start_file_upload(executor, path, length, content_type, condition, limits, cancelled)` | Conditionally created `OneLakeFileUpload` session |
+| `upload.append_at(executor, position, content, cancelled)` | One bounded, explicitly positioned, ETag-conditioned append |
+| `upload.flush(executor, cancelled)` | Final flush only after all declared bytes are acknowledged |
+
+`OneLakeChunkLimits` bounds each request's chunk and service response separately;
+`max_chunk_bytes` cannot exceed 4 MiB. A range is clipped only at the declared
+EOF. Every nonempty read sends `Range` and the snapshot's `If-Match`; HTTP 206,
+ETag, Content-Range, Content-Length and actual bytes must agree exactly. Ignored
+ranges, compressed representations, malformed headers, source changes and
+truncation fail rather than returning bytes. Exact EOF, including an empty
+version, returns an empty range without a GET.
+
+Creation requires `OneLakeFileCreateCondition::IfAbsent` or `IfMatch(etag)`.
+Only HTTP 201 with a strong ETag creates a session. Append HTTP 202 is normal
+acknowledgement of uncommitted bytes: `position()` advances, but `is_complete()`
+stays false until a validated final HTTP 200 flush. Empty files need creation
+and flush, not append. Gaps, overlaps, oversized chunks and early flushes fail
+before dispatch.
+
+`OneLakeChunkError` preserves the typed SDK failure, acknowledged position,
+possible side effects, and received nonconforming response. Service failures
+retain their original structured code/body through `OneLakeError::Http`.
+Accepted creation/final flush is incomplete, not success. Lost, cancelled or
+malformed write responses block further writes on the session. Dropping an
+append/flush future after local validation also blocks further writes, even if
+dispatch is unknown. A validated append acknowledgement alone restores the
+session for the next chunk; purely local invalid input does not poison it.
+No replay, automatic cleanup, copy/delete fallback or automatic flush occurs
+on drop.
+
+These are SDK prerequisites, not whole-file CLI or tree-engine completion.
+Callers own incremental local I/O, traversal, transfer completion and move policy.
+
 ## Shortcuts and composition
 
 `shortcuts` uses Fabric `ResourceOperations` and the Fabric audience, not a DFS

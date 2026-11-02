@@ -1,0 +1,27 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-cli-repl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Removable Fabric CLI shell loop with an optional Reedline terminal adapter"
+
+[package.metadata.fabric]
+layer = "cli"
+
+[features]
+default = []
+reedline-editor = ["dep:reedline"]
+
+[dependencies]
+reedline = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

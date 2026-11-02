@@ -6,6 +6,7 @@
 //! The executor adapts the existing shared HTTP policy. This crate installs no
 //! transport, retries, identity backend, runtime or table interpretation.
 
+pub mod file_ranges;
 mod mutations;
 pub mod shortcuts;
 use azure_core::{credentials::AccessToken, http::Url};
@@ -636,8 +637,20 @@ impl OneLakeClient {
         &self,
         executor: &dyn OneLakeExecutor,
         exchange: Exchange,
+        cancelled: Pin<&mut (impl Future<Output = ()> + Send)>,
+        dispatched: &mut bool,
+    ) -> Result<OneLakeResponse, OneLakeError> {
+        self.exchange_impl(executor, exchange, cancelled, dispatched, false)
+            .await
+    }
+
+    async fn exchange_impl(
+        &self,
+        executor: &dyn OneLakeExecutor,
+        exchange: Exchange,
         mut cancelled: Pin<&mut (impl Future<Output = ()> + Send)>,
         dispatched: &mut bool,
+        allow_partial_content: bool,
     ) -> Result<OneLakeResponse, OneLakeError> {
         or_cancel(std::future::ready(()), cancelled.as_mut()).await?;
         if self.selection.audience() != Audience::OneLake {
@@ -675,6 +688,7 @@ impl OneLakeClient {
             return Err(OneLakeError::Limit);
         }
         match response.status {
+            206 if allow_partial_content => Ok(response),
             200 | 201 | 202 | 204 => Ok(response),
             202..=299 => Err(OneLakeError::InvalidResponse),
             status => Err(OneLakeError::Http {

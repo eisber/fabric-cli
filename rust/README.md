@@ -22,6 +22,12 @@ to an account. Remote command execution requires an explicitly configured host.
 See the [CLI guide](hosts/cli/fabric-cli/README.md) for command composition and
 [native host configuration](docs/native-read-host.md) for service execution.
 
+The default-disabled `repl` feature adds the original recovered terminal
+component for no-argument input, with memory-only history/local navigation.
+See [recovery adaptations and acceptance limits](docs/repl-recovery-integration.md)
+before enabling it; real-terminal and live native-shell acceptance are not
+established by offline component tests.
+
 ## Workspace components
 
 The workspace groups service clients and command adapters by capability:
@@ -36,6 +42,7 @@ capabilities\
   local\           Local configuration and navigation commands
 hosts\
   cli\             Executable composition, context, query and presentation
+  repl\            Removable shell loop and optional terminal editor
 infrastructure\
   core\            Shared contracts and JSON encoding
   identity\        Credential selection and optional Windows broker
@@ -58,6 +65,7 @@ front-ends are not implemented by this layout.
 | [Native transport](infrastructure/http/fabric-sdk-transport/README.md) | Optional `hyper-rustls` backend and asynchronous timers |
 | [Deployment](capabilities/deployment/fabric-deploy/README.md) | Configuration, parameters, repository planning, item publication and orphan removal |
 | [CLI](hosts/cli/fabric-cli/README.md) | Argument parsing, command sessions and native host composition |
+| [REPL](hosts/repl/fabric-cli-repl/README.md) | Dependency-free pure shell loop and opt-in Reedline adapter |
 | [Path context](hosts/cli/fabric-cli-context/README.md) | Immutable hierarchy, path resolution and command context |
 | [Output](hosts/cli/fabric-cli-output/README.md) | Structured envelopes, text presentation and stream handling |
 | [Workflow skills](skills/README.md) | Boundaries for workflows that compose CLI commands |
@@ -168,8 +176,11 @@ library consumers on other platforms must inject their own supported
 credentials and execution capabilities.
 
 Interactive shell mode, complete terminal styling and several command-specific
-features remain outside the current host. Advanced deployment regex and JSONPath
-expressions have explicit supported subsets and resource limits. Unsupported
+features remain outside the current host. `fab-rs deploy` uses the owner-approved
+[authoritative Python deployment backend](docs/python-deployment-backend.md),
+including its preinstalled Python/package prerequisites; it does not use the
+native deployment libraries' bounded regex/JSONPath subsets. Other commands do
+not acquire a Python runtime or authentication fallback. Unsupported
 operations fail rather than returning successful-looking results.
 
 ## Contributing
@@ -180,6 +191,7 @@ operations fail rather than returning successful-looking results.
 - [Integration handoff](docs/integration-handoff.md)
 - [Authentication requirements](docs/identity-requirements.md)
 - [Deployment behavior and limits](docs/deployment-compatibility.md)
+- [Python deployment backend prerequisites](docs/python-deployment-backend.md)
 - [Extension boundaries](docs/extensions-and-skills.md)
 
 The repository's Microsoft copyright, MIT license and applicable attribution

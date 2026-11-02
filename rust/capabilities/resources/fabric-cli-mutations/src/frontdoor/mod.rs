@@ -19,8 +19,11 @@ use crate::{
     CapacitySelection, CreateOptions, MutationError, MutationHost, MutationResult,
     OneLakeShortcutHost, ShortcutCreateDestination, ShortcutCreateOptions,
 };
-use fabric_cli_context::{NodeKind, PathElement, PathKind, ResolveOptions, VirtualWorkspaceKind};
+use fabric_cli_context::{
+    NodeKind, OneLakeKind, PathElement, PathKind, ResolveOptions, VirtualWorkspaceKind,
+};
 use fabric_cli_query::join_query_args;
+use fabric_sdk_onelake::shortcuts::ShortcutPath;
 use std::sync::Arc;
 
 /// The existing host's context boundary, not a second catalog or cache.
@@ -119,6 +122,25 @@ impl ResourceHost<'_> {
                     .await?
             }
             ResourceCommand::Remove { force, hard, .. } => {
+                if target.kind() == PathKind::OneLake(OneLakeKind::Shortcut) {
+                    let destination = shortcut_destination(command, &target)?;
+                    let (path, name) =
+                        destination.local_path.rsplit_once('/').ok_or_else(|| {
+                            parser::invalid("Shortcut removal requires a folder and name")
+                        })?;
+                    let path =
+                        ShortcutPath::new(&destination.workspace, &destination.item, path, name)?;
+                    let mut result = OneLakeShortcutHost {
+                        operations: self.mutations.operations,
+                        ui: self.mutations.ui,
+                    }
+                    .remove(&path, &target.name(), *force, true)
+                    .await?;
+                    for output in &mut result.outputs {
+                        output.command = Some(command.name().into());
+                    }
+                    return Ok(result);
+                }
                 let element = fabric_target(command, &target)?;
                 if matches!(element.kind(), NodeKind::Workspace(_) | NodeKind::Tenant) {
                     return Err(gap(

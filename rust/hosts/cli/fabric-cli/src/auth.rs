@@ -1,16 +1,14 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+use crate::repl_state::CommandOutcome;
 #[cfg(windows)]
 use fabric_cli::auth_commands as commands;
 use fabric_cli::parser::AuthCommand;
 use serde_json::json;
-use std::{
-    io::{self, Write},
-    process::ExitCode,
-};
+use std::io::{self, Write};
 
-fn error(code: &'static str, message: &str, exit: u8) -> io::Result<ExitCode> {
+fn error(code: &'static str, message: &str, exit: u8) -> io::Result<CommandOutcome> {
     let mut stderr = io::stderr().lock();
     serde_json::to_writer(
         &mut stderr,
@@ -18,10 +16,14 @@ fn error(code: &'static str, message: &str, exit: u8) -> io::Result<ExitCode> {
     )
     .map_err(io::Error::other)?;
     writeln!(stderr)?;
-    Ok(ExitCode::from(exit))
+    Ok(if code == "invalid_configuration" {
+        CommandOutcome::Stop(exit)
+    } else {
+        CommandOutcome::from_code(Some(code), exit)
+    })
 }
 
-pub(crate) fn run(command: &AuthCommand) -> io::Result<ExitCode> {
+pub(crate) fn run(command: &AuthCommand) -> io::Result<CommandOutcome> {
     #[cfg(windows)]
     {
         let options = match fabric_identity::LoginOptions::new(
@@ -55,7 +57,7 @@ pub(crate) fn run(command: &AuthCommand) -> io::Result<ExitCode> {
             )
             .await
         });
-        commands::write_result(result, io::stdout().lock(), io::stderr().lock()).map(ExitCode::from)
+        write_result(result, io::stdout().lock(), io::stderr().lock())
     }
     #[cfg(not(windows))]
     {
@@ -66,6 +68,17 @@ pub(crate) fn run(command: &AuthCommand) -> io::Result<ExitCode> {
             1,
         )
     }
+}
+
+#[cfg(windows)]
+fn write_result(
+    result: Result<serde_json::Value, commands::Failure>,
+    stdout: impl Write,
+    stderr: impl Write,
+) -> io::Result<CommandOutcome> {
+    let code = result.as_ref().err().map(|(code, _)| *code);
+    let exit = commands::write_result(result, stdout, stderr)?;
+    Ok(CommandOutcome::from_code(code, exit))
 }
 
 #[cfg(windows)]
@@ -201,5 +214,29 @@ mod tests {
             "11111111-2222-3333-4444-555555555555"
         );
         assert_eq!(commands::Broker::account(&broker), "selected@example.test");
+    }
+
+    #[test]
+    fn typed_result_plumbing_preserves_auth_bytes_without_acquiring_tokens() {
+        for (code, expected) in [
+            ("cancelled", CommandOutcome::Cancelled(1)),
+            ("authentication_failed", CommandOutcome::Returned(1)),
+        ] {
+            let result = Err((code, "Synthetic failure.".into()));
+            let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+            assert_eq!(
+                write_result(result, &mut stdout, &mut stderr).unwrap(),
+                expected
+            );
+            assert!(stdout.is_empty());
+            let mut original = Vec::new();
+            commands::write_result(
+                Err((code, "Synthetic failure.".into())),
+                Vec::new(),
+                &mut original,
+            )
+            .unwrap();
+            assert_eq!(stderr, original);
+        }
     }
 }

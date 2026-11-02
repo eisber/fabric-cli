@@ -22,6 +22,7 @@ broker-only builds do not install a remote execution host.
 | Feature | Host capability |
 | --- | --- |
 | Default | Arguments, local commands and unconfigured-host diagnostics |
+| `repl` | Optional recovered Reedline shell for terminal-only, no-argument input |
 | `windows-broker` | Explicit experimental Windows login, status and logout |
 | `native-read` | Windows service command host, including reads, jobs, transfers and deployment |
 
@@ -117,33 +118,34 @@ The same executable selectors and an all-target check are also required with
 `--features native-read`. Source-only captures do not establish Rust compilation,
 actual native cancellation, remote context reuse or platform parity.
 
-## Interactive-shell decision boundary
+## Optional recovered interactive shell
 
-The pinned `core/fab_interactive.py` requires a styled, escaped current-context
-prompt, blinking cursor, in-memory editing/history with history search, and
-POSIX `shlex.split` input. It contains exact raw quit/help/version aliases,
-`fab` prefix guidance, per-command `SystemExit` containment and Ctrl+C
-hint-and-continue behavior. EOF is caught by the inner generic exception
-handler before the outer goodbye branch; padded aliases and malformed quotes
-also have source-specific behavior that must not be silently improved.
+Build with `--features repl` and invoke `fab-rs` without arguments on a real
+terminal. Both stdin and stdout must be terminals; redirected input fails with
+`InteractiveInputUnavailable` rather than becoming an implicit batch reader.
+Default builds retain their no-argument invalid-arguments contract.
 
-No completer is supplied to `PromptSession`: command/path completion is not an
-implemented REPL requirement to invent. `argcomplete` belongs to command-line
-completion, and config completers are separate parser callbacks. The source
-depends on `prompt_toolkit>=3.0.41` and `argcomplete>=3.6.2`, without an upper
-version pin. Rust currently has no selected terminal editor dependency.
+The [removable component](../../repl/fabric-cli-repl/README.md) is the original
+recovered candidate, not a replacement lexer or line-oriented shell. Its pure
+core is dependency-free by default; only the application `repl` feature selects
+Reedline 0.52.1 with default features disabled. SDK/default CLI graphs exclude
+Reedline and Crossterm.
 
-| Option | Decision and impact |
-| --- | --- |
-| Keep the current no-argument contract until backend review | Recommended. No invented REPL, dependency, lock change or platform support claim. Batch delivery remains independent. |
-| Stdlib line-oriented shell | Can implement input and dispatch but cannot provide source-faithful portable editing/history-search/cursor/signal behavior. Requires explicit approval as a reduced contract, not REPL parity. |
-| Reviewed terminal editor/backend | Can target the complete source contract, but requires dependency/security/license review, Windows/macOS/Linux terminal and redirected-input tests, and an explicit cancellation/runtime design. No backend is selected here. |
+The loop preserves raw aliases, POSIX `shlex` rules distinct from batch splitting,
+Ctrl+C hint-and-continue, and source-specific lexical/EOF behavior. Malformed
+quotes or escapes stop once with a diagnostic and normal status. EOF emits the
+source diagnostic without farewell. Unknown root commands exit 2; registered
+subparser misuse is contained. History and local navigation remain in memory,
+without command-line context restoration or navigation persistence.
 
-A complete source-faithful minimal REPL is therefore not feasible with only
-stdlib and existing APIs. Any future backend-neutral shell contract should own
-one mutable command session, inject input/prompt/history/output/cancellation,
-and keep source `shlex` rules distinct from batch whitespace rules. Parent review
-must establish this scope before central host redesign.
+The recovered host required missing native-state/outcome seams. This integration
+adds only those seams: native commands reuse in-memory interactive navigation,
+authentication retains typed cancellation before writing its unchanged output,
+and shared batch dispatch remains available. Ordinary handled exit 2 does not
+become cancellation. Standalone command-line/batch policies remain unchanged.
+No new identity backend or persistence is introduced.
+See [recovery adaptations and acceptance limits](../../../docs/repl-recovery-integration.md).
+Offline tests do not establish real-terminal or cross-platform UX acceptance.
 
 ## Deployment and transfers
 
@@ -174,5 +176,6 @@ limits and Ctrl+C handling without an arbitrary whole-command cutoff.
 
 Windows credentials require explicit account, tenant and client selection.
 Other platforms can use injected library credentials; native credential
-execution there fails explicitly. Resource/access skill headers, interactive
-shell mode and several resource-specific capabilities remain unavailable.
+execution there fails explicitly. Resource/access skill headers and several
+resource-specific capabilities remain unavailable. Optional-shell compilation
+does not establish real-terminal or live native-shell acceptance.

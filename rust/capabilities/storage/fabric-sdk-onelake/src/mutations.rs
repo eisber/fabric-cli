@@ -137,13 +137,48 @@ impl OneLakeClient {
         .await
     }
 
+    /// Delete one copied path with an optional source ETag condition.
+    ///
+    /// Nonrecursive directory deletion protects newly added, uncopied children.
+    /// No failed or uncertain deletion is retried.
+    ///
+    /// # Errors
+    /// Unsafe paths, invalid ETags, service conflicts and uncertain effects remain typed.
+    pub async fn delete_path_checked(
+        &self,
+        executor: &dyn OneLakeExecutor,
+        path: &OneLakePath,
+        etag: Option<&str>,
+        limits: OneLakeWriteLimits,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<OneLakeWriteOutcome, OneLakeMutationError> {
+        let exchange = (|| {
+            let mut headers = Vec::new();
+            if let Some(etag) = etag {
+                if etag.is_empty() || !etag.is_ascii() || etag.chars().any(char::is_control) {
+                    return Err(OneLakeError::InvalidInput);
+                }
+                headers.push(("If-Match".into(), etag.into()));
+            }
+            Ok(Exchange {
+                method: OneLakeMethod::Delete,
+                url: directory_url(path, "recursive", "false")?,
+                body: Vec::new(),
+                headers,
+                limit: limits.max_response_bytes,
+            })
+        })();
+        self.single_write(executor, exchange, cancelled).await
+    }
+
     /// Rename/move a path with the source-provided rename header.
     ///
     /// The SDK preserves the caller's explicit workspace/item selection and
     /// constructs both paths from validated resources, never arbitrary origins.
     ///
     /// # Errors
-    /// Rejects item-root or non-ASCII rename headers before credential acquisition.
+    /// Rejects item-root paths before credential acquisition; source path segments
+    /// are encoded so Unicode and spaces remain valid HTTP header values.
     pub async fn rename_path(
         &self,
         executor: &dyn OneLakeExecutor,
@@ -152,19 +187,56 @@ impl OneLakeClient {
         limits: OneLakeWriteLimits,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<OneLakeWriteOutcome, OneLakeMutationError> {
+        self.rename_path_impl(executor, source, target, limits, true, cancelled)
+            .await
+    }
+
+    /// Rename after explicit collision preflight, protecting a missing target.
+    ///
+    /// `overwrite=false` sends `If-None-Match: *`, so a target created after
+    /// preflight cannot be silently overwritten. Uncertain renames are not retried.
+    ///
+    /// # Errors
+    /// Preserves the same path, cancellation and mutation evidence as `rename_path`.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Explicit source, target and collision policy."
+    )]
+    pub async fn rename_path_checked(
+        &self,
+        executor: &dyn OneLakeExecutor,
+        source: &OneLakePath,
+        target: &OneLakePath,
+        limits: OneLakeWriteLimits,
+        overwrite: bool,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<OneLakeWriteOutcome, OneLakeMutationError> {
+        self.rename_path_impl(executor, source, target, limits, overwrite, cancelled)
+            .await
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Shared checked and legacy rename implementation."
+    )]
+    async fn rename_path_impl(
+        &self,
+        executor: &dyn OneLakeExecutor,
+        source: &OneLakePath,
+        target: &OneLakePath,
+        limits: OneLakeWriteLimits,
+        overwrite: bool,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<OneLakeWriteOutcome, OneLakeMutationError> {
         let mut dispatched = false;
         let mut cancelled = pin!(cancelled);
         let result = async {
             writable(source)?;
             writable(target)?;
-            let source = format!(
-                "{}/{}/{}",
-                source.workspace(),
-                source.item(),
-                source.relative()
-            );
-            if !source.is_ascii() {
-                return Err(OneLakeError::InvalidInput);
+            let source = source.url()?.path().trim_start_matches('/').to_owned();
+            let mut headers = vec![("x-ms-rename-source".into(), source)];
+            if !overwrite {
+                headers.push(("If-None-Match".into(), "*".into()));
             }
             let response = self
                 .exchange(
@@ -173,7 +245,7 @@ impl OneLakeClient {
                         method: OneLakeMethod::Put,
                         url: target.url()?,
                         body: Vec::new(),
-                        headers: vec![("x-ms-rename-source".into(), source)],
+                        headers,
                         limit: limits.max_response_bytes,
                     },
                     cancelled.as_mut(),
@@ -212,6 +284,7 @@ impl OneLakeClient {
             limits,
             false,
             content.len(),
+            true,
             cancelled,
         )
         .await
@@ -250,6 +323,42 @@ impl OneLakeClient {
             limits,
             true,
             flush_position,
+            true,
+            cancelled,
+        )
+        .await
+    }
+
+    /// Upload with a conditional create when overwrite was not authorized.
+    ///
+    /// Empty files are valid. A completed flush, not an accepted create, is the
+    /// copy commit boundary used by additive move orchestration.
+    ///
+    /// # Errors
+    /// Retains every received upload stage and uncertainty without replay.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Explicit transfer policy and caller capabilities."
+    )]
+    pub async fn upload_file_checked(
+        &self,
+        executor: &dyn OneLakeExecutor,
+        path: &OneLakePath,
+        content: &[u8],
+        content_type: &str,
+        limits: OneLakeWriteLimits,
+        overwrite: bool,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<OneLakeUpload, OneLakeMutationError> {
+        self.upload_file_impl(
+            executor,
+            path,
+            content,
+            content_type,
+            limits,
+            true,
+            content.len(),
+            overwrite,
             cancelled,
         )
         .await
@@ -268,6 +377,7 @@ impl OneLakeClient {
         limits: OneLakeWriteLimits,
         omit_empty_append: bool,
         flush_position: usize,
+        overwrite: bool,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<OneLakeUpload, OneLakeMutationError> {
         let mut dispatched = false;
@@ -295,7 +405,11 @@ impl OneLakeClient {
                         method: OneLakeMethod::Put,
                         url: directory_url(path, "resource", "file")?,
                         body: Vec::new(),
-                        headers: Vec::new(),
+                        headers: if overwrite {
+                            Vec::new()
+                        } else {
+                            vec![("If-None-Match".into(), "*".into())]
+                        },
                         limit: limits.max_response_bytes,
                     },
                     cancelled.as_mut(),

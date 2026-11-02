@@ -13,6 +13,8 @@ use std::{fmt, future::Future, path::Path, pin::pin, sync::Arc};
 /// Resource transfer evidence, kept intact across rendering and writer failure.
 #[derive(Debug)]
 pub enum ResourceFileResult {
+    /// Authorized additive recursive transfer and safe move evidence.
+    Tree(crate::TreeResult),
     /// Existing remote copy/rename evidence; acceptance is not completion.
     Storage(OneLakeWriteResult),
     /// Physical upload, including actual create/append/flush responses.
@@ -25,6 +27,7 @@ impl ResourceFileResult {
     /// Borrow source output without discarding the underlying transfer receipt.
     pub fn outputs(&self) -> &[OutputInput] {
         match self {
+            Self::Tree(result) => &result.outputs,
             Self::Storage(result) => &result.outputs,
             Self::Upload(result) => &result.outputs,
             Self::Download(result) => &result.outputs,
@@ -35,6 +38,8 @@ impl ResourceFileResult {
 /// Original command, storage or physical-file failure; never a success fallback.
 #[derive(Debug)]
 pub enum ResourceFileError {
+    /// Authorized additive transfer failure with complete earlier receipts.
+    Tree(Box<crate::TreeError>),
     /// Resolution, unsupported route or missing explicit filesystem capability.
     Command(MutationError),
     /// Existing remote transfer failure and mutation uncertainty.
@@ -47,6 +52,7 @@ impl ResourceFileError {
     /// Render through the existing output policy while retaining this receipt.
     pub fn output(&self) -> OutputInput {
         match self {
+            Self::Tree(error) => error.output(),
             Self::Command(error) => error.output(),
             Self::Storage(error) => error.output(),
             Self::Copy(error) => error.output(),
@@ -189,6 +195,7 @@ impl ResourceFileHost<'_> {
         }
         .map_err(ResourceFileError::Copy)?;
         let outputs = match &mut result {
+            ResourceFileResult::Tree(result) => &mut result.outputs,
             ResourceFileResult::Upload(result) => &mut result.outputs,
             ResourceFileResult::Download(result) => &mut result.outputs,
             ResourceFileResult::Storage(result) => &mut result.outputs,

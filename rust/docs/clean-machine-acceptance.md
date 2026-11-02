@@ -6,6 +6,9 @@
 recorded here.** Owner approval and the [decision register](release-readiness.md)
 gate actual installation, hosted workflow setup, live authentication and
 promotion. These instructions are not permission to perform those operations.
+Release execution is deferred. Required ESRP onboarding, signing, and
+distribution acceptance remain pending under the
+[release readiness checklist](release-readiness.md#deferred-production-release-and-esrp-onboarding).
 
 ## Establish immutable inputs
 
@@ -100,21 +103,30 @@ are **not** a fab executable, downloaded-binary or clean-machine receipt.
 ## Clean-machine matrix and acceptance checklist
 
 Use a fresh disposable image, not a developer profile with cleared environment.
-The verifier host can have Python, but the **product execution host** must have
-no Python, Rust/Cargo, Azure CLI or Azure Developer CLI. For a strict no-Python
-machine, run verification elsewhere, transfer the exact verified bytes and
+The verifier host can have Python. Validate **non-deployment Rust commands** on
+a product execution host without Python, Rust/Cargo, Azure CLI, or Azure
+Developer CLI. For a strict no-Python machine, run verification elsewhere,
+transfer the exact verified bytes and
 rehash them with approved native OS tooling; execute the eight cases below
 using an absolute product path, null stdin, scrubbed environment and explicit
 ten-second per-case timeouts in the approved native harness. Record that
 harness's full revision and environment allowlist. Such a native clean-host
 harness/receipt is still required; this Python tool alone cannot prove absence
-of Python. Do not install Python on the clean host to make that gate pass.
+of Python. Do not install Python on that host to make that gate pass.
+
+The owner separately permits a [Python deployment backend](python-deployment-backend.md).
+Validate deployment on a second clean-host configuration with its documented
+Python runtime and package prerequisites. Record the selected interpreter and package versions,
+missing-runtime/package failures, process exit and cancellation behavior, and
+the exact supported deployment inputs. This is a declared deployment dependency,
+not evidence that deployment runs without Python and not permission for
+authentication or file commands to fall back to Python, `az`, or `azd`.
 
 | Check | Required evidence and pass condition |
 | --- | --- |
 | Host identity | Actual OS name/build, architecture, VM/image ID, update state, non-admin test identity, minimum-version candidate, UTC timestamp and platform validator. Match artifact target; no architecture emulation as native proof. |
 | Runtime inventory | Windows CRT/system components and native-read WinRT/COM/WAM availability, Linux glibc/system library requirements, or macOS version/runtime. Use approved OS inspection tools; record actual linked dependencies. Do not install a missing runtime silently or infer it from hosted CI. |
-| Tool independence | Approved software inventory proves Python/Cargo/az/azd absent on the product host. Use an isolated empty PATH plus approved test-only trap tooling to prove no tool invocation; preserve trap counters/process observations, not credentials. Traps must not be production fallbacks. |
+| Tool independence | For non-deployment commands, approved software inventory proves Python/Cargo/az/azd absent on the product host. Use an isolated empty PATH plus approved test-only trap tooling to prove no tool invocation; preserve trap counters/process observations, not credentials. Validate the declared Python deployment runtime separately. Traps must not be production fallbacks. |
 | Offline execution | Block outbound traffic at the disposable host boundary; no login/tenant/selectors. Record actual firewall/network isolation evidence. Environment scrubbing is not network isolation. |
 | Help | `--help`, `-h`: exit 0, stdout contains `Usage: fab-rs`, `--help` and `--version`, empty stderr. |
 | Version | `--version`, `-V`: exit 0, exact `fab-rs <pinned-version>` followed by newline, empty stderr. Preserve captured stream bytes/hashes; do not normalize away unexpected output. |

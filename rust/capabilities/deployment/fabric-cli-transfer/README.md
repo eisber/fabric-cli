@@ -4,7 +4,12 @@
 
 `fabric-cli-transfer` composes `export`, `bulk-export` and `import` over
 `fabric_deploy::definitions`. It registers deployment arguments for the central
-CLI, which executes them through its separate `DeployHost`.
+CLI. Since the owner-approved November 2, 2026 deployment-only exception,
+executable `fab-rs deploy` uses the
+[authoritative installed Python backend](../../../docs/python-deployment-backend.md)
+before native effects. The separate native `DeployHost` remains available to
+explicit injected library callers; it is not an executable fallback. Definition
+transfer and file commands retain their native implementations.
 
 ## Host contract
 

@@ -51,6 +51,14 @@ impl NavigationState {
         &self.current
     }
 
+    /// Whether this caller selected command-line rather than interactive execution.
+    ///
+    /// Interactive callers retain navigation in memory without writing the
+    /// command-line context file, even if persistence is enabled in the store.
+    pub fn is_command_line(&self) -> bool {
+        self.command_line
+    }
+
     /// Resolve using only the existing public context algorithms and injected lookup.
     pub fn resolve(
         &self,

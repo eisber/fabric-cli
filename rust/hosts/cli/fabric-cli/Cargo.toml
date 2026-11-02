@@ -19,10 +19,12 @@ path = "src/main.rs"
 
 [features]
 default = []
-windows-broker = ["dep:fabric-identity", "dep:tokio", "fabric-identity/windows-broker"]
-native-read = ["windows-broker", "dep:fabric-sdk-http", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls", "dep:rustix"]
+repl = ["dep:fabric-cli-repl", "fabric-cli-repl/reedline-editor"]
+windows-broker = ["dep:fabric-identity", "fabric-identity/windows-broker"]
+native-read = ["windows-broker", "dep:fabric-sdk-http", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls", "dep:rustix", "dep:time"]
 
 [dependencies]
+fabric-cli-repl = { workspace = true, optional = true }
 clap.workspace = true
 fabric-cli-context.workspace = true
 fabric-cli-output.workspace = true
@@ -50,7 +52,8 @@ futures-util.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 fabric-identity = { workspace = true, optional = true }
-tokio = { workspace = true, optional = true, features = ["signal"] }
+tokio = { workspace = true, features = ["signal"] }
+time = { workspace = true, optional = true }
 thiserror.workspace = true
 
 [target.'cfg(unix)'.dependencies]

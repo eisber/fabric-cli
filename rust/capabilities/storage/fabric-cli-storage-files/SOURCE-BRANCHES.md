@@ -6,6 +6,16 @@ Source: Python `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`, immutable Git
 objects, not current Python files. Paths below start at `src/fabric_cli/`.
 This matrix enumerates the physical-handler branch categories and their host
 boundary, not a claimed denominator for all commands or every possible input.
+The [additive operation matrix](TREE-OPERATIONS.md#operation-matrix) records
+the owner's authorized extension beyond source-rejected combinations. Native root argv coverage
+in `hosts/cli/fabric-cli/tests/native_resource_files.rs` now exercises upload,
+download, remote copy with ignored recursive/collision flags, recursive remote
+directory rename, recursive physical copies/local moves, directory create and recursive delete. Shortcut removal is
+routed to the Fabric metadata handler rather than DFS deletion.
+
+The detailed inventory below records the original physical-library checkpoint;
+its `Host-owned` entries are historical handoffs, not a claim that the current
+central host still lacks those physical-file routes.
 `Implemented` means a reusable public library branch, not integrated executable.
 `Host-owned` is an explicit remaining composition gate; `source-rejected` is
 completed rejection behavior, never an invented recursive/local-move feature.

@@ -476,7 +476,16 @@ impl CommandContext {
                             "Local metadata changed the selected input",
                         ));
                     }
+                    // The additive physical destination uses its actual selected
+                    // parent, not Python's empty-dirname/boolean-fd exists quirk.
+                    // This branch is reached only after Fabric requested local
+                    // fallback, never after a service/permission/paging failure.
+                    let prospective_destination = !options.raise_error && result.directory_writable;
+                    let metadata = result.metadata.clone();
                     self.local.insert(path, result);
+                    if prospective_destination {
+                        return Ok(PathElement::local(metadata));
+                    }
                 }
             }
         }

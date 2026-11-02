@@ -4,6 +4,7 @@
 [workspace]
 members = ["capabilities/*/*", "hosts/*/*", "infrastructure/*/*", "sdk/*"]
 default-members = [
+    "hosts/repl/fabric-cli-repl",
     "infrastructure/core/fabric-core",
     "infrastructure/core/fabric-core-json",
     "infrastructure/identity/fabric-identity",
@@ -46,6 +47,8 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+fabric-cli-repl = { path = "hosts/repl/fabric-cli-repl", default-features = false }
+reedline = { version = "=0.52.1", default-features = false }
 fabric-cli-context = { path = "hosts/cli/fabric-cli-context" }
 fabric-core = { path = "infrastructure/core/fabric-core" }
 fabric-core-json = { path = "infrastructure/core/fabric-core-json" }
@@ -94,6 +97,7 @@ serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtr
 thiserror = "2.0.21"
 jpx-core = { version = "=0.3.1", default-features = false }
 tokio = { version = "1.54.1", default-features = false, features = ["macros", "rt", "time", "net", "io-util", "sync"] }
+time = { version = "=0.3.55", default-features = false, features = ["local-offset"] }
 hyper = { version = "=1.12.0", default-features = false, features = ["client", "http1"] }
 hyper-util = { version = "=0.1.21", default-features = false, features = ["client-legacy", "client-proxy", "http1", "tokio"] }
 hyper-rustls = { version = "=0.27.10", default-features = false, features = ["http1", "ring", "tls12"] }

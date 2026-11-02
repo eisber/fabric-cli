@@ -86,7 +86,11 @@ CLA, required checks, restricted-area review, and authority boundaries still app
   [REST client decision](docs/decisions/rest-client-implementation.md).
 - Tests stay offline and secret-free. Do not discover ambient credentials,
   implement static-token production fallback, persist plaintext credentials, or
-  add a Python/az/azd runtime requirement. The `windows-broker` feature now includes
+  add a Python/az/azd runtime requirement outside the owner's explicitly approved
+  Python deployment backend. That deployment-only exception does not authorize
+  Python authentication, SDK, or file-command fallbacks; document and validate
+  its interpreter, package, process, and failure contracts separately.
+  The `windows-broker` feature now includes
   experimental user-invoked login/status/logout, not a production support claim.
   Native login/MFA/tenant-policy proof and team review remain required.
 

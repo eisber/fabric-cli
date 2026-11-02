@@ -290,6 +290,14 @@ pub fn json_dumps(data: &Value) -> Result<String, OutputError> {
     Ok(encoding::encode_default(data))
 }
 
+/// Encode a local GET result like Python `json.dump(..., indent=4, ensure_ascii=False)`.
+///
+/// Retains insertion order, UTF-8 Unicode and the shared JSON numeric domain.
+/// No envelope, list wrapping or trailing newline is added.
+pub fn json_dumps_pretty_unicode(data: &Value) -> String {
+    encoding::encode_pretty_unicode(data)
+}
+
 /// Parse strict JSON instead of silently coercing malformed or non-finite data.
 ///
 /// Unsupported Python objects, bytes, lone surrogates, and NaN/Infinity literals

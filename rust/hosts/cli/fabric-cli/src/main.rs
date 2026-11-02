@@ -2,22 +2,28 @@
 // Licensed under the MIT License.
 
 //! Experimental CLI entry point, not a replacement for the Python `fab`.
+#![cfg_attr(test, deny(unnameable_test_items))]
 
 #[cfg(feature = "windows-broker")]
 mod auth;
 mod local_host;
 #[cfg(feature = "native-read")]
 mod native_read;
+mod python_deploy;
+#[cfg(feature = "repl")]
+mod repl_host;
+mod repl_state;
 
 #[cfg(not(feature = "native-read"))]
 use fabric_cli::HostError;
 use fabric_cli::parser::{
     Invocation,
-    batch::{self, BatchHost, BatchInvocation, CommandOutcome, CommandParseError},
+    batch::{self, BatchHost, BatchInvocation, CommandOutcome as BatchOutcome, CommandParseError},
     invalid_arguments_message, parse_args,
 };
 use fabric_cli_local::NavigationState;
 use fabric_cli_output::{json_dumps, text::OutputFormat};
+use repl_state::CommandOutcome;
 use serde::Serialize;
 use std::{
     io::{self, Write},
@@ -35,42 +41,68 @@ struct CommandError {
 }
 
 fn run() -> io::Result<ExitCode> {
-    dispatch(parse_args(std::env::args_os()), &mut None)
+    let arguments = std::env::args_os().collect::<Vec<_>>();
+    #[cfg(feature = "repl")]
+    if arguments.len() == 1 {
+        return repl_host::run();
+    }
+    dispatch(parse_args(arguments), &mut None).map(CommandOutcome::exit_code)
 }
 
 fn dispatch(
     invocation: Result<Invocation, clap::Error>,
     local_state: &mut Option<NavigationState>,
-) -> io::Result<ExitCode> {
+) -> io::Result<CommandOutcome> {
     let (error, exit) = match invocation {
         Ok(Invocation::Batch(invocation)) => {
             return batch::run(&invocation, &mut BatchExecution { local_state: None })
-                .map(ExitCode::from);
+                .map(CommandOutcome::Returned);
         }
         Ok(Invocation::Display(text)) => {
             write!(io::stdout().lock(), "{text}")?;
-            return Ok(ExitCode::SUCCESS);
+            return Ok(CommandOutcome::Returned(0));
+        }
+        Ok(Invocation::Deploy(command)) => {
+            return match python_deploy::run(&command) {
+                Ok(status) => Ok(CommandOutcome::from_exit(python_deploy::exit_code(status))),
+                Err(error) => {
+                    write_error(
+                        CommandError {
+                            code: error.code(),
+                            message: error.to_string(),
+                        },
+                        error.exit(),
+                    )?;
+                    Ok(match error {
+                        python_deploy::BridgeError::Cancelled => {
+                            CommandOutcome::Cancelled(error.exit())
+                        }
+                        _ => CommandOutcome::Returned(error.exit()),
+                    })
+                }
+            };
         }
         #[cfg(feature = "native-read")]
         Ok(invocation @ Invocation::Local(_)) if matches!(&invocation, Invocation::Local(command) if local_host::needs_remote(command)) =>
         {
             return native_read::run_family(&invocation);
         }
-        Ok(Invocation::Local(command)) => return local_host::run(&command, local_state),
+        Ok(Invocation::Local(command)) => {
+            return local_host::run(&command, local_state).map(CommandOutcome::from_exit);
+        }
         Ok(Invocation::Access(command))
             if matches!(
                 command.kind,
                 fabric_cli_resources::frontdoor::AccessKind::LabelListLocal
             ) =>
         {
-            return local_host::local_access(&command);
+            return local_host::local_access(&command).map(CommandOutcome::from_exit);
         }
         #[cfg(feature = "native-read")]
         Ok(
             invocation @ (Invocation::Access(_)
             | Invocation::Resource(_)
             | Invocation::Transfer(_)
-            | Invocation::Deploy(_)
             | Invocation::Table(_)),
         ) => {
             return native_read::run_family(&invocation);
@@ -80,7 +112,6 @@ fn dispatch(
             Invocation::Access(_)
             | Invocation::Resource(_)
             | Invocation::Transfer(_)
-            | Invocation::Deploy(_)
             | Invocation::Table(_),
         ) => (
             CommandError {
@@ -120,7 +151,12 @@ fn dispatch(
             2,
         ),
     };
-    write_error(error, exit)
+    write_error(error, exit)?;
+    Ok(if exit == 2 {
+        CommandOutcome::Stop(exit)
+    } else {
+        CommandOutcome::Returned(exit)
+    })
 }
 
 fn write_error(error: CommandError, exit: u8) -> io::Result<ExitCode> {
@@ -138,12 +174,12 @@ struct BatchExecution {
 impl BatchHost for BatchExecution {
     type Error = io::Error;
 
-    fn execute(&mut self, arguments: &[&str]) -> io::Result<CommandOutcome> {
+    fn execute(&mut self, arguments: &[&str]) -> io::Result<BatchOutcome> {
         let (invocation, exits) = match batch::parse_command(arguments) {
             Ok(parsed) => parsed,
             Err(CommandParseError::Arguments(error)) => {
                 dispatch(Err(error), &mut self.local_state)?;
-                return Ok(CommandOutcome::Stop(2));
+                return Ok(BatchOutcome::Stop(2));
             }
             Err(CommandParseError::UnknownCommand) => {
                 write_error(
@@ -153,7 +189,7 @@ impl BatchHost for BatchExecution {
                     },
                     1,
                 )?;
-                return Ok(CommandOutcome::Stop(1));
+                return Ok(BatchOutcome::Stop(1));
             }
         };
         #[cfg(feature = "windows-broker")]
@@ -165,7 +201,7 @@ impl BatchHost for BatchExecution {
                 },
                 1,
             )?;
-            return Ok(CommandOutcome::Stop(1));
+            return Ok(BatchOutcome::Stop(1));
         }
         #[cfg(feature = "native-read")]
         if matches!(&invocation, Invocation::Local(command)
@@ -179,24 +215,19 @@ impl BatchHost for BatchExecution {
                 },
                 1,
             )?;
-            return Ok(CommandOutcome::Stop(1));
+            return Ok(BatchOutcome::Stop(1));
         }
-        let code = dispatch(Ok(invocation), &mut self.local_state)?;
-        // Existing executable dispatchers return only ExitCode. Two is terminal
-        // misuse/cancellation, whereas handled command failures (1/4) continue.
-        let exit = if code == ExitCode::SUCCESS {
-            0
-        } else if code == ExitCode::from(2) {
-            2
-        } else if code == ExitCode::from(4) {
-            4
-        } else {
-            1
+        let outcome = dispatch(Ok(invocation), &mut self.local_state)?;
+        // Keep the existing standalone batch status policy, independently of
+        // the interactive host's retained typed cancellation/control reason.
+        let exit = match outcome.exit() {
+            exit @ (0 | 2 | 4) => exit,
+            _ => 1,
         };
         Ok(if exits || exit == 2 {
-            CommandOutcome::Stop(exit)
+            BatchOutcome::Stop(exit)
         } else {
-            CommandOutcome::Returned(exit)
+            BatchOutcome::Returned(exit)
         })
     }
 

@@ -39,7 +39,7 @@ impl fmt::Display for IncompleteUpload {
 
 impl std::error::Error for IncompleteUpload {}
 
-pub(super) struct ExportFiles<'a, 'session> {
+pub(crate) struct ExportFiles<'a, 'session> {
     local: &'a mut dyn TransferFiles,
     reads: &'a ReadSession<'session>,
     http: &'a HttpExecutor,
@@ -47,7 +47,7 @@ pub(super) struct ExportFiles<'a, 'session> {
 }
 
 impl<'a, 'session> ExportFiles<'a, 'session> {
-    pub(super) fn new(
+    pub(crate) fn new(
         local: &'a mut dyn TransferFiles,
         reads: &'a ReadSession<'session>,
         http: &'a HttpExecutor,

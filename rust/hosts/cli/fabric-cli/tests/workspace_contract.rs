@@ -202,7 +202,7 @@ fn workspace_members_and_internal_edges_respect_library_boundaries() {
         let manifest = std::fs::read_to_string(package["manifest_path"].as_str().unwrap()).unwrap();
         if matches!(
             name,
-            "fabric-cli" | "fabric-identity" | "fabric-sdk-transport"
+            "fabric-cli" | "fabric-cli-repl" | "fabric-identity" | "fabric-sdk-transport"
         ) {
             assert_eq!(package["features"]["default"], json!([]));
         }
@@ -480,8 +480,66 @@ fn default_sdk_cli_and_identity_graphs_exclude_native_broker() {
             String::from_utf8_lossy(&output.stderr)
         );
         let graph = String::from_utf8(output.stdout).unwrap();
-        for excluded in ["fabric-identity-windows v", "windows v", "windows-future v"] {
+        for excluded in [
+            "fabric-identity-windows v",
+            "windows v",
+            "windows-future v",
+            "fabric-cli-repl v",
+            "reedline v",
+            "crossterm v",
+        ] {
             assert!(!graph.contains(excluded), "{package}: {graph}");
+        }
+    }
+}
+
+#[test]
+fn terminal_editor_is_only_selected_through_the_optional_cli_repl_feature() {
+    for (package, features, expected) in [
+        ("fabric-cli-repl", "", false),
+        ("fabric-cli", "repl", true),
+        ("fabric-cli-repl", "reedline-editor", true),
+    ] {
+        let mut command = Command::new(env!("CARGO"));
+        command.args([
+            "tree",
+            "--offline",
+            "--locked",
+            "-p",
+            package,
+            "--no-default-features",
+            "--edges",
+            "normal",
+            "--prefix",
+            "none",
+        ]);
+        if !features.is_empty() {
+            command.args(["--features", features]);
+        }
+        let output = command.current_dir(workspace_root()).output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let graph = String::from_utf8(output.stdout).unwrap();
+        for dependency in ["reedline v0.52.1", "crossterm v"] {
+            assert_eq!(
+                graph.contains(dependency),
+                expected,
+                "{package}/{features}: {graph}"
+            );
+        }
+        for excluded in [
+            "rusqlite v",
+            "arboard v",
+            "fabric-cli v",
+            "fabric-sdk v",
+            "fabric-identity v",
+        ] {
+            if package == "fabric-cli-repl" {
+                assert!(!graph.contains(excluded), "{package}: {graph}");
+            }
         }
     }
 }

@@ -8,14 +8,19 @@
 
 mod local;
 mod resource;
+mod routed;
 mod selected;
+mod tree;
 mod upload;
 pub use resource::{ResourceFileError, ResourceFileHost, ResourceFileResult};
+pub use routed::RoutedFileSystems;
 pub use selected::SelectedFileSystem;
+pub use tree::{TreeError, TreeFailure, TreePaths, TreeResult, TreeStage};
 pub use upload::UploadResult;
 
 pub use local::{
-    LocalError, LocalErrorKind, LocalFileSystem, LocalKind, LocalReadFile, OsFileSystem,
+    LocalEntry, LocalError, LocalErrorKind, LocalFileReader, LocalFileSystem, LocalFileWriter,
+    LocalKind, LocalReadFile, OsFileSystem,
 };
 
 use fabric_cli_mutations::{

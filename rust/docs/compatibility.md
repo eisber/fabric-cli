@@ -6,6 +6,13 @@ The Rust workspace is an experimental staged port. It does not provide full Pyth
 MSAL, deployment, or complete cross-platform parity. The Python implementation
 continues to own the existing `fab` product contract.
 
+On **November 2, 2026**, the owner explicitly approved Python-backed executable
+deployment for Rust v1. The [deployment backend contract](python-deployment-backend.md)
+supersedes earlier no-Python requirements for `fab-rs deploy` only. Native SDK,
+authentication and file commands retain their no-Python/`az`/`azd` fallback
+boundaries. Historical native-deployment reference evidence remains immutable;
+it is not proof of the new process boundary or live deployment acceptance.
+
 The [complete command inventory and crate ownership](command-parity.md) tracks
 all 52 registered Python leaves, six groups, aliases, modes and current gaps.
 SDK endpoints and passing read fixtures alone do not establish command parity.
@@ -28,8 +35,10 @@ in [central family composition](native-family-host.md). Actual root-handler,
 request, stream and file evidence, not schema counts, gates coverage claims.
 
 The temporary executable name is `fab-rs`, version `0.1.0`. There is no REPL,
-embedded agent runtime, authentication command, deployment command or production
-read host in the default build. The separately opt-in Windows authentication
+embedded agent runtime, authentication command or native production
+read host in the default build. Executable deployment is available through the
+explicit preinstalled Python backend in every build configuration, not through
+a default native deployment host. The separately opt-in Windows authentication
 slice is described below. Python-named `ls` (`dir`) and `get` are recognized; their public async
 library composition is described in [read-command compatibility](read-command-compatibility.md).
 The separate `native-read` feature now installs an explicitly configured Windows
@@ -43,12 +52,21 @@ remain incomplete source branches, not complete-command acceptance.
 The native removal path requires explicit `--force`; injected offline/library
 UI hosts also exercise confirmation, decline and cancellation.
 
+The separately opt-in `repl` feature integrates the original recovered terminal
+component for no-argument, terminal-only input. It preserves source lexical/raw
+alias/EOF quirks and keeps history and navigation in memory. With `native-read`,
+service commands reuse an interactive in-memory context; broker authentication
+retains typed cancellation without changing its provider/policy. Separate
+invocation and standalone batch contracts remain unchanged.
+See [recovery adaptations and acceptance limits](repl-recovery-integration.md).
+
 | Invocation | Exit status | Standard output | Standard error |
 | --- | --- | --- | --- |
 | `--help`, `-h`, source `-help` flag | 0 | Human-readable help | Empty |
 | Bare `job`, `acl`, `label`, `config` groups | 0 | Registered group help, without host or configuration access | Empty |
 | `--version`, `-V` | 0 | `fab-rs 0.1.0` plus newline | Empty |
 | `ls`, `dir`, valid `get` arguments | 1 | Empty | Sanitized `NotConfigured` JSON plus newline |
+| Valid `deploy --config …` arguments | Python backend status | Python backend stream | Python backend stream, or sanitized runtime/package error |
 | No arguments, unknown commands or flags, `auth login`, `deploy` | 2 | Empty | One JSON error object plus newline |
 | Output I/O failure | 1 | May be incomplete | Best-effort output-failure diagnostic |
 
@@ -147,13 +165,14 @@ are not complete. See [manual login instructions](../README.md#run-an-actual-win
 | Pagination | Bounded traversal, validated continuation origins, and explicit incomplete results |
 | Operations | Real operation handles and safe retry/reconciliation; accepted is not completed and cancellation is not rollback |
 | Identity | Explicit account, tenant, audience, typed errors, and no silent fallback; enterprise policy evidence |
-| Installation | Authentication and deployment without installed Azure CLI, Azure Developer CLI, or Python |
+| Installation | Native authentication without Azure CLI, Azure Developer CLI or Python; deployment has an owner-approved preinstalled Python/package contract |
 | Platforms | Native Windows/macOS/Linux execution and packaging evidence |
 
 The [bounded Notebook deployment implementation](../capabilities/deployment/fabric-deploy/README.md)
-is native Rust, not a permanent Python subprocess bridge. Broad configuration,
-transforms, planning and Git behavior remain compatibility gates; the single
-Notebook path is not a full deployment port.
+remains a native Rust library. Rust v1 executable deployment instead selects the
+owner-approved [authoritative Python backend](python-deployment-backend.md)
+before native effects. Its Python runtime/package prerequisite is deployment-only;
+neither this handoff nor the native library proves live or GA deployment parity.
 
 ## Validation boundaries
 

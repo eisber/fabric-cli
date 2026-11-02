@@ -96,8 +96,9 @@ impl ResourceTransferHost<'_> {
     /// cancellation and mutation uncertainty remain in the existing SDK.
     ///
     /// # Errors
-    /// Definition, recursive, collision-policy and local-destination branches
-    /// fail explicitly; no accepted stage becomes a completed result or retry.
+    /// Definition and local-destination branches fail explicitly. Directory
+    /// copies retain the source rejection regardless of flags; no accepted
+    /// stage becomes a completed result or retry.
     pub async fn execute(
         &mut self,
         command: &ResourceCommand,
@@ -193,26 +194,13 @@ impl ResourceTransferHost<'_> {
 }
 
 fn transfer_options(command: &ResourceCommand) -> Result<(bool, bool), OneLakeWriteError> {
-    let (moving, force, recursive, collision) = match command {
-        ResourceCommand::Copy {
-            force,
-            recursive,
-            block_on_path_collision,
-            ..
-        } => (false, *force, *recursive, *block_on_path_collision),
-        ResourceCommand::Move {
-            force, recursive, ..
-        } => (true, *force, *recursive, false),
+    let (moving, force) = match command {
+        ResourceCommand::Copy { force, .. } => (false, *force),
+        ResourceCommand::Move { force, .. } => (true, *force),
         _ => return Err(local(parser::invalid("Expected a copy or move command"))),
     };
     if command.args().skill.is_some() {
         return Err(local(gap(command, "--skill storage request headers")));
-    }
-    if recursive || collision {
-        return Err(local(gap(
-            command,
-            "recursive/collision-policy transfer options",
-        )));
     }
     Ok((moving, force))
 }

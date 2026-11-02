@@ -34,6 +34,14 @@ pub struct JobReadSession<'a, 'session> {
     pub jobs: Arc<dyn JobExecutor>,
 }
 
+/// Rendered job output retaining its typed failure for caller-owned control flow.
+pub struct JobDispatch {
+    /// The unchanged command presentation, streams and exit code.
+    pub plan: TextPlan,
+    /// Original command or operation failure, retained before rendering.
+    pub error: Option<JobCommandError>,
+}
+
 impl JobReadSession<'_, '_> {
     /// Resolve context, execute a read-only leaf and render its actual streams.
     ///
@@ -45,6 +53,17 @@ impl JobReadSession<'_, '_> {
         command: &JobReadCommand,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<TextPlan, text::TextError> {
+        self.dispatch_result(command, cancelled)
+            .await
+            .map(|output| output.plan)
+    }
+
+    /// Dispatch a read-only job while retaining its typed failure.
+    pub async fn dispatch_result(
+        &self,
+        command: &JobReadCommand,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<JobDispatch, text::TextError> {
         let family = command.family_command();
         JobSession {
             reads: self.reads,
@@ -53,7 +72,7 @@ impl JobReadSession<'_, '_> {
             ui: &ReadOnlyUi,
             config: JobConfig::default(),
         }
-        .dispatch(&family, cancelled)
+        .dispatch_result(&family, cancelled)
         .await
     }
 }
@@ -85,6 +104,17 @@ impl JobSession<'_, '_> {
         command: &JobCommand,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<TextPlan, text::TextError> {
+        self.dispatch_result(command, cancelled)
+            .await
+            .map(|output| output.plan)
+    }
+
+    /// Dispatch a job while retaining its original command or operation failure.
+    pub async fn dispatch_result(
+        &self,
+        command: &JobCommand,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<JobDispatch, text::TextError> {
         let format = OutputFormat::resolve(command.output_format.as_deref(), Some("json"))?;
         let mut cancelled = pin!(cancelled);
         let result = async {
@@ -140,17 +170,21 @@ impl JobSession<'_, '_> {
             .await
         }
         .await;
-        let (envelope, headers, key_value, after) = match result {
+        let (envelope, headers, key_value, after, error) = match result {
             Ok(Some(output)) => (
                 OutputEnvelope::new(self.reads.timestamp.clone(), output.input),
                 output.show_headers,
                 output.show_key_value_list,
                 output.after_output,
+                None,
             ),
             Ok(None) => {
-                return Ok(TextPlan {
-                    records: Vec::new(),
-                    exit_code: 0,
+                return Ok(JobDispatch {
+                    plan: TextPlan {
+                        records: Vec::new(),
+                        exit_code: 0,
+                    },
+                    error: None,
                 });
             }
             Err(error) => (
@@ -158,6 +192,7 @@ impl JobSession<'_, '_> {
                 false,
                 false,
                 Vec::new(),
+                Some(error),
             ),
         };
         let mut plan = text::render(
@@ -174,7 +209,7 @@ impl JobSession<'_, '_> {
         for event in after {
             plan.records.extend(render_job_event(&event)?.records);
         }
-        Ok(plan)
+        Ok(JobDispatch { plan, error })
     }
 }
 

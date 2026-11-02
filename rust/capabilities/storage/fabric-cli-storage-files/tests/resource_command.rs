@@ -551,3 +551,58 @@ async fn remote_move_delegates_once_without_local_io_or_acceptance_promotion() {
     assert_eq!(network.requests.lock().unwrap().len(), 1);
     assert!(ui.prompts.is_empty());
 }
+
+#[tokio::test]
+async fn same_overlapping_and_colliding_remote_moves_never_fall_back_to_copy_or_delete() {
+    let root = remote(OneLakeKind::Folder);
+    let source = PathElement::child(
+        "tree",
+        Some("resolved".into()),
+        PathKind::OneLake(OneLakeKind::Folder),
+        root.clone(),
+    )
+    .unwrap();
+    let nested = PathElement::child(
+        "nested",
+        None,
+        PathKind::OneLake(OneLakeKind::Undefined),
+        source.clone(),
+    )
+    .unwrap();
+    let collision = PathElement::child(
+        "existing",
+        Some("resolved".into()),
+        PathKind::OneLake(OneLakeKind::Folder),
+        root,
+    )
+    .unwrap();
+    for target in [source.clone(), nested, collision] {
+        for transport_failure in [false, true] {
+            let mut context = Context::new(source.clone(), target.clone());
+            let (client, adapter, network) = setup(vec![]);
+            network
+                .replies
+                .lock()
+                .unwrap()
+                .push_back(if transport_failure {
+                    Err(support::failed_response())
+                } else {
+                    Ok(response(409, b""))
+                });
+            let mut ui = Ui::default();
+            let error = host(&mut context, &client, &adapter, &mut ui, Some(&NeverLocal))
+                .execute(&command(true, true), pending())
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                error,
+                ResourceFileError::Storage(OneLakeWriteError::Storage(error))
+                if error.mutation_may_have_occurred
+            ));
+            let requests = network.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0]["method"], "put");
+            assert!(ui.prompts.is_empty());
+        }
+    }
+}

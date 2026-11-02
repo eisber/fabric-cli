@@ -375,6 +375,22 @@ jobs:
           cargo clippy --offline --locked -p fabric-identity --all-targets --features windows-broker -- -D warnings
           cargo run --offline --locked -p fabric-identity --example safe_consumer --no-default-features
           cargo run --offline --locked -p fabric-identity --example safe_consumer --features windows-broker
+      - name: Check optional recovered terminal component without terminal or identity access
+        if: >-
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-repl') ||
+          contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli-local')
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          cargo test --offline --locked -p fabric-cli-repl --no-default-features --all-targets
+          cargo test --offline --locked -p fabric-cli-repl --features reedline-editor --all-targets
+          cargo clippy --offline --locked -p fabric-cli -p fabric-cli-repl --all-targets --features fabric-cli/repl -- -D warnings
+          cargo test --offline --locked -p fabric-cli --features repl --lib --bin fab-rs --test cli_contract --test argv_contract --test workspace_contract --test local_mounted --test batch_commands --test batch_parser --test python_deploy_dispatch --test repl_dispatch --test read_session --test job_read_session --test get_result_files --test read_session_unicode
+          cargo clippy --offline --locked -p fabric-cli --features native-read,repl --all-targets -- -D warnings
+          cargo test --offline --locked -p fabric-cli --features native-read,repl --lib --bin fab-rs --test cli_contract --test argv_contract --test workspace_contract --test local_mounted --test batch_commands --test python_deploy_dispatch --test repl_dispatch --test read_session --test job_read_session --test get_result_files --test read_session_unicode
+          python -B -m unittest discover -s hosts/repl/fabric-cli-repl/tests -p test_source_oracle.py -v
       - name: Require pinned Python job contracts and actual offline job consumer
         if: >-
           contains(fromJSON(needs.changes.outputs.packages), 'fabric-cli') ||

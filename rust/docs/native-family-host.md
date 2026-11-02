@@ -203,7 +203,12 @@ live-service or all-platform acceptance.
 
 ## Bounded gaps and evidence
 
-The generic deployment CLI route, recursive transfer metadata and configuration
+Executable `deploy` now selects the owner-approved
+[Python deployment backend](python-deployment-backend.md) before this native
+session. The remaining native deployment library route remains available to
+explicit injected hosts and is not a fallback from Python.
+
+The generic native deployment library route, recursive transfer metadata and configuration
 parameter inputs are implemented candidates, not a complete native validation
 or live-service claim. The latest source-matched schema, lifecycle and profile
 cases must pass before publishing a parity milestone.

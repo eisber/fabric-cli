@@ -65,6 +65,9 @@ fn invalid_commands_fail_with_sanitized_json_on_stderr() {
         vec!["--not-a-flag"],
         vec!["--client-secret", "must-not-be-echoed"],
     ] {
+        if args.is_empty() && cfg!(feature = "repl") {
+            continue;
+        }
         let output = invoke(&args);
         assert_eq!(output.status.code(), Some(2), "{args:?}");
         assert!(output.stdout.is_empty());
@@ -75,6 +78,7 @@ fn invalid_commands_fail_with_sanitized_json_on_stderr() {
             ["deploy"] => {
                 "Missing required argument(s): --config <config>. Run fab-rs --help for available commands and usage."
             }
+
             ["auth", "login"] if cfg!(feature = "windows-broker") => {
                 "Missing required argument(s): --tenant <TENANT_GUID>, --account <WORK_ACCOUNT_UPN>. Run fab-rs --help for available commands and usage."
             }
@@ -90,6 +94,16 @@ fn invalid_commands_fail_with_sanitized_json_on_stderr() {
             })
         );
     }
+}
+
+#[cfg(feature = "repl")]
+#[test]
+fn redirected_no_argument_input_fails_without_starting_an_editor_or_reading_config() {
+    let output = invoke(&[]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["error"]["code"], "InteractiveInputUnavailable");
 }
 
 #[cfg(feature = "windows-broker")]

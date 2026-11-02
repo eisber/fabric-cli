@@ -11,7 +11,8 @@ use std::{path::Path, sync::Arc};
 /// One caller-owned local classification, distinct from permission to copy.
 ///
 /// The metadata owner requests this snapshot only after Fabric resolution
-/// selects local fallback. Its filesystem remains confined to the exact input.
+/// selects local fallback. Its filesystem remains confined to the selected input
+/// and any explicitly enabled descendants.
 pub struct ResourceLocalSnapshot {
     /// Exact original input, basename, opaque identity and actual object kind.
     pub metadata: LocalMetadata,
@@ -27,7 +28,7 @@ pub struct ResourceLocalSnapshot {
     pub empty_path_exists: bool,
     /// Source boolean-as-file-descriptor existence, indexed by false/true.
     pub descriptor_exists: [bool; 2],
-    /// Deferred filesystem capability for this alias, never a directory tree.
+    /// Deferred filesystem capability for this alias and explicitly enabled descendants.
     pub files: Arc<dyn LocalFileSystem>,
 }
 

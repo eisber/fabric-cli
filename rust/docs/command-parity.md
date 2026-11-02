@@ -27,6 +27,12 @@ Automatic help, flags, batch and REPL modes are additional surfaces below.
 These counts are a command denominator, **not a full behavioral denominator**:
 each path has resource, option, mode, output and failure variations.
 
+The November 2, 2026 [selective recovered REPL integration](repl-recovery-integration.md)
+adds a default-disabled terminal component, without changing this historical
+command inventory. Shell state, registered native/auth dispatch and source
+lexical quirks are integrated; real terminal UX, live native-shell acceptance
+and non-Windows execution remain separate gates.
+
 ## Complete command table
 
 Every leaf below remains unavailable as a successful live command in the

@@ -78,19 +78,25 @@ impl HttpClient for Network {
             );
             self.source_lease_checks.fetch_add(1, Ordering::SeqCst);
         }
-        let headers: BTreeMap<_, _> = ["content-type", "x-ms-content-type"]
-            .into_iter()
-            .filter_map(|name| {
-                request
-                    .headers()
-                    .get_str(&name.into())
-                    .ok()
-                    .map(|v| (name, v.to_owned()))
-            })
-            .collect();
+        let headers: BTreeMap<_, _> = [
+            "content-type",
+            "x-ms-content-type",
+            "if-none-match",
+            "if-match",
+            "x-ms-rename-source",
+        ]
+        .into_iter()
+        .filter_map(|name| {
+            request
+                .headers()
+                .get_str(&name.into())
+                .ok()
+                .map(|v| (name, v.to_owned()))
+        })
+        .collect();
         self.requests.lock().unwrap().push(json!({
             "method": match request.method() {
-                Method::Get => "get", Method::Put => "put", Method::Patch => "patch",
+                Method::Get => "get", Method::Put => "put", Method::Patch => "patch", Method::Head => "head", Method::Delete => "delete",
                 _ => panic!("unexpected request"),
             },
             "url": request.url().as_str(), "headers": headers,

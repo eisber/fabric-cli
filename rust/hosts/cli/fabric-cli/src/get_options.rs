@@ -37,7 +37,7 @@ pub fn is_metadata_property_query(query: &str) -> bool {
 /// Validate options before metadata discovery or native credential setup.
 ///
 /// Context-sensitive force and verbose handling is checked after resolving the
-/// target. Result-file output remains unsupported and never reaches file I/O.
+/// target. Result-file output requires the separately injected file capability.
 ///
 /// # Errors
 /// Rejects result-file output and GET-only flags on listing commands.
@@ -47,7 +47,20 @@ pub fn preflight(command: &ReadCommand) -> Result<(), CommandError> {
             "GET result-file output requires the source storage serializer and an explicit file host",
         ));
     }
-    if command.kind != ReadKind::Get && (command.force || command.verbose) {
+    preflight_with_files(command)
+}
+
+/// Validate options when the caller provides an explicit GET result-file host.
+///
+/// Preserves all selected options without resolving paths, acquiring credentials
+/// or performing I/O. Target-specific force/verbose policy remains deferred.
+///
+/// # Errors
+/// Rejects GET-only flags and result-file output on listing commands.
+pub fn preflight_with_files(command: &ReadCommand) -> Result<(), CommandError> {
+    if command.kind != ReadKind::Get
+        && (command.force || command.verbose || command.output.is_some())
+    {
         return Err(errors::unsupported(
             "GET options cannot be used for a listing",
         ));

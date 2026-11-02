@@ -25,6 +25,7 @@ layers:
 | `capabilities/deployment/` | Deployment workflows and definition transfer adapters |
 | `capabilities/local/` | Local configuration, navigation and platform commands |
 | `hosts/cli/` | Executable composition and CLI-specific context, query and presentation |
+| `hosts/repl/` | Removable shell loop and opt-in Reedline terminal adapter |
 | `infrastructure/core/` | Shared contracts and ordered JSON encoding |
 | `infrastructure/identity/` | Credential selection and isolated Windows interop |
 | `infrastructure/http/` | Shared HTTP execution and optional native transport |
@@ -122,6 +123,13 @@ lint policy. The native boundary has no internal workspace dependencies; all
 other workspace crates inherit `unsafe_code = "forbid"`.
 
 ### Crate-first parallel development
+
+The optional `fabric-cli-repl` component is a CLI-layer leaf with a
+dependency-free default feature set. `reedline-editor` adds only the pinned
+editor graph; default CLI and SDK consumers exclude Reedline/Crossterm.
+Application feature `repl` owns the binary-only adapter and does not change
+shared command or batch APIs. Its [selective recovery integration](repl-recovery-integration.md)
+records the explicit native-context boundary and unexecuted terminal gates.
 
 Prefer focused crates for independently owned porting areas rather than growing
 the initial crates into monoliths. Establish a small public interface, a bounded
@@ -224,7 +232,12 @@ failure/bounds/cancellation gates, and non-goals.
 
 The SDK's normal dependency closure excludes the CLI and identity implementation.
 SDK consumers supply an `Arc<dyn azure_core::credentials::TokenCredential>`.
-Neither `az`, `azd`, nor Python is required by the Rust workspace.
+Neither `az`, `azd`, nor Python is required by native SDK, authentication or file
+commands. The owner's November 2, 2026
+[deployment-only exception](python-deployment-backend.md) requires an installed
+Python product environment for executable deployment. That CLI-host process
+boundary does not change library dependency directions or authorize a Python
+credential fallback.
 
 ## REST client implementation
 

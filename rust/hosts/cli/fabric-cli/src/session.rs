@@ -11,7 +11,7 @@ pub mod get_options;
 use crate::{PythonQuery, ReadConfig, ReadHost, errors, parser::ReadCommand};
 use fabric_cli_context::{Element, HomeContext};
 use fabric_cli_output::{
-    CommandError, OutputEnvelope, Timestamp,
+    CommandError, OutputEnvelope, Timestamp, production_unicode,
     text::{self, OutputFormat, Presentation, TextOptions, TextPlan},
 };
 use fabric_sdk::{
@@ -74,6 +74,22 @@ pub struct ReadSession<'a> {
     pub config: ReadConfig,
 }
 
+/// Rendered read output retaining its typed command failure for caller control flow.
+///
+/// The existing plan-only methods remain unchanged. Hosts must not infer
+/// cancellation by inspecting rendered records, messages or numeric exit codes.
+pub struct ReadDispatch {
+    /// The unchanged command presentation, streams and exit code.
+    pub plan: TextPlan,
+    /// Original command failure, retained before rendering.
+    pub error: Option<CommandError>,
+    /// Structured source-operation failure code, retained before presentation.
+    ///
+    /// Source GET can return an `OutputInput` failure rather than `Err`.
+    /// This is that typed field, not a parsed rendered diagnostic.
+    pub output_error_code: Option<String>,
+}
+
 /// Explicit source-synchronous workspace GET policy over the unchanged read session.
 ///
 /// The borrowed operation executor supplies the same caller-owned HTTP/time
@@ -86,6 +102,44 @@ pub struct SourceOperationReadSession<'a, 'session> {
 }
 
 impl SourceOperationReadSession<'_, '_> {
+    /// Dispatch with result-file support while retaining the typed failure.
+    pub async fn dispatch_result_with_files(
+        &self,
+        command: &ReadCommand,
+        files: &mut crate::get_output::ResultFileHost<'_>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<ReadDispatch, text::TextError> {
+        self.base
+            .dispatch_with_files_result(command, Some(self.operations), Some(files), cancelled)
+            .await
+    }
+
+    /// Dispatch source operations while retaining the typed failure before rendering.
+    pub async fn dispatch_result(
+        &self,
+        command: &ReadCommand,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<ReadDispatch, text::TextError> {
+        self.base
+            .dispatch_with_files_result(command, Some(self.operations), None, cancelled)
+            .await
+    }
+
+    /// Dispatch GET with an explicit result-file capability and filename clock.
+    ///
+    /// Querying completes once before destination resolution or any write.
+    /// Dropped/failed writes are never retried and are not rolled back.
+    pub async fn dispatch_with_result_files(
+        &self,
+        command: &ReadCommand,
+        files: &mut crate::get_output::ResultFileHost<'_>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<TextPlan, text::TextError> {
+        self.base
+            .dispatch_with_files(command, Some(self.operations), Some(files), cancelled)
+            .await
+    }
+
     /// Dispatch using source GET operation reconciliation before enrichment.
     ///
     /// Other read paths, discovery, projection and stream rendering are unchanged.
@@ -101,6 +155,17 @@ impl SourceOperationReadSession<'_, '_> {
 }
 
 impl<'session> ReadSession<'session> {
+    /// Dispatch GET with caller-owned result files, without installing a runtime.
+    pub async fn dispatch_with_result_files(
+        &self,
+        command: &ReadCommand,
+        files: &mut crate::get_output::ResultFileHost<'_>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<TextPlan, text::TextError> {
+        self.dispatch_with_files(command, None, Some(files), cancelled)
+            .await
+    }
+
     /// Select source-synchronous workspace GET without changing default contracts.
     ///
     /// Supply the same shared executor used for reads, with its existing timer.
@@ -118,10 +183,10 @@ impl<'session> ReadSession<'session> {
     /// Execute a parsed read through real discovery, SDK, query and rendering.
     ///
     /// JSON remains the preview default. Explicit text uses the shared pure
-    /// renderer with no colors and ASCII terminal-width properties. GET uses
-    /// source raw-data presentation, not key/value rows. Non-ASCII text requiring
-    /// unavailable Python properties fails explicitly; JSON is unrestricted by
-    /// the terminal-width provider.
+    /// renderer with no colors and pinned Python scalar-width properties. GET
+    /// uses source raw-data presentation, not key/value rows. Unicode provider
+    /// initialization and formatting failures propagate without ASCII fallback;
+    /// JSON does not initialize or depend on the terminal-width provider.
     ///
     /// Ordinary service/path/cancellation failures retain product envelopes and
     /// exit codes. Rendering errors, including partial text, remain errors.
@@ -140,37 +205,123 @@ impl<'session> ReadSession<'session> {
         operations: Option<&dyn OperationExecutor>,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<TextPlan, text::TextError> {
+        self.dispatch_with_files(command, operations, None, cancelled)
+            .await
+    }
+
+    async fn dispatch_with_files(
+        &self,
+        command: &ReadCommand,
+        operations: Option<&dyn OperationExecutor>,
+        files: Option<&mut crate::get_output::ResultFileHost<'_>>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<TextPlan, text::TextError> {
+        self.dispatch_with_files_result(command, operations, files, cancelled)
+            .await
+            .map(|output| output.plan)
+    }
+
+    async fn dispatch_with_files_result(
+        &self,
+        command: &ReadCommand,
+        operations: Option<&dyn OperationExecutor>,
+        mut files: Option<&mut crate::get_output::ResultFileHost<'_>>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<ReadDispatch, text::TextError> {
         let format = OutputFormat::resolve(command.output_format.as_deref(), Some("json"))?;
+        let file_default_format = files
+            .as_ref()
+            .map(|files| OutputFormat::resolve(files.default_output_format, Some("json")))
+            .transpose()?;
         let mut cancelled = pin!(cancelled);
-        let result = self.execute(command, operations, cancelled.as_mut()).await;
+        let result = self
+            .execute(command, operations, files.is_some(), cancelled.as_mut())
+            .await;
+        let error = result.as_ref().err().cloned();
+        let output_error_code = result
+            .as_ref()
+            .ok()
+            .and_then(|(input, _)| input.as_ref())
+            .and_then(|input| input.error_code.clone());
         let envelope = match result {
-            Ok(Some(input)) => OutputEnvelope::new(self.timestamp.clone(), input),
-            Ok(None) => {
-                return Ok(TextPlan {
-                    records: Vec::new(),
-                    exit_code: 0,
+            Ok((Some(input), name)) => {
+                if let (Some(output), Some(files), Some(data)) = (
+                    command.output.as_ref().filter(|output| !output.is_empty()),
+                    files.as_mut(),
+                    &input.data,
+                ) && input.status == fabric_cli_output::OutputStatus::Success
+                {
+                    let (notice, result, storage) =
+                        files.write(output, &name, data, cancelled.as_mut()).await;
+                    let lakehouse_success = result.is_ok()
+                        && storage == Some(fabric_deploy::definitions::ExportStorage::Lakehouse);
+                    let format = if lakehouse_success {
+                        file_default_format.unwrap_or(format)
+                    } else {
+                        format
+                    };
+                    let error = result.as_ref().err().cloned();
+                    let plan = crate::get_output::render_completion(
+                        result,
+                        notice,
+                        self.timestamp.clone(),
+                        (!lakehouse_success).then_some(command.name.as_str()),
+                        format,
+                    )?;
+                    return Ok(ReadDispatch {
+                        plan,
+                        error,
+                        output_error_code: None,
+                    });
+                }
+                OutputEnvelope::new(self.timestamp.clone(), input)
+            }
+            Ok((None, _)) => {
+                return Ok(ReadDispatch {
+                    plan: TextPlan {
+                        records: Vec::new(),
+                        exit_code: 0,
+                    },
+                    error: None,
+                    output_error_code: None,
                 });
             }
             Err(error) => error.envelope(self.timestamp.clone(), Some(command.name.clone())),
         };
-        text::render(
-            &envelope,
-            format,
-            &TextOptions {
-                subcommand: Some(&command.name),
-                ..TextOptions::default()
-            },
-            &text::ascii_width,
-            Presentation::default(),
-        )
+        let options = TextOptions {
+            subcommand: Some(&command.name),
+            ..TextOptions::default()
+        };
+        let plan = match format {
+            OutputFormat::Json => text::render(
+                &envelope,
+                format,
+                &options,
+                &text::ascii_width,
+                Presentation::default(),
+            ),
+            OutputFormat::Text => text::render(
+                &envelope,
+                format,
+                &options,
+                production_unicode::width_provider()?,
+                Presentation::default(),
+            ),
+        }?;
+        Ok(ReadDispatch {
+            plan,
+            error,
+            output_error_code,
+        })
     }
 
     async fn execute(
         &self,
         command: &ReadCommand,
         operations: Option<&dyn OperationExecutor>,
+        result_files: bool,
         cancelled: impl Future<Output = ()> + Send,
-    ) -> Result<Option<fabric_cli_output::OutputInput>, CommandError> {
+    ) -> Result<(Option<fabric_cli_output::OutputInput>, String), CommandError> {
         if self.tenant.id() != Some(self.sdk.selection().tenant())
             || self.tenant.kind() != fabric_cli_context::NodeKind::Tenant
             || self.sdk.selection().audience() != fabric_sdk::Audience::Fabric
@@ -181,7 +332,11 @@ impl<'session> ReadSession<'session> {
                 "Invalid selected read context",
             ));
         }
-        get_options::preflight(command)?;
+        if result_files {
+            get_options::preflight_with_files(command)?;
+        } else {
+            get_options::preflight(command)?;
+        }
         let mut cancelled = pin!(cancelled);
         let mut snapshot = snapshot::Snapshot::default();
         // Keep the parser's exact token joining and quote trimming contract.
@@ -212,9 +367,18 @@ impl<'session> ReadSession<'session> {
         };
         let mut normalized = command.clone();
         normalized.output_format = Some("json".into());
-        host.with_folders(self.executor)
-            .with_scalar_query()
-            .execute_with_source_operations(&normalized, operations, cancelled.as_mut())
-            .await
+        if result_files && normalized.output.as_deref() == Some("") {
+            normalized.output = None;
+        }
+        let result = if result_files && command.kind == crate::parser::ReadKind::Get {
+            host.execute_read(&normalized, operations, true, cancelled.as_mut())
+                .await
+        } else {
+            host.with_folders(self.executor)
+                .with_scalar_query()
+                .execute_with_source_operations(&normalized, operations, cancelled.as_mut())
+                .await
+        }?;
+        Ok((result, target.name().to_owned()))
     }
 }

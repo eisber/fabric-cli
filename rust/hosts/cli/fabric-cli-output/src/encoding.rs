@@ -17,3 +17,7 @@ pub(crate) fn encode(value: &Value, indent: Indent) -> String {
 pub(crate) fn encode_default(value: &Value) -> String {
     fabric_core_json::json_dumps(value)
 }
+
+pub(crate) fn encode_pretty_unicode(value: &Value) -> String {
+    fabric_core_json::encode_unicode(value, Format::Pretty(JsonIndent::Four))
+}

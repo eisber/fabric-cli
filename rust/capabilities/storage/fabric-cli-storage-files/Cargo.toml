@@ -19,6 +19,7 @@ fabric-cli-mutations.workspace = true
 fabric-cli-output.workspace = true
 fabric-sdk-onelake.workspace = true
 tokio.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 azure_core.workspace = true
@@ -26,7 +27,6 @@ async-trait.workspace = true
 fabric-sdk-http.workspace = true
 fabric-sdk-onelake-http.workspace = true
 fabric-sdk-workspaces.workspace = true
-serde_json.workspace = true
 
 [lints]
 workspace = true

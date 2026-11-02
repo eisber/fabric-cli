@@ -2,6 +2,22 @@
 
 # Central-host physical copy contract
 
+## Current additive production entry point
+
+The owner subsequently authorized full recursive physical transfers and local
+moves beyond the pinned Python source. Production composition now selects
+`ResourceFileHost::execute_full_resolved`, explicit
+`SelectedFileSystem::with_tree` endpoints and `RoutedFileSystems`.
+[Recursive operations](TREE-OPERATIONS.md) defines that current operation matrix,
+commit/cleanup, collision, cancellation and partial-error contract.
+`TreeResult`/`TreeError` retain the corresponding evidence.
+
+The historical contract below applies to the retained oracle entry points and
+examples. Its directory/local-move rejections are not the current production
+file-command policy, nor permission to remove the independent source oracle.
+
+## Retained pinned-source adapter contract
+
 This is the reusable contract of `fabric-cli-storage-files`, not a second parser,
 Fabric-context resolver, generic resource mutation engine, or production host.
 Python behavior is pinned to `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
@@ -172,6 +188,15 @@ local boundary and native basename guards are recorded safety limits, not
 unqualified Python parity. Native OS diagnostic suffixes can differ, but source
 codes/prefixes, request order, outputs and actual file contents are compared.
 Windows evidence does not establish native Linux/macOS or live service parity.
+
+These whole-file bounds describe the retained oracle entry points, not
+`execute_full_resolved`. The additive production tree host uses bounded
+`LocalFileReader`/`LocalFileWriter` leases and the SDK `file_ranges` API.
+Adapters must implement those capabilities explicitly; defaults reject rather
+than falling back to whole-file buffering. The per-request 4 MiB limit is not
+a file-size limit. Overwrites must replace a directory entry without truncating
+a potentially shared source identity. See [tree operations](TREE-OPERATIONS.md)
+for conditional versions, source retention, completion and cleanup diagnostics.
 
 ## Post-checkpoint evidence boundary
 

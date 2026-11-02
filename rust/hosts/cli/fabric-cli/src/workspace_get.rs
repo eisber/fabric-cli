@@ -158,7 +158,7 @@ impl ReadHost<'_> {
             Value::Array(value) => !value.is_empty(),
             Value::Object(value) => !value.is_empty(),
         };
-        Ok(print.then(|| OutputInput {
+        Ok((print || command.output.is_some()).then(|| OutputInput {
             command: Some(command.name.clone()),
             data: Some(data),
             ..OutputInput::default()

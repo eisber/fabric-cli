@@ -7,6 +7,12 @@ planning, item publication, orphan removal and definition transfer APIs.
 Applications supply credentials, SDK clients, execution, filesystem capabilities
 and cancellation; the library does not invoke the CLI.
 
+This native library is separate from the owner-approved November 2, 2026
+[Python executable deployment backend](../../../docs/python-deployment-backend.md).
+`fab-rs deploy` selects that backend before any native deployment effects;
+library regex/JSONPath limits below do not gate executable deployments.
+The library does not acquire a Python runtime or credential fallback.
+
 ## Deployment workflow
 
 `workflow::deploy_repository` accepts a complete `DeploymentRepository`,

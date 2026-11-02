@@ -142,8 +142,11 @@ replace, the exact-source consumer/differential gates in `rust-ci.yml`.
 
 ## Runtime prerequisites and download verification
 
-An executable avoids a Rust/Python/az/azd build dependency for its user; it does
-not eliminate platform libraries. Windows MSVC binaries may require the matching
+An executable avoids a Rust/Cargo build dependency for its user; native
+non-deployment commands do not require Python/az/azd. The owner-approved
+[deployment backend](python-deployment-backend.md) separately requires
+preinstalled Python product packages. An executable does not eliminate platform
+libraries. Windows MSVC binaries may require the matching
 Microsoft Visual C++ runtime/system CRT and Windows SDK-era system APIs. The
 native-read variant also depends on Windows WinRT/COM/WAM system components and
 the existing isolated native interop boundary; no redistributable broker DLL is

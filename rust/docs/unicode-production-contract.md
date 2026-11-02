@@ -10,9 +10,73 @@ Python source: `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`.
 This contract records the approved production-provider design, source-version
 compatibility and actual validation evidence. The library now exports the
 provider and selects its default callbacks after complete corpus generation and
-verification. Native central-host integration, independent review and broader
-production acceptance remain separate gates. This is not a full-CLI/GA claim.
+verification. The later central read integration is recorded below; independent
+review and broader production acceptance remain separate gates. This is not a full-CLI/GA claim.
 This lane did not edit manifests, locks, old oracles, commands or peer files.
+
+## Central read integration — November 2, 2026
+
+`fabric-cli::session::ReadSession` now obtains the existing fallible
+`production_unicode::width_provider()` for explicit text output. Both ordinary
+and source-operation reads share this rendering boundary. The immutable provider
+is the same one already used by the default key/value formatters; no dependency,
+Unicode data, casing callback, configuration source or runtime was added.
+
+The table policy remains CPython 3.13.15 / UCD 15.1 scalar F/W = 2,
+everything else = 1. In particular, combining marks count one and wrapping may
+split sequences; this is neither Rich cell measurement nor generic `wcwidth`.
+Source truncation still counts scalars before visual table layout. ASCII
+formatting, default JSON selection, escaped JSON bytes and GET raw presentation
+are unchanged. JSON rendering does not initialize or require the width provider.
+
+Provider initialization errors propagate as typed `TextError::UnicodeData` or
+`UnicodeResource` values, never an ASCII retry or successful empty result.
+Unsupported output formats fail before discovery. Formatter resource errors and
+partial-output errors retain the existing `ReadSession` result contract; native
+dispatch writes any recorded partial output and reports `render_failed` with
+exit 1. No new provider selection or ambient configuration is supported.
+
+`fabric-cli/tests/read_session_unicode.rs` covers the offline discovery-to-output
+path for wide/combining alignment, a UCD-version-sensitive scalar, scalar
+wrapping, exact JSON bytes, unsupported formats and formatter resource errors.
+The production Unicode module adds a
+wide/combining truncation-and-alignment regression without changing any fixture
+or oracle artifact. Expected text was captured with the existing hash-guarded
+Python reference against its original Git blobs at
+`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`; current Python main differs from
+those original source hashes, so no reference pin was relaxed or regenerated.
+These checks do not establish live service, terminal/grapheme or full-CLI parity.
+
+Validation used Windows x64, pinned Rust 1.99.1, offline Cargo,
+`CARGO_BUILD_JOBS=2` and `RUST_TEST_THREADS=2`. The shared checkout was based on
+`336cbfcb547807c2176159bb7043a59f2f47c253` with concurrent uncommitted lane
+changes; these component results do not replace the coordinator's final
+combined-revision validation:
+
+- `cargo test --offline --locked -p fabric-cli-output`: 30 tests and one doctest
+  passed, including every valid scalar against the original checksum.
+- `cargo test --offline --locked -p fabric-cli --test read_session_unicode --test read_session --test source_operations --test output_contract_audit`:
+  30 tests passed; the default-feature audit target contains no tests.
+- `cargo test --offline --locked -p fabric-cli --features native-read --test read_session_unicode`:
+  five tests passed.
+- `cargo fmt -p fabric-cli -p fabric-cli-output -- --check`: passed.
+- `cargo clippy --offline --locked -p fabric-cli-output --all-targets -- -D warnings`
+  and `cargo clippy --offline --locked -p fabric-cli --lib --test read_session_unicode --test read_session --test source_operations --features native-read -- -D warnings`:
+  passed.
+- `cargo check --offline --locked -p fabric-cli -p fabric-cli-output --all-targets --features native-read`
+  and `cargo build --offline --locked -p fabric-cli --features native-read`: passed.
+- `git diff --exit-code` for the production source-data/oracle artifacts and
+  `rust/tests/compatibility/output`, plus `git diff --check`: passed.
+
+A subsequent coordinator-granted validation-slot recheck passed per-file
+`rustfmt --check`, all 15 production Unicode tests, the 30 read-session/source
+operation tests, both Clippy commands and the native all-target check above.
+Its final native build then failed with `E0583` because concurrent storage-lane
+edits declared `mod tree` and `mod routed` before their files existed in
+`fabric-cli-storage-files`. That worker was notified; no storage files were
+changed by this lane. This later failure supersedes any claim that the latest
+combined working tree has a green native build. The slot was returned to the
+coordinator with no remaining Cargo process.
 
 ## Approved exact dependency — controller-owned manifest changes
 

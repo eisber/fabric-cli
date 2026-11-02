@@ -12,6 +12,40 @@ use std::{fs, num::NonZeroUsize, path::Path};
 use support::Fixture;
 
 #[tokio::test]
+async fn tree_canonical_mapping_can_inspect_missing_descendants_without_creating_or_expanding_authority()
+ {
+    let fixture = Fixture::new();
+    let selected = fixture.path().join("missing");
+    let files = SelectedFileSystem::defer(
+        fixture.path().into(),
+        selected.clone(),
+        tokio::runtime::Handle::current(),
+    )
+    .with_input("chosen".into())
+    .with_tree();
+    let child = Path::new("chosen").join("Nested").join("Ä.bin");
+    assert_eq!(
+        files.canonical_path(&child).await.unwrap(),
+        fs::canonicalize(fixture.path())
+            .unwrap()
+            .join("missing")
+            .join("Nested")
+            .join("Ä.bin")
+    );
+    assert!(!selected.exists());
+    for rejected in [
+        Path::new("neighbor").join("data"),
+        Path::new("chosen").join("..").join("neighbor"),
+    ] {
+        assert!(matches!(
+            files.canonical_path(&rejected).await.unwrap_err().kind,
+            LocalErrorKind::OutsideBoundary
+        ));
+    }
+    assert!(!selected.exists());
+}
+
+#[tokio::test]
 async fn selected_path_is_deferred_and_sibling_paths_never_gain_boundary_authority() {
     let fixture = Fixture::new();
     let missing_root = fixture.path().join("not-created");
@@ -152,5 +186,30 @@ async fn selected_paths_retain_existing_symlink_containment_policy() {
                 LocalErrorKind::OutsideBoundary
             ));
         }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn download_child_cannot_follow_a_link_outside_the_selected_directory() {
+        use std::os::unix::fs::symlink;
+        let fixture = Fixture::new();
+        let selected = fixture.path().join("selected");
+        fs::create_dir(&selected).unwrap();
+        let sibling = fixture.path().join("sibling");
+        fs::write(&sibling, b"keep").unwrap();
+        symlink(&sibling, selected.join("payload")).unwrap();
+        let files = SelectedFileSystem::defer(
+            fixture.path().into(),
+            selected,
+            tokio::runtime::Handle::current(),
+        )
+        .with_input("chosen".into());
+        let error = files
+            .write(&Path::new("chosen").join("payload"), b"replace".to_vec())
+            .await
+            .unwrap_err();
+        assert!(matches!(error.kind, LocalErrorKind::OutsideBoundary));
+        assert!(!error.destination_opened);
+        assert_eq!(fs::read(sibling).unwrap(), b"keep");
     }
 }

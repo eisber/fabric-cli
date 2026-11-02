@@ -40,7 +40,8 @@ impl ResourceFileInputs for NativeResourceFileInputs {
             let boundary = selected.parent().unwrap_or(&selected).to_owned();
             let files = Arc::new(
                 SelectedFileSystem::defer(boundary, selected.clone(), self.runtime.clone())
-                    .with_input(PathBuf::from(input)),
+                    .with_input(PathBuf::from(input))
+                    .with_tree(),
             );
             let kind = files
                 .kind(Path::new(input))

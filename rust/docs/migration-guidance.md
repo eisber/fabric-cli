@@ -4,9 +4,34 @@
 
 The owner-approved strategy is **pure behavioral translation first, improvements
 second**. The goal is a reusable native Rust SDK, thin human/agent CLI, optional
-identity implementation, and native deployment library, with no production
-requirement for Python, Azure CLI, or Azure Developer CLI. A compiling scaffold
-is the foundation, not service, deployment, MSAL, or cross-platform parity.
+identity implementation, and native deployment library. Native SDK,
+authentication and file commands must not require Python, Azure CLI, or Azure
+Developer CLI. The owner-approved deployment-only exception below permits an
+installed Python backend for executable deployment. A compiling scaffold is the
+foundation, not service, deployment, MSAL, or cross-platform parity.
+
+## Current deployment-only exception — November 2, 2026
+
+The owner explicitly approved that **deployment can invoke Python** for Rust v1.
+This supersedes earlier entire-Rust/no-Python and permanent-bridge restrictions
+for the executable `deploy` command only. The CLI selects the authoritative
+installed Python Fabric CLI, which delegates to `fabric-cicd`, before any native
+deployment effects. It must not attempt native deployment and then silently
+fallback, retry a partially effected deployment, download code or install runtime
+dependencies. See [Python deployment backend](python-deployment-backend.md) for
+the interpreter/package contract and process-boundary evidence.
+
+This is not permission for Python/`az`/`azd` authentication, token-acquisition,
+SDK or file-command fallbacks. SDK and deployment libraries remain native and
+caller-injected; they do not launch the CLI or Python. Python deployment uses
+its own explicitly provisioned Python CLI identity/configuration contract, not
+an automatic replacement for a Rust credential.
+
+Historical lane remits and source checkpoints below retain their original
+scope. Their earlier no-Python deployment requirement is superseded only by
+this dated exception; independent source fixtures and native library contracts
+are not rewritten or weakened. The exception itself is not live-operation,
+release, cross-platform or GA acceptance.
 
 These rules apply lessons from Stephen Toub's
 [GitHub Copilot runtime migration retrospective](https://github.blog/ai-and-ml/generative-ai/migrating-the-github-copilot-runtime-to-rust-using-copilot/).
@@ -31,14 +56,16 @@ redesigning around Rust. Do not combine a port with an unrelated bug fix,
 optimization, namespace change, or plugin architecture.
 
 Existing product requirements can intentionally differ from Python, especially
-explicit identity selection, no credential fallback, and installation without
-Python/az/azd. Record these as approved compatibility exceptions, not accidental
+explicit identity selection, no credential fallback, and native-command
+installation without Python/az/azd, subject to the deployment-only prerequisite
+above. Record these as approved compatibility exceptions, not accidental
 translation or unqualified parity. Do not select an interactive backend simply
 to keep a port moving. Unsupported behavior must fail explicitly.
 
 The SDK belongs below the CLI. Do not reproduce an SDK that launches the CLI or
-a permanent Python deployment bridge. No Copilot agent runtime, generic plugin
-loader, or multi-language FFI layer is implied by this migration.
+Python. The approved Python deployment process boundary belongs only to the
+executable host, not the SDK or native deployment library. No Copilot agent
+runtime, generic plugin loader, or multi-language FFI layer is implied.
 
 ## Protect an independent behavioral oracle
 
@@ -49,8 +76,10 @@ may be changed to hide a regression. Any necessary oracle change needs an
 explicit rationale and owner approval independent of the implementation.
 
 Use the Python implementation as a development-time comparison oracle when
-appropriate. It is not a dependency of the shipped Rust product. Capture
-synthetic or sanitized inputs/outputs, exact versions, fixture provenance, and
+appropriate. The oracle's source checkout is not a runtime dependency. The
+separate November 2 deployment exception requires installed Python product
+packages only for executable deployment. Capture synthetic or sanitized
+inputs/outputs, exact versions, fixture provenance, and
 intentional exceptions. Failing comparisons should fix the translation first.
 Review old and new behavior after rebases, not just a mechanically clean merge.
 
@@ -86,7 +115,8 @@ stateful/mutating operations once prerequisites and permissions are established.
 Integrate reviewable slices regularly, preserving the working Python product.
 
 Each slice needs a complete definition of done: source behavior and consumers
-mapped, native implementation and failure/cleanup paths present, targeted tests
+mapped, native implementation or its explicit approved backend exception and
+failure/cleanup paths present, targeted tests
 and independent contracts passed, required native evidence recorded, and no
 unapproved fallback or omitted behavior. Planned CI is not passed CI. Report
 actual runner architecture and unexecuted platforms.
@@ -112,6 +142,8 @@ or compatible interface migrations rather than permanent family-merger chains.
 
 The initial assignments below are historical. The current task and protected
 contracts determine authority; these rows do not expand or revoke an assignment.
+The November 2 deployment-only exception supersedes the historical permanent
+Python-bridge restriction for the executable host, not the native library.
 
 | Lane | Initial bounded remit | Outside its initial authority |
 | --- | --- | --- |

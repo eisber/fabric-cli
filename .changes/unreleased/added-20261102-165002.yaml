@@ -1,0 +1,7 @@
+# Copyright (c) Microsoft Corporation. Licensed under the MIT License.
+kind: added
+body: Recover the optional Rust REPL, extend recursive file transfers, add GET result-file output, and support an explicit Python deployment backend in the experimental Rust CLI.
+time: 2026-11-02T16:50:02Z
+custom:
+    Author: eisber
+    AuthorLink: https://github.com/eisber

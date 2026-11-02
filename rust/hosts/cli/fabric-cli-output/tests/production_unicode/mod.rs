@@ -490,3 +490,44 @@ fn default_callbacks_report_typed_resource_limits_without_changing_json() {
     .unwrap();
     assert_eq!(observed.records, vec![expected]);
 }
+
+#[test]
+fn source_truncation_counts_scalars_before_visual_table_alignment() {
+    let envelope = crate::OutputEnvelope::new(
+        crate::Timestamp::parse("2000-01-01T00:00:00Z").unwrap(),
+        crate::OutputInput {
+            command: Some("ls".into()),
+            data: Some(json!([{"name":"界e\u{301}".repeat(20),"id":"w"}])),
+            ..crate::OutputInput::default()
+        },
+    );
+    let before = envelope.to_value().unwrap();
+    let columns = ["name".to_owned()];
+    let plan = text::render(
+        &envelope,
+        text::OutputFormat::Text,
+        &text::TextOptions {
+            truncate_columns: &columns,
+            terminal_width: Some(200),
+            ..text::TextOptions::default()
+        },
+        width_provider().unwrap(),
+        Presentation::default(),
+    )
+    .unwrap();
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    plan.write_to(&mut stdout, &mut stderr).unwrap();
+    // Pinned fab_util truncates to 49 scalars + ellipsis, not 49 display cells.
+    assert_eq!(
+        String::from_utf8(stdout).unwrap(),
+        format!(
+            "name{}id\n{}\n{}界…   w\n",
+            " ".repeat(66),
+            "-".repeat(72),
+            "界e\u{301}".repeat(16)
+        )
+    );
+    assert!(stderr.is_empty());
+    assert_eq!(plan.exit_code, 0);
+    assert_eq!(envelope.to_value().unwrap(), before);
+}

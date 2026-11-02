@@ -29,6 +29,13 @@ targets; removal and updates require existing resources.
 `ResourceFiles`. It retains `OneLakeWriteResult` and `OneLakeWriteError`
 separately from Fabric mutation outcomes. A host without transfer capabilities
 rejects copy/move explicitly.
+Storage file copies and renames accept the source's ignored recursive and
+collision flags; directory copies still retain the original explicit rejection.
+The physical-file library documents the full
+[baseline and additive operation matrices](../../../../storage/fabric-cli-storage-files/TREE-OPERATIONS.md).
+The production file host selects the owner-authorized additive tree engine,
+including recursive physical copies and local moves. This legacy adapter stays
+separate so the immutable Python oracle is not redefined.
 
 Workspace and tenant `rm` need a complete `RemovalCatalog` and `RemovalHost`
 rather than the single-resource `ResourceHost` entry point. The central
@@ -51,9 +58,12 @@ replay a request.
 ## Limits
 
 Resource skill headers are not wired and requested values fail explicitly.
-Virtual-resource mutations, recursive storage traversal, local destinations,
+Virtual-resource mutations, recursive storage copy, local destinations,
 capacity ARM lifecycle and domain assignment require their own capabilities.
 Do not substitute successful no-ops for unsupported branches.
+The central host mounts OneLake directory create/delete through
+`OneLakeWriteHost`; shortcut removal uses `ResourceHost` and the existing Fabric
+shortcut metadata handler, never DFS deletion.
 
 Two-path transfers assign the final positional token to the destination.
 Workspace capacity is configured with `mkdir -P capacityName=...`; `--type`

@@ -84,6 +84,8 @@ fn execute(
     command: &LocalInvocation,
     timestamp: Timestamp,
     session: &mut Option<NavigationState>,
+    command_line: bool,
+    selected_context: Option<&str>,
 ) -> Result<TextPlan, LocalError> {
     if matches!(command.command, LocalCommand::Version) {
         return fabric_cli::local_commands::dispatch(
@@ -99,18 +101,15 @@ fn execute(
         HomeContext::Unspecified,
         std::env::current_dir()?.to_string_lossy().into_owned(),
         session_id()?,
-        true,
+        command_line,
     )?;
-    let navigation = matches!(
-        &command.command,
-        LocalCommand::ChangeDirectory { .. }
-            | LocalCommand::PrintDirectory
-            | LocalCommand::Open { .. }
-    ) || matches!(&command.command, LocalCommand::Describe { path } if path.is_empty() || !path.join(" ").starts_with('.'));
+    let navigation = navigation_command(command);
     if !navigation {
         return fabric_cli::local_commands::dispatch(command, &store, &mut Effects, timestamp);
     }
-    if session.is_none() && context_selection()?.0 != "/" {
+    if selected_context.is_some_and(|path| path != "/")
+        || (session.is_none() && command_line && context_selection()?.0 != "/")
+    {
         return Err(LocalError::command(
             "NotConfigured",
             "This context requires the configured native metadata host",
@@ -151,6 +150,15 @@ fn execute(
     Ok(plan)
 }
 
+fn navigation_command(command: &LocalInvocation) -> bool {
+    matches!(
+        &command.command,
+        LocalCommand::ChangeDirectory { .. }
+            | LocalCommand::PrintDirectory
+            | LocalCommand::Open { .. }
+    ) || matches!(&command.command, LocalCommand::Describe { path } if path.is_empty() || !path.join(" ").starts_with('.'))
+}
+
 pub(crate) fn session_id() -> Result<u32, LocalError> {
     match std::env::var("FAB_RUST_SESSION_ID") {
         Ok(value) => value
@@ -169,7 +177,7 @@ pub(crate) fn run(
     session: &mut Option<NavigationState>,
 ) -> io::Result<ExitCode> {
     let timestamp = timestamp().map_err(io::Error::other)?;
-    let plan = match execute(command, timestamp.clone(), session) {
+    let plan = match execute(command, timestamp.clone(), session, true, None) {
         Ok(plan) => plan,
         Err(error) => text::render(
             &error
@@ -186,9 +194,72 @@ pub(crate) fn run(
     Ok(ExitCode::from(plan.exit_code))
 }
 
+#[cfg(feature = "repl")]
+pub(crate) fn run_interactive(
+    command: &LocalInvocation,
+    state: &mut crate::repl_state::ReplState,
+) -> io::Result<crate::repl_state::CommandOutcome> {
+    let timestamp = timestamp().map_err(io::Error::other)?;
+    let context = state.path().map_err(io::Error::other)?;
+    if navigation_command(command) {
+        state.initialize_local().map_err(io::Error::other)?;
+    }
+    let before = state
+        .navigation
+        .as_ref()
+        .map(|state| std::sync::Arc::clone(state.current()));
+    let result = execute(
+        command,
+        timestamp.clone(),
+        &mut state.navigation,
+        false,
+        Some(&context),
+    );
+    if let Some(before) = before {
+        state.commit_navigation(&before);
+    }
+    let (plan, outcome) = match result {
+        Ok(plan) => {
+            let outcome = crate::repl_state::CommandOutcome::Returned(plan.exit_code);
+            (plan, outcome)
+        }
+        Err(LocalError::Text(error)) => {
+            if let Some(partial) = error.partial_output() {
+                partial.write_to(&mut io::stdout().lock(), &mut io::stderr().lock())?;
+            }
+            return Err(io::Error::other(error));
+        }
+        Err(error) => {
+            let envelope = error
+                .command_error()
+                .envelope(timestamp, Some(command.command.command_path().into()));
+            let plan = text::render(
+                &envelope,
+                OutputFormat::Json,
+                &TextOptions::default(),
+                &text::ascii_width,
+                Presentation::default(),
+            )
+            .map_err(io::Error::other)?;
+            let outcome = crate::repl_state::error_outcome(&error.command_error(), plan.exit_code);
+            (plan, outcome)
+        }
+    };
+    plan.write_to(&mut io::stdout().lock(), &mut io::stderr().lock())?;
+    Ok(outcome)
+}
+
 #[cfg(feature = "native-read")]
 pub(crate) fn needs_remote(command: &LocalInvocation) -> bool {
-    let selected_remote = context_selection().is_ok_and(|(path, _)| path != "/");
+    needs_remote_for(
+        command,
+        &context_selection().map_or_else(|_| "/".into(), |(path, _)| path),
+    )
+}
+
+#[cfg(feature = "native-read")]
+pub(crate) fn needs_remote_for(command: &LocalInvocation, context: &str) -> bool {
+    let selected_remote = context != "/";
     match &command.command {
         LocalCommand::Open { .. } => true,
         LocalCommand::ChangeDirectory { path } => path.join(" ") != "/" || selected_remote,
@@ -203,6 +274,10 @@ pub(crate) fn needs_remote(command: &LocalInvocation) -> bool {
 }
 
 pub(crate) fn context_selection() -> Result<(String, bool), LocalError> {
+    context_selection_for(true)
+}
+
+pub(crate) fn context_selection_for(command_line: bool) -> Result<(String, bool), LocalError> {
     match std::env::var("FAB_RUST_CONTEXT") {
         Ok(path) if path.starts_with('/') => return Ok((path, false)),
         Ok(_) | Err(std::env::VarError::NotUnicode(_)) => {
@@ -213,7 +288,7 @@ pub(crate) fn context_selection() -> Result<(String, bool), LocalError> {
         }
         Err(std::env::VarError::NotPresent) => {}
     }
-    if std::env::var_os("FAB_RUST_CONFIG_ROOT").is_none() {
+    if !command_line || std::env::var_os("FAB_RUST_CONFIG_ROOT").is_none() {
         return Ok(("/".into(), false));
     }
     let store = store()?;

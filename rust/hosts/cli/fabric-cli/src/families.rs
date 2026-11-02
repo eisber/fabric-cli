@@ -5,7 +5,7 @@
 
 pub(crate) mod context;
 mod deploy_http;
-mod export_files;
+pub(crate) mod export_files;
 #[cfg(feature = "native-read")]
 pub mod native_resource_files;
 pub mod resource_files;
@@ -34,7 +34,9 @@ use fabric_cli_resources::{
     FamilyPresentation,
     frontdoor::{self, AccessHost, AccessKind, ApiClients},
 };
-use fabric_cli_storage_files::{ResourceFileError, ResourceFileHost, ResourceFileResult};
+use fabric_cli_storage_files::{
+    ResourceFileError, ResourceFileHost, ResourceFileResult, RoutedFileSystems,
+};
 use fabric_cli_transfer::{
     TransferContext, TransferError, TransferFiles, TransferHost, TransferKind, TransferMetadata,
     TransferResult, TransferUi,
@@ -57,6 +59,8 @@ use std::{
 pub enum FamilyEvidence {
     /// Local execution has no remote mutation result.
     Local,
+    /// Original command failure, including cancellation during metadata resolution.
+    CommandFailure(CommandError),
     /// Access result retains original accepted-operation uncertainty.
     Access(Result<fabric_cli_resources::CommandValue, fabric_cli_resources::CommandError>),
     /// Fabric mutation result retains earlier creation and cache evidence.
@@ -608,14 +612,22 @@ impl FamilySession<'_, '_> {
                 ) {
                     let storage = storage_client(self.reads);
                     let adapter = OneLakeHttpExecutor::new(Arc::new(self.http.clone()));
-                    if physical.is_some() {
+                    if physical.is_some()
+                        || matches!(target.kind(), fabric_cli_context::PathKind::OneLake(_))
+                    {
                         let destination =
                             destination.as_ref().ok_or(TextError::InvalidTableEntries)?;
-                        let selected = target
-                            .local_metadata()
-                            .or_else(|| destination.local_metadata());
-                        let files =
-                            selected.and_then(|selected| context.local_files(&selected.path));
+                        let files = RoutedFileSystems::new(
+                            [&target, destination]
+                                .into_iter()
+                                .filter_map(|path| path.local_metadata())
+                                .filter_map(|selected| {
+                                    context.local_files(&selected.path).map(|files| {
+                                        (std::path::PathBuf::from(&selected.path), files)
+                                    })
+                                })
+                                .collect(),
+                        );
                         let result = ResourceFileHost {
                             context: &mut targets,
                             storage: OneLakeWriteHost {
@@ -625,10 +637,13 @@ impl FamilySession<'_, '_> {
                                 read_limits: OneLakeLimits::default(),
                                 write_limits: OneLakeWriteLimits::default(),
                             },
-                            files: files.as_deref(),
+                            files: physical
+                                .map(|_| &files as &dyn fabric_cli_storage_files::LocalFileSystem),
                         }
-                        .execute_resolved(command, &target, destination, cancelled.as_mut())
-                        .await;
+                        .execute_full_resolved(command, &target, destination, cancelled.as_mut())
+                        .await
+                        .map(ResourceFileResult::Tree)
+                        .map_err(|error| ResourceFileError::Tree(Box::new(error)));
                         return physical_output(
                             result,
                             timestamp.clone(),
@@ -653,6 +668,60 @@ impl FamilySession<'_, '_> {
                             .map(|files| &mut **files as &mut dyn ResourceFiles),
                     }
                     .execute(command, cancelled.as_mut())
+                    .await;
+                    let outputs = match &result {
+                        Ok(result) => result.outputs.clone(),
+                        Err(error) => vec![error.output()],
+                    };
+                    let plan = render_outputs(outputs, command.name(), timestamp, format, false)?;
+                    return Ok(FamilyOutput {
+                        plan,
+                        evidence: FamilyEvidence::Storage(result),
+                    });
+                }
+                if matches!(target.kind(), fabric_cli_context::PathKind::OneLake(_))
+                    && (matches!(command, ResourceCommand::Mkdir { .. })
+                        || matches!(command, ResourceCommand::Remove { .. })
+                            && target.kind()
+                                != fabric_cli_context::PathKind::OneLake(
+                                    fabric_cli_context::OneLakeKind::Shortcut,
+                                ))
+                {
+                    let storage = storage_client(self.reads);
+                    let adapter = OneLakeHttpExecutor::new(Arc::new(self.http.clone()));
+                    let result = async {
+                        if command.args().skill.is_some() {
+                            return Err(OneLakeWriteError::Command(MutationError::new(
+                                "NotSupported",
+                                "--skill requires shared storage request-header plumbing",
+                            )));
+                        }
+                        let target = ResourceTransferHost::storage_target(command, &target)?;
+                        let mut host = OneLakeWriteHost {
+                            client: &storage,
+                            executor: &adapter,
+                            ui: self.mutations,
+                            read_limits: OneLakeLimits::default(),
+                            write_limits: OneLakeWriteLimits::default(),
+                        };
+                        match command {
+                            ResourceCommand::Remove { force, .. } => {
+                                host.remove(&target, *force, cancelled.as_mut()).await
+                            }
+                            ResourceCommand::Mkdir { params, .. } => {
+                                let params =
+                                    fabric_cli_mutations::frontdoor::creation_parameters(params)
+                                        .map_err(OneLakeWriteError::Command)?;
+                                host.create_directory(
+                                    &target,
+                                    !params.is_empty(),
+                                    cancelled.as_mut(),
+                                )
+                                .await
+                            }
+                            _ => unreachable!("OneLake write command selected above"),
+                        }
+                    }
                     .await;
                     let outputs = match &result {
                         Ok(result) => result.outputs.clone(),
@@ -749,7 +818,7 @@ impl FamilySession<'_, '_> {
                         ui: self.transfer_ui,
                         definition_limits: Default::default(),
                         operation_limits: Default::default(),
-                        command_line: true,
+                        command_line: self.navigation.is_command_line(),
                     }
                     .execute(command, cancelled.as_mut())
                     .await
@@ -812,7 +881,11 @@ impl FamilySession<'_, '_> {
         )?;
         Ok(FamilyOutput {
             plan,
-            evidence: FamilyEvidence::Local,
+            evidence: if self.navigation.is_command_line() {
+                FamilyEvidence::Local
+            } else {
+                FamilyEvidence::CommandFailure(error)
+            },
         })
     }
 }

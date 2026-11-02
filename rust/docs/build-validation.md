@@ -473,7 +473,7 @@ Before authorizing a packaging slice, the integration owner needs bounded answer
 | Question | Evidence required before claiming that capability |
 | --- | --- |
 | Which single already-executed native target should receive the first release-profile build experiment? | Exact head/toolchain, command, linker prerequisites, and resulting executable tested on that target; no installer or filename contract implied |
-| Which clean-machine OS/runtime baseline must run that executable without Python, `az`, or `azd`? | Approved disposable environment, native-library inventory, and offline help/version/error smoke results |
+| Which clean-machine OS/runtime baseline must run native non-deployment commands without Python, `az`, or `azd`? | Approved disposable environment, native-library inventory, and offline help/version/error smoke results; validate the separate [Python deployment prerequisite](python-deployment-backend.md) explicitly |
 | Are musl or additional architectures actually required for the next milestone? | Separate target/linker choice and native execution evidence; cross-compilation alone is insufficient |
 | When network/identity dependencies arrive, which trust and certificate scenarios are required first? | Approved transport/features, proxy/trust fixtures, and native-prerequisite review, including possible certificate-related OpenSSL |
 

@@ -2,6 +2,21 @@
 
 # Deployment configuration and transform compatibility
 
+## Executable backend: November 2, 2026 deployment-only exception
+
+The owner explicitly approved that deployment can invoke Python on November 2,
+2026. This supersedes earlier no-Python deployment requirements for the
+executable host only. Rust v1 `fab-rs deploy` selects the installed authoritative Python CLI before
+any native deployment effects. Its Python wrapper delegates to `fabric-cicd`;
+bounded native regex/JSONPath limits below do not gate executable deployments.
+See [Python deployment backend](python-deployment-backend.md) for exact
+interpreter/package prerequisites, selection, argument/stream/exit handling,
+cancellation and offline validation. This is deployment-only, not an SDK or
+authentication fallback, and not GA or live-service acceptance.
+
+The remaining sections describe the native libraries and historical reference
+evidence; they do not select the executable's deployment backend.
+
 The source-compatible CLI retains unknown configuration fields as immutable
 extension metadata without rejecting them. The pinned deployment wrapper uses
 explicit known-setting extraction for construction and publication; six
@@ -172,7 +187,8 @@ source no-op, not an unconsumed-processor failure.
 The initial slice inventories reference behavior and adds synthetic offline
 fixtures. The owner subsequently approved a native single-Notebook implementation,
 described below. It is not the full `fab deploy` command, a planner, unpublication,
-or a Python runtime bridge.
+or a Python runtime bridge. That statement describes the historical native
+library slice, not the separately approved November 2 executable backend.
 
 ## Source checkpoints and consumers
 
@@ -262,9 +278,13 @@ and platform-specific emission/path behavior.
 The upstream Python 3.10/jsonpath-ng 1.7.0 dependency branch is also unexecuted.
 These are future gates, not claims of complete semantic coverage.
 
-**Approved architectural exceptions:** the eventual runtime is native and has
-no Python/CLI subprocess dependency; libraries use caller-supplied SDK/core
-interfaces and credentials rather than mutable CLI state. Libraries must not
+**Historical architectural policy, partly superseded November 2, 2026:** the
+earlier all-native runtime/no-Python subprocess requirement is no longer the
+executable deployment contract. The deployment-only exception at the top of
+this page selects installed authoritative Python product code. The native
+library policy is unchanged: libraries use caller-supplied SDK/core interfaces
+and credentials rather than mutable CLI state and never invoke Python or the
+CLI. Libraries must not
 prompt, exit, initialize a global logger/runtime, or discover ambient credentials.
 These exceptions do not approve changes to the sampled transform semantics.
 No new behavioral waiver or YAML/regex/JSONPath crate equivalence is approved.

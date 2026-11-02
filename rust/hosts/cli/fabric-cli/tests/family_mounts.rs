@@ -71,13 +71,33 @@ async fn root_storage_copy_and_move_keep_distinct_stage_evidence() {
         if leaf == "cp" {
             host.headers(
                 200,
-                json!("abc"),
-                &[("Content-Length", "3"), ("Content-Type", "text/csv")],
+                serde_json::Value::Null,
+                &[
+                    ("Content-Length", "3"),
+                    ("Content-Type", "text/csv"),
+                    ("ETag", "\"source-v1\""),
+                    ("x-ms-resource-type", "file"),
+                ],
             );
-            host.reply(201, serde_json::Value::Null);
+            host.headers(201, serde_json::Value::Null, &[("ETag", "\"target-v1\"")]);
+            host.headers(
+                206,
+                json!("abc"),
+                &[
+                    ("Content-Length", "3"),
+                    ("Content-Range", "bytes 0-2/3"),
+                    ("ETag", "\"source-v1\""),
+                ],
+            );
             host.reply(202, serde_json::Value::Null);
             host.reply(200, serde_json::Value::Null);
         } else {
+            host.headers(
+                200,
+                serde_json::Value::Null,
+                &[("x-ms-resource-type", "file")],
+            );
+            host.reply(404, serde_json::Value::Null);
             host.reply(200, serde_json::Value::Null);
         }
         let output = host
@@ -89,8 +109,75 @@ async fn root_storage_copy_and_move_keep_distinct_stage_evidence() {
             ])
             .await;
         success(&output);
-        assert!(matches!(&output.evidence, FamilyEvidence::Storage(Ok(_))));
+        let FamilyEvidence::ResourceFiles(Ok(fabric_cli_storage_files::ResourceFileResult::Tree(
+            receipt,
+        ))) = &output.evidence
+        else {
+            panic!("missing full physical transfer receipt")
+        };
+        if leaf == "cp" {
+            assert_eq!(receipt.uploads.len(), 1);
+            assert!(receipt.rename.is_none());
+            assert_eq!(receipt.uploads[0].0.relative(), "Files/to.csv");
+            assert_eq!(receipt.uploads[0].1.create.status(), 201);
+            assert_eq!(receipt.uploads[0].1.append.unwrap().status(), 202);
+            assert!(matches!(
+                receipt.uploads[0].1.flush,
+                Some(fabric_sdk_onelake::OneLakeWriteOutcome::Completed { status: 200 })
+            ));
+            assert_eq!(receipt.upload_progress[0].1, 3);
+            assert_eq!(receipt.upload_progress[0].2, 1);
+            assert!(receipt.destination_copy_complete);
+        } else {
+            assert_eq!(receipt.rename.unwrap().status(), 200);
+            assert!(receipt.uploads.is_empty());
+        }
+        assert!(receipt.source_deletes.is_empty() && receipt.local_deletes.is_empty());
+        assert!(receipt.local_writes.is_empty() && receipt.local_directories.is_empty());
+        assert!(!receipt.declined && !receipt.unchanged);
         let requests = host.requests();
+        assert_eq!(
+            requests
+                .iter()
+                .map(|request| request["method"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            if leaf == "cp" {
+                vec![
+                    "GET", "GET", "HEAD", "HEAD", "HEAD", "PUT", "GET", "PATCH", "PATCH",
+                ]
+            } else {
+                vec!["GET", "GET", "HEAD", "HEAD", "HEAD", "HEAD", "PUT"]
+            }
+        );
+        if leaf == "cp" {
+            assert!(
+                requests[4]["url"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with("/Files/from.csv")
+            );
+            assert!(
+                requests[6]["url"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with("/Files/from.csv")
+            );
+            assert_eq!(requests[7]["raw_body"], "abc");
+            assert!(
+                requests[7]["url"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with("action=append&position=0")
+            );
+            assert!(
+                requests[8]["url"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with("action=flush&position=3&close=true")
+            );
+            assert_eq!(requests[8]["raw_body"], "");
+        }
+        assert!(requests.iter().all(|request| request["method"] != "DELETE"));
         assert_eq!(requests[2]["method"], "HEAD");
         assert!(
             requests[2]["url"]
@@ -111,6 +198,65 @@ async fn root_storage_copy_and_move_keep_distinct_stage_evidence() {
                 .any(|scopes| scopes == &[fabric_sdk::Audience::OneLake.scope()])
         );
     }
+}
+
+#[tokio::test]
+async fn root_storage_copy_requires_source_version_before_any_destination_mutation() {
+    let mut host = Harness::new();
+    host.item("Lakehouse");
+    host.headers(
+        200,
+        serde_json::Value::Null,
+        &[("x-ms-resource-type", "file")],
+    );
+    host.reply(404, serde_json::Value::Null);
+    host.headers(200, serde_json::Value::Null, &[("Content-Length", "3")]);
+    let output = host
+        .execute(&[
+            "cp",
+            "Demo.Workspace/Book.Lakehouse/Files/from.csv",
+            "Demo.Workspace/Book.Lakehouse/Files/to.csv",
+            "-f",
+        ])
+        .await;
+    assert_eq!(output.plan.exit_code, 1);
+    let FamilyEvidence::ResourceFiles(Err(fabric_cli_storage_files::ResourceFileError::Tree(
+        error,
+    ))) = &output.evidence
+    else {
+        panic!("missing source-version failure evidence");
+    };
+    assert!(matches!(
+        error.failure,
+        fabric_cli_storage_files::TreeFailure::Read(
+            fabric_sdk_onelake::OneLakeError::InvalidResponse
+        )
+    ));
+    assert!(error.partial.uploads.is_empty() && error.partial.upload_progress.is_empty());
+    assert!(error.partial.source_deletes.is_empty() && error.partial.local_deletes.is_empty());
+    assert!(!error.source_delete_may_have_occurred && !error.partial.destination_copy_complete);
+    let requests = host.requests();
+    assert_eq!(requests.len(), 5);
+    assert!(
+        requests
+            .iter()
+            .all(|request| matches!(request["method"].as_str(), Some("GET" | "HEAD")))
+    );
+    assert_eq!(requests[4]["method"], "HEAD");
+    assert!(
+        requests[4]["url"]
+            .as_str()
+            .unwrap()
+            .ends_with("/Files/from.csv")
+    );
+    assert!(
+        host.credential
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|scopes| scopes == &[fabric_sdk::Audience::OneLake.scope()])
+    );
 }
 
 #[tokio::test]

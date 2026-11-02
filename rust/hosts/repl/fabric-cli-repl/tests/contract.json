@@ -1,0 +1,102 @@
+{
+  "copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "source": {
+    "repository": "https://github.com/microsoft/fabric-cli",
+    "commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+    "files": [
+      "src/fabric_cli/core/fab_interactive.py",
+      "src/fabric_cli/core/fab_constant.py"
+    ],
+    "oracle": "test_source_oracle.py executes extracted pinned source methods and Python standard-library shlex; it does not import the product or the Rust implementation."
+  },
+  "editor_source": {
+    "repository": "https://github.com/nushell/reedline",
+    "version": "0.52.1",
+    "license": "MIT",
+    "rust_version": "1.95.0",
+    "sources": [
+      "https://raw.githubusercontent.com/nushell/reedline/v0.52.1/Cargo.toml",
+      "https://raw.githubusercontent.com/nushell/reedline/v0.52.1/src/engine.rs",
+      "https://raw.githubusercontent.com/nushell/reedline/v0.52.1/src/history/file_backed.rs",
+      "https://raw.githubusercontent.com/nushell/reedline/v0.52.1/src/history/base.rs",
+      "https://raw.githubusercontent.com/nushell/reedline/v0.52.1/src/history/item.rs",
+      "https://raw.githubusercontent.com/nushell/reedline/v0.52.1/src/prompt/base.rs",
+      "https://raw.githubusercontent.com/nushell/reedline/v0.52.1/src/result.rs",
+      "https://docs.rs/reedline/0.52.1/reedline/enum.Signal.html"
+    ],
+    "verified_signatures": [
+      "Reedline::create() -> Self",
+      "Reedline::with_history(self, Box<dyn History>) -> Self",
+      "Reedline::with_ansi_colors(self, bool) -> Self",
+      "Reedline::disable_hints(self) -> Self",
+      "Reedline::read_line(&mut self, &dyn Prompt) -> std::io::Result<Signal>",
+      "Reedline::take_history_save_error(&mut self) -> Option<ReedlineError>",
+      "FileBackedHistory::new(capacity: usize) -> reedline::Result<Self>"
+    ],
+    "history_api_correction": "The requested new(capacity, None) is not a Reedline 0.52.1 API. new(capacity) explicitly initializes its private file field to None; only with_file accepts a path.",
+    "typecheck_status": "Primary-source signatures verified; Cargo all-target checks require the parent's dependency graph and serial validation slot."
+  },
+  "intentional_differences": [
+    "The owner selected Reedline rather than Python PromptSession. Plain escaped prompt layout is retained; Rich styling, blinking cursor, key bindings, multiline editing and history-search UI are not claimed identical.",
+    "EOF is a distinct StopReason::EndOfInput and stops after one event. The source inner Exception handler instead prints 'Error in interactive session: ' for EOFError and breaks without a farewell.",
+    "Actual stdin and stdout must both be terminals. Redirected streams are explicitly unsupported before creating Reedline; there is no pseudo-terminal or environment fallback.",
+    "Submitted line bytes, token count, prompt bytes and retained history payload are bounded. Oversized or malformed lines fail without truncation. Reedline live editing/undo allocation has no hard byte ceiling.",
+    "History is in-memory and capacity-bounded, unlike the source's unlimited InMemoryHistory. Reedline omits empty lines and consecutive duplicates.",
+    "There is no log-file-path emission, hidden singleton, global runtime-mode mutation, terminal styling, custom completer, SDK or authentication initialization in this component. The application owns mode, diagnostics and dispatch.",
+    "Handled application/parser failures are host-owned Continue outcomes; fatal host errors stop with RunError::Host. Lexical ValueError-equivalent failures terminate with RunError::Line as the source inner exception path does."
+  ],
+  "host_contract": [
+    "Token/action fixtures use a parser fake accepting arbitrary first tokens so they test lexing and raw aliases, not actual command registration or acceptance.",
+    "The source catches SystemExit from a selected subparser's parse_args, but its unknown-command self.parser.error call is outside that catch and propagates SystemExit. The caller must distinguish handled subparser failures from fatal root command errors; this crate does not invent a command registry."
+  ],
+  "cases": [
+    {"line": "", "action": "empty", "tokens": []},
+    {"line": " \t\r\n", "action": "empty", "tokens": []},
+    {"line": "\u001c\u0085\u3000", "action": "empty", "tokens": []},
+    {"line": "ls", "action": "command", "tokens": ["ls"]},
+    {"line": "ls 'Sales Workspace.Workspace'", "action": "command", "tokens": ["ls", "Sales Workspace.Workspace"]},
+    {"line": "get \"日本語.Workspace/項目.Notebook\"", "action": "command", "tokens": ["get", "日本語.Workspace/項目.Notebook"]},
+    {"line": "get '' \"\"", "action": "command", "tokens": ["get", "", ""]},
+    {"line": "ls a''b\"c d\"e", "action": "command", "tokens": ["ls", "abc de"]},
+    {"line": "ls one\\ two three\\\\four", "action": "command", "tokens": ["ls", "one two", "three\\four"]},
+    {"line": "ls 'one\\two'", "action": "command", "tokens": ["ls", "one\\two"]},
+    {"line": "ls \"a\\qb\\$c\\`d\\\\e\\\"f\"", "action": "command", "tokens": ["ls", "a\\qb\\$c\\`d\\e\"f"]},
+    {"line": "ls \"a\\\nb\"", "action": "command", "tokens": ["ls", "a\\\nb"]},
+    {"line": "ls a\\\nb", "action": "command", "tokens": ["ls", "a\nb"]},
+    {"line": "ls a\tb\rc\nd", "action": "command", "tokens": ["ls", "a", "b", "c", "d"]},
+    {"line": "\u2003ls a\u2003b\u00a0c\u2003", "action": "command", "tokens": ["ls", "a\u2003b\u00a0c"]},
+    {"line": "ls a\u000bb\u000cc\u001cd", "action": "command", "tokens": ["ls", "a\u000bb\u000cc\u001cd"]},
+    {"line": "ls #literal a#b", "action": "command", "tokens": ["ls", "#literal", "a#b"]},
+    {"line": "ls a|b ; $(whoami) > out && ls", "action": "command", "tokens": ["ls", "a|b", ";", "$(whoami)", ">", "out", "&&", "ls"]},
+    {"line": "ls $HOME ~ `x` *.Workspace", "action": "command", "tokens": ["ls", "$HOME", "~", "`x`", "*.Workspace"]},
+    {"line": "exit", "action": "exit", "tokens": ["exit"]},
+    {"line": "quit", "action": "exit", "tokens": ["quit"]},
+    {"line": "q", "action": "exit", "tokens": ["q"]},
+    {"line": " exit ", "action": "command", "tokens": ["exit"]},
+    {"line": "\"exit\"", "action": "command", "tokens": ["exit"]},
+    {"line": "exit\n", "action": "command", "tokens": ["exit"]},
+    {"line": "EXIT", "action": "command", "tokens": ["EXIT"]},
+    {"line": "exit now", "action": "command", "tokens": ["exit", "now"]},
+    {"line": "help", "action": "help", "tokens": ["help"]},
+    {"line": "h", "action": "help", "tokens": ["h"]},
+    {"line": "-h", "action": "help", "tokens": ["-h"]},
+    {"line": "--help", "action": "help", "tokens": ["--help"]},
+    {"line": " help ", "action": "command", "tokens": ["help"]},
+    {"line": "'h'", "action": "command", "tokens": ["h"]},
+    {"line": "version", "action": "version", "tokens": ["version"]},
+    {"line": "v", "action": "version", "tokens": ["v"]},
+    {"line": "-v", "action": "version", "tokens": ["-v"]},
+    {"line": "--version", "action": "version", "tokens": ["--version"]},
+    {"line": " v ", "action": "command", "tokens": ["v"]},
+    {"line": " fab ", "action": "prefix-hint", "tokens": ["fab"]},
+    {"line": "fab", "action": "prefix-hint", "tokens": ["fab"]},
+    {"line": "\"fab\"", "action": "command", "tokens": ["fab"]},
+    {"line": "fab ls", "action": "command", "tokens": ["fab", "ls"]},
+    {"line": "''", "action": "command", "tokens": [""]},
+    {"line": "ls 'unclosed", "error": "No closing quotation"},
+    {"line": "ls \"unclosed", "error": "No closing quotation"},
+    {"line": "ls trailing\\", "error": "No escaped character"},
+    {"line": "ls \"trailing\\", "error": "No escaped character"},
+    {"line": "ls \\\n", "error": "No escaped character"}
+  ]
+}
