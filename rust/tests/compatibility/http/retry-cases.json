@@ -1,0 +1,69 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "session_factory_ast_sha256": "1eeb0ff15eaa4fac726b463d26704a228446d3b06701e65c9f8a58caf7f21b2b",
+  "cases": [
+    {
+      "name": "gateway_recovers_on_fourth_attempt",
+      "method": "GET",
+      "statuses": [503, 503, 503, 200],
+      "retry_after": null,
+      "requests": 4,
+      "wait_seconds": [2, 4],
+      "outcome": "response"
+    },
+    {
+      "name": "gateway_exhausts_after_four_attempts",
+      "method": "GET",
+      "statuses": [502, 502, 502, 502],
+      "retry_after": null,
+      "requests": 4,
+      "wait_seconds": [2, 4],
+      "outcome": "exhausted"
+    },
+    {
+      "name": "service_retry_after_overrides_backoff",
+      "method": "GET",
+      "statuses": [503, 200],
+      "retry_after": "3",
+      "requests": 2,
+      "wait_seconds": [3],
+      "outcome": "response"
+    },
+    {
+      "name": "adapter_retries_explicit_throttle",
+      "method": "GET",
+      "statuses": [429, 200],
+      "retry_after": "2",
+      "requests": 2,
+      "wait_seconds": [2],
+      "outcome": "response"
+    },
+    {
+      "name": "adapter_retries_payload_status_with_retry_after",
+      "method": "GET",
+      "statuses": [413, 200],
+      "retry_after": "1",
+      "requests": 2,
+      "wait_seconds": [1],
+      "outcome": "response"
+    },
+    {
+      "name": "post_is_not_a_status_retry_method",
+      "method": "POST",
+      "statuses": [503],
+      "retry_after": "1",
+      "requests": 1,
+      "wait_seconds": [],
+      "outcome": "response"
+    },
+    {
+      "name": "authorization_error_is_not_retried",
+      "method": "GET",
+      "statuses": [403],
+      "retry_after": null,
+      "requests": 1,
+      "wait_seconds": [],
+      "outcome": "response"
+    }
+  ]
+}

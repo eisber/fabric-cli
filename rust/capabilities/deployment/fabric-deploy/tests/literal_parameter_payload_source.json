@@ -1,0 +1,129 @@
+{
+  "source": "microsoft/fabric-cicd@5ca096c00a9a878c646c59fe537b883eba951329",
+  "fileSourceSHA256": "e3355695912a04a588b6cc0a6b0568d373cdce13a903f5643e894dc0ed5010d8",
+  "boundary": "Actual pinned literal schema/transforms then original File.base64_payload, without package/auth/filesystem constructors.",
+  "cases": [
+    {
+      "id": "literal",
+      "input": "source source SOURCE",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "target"
+            }
+          }
+        ]
+      },
+      "expectedPart": {
+        "path": "notebook-content.py",
+        "payload": "dGFyZ2V0IHRhcmdldCBTT1VSQ0U=",
+        "payloadType": "InlineBase64"
+      }
+    },
+    {
+      "id": "ordered",
+      "input": "source source SOURCE",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "middle"
+            }
+          },
+          {
+            "find_value": "middle",
+            "replace_value": {
+              "dev": "target"
+            }
+          }
+        ]
+      },
+      "expectedPart": {
+        "path": "notebook-content.py",
+        "payload": "dGFyZ2V0IHRhcmdldCBTT1VSQ0U=",
+        "payloadType": "InlineBase64"
+      }
+    },
+    {
+      "id": "all-alias",
+      "input": "source source SOURCE",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "_aLl_": "target"
+            }
+          }
+        ]
+      },
+      "expectedPart": {
+        "path": "notebook-content.py",
+        "payload": "dGFyZ2V0IHRhcmdldCBTT1VSQ0U=",
+        "payloadType": "InlineBase64"
+      }
+    },
+    {
+      "id": "literal-backreference",
+      "input": "source source SOURCE",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "\\1"
+            }
+          }
+        ]
+      },
+      "expectedPart": {
+        "path": "notebook-content.py",
+        "payload": "XDEgXDEgU09VUkNF",
+        "payloadType": "InlineBase64"
+      }
+    },
+    {
+      "id": "missing-environment",
+      "input": "source source SOURCE",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "other": "target"
+            }
+          }
+        ]
+      },
+      "expectedPart": {
+        "path": "notebook-content.py",
+        "payload": "c291cmNlIHNvdXJjZSBTT1VSQ0U=",
+        "payloadType": "InlineBase64"
+      }
+    },
+    {
+      "id": "string-false-flags",
+      "input": "source source SOURCE",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "target"
+            },
+            "is_regex": "false",
+            "ignore_case": "false"
+          }
+        ]
+      },
+      "expectedPart": {
+        "path": "notebook-content.py",
+        "payload": "dGFyZ2V0IHRhcmdldCBTT1VSQ0U=",
+        "payloadType": "InlineBase64"
+      }
+    }
+  ]
+}

@@ -1,0 +1,426 @@
+{
+  "_copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "schema_version": 1,
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "attribution": "Hand-authored synthetic source reference data. Never recorded from Rust and never regenerated from observed output.",
+  "cases": [
+    {
+      "id": "item_empty",
+      "purpose": "Current workspace, omitted path, empty successful list, hidden collections disabled.",
+      "input": {
+        "id": "item_empty",
+        "command": ["ls", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Workspace"},
+        "responses": [{"status": 200, "body": {"value": []}}]
+      },
+      "expected": {
+        "exit_code": 0,
+        "output": {"status": "Success", "command": "ls", "result": {"data": []}},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items"]
+      }
+    },
+    {
+      "id": "item_byname_stable_unicode",
+      "purpose": "Name-first sorting uses lowercase short names then enum NAME; duplicate identical keys remain service-stable and unknown future item types are filtered.",
+      "input": {
+        "id": "item_byname_stable_unicode",
+        "command": ["ls", "-l", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Workspace"},
+        "config": {"item_sort": "byname"},
+        "responses": [{"status": 200, "body": {"value": [
+          {"id": "z", "displayName": "Zulu", "type": "Notebook"},
+          {"id": "graph-model", "displayName": "same", "type": "GraphModel"},
+          {"id": "graph-api", "displayName": "SAME", "type": "GraphQLApi"},
+          {"id": "first", "displayName": "alpha", "type": "Notebook"},
+          {"id": "second", "displayName": "ALPHA", "type": "notebook"},
+          {"id": "slash", "displayName": "A/B", "type": "Report"},
+          {"id": "unicode", "displayName": "\u00c9quipe", "type": "Lakehouse"},
+          {"id": "future", "displayName": "First", "type": "FutureFabricItem"}
+        ]}}]
+      },
+      "expected": {
+        "exit_code": 0,
+        "output": {"status": "Success", "command": "ls", "result": {"data": [
+          {"name": "A/B.Report", "id": "slash"},
+          {"name": "alpha.Notebook", "id": "first"},
+          {"name": "ALPHA.Notebook", "id": "second"},
+          {"name": "SAME.GraphQLApi", "id": "graph-api"},
+          {"name": "same.GraphModel", "id": "graph-model"},
+          {"name": "Zulu.Notebook", "id": "z"},
+          {"name": "\u00c9quipe.Lakehouse", "id": "unicode"}
+        ]}},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items"]
+      }
+    },
+    {
+      "id": "item_bytype_enum_names",
+      "purpose": "Enum NAME ordering is not display-value ordering: GRAPHQLAPI sorts before GRAPH_MODEL and GRAPH_QUERY_SET; names within each type remain case-insensitive and stable.",
+      "input": {
+        "id": "item_bytype_enum_names",
+        "command": ["ls", "-l", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Workspace"},
+        "config": {"item_sort": "bytype"},
+        "responses": [{"status": 200, "body": {"value": [
+          {"id": "model", "displayName": "Alpha", "type": "GraphModel"},
+          {"id": "api-z", "displayName": "Zulu", "type": "GraphQLApi"},
+          {"id": "query", "displayName": "Beta", "type": "GraphQuerySet"},
+          {"id": "api-a1", "displayName": "alpha", "type": "GraphQLApi"},
+          {"id": "api-a2", "displayName": "ALPHA", "type": "GraphQLApi"},
+          {"id": "notebook", "displayName": "A", "type": "Notebook"}
+        ]}}]
+      },
+      "expected": {
+        "exit_code": 0,
+        "output": {"status": "Success", "command": "ls", "result": {"data": [
+          {"name": "alpha.GraphQLApi", "id": "api-a1"},
+          {"name": "ALPHA.GraphQLApi", "id": "api-a2"},
+          {"name": "Zulu.GraphQLApi", "id": "api-z"},
+          {"name": "Alpha.GraphModel", "id": "model"},
+          {"name": "Beta.GraphQuerySet", "id": "query"},
+          {"name": "A.Notebook", "id": "notebook"}
+        ]}},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items"]
+      }
+    },
+    {
+      "id": "item_future_only",
+      "purpose": "An otherwise valid service row with an unknown future type is ignored rather than displayed or treated as a whole-command failure.",
+      "input": {
+        "id": "item_future_only",
+        "command": ["ls", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Workspace"},
+        "responses": [{"status": 200, "body": {"value": [
+          {"id": "future", "displayName": "Invisible", "type": "FutureFabricItem"}
+        ]}}]
+      },
+      "expected": {
+        "exit_code": 0,
+        "output": {"status": "Success", "command": "ls", "result": {"data": []}},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items"]
+      }
+    },
+    {
+      "id": "item_hidden_all",
+      "purpose": "The all flag includes sorted virtual item containers even when the workspace has no items.",
+      "input": {
+        "id": "item_hidden_all",
+        "command": ["ls", "--all", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Workspace"},
+        "responses": [{"status": 200, "body": {"value": []}}]
+      },
+      "expected": {
+        "exit_code": 0,
+        "output": {"status": "Success", "command": "ls", "result": {
+          "data": [],
+          "hidden_data": [".externaldatashares", ".managedidentities", ".managedprivateendpoints", ".sparkpools"]
+        }},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items"]
+      }
+    },
+    {
+      "id": "item_hidden_config",
+      "purpose": "show_hidden configuration is independently effective without the all flag; normal name-only projection still omits IDs.",
+      "input": {
+        "id": "item_hidden_config",
+        "command": ["ls", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Workspace"},
+        "config": {"show_hidden": true},
+        "responses": [{"status": 200, "body": {"value": [
+          {"id": "n", "displayName": "Visible", "type": "Notebook"}
+        ]}}]
+      },
+      "expected": {
+        "exit_code": 0,
+        "output": {"status": "Success", "command": "ls", "result": {
+          "data": [{"name": "Visible.Notebook"}],
+          "hidden_data": [".externaldatashares", ".managedidentities", ".managedprivateendpoints", ".sparkpools"]
+        }},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items"]
+      }
+    },
+    {
+      "id": "root_hidden_config",
+      "purpose": "Tenant hidden collections are driven by config independently of workspace context and item containers.",
+      "input": {
+        "id": "root_hidden_config",
+        "command": ["ls", "--output_format", "json"],
+        "config": {"show_hidden": true},
+        "responses": [{"status": 200, "body": {"value": []}}]
+      },
+      "expected": {
+        "exit_code": 0,
+        "output": {"status": "Success", "command": "ls", "result": {
+          "data": [],
+          "hidden_data": [".capacities", ".connections", ".domains", ".gateways"]
+        }},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces"]
+      }
+    },
+    {
+      "id": "item_long_id",
+      "purpose": "Long mode preserves the entire ID without text-table truncation and JSON escapes non-ASCII display names.",
+      "input": {
+        "id": "item_long_id",
+        "command": ["ls", "--long", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Personal"},
+        "responses": [{"status": 200, "body": {"value": [
+          {"id": "synthetic-identifier-0123456789-0123456789-0123456789-0123456789-0123456789-0123456789-0123456789-0123456789", "displayName": "\u6771\u4eac", "type": "Notebook"}
+        ]}}]
+      },
+      "expected": {
+        "exit_code": 0,
+        "output": {"status": "Success", "command": "ls", "result": {"data": [
+          {"name": "\u6771\u4eac.Notebook", "id": "synthetic-identifier-0123456789-0123456789-0123456789-0123456789-0123456789-0123456789-0123456789-0123456789"}
+        ]}},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items"]
+      }
+    },
+    {
+      "id": "item_token_pagination",
+      "purpose": "Aggregate service pages before command sorting and encode opaque continuation tokens; never follow continuationUri.",
+      "input": {
+        "id": "item_token_pagination",
+        "command": ["ls", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Workspace"},
+        "responses": [
+          {"status": 200, "body": {
+            "value": [{"id": "z", "displayName": "Zulu", "type": "Notebook"}],
+            "continuationToken": "next+/= page",
+            "continuationUri": "https://continuation.invalid/never-follow"
+          }},
+          {"status": 200, "body": {"value": [
+            {"id": "a", "displayName": "Alpha", "type": "Report"}
+          ]}}
+        ]
+      },
+      "expected": {
+        "exit_code": 0,
+        "output": {"status": "Success", "command": "ls", "result": {"data": [
+          {"name": "Alpha.Report"}, {"name": "Zulu.Notebook"}
+        ]}},
+        "requests": [
+          "https://api.fabric.microsoft.com/v1/workspaces/ws/items",
+          "https://api.fabric.microsoft.com/v1/workspaces/ws/items?continuationToken=next%2B%2F%3D+page"
+        ]
+      }
+    },
+    {
+      "id": "item_forbidden",
+      "purpose": "403 uses the public error header, not service payload details; failure JSON remains on stdout.",
+      "input": {
+        "id": "item_forbidden",
+        "command": ["ls", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Workspace"},
+        "responses": [{"status": 403, "headers": {"x-ms-public-api-error-code": "ItemAccessDenied"}, "body": {
+          "errorCode": "IgnoredCode", "message": "Ignored message.", "requestId": "synthetic-denied"
+        }}]
+      },
+      "expected": {
+        "exit_code": 1,
+        "output": {"status": "Failure", "command": "ls", "result": {
+          "error_code": "ItemAccessDenied", "message": "Access is forbidden. You do not have permission to access this resource"
+        }},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items"]
+      }
+    },
+    {
+      "id": "item_not_found",
+      "purpose": "404 maps to the source generic not-found code and message even when service code/header disagree.",
+      "input": {
+        "id": "item_not_found",
+        "command": ["ls", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Workspace"},
+        "responses": [{"status": 404, "headers": {"x-ms-public-api-error-code": "Ignored404"}, "body": {
+          "errorCode": "IgnoredBody404", "message": "Ignored missing message."
+        }}]
+      },
+      "expected": {
+        "exit_code": 1,
+        "output": {"status": "Failure", "command": "ls", "result": {
+          "error_code": "NotFound", "message": "The requested resource could not be found"
+        }},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items"]
+      }
+    },
+    {
+      "id": "item_unauthorized",
+      "purpose": "401 without a custom code returns the authorization-required exit status 4, with no real identity interaction.",
+      "input": {
+        "id": "item_unauthorized",
+        "command": ["ls", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Workspace"},
+        "responses": [{"status": 401, "body": {"message": "Ignored unauthorized body."}}]
+      },
+      "expected": {
+        "exit_code": 4,
+        "output": {"status": "Failure", "command": "ls", "result": {
+          "error_code": "Unauthorized", "message": "Access is unauthorized"
+        }},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items"]
+      }
+    },
+    {
+      "id": "get_metadata_paths",
+      "purpose": "Bounded metadata helper, no query: source returns property paths, not the raw metadata object; nested null/empty containers retain source traversal semantics.",
+      "comparison": "specialized-uri",
+      "input": {
+        "id": "get_metadata_paths",
+        "command": ["get", ".", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Workspace"},
+        "current_item": {"id": "item", "displayName": "Synthetic", "type": "Notebook"},
+        "responses": [{"status": 200, "body": {
+          "id": "item",
+          "displayName": "Synthetic",
+          "type": "Notebook",
+          "description": "\u00c9quipe",
+          "workspaceId": "ws",
+          "properties": {"enabled": false, "count": 0, "missing": null, "emptyList": [], "emptyObject": {}}
+        }}]
+      },
+      "python_requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/notebooks/item"],
+      "expected": {
+        "exit_code": 0,
+        "output": {"status": "Success", "command": "get", "result": {"data": [
+          "id", "displayName", "type", "description", "workspaceId",
+          "properties.enabled", "properties.count", "properties.missing", "properties.emptyList"
+        ]}},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items/item"]
+      }
+    },
+    {
+      "id": "get_metadata_depth",
+      "purpose": "Source no-query traversal is insertion-ordered, includes list indices, and stops at depth four without implementing JMESPath.",
+      "comparison": "specialized-uri",
+      "input": {
+        "id": "get_metadata_depth",
+        "command": ["get", ".", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Workspace"},
+        "current_item": {"id": "lake", "displayName": "Lake", "type": "Lakehouse"},
+        "responses": [{"status": 200, "body": {
+          "id": "lake",
+          "displayName": "Lake",
+          "type": "Lakehouse",
+          "properties": {
+            "a": {"b": {"c": {"d": {"ignoredLeaf": 1}}}},
+            "rows": [{"x": 1}, null, []]
+          }
+        }}]
+      },
+      "python_requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/lakehouses/lake"],
+      "expected": {
+        "exit_code": 0,
+        "output": {"status": "Success", "command": "get", "result": {"data": [
+          "id", "displayName", "type", "properties.a.b.c.d",
+          "properties.rows[0].x", "properties.rows[1]", "properties.rows[2]"
+        ]}},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items/lake"]
+      }
+    },
+    {
+      "id": "get_forbidden",
+      "purpose": "Metadata helper 403 maps header precedence exactly; no definition, connection or schedule request is made after failure.",
+      "comparison": "specialized-uri",
+      "input": {
+        "id": "get_forbidden",
+        "command": ["get", ".", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Workspace"},
+        "current_item": {"id": "item", "displayName": "Synthetic", "type": "Notebook"},
+        "responses": [{"status": 403, "headers": {"x-ms-public-api-error-code": "MetadataDenied"}, "body": {
+          "errorCode": "IgnoredCode", "message": "Ignored forbidden body."
+        }}]
+      },
+      "python_requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/notebooks/item"],
+      "expected": {
+        "exit_code": 1,
+        "output": {"status": "Failure", "command": "get", "result": {
+          "error_code": "MetadataDenied", "message": "Access is forbidden. You do not have permission to access this resource"
+        }},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items/item"]
+      }
+    },
+    {
+      "id": "get_not_found",
+      "purpose": "Metadata helper 404 is one request, source NotFound mapping, no partial successful output.",
+      "comparison": "specialized-uri",
+      "input": {
+        "id": "get_not_found",
+        "command": ["get", ".", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Workspace"},
+        "current_item": {"id": "item", "displayName": "Synthetic", "type": "Report"},
+        "responses": [{"status": 404, "body": {"message": "Synthetic item missing."}}]
+      },
+      "python_requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/reports/item"],
+      "expected": {
+        "exit_code": 1,
+        "output": {"status": "Failure", "command": "get", "result": {
+          "error_code": "NotFound", "message": "The requested resource could not be found"
+        }},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items/item"]
+      }
+    },
+    {
+      "id": "get_unauthorized",
+      "purpose": "Metadata helper 401 uses authorization-required exit code and the source error envelope.",
+      "comparison": "specialized-uri",
+      "input": {
+        "id": "get_unauthorized",
+        "command": ["get", ".", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Workspace"},
+        "current_item": {"id": "item", "displayName": "Synthetic", "type": "Notebook"},
+        "responses": [{"status": 401, "body": {"message": "Ignored unauthorized body."}}]
+      },
+      "python_requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/notebooks/item"],
+      "expected": {
+        "exit_code": 4,
+        "output": {"status": "Failure", "command": "get", "result": {
+          "error_code": "Unauthorized", "message": "Access is unauthorized"
+        }},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items/item"]
+      }
+    },
+    {
+      "id": "get_fabric_error",
+      "purpose": "Metadata helper FabricAPIError preserves service code, strips trailing punctuation, and omits request ID/details from output.",
+      "comparison": "specialized-uri",
+      "input": {
+        "id": "get_fabric_error",
+        "command": ["get", ".", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Workspace"},
+        "current_item": {"id": "item", "displayName": "Synthetic", "type": "Notebook"},
+        "responses": [{"status": 400, "body": {
+          "errorCode": "InvalidMetadataRequest", "message": "Synthetic metadata request rejected.",
+          "requestId": "synthetic-request-400", "moreDetails": [{"message": "Not rendered"}]
+        }}]
+      },
+      "python_requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/notebooks/item"],
+      "expected": {
+        "exit_code": 1,
+        "output": {"status": "Failure", "command": "get", "result": {
+          "error_code": "InvalidMetadataRequest", "message": "Synthetic metadata request rejected"
+        }},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items/item"]
+      }
+    }
+  ],
+  "source_only": [
+    {
+      "id": "get_empty_metadata",
+      "purpose": "An empty object produces no property paths and query_and_export deliberately prints nothing.",
+      "reason": "The generic native SDK may reject missing required metadata fields. This source quirk is not a comparable typed GET success or full-get parity claim.",
+      "comparison": "specialized-uri",
+      "input": {
+        "id": "get_empty_metadata",
+        "command": ["get", ".", "--output_format", "json"],
+        "current_workspace": {"id": "ws", "displayName": "Current", "type": "Workspace"},
+        "current_item": {"id": "item", "displayName": "Synthetic", "type": "Notebook"},
+        "responses": [{"status": 200, "body": {}}]
+      },
+      "python_requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/notebooks/item"],
+      "expected": {
+        "exit_code": 0,
+        "output": null,
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces/ws/items/item"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-cli-context"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Pure bounded Fabric virtual path resolution over caller-owned metadata"
+
+[package.metadata.fabric]
+layer = "cli"
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

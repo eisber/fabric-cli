@@ -1,0 +1,58 @@
+[
+  {
+    "move": true,
+    "from": "local",
+    "to": "onelake",
+    "code": "InvalidInput",
+    "message": "Source and destination must be of the same type. Check your paths"
+  },
+  {
+    "move": true,
+    "from": "onelake",
+    "to": "local",
+    "code": "InvalidInput",
+    "message": "Source and destination must be of the same type. Check your paths"
+  },
+  {
+    "move": true,
+    "from": "local",
+    "to": "local",
+    "code": "NotSupported",
+    "message": "mv is not supported for the specified source and destination items types. Check your paths"
+  },
+  {
+    "move": false,
+    "from": "local",
+    "to": "local",
+    "code": "NotSupported",
+    "message": "Source and destination must be of the same type. Check your paths"
+  },
+  {
+    "move": false,
+    "from": "local",
+    "to": "item",
+    "code": "InvalidInput",
+    "message": "Source and destination must be of the same type. Check your paths"
+  },
+  {
+    "move": false,
+    "from": "item",
+    "to": "local",
+    "code": "InvalidInput",
+    "message": "Source and destination must be of the same type. Check your paths"
+  },
+  {
+    "move": true,
+    "from": "local",
+    "to": "item",
+    "code": "InvalidInput",
+    "message": "Source and destination must be of the same type. Check your paths"
+  },
+  {
+    "move": true,
+    "from": "item",
+    "to": "local",
+    "code": "InvalidInput",
+    "message": "Source and destination must be of the same type. Check your paths"
+  }
+]

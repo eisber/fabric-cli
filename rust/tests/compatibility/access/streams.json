@@ -1,0 +1,236 @@
+[
+  {
+    "name": "workspace-ls-default",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"acl\": \"Admin\",\n                \"identity\": \"Team\",\n                \"type\": \"Group\"\n            },\n            {\n                \"acl\": \"Viewer\",\n                \"identity\": \"alice@example.invalid\",\n                \"type\": \"User\"\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "workspace-ls-long",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"acl\": \"Admin\",\n                \"identity\": \"Team\",\n                \"type\": \"Group\",\n                \"objectId\": \"assignment-a\",\n                \"name\": \"Team\"\n            },\n            {\n                \"acl\": \"Viewer\",\n                \"identity\": \"alice@example.invalid\",\n                \"type\": \"User\",\n                \"objectId\": \"assignment-b\",\n                \"name\": \"Alice\"\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "workspace-ls-.",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"name\": \"Team\",\n                \"type\": \"Group\",\n                \"identity\": \"Team\",\n                \"objectId\": \"assignment-a\",\n                \"acl\": \"Admin\"\n            },\n            {\n                \"name\": \"Alice\",\n                \"type\": \"User\",\n                \"identity\": \"alice@example.invalid\",\n                \"objectId\": \"assignment-b\",\n                \"acl\": \"Viewer\"\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "workspace-get-.",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"Viewer\",\n                \"principal\": {\n                    \"id\": \"object\",\n                    \"displayName\": \"Alice\",\n                    \"type\": \"User\",\n                    \"userDetails\": {\n                        \"userPrincipalName\": \"alice@example.invalid\"\n                    }\n                }\n            },\n            {\n                \"id\": \"assignment-a\",\n                \"role\": \"Admin\",\n                \"principal\": {\n                    \"id\": \"group\",\n                    \"displayName\": \"Team\",\n                    \"type\": \"Group\",\n                    \"groupDetails\": {\n                        \"groupType\": \"SecurityGroup\"\n                    }\n                }\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "workspace-get-default",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            \"[0].id\",\n            \"[0].role\",\n            \"[0].principal.id\",\n            \"[0].principal.displayName\",\n            \"[0].principal.type\",\n            \"[0].principal.userDetails.userPrincipalName\",\n            \"[1].id\",\n            \"[1].role\",\n            \"[1].principal.id\",\n            \"[1].principal.displayName\",\n            \"[1].principal.type\",\n            \"[1].principal.groupDetails.groupType\"\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "workspace-get-[0]",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"Viewer\",\n                \"principal\": {\n                    \"id\": \"object\",\n                    \"displayName\": \"Alice\",\n                    \"type\": \"User\",\n                    \"userDetails\": {\n                        \"userPrincipalName\": \"alice@example.invalid\"\n                    }\n                }\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "workspace-empty-get",
+    "stdout": "",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "workspace-empty-ls",
+    "stdout": "",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "gateway-ls-default",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"role\": \"Owner\",\n                \"principalId\": \"group\",\n                \"principalType\": \"Group\"\n            },\n            {\n                \"role\": \"User\",\n                \"principalId\": \"object\",\n                \"principalType\": \"User\"\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "gateway-ls-long",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-a\",\n                \"role\": \"Owner\",\n                \"principalId\": \"group\",\n                \"principalType\": \"Group\"\n            },\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"User\",\n                \"principalId\": \"object\",\n                \"principalType\": \"User\"\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "gateway-ls-.",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-a\",\n                \"role\": \"Owner\",\n                \"principalId\": \"group\",\n                \"principalType\": \"Group\"\n            },\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"User\",\n                \"principalId\": \"object\",\n                \"principalType\": \"User\"\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "gateway-get-.",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"User\",\n                \"principal\": {\n                    \"id\": \"object\",\n                    \"displayName\": \"Alice\",\n                    \"type\": \"User\",\n                    \"userDetails\": {\n                        \"userPrincipalName\": \"alice@example.invalid\"\n                    }\n                }\n            },\n            {\n                \"id\": \"assignment-a\",\n                \"role\": \"Owner\",\n                \"principal\": {\n                    \"id\": \"group\",\n                    \"displayName\": \"Team\",\n                    \"type\": \"Group\",\n                    \"groupDetails\": {\n                        \"groupType\": \"SecurityGroup\"\n                    }\n                }\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "gateway-get-default",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            \"[0].id\",\n            \"[0].role\",\n            \"[0].principal.id\",\n            \"[0].principal.displayName\",\n            \"[0].principal.type\",\n            \"[0].principal.userDetails.userPrincipalName\",\n            \"[1].id\",\n            \"[1].role\",\n            \"[1].principal.id\",\n            \"[1].principal.displayName\",\n            \"[1].principal.type\",\n            \"[1].principal.groupDetails.groupType\"\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "gateway-get-[0]",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"User\",\n                \"principal\": {\n                    \"id\": \"object\",\n                    \"displayName\": \"Alice\",\n                    \"type\": \"User\",\n                    \"userDetails\": {\n                        \"userPrincipalName\": \"alice@example.invalid\"\n                    }\n                }\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "gateway-empty-get",
+    "stdout": "",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "gateway-empty-ls",
+    "stdout": "",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "connection-ls-default",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"role\": \"Owner\",\n                \"principalId\": \"group\",\n                \"principalType\": \"Group\"\n            },\n            {\n                \"role\": \"User\",\n                \"principalId\": \"object\",\n                \"principalType\": \"User\"\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "connection-ls-long",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-a\",\n                \"role\": \"Owner\",\n                \"principalId\": \"group\",\n                \"principalType\": \"Group\"\n            },\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"User\",\n                \"principalId\": \"object\",\n                \"principalType\": \"User\"\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "connection-ls-.",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-a\",\n                \"role\": \"Owner\",\n                \"principalId\": \"group\",\n                \"principalType\": \"Group\"\n            },\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"User\",\n                \"principalId\": \"object\",\n                \"principalType\": \"User\"\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "connection-get-.",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"User\",\n                \"principal\": {\n                    \"id\": \"object\",\n                    \"displayName\": \"Alice\",\n                    \"type\": \"User\",\n                    \"userDetails\": {\n                        \"userPrincipalName\": \"alice@example.invalid\"\n                    }\n                }\n            },\n            {\n                \"id\": \"assignment-a\",\n                \"role\": \"Owner\",\n                \"principal\": {\n                    \"id\": \"group\",\n                    \"displayName\": \"Team\",\n                    \"type\": \"Group\",\n                    \"groupDetails\": {\n                        \"groupType\": \"SecurityGroup\"\n                    }\n                }\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "connection-get-default",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            \"[0].id\",\n            \"[0].role\",\n            \"[0].principal.id\",\n            \"[0].principal.displayName\",\n            \"[0].principal.type\",\n            \"[0].principal.userDetails.userPrincipalName\",\n            \"[1].id\",\n            \"[1].role\",\n            \"[1].principal.id\",\n            \"[1].principal.displayName\",\n            \"[1].principal.type\",\n            \"[1].principal.groupDetails.groupType\"\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "connection-get-[0]",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"User\",\n                \"principal\": {\n                    \"id\": \"object\",\n                    \"displayName\": \"Alice\",\n                    \"type\": \"User\",\n                    \"userDetails\": {\n                        \"userPrincipalName\": \"alice@example.invalid\"\n                    }\n                }\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "connection-empty-get",
+    "stdout": "",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "connection-empty-ls",
+    "stdout": "",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "item-ls-default",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"acl\": [\n                    \"Read\"\n                ],\n                \"identity\": \"SecurityGroup\",\n                \"type\": \"Group\"\n            },\n            {\n                \"acl\": [\n                    \"Read\",\n                    \"Write\"\n                ],\n                \"identity\": \"alice@example.invalid\",\n                \"type\": \"User\"\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "item-ls-long",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"group\",\n                \"name\": \"Team\",\n                \"acl\": [\n                    \"Read\"\n                ],\n                \"identity\": \"SecurityGroup\",\n                \"type\": \"Group\"\n            },\n            {\n                \"id\": \"object\",\n                \"name\": \"Alice\",\n                \"acl\": [\n                    \"Read\",\n                    \"Write\"\n                ],\n                \"identity\": \"alice@example.invalid\",\n                \"type\": \"User\"\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "item-ls-.",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"name\": \"Team\",\n                \"type\": \"Group\",\n                \"identity\": \"SecurityGroup\",\n                \"id\": \"group\",\n                \"acl\": [\n                    \"Read\"\n                ]\n            },\n            {\n                \"name\": \"Alice\",\n                \"type\": \"User\",\n                \"identity\": \"alice@example.invalid\",\n                \"id\": \"object\",\n                \"acl\": [\n                    \"Read\",\n                    \"Write\"\n                ]\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "item-get-.",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"principal\": {\n                    \"id\": \"object\",\n                    \"displayName\": \"Alice\",\n                    \"type\": \"User\",\n                    \"userDetails\": {\n                        \"userPrincipalName\": \"alice@example.invalid\"\n                    }\n                },\n                \"itemAccessDetails\": {\n                    \"permissions\": [\n                        \"Read\",\n                        \"Write\"\n                    ]\n                }\n            },\n            {\n                \"principal\": {\n                    \"id\": \"group\",\n                    \"displayName\": \"Team\",\n                    \"type\": \"Group\",\n                    \"groupDetails\": {\n                        \"groupType\": \"SecurityGroup\"\n                    }\n                },\n                \"itemAccessDetails\": {\n                    \"permissions\": [\n                        \"Read\"\n                    ]\n                }\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "item-get-default",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            \"[0].principal.id\",\n            \"[0].principal.displayName\",\n            \"[0].principal.type\",\n            \"[0].principal.userDetails.userPrincipalName\",\n            \"[0].itemAccessDetails.permissions[0]\",\n            \"[0].itemAccessDetails.permissions[1]\",\n            \"[1].principal.id\",\n            \"[1].principal.displayName\",\n            \"[1].principal.type\",\n            \"[1].principal.groupDetails.groupType\",\n            \"[1].itemAccessDetails.permissions[0]\"\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "item-get-[0]",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"principal\": {\n                    \"id\": \"object\",\n                    \"displayName\": \"Alice\",\n                    \"type\": \"User\",\n                    \"userDetails\": {\n                        \"userPrincipalName\": \"alice@example.invalid\"\n                    }\n                },\n                \"itemAccessDetails\": {\n                    \"permissions\": [\n                        \"Read\",\n                        \"Write\"\n                    ]\n                }\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "item-empty-get",
+    "stdout": "",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "item-empty-ls",
+    "stdout": "",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "onelake-ls-default",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"acl\": \"ReadAll\",\n                \"identity\": \"object\",\n                \"type\": \"microsoftEntraMember\"\n            },\n            {\n                \"acl\": \"ReadAll\",\n                \"identity\": \"/source\",\n                \"type\": \"fabricItemMember\"\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "onelake-ls-long",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"acl\": \"ReadAll\",\n                \"identity\": \"object\",\n                \"type\": \"microsoftEntraMember\"\n            },\n            {\n                \"acl\": \"ReadAll\",\n                \"identity\": \"/source\",\n                \"type\": \"fabricItemMember\"\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "onelake-ls-.",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"identity\": \"object\",\n                \"details\": [\n                    {\n                        \"effect\": \"Permit\"\n                    }\n                ],\n                \"acl\": \"ReadAll\",\n                \"type\": \"microsoftEntraMember\"\n            },\n            {\n                \"identity\": \"/source\",\n                \"details\": [\n                    {\n                        \"effect\": \"Permit\"\n                    }\n                ],\n                \"acl\": \"ReadAll\",\n                \"type\": \"fabricItemMember\"\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "onelake-get-.",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"name\": \"ReadAll\",\n                \"decisionRules\": [\n                    {\n                        \"effect\": \"Permit\"\n                    }\n                ],\n                \"members\": {\n                    \"microsoftEntraMembers\": [\n                        {\n                            \"objectId\": \"object\"\n                        }\n                    ],\n                    \"fabricItemMembers\": [\n                        {\n                            \"sourcePath\": \"/source\"\n                        }\n                    ]\n                }\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "onelake-get-default",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            \"[0].name\",\n            \"[0].decisionRules[0].effect\",\n            \"[0].members.microsoftEntraMembers[0].objectId\",\n            \"[0].members.fabricItemMembers[0].sourcePath\"\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "onelake-get-[0]",
+    "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"name\": \"ReadAll\",\n                \"decisionRules\": [\n                    {\n                        \"effect\": \"Permit\"\n                    }\n                ],\n                \"members\": {\n                    \"microsoftEntraMembers\": [\n                        {\n                            \"objectId\": \"object\"\n                        }\n                    ],\n                    \"fabricItemMembers\": [\n                        {\n                            \"sourcePath\": \"/source\"\n                        }\n                    ]\n                }\n            }\n        ]\n    }\n}\n",
+    "stderr": "",
+    "exit": 0
+  },
+  {
+    "name": "onelake-empty-get",
+    "stdout": "",
+    "stderr": "",
+    "exit": 0
+  }
+]

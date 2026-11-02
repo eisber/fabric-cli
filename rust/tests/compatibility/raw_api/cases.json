@@ -1,0 +1,630 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "name": "get",
+      "method": "get",
+      "status": 200,
+      "response": {
+        "ok": true
+      },
+      "input": null,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/resources",
+            "body": null,
+            "headers": {
+              "content-type": "application/json"
+            }
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "data": {
+          "status_code": 200,
+          "text": {
+            "ok": true
+          }
+        },
+        "error": null,
+        "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            {\n                \"status_code\": 200,\n                \"text\": {\n                    \"ok\": true\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "post",
+      "method": "post",
+      "status": 200,
+      "response": {
+        "ok": true
+      },
+      "input": {
+        "x": 1
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/resources",
+            "body": {
+              "x": 1
+            },
+            "headers": {
+              "content-type": "application/json"
+            }
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "data": {
+          "status_code": 200,
+          "text": {
+            "ok": true
+          }
+        },
+        "error": null,
+        "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            {\n                \"status_code\": 200,\n                \"text\": {\n                    \"ok\": true\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "put",
+      "method": "put",
+      "status": 200,
+      "response": {
+        "ok": true
+      },
+      "input": {
+        "x": 1
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "PUT",
+            "url": "https://api.fabric.microsoft.com/v1/resources",
+            "body": {
+              "x": 1
+            },
+            "headers": {
+              "content-type": "application/json"
+            }
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "data": {
+          "status_code": 200,
+          "text": {
+            "ok": true
+          }
+        },
+        "error": null,
+        "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            {\n                \"status_code\": 200,\n                \"text\": {\n                    \"ok\": true\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "patch",
+      "method": "patch",
+      "status": 200,
+      "response": {
+        "ok": true
+      },
+      "input": {
+        "x": 1
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "PATCH",
+            "url": "https://api.fabric.microsoft.com/v1/resources",
+            "body": {
+              "x": 1
+            },
+            "headers": {
+              "content-type": "application/json"
+            }
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "data": {
+          "status_code": 200,
+          "text": {
+            "ok": true
+          }
+        },
+        "error": null,
+        "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            {\n                \"status_code\": 200,\n                \"text\": {\n                    \"ok\": true\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "delete",
+      "method": "delete",
+      "status": 200,
+      "response": {
+        "ok": true
+      },
+      "input": {
+        "x": 1
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "DELETE",
+            "url": "https://api.fabric.microsoft.com/v1/resources",
+            "body": {
+              "x": 1
+            },
+            "headers": {
+              "content-type": "application/json"
+            }
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "data": {
+          "status_code": 200,
+          "text": {
+            "ok": true
+          }
+        },
+        "error": null,
+        "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            {\n                \"status_code\": 200,\n                \"text\": {\n                    \"ok\": true\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "fabric",
+      "audience": "fabric",
+      "method": "get",
+      "status": 200,
+      "response": {
+        "value": [
+          1,
+          2
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/resources",
+            "body": null,
+            "headers": {
+              "content-type": "application/json"
+            }
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "data": {
+          "status_code": 200,
+          "text": {
+            "value": [
+              1,
+              2
+            ]
+          }
+        },
+        "error": null,
+        "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            {\n                \"status_code\": 200,\n                \"text\": {\n                    \"value\": [\n                        1,\n                        2\n                    ]\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "storage",
+      "audience": "storage",
+      "method": "get",
+      "status": 200,
+      "response": {
+        "value": [
+          1,
+          2
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://onelake.dfs.fabric.microsoft.com/resources",
+            "body": null,
+            "headers": {
+              "content-type": "application/json"
+            }
+          }
+        ],
+        "scopes": [
+          [
+            "https://storage.azure.com/.default"
+          ]
+        ],
+        "data": {
+          "status_code": 200,
+          "text": {
+            "value": [
+              1,
+              2
+            ]
+          }
+        },
+        "error": null,
+        "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            {\n                \"status_code\": 200,\n                \"text\": {\n                    \"value\": [\n                        1,\n                        2\n                    ]\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "azure",
+      "audience": "azure",
+      "method": "get",
+      "status": 200,
+      "response": {
+        "value": [
+          1,
+          2
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://management.azure.com/resources",
+            "body": null,
+            "headers": {
+              "content-type": "application/json"
+            }
+          }
+        ],
+        "scopes": [
+          [
+            "https://management.azure.com/.default"
+          ]
+        ],
+        "data": {
+          "status_code": 200,
+          "text": {
+            "value": [
+              1,
+              2
+            ]
+          }
+        },
+        "error": null,
+        "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            {\n                \"status_code\": 200,\n                \"text\": {\n                    \"value\": [\n                        1,\n                        2\n                    ]\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "powerbi",
+      "audience": "powerbi",
+      "method": "get",
+      "status": 200,
+      "response": {
+        "value": [
+          1,
+          2
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.powerbi.com/v1.0/myorg/resources",
+            "body": null,
+            "headers": {
+              "content-type": "application/json"
+            }
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "data": {
+          "status_code": 200,
+          "text": {
+            "value": [
+              1,
+              2
+            ]
+          }
+        },
+        "error": null,
+        "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            {\n                \"status_code\": 200,\n                \"text\": {\n                    \"value\": [\n                        1,\n                        2\n                    ]\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "empty",
+      "method": "delete",
+      "status": 204,
+      "raw_body": " \n",
+      "expected": {
+        "requests": [
+          {
+            "method": "DELETE",
+            "url": "https://api.fabric.microsoft.com/v1/resources",
+            "body": null,
+            "headers": {
+              "content-type": "application/json"
+            }
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "data": {
+          "status_code": 204,
+          "text": "(Empty)"
+        },
+        "error": null,
+        "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            {\n                \"status_code\": 204,\n                \"text\": \"(Empty)\"\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "error-data",
+      "status": 403,
+      "response": {
+        "errorCode": "Denied",
+        "message": "No"
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/resources",
+            "body": null,
+            "headers": {
+              "content-type": "application/json"
+            }
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "data": {
+          "status_code": 403,
+          "text": {
+            "errorCode": "Denied",
+            "message": "No"
+          }
+        },
+        "error": null,
+        "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            {\n                \"status_code\": 403,\n                \"text\": {\n                    \"errorCode\": \"Denied\",\n                    \"message\": \"No\"\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "headers",
+      "status": 200,
+      "response": {
+        "value": []
+      },
+      "show_headers": true,
+      "response_headers": {
+        "x-test": "value"
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/resources",
+            "body": null,
+            "headers": {
+              "content-type": "application/json"
+            }
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "data": {
+          "status_code": 200,
+          "headers": {
+            "x-test": "value"
+          },
+          "text": {
+            "value": []
+          }
+        },
+        "error": null,
+        "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            {\n                \"status_code\": 200,\n                \"headers\": {\n                    \"x-test\": \"value\"\n                },\n                \"text\": {\n                    \"value\": []\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "params",
+      "status": 200,
+      "response": {},
+      "endpoint": "resources?x=uri%20value",
+      "params": "x=original,p= *~",
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/resources?x=uri%2520value&p=%2A~",
+            "body": null,
+            "headers": {
+              "content-type": "application/json"
+            }
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "data": {
+          "status_code": 200,
+          "text": {}
+        },
+        "error": null,
+        "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            {\n                \"status_code\": 200,\n                \"text\": {}\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "query",
+      "status": 200,
+      "response": {
+        "value": [
+          1,
+          2
+        ]
+      },
+      "query": "text.value",
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/resources",
+            "body": null,
+            "headers": {
+              "content-type": "application/json"
+            }
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "data": [
+          1,
+          2
+        ],
+        "error": null,
+        "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            1,\n            2\n        ]\n    }\n}\n",
+        "stderr": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "query-empty-fallback",
+      "status": 200,
+      "response": {
+        "value": []
+      },
+      "query": "text.value",
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/resources",
+            "body": null,
+            "headers": {
+              "content-type": "application/json"
+            }
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "data": {
+          "status_code": 200,
+          "text": {
+            "value": []
+          }
+        },
+        "error": null,
+        "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            {\n                \"status_code\": 200,\n                \"text\": {\n                    \"value\": []\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "custom-header",
+      "status": 200,
+      "response": {},
+      "headers": "x-correlation=synthetic",
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/resources",
+            "body": null,
+            "headers": {
+              "content-type": "application/json",
+              "x-correlation": "synthetic"
+            }
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "data": {
+          "status_code": 200,
+          "text": {}
+        },
+        "error": null,
+        "stdout": "{\n    \"timestamp\": \"2000-01-01T00:00:00Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            {\n                \"status_code\": 200,\n                \"text\": {}\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "invalid-params",
+      "status": 200,
+      "response": {},
+      "params": "invalid",
+      "expected": {
+        "requests": [],
+        "scopes": [],
+        "data": null,
+        "error": {
+          "code": "InvalidInput",
+          "message": "Invalid format for query parameters. Use key=value pairs separated by commas"
+        },
+        "stdout": "",
+        "stderr": "",
+        "exit": 1
+      }
+    }
+  ]
+}

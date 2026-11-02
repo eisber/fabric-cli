@@ -1,0 +1,962 @@
+{
+  "source": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "existing": false,
+      "states": [
+        "running",
+        "SUCCESS"
+      ],
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": "{\"type\": \"Environment\", \"folderId\": null, \"displayName\": \"Synthetic\", \"definition\": {\"parts\": [{\"path\": \"environment.yml\", \"payload\": \"ZGVwZW5kZW5jaWVzOg0KICAtIG51bXB5Cg==\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"Resources/a.jar\", \"payload\": \"amFy\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"Resources/b.whl\", \"payload\": \"AP8NCg==\", \"payloadType\": \"InlineBase64\"}]}}"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333/staging/publish",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        }
+      ],
+      "events": [
+        {
+          "info": "Environment publish triggered"
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 10 seconds (Attempt 1/60)..."
+        },
+        {
+          "delay": 10.0
+        },
+        {
+          "info": "Environment publish completed"
+        }
+      ],
+      "completed": true,
+      "created_id": "33333333-3333-3333-3333-333333333333"
+    },
+    {
+      "existing": true,
+      "states": [
+        "running",
+        "failed",
+        "running",
+        "success"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/22222222-2222-2222-2222-222222222222",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/22222222-2222-2222-2222-222222222222",
+          "body": ""
+        },
+        {
+          "method": "POST",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition",
+          "body": "{\"definition\": {\"parts\": [{\"path\": \"environment.yml\", \"payload\": \"ZGVwZW5kZW5jaWVzOg0KICAtIG51bXB5Cg==\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"Resources/a.jar\", \"payload\": \"amFy\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"Resources/b.whl\", \"payload\": \"AP8NCg==\", \"payloadType\": \"InlineBase64\"}]}}"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/22222222-2222-2222-2222-222222222222/staging/publish",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/22222222-2222-2222-2222-222222222222",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/22222222-2222-2222-2222-222222222222",
+          "body": ""
+        }
+      ],
+      "events": [
+        {
+          "progress": "Existing Environment publish is in progress Checking again in 10 seconds (Attempt 1/60)..."
+        },
+        {
+          "delay": 10.0
+        },
+        {
+          "info": "Environment publish triggered"
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 10 seconds (Attempt 1/60)..."
+        },
+        {
+          "delay": 10.0
+        },
+        {
+          "info": "Environment publish completed"
+        }
+      ],
+      "completed": true
+    },
+    {
+      "existing": true,
+      "states": [
+        "cancelled",
+        "success"
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/22222222-2222-2222-2222-222222222222",
+          "body": ""
+        },
+        {
+          "method": "POST",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition",
+          "body": "{\"definition\": {\"parts\": [{\"path\": \"environment.yml\", \"payload\": \"ZGVwZW5kZW5jaWVzOg0KICAtIG51bXB5Cg==\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"Resources/a.jar\", \"payload\": \"amFy\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"Resources/b.whl\", \"payload\": \"AP8NCg==\", \"payloadType\": \"InlineBase64\"}]}}"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/22222222-2222-2222-2222-222222222222/staging/publish",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/22222222-2222-2222-2222-222222222222",
+          "body": ""
+        }
+      ],
+      "events": [
+        {
+          "info": "Environment publish triggered"
+        },
+        {
+          "info": "Environment publish completed"
+        }
+      ],
+      "completed": true
+    },
+    {
+      "existing": false,
+      "states": [
+        "failed"
+      ],
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": "{\"type\": \"Environment\", \"folderId\": null, \"displayName\": \"Synthetic\", \"definition\": {\"parts\": [{\"path\": \"environment.yml\", \"payload\": \"ZGVwZW5kZW5jaWVzOg0KICAtIG51bXB5Cg==\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"Resources/a.jar\", \"payload\": \"amFy\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"Resources/b.whl\", \"payload\": \"AP8NCg==\", \"payloadType\": \"InlineBase64\"}]}}"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333/staging/publish",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        }
+      ],
+      "events": [
+        {
+          "info": "Environment publish triggered"
+        }
+      ],
+      "error": {
+        "type": "SourceError",
+        "args": [
+          "Environment publish failed",
+          "UnexpectedError"
+        ]
+      }
+    },
+    {
+      "existing": false,
+      "states": [
+        "cancelled"
+      ],
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": "{\"type\": \"Environment\", \"folderId\": null, \"displayName\": \"Synthetic\", \"definition\": {\"parts\": [{\"path\": \"environment.yml\", \"payload\": \"ZGVwZW5kZW5jaWVzOg0KICAtIG51bXB5Cg==\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"Resources/a.jar\", \"payload\": \"amFy\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"Resources/b.whl\", \"payload\": \"AP8NCg==\", \"payloadType\": \"InlineBase64\"}]}}"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333/staging/publish",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        }
+      ],
+      "events": [
+        {
+          "info": "Environment publish triggered"
+        }
+      ],
+      "error": {
+        "type": "SourceError",
+        "args": [
+          "Environment publish cancelled",
+          "UnexpectedError"
+        ]
+      }
+    },
+    {
+      "existing": false,
+      "states": [
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+        "Unknown"
+      ],
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": "{\"type\": \"Environment\", \"folderId\": null, \"displayName\": \"Synthetic\", \"definition\": {\"parts\": [{\"path\": \"environment.yml\", \"payload\": \"ZGVwZW5kZW5jaWVzOg0KICAtIG51bXB5Cg==\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"Resources/a.jar\", \"payload\": \"amFy\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"Resources/b.whl\", \"payload\": \"AP8NCg==\", \"payloadType\": \"InlineBase64\"}]}}"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333/staging/publish",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "path": "/v1/workspaces/11111111-1111-1111-1111-111111111111/environments/33333333-3333-3333-3333-333333333333",
+          "body": ""
+        }
+      ],
+      "events": [
+        {
+          "info": "Environment publish triggered"
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 10 seconds (Attempt 1/60)..."
+        },
+        {
+          "delay": 10.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 20 seconds (Attempt 2/60)..."
+        },
+        {
+          "delay": 20.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 40 seconds (Attempt 3/60)..."
+        },
+        {
+          "delay": 40.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 4/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 5/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 6/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 7/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 8/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 9/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 10/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 11/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 12/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 13/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 14/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 15/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 16/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 17/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 18/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 19/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 20/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 21/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 22/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 23/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 24/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 25/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 26/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 27/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 28/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 29/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 30/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 31/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 32/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 33/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 34/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 35/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 36/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 37/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 38/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 39/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 40/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 41/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 42/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 43/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 44/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 45/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 46/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 47/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 48/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 49/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 50/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 51/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 52/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 53/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 54/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 55/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 56/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 57/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 58/60)..."
+        },
+        {
+          "delay": 60.0
+        },
+        {
+          "progress": "Environment publish in progress Checking again in 60 seconds (Attempt 59/60)..."
+        },
+        {
+          "delay": 60.0
+        }
+      ],
+      "error": {
+        "type": "Exception",
+        "args": [
+          "Maximum retry attempts (60) exceeded"
+        ]
+      }
+    }
+  ]
+}

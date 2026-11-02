@@ -1,0 +1,503 @@
+{
+  "schema_version": 1,
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "provenance": "Hand-authored synthetic expectations from pinned Python source before any execution; neither Rust nor oracle output generates expectations.",
+  "source_sha256": {
+    "src/fabric_cli/core/fab_handle_context.py": "2181706fea9e330b4fb9931e38437319d69665f55af8ea5af91a377b00424eae",
+    "src/fabric_cli/core/hiearchy/fab_element.py": "beea64ec1043156d32475333d974950dd8645f2aeddef0b2954ad917365e9575",
+    "src/fabric_cli/core/hiearchy/fab_tenant.py": "c9efd4468738a6cd8b77fc6b3108d362df3442717ffbd2426b89958329c71d8b",
+    "src/fabric_cli/core/hiearchy/fab_workspace.py": "75aa943e0859a7256bb53f55f015195d03df9dee2a34fcd3c467054af04afe6b",
+    "src/fabric_cli/core/hiearchy/fab_folder.py": "f55a68eb40ffc4c7fe56ad3768a4f275f32314ae07303b418cbbeaf2aab03324",
+    "src/fabric_cli/core/hiearchy/fab_base_item.py": "43344e9cbda8263c8d7f17d1bb9e69583a0d31606190b25b6d2e166e72a3fec8",
+    "src/fabric_cli/core/hiearchy/fab_item.py": "88ce918c2bd32620b50e44b6a5700bb413fc33e42dbd66958127de1143989949",
+    "src/fabric_cli/core/hiearchy/fab_virtual_workspace_item.py": "35947b887bec1b04c8cb21f49f6485f85885464feea5b95e71847bf6b302641e",
+    "src/fabric_cli/core/hiearchy/fab_virtual_item_container.py": "c697318e689d3e55989762c2764614c31547c5d787f9455e9fc2050ef50dd072",
+    "src/fabric_cli/core/hiearchy/fab_virtual_item.py": "897fb6f2f28efc20c97449ce8b4c4c523a419af17d3779033fa288f84555c074",
+    "src/fabric_cli/core/hiearchy/fab_onelake_element.py": "de4e372598b22b3ff0e6ed5fc02cf15f0354d2f0db8f61fee8e9d50f06d7e757",
+    "src/fabric_cli/core/hiearchy/fab_local_path.py": "d6e44ce5e53e6fa7d7508b75acfa6caa5a2177e82f786a345d26b012bed29e07",
+    "src/fabric_cli/core/fab_types.py": "a613c525a9740204423108bb9c95aeb092d3db6baa92b3c1531d4b4d9f79218d",
+    "src/fabric_cli/core/fab_exceptions.py": "85826f456cc9f2bfd026950fc0338b04570cf56c571513f1cef1feac386db0dc",
+    "src/fabric_cli/core/fab_constant.py": "20dd87282310f0217b3f3724214c280c3dab123bec5f7fafa770e1c2c44bfff0",
+    "src/fabric_cli/core/fab_commands.py": "79540d31a8e39656b1cbe2d7deadbac65b7b25de8fc7f677c4fc31cf2a2d9b0e",
+    "src/fabric_cli/core/fab_config/command_support.yaml": "4ea9e805e9f5b251d9a64de5351f7288c3a4ad5d84bbb6568ef466dd6f8d40fd",
+    "src/fabric_cli/errors/common.py": "f0af9183ba94b1ab89f6bd7afe1bca71538704afd5570e73b913fd45b2c1154d",
+    "src/fabric_cli/errors/hierarchy.py": "f43a9b4727e102a712fa9bc780db153a2136c4904458cbfe789e9c7e411c397c",
+    "src/fabric_cli/utils/fab_mem_store.py": "5f1bb375ca2e1da68c454de622b1f624f8187e73c8ef8db317f553bad9f12620",
+    "src/fabric_cli/utils/fab_util.py": "b1facc2ca56501b74fd5e5ddc18a7c8e42d020cbd71549317b7a73948169db82",
+    "src/fabric_cli/utils/fab_item_util.py": "99a5045c607e20bfa4a126f5342cb0e29e5357343a85a3db177ec32d80ac4983"
+  },
+  "defaults": {
+    "current": "tenant",
+    "home": "Home.Personal",
+    "raise_error": true,
+    "supports_local_path": false,
+    "local_mode": "posix"
+  },
+  "catalog": [
+    {"key":"tenant","kind":"Tenant","name":"Example","id":"tenant-id","parent":null},
+    {"key":"alpha","kind":"Workspace","name":"Alpha","id":"w-alpha","parent":"tenant","type":"Workspace"},
+    {"key":"home","kind":"Workspace","name":"Home","id":"w-home","parent":"tenant","type":"Personal"},
+    {"key":"capacities","kind":"VirtualWorkspace","name":".capacities","id":null,"parent":"tenant"},
+    {"key":"domains","kind":"VirtualWorkspace","name":".domains","id":null,"parent":"tenant"},
+    {"key":"connections","kind":"VirtualWorkspace","name":".connections","id":null,"parent":"tenant"},
+    {"key":"gateways","kind":"VirtualWorkspace","name":".gateways","id":null,"parent":"tenant"},
+    {"key":"capacity","kind":"VirtualWorkspaceItem","name":"Compute","id":"cap-1","parent":"capacities","type":"Capacity"},
+    {"key":"domain","kind":"VirtualWorkspaceItem","name":"Finance","id":"dom-1","parent":"domains","type":"Domain"},
+    {"key":"connection","kind":"VirtualWorkspaceItem","name":"SQL","id":"conn-1","parent":"connections","type":"Connection"},
+    {"key":"gateway","kind":"VirtualWorkspaceItem","name":"Edge","id":"gate-1","parent":"gateways","type":"Gateway"},
+    {"key":"sparkpools","kind":"VirtualItemContainer","name":".sparkpools","id":null,"parent":"alpha"},
+    {"key":"identities","kind":"VirtualItemContainer","name":".managedidentities","id":null,"parent":"alpha"},
+    {"key":"endpoints","kind":"VirtualItemContainer","name":".managedprivateendpoints","id":null,"parent":"alpha"},
+    {"key":"shares","kind":"VirtualItemContainer","name":".externaldatashares","id":null,"parent":"alpha"},
+    {"key":"pool","kind":"VirtualItem","name":"Fast","id":"pool-1","parent":"sparkpools","type":"SparkPool"},
+    {"key":"identity","kind":"VirtualItem","name":"Alpha","id":"mi-1","parent":"identities","type":"ManagedIdentity"},
+    {"key":"endpoint","kind":"VirtualItem","name":"Storage","id":"mpe-1","parent":"endpoints","type":"ManagedPrivateEndpoint"},
+    {"key":"share","kind":"VirtualItem","name":"Lake.Lakehouse_Invite","id":"eds-1","parent":"shares","type":"ExternalDataShare"},
+    {"key":"lake","kind":"Item","name":"Lake","id":"i-lake","parent":"alpha","type":"Lakehouse"},
+    {"key":"home_lake","kind":"Item","name":"Lake","id":"i-home-lake","parent":"home","type":"Lakehouse"},
+    {"key":"note","kind":"Item","name":"Note","id":"i-note","parent":"alpha","type":"Notebook"},
+    {"key":"warehouse","kind":"Item","name":"Warehouse","id":"i-warehouse","parent":"alpha","type":"Warehouse"},
+    {"key":"model","kind":"Item","name":"Model","id":"i-model","parent":"alpha","type":"SemanticModel"},
+    {"key":"spark","kind":"Item","name":"Spark","id":"i-spark","parent":"alpha","type":"SparkJobDefinition"},
+    {"key":"kql","kind":"Item","name":"Kql","id":"i-kql","parent":"alpha","type":"KQLDatabase"},
+    {"key":"sql","kind":"Item","name":"Sql","id":"i-sql","parent":"alpha","type":"SQLDatabase"},
+    {"key":"cosmos","kind":"Item","name":"Cosmos","id":"i-cosmos","parent":"alpha","type":"CosmosDBDatabase"},
+    {"key":"mirror","kind":"Item","name":"Mirror","id":"i-mirror","parent":"alpha","type":"MirroredDatabase"},
+    {"key":"mirror_warehouse","kind":"Item","name":"MirrorWarehouse","id":"i-mirror-warehouse","parent":"alpha","type":"MirroredWarehouse"},
+    {"key":"graphql","kind":"Item","name":"Graph","id":"i-graph","parent":"alpha","type":"GraphQLApi"},
+    {"key":"files","kind":"OneLakeItem","name":"Files","id":"0000","parent":"lake","subtype":"FOLDER"},
+    {"key":"tables","kind":"OneLakeItem","name":"Tables","id":"0000","parent":"lake","subtype":"FOLDER"}
+  ],
+  "current_snapshots": {
+    "tenant":{"path":"/","path_id":"/","kind":"Tenant","name":"Example.Tenant","id":"tenant-id"},
+    "alpha":{"path":"/Alpha.Workspace","path_id":"/w-alpha","kind":"Workspace","name":"Alpha.Workspace","id":"w-alpha","subtype":"Workspace"},
+    "capacities":{"path":"/.capacities","path_id":"/None","kind":"VirtualWorkspace","name":".capacities","id":null,"subtype":".capacities"},
+    "capacity":{"path":"/.capacities/Compute.Capacity","path_id":"/None/cap-1","kind":"VirtualWorkspaceItem","name":"Compute.Capacity","id":"cap-1","subtype":"Capacity"},
+    "sparkpools":{"path":"/Alpha.Workspace/.sparkpools","path_id":"/w-alpha","kind":"VirtualItemContainer","name":".sparkpools","id":null,"subtype":".sparkpools"},
+    "shares":{"path":"/Alpha.Workspace/.externaldatashares","path_id":"/w-alpha","kind":"VirtualItemContainer","name":".externaldatashares","id":null,"subtype":".externaldatashares"},
+    "share":{"path":"/Alpha.Workspace/.externaldatashares/Lake.Lakehouse_Invite.ExternalDataShare","path_id":"/w-alpha/eds-1","kind":"VirtualItem","name":"Lake.Lakehouse_Invite.ExternalDataShare","id":"eds-1","subtype":"ExternalDataShare"},
+    "lake":{"path":"/Alpha.Workspace/Lake.Lakehouse","path_id":"/w-alpha/i-lake","kind":"Item","name":"Lake.Lakehouse","id":"i-lake","subtype":"Lakehouse"},
+    "note":{"path":"/Alpha.Workspace/Note.Notebook","path_id":"/w-alpha/i-note","kind":"Item","name":"Note.Notebook","id":"i-note","subtype":"Notebook"},
+    "warehouse":{"path":"/Alpha.Workspace/Warehouse.Warehouse","path_id":"/w-alpha/i-warehouse","kind":"Item","name":"Warehouse.Warehouse","id":"i-warehouse","subtype":"Warehouse"},
+    "model":{"path":"/Alpha.Workspace/Model.SemanticModel","path_id":"/w-alpha/i-model","kind":"Item","name":"Model.SemanticModel","id":"i-model","subtype":"SemanticModel"},
+    "spark":{"path":"/Alpha.Workspace/Spark.SparkJobDefinition","path_id":"/w-alpha/i-spark","kind":"Item","name":"Spark.SparkJobDefinition","id":"i-spark","subtype":"SparkJobDefinition"},
+    "kql":{"path":"/Alpha.Workspace/Kql.KQLDatabase","path_id":"/w-alpha/i-kql","kind":"Item","name":"Kql.KQLDatabase","id":"i-kql","subtype":"KQLDatabase"},
+    "sql":{"path":"/Alpha.Workspace/Sql.SQLDatabase","path_id":"/w-alpha/i-sql","kind":"Item","name":"Sql.SQLDatabase","id":"i-sql","subtype":"SQLDatabase"},
+    "cosmos":{"path":"/Alpha.Workspace/Cosmos.CosmosDBDatabase","path_id":"/w-alpha/i-cosmos","kind":"Item","name":"Cosmos.CosmosDBDatabase","id":"i-cosmos","subtype":"CosmosDBDatabase"},
+    "mirror":{"path":"/Alpha.Workspace/Mirror.MirroredDatabase","path_id":"/w-alpha/i-mirror","kind":"Item","name":"Mirror.MirroredDatabase","id":"i-mirror","subtype":"MirroredDatabase"},
+    "mirror_warehouse":{"path":"/Alpha.Workspace/MirrorWarehouse.MirroredWarehouse","path_id":"/w-alpha/i-mirror-warehouse","kind":"Item","name":"MirrorWarehouse.MirroredWarehouse","id":"i-mirror-warehouse","subtype":"MirroredWarehouse"},
+    "graphql":{"path":"/Alpha.Workspace/Graph.GraphQLApi","path_id":"/w-alpha/i-graph","kind":"Item","name":"Graph.GraphQLApi","id":"i-graph","subtype":"GraphQLApi"},
+    "files":{"path":"/Alpha.Workspace/Lake.Lakehouse/Files","path_id":"/w-alpha/i-lake/Files","kind":"Onelake","name":"Files","id":"0000","subtype":"FOLDER","local_path":"Files","root_folder":"Files"},
+    "tables":{"path":"/Alpha.Workspace/Lake.Lakehouse/Tables","path_id":"/w-alpha/i-lake/Tables","kind":"Onelake","name":"Tables","id":"0000","subtype":"FOLDER","local_path":"Tables","root_folder":"Tables"}
+  },
+  "cases": [
+    {
+      "name":"hidden_capacity_vertical","input":"/.capacities/Compute.cApAcItY",
+      "expected":{"result":{"path":"/.capacities/Compute.Capacity","path_id":"/None/cap-1","kind":"VirtualWorkspaceItem","name":"Compute.Capacity","id":"cap-1","subtype":"Capacity"},"calls":[{"op":"capacity","parent":"/","name":"Compute.Capacity"}],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"hidden_domains_root","input":"/.DoMaInS",
+      "expected":{"result":{"path":"/.domains","path_id":"/None","kind":"VirtualWorkspace","name":".domains","id":null,"subtype":".domains"},"calls":[],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"hidden_domain_lookup","input":"/.domains/Finance.Domain",
+      "expected":{"result":{"path":"/.domains/Finance.Domain","path_id":"/None/dom-1","kind":"VirtualWorkspaceItem","name":"Finance.Domain","id":"dom-1","subtype":"Domain"},"calls":[{"op":"domain","parent":"/","name":"Finance.Domain"}],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"hidden_connection_lookup","input":"/.connections/SQL.Connection",
+      "expected":{"result":{"path":"/.connections/SQL.Connection","path_id":"/None/conn-1","kind":"VirtualWorkspaceItem","name":"SQL.Connection","id":"conn-1","subtype":"Connection"},"calls":[{"op":"connection","parent":"/","name":"SQL.Connection"}],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"hidden_gateway_lookup","input":"/.gateways/Edge.Gateway",
+      "expected":{"result":{"path":"/.gateways/Edge.Gateway","path_id":"/None/gate-1","kind":"VirtualWorkspaceItem","name":"Edge.Gateway","id":"gate-1","subtype":"Gateway"},"calls":[{"op":"gateway","parent":"/","name":"Edge.Gateway"}],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"hidden_capacity_type_mismatch","input":"/.capacities/Finance.Domain",
+      "expected":{"error":{"code":"InvalidPath","message":"The item type 'Domain' is not supported in the context 'VirtualWorkspace'"},"calls":[],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"hidden_capacity_missing_final","input":"Missing.Capacity","current":"capacities","raise_error":false,
+      "expected":{"result":{"path":"/.capacities/Missing.Capacity","path_id":"/None/None","kind":"VirtualWorkspaceItem","name":"Missing.Capacity","id":null,"subtype":"Capacity"},"calls":[{"op":"capacity","parent":"/","name":"Missing.Capacity"}],"warnings":[],"notices":[],"current_before":"capacities","current_after":"capacities"}
+    },
+    {
+      "name":"hidden_capacity_missing_error","input":"/.capacities/Missing.Capacity",
+      "expected":{"error":{"code":"NotFound","message":"The Capacity 'Missing.Capacity' could not be found"},"calls":[{"op":"capacity","parent":"/","name":"Missing.Capacity"}],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"hidden_domain_missing_suppressed","input":"/.domains/Missing.Domain","raise_error":false,
+      "expected":{"result":{"path":"/.domains/Missing.Domain","path_id":"/None/None","kind":"VirtualWorkspaceItem","name":"Missing.Domain","id":null,"subtype":"Domain"},"calls":[{"op":"domain","parent":"/","name":"Missing.Domain"}],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"hidden_connection_missing_error","input":"/.connections/Missing.Connection",
+      "expected":{"error":{"code":"NotFound","message":"The Connection 'Missing.Connection' could not be found"},"calls":[{"op":"connection","parent":"/","name":"Missing.Connection"}],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"hidden_gateway_missing_suppressed","input":"/.gateways/Missing.Gateway","raise_error":false,
+      "expected":{"result":{"path":"/.gateways/Missing.Gateway","path_id":"/None/None","kind":"VirtualWorkspaceItem","name":"Missing.Gateway","id":null,"subtype":"Gateway"},"calls":[{"op":"gateway","parent":"/","name":"Missing.Gateway"}],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"hidden_leaf_rejects_traversal","input":"child","current":"capacity",
+      "expected":{"error":{"code":"InvalidPath","message":"Traversing into '/.capacities/Compute.Capacity' is not supported"},"calls":[],"warnings":[],"notices":[],"current_before":"capacity","current_after":"capacity"}
+    },
+    {
+      "name":"hidden_missing_nonfinal_still_leaf","input":"/.capacities/Missing.Capacity/child","raise_error":false,
+      "expected":{"error":{"code":"InvalidPath","message":"Traversing into '/.capacities/Missing.Capacity' is not supported"},"calls":[{"op":"capacity","parent":"/","name":"Missing.Capacity"}],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"hidden_malformed_item_preserves_warning_code","input":"/.capacities/Bare",
+      "expected":{"error":{"code":"Invalid item name","message":"Invalid item name 'Bare'"},"calls":[],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"hidden_invalid_item_type","input":"/.capacities/Note.Notebook",
+      "expected":{"error":{"code":"InvalidItemType","message":"'Notebook' is not a valid Fabric item type"},"calls":[],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"hidden_invalid_workspace_type_message","input":"/Bad.VirtualWorkspace",
+      "expected":{"error":{"code":"InvalidWorkspaceType","message":"Invalid type 'Bad.VirtualWorkspace'"},"calls":[],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"hidden_parent_then_sibling","input":"../.connections/SQL.Connection","current":"capacities",
+      "expected":{"result":{"path":"/.connections/SQL.Connection","path_id":"/None/conn-1","kind":"VirtualWorkspaceItem","name":"SQL.Connection","id":"conn-1","subtype":"Connection"},"calls":[{"op":"connection","parent":"/","name":"SQL.Connection"}],"warnings":[],"notices":[],"current_before":"capacities","current_after":"capacities"}
+    },
+    {
+      "name":"spark_pool_vertical","input":"/Alpha.Workspace/.SpArKpOoLs/Fast.sPaRkPoOl",
+      "expected":{"result":{"path":"/Alpha.Workspace/.sparkpools/Fast.SparkPool","path_id":"/w-alpha/pool-1","kind":"VirtualItem","name":"Fast.SparkPool","id":"pool-1","subtype":"SparkPool"},"calls":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"},{"op":"spark_pool","parent":"/Alpha.Workspace/.sparkpools","name":"Fast.SparkPool"}],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"managed_identity_vertical","input":".managedidentities/Alpha.ManagedIdentity","current":"alpha",
+      "expected":{"result":{"path":"/Alpha.Workspace/.managedidentities/Alpha.ManagedIdentity","path_id":"/w-alpha/mi-1","kind":"VirtualItem","name":"Alpha.ManagedIdentity","id":"mi-1","subtype":"ManagedIdentity"},"calls":[{"op":"managed_identity","parent":"/Alpha.Workspace/.managedidentities","name":"Alpha.ManagedIdentity"}],"warnings":[],"notices":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"managed_endpoint_vertical","input":".managedprivateendpoints/Storage.ManagedPrivateEndpoint","current":"alpha",
+      "expected":{"result":{"path":"/Alpha.Workspace/.managedprivateendpoints/Storage.ManagedPrivateEndpoint","path_id":"/w-alpha/mpe-1","kind":"VirtualItem","name":"Storage.ManagedPrivateEndpoint","id":"mpe-1","subtype":"ManagedPrivateEndpoint"},"calls":[{"op":"managed_private_endpoint","parent":"/Alpha.Workspace/.managedprivateendpoints","name":"Storage.ManagedPrivateEndpoint"}],"warnings":[],"notices":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"external_share_container_warning","input":".externaldatashares","current":"alpha",
+      "expected":{"result":{"path":"/Alpha.Workspace/.externaldatashares","path_id":"/w-alpha","kind":"VirtualItemContainer","name":".externaldatashares","id":null,"subtype":".externaldatashares"},"calls":[],"warnings":["Ensure tenant setting is enabled for External data sharing"],"notices":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"external_share_vertical_and_nested_item_lookup","input":"Lake.Lakehouse_Invite.ExternalDataShare","current":"shares",
+      "expected":{"result":{"path":"/Alpha.Workspace/.externaldatashares/Lake.Lakehouse_Invite.ExternalDataShare","path_id":"/w-alpha/eds-1","kind":"VirtualItem","name":"Lake.Lakehouse_Invite.ExternalDataShare","id":"eds-1","subtype":"ExternalDataShare"},"calls":[{"op":"external_data_share","parent":"/Alpha.Workspace/.externaldatashares","name":"Lake.Lakehouse_Invite.ExternalDataShare"},{"op":"item","parent":"/Alpha.Workspace","name":"Lake.Lakehouse"}],"warnings":["Ensure tenant setting is enabled for External data sharing"],"notices":[],"current_before":"shares","current_after":"shares"}
+    },
+    {
+      "name":"external_share_dot_warns_without_lookup","input":".","current":"share",
+      "expected":{"result":{"path":"/Alpha.Workspace/.externaldatashares/Lake.Lakehouse_Invite.ExternalDataShare","path_id":"/w-alpha/eds-1","kind":"VirtualItem","name":"Lake.Lakehouse_Invite.ExternalDataShare","id":"eds-1","subtype":"ExternalDataShare"},"calls":[],"warnings":["Ensure tenant setting is enabled for External data sharing"],"notices":[],"current_before":"share","current_after":"share"}
+    },
+    {
+      "name":"external_share_missing_warning_after_suppression","input":"Lake.Lakehouse_Missing.ExternalDataShare","current":"shares","raise_error":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/.externaldatashares/Lake.Lakehouse_Missing.ExternalDataShare","path_id":"/w-alpha/None","kind":"VirtualItem","name":"Lake.Lakehouse_Missing.ExternalDataShare","id":null,"subtype":"ExternalDataShare"},"calls":[{"op":"external_data_share","parent":"/Alpha.Workspace/.externaldatashares","name":"Lake.Lakehouse_Missing.ExternalDataShare"},{"op":"item","parent":"/Alpha.Workspace","name":"Lake.Lakehouse"}],"warnings":["Ensure tenant setting is enabled for External data sharing"],"notices":[],"current_before":"shares","current_after":"shares"}
+    },
+    {
+      "name":"spark_missing_error","input":"Missing.SparkPool","current":"sparkpools",
+      "expected":{"error":{"code":"NotFound","message":"The Spark Pool 'Missing.SparkPool' could not be found"},"calls":[{"op":"spark_pool","parent":"/Alpha.Workspace/.sparkpools","name":"Missing.SparkPool"}],"warnings":[],"notices":[],"current_before":"sparkpools","current_after":"sparkpools"}
+    },
+    {
+      "name":"virtual_container_mismatch","input":"Alpha.ManagedIdentity","current":"sparkpools",
+      "expected":{"error":{"code":"InvalidPath","message":"The item type 'ManagedIdentity' is not supported in the context 'VirtualItemContainer'"},"calls":[],"warnings":[],"notices":[],"current_before":"sparkpools","current_after":"sparkpools"}
+    },
+    {
+      "name":"virtual_item_leaf_rejection_no_warning","input":"child","current":"share",
+      "expected":{"error":{"code":"InvalidPath","message":"Traversing into '/Alpha.Workspace/.externaldatashares/Lake.Lakehouse_Invite.ExternalDataShare' is not supported"},"calls":[],"warnings":[],"notices":[],"current_before":"share","current_after":"share"}
+    },
+    {
+      "name":"virtual_parent_removes_warning","input":"..","current":"shares",
+      "expected":{"result":{"path":"/Alpha.Workspace","path_id":"/w-alpha","kind":"Workspace","name":"Alpha.Workspace","id":"w-alpha","subtype":"Workspace"},"calls":[],"warnings":[],"notices":[],"current_before":"shares","current_after":"shares"}
+    },
+    {
+      "name":"onelake_files_vertical","input":"/Alpha.Workspace/Lake.Lakehouse/fIlEs",
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/Files","path_id":"/w-alpha/i-lake/Files","kind":"Onelake","name":"Files","id":"0000","subtype":"FOLDER","local_path":"Files","root_folder":"Files"},"calls":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"},{"op":"item","parent":"/Alpha.Workspace","name":"Lake.Lakehouse"}],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"onelake_tables_root_no_properties","input":"Tables","current":"lake",
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/Tables","path_id":"/w-alpha/i-lake/Tables","kind":"Onelake","name":"Tables","id":"0000","subtype":"FOLDER","local_path":"Tables","root_folder":"Tables"},"calls":[],"warnings":[],"notices":[],"current_before":"lake","current_after":"lake"}
+    },
+    {
+      "name":"onelake_lakehouse_other_folder","input":"tablemaintenance","current":"lake",
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/TableMaintenance","path_id":"/w-alpha/i-lake/TableMaintenance","kind":"Onelake","name":"TableMaintenance","id":"0000","subtype":"FOLDER","local_path":"TableMaintenance","root_folder":"TableMaintenance"},"calls":[],"warnings":[],"notices":[],"current_before":"lake","current_after":"lake"}
+    },
+    {
+      "name":"onelake_warehouse_files","input":"Files","current":"warehouse",
+      "expected":{"result":{"path":"/Alpha.Workspace/Warehouse.Warehouse/Files","path_id":"/w-alpha/i-warehouse/Files","kind":"Onelake","name":"Files","id":"0000","subtype":"FOLDER","local_path":"Files","root_folder":"Files"},"calls":[],"warnings":[],"notices":[],"current_before":"warehouse","current_after":"warehouse"}
+    },
+    {
+      "name":"onelake_model_tables","input":"Tables","current":"model",
+      "expected":{"result":{"path":"/Alpha.Workspace/Model.SemanticModel/Tables","path_id":"/w-alpha/i-model/Tables","kind":"Onelake","name":"Tables","id":"0000","subtype":"FOLDER","local_path":"Tables","root_folder":"Tables"},"calls":[],"warnings":[],"notices":[],"current_before":"model","current_after":"model"}
+    },
+    {
+      "name":"onelake_spark_libs","input":"Libs","current":"spark",
+      "expected":{"result":{"path":"/Alpha.Workspace/Spark.SparkJobDefinition/Libs","path_id":"/w-alpha/i-spark/Libs","kind":"Onelake","name":"Libs","id":"0000","subtype":"FOLDER","local_path":"Libs","root_folder":"Libs"},"calls":[],"warnings":[],"notices":[],"current_before":"spark","current_after":"spark"}
+    },
+    {
+      "name":"onelake_spark_main","input":"Main","current":"spark",
+      "expected":{"result":{"path":"/Alpha.Workspace/Spark.SparkJobDefinition/Main","path_id":"/w-alpha/i-spark/Main","kind":"Onelake","name":"Main","id":"0000","subtype":"FOLDER","local_path":"Main","root_folder":"Main"},"calls":[],"warnings":[],"notices":[],"current_before":"spark","current_after":"spark"}
+    },
+    {
+      "name":"onelake_spark_snapshots","input":"Snapshots","current":"spark",
+      "expected":{"result":{"path":"/Alpha.Workspace/Spark.SparkJobDefinition/Snapshots","path_id":"/w-alpha/i-spark/Snapshots","kind":"Onelake","name":"Snapshots","id":"0000","subtype":"FOLDER","local_path":"Snapshots","root_folder":"Snapshots"},"calls":[],"warnings":[],"notices":[],"current_before":"spark","current_after":"spark"}
+    },
+    {
+      "name":"onelake_kql_shortcut_root","input":"Shortcut","current":"kql",
+      "expected":{"result":{"path":"/Alpha.Workspace/Kql.KQLDatabase/Shortcut","path_id":"/w-alpha/i-kql/Shortcut","kind":"Onelake","name":"Shortcut","id":"0000","subtype":"FOLDER","local_path":"Shortcut","root_folder":"Shortcut"},"calls":[],"warnings":[],"notices":[],"current_before":"kql","current_after":"kql"}
+    },
+    {
+      "name":"onelake_sql_code","input":"Code","current":"sql",
+      "expected":{"result":{"path":"/Alpha.Workspace/Sql.SQLDatabase/Code","path_id":"/w-alpha/i-sql/Code","kind":"Onelake","name":"Code","id":"0000","subtype":"FOLDER","local_path":"Code","root_folder":"Code"},"calls":[],"warnings":[],"notices":[],"current_before":"sql","current_after":"sql"}
+    },
+    {
+      "name":"onelake_cosmos_audit","input":"Audit","current":"cosmos",
+      "expected":{"result":{"path":"/Alpha.Workspace/Cosmos.CosmosDBDatabase/Audit","path_id":"/w-alpha/i-cosmos/Audit","kind":"Onelake","name":"Audit","id":"0000","subtype":"FOLDER","local_path":"Audit","root_folder":"Audit"},"calls":[],"warnings":[],"notices":[],"current_before":"cosmos","current_after":"cosmos"}
+    },
+    {
+      "name":"onelake_mirror_files","input":"Files","current":"mirror",
+      "expected":{"result":{"path":"/Alpha.Workspace/Mirror.MirroredDatabase/Files","path_id":"/w-alpha/i-mirror/Files","kind":"Onelake","name":"Files","id":"0000","subtype":"FOLDER","local_path":"Files","root_folder":"Files"},"calls":[],"warnings":[],"notices":[],"current_before":"mirror","current_after":"mirror"}
+    },
+    {
+      "name":"onelake_registry_rejects_mirroredwarehouse_despite_folder_map","input":"Files","current":"mirror_warehouse",
+      "expected":{"error":{"code":"UnsupportedCommand","message":"not supported for command 'ls'"},"calls":[],"warnings":[],"notices":[],"current_before":"mirror_warehouse","current_after":"mirror_warehouse"}
+    },
+    {
+      "name":"onelake_registry_supports_graphql_but_folders_empty","input":"Tables","current":"graphql",
+      "expected":{"error":{"code":"NotSupported","message":"The folder 'Tables' could not be found in item 'Graph.GraphQLApi'. Valid folders are: "},"calls":[],"warnings":[],"notices":[],"current_before":"graphql","current_after":"graphql"}
+    },
+    {
+      "name":"onelake_notebook_unsupported_windows_message","input":"Files","current":"note","local_mode":"windows",
+      "expected":{"error":{"code":"UnsupportedCommand","message":"not supported for command 'dir'"},"calls":[],"warnings":[],"notices":[],"current_before":"note","current_after":"note"}
+    },
+    {
+      "name":"onelake_invalid_root_folder","input":"Other","current":"lake",
+      "expected":{"error":{"code":"NotSupported","message":"The folder 'Other' could not be found in item 'Lake.Lakehouse'. Valid folders are: Files, Tables, TableMaintenance"},"calls":[],"warnings":[],"notices":[],"current_before":"lake","current_after":"lake"}
+    },
+    {
+      "name":"onelake_directory_metadata","input":"dir","current":"files",
+      "properties":[{"path":"w-alpha/i-lake/Files/dir","status_code":200,"headers":{"x-ms-resource-type":"directory"}}],
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/Files/dir","path_id":"/w-alpha/i-lake/Files/dir","kind":"Onelake","name":"dir","id":"0000","subtype":"FOLDER","local_path":"Files/dir","root_folder":"Files"},"calls":[{"op":"properties","path":"w-alpha/i-lake/Files/dir"}],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"onelake_file_metadata","input":"data.csv","current":"files",
+      "properties":[{"path":"w-alpha/i-lake/Files/data.csv","status_code":200,"headers":{"x-ms-resource-type":"file"}}],
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/Files/data.csv","path_id":"/w-alpha/i-lake/Files/data.csv","kind":"Onelake","name":"data.csv","id":"0000","subtype":"FILE","local_path":"Files/data.csv","root_folder":"Files"},"calls":[{"op":"properties","path":"w-alpha/i-lake/Files/data.csv"}],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"onelake_table_direct_child","input":"Orders","current":"tables",
+      "properties":[{"path":"w-alpha/i-lake/Tables/Orders","status_code":200,"headers":{"x-ms-resource-type":"directory"}}],
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/Tables/Orders","path_id":"/w-alpha/i-lake/Tables/Orders","kind":"Onelake","name":"Orders","id":"0000","subtype":"TABLE","local_path":"Tables/Orders","root_folder":"Tables"},"calls":[{"op":"properties","path":"w-alpha/i-lake/Tables/Orders"}],"warnings":[],"notices":[],"current_before":"tables","current_after":"tables"}
+    },
+    {
+      "name":"onelake_directory_below_table_not_table","input":"Orders/_delta_log","current":"tables",
+      "properties":[{"path":"w-alpha/i-lake/Tables/Orders","status_code":200,"headers":{"x-ms-resource-type":"directory"}},{"path":"w-alpha/i-lake/Tables/Orders/_delta_log","status_code":200,"headers":{"x-ms-resource-type":"directory"}}],
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/Tables/Orders/_delta_log","path_id":"/w-alpha/i-lake/Tables/Orders/_delta_log","kind":"Onelake","name":"_delta_log","id":"0000","subtype":"FOLDER","local_path":"Tables/Orders/_delta_log","root_folder":"Tables"},"calls":[{"op":"properties","path":"w-alpha/i-lake/Tables/Orders"},{"op":"properties","path":"w-alpha/i-lake/Tables/Orders/_delta_log"}],"warnings":[],"notices":[],"current_before":"tables","current_after":"tables"}
+    },
+    {
+      "name":"onelake_shortcut_metadata_beats_table","input":"Orders.Shortcut","current":"tables",
+      "properties":[{"path":"w-alpha/i-lake/Tables/Orders","status_code":200,"headers":{"x-ms-resource-type":"directory","x-ms-onelake-shortcut-path":"true"}}],
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/Tables/Orders.Shortcut","path_id":"/w-alpha/i-lake/Tables/Orders","kind":"Onelake","name":"Orders.Shortcut","id":"0000","subtype":"SHORTCUT","local_path":"Tables/Orders","root_folder":"Tables"},"calls":[{"op":"properties","path":"w-alpha/i-lake/Tables/Orders"}],"warnings":[],"notices":[],"current_before":"tables","current_after":"tables"}
+    },
+    {
+      "name":"onelake_shortcut_literal_fallback","input":"actual.Shortcut","current":"files",
+      "properties":[{"path":"w-alpha/i-lake/Files/actual","error":{"code":"NotFound","message":"absent"}},{"path":"w-alpha/i-lake/Files/actual.Shortcut","status_code":200,"headers":{"x-ms-resource-type":"file"}}],
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/Files/actual.Shortcut","path_id":"/w-alpha/i-lake/Files/actual.Shortcut","kind":"Onelake","name":"actual.Shortcut","id":"0000","subtype":"FILE","local_path":"Files/actual.Shortcut","root_folder":"Files"},"calls":[{"op":"properties","path":"w-alpha/i-lake/Files/actual"},{"op":"properties","path":"w-alpha/i-lake/Files/actual.Shortcut"}],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"onelake_shortcut_replacement_is_not_suffix_only","input":"a.Shortcut.b.shortcut","current":"files",
+      "properties":[{"path":"w-alpha/i-lake/Files/a.b","status_code":200,"headers":{"x-ms-resource-type":"directory"}}],
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/Files/a.b","path_id":"/w-alpha/i-lake/Files/a.b","kind":"Onelake","name":"a.b","id":"0000","subtype":"FOLDER","local_path":"Files/a.b","root_folder":"Files"},"calls":[{"op":"properties","path":"w-alpha/i-lake/Files/a.b"}],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"onelake_mixed_shortcut_suffix_not_removed","input":"a.SHORTCUT","current":"files",
+      "properties":[{"path":"w-alpha/i-lake/Files/a.SHORTCUT","status_code":200,"headers":{"x-ms-resource-type":"directory","x-ms-onelake-shortcut-path":"True"}}],
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/Files/a.SHORTCUT","path_id":"/w-alpha/i-lake/Files/a.SHORTCUT","kind":"Onelake","name":"a.SHORTCUT","id":"0000","subtype":"FOLDER","local_path":"Files/a.SHORTCUT","root_folder":"Files"},"calls":[{"op":"properties","path":"w-alpha/i-lake/Files/a.SHORTCUT"}],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"onelake_undefined_metadata_still_has_id","input":"odd","current":"files",
+      "properties":[{"path":"w-alpha/i-lake/Files/odd","status_code":200,"headers":{}}],
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/Files/odd","path_id":"/w-alpha/i-lake/Files/odd","kind":"Onelake","name":"odd","id":"0000","subtype":"UNDEFINED","local_path":"Files/odd","root_folder":"Files"},"calls":[{"op":"properties","path":"w-alpha/i-lake/Files/odd"}],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"onelake_missing_final_suppressed","input":"new.Shortcut","current":"files","raise_error":false,
+      "properties":[{"path":"w-alpha/i-lake/Files/new","error":{"code":"NotFound","message":"absent"}},{"path":"w-alpha/i-lake/Files/new.Shortcut","error":{"code":"NotFound","message":"absent"}}],
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/Files/new.Shortcut","path_id":"/w-alpha/i-lake/Files/new.Shortcut","kind":"Onelake","name":"new.Shortcut","id":null,"subtype":"UNDEFINED","local_path":"Files/new.Shortcut","root_folder":"Files"},"calls":[{"op":"properties","path":"w-alpha/i-lake/Files/new"},{"op":"properties","path":"w-alpha/i-lake/Files/new.Shortcut"}],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"onelake_missing_nonfinal_not_suppressed","input":"missing/child","current":"files","raise_error":false,
+      "properties":[{"path":"w-alpha/i-lake/Files/missing","error":{"code":"NotFound","message":"absent"}},{"path":"w-alpha/i-lake/Files/missing","error":{"code":"NotFound","message":"absent"}}],
+      "expected":{"error":{"code":"NotFound","message":"The path 'w-alpha/i-lake/Files/missing' could not be found"},"calls":[{"op":"properties","path":"w-alpha/i-lake/Files/missing"},{"op":"properties","path":"w-alpha/i-lake/Files/missing"}],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"onelake_missing_final_error","input":"missing","current":"files",
+      "properties":[{"path":"w-alpha/i-lake/Files/missing","error":{"code":"NotFound","message":"absent"}},{"path":"w-alpha/i-lake/Files/missing","error":{"code":"NotFound","message":"absent"}}],
+      "expected":{"error":{"code":"NotFound","message":"The path 'w-alpha/i-lake/Files/missing' could not be found"},"calls":[{"op":"properties","path":"w-alpha/i-lake/Files/missing"},{"op":"properties","path":"w-alpha/i-lake/Files/missing"}],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"onelake_service_error_no_retry_or_local_fallback","input":"secret","current":"files","supports_local_path":true,
+      "properties":[{"path":"w-alpha/i-lake/Files/secret","error":{"code":"Forbidden","message":"Metadata denied."}}],
+      "expected":{"error":{"code":"Forbidden","message":"Metadata denied"},"calls":[{"op":"properties","path":"w-alpha/i-lake/Files/secret"}],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"onelake_parent_then_other_root","input":"../Tables","current":"files",
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/Tables","path_id":"/w-alpha/i-lake/Tables","kind":"Onelake","name":"Tables","id":"0000","subtype":"FOLDER","local_path":"Tables","root_folder":"Tables"},"calls":[],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"onelake_home_explicit_injection","input":"~/Lake.Lakehouse/Files","current":"files",
+      "expected":{"result":{"path":"/Home.Personal/Lake.Lakehouse/Files","path_id":"/w-home/i-home-lake/Files","kind":"Onelake","name":"Files","id":"0000","subtype":"FOLDER","local_path":"Files","root_folder":"Files"},"calls":[{"op":"workspace","parent":"/","name":"Home.Personal"},{"op":"item","parent":"/Home.Personal","name":"Lake.Lakehouse"}],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"onelake_missing_item_id_before_folders","input":"Missing.Lakehouse/Files","current":"alpha","raise_error":false,
+      "expected":{"error":{"code":"NotFound","message":"The Item 'Missing.Lakehouse' could not be found"},"calls":[{"op":"item","parent":"/Alpha.Workspace","name":"Missing.Lakehouse"}],"warnings":[],"notices":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"local_readable_posix","input":"/data/file.txt","supports_local_path":true,
+      "local_fs":{"hash":4242,"operations":[{"op":"exists","arg":"/data/file.txt","result":true},{"op":"access","arg":"/data/file.txt","mode":"R_OK","result":true}]},
+      "expected":{"result":{"path":"/data/file.txt","path_id":"/","kind":"LocalPath","name":"file.txt","id":"4242"},"calls":[{"op":"exists","arg":"/data/file.txt"},{"op":"access","arg":"/data/file.txt","mode":"R_OK"}],"warnings":[],"notices":["/data/file.txt not found in Fabric, checking local file system"],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"local_readable_windows_raw_path_retained","input":"C:\\data\\file.txt","supports_local_path":true,"local_mode":"windows",
+      "local_fs":{"hash":-17,"operations":[{"op":"exists","arg":"C:\\data\\file.txt","result":true},{"op":"access","arg":"C:\\data\\file.txt","mode":"R_OK","result":true}]},
+      "expected":{"result":{"path":"C:\\data\\file.txt","path_id":"/","kind":"LocalPath","name":"file.txt","id":"-17"},"calls":[{"op":"exists","arg":"C:\\data\\file.txt"},{"op":"access","arg":"C:\\data\\file.txt","mode":"R_OK"}],"warnings":[],"notices":["C:\\data\\file.txt not found in Fabric, checking local file system"],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"local_read_denied_preserves_fabric_error","input":"/data/file.txt","supports_local_path":true,
+      "local_fs":{"operations":[{"op":"exists","arg":"/data/file.txt","result":true},{"op":"access","arg":"/data/file.txt","mode":"R_OK","result":false}]},
+      "expected":{"error":{"code":"InvalidPath","message":"The path '/data' is invalid"},"calls":[{"op":"exists","arg":"/data/file.txt"},{"op":"access","arg":"/data/file.txt","mode":"R_OK"}],"warnings":[],"notices":["/data/file.txt not found in Fabric, checking local file system"],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"local_missing_does_not_check_read_access","input":"/data/file.txt","supports_local_path":true,
+      "local_fs":{"operations":[{"op":"exists","arg":"/data/file.txt","result":false}]},
+      "expected":{"error":{"code":"InvalidPath","message":"The path '/data' is invalid"},"calls":[{"op":"exists","arg":"/data/file.txt"}],"warnings":[],"notices":["/data/file.txt not found in Fabric, checking local file system"],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"local_write_parent_boolean_true_bug_accepts","input":"/data/new.txt","raise_error":false,"supports_local_path":true,
+      "local_fs":{"hash":4243,"operations":[{"op":"exists","arg":"/data/new.txt","result":false},{"op":"access","arg":"/data","mode":"W_OK","result":true},{"op":"exists","arg":true,"result":true}]},
+      "expected":{"result":{"path":"/data/new.txt","path_id":"/","kind":"LocalPath","name":"new.txt","id":"4243"},"calls":[{"op":"exists","arg":"/data/new.txt"},{"op":"dirname","arg":"/data/new.txt"},{"op":"dirname","arg":"/data/new.txt"},{"op":"access","arg":"/data","mode":"W_OK"},{"op":"exists","arg":true}],"warnings":[],"notices":["/data/new.txt not found in Fabric, checking local file system"],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"local_write_parent_boolean_true_bug_rejects","input":"/data/new.txt","raise_error":false,"supports_local_path":true,
+      "local_fs":{"operations":[{"op":"exists","arg":"/data/new.txt","result":false},{"op":"access","arg":"/data","mode":"W_OK","result":true},{"op":"exists","arg":true,"result":false}]},
+      "expected":{"error":{"code":"InvalidPath","message":"The path '/data' is invalid"},"calls":[{"op":"exists","arg":"/data/new.txt"},{"op":"dirname","arg":"/data/new.txt"},{"op":"dirname","arg":"/data/new.txt"},{"op":"access","arg":"/data","mode":"W_OK"},{"op":"exists","arg":true}],"warnings":[],"notices":["/data/new.txt not found in Fabric, checking local file system"],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"local_write_parent_boolean_false_still_calls_exists","input":"/data/new.txt","raise_error":false,"supports_local_path":true,
+      "local_fs":{"operations":[{"op":"exists","arg":"/data/new.txt","result":false},{"op":"access","arg":"/data","mode":"W_OK","result":false},{"op":"exists","arg":false,"result":false}]},
+      "expected":{"error":{"code":"InvalidPath","message":"The path '/data' is invalid"},"calls":[{"op":"exists","arg":"/data/new.txt"},{"op":"dirname","arg":"/data/new.txt"},{"op":"dirname","arg":"/data/new.txt"},{"op":"access","arg":"/data","mode":"W_OK"},{"op":"exists","arg":false}],"warnings":[],"notices":["/data/new.txt not found in Fabric, checking local file system"],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"local_false_descriptor_can_accept_unwritable_parent","input":"/data/new.txt","raise_error":false,"supports_local_path":true,
+      "local_fs":{"hash":4244,"operations":[{"op":"exists","arg":"/data/new.txt","result":false},{"op":"access","arg":"/data","mode":"W_OK","result":false},{"op":"exists","arg":false,"result":true}]},
+      "expected":{"result":{"path":"/data/new.txt","path_id":"/","kind":"LocalPath","name":"new.txt","id":"4244"},"calls":[{"op":"exists","arg":"/data/new.txt"},{"op":"dirname","arg":"/data/new.txt"},{"op":"dirname","arg":"/data/new.txt"},{"op":"access","arg":"/data","mode":"W_OK"},{"op":"exists","arg":false}],"warnings":[],"notices":["/data/new.txt not found in Fabric, checking local file system"],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"local_empty_dirname_short_circuits_write_access","input":"new.txt","raise_error":false,"supports_local_path":true,
+      "local_fs":{"operations":[{"op":"exists","arg":"new.txt","result":false},{"op":"exists","arg":"","result":false}]},
+      "expected":{"error":{"code":"InvalidPath","message":"The path '/new.txt' is invalid"},"calls":[{"op":"exists","arg":"new.txt"},{"op":"dirname","arg":"new.txt"},{"op":"exists","arg":""}],"warnings":[],"notices":["new.txt not found in Fabric, checking local file system"],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"local_read_denied_then_windows_writable_parent","input":"C:\\data\\new.txt","raise_error":false,"supports_local_path":true,"local_mode":"windows",
+      "local_fs":{"hash":4245,"operations":[{"op":"exists","arg":"C:\\data\\new.txt","result":true},{"op":"access","arg":"C:\\data\\new.txt","mode":"R_OK","result":false},{"op":"access","arg":"C:\\data","mode":"W_OK","result":true},{"op":"exists","arg":true,"result":true}]},
+      "expected":{"result":{"path":"C:\\data\\new.txt","path_id":"/","kind":"LocalPath","name":"new.txt","id":"4245"},"calls":[{"op":"exists","arg":"C:\\data\\new.txt"},{"op":"access","arg":"C:\\data\\new.txt","mode":"R_OK"},{"op":"dirname","arg":"C:\\data\\new.txt"},{"op":"dirname","arg":"C:\\data\\new.txt"},{"op":"access","arg":"C:\\data","mode":"W_OK"},{"op":"exists","arg":true}],"warnings":[],"notices":["C:\\data\\new.txt not found in Fabric, checking local file system"],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"local_option_disabled_never_accesses_fs","input":"/data/file.txt",
+      "expected":{"error":{"code":"InvalidPath","message":"The path '/data' is invalid"},"calls":[],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"local_service_lookup_error_does_not_fallback","input":"/Alpha.Workspace","supports_local_path":true,"raise_error":false,
+      "failures":[{"op":"workspace","parent":"/","name":"Alpha.Workspace","error":{"code":"Forbidden","message":"Workspace denied."}}],
+      "expected":{"error":{"code":"Forbidden","message":"Workspace denied"},"calls":[{"op":"workspace","parent":"/","name":"Alpha.Workspace"}],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"local_notfound_lookup_can_fallback","input":"/Missing.Workspace","supports_local_path":true,
+      "local_fs":{"hash":4246,"operations":[{"op":"exists","arg":"/Missing.Workspace","result":true},{"op":"access","arg":"/Missing.Workspace","mode":"R_OK","result":true}]},
+      "expected":{"result":{"path":"/Missing.Workspace","path_id":"/","kind":"LocalPath","name":"Missing.Workspace","id":"4246"},"calls":[{"op":"workspace","parent":"/","name":"Missing.Workspace"},{"op":"exists","arg":"/Missing.Workspace"},{"op":"access","arg":"/Missing.Workspace","mode":"R_OK"}],"warnings":[],"notices":["/Missing.Workspace not found in Fabric, checking local file system"],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"local_notsupported_folder_can_fallback","input":"Other","current":"lake","supports_local_path":true,
+      "local_fs":{"hash":4247,"operations":[{"op":"exists","arg":"Other","result":true},{"op":"access","arg":"Other","mode":"R_OK","result":true}]},
+      "expected":{"result":{"path":"Other","path_id":"/","kind":"LocalPath","name":"Other","id":"4247"},"calls":[{"op":"exists","arg":"Other"},{"op":"access","arg":"Other","mode":"R_OK"}],"warnings":[],"notices":["Other not found in Fabric, checking local file system"],"current_before":"lake","current_after":"lake"}
+    },
+    {
+      "name":"local_unsupportedcommand_does_not_fallback","input":"Files","current":"note","supports_local_path":true,
+      "expected":{"error":{"code":"UnsupportedCommand","message":"not supported for command 'ls'"},"calls":[],"warnings":[],"notices":[],"current_before":"note","current_after":"note"}
+    },
+    {
+      "name":"local_invaliditemtype_does_not_fallback","input":"Bad.Notebook","current":"capacities","supports_local_path":true,
+      "expected":{"error":{"code":"InvalidItemType","message":"'Notebook' is not a valid Fabric item type"},"calls":[],"warnings":[],"notices":[],"current_before":"capacities","current_after":"capacities"}
+    },
+    {
+      "name":"local_successful_fabric_path_never_falls_back","input":"Files","current":"lake","supports_local_path":true,
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/Files","path_id":"/w-alpha/i-lake/Files","kind":"Onelake","name":"Files","id":"0000","subtype":"FOLDER","local_path":"Files","root_folder":"Files"},"calls":[],"warnings":[],"notices":[],"current_before":"lake","current_after":"lake"}
+    },
+    {
+      "name":"local_list_tokens_are_joined_before_fallback","input":["'data","file.txt'"],"supports_local_path":true,
+      "local_fs":{"hash":4248,"operations":[{"op":"exists","arg":"data file.txt","result":true},{"op":"access","arg":"data file.txt","mode":"R_OK","result":true}]},
+      "expected":{"result":{"path":"data file.txt","path_id":"/","kind":"LocalPath","name":"data file.txt","id":"4248"},"calls":[{"op":"exists","arg":"data file.txt"},{"op":"access","arg":"data file.txt","mode":"R_OK"}],"warnings":[],"notices":["data file.txt not found in Fabric, checking local file system"],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"home_error_precedes_fallback_try_block","input":"~/file.txt","supports_local_path":true,
+      "home":{"error":{"code":"InvalidOperation","message":"The personal workspace is only available with user authentication"}},
+      "expected":{"error":{"code":"InvalidOperation","message":"The personal workspace is only available with user authentication"},"calls":[],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"managed_identity_missing_error","input":".managedidentities/Missing.ManagedIdentity","current":"alpha",
+      "expected":{"error":{"code":"NotFound","message":"The Managed Identity 'Missing.ManagedIdentity' could not be found"},"calls":[{"op":"managed_identity","parent":"/Alpha.Workspace/.managedidentities","name":"Missing.ManagedIdentity"}],"warnings":[],"notices":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"managed_endpoint_missing_suppressed","input":".managedprivateendpoints/Missing.ManagedPrivateEndpoint","current":"alpha","raise_error":false,
+      "expected":{"result":{"path":"/Alpha.Workspace/.managedprivateendpoints/Missing.ManagedPrivateEndpoint","path_id":"/w-alpha/None","kind":"VirtualItem","name":"Missing.ManagedPrivateEndpoint","id":null,"subtype":"ManagedPrivateEndpoint"},"calls":[{"op":"managed_private_endpoint","parent":"/Alpha.Workspace/.managedprivateendpoints","name":"Missing.ManagedPrivateEndpoint"}],"warnings":[],"notices":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"external_share_missing_error_no_warning","input":"Lake.Lakehouse_Missing.ExternalDataShare","current":"shares",
+      "expected":{"error":{"code":"NotFound","message":"The External Data Share 'Lake.Lakehouse_Missing.ExternalDataShare' could not be found"},"calls":[{"op":"external_data_share","parent":"/Alpha.Workspace/.externaldatashares","name":"Lake.Lakehouse_Missing.ExternalDataShare"},{"op":"item","parent":"/Alpha.Workspace","name":"Lake.Lakehouse"}],"warnings":[],"notices":[],"current_before":"shares","current_after":"shares"}
+    },
+    {
+      "name":"external_share_malformed_name_looks_up_empty_item","input":"Bare.ExternalDataShare","current":"shares",
+      "expected":{"error":{"code":"NotFound","message":"The Item '' could not be found"},"calls":[{"op":"external_data_share","parent":"/Alpha.Workspace/.externaldatashares","name":"Bare.ExternalDataShare"},{"op":"item","parent":"/Alpha.Workspace","name":""}],"warnings":[],"notices":[],"current_before":"shares","current_after":"shares"}
+    },
+    {
+      "name":"virtual_invalid_container_preserves_source_error","input":"Bad.VirtualItemContainer","current":"alpha",
+      "expected":{"error":{"code":"InvalidItemType","message":"Invalid type 'Bad.VirtualItemContainer'"},"calls":[],"warnings":[],"notices":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"onelake_resource_type_header_is_case_sensitive","input":"odd","current":"files",
+      "properties":[{"path":"w-alpha/i-lake/Files/odd","status_code":200,"headers":{"x-ms-resource-type":"Directory"}}],
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/Files/odd","path_id":"/w-alpha/i-lake/Files/odd","kind":"Onelake","name":"odd","id":"0000","subtype":"UNDEFINED","local_path":"Files/odd","root_folder":"Files"},"calls":[{"op":"properties","path":"w-alpha/i-lake/Files/odd"}],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"onelake_file_shortcut_header_ignored","input":"data","current":"files",
+      "properties":[{"path":"w-alpha/i-lake/Files/data","status_code":200,"headers":{"x-ms-resource-type":"file","x-ms-onelake-shortcut-path":"true"}}],
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/Files/data","path_id":"/w-alpha/i-lake/Files/data","kind":"Onelake","name":"data","id":"0000","subtype":"FILE","local_path":"Files/data","root_folder":"Files"},"calls":[{"op":"properties","path":"w-alpha/i-lake/Files/data"}],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"onelake_file_does_not_reject_child_lookup","input":"data/child","current":"files",
+      "properties":[{"path":"w-alpha/i-lake/Files/data","status_code":200,"headers":{"x-ms-resource-type":"file"}},{"path":"w-alpha/i-lake/Files/data/child","status_code":200,"headers":{"x-ms-resource-type":"directory"}}],
+      "expected":{"result":{"path":"/Alpha.Workspace/Lake.Lakehouse/Files/data/child","path_id":"/w-alpha/i-lake/Files/data/child","kind":"Onelake","name":"child","id":"0000","subtype":"FOLDER","local_path":"Files/data/child","root_folder":"Files"},"calls":[{"op":"properties","path":"w-alpha/i-lake/Files/data"},{"op":"properties","path":"w-alpha/i-lake/Files/data/child"}],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"local_suppressed_remote_missing_final_does_not_fallback","input":"/Missing.Workspace","raise_error":false,"supports_local_path":true,
+      "expected":{"result":{"path":"/Missing.Workspace","path_id":"/None","kind":"Workspace","name":"Missing.Workspace","id":null,"subtype":"Workspace"},"calls":[{"op":"workspace","parent":"/","name":"Missing.Workspace"}],"warnings":[],"notices":[],"current_before":"tenant","current_after":"tenant"}
+    },
+    {
+      "name":"local_onelake_missing_final_can_fallback","input":"missing","current":"files","supports_local_path":true,
+      "properties":[{"path":"w-alpha/i-lake/Files/missing","error":{"code":"NotFound","message":"absent"}},{"path":"w-alpha/i-lake/Files/missing","error":{"code":"NotFound","message":"absent"}}],
+      "local_fs":{"hash":4249,"operations":[{"op":"exists","arg":"missing","result":true},{"op":"access","arg":"missing","mode":"R_OK","result":true}]},
+      "expected":{"result":{"path":"missing","path_id":"/","kind":"LocalPath","name":"missing","id":"4249"},"calls":[{"op":"properties","path":"w-alpha/i-lake/Files/missing"},{"op":"properties","path":"w-alpha/i-lake/Files/missing"},{"op":"exists","arg":"missing"},{"op":"access","arg":"missing","mode":"R_OK"}],"warnings":[],"notices":["missing not found in Fabric, checking local file system"],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"hidden_prefix_is_tenant_only","input":".capacities","current":"alpha",
+      "expected":{"error":{"code":"InvalidPath","message":"The path '/Alpha.Workspace/.capacities' is invalid"},"calls":[],"warnings":[],"notices":[],"current_before":"alpha","current_after":"alpha"}
+    },
+    {
+      "name":"onelake_non200_created_assertion","input":"created","current":"files",
+      "properties":[{"path":"w-alpha/i-lake/Files/created","status_code":201,"headers":{"x-ms-resource-type":"directory"}}],
+      "expected":{"error":{"code":"AssertionError","message":""},"calls":[{"op":"properties","path":"w-alpha/i-lake/Files/created"}],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"onelake_non200_notfound_is_not_missing_exception","input":"absent","current":"files","supports_local_path":true,
+      "properties":[{"path":"w-alpha/i-lake/Files/absent","status_code":404,"headers":{}}],
+      "expected":{"error":{"code":"AssertionError","message":""},"calls":[{"op":"properties","path":"w-alpha/i-lake/Files/absent"}],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    },
+    {
+      "name":"onelake_non200_server_no_suppression_or_local_fallback","input":"broken","current":"files","raise_error":false,"supports_local_path":true,
+      "properties":[{"path":"w-alpha/i-lake/Files/broken","status_code":500,"headers":{"x-ms-resource-type":"file"}}],
+      "expected":{"error":{"code":"AssertionError","message":""},"calls":[{"op":"properties","path":"w-alpha/i-lake/Files/broken"}],"warnings":[],"notices":[],"current_before":"files","current_after":"files"}
+    }
+  ]
+}

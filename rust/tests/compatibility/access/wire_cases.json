@@ -1,0 +1,88 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "requests": [
+    {
+      "name": "acl-principal",
+      "body": {
+        "principal": {
+          "id": "identity",
+          "type": "User"
+        },
+        "role": "viewer"
+      },
+      "wire": "{\"principal\": {\"id\": \"identity\", \"type\": \"User\"}, \"role\": \"viewer\"}"
+    },
+    {
+      "name": "unicode-controls",
+      "body": {
+        "unicode": "\u96ea\ud83c\udf0d",
+        "control": "\u0000\n",
+        "float": -0.0
+      },
+      "wire": "{\"unicode\": \"\\u96ea\\ud83c\\udf0d\", \"control\": \"\\u0000\\n\", \"float\": -0.0}"
+    },
+    {
+      "name": "label",
+      "body": {
+        "items": [
+          {
+            "id": "item",
+            "type": "Notebook"
+          }
+        ],
+        "labelId": "label",
+        "assignmentMethod": "Standard"
+      },
+      "wire": "{\"items\": [{\"id\": \"item\", \"type\": \"Notebook\"}], \"labelId\": \"label\", \"assignmentMethod\": \"Standard\"}"
+    },
+    {
+      "name": "catalog",
+      "body": {
+        "search": "\u96ea",
+        "pageSize": 1000,
+        "filter": "Type eq 'Report'"
+      },
+      "wire": "{\"search\": \"\\u96ea\", \"pageSize\": 1000, \"filter\": \"Type eq 'Report'\"}"
+    },
+    {
+      "name": "numeric",
+      "body": {
+        "small": 1e-07,
+        "large": 1e+20,
+        "fraction": 1.25
+      },
+      "wire": "{\"small\": 1e-07, \"large\": 1e+20, \"fraction\": 1.25}"
+    }
+  ],
+  "merged": {
+    "first": "{\"value\": [{\"id\": \"first\", \"note\": \"\\u96ea\", \"extra\": \"identity: value\"}], \"continuationToken\": \"next\"}",
+    "second": "{\"value\": [{\"id\": \"second\", \"name\": \"\\ud83c\\udf0d\"}]}",
+    "wire": "{\"value\": [{\"id\": \"first\", \"note\": \"\\u96ea\", \"extra\": \"identity: value\"}, {\"id\": \"second\", \"name\": \"\\ud83c\\udf0d\"}], \"total_pages\": 1}",
+    "identities": [
+      {
+        "value": "\u96ea",
+        "matched": false
+      },
+      {
+        "value": "\\u96ea",
+        "matched": true
+      },
+      {
+        "value": "\"id\": \"first\"",
+        "matched": true
+      },
+      {
+        "value": "\"id\":\"first\"",
+        "matched": false
+      },
+      {
+        "value": "\ud83c\udf0d",
+        "matched": false
+      },
+      {
+        "value": "\\ud83c\\udf0d",
+        "matched": true
+      }
+    ]
+  }
+}

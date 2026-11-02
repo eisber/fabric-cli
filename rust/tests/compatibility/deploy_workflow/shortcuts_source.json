@@ -1,0 +1,32 @@
+{
+  "source_commit": "5ca096c00a9a878c646c59fe537b883eba951329",
+  "source_function": "_items/_lakehouse.py:ShortcutPublisher._unpublish_shortcuts",
+  "source_sha256": "76993ed32b4e0df82a07a9701d5bdbda52e3fb4e4f3ade80059011cfb54d494d",
+  "requests_version": "2.33.1",
+  "cases": [
+    {
+      "method": "DELETE",
+      "raw_url": "https://msitapi.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/shortcuts/Tables/My Shortcut",
+      "url": "https://msitapi.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/shortcuts/Tables/My%20Shortcut",
+      "shortcut_path": "Tables/My Shortcut"
+    },
+    {
+      "method": "DELETE",
+      "raw_url": "https://msitapi.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/shortcuts/Tables/\u00c9quipe \u00e9t\u00e9",
+      "url": "https://msitapi.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/shortcuts/Tables/%C3%89quipe%20%C3%A9t%C3%A9",
+      "shortcut_path": "Tables/\u00c9quipe \u00e9t\u00e9"
+    },
+    {
+      "method": "DELETE",
+      "raw_url": "https://msitapi.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/shortcuts/Files/a+b",
+      "url": "https://msitapi.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/shortcuts/Files/a+b",
+      "shortcut_path": "Files/a+b"
+    },
+    {
+      "method": "DELETE",
+      "raw_url": "https://msitapi.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/shortcuts/Tables/percent%value",
+      "url": "https://msitapi.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/shortcuts/Tables/percent%25value",
+      "shortcut_path": "Tables/percent%value"
+    }
+  ]
+}

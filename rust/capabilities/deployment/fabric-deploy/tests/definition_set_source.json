@@ -1,0 +1,321 @@
+{
+  "source": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "name": "object",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": "eyJ4IjogMX0=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "decoded": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": {
+                "x": 1
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "edited": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": {
+                "x": "\u00e9\ud83d\ude00",
+                "n": 1e-05,
+                "null": null
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "encoded": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": "eyJ4IjogIlx1MDBlOVx1ZDgzZFx1ZGUwMCIsICJuIjogMWUtMDUsICJudWxsIjogbnVsbH0=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "body": "{\"definition\": {\"parts\": [{\"path\": \"part.json\", \"payload\": \"eyJ4IjogIlx1MDBlOVx1ZDgzZFx1ZGUwMCIsICJuIjogMWUtMDUsICJudWxsIjogbnVsbH0=\", \"payloadType\": \"InlineBase64\"}]}}"
+    },
+    {
+      "name": "ipynb",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "notebook.ipynb",
+              "payload": "eyJjZWxscyI6IFtdfQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "decoded": {
+        "definition": {
+          "parts": [
+            {
+              "path": "notebook.ipynb",
+              "payload": {
+                "cells": []
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "edited": {
+        "definition": {
+          "parts": [
+            {
+              "path": "notebook.ipynb",
+              "payload": {
+                "cells": [],
+                "n": 1.0
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "encoded": {
+        "definition": {
+          "parts": [
+            {
+              "path": "notebook.ipynb",
+              "payload": "eyJjZWxscyI6IFtdLCAibiI6IDEuMH0=",
+              "payloadType": "InlineBase64"
+            }
+          ],
+          "format": "ipynb"
+        }
+      },
+      "body": "{\"definition\": {\"parts\": [{\"path\": \"notebook.ipynb\", \"payload\": \"eyJjZWxscyI6IFtdLCAibiI6IDEuMH0=\", \"payloadType\": \"InlineBase64\"}], \"format\": \"ipynb\"}}"
+    },
+    {
+      "name": "string",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": "eyJ4IjogMX0=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "decoded": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": {
+                "x": 1
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "edited": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": "plain text",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "encoded": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": "cGxhaW4gdGV4dA==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "body": "{\"definition\": {\"parts\": [{\"path\": \"part.json\", \"payload\": \"cGxhaW4gdGV4dA==\", \"payloadType\": \"InlineBase64\"}]}}"
+    },
+    {
+      "name": "array",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": "eyJ4IjogMX0=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "decoded": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": {
+                "x": 1
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "edited": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": [
+                1,
+                null,
+                false
+              ],
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "encoded": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": [
+                1,
+                null,
+                false
+              ],
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "body": "{\"definition\": {\"parts\": [{\"path\": \"part.json\", \"payload\": [1, null, false], \"payloadType\": \"DecodeBase64\"}]}}"
+    },
+    {
+      "name": "boolean",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": "eyJ4IjogMX0=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "decoded": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": {
+                "x": 1
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "edited": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": false,
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "encoded": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": false,
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "body": "{\"definition\": {\"parts\": [{\"path\": \"part.json\", \"payload\": false, \"payloadType\": \"DecodeBase64\"}]}}"
+    },
+    {
+      "name": "null",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": "eyJ4IjogMX0=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "decoded": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": {
+                "x": 1
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "edited": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": null,
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "encoded": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.json",
+              "payload": null,
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "body": "{\"definition\": {\"parts\": [{\"path\": \"part.json\", \"payload\": null, \"payloadType\": \"DecodeBase64\"}]}}"
+    }
+  ]
+}

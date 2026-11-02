@@ -1,0 +1,14 @@
+[
+  {"name":"null","data":null,"expected":"null"},
+  {"name":"false","data":false,"expected":"false"},
+  {"name":"zero","data":0,"expected":"0"},
+  {"name":"empty-object","data":{},"expected":"{}"},
+  {"name":"empty-array","data":[],"expected":"[]"},
+  {"name":"empty-string","data":"","expected":"\"\""},
+  {"name":"definition-order","data":{"z":{"parts":[{"path":"notebook-content.py","payload":"synthetic","payloadType":"InlineBase64"}]},"a":null},"expected":"{\"z\": {\"parts\": [{\"path\": \"notebook-content.py\", \"payload\": \"synthetic\", \"payloadType\": \"InlineBase64\"}]}, \"a\": null}"},
+  {"name":"separators","data":[1,{"b":2,"a":3},[],{}],"expected":"[1, {\"b\": 2, \"a\": 3}, [], {}]"},
+  {"name":"ascii-unicode","data":"caf\u00e9 \ud83d\ude80 \u007f","expected":"\"caf\\u00e9 \\ud83d\\ude80 \\u007f\""},
+  {"name":"escapes","data":"\"\\/\b\f\n\r\t\u0000\u001f","expected":"\"\\\"\\\\/\\b\\f\\n\\r\\t\\u0000\\u001f\""},
+  {"name":"float-boundaries","data":[-0.0,1.0,1e-5,0.0001,1e15,1e16,2.9802322387695312e-8],"expected":"[-0.0, 1.0, 1e-05, 0.0001, 1000000000000000.0, 1e+16, 2.9802322387695312e-08]"},
+  {"name":"integer-boundaries","data":[-9223372036854775808,18446744073709551615],"expected":"[-9223372036854775808, 18446744073709551615]"}
+]

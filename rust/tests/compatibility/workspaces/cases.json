@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "repository": "https://github.com/microsoft/fabric-cli",
+    "commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+    "foundation": "eccfca1d3b1cb4df71d0fa65a76221a588095290",
+    "source_file_count": 259,
+    "source_tree_sha256": "b044061fc4d8e43d104addf0de4d6860451ebd9fd0f5b0ddf81d5de1da3b41ce",
+    "attribution": "Microsoft Corporation, MIT. All service payloads and expected results below are hand-authored synthetic reference data, not recordings or Rust-generated snapshots."
+  },
+  "cases": [
+    {
+      "id": "empty",
+      "purpose": "An empty value array remains successful data: [], not missing data or null.",
+      "responses": [
+        {"status": 200, "body": {"value": []}}
+      ],
+      "expected": {
+        "exit_code": 0,
+        "output": {"status": "Success", "command": "ls", "result": {"data": []}},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces"],
+        "api_ids": [],
+        "api_total_pages": null,
+        "exception": null
+      }
+    },
+    {
+      "id": "names_types_order",
+      "purpose": "Stable case-insensitive sorting of suffixed names, Personal workspaces, unknown-type filtering, and literal slash/Unicode names.",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {"id": "z", "displayName": "Zulu", "type": "Workspace"},
+              {"id": "a1", "displayName": "alpha", "type": "workspace"},
+              {"id": "a2", "displayName": "ALPHA", "type": "Workspace"},
+              {"id": "personal", "displayName": "Mine", "type": "Personal"},
+              {"id": "unknown", "displayName": "Hidden", "type": "FutureType"},
+              {"id": "slash", "displayName": "A/B", "type": "Workspace"},
+              {"id": "unicode", "displayName": "\u00e9quipe", "type": "Workspace"}
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "exit_code": 0,
+        "output": {
+          "status": "Success",
+          "command": "ls",
+          "result": {
+            "data": [
+              {"name": "A/B.Workspace"},
+              {"name": "alpha.Workspace"},
+              {"name": "ALPHA.Workspace"},
+              {"name": "Mine.Personal"},
+              {"name": "Zulu.Workspace"},
+              {"name": "\u00e9quipe.Workspace"}
+            ]
+          }
+        },
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces"],
+        "api_ids": ["z", "a1", "a2", "personal", "unknown", "slash", "unicode"],
+        "api_total_pages": null,
+        "exception": null
+      }
+    },
+    {
+      "id": "token_pagination",
+      "purpose": "Three pages, an empty intermediate page, encoded opaque tokens, ignored continuationUri, service-order aggregation then CLI sorting.",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [{"id": "z", "displayName": "Zulu", "type": "Workspace"}],
+            "continuationToken": "page+/= 2",
+            "continuationUri": "https://continuation.invalid/do-not-follow"
+          }
+        },
+        {
+          "status": 200,
+          "body": {"value": [], "continuationToken": "last", "continuationUri": "https://continuation.invalid/also-ignored"}
+        },
+        {
+          "status": 200,
+          "body": {"value": [{"id": "a", "displayName": "Alpha", "type": "Workspace"}]}
+        }
+      ],
+      "expected": {
+        "exit_code": 0,
+        "output": {"status": "Success", "command": "ls", "result": {"data": [{"name": "Alpha.Workspace"}, {"name": "Zulu.Workspace"}]}},
+        "requests": [
+          "https://api.fabric.microsoft.com/v1/workspaces",
+          "https://api.fabric.microsoft.com/v1/workspaces?continuationToken=page%2B%2F%3D+2",
+          "https://api.fabric.microsoft.com/v1/workspaces?continuationToken=last"
+        ],
+        "api_ids": ["z", "a"],
+        "api_total_pages": 1,
+        "exception": null
+      }
+    },
+    {
+      "id": "query_projection",
+      "purpose": "JMESPath filters and projects sorted internal name/id rows, overriding default name-only columns.",
+      "query": "[?id != 'skip'].{workspace: name, key: id}",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {"id": "b", "displayName": "Beta", "type": "Workspace"},
+              {"id": "skip", "displayName": "Ignored", "type": "Workspace"},
+              {"id": "a", "displayName": "Alpha", "type": "Personal"}
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "exit_code": 0,
+        "output": {"status": "Success", "command": "ls", "result": {"data": [{"workspace": "Alpha.Personal", "key": "a"}, {"workspace": "Beta.Workspace", "key": "b"}]}},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces"],
+        "api_ids": ["b", "skip", "a"],
+        "api_total_pages": null,
+        "exception": null
+      }
+    },
+    {
+      "id": "missing_value",
+      "purpose": "Successful HTTP with missing value raises KeyError; the existing main unexpected-error helper emits a failure JSON envelope without a command.",
+      "responses": [
+        {"status": 200, "body": {"unexpected": []}}
+      ],
+      "expected": {
+        "exit_code": 1,
+        "output": {"status": "Failure", "result": {"error_code": "UnexpectedError", "message": "value"}},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces"],
+        "api_ids": null,
+        "api_total_pages": null,
+        "exception": {"type": "KeyError", "message": "value"}
+      }
+    },
+    {
+      "id": "forbidden_mapping",
+      "purpose": "HTTP 403 uses the public API error header and standard forbidden message, not the service-body message or request ID.",
+      "responses": [
+        {
+          "status": 403,
+          "headers": {"x-ms-public-api-error-code": "WorkspaceAccessDenied"},
+          "body": {"errorCode": "IgnoredBodyCode", "message": "Do not use this body message", "requestId": "synthetic-forbidden"}
+        }
+      ],
+      "expected": {
+        "exit_code": 1,
+        "output": {"status": "Failure", "command": "ls", "result": {"error_code": "WorkspaceAccessDenied", "message": "Access is forbidden. You do not have permission to access this resource"}},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces"],
+        "api_ids": null,
+        "api_total_pages": null,
+        "exception": {"type": "FabricCLIError", "code": "WorkspaceAccessDenied", "request_id": null}
+      }
+    },
+    {
+      "id": "fabric_error",
+      "purpose": "HTTP 400 maps through FabricAPIError; trailing punctuation is removed and request ID is retained on the exception but absent from JSON output.",
+      "responses": [
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "InvalidWorkspaceRequest",
+            "message": "Synthetic workspace request rejected.",
+            "requestId": "synthetic-request-400",
+            "moreDetails": [{"errorCode": "SyntheticDetail", "message": "Not part of JSON output"}]
+          }
+        }
+      ],
+      "expected": {
+        "exit_code": 1,
+        "output": {"status": "Failure", "command": "ls", "result": {"error_code": "InvalidWorkspaceRequest", "message": "Synthetic workspace request rejected"}},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces"],
+        "api_ids": null,
+        "api_total_pages": null,
+        "exception": {"type": "FabricAPIError", "code": "InvalidWorkspaceRequest", "request_id": "synthetic-request-400"}
+      }
+    },
+    {
+      "id": "root_from_workspace",
+      "purpose": "Explicit root resolves the tenant without workspace lookup despite current workspace context; -a includes sorted hidden root collections and does not mutate context.",
+      "path": "/",
+      "all": true,
+      "current_workspace": {"id": "current", "displayName": "Current", "type": "Workspace"},
+      "responses": [
+        {"status": 200, "body": {"value": [{"id": "listed", "displayName": "Listed", "type": "Workspace"}]}}
+      ],
+      "expected": {
+        "exit_code": 0,
+        "output": {"status": "Success", "command": "ls", "result": {"data": [{"name": "Listed.Workspace"}], "hidden_data": [".capacities", ".connections", ".domains", ".gateways"]}},
+        "requests": ["https://api.fabric.microsoft.com/v1/workspaces"],
+        "api_ids": ["listed"],
+        "api_total_pages": null,
+        "exception": null
+      }
+    }
+  ]
+}

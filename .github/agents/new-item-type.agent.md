@@ -7,7 +7,13 @@ tools: ['runInTerminal', 'terminalLastCommand', 'search', 'fetch', 'read_file']
 
 # New Item Type Onboarding Agent
 
-> **Important:** If you are unsure about any detail -- such as the correct API URI, portal slug, whether the item supports definitions, OneLake folders, jobs, or any other capability -- **always ask the requestor for clarification before proceeding**.
+> **Important:** Resolve technical uncertainty from repository evidence and
+> authoritative Fabric REST documentation first. Do not invent API routes,
+> capabilities, or product requirements. Escalate only details that remain
+> unresolved or require authority outside the assignment. For authorized Rust
+> migration tasks, follow `rust/docs/agentic-delivery.md`, including independent
+> stage reviews and bounded repair; the Python-specific implementation steps
+> below are not Rust instructions.
 
 ## Safety Rules
 
@@ -603,4 +609,3 @@ Here is a real example of onboarding the `Map` item type, which is an **item wit
 | `.changes/unreleased/new-items-*.yaml` | Changelog entry for Map item type |
 | `docs/essentials/resource_types.md` | Added `.Map` row to the Item Types table |
 | `docs/examples/item_examples.md` | Added `.Map` to copy and export supported types lists |
-

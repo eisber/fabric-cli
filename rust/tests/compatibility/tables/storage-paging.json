@@ -1,0 +1,36 @@
+{
+  "_copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "id": "newer-metadata-on-second-page",
+      "pages": [
+        {"paths": [{"name": "item/Tables/sales/_delta_log/00001.json"}], "continuation": "next+/="},
+        {"paths": [{"name": "item/Tables/sales/_delta_log/00002.json"}]}
+      ],
+      "logs": [
+        {"name": "item/Tables/sales/_delta_log/00001.json", "text": "{\"metaData\":{\"schemaString\":\"{\\\"fields\\\":[{\\\"name\\\":\\\"old\\\"}]}\"}}"},
+        {"name": "item/Tables/sales/_delta_log/00002.json", "text": "{\"metaData\":{\"schemaString\":\"{\\\"fields\\\":[{\\\"name\\\":\\\"new\\\",\\\"type\\\":\\\"long\\\"}]}\"}}"}
+      ],
+      "expected": [{"name": "new", "type": "long"}],
+      "expected_reads": ["ws/item/Tables/sales/_delta_log/00002.json"],
+      "expected_pages": 2
+    },
+    {
+      "id": "newest-page-has-no-metadata-falls-back",
+      "pages": [
+        {"paths": [{"name": "item/Tables/sales/_delta_log/00001.json"}], "continuation": "page2"},
+        {"paths": [{"name": "item/Tables/sales/_delta_log/00002.json"}], "continuation": "page3"},
+        {"paths": [{"name": "item/Tables/sales/_delta_log/00003.json"}]}
+      ],
+      "logs": [
+        {"name": "item/Tables/sales/_delta_log/00001.json", "text": "{\"metaData\":{\"schemaString\":\"{\\\"fields\\\":[{\\\"name\\\":\\\"old\\\"}]}\"}}"},
+        {"name": "item/Tables/sales/_delta_log/00002.json", "text": "{\"metaData\":{\"schemaString\":\"{\\\"fields\\\":[{\\\"name\\\":\\\"chosen\\\"}]}\"}}"},
+        {"name": "item/Tables/sales/_delta_log/00003.json", "text": "{\"add\":{}}"}
+      ],
+      "expected": [{"name": "chosen"}],
+      "expected_reads": ["ws/item/Tables/sales/_delta_log/00003.json", "ws/item/Tables/sales/_delta_log/00002.json"],
+      "expected_pages": 3
+    }
+  ]
+}

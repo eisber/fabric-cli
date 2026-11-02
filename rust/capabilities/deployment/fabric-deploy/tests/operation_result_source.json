@@ -1,0 +1,74 @@
+{
+  "sources": {
+    "cli": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+    "cicd": "5ca096c00a9a878c646c59fe537b883eba951329"
+  },
+  "hashes": {
+    "src/fabric_cli/client/fab_api_client.py": "d7d978f315921ec4559a2fcefc992435152758b74470d1d969006def088e8e0d",
+    "src/fabric_cicd/_common/_fabric_endpoint.py": "339810d1ee7269774cc2db569aa333eb3fb000ba4c73cfe6cfbcd3a494f576d5"
+  },
+  "boundary": "Actual CICD _handle_response and original CLI _handle_fab_long_running_op/_poll_operation/_fetch_operation_result; synthetic bounded GET responses/time only. Neither accepts terminal success as an item ID when no result Location/body is supplied.",
+  "cases": [
+    {
+      "id": "terminal-without-result-location",
+      "terminalHeaders": {},
+      "cicdTransition": [
+        true,
+        "GET",
+        null,
+        "{}",
+        false
+      ],
+      "cliRequests": [
+        {
+          "uri": "operations/33333333-3333-3333-3333-333333333333",
+          "method": "get",
+          "hostname": "api.fabric.microsoft.com"
+        }
+      ],
+      "waits": [
+        0
+      ],
+      "result": {
+        "status": 200,
+        "body": null
+      },
+      "sameOriginalResponse": true
+    },
+    {
+      "id": "advertised-result",
+      "terminalHeaders": {
+        "Location": "https://api.fabric.microsoft.com/v1/operations/33333333-3333-3333-3333-333333333333/result"
+      },
+      "cicdTransition": [
+        false,
+        "GET",
+        "https://api.fabric.microsoft.com/v1/operations/33333333-3333-3333-3333-333333333333/result",
+        "{}",
+        false
+      ],
+      "cliRequests": [
+        {
+          "uri": "operations/33333333-3333-3333-3333-333333333333",
+          "method": "get",
+          "hostname": "api.fabric.microsoft.com"
+        },
+        {
+          "uri": "operations/33333333-3333-3333-3333-333333333333/result",
+          "method": "get",
+          "hostname": "api.fabric.microsoft.com"
+        }
+      ],
+      "waits": [
+        0
+      ],
+      "result": {
+        "status": 200,
+        "body": {
+          "id": "22222222-2222-2222-2222-222222222222"
+        }
+      },
+      "sameOriginalResponse": false
+    }
+  ]
+}

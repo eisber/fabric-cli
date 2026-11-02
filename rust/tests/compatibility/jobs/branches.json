@@ -1,0 +1,66 @@
+{
+  "python_source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "rejected_resources": [
+    "AISkill","ApacheAirflowJob","Exploration","RetailDataManager","Healthcaredatasolution","MetricSet",
+    "OrgApp","SustainabilityDataSolution","CosmosDBDatabase","Dashboard","Datamart",
+    "DigitalTwinBuilder","DigitalTwinBuilderFlow","Environment","Eventhouse","Eventstream",
+    "KQLDashboard","KQLDatabase","KQLQueryset","Map","MirroredWarehouse","MirroredDatabase",
+    "MLExperiment","MLModel","Ontology","PaginatedReport","Reflex","Report","SemanticModel",
+    "SQLEndpoint","Warehouse","CopyJob","GraphQLApi","GraphQuerySet","UserDataFunction",
+    "MountedDataFactory","SQLDatabase","Dataflow","VariableLibrary"
+  ],
+  "execution": [
+    {"name":"unsigned-json-range","resource":"DataPipeline","args":{"params":["n:int=18446744073709551615"]},"expected":{"parameters":{"n":18446744073709551615}}},
+    {"name":"signed-min","resource":"Notebook","args":{"params":["n:int=-9223372036854775808"]},"expected":{"parameters":{"n":{"type":"int","value":-9223372036854775808}}}},
+    {"name":"integer-underscore-sign-space","resource":"DataPipeline","args":{"params":["a:int= +1_234 ,b:int=-0"]},"expected":{"parameters":{"a":1234,"b":0}}},
+    {"name":"float-exponent-and-negative-zero","resource":"Notebook","args":{"params":["a:float=1_2.5e+2,b:float=-0.0"]},"expected":{"parameters":{"a":{"type":"float","value":1250.0},"b":{"type":"float","value":-0.0}}}},
+    {"name":"pipeline-label-not-a-schema","resource":"DataPipeline","args":{"params":["a:array=null,b:object=[1,true],c:secureString='abc'"]},"expected":{"parameters":{"a":null,"b":[1,true],"c":"abc"}}},
+    {"name":"string-case-and-quotes","resource":"Notebook","args":{"params":["a:string=\"'value'\",b:bool=TrUe,c:bool= true"]},"expected":{"parameters":{"a":{"type":"string","value":"value"},"b":{"type":"bool","value":true},"c":{"type":"bool","value":false}}}},
+    {"name":"unicode-parameter-name","resource":"DataPipeline","args":{"params":["\u53c2\u6570:int=2"]},"expected":{"parameters":{"\u53c2\u6570":2}}},
+    {"name":"empty-value-absorbs-next-looking-parameter","resource":"DataPipeline","args":{"params":["a:string=,b:int=1"]},"expected":{"parameters":{"a":",b:int=1"}}},
+    {"name":"final-newline-source-dollar-anchor","resource":"DataPipeline","args":{"params":["a:int=1\n"]},"expected":{"parameters":{"a":1}}},
+    {"name":"embedded-newline-searches-next-valid-span","resource":"DataPipeline","args":{"params":["a:int=1\nb:int=2"]},"expected":{"parameters":{"b":2}}},
+    {"name":"comma-newline-separator","resource":"DataPipeline","args":{"params":["a:int=1,\n b:int=2"]},"expected":{"parameters":{"a":1,"b":2}}},
+    {"name":"invalid-format-precedes-unsupported-type","resource":"SparkJobDefinition","args":{"params":["not a parameter"]},"error":{"code":"NotRunnable","message":"Invalid parameter format: not a parameter"}},
+    {"name":"invalid-format-on-lakehouse","resource":"Lakehouse","args":{"params":["empty:"]},"error":{"code":"NotRunnable","message":"Invalid parameter format: empty:"}},
+    {"name":"unsupported-valid-graph-parameters","resource":"GraphModel","args":{"params":["x:int=1"]},"error":{"code":"NotRunnable","message":"Parameters not supported for job type: refreshGraph. Please use the input argument instead"}},
+    {"name":"config-input-conflict-before-config-resource-check","resource":"GraphModel","args":{"config":["{}"],"input":["{}"]},"error":{"code":"NotRunnable","message":"Cannot use input in combination with params or config arguments at the same time."}},
+    {"name":"notebook-parameter-type-case-sensitive","resource":"Notebook","args":{"params":["x:INT=1"]},"error":{"code":"NotRunnable","message":"Invalid parameter type: INT. Supported types: string, int, float, bool."}},
+    {"name":"pipeline-parameter-type-case-sensitive","resource":"DataPipeline","args":{"params":["x:String=value"]},"error":{"code":"NotRunnable","message":"Invalid parameter type: String. Supported types: string, secureString, int, float, bool, array, object."}},
+    {"name":"empty-params-token","resource":"Notebook","args":{"params":[""]},"error":{"code":"NotRunnable","message":"Invalid parameter format: "}},
+    {"name":"empty-object-input","resource":"Lakehouse","args":{"input":["{}"]},"expected":{}},
+    {"name":"notebook-only-config-without-params","resource":"Notebook","args":{"config":["{'configuration':{'nested':true}}"]},"expected":{"configuration":{"configuration":{"nested":true}}}}
+  ],
+  "schedules": [
+    {"name":"empty-type-is-not-supplied","args":{"type":""},"error":{"code":"NotRunnable","message":"Schedule configuration is required for schedule creation."}},
+    {"name":"empty-required-end","args":{"type":"cron","interval":"1","start":"2024-01-01T00:00:00","end":""},"error":{"code":"NotRunnable","message":"`type`, `interval`, `start`, and `end` are required parameters for schedule creation."}},
+    {"name":"cron-final-newline-source-dollar-anchor","args":{"type":"cron","interval":"123\n","start":"2024-01-01T00:00:00","end":"2024-02-01T00:00:00"},"expected":{"type":"Cron","interval":123,"startDateTime":"2024-01-01T00:00:00","endDateTime":"2024-02-01T00:00:00","localTimeZoneId":"UTC"}},
+    {"name":"daily-empty-times-rejected","args":{"type":"daily","interval":"[]","start":"2024-01-01T00:00:00","end":"2024-02-01T00:00:00"},"error":{"code":"NotRunnable","message":"Invalid time format: . Must be in the format HH:mm"}},
+    {"name":"daily-comma-whitespace-not-trimmed","args":{"type":"daily","interval":"10:00, 12:00","start":"2024-01-01T00:00:00","end":"2024-02-01T00:00:00"},"error":{"code":"NotRunnable","message":"Invalid time format:  12:00. Must be in the format HH:mm"}},
+    {"name":"weekly-empty-days","args":{"type":"weekly","interval":"10:00","days":"","start":"2024-01-01T00:00:00","end":"2024-02-01T00:00:00"},"error":{"code":"NotRunnable","message":"Weekly schedule requires the days parameter."}},
+    {"name":"weekly-comma-whitespace-not-trimmed","args":{"type":"weekly","interval":"10:00","days":"Monday, Friday","start":"2024-01-01T00:00:00","end":"2024-02-01T00:00:00"},"error":{"code":"NotRunnable","message":"Invalid day:  Friday. Must be one of Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday"}},
+    {"name":"input-with-empty-field-not-conflicting","args":{"input":["{'enabled':true,'configuration':{}}"],"days":""},"expected":{"enabled":true,"configuration":{}}},
+    {"name":"input-disable-conflict","update":true,"args":{"input":["{}"],"disable":false},"error":{"code":"NotRunnable","message":"Cannot use input in combination with schedule parameters"}},
+    {"name":"end-before-start-shape-only","args":{"type":"daily","interval":"10:00suffix","start":"2025-01-01T00:00:00","end":"2024-01-01T00:00:00"},"expected":{"type":"Daily","times":["10:00suffix"],"startDateTime":"2025-01-01T00:00:00","endDateTime":"2024-01-01T00:00:00","localTimeZoneId":"UTC"}}
+  ],
+  "polling": [
+    {"header":"1_0","expected":10},
+    {"header":"+2","expected":2},
+    {"header":"-0","expected":0},
+    {"header":"2.5","expected":10},
+    {"header":"","expected":10},
+    {"header":"-1","expected":-1},
+    {"header":" 3 ","expected":3},
+    {"header":"1__0","expected":10}
+  ],
+  "schedule_updates": [
+    {"name":"retain-null-enabled","args":{"input":["{}"]},"existing":{"id":"sch","enabled":null,"configuration":{"type":"Cron","interval":1}},"expected":{"configuration":{},"enabled":null}},
+    {"name":"retain-numeric-enabled","args":{"input":["{}"]},"existing":{"id":"sch","enabled":1,"configuration":{}},"expected":{"configuration":{},"enabled":1}},
+    {"name":"retain-string-enabled","args":{"input":["{}"]},"existing":{"id":"sch","enabled":"future","configuration":{}},"expected":{"configuration":{},"enabled":"future"}},
+    {"name":"input-envelope-still-retained","args":{"input":["{'enabled':false,'configuration':{'type':'Daily','times':['10:00']}}"]},"existing":{"id":"sch","enabled":true,"configuration":{}},"expected":{"enabled":false,"configuration":{"type":"Daily","times":["10:00"]}}}
+  ],
+  "wrapper_events": [
+    {"leaf":"start","item":"item.Notebook","expected":"Starting job (async) for 'item.Notebook'...","wait":false},
+    {"leaf":"run","item":"item.Notebook","expected":"Running job (sync) for 'item.Notebook'...","wait":true}
+  ]
+}

@@ -1,0 +1,210 @@
+{
+  "source": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "platform": "win32",
+  "cases": [
+    {
+      "name": "unicode-object",
+      "notebook": false,
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "definition.json",
+              "payload": "eyJ6IjogIsOp8J+YgCIsICJhIjogbnVsbCwgIm4iOiAxZS01fQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "path": "definition.json",
+      "expected_base64": "ew0KICAgICJ6IjogIsOp8J+YgCIsDQogICAgImEiOiBudWxsLA0KICAgICJuIjogMWUtMDUNCn0="
+    },
+    {
+      "name": "plain-json",
+      "notebook": false,
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "data.txt",
+              "payload": "eyJhIjogWzEsIHRydWVdfQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "path": "data.txt",
+      "expected_base64": "ew0KICAgICJhIjogWw0KICAgICAgICAxLA0KICAgICAgICB0cnVlDQogICAgXQ0KfQ=="
+    },
+    {
+      "name": "scalar-null",
+      "notebook": false,
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "null.json",
+              "payload": "bnVsbA==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "path": "null.json",
+      "expected_base64": "Tm9uZQ=="
+    },
+    {
+      "name": "scalar-boolean",
+      "notebook": false,
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "bool.json",
+              "payload": "ZmFsc2U=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "path": "bool.json",
+      "expected_base64": "RmFsc2U="
+    },
+    {
+      "name": "scalar-number",
+      "notebook": false,
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "number.json",
+              "payload": "MWUtNQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "path": "number.json",
+      "expected_base64": "MWUtMDU="
+    },
+    {
+      "name": "json-string-json",
+      "notebook": false,
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "string.json",
+              "payload": "IntcInhcIjogMn0i",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "path": "string.json",
+      "expected_base64": "ew0KICAgICJ4IjogMg0KfQ=="
+    },
+    {
+      "name": "json-string-plain",
+      "notebook": false,
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "plain.json",
+              "payload": "ImhlbGxvIg==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "path": "plain.json",
+      "expected_base64": "aGVsbG8="
+    },
+    {
+      "name": "raw-null",
+      "notebook": false,
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "null.txt",
+              "payload": "bnVsbA==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "path": "null.txt",
+      "expected_base64": "bnVsbA=="
+    },
+    {
+      "name": "empty",
+      "notebook": false,
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "empty.json",
+              "payload": "",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "path": "empty.json",
+      "expected_base64": ""
+    },
+    {
+      "name": "binary",
+      "notebook": false,
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "image.bin",
+              "payload": "/wCA",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "path": "image.bin",
+      "expected_base64": "/wCA"
+    },
+    {
+      "name": "text-newlines",
+      "notebook": false,
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "code.py",
+              "payload": "YQ0KYgo=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "path": "code.py",
+      "expected_base64": "YQ0NCmINCg=="
+    },
+    {
+      "name": "notebook-first-part",
+      "notebook": true,
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "notebook.ipynb",
+              "payload": "eyJjZWxscyI6W3sib3V0cHV0cyI6WzFdLCJtZXRhZGF0YSI6eyJ4IjpudWxsfX0seyJzb3VyY2UiOlsieCJdfV19",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "path": "notebook.ipynb",
+      "expected_base64": "ew0KICAgICJjZWxscyI6IFsNCiAgICAgICAgew0KICAgICAgICAgICAgIm91dHB1dHMiOiBbXSwNCiAgICAgICAgICAgICJtZXRhZGF0YSI6IHsNCiAgICAgICAgICAgICAgICAieCI6IG51bGwNCiAgICAgICAgICAgIH0NCiAgICAgICAgfSwNCiAgICAgICAgew0KICAgICAgICAgICAgInNvdXJjZSI6IFsNCiAgICAgICAgICAgICAgICAieCINCiAgICAgICAgICAgIF0NCiAgICAgICAgfQ0KICAgIF0NCn0="
+    }
+  ]
+}

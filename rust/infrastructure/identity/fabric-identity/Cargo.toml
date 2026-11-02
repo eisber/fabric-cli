@@ -1,0 +1,32 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-identity"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Explicit identity composition boundary for the Fabric Rust CLI"
+
+[package.metadata.fabric]
+layer = "identity"
+
+[features]
+default = []
+windows-broker = ["dep:fabric-identity-windows", "dep:azure_core", "dep:async-trait"]
+
+[dependencies]
+fabric-core.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+fabric-identity-windows = { workspace = true, optional = true }
+azure_core = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

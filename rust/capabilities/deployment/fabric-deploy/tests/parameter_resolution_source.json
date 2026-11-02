@@ -1,0 +1,342 @@
+{
+  "source": "microsoft/fabric-cicd@5ca096c00a9a878c646c59fe537b883eba951329",
+  "sourceHashes": {
+    "constants.py": "9db94078b1152f137b0c44a60626460575280455642a81d8a932035b251c9535",
+    "_common\\_exceptions.py": "22cc6ce5ca4dcf209c1d7c1c056c1c2b40cdc8ca397d36c9c68d108d0c89440e",
+    "_common\\_check_utils.py": "f60444e11a5f3424b5afb63cc4b69c7cd68a2fd4aff268913061e96c4000f39c",
+    "_common\\_config_utils.py": "acdb203d4db08687c438c811598f696c7aed69674c3e3d42b81a3ad627396f2f",
+    "_parameter\\_parameter.py": "32d603cfaf2b891194a5ea170dcd952d3c492a8420a3df0595ce84c682b07daf",
+    "_parameter\\_utils.py": "2d8b79c6d7d737595b346da0466790308e46b9cbed46bfaf1b3cde8a189e69d6",
+    "fabric_workspace.py": "10bae33f95026065fc22d558dc02b8ee17929cac77fa0dde298cc4d41ac7a890"
+  },
+  "dependencies": {
+    "PyYAML": "6.0.3",
+    "jsonpath-ng": "1.9.1"
+  },
+  "boundary": "Actual _replace_parameters/extract/JSONPath consumers with traced explicit metadata callbacks and concrete path-filter injection; no constructors, network, ambient filesystem/environment, auth or bulk cache.",
+  "cases": [
+    {
+      "id": "find-match",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "$items.Notebook.Book.$id"
+            }
+          }
+        ]
+      },
+      "input": "source",
+      "workspace_name": "Name",
+      "expected": "22222222-2222-2222-2222-222222222222",
+      "calls": [
+        "$items.Notebook.Book.$id"
+      ]
+    },
+    {
+      "id": "find-no-match",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "$items.Notebook.Book.$id"
+            }
+          }
+        ]
+      },
+      "input": "absent",
+      "workspace_name": "Name",
+      "expected": "absent",
+      "calls": []
+    },
+    {
+      "id": "find-filter-excluded",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "$items.Notebook.Book.$id"
+            },
+            "item_type": "Report"
+          }
+        ]
+      },
+      "input": "source",
+      "workspace_name": "Name",
+      "expected": "source",
+      "calls": []
+    },
+    {
+      "id": "find-env-missing",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "prod": "$items.Notebook.Book.$id"
+            }
+          }
+        ]
+      },
+      "input": "source",
+      "workspace_name": "Name",
+      "expected": "source",
+      "calls": []
+    },
+    {
+      "id": "find-file-excluded",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "$items.Notebook.Book.$id"
+            },
+            "file_path": "other.py"
+          }
+        ]
+      },
+      "input": "source",
+      "workspace_name": "Name",
+      "expected": "source",
+      "calls": []
+    },
+    {
+      "id": "find-repeated-refresh",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "$items.Notebook.Book.$id"
+            }
+          },
+          {
+            "find_value": "22222222-2222-2222-2222-222222222222",
+            "replace_value": {
+              "dev": "$items.Notebook.Book.$id"
+            }
+          }
+        ]
+      },
+      "input": "source",
+      "workspace_name": "Name",
+      "expected": "22222222-2222-2222-2222-222222222222",
+      "calls": [
+        "$items.Notebook.Book.$id",
+        "$items.Notebook.Book.$id"
+      ]
+    },
+    {
+      "id": "key-two-refreshes",
+      "parameters": {
+        "key_value_replace": [
+          {
+            "find_key": "$.x[*]",
+            "replace_value": {
+              "dev": "$items.Notebook.Book.$id"
+            }
+          }
+        ]
+      },
+      "input": "{\"x\":[1,2]}",
+      "workspace_name": "Name",
+      "expected": "{\"x\": [\"22222222-2222-2222-2222-222222222222\", \"22222222-2222-2222-2222-222222222222\"]}",
+      "calls": [
+        "$items.Notebook.Book.$id",
+        "$items.Notebook.Book.$id"
+      ]
+    },
+    {
+      "id": "key-no-match",
+      "parameters": {
+        "key_value_replace": [
+          {
+            "find_key": "$.x[*]",
+            "replace_value": {
+              "dev": "$items.Notebook.Book.$id"
+            }
+          }
+        ]
+      },
+      "input": "{\"other\":[1,2]}",
+      "workspace_name": "Name",
+      "expected": "{\"other\":[1,2]}",
+      "calls": []
+    },
+    {
+      "id": "key-env-missing",
+      "parameters": {
+        "key_value_replace": [
+          {
+            "find_key": "$.x[*]",
+            "replace_value": {
+              "prod": "$items.Notebook.Book.$id"
+            }
+          }
+        ]
+      },
+      "input": "{\"x\":[1,2]}",
+      "workspace_name": "Name",
+      "expected": "{\"x\":[1,2]}",
+      "calls": []
+    },
+    {
+      "id": "key-filter-excluded",
+      "parameters": {
+        "key_value_replace": [
+          {
+            "find_key": "$.x[*]",
+            "replace_value": {
+              "dev": "$items.Notebook.Book.$id"
+            },
+            "item_name": "Other"
+          }
+        ]
+      },
+      "input": "{\"x\":[1,2]}",
+      "workspace_name": "Name",
+      "expected": "{\"x\":[1,2]}",
+      "calls": []
+    },
+    {
+      "id": "key-nonstructured",
+      "parameters": {
+        "key_value_replace": [
+          {
+            "find_key": "$.x[*]",
+            "replace_value": {
+              "dev": "$items.Notebook.Book.$id"
+            }
+          }
+        ]
+      },
+      "input": "source",
+      "workspace_name": "Name",
+      "expected": "source",
+      "calls": []
+    },
+    {
+      "id": "key-before-find",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "source",
+            "replace_value": {
+              "dev": "$items.Notebook.Book.$id"
+            }
+          }
+        ],
+        "key_value_replace": [
+          {
+            "find_key": "$.x",
+            "replace_value": {
+              "dev": "source"
+            }
+          }
+        ]
+      },
+      "input": "{\"x\":\"old\"}",
+      "workspace_name": "Name",
+      "expected": "{\"x\": \"22222222-2222-2222-2222-222222222222\"}",
+      "calls": [
+        "$items.Notebook.Book.$id"
+      ]
+    },
+    {
+      "id": "dynamic-find-before-filter",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "$workspace.$id",
+            "replace_value": {
+              "dev": "target"
+            },
+            "item_name": "Other"
+          }
+        ]
+      },
+      "input": "11111111-1111-1111-1111-111111111111",
+      "workspace_name": "Name",
+      "expected": "11111111-1111-1111-1111-111111111111",
+      "calls": [
+        "$workspace.$id"
+      ]
+    },
+    {
+      "id": "dynamic-find-before-env",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "$workspace.Other",
+            "replace_value": {
+              "prod": "target"
+            }
+          }
+        ]
+      },
+      "input": "22222222-2222-2222-2222-222222222222",
+      "workspace_name": "Name",
+      "expected": "22222222-2222-2222-2222-222222222222",
+      "calls": [
+        "$workspace.Other"
+      ]
+    },
+    {
+      "id": "empty-dynamic-find",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "$workspace.$name",
+            "replace_value": {
+              "dev": "target"
+            }
+          }
+        ]
+      },
+      "input": "source",
+      "workspace_name": "",
+      "expected": "source",
+      "calls": [
+        "$workspace.$name"
+      ]
+    },
+    {
+      "id": "literal-environment-find",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "$ENV:RAW",
+            "replace_value": {
+              "dev": "target"
+            }
+          }
+        ]
+      },
+      "input": "$ENV:RAW",
+      "workspace_name": "Name",
+      "expected": "target",
+      "calls": []
+    },
+    {
+      "id": "literal-environment-find-no-match",
+      "parameters": {
+        "find_replace": [
+          {
+            "find_value": "$ENV:RAW",
+            "replace_value": {
+              "dev": "target"
+            }
+          }
+        ]
+      },
+      "input": "source",
+      "workspace_name": "Name",
+      "expected": "source",
+      "calls": []
+    }
+  ]
+}

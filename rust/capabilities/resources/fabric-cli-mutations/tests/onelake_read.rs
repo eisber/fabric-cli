@@ -1,0 +1,425 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+//! CLI OneLake dependency reads with explicit credentials, responses and outputs.
+
+use async_trait::async_trait;
+use azure_core::{
+    credentials::{AccessToken, TokenCredential, TokenRequestOptions},
+    time::OffsetDateTime,
+};
+use fabric_cli_mutations::{OneLakeReadError, OneLakeReadHost};
+use fabric_cli_output::{Indent, OutputEnvelope, Timestamp};
+use fabric_sdk_http::PublicOrigin;
+use fabric_sdk_onelake::{
+    OneLakeClient, OneLakeError, OneLakeExecutionError, OneLakeExecutor, OneLakeLimits,
+    OneLakePath, OneLakeRequest, OneLakeResponse,
+};
+use fabric_sdk_workspaces::CredentialSelection;
+use serde_json::{Value, json};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    future::{Future, pending},
+    pin::Pin,
+    sync::{Arc, Mutex},
+};
+
+#[derive(Debug)]
+struct Credential;
+#[async_trait]
+impl TokenCredential for Credential {
+    async fn get_token(
+        &self,
+        scopes: &[&str],
+        _: Option<TokenRequestOptions<'_>>,
+    ) -> azure_core::Result<AccessToken> {
+        assert_eq!(scopes, ["https://storage.azure.com/.default"]);
+        Ok(AccessToken::new(
+            "offline-cli-onelake",
+            OffsetDateTime::UNIX_EPOCH,
+        ))
+    }
+}
+
+#[derive(Default)]
+struct Executor {
+    responses: Mutex<VecDeque<OneLakeResponse>>,
+    requests: Mutex<Vec<String>>,
+}
+impl OneLakeExecutor for Executor {
+    fn execute<'a>(
+        &'a self,
+        request: OneLakeRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<OneLakeResponse, OneLakeExecutionError>> + Send + 'a>>
+    {
+        self.requests
+            .lock()
+            .unwrap()
+            .push(request.url().to_string());
+        let response = self
+            .responses
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("unexpected OneLake request");
+        Box::pin(std::future::ready(Ok(response)))
+    }
+}
+
+fn client() -> OneLakeClient {
+    OneLakeClient::new(
+        Arc::new(Credential),
+        CredentialSelection::new("offline", "tenant", PublicOrigin::OneLake.audience()).unwrap(),
+    )
+}
+fn path() -> OneLakePath {
+    OneLakePath::new("workspace", "item", "Files/link.Shortcut").unwrap()
+}
+fn response(status: u16, data: Value) -> OneLakeResponse {
+    OneLakeResponse {
+        status,
+        body: serde_json::to_vec(&data).unwrap(),
+        headers: BTreeMap::new(),
+    }
+}
+fn executor(responses: Vec<OneLakeResponse>) -> Executor {
+    Executor {
+        responses: Mutex::new(responses.into()),
+        ..Executor::default()
+    }
+}
+
+#[tokio::test]
+async fn list_uses_existing_query_on_mutated_complete_rows_not_column_projection() {
+    let client = client();
+    let executor = executor(vec![response(
+        200,
+        json!({"paths":[
+            {"name":"item/Files/link/file","isDirectory":false,"future":{"n":2}},
+            {"name":"item/Files/link/folder","isDirectory":"false","future":{"n":1}},
+        ]}),
+    )]);
+    let host = OneLakeReadHost {
+        client: &client,
+        executor: &executor,
+        limits: OneLakeLimits::default(),
+    };
+    let result = host
+        .list(
+            &path(),
+            false,
+            Some("[?type == 'Directory'].future.n"),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.output.data, Some(json!([1])));
+    assert!(!result.show_headers);
+    assert!(executor.requests.lock().unwrap()[0].contains("directory=item%2FFiles%2Flink&"));
+}
+
+#[tokio::test]
+async fn scalar_query_keeps_python_stringification_and_long_headers() {
+    let client = client();
+    let executor = executor(vec![response(200, json!({"paths":[]}))]);
+    let result = OneLakeReadHost {
+        client: &client,
+        executor: &executor,
+        limits: OneLakeLimits::default(),
+    }
+    .list(&path(), true, Some("length(@)"), pending())
+    .await
+    .unwrap();
+    assert_eq!(result.output.data, Some(json!("0")));
+    assert!(result.show_headers);
+}
+
+#[tokio::test]
+async fn invalid_query_is_not_empty_data_or_a_successful_output_envelope() {
+    let client = client();
+    let executor = executor(vec![response(200, json!({"paths":[]}))]);
+    let error = OneLakeReadHost {
+        client: &client,
+        executor: &executor,
+        limits: OneLakeLimits::default(),
+    }
+    .list(&path(), false, Some("["), pending())
+    .await
+    .unwrap_err();
+    assert!(matches!(error, OneLakeReadError::Query(_)));
+    let plan = OutputEnvelope::new(
+        Timestamp::parse("2000-01-01T00:00:00Z").unwrap(),
+        error.output(),
+    )
+    .render(Indent::Four)
+    .unwrap();
+    assert_eq!(plan.exit_code, 1);
+    assert!(
+        String::from_utf8(plan.payload)
+            .unwrap()
+            .contains("\"error_code\": \"InvalidInput\"")
+    );
+}
+
+#[tokio::test]
+async fn exists_maps_only_http404_and_empty_success_is_true() {
+    let client = client();
+    for (status, expected) in [(200, "true"), (404, "false")] {
+        let executor = executor(vec![response(status, json!({"paths":[]}))]);
+        let result = OneLakeReadHost {
+            client: &client,
+            executor: &executor,
+            limits: OneLakeLimits::default(),
+        }
+        .exists(&path(), pending())
+        .await
+        .unwrap();
+        assert_eq!(result.output.message.as_deref(), Some(expected));
+        assert!(result.output.data.is_none());
+        assert_eq!(executor.requests.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn exists_preserves_permission_and_malformed_failures_instead_of_false() {
+    let client = client();
+    for reply in [
+        response(403, json!({})),
+        response(200, json!({})),
+        response(200, json!({"paths":[{}]})),
+    ] {
+        let executor = executor(vec![reply]);
+        let error = OneLakeReadHost {
+            client: &client,
+            executor: &executor,
+            limits: OneLakeLimits::default(),
+        }
+        .exists(&path(), pending())
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            OneLakeReadError::Sdk(
+                OneLakeError::Http { status: 403, .. } | OneLakeError::InvalidResponse
+            )
+        ));
+    }
+}
+
+#[tokio::test]
+async fn cancelled_exists_never_acquires_a_successful_absence_or_dispatches() {
+    let client = client();
+    let executor = Executor::default();
+    let error = OneLakeReadHost {
+        client: &client,
+        executor: &executor,
+        limits: OneLakeLimits::default(),
+    }
+    .exists(&path(), std::future::ready(()))
+    .await
+    .unwrap_err();
+    assert_eq!(error, OneLakeReadError::Sdk(OneLakeError::Cancelled));
+    assert!(executor.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn list_keeps_page_order_then_applies_truthiness_and_long_column_order() {
+    let client = client();
+    let mut first = response(
+        200,
+        json!({"paths":[{"name":"item/Files/link/first","lastModified":"one","permissions":"r","isShortcut":"false"}]}),
+    );
+    first
+        .headers
+        .insert("x-ms-continuation".into(), "next".into());
+    let executor = executor(vec![
+        first,
+        response(
+            200,
+            json!({"paths":[{"name":"item/Files/link/second","isDirectory":true}]}),
+        ),
+    ]);
+    let result = OneLakeReadHost {
+        client: &client,
+        executor: &executor,
+        limits: OneLakeLimits::default(),
+    }
+    .list(&path(), true, None, pending())
+    .await
+    .unwrap();
+    let data = result.output.data.unwrap();
+    assert_eq!(
+        data,
+        json!([
+            {"permissions":"r","lastModified":"one","name":"first.Shortcut","type":"Shortcut"},
+            {"name":"second","type":"Directory"},
+        ])
+    );
+    assert_eq!(
+        data[0]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["permissions", "lastModified", "name", "type"]
+    );
+}
+
+#[tokio::test]
+async fn metadata_get_preserves_first_page_fields_and_source_paging_quirks_before_projection() {
+    let client = client();
+    let first = response(
+        200,
+        json!({"paths":[{"name":"first"}],"annotations":[1],"firstOnly":true,"ContinuationToken":"remove","continuationToken":"next"}),
+    );
+    let second = response(
+        200,
+        json!({"paths":[{"name":"second"}],"annotations":[2],"secondOnly":true}),
+    );
+    let executor = executor(vec![first, second]);
+    let result = OneLakeReadHost {
+        client: &client,
+        executor: &executor,
+        limits: OneLakeLimits::default(),
+    }
+    .get(&path(), Some("."), false, pending())
+    .await
+    .unwrap();
+    assert_eq!(
+        result.metadata,
+        json!({"paths":[{"name":"first"},{"name":"second"}],"annotations":[1,2],"firstOnly":true,"total_pages":1})
+    );
+    assert_eq!(result.projected, result.metadata);
+    assert_eq!(result.output.unwrap().data, Some(result.metadata));
+    assert!(executor.requests.lock().unwrap()[0].contains("link.Shortcut"));
+    assert!(executor.requests.lock().unwrap()[1].ends_with("continuationToken=next"));
+}
+
+#[tokio::test]
+async fn falsey_get_projection_is_available_for_export_but_emits_no_source_output() {
+    let client = client();
+    let executor = executor(vec![response(200, json!({"paths":[]}))]);
+    let result = OneLakeReadHost {
+        client: &client,
+        executor: &executor,
+        limits: OneLakeLimits::default(),
+    }
+    .get(&path(), Some("paths"), false, pending())
+    .await
+    .unwrap();
+    assert_eq!(result.projected, json!([]));
+    assert!(result.output.is_none());
+    assert_eq!(result.metadata, json!({"paths":[]}));
+}
+
+#[tokio::test]
+async fn aggregate_metadata_bound_is_enforced_without_changing_complete_sdk_path_list_limits() {
+    let client = client();
+    let mut first = response(200, json!({"paths":[],"padding":"x".repeat(60)}));
+    first
+        .headers
+        .insert("x-ms-continuation".into(), "next".into());
+    let second = response(200, json!({"paths":[],"padding":"y".repeat(60)}));
+    let limits = OneLakeLimits {
+        max_response_bytes: std::num::NonZeroUsize::new(150).unwrap(),
+        ..OneLakeLimits::default()
+    };
+    let reads = executor(vec![first.clone(), second.clone()]);
+    assert_eq!(
+        client
+            .directory_metadata(&reads, &path(), limits, pending())
+            .await
+            .unwrap_err(),
+        OneLakeError::Limit
+    );
+    assert_eq!(reads.requests.lock().unwrap().len(), 2);
+    let reads = executor(vec![first, second]);
+    assert!(
+        client
+            .list(&reads, &path(), false, limits, pending())
+            .await
+            .unwrap()
+            .paths
+            .is_empty()
+    );
+}
+
+#[test]
+fn storage_body_errors_preserve_raw_evidence_but_source_json_message_removes_request_metadata() {
+    let raw = json!({"error":{"code":"BodyCode","message":"Failure\nRequestId:abc\nTime:2000-01-01T00:00:00Z"}});
+    let error = OneLakeError::Http {
+        status: 400,
+        code: Some("IgnoredHeader".into()),
+        raw_service_error: Some(Box::new(raw.clone())),
+    };
+    assert!(!error.to_string().contains("Failure"));
+    let output = OneLakeReadError::Sdk(error.clone()).output();
+    assert_eq!(output.error_code.as_deref(), Some("BodyCode"));
+    assert_eq!(output.message.as_deref(), Some("Failure"));
+    assert!(matches!(error,OneLakeError::Http { raw_service_error:Some(value),.. } if *value==raw));
+}
+
+#[test]
+fn storage_period_only_error_is_normalized_once_not_replaced_by_a_second_default() {
+    let output = OneLakeReadError::Sdk(OneLakeError::Http {
+        status: 400,
+        code: None,
+        raw_service_error: Some(Box::new(json!({"error":{"code":"","message":"..."}}))),
+    })
+    .output();
+    assert_eq!(output.error_code.as_deref(), Some("UnknownError"));
+    assert_eq!(output.message.as_deref(), Some(""));
+}
+
+#[tokio::test]
+async fn item_roots_use_the_item_path_route_and_distinct_source_name_projection() {
+    let client = client();
+    let executor = executor(vec![response(
+        200,
+        json!({"paths":[
+            {"name":"item/Files/third","permissions":"r","lastModified":"synthetic","isDirectory":true},
+            {"name":"/item/Tables"},
+        ]}),
+    )]);
+    let result = OneLakeReadHost {
+        client: &client,
+        executor: &executor,
+        limits: OneLakeLimits::default(),
+    }
+    .list_item_roots("workspace", "item", true, None, pending())
+    .await
+    .unwrap();
+    assert_eq!(
+        result.output.data,
+        Some(
+            json!([{"permissions":"r","lastModified":"synthetic","name":"Files"},{"name":"item"}])
+        )
+    );
+    assert_eq!(
+        executor.requests.lock().unwrap()[0],
+        "https://onelake.dfs.fabric.microsoft.com/workspace/item/?recursive=false&resource=filesystem"
+    );
+    assert!(result.show_headers);
+}
+
+#[tokio::test]
+async fn source_terminal_201_metadata_does_not_silently_change_python_append_status_policy() {
+    let client = client();
+    let executor = executor(vec![
+        response(
+            200,
+            json!({"paths":[{"name":"first"}],"continuationToken":"next"}),
+        ),
+        response(201, json!({"paths":[{"name":"second"}]})),
+    ]);
+    let result = client
+        .directory_metadata(&executor, &path(), OneLakeLimits::default(), pending())
+        .await
+        .unwrap();
+    assert_eq!(result.pages_received, 2);
+    assert_eq!(
+        result.data,
+        json!({"paths":[{"name":"first"}],"continuationToken":"next"})
+    );
+}

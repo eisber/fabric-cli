@@ -1,0 +1,150 @@
+{
+  "source": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "platform": "win32",
+  "cases": [
+    {
+      "name": "wide-scalar",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "MTg0NDY3NDQwNzM3MDk1NTE2MTYwMTIzNDU2Nzg5"
+            }
+          ]
+        }
+      },
+      "path": "value.json",
+      "notebook": false,
+      "expected_base64": "MTg0NDY3NDQwNzM3MDk1NTE2MTYwMTIzNDU2Nzg5"
+    },
+    {
+      "name": "wide-nested",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "eyJ3aWRlIjotMTg0NDY3NDQwNzM3MDk1NTE2MTYwMTIzNDU2Nzg5LCJkdXAiOjEsImR1cCI6Mn0="
+            }
+          ]
+        }
+      },
+      "path": "value.json",
+      "notebook": false,
+      "expected_base64": "ew0KICAgICJ3aWRlIjogLTE4NDQ2NzQ0MDczNzA5NTUxNjE2MDEyMzQ1Njc4OSwNCiAgICAiZHVwIjogMg0KfQ=="
+    },
+    {
+      "name": "nonfinite-nested",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "eyJhIjpOYU4sImIiOkluZmluaXR5LCJjIjotSW5maW5pdHksImQiOjFlOTk5fQ=="
+            }
+          ]
+        }
+      },
+      "path": "value.json",
+      "notebook": false,
+      "expected_base64": "ew0KICAgICJhIjogTmFOLA0KICAgICJiIjogSW5maW5pdHksDQogICAgImMiOiAtSW5maW5pdHksDQogICAgImQiOiBJbmZpbml0eQ0KfQ=="
+    },
+    {
+      "name": "nonfinite-scalar",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "TmFO"
+            }
+          ]
+        }
+      },
+      "path": "value.json",
+      "notebook": false,
+      "expected_base64": "bmFu"
+    },
+    {
+      "name": "overflow-scalar",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "MWU5OTk="
+            }
+          ]
+        }
+      },
+      "path": "value.json",
+      "notebook": false,
+      "expected_base64": "aW5m"
+    },
+    {
+      "name": "raw-nonfinite",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.txt",
+              "payload": "TmFO"
+            }
+          ]
+        }
+      },
+      "path": "value.txt",
+      "notebook": false,
+      "expected_base64": "TmFO"
+    },
+    {
+      "name": "raw-wide",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.txt",
+              "payload": "MTg0NDY3NDQwNzM3MDk1NTE2MTYwMTIzNDU2Nzg5"
+            }
+          ]
+        }
+      },
+      "path": "value.txt",
+      "notebook": false,
+      "expected_base64": "MTg0NDY3NDQwNzM3MDk1NTE2MTYwMTIzNDU2Nzg5"
+    },
+    {
+      "name": "notebook-wide",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "notebook.ipynb",
+              "payload": "eyJjZWxscyI6W3sib3V0cHV0cyI6WzFdLCJtZXRhZGF0YSI6eyJuIjoxODQ0Njc0NDA3MzcwOTU1MTYxNn19XX0="
+            }
+          ]
+        }
+      },
+      "path": "notebook.ipynb",
+      "notebook": true,
+      "expected_base64": "ew0KICAgICJjZWxscyI6IFsNCiAgICAgICAgew0KICAgICAgICAgICAgIm91dHB1dHMiOiBbXSwNCiAgICAgICAgICAgICJtZXRhZGF0YSI6IHsNCiAgICAgICAgICAgICAgICAibiI6IDE4NDQ2NzQ0MDczNzA5NTUxNjE2DQogICAgICAgICAgICB9DQogICAgICAgIH0NCiAgICBdDQp9"
+    },
+    {
+      "name": "escaped-astral",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "eyJ4IjoiXHVkODNkXHVkZTAwIn0="
+            }
+          ]
+        }
+      },
+      "path": "value.json",
+      "notebook": false,
+      "expected_base64": "ew0KICAgICJ4IjogIvCfmIAiDQp9"
+    }
+  ]
+}

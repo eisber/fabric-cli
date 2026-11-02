@@ -1,0 +1,5 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+# Development-only Python source oracle, never a shipped Rust dependency.
+jmespath==1.0.1

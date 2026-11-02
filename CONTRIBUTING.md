@@ -25,6 +25,20 @@ We welcome several types of contributions:
 - 💡 **Feature suggestions** - Propose new capabilities
 
 ## Contribution process
+The issue-approval and team-merge process below applies to upstream
+`microsoft/fabric-cli` contributions. Explicitly authorized experimental Rust
+migration tasks in the owner's `eisber/fabric-cli` fork use the
+[agent-operated delivery instructions](rust/docs/agentic-delivery.md) instead of
+routine kickoff acknowledgment and manual review handoffs. Those tasks may
+proceed within their assigned scope, with independent stage reviews, actual
+validation evidence, and bounded repair. Link relevant existing issues; an issue
+is not required solely to publish fork work.
+
+This fork-scoped exception does not waive CLA, required checks, restricted-area
+team review, changie entries, or branch/publication permissions. It does not
+enable automatic merging or change upstream policy. Missing authority or
+required evidence is an actionable blocker, not approval to bypass a gate.
+
 To avoid cases where submitted PRs are rejected, please follow the following steps:
 - To report a new issue, follow [Create an issue](#creating-an-issue)
 - To work on existing issue, follow [Find an issue to work on](#finding-an-issue-to-work-on)
@@ -72,6 +86,12 @@ Before submitting the pull request please verify that:
 - The PR is focused on the related task
 - Tests coverage is kept and all tests pass
 - Your code is aligned with the code conventions of this project
+
+For Rust migration PRs, also record acceptance criteria, affected crates and
+consumers, source baseline, compatibility impact, actual validation results and
+remaining gaps. Independent review must cover the perspectives for the current
+stage in [agent-operated delivery](rust/docs/agentic-delivery.md#stage-reviews).
+Author-written checkboxes do not replace verified checks or review evidence.
 
 Before your PR can be merged, make sure to address and resolve all review comments. PR will be labeled as "need author feedback" when there are comments to resolve. Approved PRs will be merged by the Fabric CLI team.
 

@@ -1,0 +1,896 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "unicode_version": "15.1.0",
+  "decimal_blocks": [
+    48,
+    1632,
+    1776,
+    1984,
+    2406,
+    2534,
+    2662,
+    2790,
+    2918,
+    3046,
+    3174,
+    3302,
+    3430,
+    3558,
+    3664,
+    3792,
+    3872,
+    4160,
+    4240,
+    6112,
+    6160,
+    6470,
+    6608,
+    6784,
+    6800,
+    6992,
+    7088,
+    7232,
+    7248,
+    42528,
+    43216,
+    43264,
+    43472,
+    43504,
+    43600,
+    44016,
+    65296,
+    66720,
+    68912,
+    69734,
+    69872,
+    69942,
+    70096,
+    70384,
+    70736,
+    70864,
+    71248,
+    71360,
+    71472,
+    71904,
+    72016,
+    72784,
+    73040,
+    73120,
+    73552,
+    92768,
+    92864,
+    93008,
+    120782,
+    120792,
+    120802,
+    120812,
+    120822,
+    123200,
+    123632,
+    124144,
+    125264,
+    130032
+  ],
+  "rows": [
+    {
+      "input": {
+        "name": "Notebook/int/0",
+        "resource": "Notebook",
+        "leaf": "start",
+        "options": [
+          "--params",
+          "n:int=\uff11\uff18\uff14\uff14\uff16\uff17\uff14\uff14\uff10\uff17\uff13\uff17\uff10\uff19\uff15\uff15\uff11\uff16\uff11\uff15"
+        ],
+        "execution_data": {
+          "parameters": {
+            "n": {
+              "type": "int",
+              "value": 18446744073709551615
+            }
+          }
+        },
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run"
+            }
+          }
+        ],
+        "waits": []
+      },
+      "format": "json",
+      "observed": {
+        "exit": 0,
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"job\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"run\"\n            }\n        ],\n        \"message\": \"Job instance 'run' created\"\n    }\n}\n",
+        "stderr": "Starting job (async) for 'Book.Notebook'...\n\n\u2192 To see status run 'job run-status /Demo.Workspace/Book.Notebook --id run'\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=RunNotebook",
+            "body": {
+              "executionData": {
+                "parameters": {
+                  "n": {
+                    "type": "int",
+                    "value": 18446744073709551615
+                  }
+                }
+              }
+            },
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": []
+      }
+    },
+    {
+      "input": {
+        "name": "Notebook/int/1",
+        "resource": "Notebook",
+        "leaf": "start",
+        "options": [
+          "--params",
+          "n:int=-\uff19_\uff12\uff12\uff13_\uff13\uff17\uff12_\uff10\uff13\uff16_\uff18\uff15\uff14_\uff17\uff17\uff15_\uff18\uff10\uff18"
+        ],
+        "execution_data": {
+          "parameters": {
+            "n": {
+              "type": "int",
+              "value": -9223372036854775808
+            }
+          }
+        },
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run"
+            }
+          }
+        ],
+        "waits": []
+      },
+      "format": "json",
+      "observed": {
+        "exit": 0,
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"job\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"run\"\n            }\n        ],\n        \"message\": \"Job instance 'run' created\"\n    }\n}\n",
+        "stderr": "Starting job (async) for 'Book.Notebook'...\n\n\u2192 To see status run 'job run-status /Demo.Workspace/Book.Notebook --id run'\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=RunNotebook",
+            "body": {
+              "executionData": {
+                "parameters": {
+                  "n": {
+                    "type": "int",
+                    "value": -9223372036854775808
+                  }
+                }
+              }
+            },
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": []
+      }
+    },
+    {
+      "input": {
+        "name": "Notebook/float/2",
+        "resource": "Notebook",
+        "leaf": "start",
+        "options": [
+          "--params",
+          "n:float=+\uff11_\uff12.\uff15e+\uff12"
+        ],
+        "execution_data": {
+          "parameters": {
+            "n": {
+              "type": "float",
+              "value": 1250.0
+            }
+          }
+        },
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run"
+            }
+          }
+        ],
+        "waits": []
+      },
+      "format": "json",
+      "observed": {
+        "exit": 0,
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"job\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"run\"\n            }\n        ],\n        \"message\": \"Job instance 'run' created\"\n    }\n}\n",
+        "stderr": "Starting job (async) for 'Book.Notebook'...\n\n\u2192 To see status run 'job run-status /Demo.Workspace/Book.Notebook --id run'\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=RunNotebook",
+            "body": {
+              "executionData": {
+                "parameters": {
+                  "n": {
+                    "type": "float",
+                    "value": 1250.0
+                  }
+                }
+              }
+            },
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": []
+      }
+    },
+    {
+      "input": {
+        "name": "DataPipeline/int/3",
+        "resource": "DataPipeline",
+        "leaf": "start",
+        "options": [
+          "--params",
+          "n:int=\uff11\uff18\uff14\uff14\uff16\uff17\uff14\uff14\uff10\uff17\uff13\uff17\uff10\uff19\uff15\uff15\uff11\uff16\uff11\uff15"
+        ],
+        "execution_data": {
+          "parameters": {
+            "n": 18446744073709551615
+          }
+        },
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run"
+            }
+          }
+        ],
+        "waits": []
+      },
+      "format": "json",
+      "observed": {
+        "exit": 0,
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"job\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"run\"\n            }\n        ],\n        \"message\": \"Job instance 'run' created\"\n    }\n}\n",
+        "stderr": "Starting job (async) for 'Book.DataPipeline'...\n\n\u2192 To see status run 'job run-status /Demo.Workspace/Book.DataPipeline --id run'\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=Pipeline",
+            "body": {
+              "executionData": {
+                "parameters": {
+                  "n": 18446744073709551615
+                }
+              }
+            },
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": []
+      }
+    },
+    {
+      "input": {
+        "name": "DataPipeline/int/4",
+        "resource": "DataPipeline",
+        "leaf": "start",
+        "options": [
+          "--params",
+          "n:int=-\uff19_\uff12\uff12\uff13_\uff13\uff17\uff12_\uff10\uff13\uff16_\uff18\uff15\uff14_\uff17\uff17\uff15_\uff18\uff10\uff18"
+        ],
+        "execution_data": {
+          "parameters": {
+            "n": -9223372036854775808
+          }
+        },
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run"
+            }
+          }
+        ],
+        "waits": []
+      },
+      "format": "json",
+      "observed": {
+        "exit": 0,
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"job\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"run\"\n            }\n        ],\n        \"message\": \"Job instance 'run' created\"\n    }\n}\n",
+        "stderr": "Starting job (async) for 'Book.DataPipeline'...\n\n\u2192 To see status run 'job run-status /Demo.Workspace/Book.DataPipeline --id run'\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=Pipeline",
+            "body": {
+              "executionData": {
+                "parameters": {
+                  "n": -9223372036854775808
+                }
+              }
+            },
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": []
+      }
+    },
+    {
+      "input": {
+        "name": "DataPipeline/float/5",
+        "resource": "DataPipeline",
+        "leaf": "start",
+        "options": [
+          "--params",
+          "n:float=+\uff11_\uff12.\uff15e+\uff12"
+        ],
+        "execution_data": {
+          "parameters": {
+            "n": 1250.0
+          }
+        },
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run"
+            }
+          }
+        ],
+        "waits": []
+      },
+      "format": "json",
+      "observed": {
+        "exit": 0,
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"job\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"run\"\n            }\n        ],\n        \"message\": \"Job instance 'run' created\"\n    }\n}\n",
+        "stderr": "Starting job (async) for 'Book.DataPipeline'...\n\n\u2192 To see status run 'job run-status /Demo.Workspace/Book.DataPipeline --id run'\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=Pipeline",
+            "body": {
+              "executionData": {
+                "parameters": {
+                  "n": 1250.0
+                }
+              }
+            },
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": []
+      }
+    },
+    {
+      "input": {
+        "name": "numeric-poll/6",
+        "leaf": "run",
+        "options": [
+          "--timeout=\uff16_\uff10",
+          "--polling_interval=\uff12"
+        ],
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run"
+            }
+          },
+          {
+            "status": 200,
+            "body": {
+              "status": "Completed"
+            }
+          }
+        ],
+        "waits": [
+          2
+        ]
+      },
+      "format": "json",
+      "observed": {
+        "exit": 0,
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"job run\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"run\"\n            }\n        ],\n        \"message\": \"Job instance 'run' completed\"\n    }\n}\n",
+        "stderr": "Running job (sync) for 'Book.Notebook'...\n\u221f Job instance 'run' created\n\u221f Timeout: 60 seconds\n\u221f Job instance status: Completed\n\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=RunNotebook",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": [
+          2
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "numeric-poll/7",
+        "leaf": "run",
+        "options": [],
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+              "Retry-After": "+\uff11_\uff10"
+            }
+          },
+          {
+            "status": 200,
+            "body": {
+              "status": "Completed"
+            }
+          }
+        ],
+        "waits": [
+          10
+        ]
+      },
+      "format": "json",
+      "observed": {
+        "exit": 0,
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"job run\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"run\"\n            }\n        ],\n        \"message\": \"Job instance 'run' completed\"\n    }\n}\n",
+        "stderr": "Running job (sync) for 'Book.Notebook'...\n\u221f Job instance 'run' created\n\u221f Timeout: no timeout specified\n\u221f Job instance status: Completed\n\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=RunNotebook",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": [
+          10
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "numeric-poll/8",
+        "leaf": "run",
+        "options": [],
+        "responses": [
+          {
+            "status": 202,
+            "body": null,
+            "headers": {
+              "Location": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+              "Retry-After": "\u0667"
+            }
+          },
+          {
+            "status": 200,
+            "body": {
+              "status": "Completed"
+            }
+          }
+        ],
+        "waits": [
+          7
+        ]
+      },
+      "format": "json",
+      "observed": {
+        "exit": 0,
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"job run\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"run\"\n            }\n        ],\n        \"message\": \"Job instance 'run' completed\"\n    }\n}\n",
+        "stderr": "Running job (sync) for 'Book.Notebook'...\n\u221f Job instance 'run' created\n\u221f Timeout: no timeout specified\n\u221f Job instance status: Completed\n\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances?jobType=RunNotebook",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/instances/run",
+            "body": null,
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": [
+          7
+        ]
+      }
+    },
+    {
+      "input": {
+        "name": "numeric-schedule/cron",
+        "leaf": "run-sch",
+        "options": [
+          "--type=cron",
+          "--interval=\uff11\uff18\uff14\uff14\uff16\uff17\uff14\uff14\uff10\uff17\uff13\uff17\uff10\uff19\uff15\uff15\uff11\uff16\uff11\uff15",
+          "--start=\uff12\uff10\uff12\uff16-\uff10\uff11-\uff10\uff11T\uff10\uff10:\uff10\uff10:\uff10\uff10",
+          "--end=\uff12\uff10\uff12\uff16-\uff11\uff12-\uff10\uff11T\uff10\uff10:\uff10\uff10:\uff10\uff10"
+        ],
+        "responses": [
+          {
+            "status": 201,
+            "body": {
+              "id": "sch"
+            }
+          }
+        ],
+        "methods": [
+          "POST"
+        ]
+      },
+      "format": "json",
+      "observed": {
+        "exit": 0,
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"job\",\n    \"result\": {\n        \"message\": \"Job schedule 'sch' created\"\n    }\n}\n",
+        "stderr": "Creating job schedule for 'Book.Notebook'...\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/RunNotebook/schedules",
+            "body": {
+              "configuration": {
+                "type": "Cron",
+                "interval": 18446744073709551615,
+                "startDateTime": "\uff12\uff10\uff12\uff16-\uff10\uff11-\uff10\uff11T\uff10\uff10:\uff10\uff10:\uff10\uff10",
+                "endDateTime": "\uff12\uff10\uff12\uff16-\uff11\uff12-\uff10\uff11T\uff10\uff10:\uff10\uff10:\uff10\uff10",
+                "localTimeZoneId": "UTC"
+              },
+              "enabled": false
+            },
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": [],
+        "confirmations": 0
+      }
+    },
+    {
+      "input": {
+        "name": "numeric-schedule/daily",
+        "leaf": "run-sch",
+        "options": [
+          "--type=daily",
+          "--interval=\uff11\uff12:\uff13\uff14suffix",
+          "--start=\uff12\uff10\uff12\uff16-\uff10\uff11-\uff10\uff11T\uff10\uff10:\uff10\uff10:\uff10\uff10",
+          "--end=\uff12\uff10\uff12\uff16-\uff11\uff12-\uff10\uff11T\uff10\uff10:\uff10\uff10:\uff10\uff10"
+        ],
+        "responses": [
+          {
+            "status": 201,
+            "body": {
+              "id": "sch"
+            }
+          }
+        ],
+        "methods": [
+          "POST"
+        ]
+      },
+      "format": "json",
+      "observed": {
+        "exit": 0,
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"job\",\n    \"result\": {\n        \"message\": \"Job schedule 'sch' created\"\n    }\n}\n",
+        "stderr": "Creating job schedule for 'Book.Notebook'...\n",
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items",
+            "body": null,
+            "skill": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/w/items/n/jobs/RunNotebook/schedules",
+            "body": {
+              "configuration": {
+                "type": "Daily",
+                "times": [
+                  "\uff11\uff12:\uff13\uff14suffix"
+                ],
+                "startDateTime": "\uff12\uff10\uff12\uff16-\uff10\uff11-\uff10\uff11T\uff10\uff10:\uff10\uff10:\uff10\uff10",
+                "endDateTime": "\uff12\uff10\uff12\uff16-\uff11\uff12-\uff10\uff11T\uff10\uff10:\uff10\uff10:\uff10\uff10",
+                "localTimeZoneId": "UTC"
+              },
+              "enabled": false
+            },
+            "skill": null
+          }
+        ],
+        "scopes": [
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ],
+          [
+            "https://api.fabric.microsoft.com/.default"
+          ]
+        ],
+        "file_reads": [],
+        "waits": [],
+        "confirmations": 0
+      }
+    }
+  ]
+}

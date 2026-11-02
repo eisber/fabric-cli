@@ -1,0 +1,368 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "exports": [
+    {
+      "name": "export-raw",
+      "resource": "workspace",
+      "command": "get",
+      "long": false,
+      "query": ".",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "output": "explicit-destination",
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "data": null,
+        "error": null,
+        "exports": [
+          {
+            "data": [
+              {
+                "id": "assignment-b",
+                "role": "Viewer",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "type": "User",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  }
+                }
+              },
+              {
+                "id": "assignment-a",
+                "role": "Admin",
+                "principal": {
+                  "id": "group",
+                  "displayName": "Team",
+                  "type": "Group",
+                  "groupDetails": {
+                    "groupType": "SecurityGroup"
+                  }
+                }
+              }
+            ],
+            "name": "Resource"
+          }
+        ]
+      }
+    },
+    {
+      "name": "export-paths",
+      "resource": "workspace",
+      "command": "get",
+      "long": false,
+      "query": null,
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "output": "explicit-destination",
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "data": null,
+        "error": null,
+        "exports": [
+          {
+            "data": [
+              "[0].id",
+              "[0].role",
+              "[0].principal.id",
+              "[0].principal.displayName",
+              "[0].principal.type",
+              "[0].principal.userDetails.userPrincipalName",
+              "[1].id",
+              "[1].role",
+              "[1].principal.id",
+              "[1].principal.displayName",
+              "[1].principal.type",
+              "[1].principal.groupDetails.groupType"
+            ],
+            "name": "Resource"
+          }
+        ]
+      }
+    },
+    {
+      "name": "export-scalar",
+      "resource": "workspace",
+      "command": "get",
+      "long": false,
+      "query": "[0].role",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "output": "explicit-destination",
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "data": null,
+        "error": null,
+        "exports": [
+          {
+            "data": "Viewer",
+            "name": "Resource"
+          }
+        ]
+      }
+    },
+    {
+      "name": "export-empty",
+      "resource": "workspace",
+      "command": "get",
+      "long": false,
+      "query": ".",
+      "body": {
+        "value": []
+      },
+      "output": "explicit-destination",
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "data": null,
+        "error": null,
+        "exports": [
+          {
+            "data": [],
+            "name": "Resource"
+          }
+        ]
+      }
+    },
+    {
+      "name": "export-falsey-projection",
+      "resource": "workspace",
+      "command": "get",
+      "long": false,
+      "query": "`[]`",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "output": "explicit-destination",
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "data": null,
+        "error": null,
+        "exports": [
+          {
+            "data": [],
+            "name": "Resource"
+          }
+        ]
+      }
+    }
+  ],
+  "errors": [
+    {
+      "command": "ls",
+      "code": "BadRequest",
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "error": {
+          "code": "UniversalSecurityDisabled",
+          "message": "Universal security is disabled for 'Resource.Lakehouse'"
+        },
+        "handled": true,
+        "warnings": [
+          "Requires data access roles enabled"
+        ],
+        "diagnostics": [
+          "\u2192 Run 'open /Workspace.Workspace/Resource.Lakehouse' and enable it"
+        ]
+      }
+    },
+    {
+      "command": "ls",
+      "code": "Forbidden",
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "error": {
+          "code": "Forbidden",
+          "message": "Access is forbidden. You do not have permission to access this resource"
+        },
+        "handled": false,
+        "warnings": [
+          "Requires data access roles enabled"
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "command": "get",
+      "code": "BadRequest",
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "error": {
+          "code": "UniversalSecurityDisabled",
+          "message": "Universal security is disabled for 'Resource.Lakehouse'"
+        },
+        "handled": true,
+        "warnings": [
+          "Requires data access roles enabled"
+        ],
+        "diagnostics": [
+          "\u2192 Run 'open /Workspace.Workspace/Resource.Lakehouse' and enable it"
+        ]
+      }
+    },
+    {
+      "command": "get",
+      "code": "Forbidden",
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "error": {
+          "code": "Forbidden",
+          "message": "Access is forbidden. You do not have permission to access this resource"
+        },
+        "handled": false,
+        "warnings": [
+          "Requires data access roles enabled"
+        ],
+        "diagnostics": []
+      }
+    }
+  ]
+}

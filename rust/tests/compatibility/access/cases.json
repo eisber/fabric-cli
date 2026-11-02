@@ -1,0 +1,2044 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "name": "workspace-ls-default",
+      "resource": "workspace",
+      "command": "ls",
+      "long": false,
+      "query": null,
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "data": [
+          {
+            "acl": "Admin",
+            "identity": "Team",
+            "type": "Group"
+          },
+          {
+            "acl": "Viewer",
+            "identity": "alice@example.invalid",
+            "type": "User"
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "workspace-ls-long",
+      "resource": "workspace",
+      "command": "ls",
+      "long": true,
+      "query": null,
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "data": [
+          {
+            "acl": "Admin",
+            "identity": "Team",
+            "type": "Group",
+            "objectId": "assignment-a",
+            "name": "Team"
+          },
+          {
+            "acl": "Viewer",
+            "identity": "alice@example.invalid",
+            "type": "User",
+            "objectId": "assignment-b",
+            "name": "Alice"
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "workspace-ls-.",
+      "resource": "workspace",
+      "command": "ls",
+      "long": false,
+      "query": ".",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "data": [
+          {
+            "name": "Team",
+            "type": "Group",
+            "identity": "Team",
+            "objectId": "assignment-a",
+            "acl": "Admin"
+          },
+          {
+            "name": "Alice",
+            "type": "User",
+            "identity": "alice@example.invalid",
+            "objectId": "assignment-b",
+            "acl": "Viewer"
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "workspace-get-.",
+      "resource": "workspace",
+      "command": "get",
+      "long": false,
+      "query": ".",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "data": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "workspace-get-default",
+      "resource": "workspace",
+      "command": "get",
+      "long": false,
+      "query": null,
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "data": [
+          "[0].id",
+          "[0].role",
+          "[0].principal.id",
+          "[0].principal.displayName",
+          "[0].principal.type",
+          "[0].principal.userDetails.userPrincipalName",
+          "[1].id",
+          "[1].role",
+          "[1].principal.id",
+          "[1].principal.displayName",
+          "[1].principal.type",
+          "[1].principal.groupDetails.groupType"
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "workspace-get-[0]",
+      "resource": "workspace",
+      "command": "get",
+      "long": false,
+      "query": "[0]",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "data": {
+          "id": "assignment-b",
+          "role": "Viewer",
+          "principal": {
+            "id": "object",
+            "displayName": "Alice",
+            "type": "User",
+            "userDetails": {
+              "userPrincipalName": "alice@example.invalid"
+            }
+          }
+        },
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "workspace-empty-get",
+      "resource": "workspace",
+      "command": "get",
+      "query": ".",
+      "body": {
+        "value": []
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "data": null,
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "workspace-empty-ls",
+      "resource": "workspace",
+      "command": "ls",
+      "body": {
+        "value": []
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "data": null,
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "gateway-ls-default",
+      "resource": "gateway",
+      "command": "ls",
+      "long": false,
+      "query": null,
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "data": [
+          {
+            "role": "Owner",
+            "principalId": "group",
+            "principalType": "Group"
+          },
+          {
+            "role": "User",
+            "principalId": "object",
+            "principalType": "User"
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "gateway-ls-long",
+      "resource": "gateway",
+      "command": "ls",
+      "long": true,
+      "query": null,
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "data": [
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principalId": "group",
+            "principalType": "Group"
+          },
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principalId": "object",
+            "principalType": "User"
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "gateway-ls-.",
+      "resource": "gateway",
+      "command": "ls",
+      "long": false,
+      "query": ".",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "data": [
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principalId": "group",
+            "principalType": "Group"
+          },
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principalId": "object",
+            "principalType": "User"
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "gateway-get-.",
+      "resource": "gateway",
+      "command": "get",
+      "long": false,
+      "query": ".",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "data": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "gateway-get-default",
+      "resource": "gateway",
+      "command": "get",
+      "long": false,
+      "query": null,
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "data": [
+          "[0].id",
+          "[0].role",
+          "[0].principal.id",
+          "[0].principal.displayName",
+          "[0].principal.type",
+          "[0].principal.userDetails.userPrincipalName",
+          "[1].id",
+          "[1].role",
+          "[1].principal.id",
+          "[1].principal.displayName",
+          "[1].principal.type",
+          "[1].principal.groupDetails.groupType"
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "gateway-get-[0]",
+      "resource": "gateway",
+      "command": "get",
+      "long": false,
+      "query": "[0]",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "data": {
+          "id": "assignment-b",
+          "role": "User",
+          "principal": {
+            "id": "object",
+            "displayName": "Alice",
+            "type": "User",
+            "userDetails": {
+              "userPrincipalName": "alice@example.invalid"
+            }
+          }
+        },
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "gateway-empty-get",
+      "resource": "gateway",
+      "command": "get",
+      "query": ".",
+      "body": {
+        "value": []
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "data": null,
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "gateway-empty-ls",
+      "resource": "gateway",
+      "command": "ls",
+      "body": {
+        "value": []
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "data": null,
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "connection-ls-default",
+      "resource": "connection",
+      "command": "ls",
+      "long": false,
+      "query": null,
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "data": [
+          {
+            "role": "Owner",
+            "principalId": "group",
+            "principalType": "Group"
+          },
+          {
+            "role": "User",
+            "principalId": "object",
+            "principalType": "User"
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "connection-ls-long",
+      "resource": "connection",
+      "command": "ls",
+      "long": true,
+      "query": null,
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "data": [
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principalId": "group",
+            "principalType": "Group"
+          },
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principalId": "object",
+            "principalType": "User"
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "connection-ls-.",
+      "resource": "connection",
+      "command": "ls",
+      "long": false,
+      "query": ".",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "data": [
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principalId": "group",
+            "principalType": "Group"
+          },
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principalId": "object",
+            "principalType": "User"
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "connection-get-.",
+      "resource": "connection",
+      "command": "get",
+      "long": false,
+      "query": ".",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "data": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "connection-get-default",
+      "resource": "connection",
+      "command": "get",
+      "long": false,
+      "query": null,
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "data": [
+          "[0].id",
+          "[0].role",
+          "[0].principal.id",
+          "[0].principal.displayName",
+          "[0].principal.type",
+          "[0].principal.userDetails.userPrincipalName",
+          "[1].id",
+          "[1].role",
+          "[1].principal.id",
+          "[1].principal.displayName",
+          "[1].principal.type",
+          "[1].principal.groupDetails.groupType"
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "connection-get-[0]",
+      "resource": "connection",
+      "command": "get",
+      "long": false,
+      "query": "[0]",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "data": {
+          "id": "assignment-b",
+          "role": "User",
+          "principal": {
+            "id": "object",
+            "displayName": "Alice",
+            "type": "User",
+            "userDetails": {
+              "userPrincipalName": "alice@example.invalid"
+            }
+          }
+        },
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "connection-empty-get",
+      "resource": "connection",
+      "command": "get",
+      "query": ".",
+      "body": {
+        "value": []
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "data": null,
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "connection-empty-ls",
+      "resource": "connection",
+      "command": "ls",
+      "body": {
+        "value": []
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "data": null,
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "item-ls-default",
+      "resource": "item",
+      "command": "ls",
+      "long": false,
+      "query": null,
+      "body": {
+        "accessDetails": [
+          {
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read",
+                "Write"
+              ]
+            }
+          },
+          {
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read"
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "data": [
+          {
+            "acl": [
+              "Read"
+            ],
+            "identity": "SecurityGroup",
+            "type": "Group"
+          },
+          {
+            "acl": [
+              "Read",
+              "Write"
+            ],
+            "identity": "alice@example.invalid",
+            "type": "User"
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "item-ls-long",
+      "resource": "item",
+      "command": "ls",
+      "long": true,
+      "query": null,
+      "body": {
+        "accessDetails": [
+          {
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read",
+                "Write"
+              ]
+            }
+          },
+          {
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read"
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "data": [
+          {
+            "id": "group",
+            "name": "Team",
+            "acl": [
+              "Read"
+            ],
+            "identity": "SecurityGroup",
+            "type": "Group"
+          },
+          {
+            "id": "object",
+            "name": "Alice",
+            "acl": [
+              "Read",
+              "Write"
+            ],
+            "identity": "alice@example.invalid",
+            "type": "User"
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "item-ls-.",
+      "resource": "item",
+      "command": "ls",
+      "long": false,
+      "query": ".",
+      "body": {
+        "accessDetails": [
+          {
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read",
+                "Write"
+              ]
+            }
+          },
+          {
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read"
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "data": [
+          {
+            "name": "Team",
+            "type": "Group",
+            "identity": "SecurityGroup",
+            "id": "group",
+            "acl": [
+              "Read"
+            ]
+          },
+          {
+            "name": "Alice",
+            "type": "User",
+            "identity": "alice@example.invalid",
+            "id": "object",
+            "acl": [
+              "Read",
+              "Write"
+            ]
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "item-get-.",
+      "resource": "item",
+      "command": "get",
+      "long": false,
+      "query": ".",
+      "body": {
+        "accessDetails": [
+          {
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read",
+                "Write"
+              ]
+            }
+          },
+          {
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read"
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "data": [
+          {
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read",
+                "Write"
+              ]
+            }
+          },
+          {
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read"
+              ]
+            }
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "item-get-default",
+      "resource": "item",
+      "command": "get",
+      "long": false,
+      "query": null,
+      "body": {
+        "accessDetails": [
+          {
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read",
+                "Write"
+              ]
+            }
+          },
+          {
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read"
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "data": [
+          "[0].principal.id",
+          "[0].principal.displayName",
+          "[0].principal.type",
+          "[0].principal.userDetails.userPrincipalName",
+          "[0].itemAccessDetails.permissions[0]",
+          "[0].itemAccessDetails.permissions[1]",
+          "[1].principal.id",
+          "[1].principal.displayName",
+          "[1].principal.type",
+          "[1].principal.groupDetails.groupType",
+          "[1].itemAccessDetails.permissions[0]"
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "item-get-[0]",
+      "resource": "item",
+      "command": "get",
+      "long": false,
+      "query": "[0]",
+      "body": {
+        "accessDetails": [
+          {
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read",
+                "Write"
+              ]
+            }
+          },
+          {
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read"
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "data": {
+          "principal": {
+            "id": "object",
+            "displayName": "Alice",
+            "type": "User",
+            "userDetails": {
+              "userPrincipalName": "alice@example.invalid"
+            }
+          },
+          "itemAccessDetails": {
+            "permissions": [
+              "Read",
+              "Write"
+            ]
+          }
+        },
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "item-empty-get",
+      "resource": "item",
+      "command": "get",
+      "query": ".",
+      "body": {
+        "accessDetails": []
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "data": null,
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "item-empty-ls",
+      "resource": "item",
+      "command": "ls",
+      "body": {
+        "accessDetails": []
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "data": null,
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "onelake-ls-default",
+      "resource": "onelake",
+      "command": "ls",
+      "long": false,
+      "query": null,
+      "body": {
+        "value": [
+          {
+            "name": "ReadAll",
+            "decisionRules": [
+              {
+                "effect": "Permit"
+              }
+            ],
+            "members": {
+              "microsoftEntraMembers": [
+                {
+                  "objectId": "object"
+                }
+              ],
+              "fabricItemMembers": [
+                {
+                  "sourcePath": "/source"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "data": [
+          {
+            "acl": "ReadAll",
+            "identity": "object",
+            "type": "microsoftEntraMember"
+          },
+          {
+            "acl": "ReadAll",
+            "identity": "/source",
+            "type": "fabricItemMember"
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "onelake-ls-long",
+      "resource": "onelake",
+      "command": "ls",
+      "long": true,
+      "query": null,
+      "body": {
+        "value": [
+          {
+            "name": "ReadAll",
+            "decisionRules": [
+              {
+                "effect": "Permit"
+              }
+            ],
+            "members": {
+              "microsoftEntraMembers": [
+                {
+                  "objectId": "object"
+                }
+              ],
+              "fabricItemMembers": [
+                {
+                  "sourcePath": "/source"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "data": [
+          {
+            "acl": "ReadAll",
+            "identity": "object",
+            "type": "microsoftEntraMember"
+          },
+          {
+            "acl": "ReadAll",
+            "identity": "/source",
+            "type": "fabricItemMember"
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "onelake-ls-.",
+      "resource": "onelake",
+      "command": "ls",
+      "long": false,
+      "query": ".",
+      "body": {
+        "value": [
+          {
+            "name": "ReadAll",
+            "decisionRules": [
+              {
+                "effect": "Permit"
+              }
+            ],
+            "members": {
+              "microsoftEntraMembers": [
+                {
+                  "objectId": "object"
+                }
+              ],
+              "fabricItemMembers": [
+                {
+                  "sourcePath": "/source"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "data": [
+          {
+            "identity": "object",
+            "details": [
+              {
+                "effect": "Permit"
+              }
+            ],
+            "acl": "ReadAll",
+            "type": "microsoftEntraMember"
+          },
+          {
+            "identity": "/source",
+            "details": [
+              {
+                "effect": "Permit"
+              }
+            ],
+            "acl": "ReadAll",
+            "type": "fabricItemMember"
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "onelake-get-.",
+      "resource": "onelake",
+      "command": "get",
+      "long": false,
+      "query": ".",
+      "body": {
+        "value": [
+          {
+            "name": "ReadAll",
+            "decisionRules": [
+              {
+                "effect": "Permit"
+              }
+            ],
+            "members": {
+              "microsoftEntraMembers": [
+                {
+                  "objectId": "object"
+                }
+              ],
+              "fabricItemMembers": [
+                {
+                  "sourcePath": "/source"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "data": [
+          {
+            "name": "ReadAll",
+            "decisionRules": [
+              {
+                "effect": "Permit"
+              }
+            ],
+            "members": {
+              "microsoftEntraMembers": [
+                {
+                  "objectId": "object"
+                }
+              ],
+              "fabricItemMembers": [
+                {
+                  "sourcePath": "/source"
+                }
+              ]
+            }
+          }
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "onelake-get-default",
+      "resource": "onelake",
+      "command": "get",
+      "long": false,
+      "query": null,
+      "body": {
+        "value": [
+          {
+            "name": "ReadAll",
+            "decisionRules": [
+              {
+                "effect": "Permit"
+              }
+            ],
+            "members": {
+              "microsoftEntraMembers": [
+                {
+                  "objectId": "object"
+                }
+              ],
+              "fabricItemMembers": [
+                {
+                  "sourcePath": "/source"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "data": [
+          "[0].name",
+          "[0].decisionRules[0].effect",
+          "[0].members.microsoftEntraMembers[0].objectId",
+          "[0].members.fabricItemMembers[0].sourcePath"
+        ],
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "onelake-get-[0]",
+      "resource": "onelake",
+      "command": "get",
+      "long": false,
+      "query": "[0]",
+      "body": {
+        "value": [
+          {
+            "name": "ReadAll",
+            "decisionRules": [
+              {
+                "effect": "Permit"
+              }
+            ],
+            "members": {
+              "microsoftEntraMembers": [
+                {
+                  "objectId": "object"
+                }
+              ],
+              "fabricItemMembers": [
+                {
+                  "sourcePath": "/source"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "data": {
+          "name": "ReadAll",
+          "decisionRules": [
+            {
+              "effect": "Permit"
+            }
+          ],
+          "members": {
+            "microsoftEntraMembers": [
+              {
+                "objectId": "object"
+              }
+            ],
+            "fabricItemMembers": [
+              {
+                "sourcePath": "/source"
+              }
+            ]
+          }
+        },
+        "error": null,
+        "exports": []
+      }
+    },
+    {
+      "name": "onelake-empty-get",
+      "resource": "onelake",
+      "command": "get",
+      "query": ".",
+      "body": {
+        "value": []
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "data": null,
+        "error": null,
+        "exports": []
+      }
+    }
+  ]
+}

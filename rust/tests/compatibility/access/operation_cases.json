@@ -1,0 +1,317 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "name": "completed-original",
+      "headers": {
+        "x-ms-operation-id": "operation",
+        "Retry-After": "0"
+      },
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "status": "Completed"
+          },
+          "headers": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/operations/operation"
+          }
+        ],
+        "waits": [
+          0
+        ],
+        "error": null,
+        "status": 200,
+        "text": "{\"accepted\": true}"
+      }
+    },
+    {
+      "name": "running-then-succeeded",
+      "headers": {
+        "x-ms-operation-id": "operation",
+        "Retry-After": "0"
+      },
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "status": "Running"
+          },
+          "headers": {
+            "Retry-After": "0"
+          }
+        },
+        {
+          "status": 200,
+          "body": {
+            "status": "Succeeded"
+          },
+          "headers": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/operations/operation"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/operations/operation"
+          }
+        ],
+        "waits": [
+          0,
+          0
+        ],
+        "error": null,
+        "status": 200,
+        "text": "{\"accepted\": true}"
+      }
+    },
+    {
+      "name": "result-created",
+      "headers": {
+        "x-ms-operation-id": "operation",
+        "Retry-After": "0"
+      },
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "status": "Completed"
+          },
+          "headers": {
+            "Location": "https://api.fabric.microsoft.com/v1/operations/operation/result"
+          }
+        },
+        {
+          "status": 201,
+          "body": {
+            "created": true
+          },
+          "headers": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/operations/operation"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/operations/operation/result"
+          }
+        ],
+        "waits": [
+          0
+        ],
+        "error": null,
+        "status": 201,
+        "text": "{\"created\": true}"
+      }
+    },
+    {
+      "name": "result-empty",
+      "headers": {
+        "x-ms-operation-id": "operation",
+        "Retry-After": "0"
+      },
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "status": "Succeeded"
+          },
+          "headers": {
+            "Location": "https://api.fabric.microsoft.com/v1/operations/operation/result"
+          }
+        },
+        {
+          "status": 204,
+          "raw_body": "",
+          "headers": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/operations/operation"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/operations/operation/result"
+          }
+        ],
+        "waits": [
+          0
+        ],
+        "error": null,
+        "status": 204,
+        "text": ""
+      }
+    },
+    {
+      "name": "result-unavailable",
+      "headers": {
+        "x-ms-operation-id": "operation",
+        "Retry-After": "0"
+      },
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "status": "Succeeded"
+          },
+          "headers": {
+            "Location": "https://api.fabric.microsoft.com/v1/operations/operation/result"
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "OperationHasNoResult",
+            "message": "No result"
+          },
+          "headers": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/operations/operation"
+          },
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/operations/operation/result"
+          }
+        ],
+        "waits": [
+          0
+        ],
+        "error": null,
+        "status": 200,
+        "text": "{\"accepted\": true}"
+      }
+    },
+    {
+      "name": "headerless",
+      "headers": {},
+      "replies": [],
+      "expected": {
+        "requests": [],
+        "waits": [],
+        "error": null,
+        "status": 202,
+        "text": "{\"accepted\": true}"
+      }
+    },
+    {
+      "name": "failed",
+      "headers": {
+        "x-ms-operation-id": "operation",
+        "Retry-After": "0"
+      },
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "status": "Failed",
+            "error": "failure"
+          },
+          "headers": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/operations/operation"
+          }
+        ],
+        "waits": [
+          0
+        ],
+        "error": {
+          "code": "LongRunningOperationFailed",
+          "message": "The operation failed: failure"
+        },
+        "status": null,
+        "text": null
+      }
+    },
+    {
+      "name": "cancelled",
+      "headers": {
+        "x-ms-operation-id": "operation",
+        "Retry-After": "0"
+      },
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "status": "Cancelled",
+            "error": "reason"
+          },
+          "headers": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/operations/operation"
+          }
+        ],
+        "waits": [
+          0
+        ],
+        "error": {
+          "code": "LongRunningOperationCancelled",
+          "message": "The operation was cancelled: reason"
+        },
+        "status": null,
+        "text": null
+      }
+    },
+    {
+      "name": "invalid-retry-fallback",
+      "headers": {
+        "x-ms-operation-id": "operation",
+        "Retry-After": "bad"
+      },
+      "replies": [
+        {
+          "status": 200,
+          "body": {
+            "status": "Completed"
+          },
+          "headers": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/operations/operation"
+          }
+        ],
+        "waits": [
+          10
+        ],
+        "error": null,
+        "status": 200,
+        "text": "{\"accepted\": true}"
+      }
+    }
+  ]
+}

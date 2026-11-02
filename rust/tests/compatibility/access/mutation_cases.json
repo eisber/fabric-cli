@@ -1,0 +1,2497 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "resource": "workspace",
+      "role": "viewer",
+      "identity": "new",
+      "force": true,
+      "confirmations": [],
+      "name": "workspace-set-add",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": []
+          }
+        },
+        {
+          "status": 201,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "User"
+              },
+              "role": "viewer"
+            }
+          }
+        ],
+        "message": "ACL set",
+        "diagnostics": [
+          "Adding ACL to 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "workspace",
+      "role": "viewer",
+      "identity": "new",
+      "force": true,
+      "confirmations": [],
+      "name": "workspace-set-probe",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": []
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "User"
+              },
+              "role": "viewer"
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "ServicePrincipal"
+              },
+              "role": "viewer"
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "Group"
+              },
+              "role": "viewer"
+            }
+          }
+        ],
+        "message": "ACL set",
+        "diagnostics": [
+          "Adding ACL to 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "workspace",
+      "role": "viewer",
+      "identity": "new",
+      "force": true,
+      "confirmations": [],
+      "name": "workspace-set-probe-exhausted",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": []
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "User"
+              },
+              "role": "viewer"
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "ServicePrincipal"
+              },
+              "role": "viewer"
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "Group"
+              },
+              "role": "viewer"
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "ServicePrincipalProfile"
+              },
+              "role": "viewer"
+            }
+          }
+        ],
+        "message": null,
+        "diagnostics": [
+          "Adding ACL to 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": {
+          "code": "NotFound",
+          "message": "'new' identity not found"
+        }
+      }
+    },
+    {
+      "resource": "workspace",
+      "role": "viewer",
+      "identity": "object",
+      "force": true,
+      "confirmations": [],
+      "name": "workspace-set-update",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "PATCH",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments/object",
+            "body": {
+              "role": "viewer"
+            }
+          }
+        ],
+        "message": "ACL updated",
+        "diagnostics": [],
+        "warnings": [
+          "The provided principal already has a role assigned in the connection"
+        ],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "workspace",
+      "role": "viewer",
+      "identity": "id",
+      "force": true,
+      "confirmations": [],
+      "name": "workspace-set-substring-update",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "PATCH",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments/id",
+            "body": {
+              "role": "viewer"
+            }
+          }
+        ],
+        "message": "ACL updated",
+        "diagnostics": [],
+        "warnings": [
+          "The provided principal already has a role assigned in the connection"
+        ],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "workspace",
+      "role": "viewer",
+      "identity": "new",
+      "force": false,
+      "confirmations": [
+        false
+      ],
+      "name": "workspace-set-declined",
+      "command": "set",
+      "responses": [],
+      "expected": {
+        "requests": [],
+        "message": null,
+        "diagnostics": [],
+        "warnings": [],
+        "questions": [
+          "Are you sure?"
+        ],
+        "error": null
+      }
+    },
+    {
+      "resource": "workspace",
+      "role": "viewer",
+      "identity": "object",
+      "force": false,
+      "confirmations": [
+        true,
+        false
+      ],
+      "name": "workspace-set-overwrite-declined",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": null
+          }
+        ],
+        "message": null,
+        "diagnostics": [],
+        "warnings": [
+          "The provided principal already has a role assigned in the connection"
+        ],
+        "questions": [
+          "Are you sure?",
+          "Overwrite?"
+        ],
+        "error": null
+      }
+    },
+    {
+      "resource": "workspace",
+      "role": "not-a-role",
+      "identity": "new",
+      "force": true,
+      "confirmations": [],
+      "name": "workspace-set-invalid-role",
+      "command": "set",
+      "responses": [],
+      "expected": {
+        "requests": [],
+        "message": null,
+        "diagnostics": [],
+        "warnings": [],
+        "questions": [],
+        "error": {
+          "code": "InvalidInput",
+          "message": "Invalid role 'not-a-role' for workspace. Valid roles are: Admin, Member, Contributor, Viewer"
+        }
+      }
+    },
+    {
+      "resource": "workspace",
+      "role": "viewer",
+      "identity": "object",
+      "force": true,
+      "confirmations": [],
+      "name": "workspace-rm-object",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "DELETE",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments/assignment",
+            "body": null
+          }
+        ],
+        "message": "ACL removed",
+        "diagnostics": [
+          "Deleting ACL from 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "workspace",
+      "role": "viewer",
+      "identity": "Alice",
+      "force": true,
+      "confirmations": [],
+      "name": "workspace-rm-Alice",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "DELETE",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments/assignment",
+            "body": null
+          }
+        ],
+        "message": "ACL removed",
+        "diagnostics": [
+          "Deleting ACL from 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "workspace",
+      "role": "viewer",
+      "identity": "alice@example.invalid",
+      "force": true,
+      "confirmations": [],
+      "name": "workspace-rm-alice@example.invalid",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "DELETE",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments/assignment",
+            "body": null
+          }
+        ],
+        "message": "ACL removed",
+        "diagnostics": [
+          "Deleting ACL from 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "workspace",
+      "role": "viewer",
+      "identity": "app",
+      "force": true,
+      "confirmations": [],
+      "name": "workspace-rm-app",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "DELETE",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments/assignment",
+            "body": null
+          }
+        ],
+        "message": "ACL removed",
+        "diagnostics": [
+          "Deleting ACL from 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "workspace",
+      "role": "viewer",
+      "identity": "missing",
+      "force": true,
+      "confirmations": [],
+      "name": "workspace-rm-missing",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": null
+          }
+        ],
+        "message": null,
+        "diagnostics": [],
+        "warnings": [],
+        "questions": [],
+        "error": {
+          "code": "NotFound",
+          "message": "'missing' identity not found"
+        }
+      }
+    },
+    {
+      "resource": "gateway",
+      "role": "admin",
+      "identity": "new",
+      "force": true,
+      "confirmations": [],
+      "name": "gateway-set-add",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": []
+          }
+        },
+        {
+          "status": 201,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "User"
+              },
+              "role": "admin"
+            }
+          }
+        ],
+        "message": "ACL set",
+        "diagnostics": [
+          "Adding ACL to 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "gateway",
+      "role": "admin",
+      "identity": "new",
+      "force": true,
+      "confirmations": [],
+      "name": "gateway-set-probe",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": []
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "User"
+              },
+              "role": "admin"
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "ServicePrincipal"
+              },
+              "role": "admin"
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "Group"
+              },
+              "role": "admin"
+            }
+          }
+        ],
+        "message": "ACL set",
+        "diagnostics": [
+          "Adding ACL to 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "gateway",
+      "role": "admin",
+      "identity": "new",
+      "force": true,
+      "confirmations": [],
+      "name": "gateway-set-probe-exhausted",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": []
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "User"
+              },
+              "role": "admin"
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "ServicePrincipal"
+              },
+              "role": "admin"
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "Group"
+              },
+              "role": "admin"
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "ServicePrincipalProfile"
+              },
+              "role": "admin"
+            }
+          }
+        ],
+        "message": null,
+        "diagnostics": [
+          "Adding ACL to 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": {
+          "code": "NotFound",
+          "message": "'new' identity not found"
+        }
+      }
+    },
+    {
+      "resource": "gateway",
+      "role": "admin",
+      "identity": "object",
+      "force": true,
+      "confirmations": [],
+      "name": "gateway-set-update",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "PATCH",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments/object",
+            "body": {
+              "role": "admin"
+            }
+          }
+        ],
+        "message": "ACL updated",
+        "diagnostics": [],
+        "warnings": [
+          "The provided principal already has a role assigned in the connection"
+        ],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "gateway",
+      "role": "admin",
+      "identity": "id",
+      "force": true,
+      "confirmations": [],
+      "name": "gateway-set-substring-update",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "PATCH",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments/id",
+            "body": {
+              "role": "admin"
+            }
+          }
+        ],
+        "message": "ACL updated",
+        "diagnostics": [],
+        "warnings": [
+          "The provided principal already has a role assigned in the connection"
+        ],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "gateway",
+      "role": "admin",
+      "identity": "new",
+      "force": false,
+      "confirmations": [
+        false
+      ],
+      "name": "gateway-set-declined",
+      "command": "set",
+      "responses": [],
+      "expected": {
+        "requests": [],
+        "message": null,
+        "diagnostics": [],
+        "warnings": [],
+        "questions": [
+          "Are you sure?"
+        ],
+        "error": null
+      }
+    },
+    {
+      "resource": "gateway",
+      "role": "admin",
+      "identity": "object",
+      "force": false,
+      "confirmations": [
+        true,
+        false
+      ],
+      "name": "gateway-set-overwrite-declined",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": null
+          }
+        ],
+        "message": null,
+        "diagnostics": [],
+        "warnings": [
+          "The provided principal already has a role assigned in the connection"
+        ],
+        "questions": [
+          "Are you sure?",
+          "Overwrite?"
+        ],
+        "error": null
+      }
+    },
+    {
+      "resource": "gateway",
+      "role": "not-a-role",
+      "identity": "new",
+      "force": true,
+      "confirmations": [],
+      "name": "gateway-set-invalid-role",
+      "command": "set",
+      "responses": [],
+      "expected": {
+        "requests": [],
+        "message": null,
+        "diagnostics": [],
+        "warnings": [],
+        "questions": [],
+        "error": {
+          "code": "InvalidInput",
+          "message": "Invalid role 'not-a-role' for gateway. Valid roles are: Admin, ConnectionCreator, ConnectionCreatorWithResharing"
+        }
+      }
+    },
+    {
+      "resource": "gateway",
+      "role": "admin",
+      "identity": "object",
+      "force": true,
+      "confirmations": [],
+      "name": "gateway-rm-object",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "DELETE",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments/assignment",
+            "body": null
+          }
+        ],
+        "message": "ACL removed",
+        "diagnostics": [
+          "Deleting ACL from 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "gateway",
+      "role": "admin",
+      "identity": "Alice",
+      "force": true,
+      "confirmations": [],
+      "name": "gateway-rm-Alice",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "DELETE",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments/assignment",
+            "body": null
+          }
+        ],
+        "message": "ACL removed",
+        "diagnostics": [
+          "Deleting ACL from 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "gateway",
+      "role": "admin",
+      "identity": "alice@example.invalid",
+      "force": true,
+      "confirmations": [],
+      "name": "gateway-rm-alice@example.invalid",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "DELETE",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments/assignment",
+            "body": null
+          }
+        ],
+        "message": "ACL removed",
+        "diagnostics": [
+          "Deleting ACL from 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "gateway",
+      "role": "admin",
+      "identity": "app",
+      "force": true,
+      "confirmations": [],
+      "name": "gateway-rm-app",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "DELETE",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments/assignment",
+            "body": null
+          }
+        ],
+        "message": "ACL removed",
+        "diagnostics": [
+          "Deleting ACL from 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "gateway",
+      "role": "admin",
+      "identity": "missing",
+      "force": true,
+      "confirmations": [],
+      "name": "gateway-rm-missing",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments",
+            "body": null
+          }
+        ],
+        "message": null,
+        "diagnostics": [],
+        "warnings": [],
+        "questions": [],
+        "error": {
+          "code": "NotFound",
+          "message": "'missing' identity not found"
+        }
+      }
+    },
+    {
+      "resource": "connection",
+      "role": "user",
+      "identity": "new",
+      "force": true,
+      "confirmations": [],
+      "name": "connection-set-add",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": []
+          }
+        },
+        {
+          "status": 201,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "User"
+              },
+              "role": "user"
+            }
+          }
+        ],
+        "message": "ACL set",
+        "diagnostics": [
+          "Adding ACL to 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "connection",
+      "role": "user",
+      "identity": "new",
+      "force": true,
+      "confirmations": [],
+      "name": "connection-set-probe",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": []
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "User"
+              },
+              "role": "user"
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "ServicePrincipal"
+              },
+              "role": "user"
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "Group"
+              },
+              "role": "user"
+            }
+          }
+        ],
+        "message": "ACL set",
+        "diagnostics": [
+          "Adding ACL to 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "connection",
+      "role": "user",
+      "identity": "new",
+      "force": true,
+      "confirmations": [],
+      "name": "connection-set-probe-exhausted",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": []
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        },
+        {
+          "status": 400,
+          "body": {
+            "errorCode": "PrincipalNotFound"
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "User"
+              },
+              "role": "user"
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "ServicePrincipal"
+              },
+              "role": "user"
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "Group"
+              },
+              "role": "user"
+            }
+          },
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": {
+              "principal": {
+                "id": "new",
+                "type": "ServicePrincipalProfile"
+              },
+              "role": "user"
+            }
+          }
+        ],
+        "message": null,
+        "diagnostics": [
+          "Adding ACL to 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": {
+          "code": "NotFound",
+          "message": "'new' identity not found"
+        }
+      }
+    },
+    {
+      "resource": "connection",
+      "role": "user",
+      "identity": "object",
+      "force": true,
+      "confirmations": [],
+      "name": "connection-set-update",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "PATCH",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments/object",
+            "body": {
+              "role": "user"
+            }
+          }
+        ],
+        "message": "ACL updated",
+        "diagnostics": [],
+        "warnings": [
+          "The provided principal already has a role assigned in the connection"
+        ],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "connection",
+      "role": "user",
+      "identity": "id",
+      "force": true,
+      "confirmations": [],
+      "name": "connection-set-substring-update",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "PATCH",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments/id",
+            "body": {
+              "role": "user"
+            }
+          }
+        ],
+        "message": "ACL updated",
+        "diagnostics": [],
+        "warnings": [
+          "The provided principal already has a role assigned in the connection"
+        ],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "connection",
+      "role": "user",
+      "identity": "new",
+      "force": false,
+      "confirmations": [
+        false
+      ],
+      "name": "connection-set-declined",
+      "command": "set",
+      "responses": [],
+      "expected": {
+        "requests": [],
+        "message": null,
+        "diagnostics": [],
+        "warnings": [],
+        "questions": [
+          "Are you sure?"
+        ],
+        "error": null
+      }
+    },
+    {
+      "resource": "connection",
+      "role": "user",
+      "identity": "object",
+      "force": false,
+      "confirmations": [
+        true,
+        false
+      ],
+      "name": "connection-set-overwrite-declined",
+      "command": "set",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": null
+          }
+        ],
+        "message": null,
+        "diagnostics": [],
+        "warnings": [
+          "The provided principal already has a role assigned in the connection"
+        ],
+        "questions": [
+          "Are you sure?",
+          "Overwrite?"
+        ],
+        "error": null
+      }
+    },
+    {
+      "resource": "connection",
+      "role": "not-a-role",
+      "identity": "new",
+      "force": true,
+      "confirmations": [],
+      "name": "connection-set-invalid-role",
+      "command": "set",
+      "responses": [],
+      "expected": {
+        "requests": [],
+        "message": null,
+        "diagnostics": [],
+        "warnings": [],
+        "questions": [],
+        "error": {
+          "code": "InvalidInput",
+          "message": "Invalid role 'not-a-role' for connection. Valid roles are: Owner, UserWithReshare, User"
+        }
+      }
+    },
+    {
+      "resource": "connection",
+      "role": "user",
+      "identity": "object",
+      "force": true,
+      "confirmations": [],
+      "name": "connection-rm-object",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "DELETE",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments/assignment",
+            "body": null
+          }
+        ],
+        "message": "ACL removed",
+        "diagnostics": [
+          "Deleting ACL from 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "connection",
+      "role": "user",
+      "identity": "Alice",
+      "force": true,
+      "confirmations": [],
+      "name": "connection-rm-Alice",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "DELETE",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments/assignment",
+            "body": null
+          }
+        ],
+        "message": "ACL removed",
+        "diagnostics": [
+          "Deleting ACL from 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "connection",
+      "role": "user",
+      "identity": "alice@example.invalid",
+      "force": true,
+      "confirmations": [],
+      "name": "connection-rm-alice@example.invalid",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "DELETE",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments/assignment",
+            "body": null
+          }
+        ],
+        "message": "ACL removed",
+        "diagnostics": [
+          "Deleting ACL from 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "connection",
+      "role": "user",
+      "identity": "app",
+      "force": true,
+      "confirmations": [],
+      "name": "connection-rm-app",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "DELETE",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments/assignment",
+            "body": null
+          }
+        ],
+        "message": "ACL removed",
+        "diagnostics": [
+          "Deleting ACL from 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "connection",
+      "role": "user",
+      "identity": "missing",
+      "force": true,
+      "confirmations": [],
+      "name": "connection-rm-missing",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments",
+            "body": null
+          }
+        ],
+        "message": null,
+        "diagnostics": [],
+        "warnings": [],
+        "questions": [],
+        "error": {
+          "code": "NotFound",
+          "message": "'missing' identity not found"
+        }
+      }
+    },
+    {
+      "name": "label-set-ok",
+      "resource": "label",
+      "command": "set",
+      "force": true,
+      "confirmations": [],
+      "configured": true,
+      "label_name": "Public",
+      "responses": [
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "definitions": {
+        "labels": [
+          {
+            "name": "Public",
+            "id": "label"
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/admin/items/bulkSetLabels",
+            "body": {
+              "items": [
+                {
+                  "id": "resource",
+                  "type": "Notebook"
+                }
+              ],
+              "labelId": "label",
+              "assignmentMethod": "Standard"
+            }
+          }
+        ],
+        "message": "Label set",
+        "diagnostics": [
+          "Setting 'Public' label..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "name": "label-set-declined",
+      "resource": "label",
+      "command": "set",
+      "force": false,
+      "confirmations": [
+        false
+      ],
+      "configured": true,
+      "label_name": "Public",
+      "responses": [
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "definitions": {
+        "labels": [
+          {
+            "name": "Public",
+            "id": "label"
+          }
+        ]
+      },
+      "expected": {
+        "requests": [],
+        "message": null,
+        "diagnostics": [],
+        "warnings": [],
+        "questions": [
+          "Are you sure?"
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "label-set-unset",
+      "resource": "label",
+      "command": "set",
+      "force": true,
+      "confirmations": [],
+      "configured": false,
+      "label_name": "Public",
+      "responses": [
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "definitions": {
+        "labels": [
+          {
+            "name": "Public",
+            "id": "label"
+          }
+        ]
+      },
+      "expected": {
+        "requests": [],
+        "message": null,
+        "diagnostics": [
+          "\u2192 Run 'config set local_definition_labels <json_path>'"
+        ],
+        "warnings": [
+          "Label definitions for CLI not set"
+        ],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "name": "label-set-unknown-name",
+      "resource": "label",
+      "command": "set",
+      "force": true,
+      "confirmations": [],
+      "configured": true,
+      "label_name": "Unknown",
+      "responses": [
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "definitions": {
+        "labels": [
+          {
+            "name": "Public",
+            "id": "label"
+          }
+        ]
+      },
+      "expected": {
+        "requests": [],
+        "message": null,
+        "diagnostics": [],
+        "warnings": [],
+        "questions": [],
+        "error": {
+          "code": "InvalidInput",
+          "message": "Id not found for label 'Unknown'"
+        }
+      }
+    },
+    {
+      "name": "label-rm-ok",
+      "resource": "label",
+      "command": "rm",
+      "force": true,
+      "confirmations": [],
+      "configured": true,
+      "label_name": "Public",
+      "responses": [
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "definitions": {
+        "labels": [
+          {
+            "name": "Public",
+            "id": "label"
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/admin/items/bulkRemoveLabels",
+            "body": {
+              "items": [
+                {
+                  "id": "resource",
+                  "type": "Notebook"
+                }
+              ]
+            }
+          }
+        ],
+        "message": "Label removed",
+        "diagnostics": [
+          "Removing label..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "name": "label-rm-declined",
+      "resource": "label",
+      "command": "rm",
+      "force": false,
+      "confirmations": [
+        false
+      ],
+      "configured": true,
+      "label_name": "Public",
+      "responses": [
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "definitions": {
+        "labels": [
+          {
+            "name": "Public",
+            "id": "label"
+          }
+        ]
+      },
+      "expected": {
+        "requests": [],
+        "message": null,
+        "diagnostics": [],
+        "warnings": [],
+        "questions": [
+          "Are you sure?"
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "label-rm-unset",
+      "resource": "label",
+      "command": "rm",
+      "force": true,
+      "confirmations": [],
+      "configured": false,
+      "label_name": "Public",
+      "responses": [
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "definitions": {
+        "labels": [
+          {
+            "name": "Public",
+            "id": "label"
+          }
+        ]
+      },
+      "expected": {
+        "requests": [],
+        "message": null,
+        "diagnostics": [
+          "\u2192 Run 'config set local_definition_labels <json_path>'"
+        ],
+        "warnings": [
+          "Label definitions for CLI not set"
+        ],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "name": "label-rm-unknown-name",
+      "resource": "label",
+      "command": "rm",
+      "force": true,
+      "confirmations": [],
+      "configured": true,
+      "label_name": "Unknown",
+      "responses": [
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "definitions": {
+        "labels": [
+          {
+            "name": "Public",
+            "id": "label"
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/admin/items/bulkRemoveLabels",
+            "body": {
+              "items": [
+                {
+                  "id": "resource",
+                  "type": "Notebook"
+                }
+              ]
+            }
+          }
+        ],
+        "message": "Label removed",
+        "diagnostics": [
+          "Removing label..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    }
+  ]
+}

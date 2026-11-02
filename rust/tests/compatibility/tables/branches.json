@@ -1,0 +1,26 @@
+{
+  "_copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {"id":"load-immediate201","operation":"load","load_status":201,"expected_message":"Table 'sales' loaded successfully"},
+    {"id":"load-bare202","operation":"load","load_status":202,"expected_message":"Load table operation started"},
+    {"id":"load204-no-output","operation":"load","load_status":204,"expected_no_output":true},
+    {"id":"load-file-format-empty-pairs","operation":"load","format":",,","error_code":"UnknownError"},
+    {"id":"load-equals-in-delimiter","operation":"load","format":"format=csv,delimiter='a=b'","expected":{"pathType":"File","relativePath":"Files/input.csv","mode":"Overwrite","formatOptions":{"format":"Csv","delimiter":"a=b"}}},
+    {"id":"load-folder-parquet-extension","operation":"load","source_kind":"directory","format":"format=parquet","extension":"parquet","expected":{"pathType":"Folder","relativePath":"Files/input.csv","mode":"Overwrite","formatOptions":{"format":"Parquet"},"extension":"parquet","recursive":true}},
+    {"id":"schema-fields-empty","operation":"schema","logs":[{"name":"item/Tables/sales/_delta_log/00001.json","text":"{\"metaData\":{\"schemaString\":\"{\\\"fields\\\":[]}\"}}"}],"expected":[],"expected_reads":["ws/item/Tables/sales/_delta_log/00001.json"]},
+    {"id":"schema-fields-null","operation":"schema","logs":[{"name":"item/Tables/sales/_delta_log/00001.json","text":"{\"metaData\":{\"schemaString\":\"{\\\"fields\\\":null}\"}}"}],"expected":null,"expected_reads":["ws/item/Tables/sales/_delta_log/00001.json"]},
+    {"id":"schema-fields-object-not-list","operation":"schema","logs":[{"name":"item/Tables/sales/_delta_log/00001.json","text":"{\"metaData\":{\"schemaString\":\"{\\\"fields\\\":{\\\"name\\\":\\\"x\\\"}}\"}}"}],"expected":{"name":"x"},"expected_reads":["ws/item/Tables/sales/_delta_log/00001.json"]},
+    {"id":"schema-empty-string-stops-not-older","operation":"schema","logs":[{"name":"item/Tables/sales/_delta_log/00002.json","text":"{\"metaData\":{\"schemaString\":\"\"}}"},{"name":"item/Tables/sales/_delta_log/00001.json","text":"{\"metaData\":{\"schemaString\":\"{\\\"fields\\\":[]}\"}}"}],"error_code":"InvalidDeltaTable","expected_reads":["ws/item/Tables/sales/_delta_log/00002.json"]},
+    {"id":"schema-malformed-inner-json-after-extraction","operation":"schema","logs":[{"name":"item/Tables/sales/_delta_log/00001.json","text":"{\"metaData\":{\"schemaString\":\"not-json\"}}"}],"error_code":"UnexpectedError","extracted_notice":true,"expected_reads":["ws/item/Tables/sales/_delta_log/00001.json"]},
+    {"id":"schema-inner-fields-missing","operation":"schema","logs":[{"name":"item/Tables/sales/_delta_log/00001.json","text":"{\"metaData\":{\"schemaString\":\"{}\"}}"}],"error_code":"UnexpectedError","extracted_notice":true,"expected_reads":["ws/item/Tables/sales/_delta_log/00001.json"]},
+    {"id":"schema-blank-line-not-skipped","operation":"schema","logs":[{"name":"item/Tables/sales/_delta_log/00001.json","text":"{\"add\":{}}\n\n{\"metaData\":{\"schemaString\":\"{\\\"fields\\\":[]}\"}}"}],"error_code":"UnexpectedError","expected_reads":["ws/item/Tables/sales/_delta_log/00001.json"]},
+    {"id":"schema-json-extension-case-sensitive","operation":"schema","logs":[{"name":"item/Tables/sales/_delta_log/00001.JSON","text":"{\"metaData\":{\"schemaString\":\"{\\\"fields\\\":[]}\"}}"}],"error_code":"InvalidDeltaTable","expected_reads":[]},
+    {"id":"schema-first-metadata-action-wins","operation":"schema","logs":[{"name":"item/Tables/sales/_delta_log/00001.json","text":"{\"metaData\":{\"schemaString\":\"{\\\"fields\\\":[\\\"first\\\"]}\"}}\n{\"metaData\":{\"schemaString\":\"{\\\"fields\\\":[\\\"second\\\"]}\"}}"}],"expected":["first"],"expected_reads":["ws/item/Tables/sales/_delta_log/00001.json"]},
+    {"id":"vacuum-negative-day-boundary","operation":"vacuum","hours":"-24","expected":{"vacuumSettings":{"retentionPeriod":"-1:00:00:00"},"tableName":"sales"}},
+    {"id":"vacuum-signed-zero","operation":"vacuum","hours":"-0","expected":{"vacuumSettings":{"retentionPeriod":"0:00:00:00"},"tableName":"sales"}},
+    {"id":"vacuum-invalid-separators","operation":"vacuum","hours":"1__2","error_code":"UnexpectedError"},
+    {"id":"optimize-zorder-whitespace-keeps-empty","operation":"optimize","zorder":"   ","expected":{"optimizeSettings":{"zOrderBy":[""]},"tableName":"sales"}},
+    {"id":"optimize-empty-zorder-omitted","operation":"optimize","zorder":"","expected":{"optimizeSettings":{},"tableName":"sales"}}
+  ]
+}

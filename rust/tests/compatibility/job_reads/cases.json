@@ -1,0 +1,77 @@
+{
+  "_copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "timestamp": "2026-01-02T03:04:05.000006Z",
+  "resources": {
+    "SparkJobDefinition": "sparkjob",
+    "Notebook": "RunNotebook",
+    "DataPipeline": "Pipeline",
+    "Lakehouse": "TableMaintenance",
+    "GraphModel": "refreshGraph"
+  },
+  "exact": [
+    {
+      "name": "ordered-list-first-row-columns",
+      "leaf": "run-list",
+      "response": {
+        "status": 200,
+        "body": {
+          "value": [
+            {"id": "z", "status": null, "number": 1.0, "enabled": false, "nested": {"b": [], "a": ""}},
+            {"id": "a", "later": "omitted", "number": 2, "enabled": true}
+          ]
+        }
+      },
+      "expected_output": {
+        "data": [
+          {"id": "z", "status": null, "number": 1.0, "enabled": false, "nested": {"b": [], "a": ""}},
+          {"id": "a", "number": 2, "enabled": true}
+        ]
+      }
+    },
+    {
+      "name": "empty-list-message",
+      "leaf": "run-list",
+      "response": {"status": 200, "body": {"value": []}},
+      "expected_output": {"message": "No runs found"},
+      "expected_schedule_output": {"message": "No schedules found"}
+    },
+    {
+      "name": "status-retains-all-fields-types-order",
+      "leaf": "run-status",
+      "response": {"status": 200, "body": {"id": "run", "status": "FutureStatus", "extra": null, "nested": {"z": 1.0, "a": false}, "empty": [], "text": ""}},
+      "expected_output": {"data": {"id": "run", "status": "FutureStatus", "extra": null, "nested": {"z": 1.0, "a": false}, "empty": [], "text": ""}}
+    }
+  ],
+  "gaps": [
+    {
+      "name": "list-201-source-no-output",
+      "leaf": "run-list",
+      "response": {"status": 201, "body": {}},
+      "expected_source": {},
+      "native_error": "UnexpectedError"
+    },
+    {
+      "name": "status-204-source-no-output",
+      "leaf": "run-status",
+      "response": {"status": 204, "body": ""},
+      "expected_source": {},
+      "native_error": "UnexpectedError"
+    },
+    {
+      "name": "status-missing-status-field",
+      "leaf": "run-status",
+      "response": {"status": 200, "body": {"id": "run", "empty": null}},
+      "expected_source": {"data": {"id": "run", "empty": null}},
+      "native_error": "UnexpectedError"
+    },
+    {
+      "name": "schedule-null-source-value",
+      "leaf": "run-status",
+      "schedule": true,
+      "response": {"status": 200, "body": null},
+      "expected_source": {"data": null},
+      "native_error": "UnexpectedError"
+    }
+  ]
+}

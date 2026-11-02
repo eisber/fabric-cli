@@ -1,0 +1,134 @@
+{
+  "source": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "platform": "win32",
+  "cases": [
+    {
+      "case": "export",
+      "calls": [
+        {
+          "api": "get_item_withdefinition",
+          "format": ""
+        }
+      ],
+      "outputs": [
+        {
+          "message": "'Pipe.DataPipeline' exported"
+        }
+      ],
+      "effects": [],
+      "files": {
+        "Pipe.DataPipeline/pipeline-content.json": "ew0KICAgICJuYW1lIjogInN5bnRoZXRpYyINCn0="
+      },
+      "events": [
+        [
+          "warning",
+          "Item definition is exported without its sensitivity label and its data"
+        ],
+        [
+          "grey",
+          "Exporting 'Demo.Workspace/Pipe.DataPipeline' \u2192 '<ROOT>\\output/Pipe.DataPipeline'..."
+        ]
+      ]
+    },
+    {
+      "case": "bulk-export",
+      "calls": [
+        {
+          "api": "bulk_export_definitions",
+          "body": "{\"items\": [], \"mode\": \"All\"}"
+        }
+      ],
+      "outputs": [
+        {
+          "data": [
+            {
+              "exported": 1,
+              "exported_types": {
+                "DataPipeline": 1
+              },
+              "skipped": 0,
+              "skipped_types": {},
+              "output": "<ROOT>\\output"
+            }
+          ],
+          "show_key_value_list": true,
+          "message": "Exported 1 items to '<ROOT>\\output'"
+        }
+      ],
+      "effects": [],
+      "files": {
+        "Pipe.DataPipeline/pipeline-content.json": "ew0KICAgICJuYW1lIjogInN5bnRoZXRpYyINCn0="
+      },
+      "events": [
+        [
+          "warning",
+          "Item definitions are exported without their sensitivity labels"
+        ],
+        [
+          "warning",
+          "Exporting to a non-empty output folder"
+        ],
+        [
+          "grey",
+          "Bulk-exporting 'Demo.Workspace' \u2192 '<ROOT>\\output'..."
+        ]
+      ]
+    },
+    {
+      "case": "import-create",
+      "calls": [
+        {
+          "api": "create_item",
+          "body": "{\"type\": \"DataPipeline\", \"folderId\": null, \"displayName\": \"Pipe\", \"definition\": {\"parts\": [{\"path\": \"pipeline-content.json\", \"payload\": \"eyJuYW1lIjoic3ludGhldGljIn0=\", \"payloadType\": \"InlineBase64\"}]}}"
+        }
+      ],
+      "outputs": [
+        {
+          "message": "'Pipe.DataPipeline' imported"
+        }
+      ],
+      "effects": [
+        "22222222-2222-2222-2222-222222222222"
+      ],
+      "files": {
+        "Pipe.DataPipeline/pipeline-content.json": "ew0KICAgICJuYW1lIjogInN5bnRoZXRpYyINCn0="
+      },
+      "events": [
+        [
+          "grey",
+          "Importing '<ROOT>\\input' \u2192 '/Demo.Workspace/Pipe.DataPipeline'..."
+        ]
+      ]
+    },
+    {
+      "case": "import-update",
+      "calls": [
+        {
+          "api": "update_item_definition",
+          "body": "{\"definition\": {\"parts\": [{\"path\": \"pipeline-content.json\", \"payload\": \"eyJuYW1lIjoic3ludGhldGljIn0=\", \"payloadType\": \"InlineBase64\"}]}}"
+        }
+      ],
+      "outputs": [
+        {
+          "message": "'Pipe.DataPipeline' imported"
+        }
+      ],
+      "effects": [
+        "22222222-2222-2222-2222-222222222222"
+      ],
+      "files": {
+        "Pipe.DataPipeline/pipeline-content.json": "ew0KICAgICJuYW1lIjogInN5bnRoZXRpYyINCn0="
+      },
+      "events": [
+        [
+          "warning",
+          "An item with the same name exists"
+        ],
+        [
+          "grey",
+          "Importing (update) '<ROOT>\\input' \u2192 '/Demo.Workspace/Pipe.DataPipeline'..."
+        ]
+      ]
+    }
+  ]
+}

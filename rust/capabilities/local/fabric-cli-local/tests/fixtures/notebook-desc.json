@@ -1,0 +1,1 @@
+"Commands for '.Notebook'. Type '<command> -h' for help.\n\nAvailable commands:\n  acl get\n  acl ls\n  bulkexport\n  cd\n  cp\n  exists\n  export\n  get\n  import\n  job run\n  job run-cancel\n  job run-list\n  job run-rm\n  job run-sch\n  job run-status\n  job run-update\n  job start\n  label rm\n  label set\n  mkdir\n  mv\n  open\n  rm\n  set\n\n"

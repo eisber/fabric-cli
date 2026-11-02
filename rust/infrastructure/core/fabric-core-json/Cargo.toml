@@ -1,0 +1,20 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-core-json"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Pure shared Python-style ordered JSON encoding"
+
+[dependencies]
+serde_json.workspace = true
+
+[package.metadata.fabric]
+layer = "core"
+
+[lints]
+workspace = true

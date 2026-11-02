@@ -1,0 +1,694 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "_copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "cases": [
+    {
+      "id": "list_empty",
+      "operation": "list",
+      "workspace_id": "ws-empty",
+      "responses": [{"status": 200, "headers": {}, "body": {"value": []}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-empty/items", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "rows": []
+      },
+      "python_expected": {"status_code": 200, "body": {"value": []}}
+    },
+    {
+      "id": "list_order_duplicates_unicode_optional_type",
+      "operation": "list",
+      "workspace_id": "ws-order",
+      "responses": [{
+        "status": 200,
+        "headers": {},
+        "body": {
+          "value": [
+            {"id": "z", "displayName": "\u96ea / caf\u00e9", "type": "Notebook", "extra": {"enabled": true, "count": 7}},
+            {"id": "future", "displayName": "Alpha", "type": "FutureWidget", "properties": [1, null, {"x": false}]},
+            {"id": "missing", "displayName": "alpha", "description": null},
+            {"id": "null", "displayName": "", "type": null, "folderId": null},
+            {"id": "z", "displayName": "\u96ea / caf\u00e9", "type": "Notebook", "extra": {"enabled": true, "count": 7}}
+          ]
+        }
+      }],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-order/items", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "rows": [
+          {"id": "z", "displayName": "\u96ea / caf\u00e9", "type": "Notebook", "extra": {"enabled": true, "count": 7}},
+          {"id": "future", "displayName": "Alpha", "type": "FutureWidget", "properties": [1, null, {"x": false}]},
+          {"id": "missing", "displayName": "alpha", "description": null},
+          {"id": "null", "displayName": "", "type": null, "folderId": null},
+          {"id": "z", "displayName": "\u96ea / caf\u00e9", "type": "Notebook", "extra": {"enabled": true, "count": 7}}
+        ]
+      },
+      "python_expected": {
+        "status_code": 200,
+        "body": {
+          "value": [
+            {"id": "z", "displayName": "\u96ea / caf\u00e9", "type": "Notebook", "extra": {"enabled": true, "count": 7}},
+            {"id": "future", "displayName": "Alpha", "type": "FutureWidget", "properties": [1, null, {"x": false}]},
+            {"id": "missing", "displayName": "alpha", "description": null},
+            {"id": "null", "displayName": "", "type": null, "folderId": null},
+            {"id": "z", "displayName": "\u96ea / caf\u00e9", "type": "Notebook", "extra": {"enabled": true, "count": 7}}
+          ]
+        }
+      }
+    },
+    {
+      "id": "list_three_pages_empty_middle",
+      "operation": "list",
+      "workspace_id": "ws-pages",
+      "responses": [
+        {"status": 200, "headers": {}, "body": {"value": [{"id": "a", "displayName": "Zulu"}], "warnings": ["first"], "origin": "first", "continuationToken": "page 2+/=", "continuationUri": "https://not-used.invalid/elsewhere"}},
+        {"status": 200, "headers": {}, "body": {"value": [], "warnings": ["middle"], "origin": "middle", "continuationToken": "last\u96ea"}},
+        {"status": 200, "headers": {}, "body": {"value": [{"id": "a", "displayName": "Zulu"}, {"id": "b", "displayName": "Alpha", "type": null}], "warnings": ["last"], "origin": "last", "laterOnly": true}}
+      ],
+      "expected": {
+        "requests": [
+          {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-pages/items", "scope": "https://api.fabric.microsoft.com/.default"},
+          {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-pages/items?continuationToken=page+2%2B%2F%3D", "scope": "https://api.fabric.microsoft.com/.default"},
+          {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-pages/items?continuationToken=last%E9%9B%AA", "scope": "https://api.fabric.microsoft.com/.default"}
+        ],
+        "rows": [{"id": "a", "displayName": "Zulu"}, {"id": "a", "displayName": "Zulu"}, {"id": "b", "displayName": "Alpha", "type": null}]
+      },
+      "python_expected": {"status_code": 200, "body": {"value": [{"id": "a", "displayName": "Zulu"}, {"id": "a", "displayName": "Zulu"}, {"id": "b", "displayName": "Alpha", "type": null}], "warnings": ["first", "middle", "last"], "origin": "first", "total_pages": 1}}
+    },
+    {
+      "id": "list_type_query_encoding_not_local_filter",
+      "operation": "list",
+      "workspace_id": "ws-filter",
+      "query": [["type", "Notebook"], ["search", "A +/&= caf\u00e9"]],
+      "responses": [{"status": 200, "headers": {}, "body": {"value": [{"id": "r", "displayName": "Server result", "type": "Report"}, {"id": "n", "displayName": "Other", "type": "Notebook"}]}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-filter/items?type=Notebook&search=A+%2B%2F%26%3D+caf%C3%A9", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "rows": [{"id": "r", "displayName": "Server result", "type": "Report"}, {"id": "n", "displayName": "Other", "type": "Notebook"}]
+      },
+      "python_expected": {"status_code": 200, "body": {"value": [{"id": "r", "displayName": "Server result", "type": "Report"}, {"id": "n", "displayName": "Other", "type": "Notebook"}]}}
+    },
+    {
+      "id": "list_query_retained_opaque_token",
+      "operation": "list",
+      "workspace_id": "ws-opaque",
+      "query": [["type", "Report"], ["includeInherited", "false"]],
+      "responses": [
+        {"status": 200, "headers": {}, "body": {"value": [], "continuationToken": "opaque+/= &?\u96ea"}},
+        {"status": 200, "headers": {}, "body": {"value": [{"id": "r", "displayName": "R", "type": "Report"}]}}
+      ],
+      "expected": {
+        "requests": [
+          {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-opaque/items?type=Report&includeInherited=false", "scope": "https://api.fabric.microsoft.com/.default"},
+          {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-opaque/items?type=Report&includeInherited=false&continuationToken=opaque%2B%2F%3D+%26%3F%E9%9B%AA", "scope": "https://api.fabric.microsoft.com/.default"}
+        ],
+        "rows": [{"id": "r", "displayName": "R", "type": "Report"}]
+      },
+      "python_expected": {"status_code": 200, "body": {"value": [{"id": "r", "displayName": "R", "type": "Report"}], "total_pages": 1}}
+    },
+    {
+      "id": "list_header_token_precedence_case_insensitive",
+      "operation": "list",
+      "workspace_id": "ws-header",
+      "responses": [
+        {"status": 200, "headers": {"X-MS-Continuation": "HEAD+/="}, "body": {"value": [{"id": "a", "displayName": "A"}], "continuationToken": "BODY", "continuationUri": "https://ignored.invalid/page"}},
+        {"status": 200, "headers": {}, "body": {"value": [{"id": "b", "displayName": "B"}]}}
+      ],
+      "expected": {
+        "requests": [
+          {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-header/items", "scope": "https://api.fabric.microsoft.com/.default"},
+          {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-header/items?continuationToken=HEAD%2B%2F%3D", "scope": "https://api.fabric.microsoft.com/.default"}
+        ],
+        "rows": [{"id": "a", "displayName": "A"}, {"id": "b", "displayName": "B"}]
+      },
+      "python_expected": {"status_code": 200, "body": {"value": [{"id": "a", "displayName": "A"}, {"id": "b", "displayName": "B"}], "total_pages": 1}}
+    },
+    {
+      "id": "list_empty_header_suppresses_body_token",
+      "operation": "list",
+      "workspace_id": "ws-stop",
+      "responses": [{"status": 200, "headers": {"x-ms-continuation": ""}, "body": {"value": [{"id": "a", "displayName": "A"}], "continuationToken": "must-not-follow", "continuationUri": "https://ignored.invalid/page"}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-stop/items", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "rows": [{"id": "a", "displayName": "A"}]
+      },
+      "python_expected": {"status_code": 200, "body": {"value": [{"id": "a", "displayName": "A"}], "continuationToken": "must-not-follow", "continuationUri": "https://ignored.invalid/page"}}
+    },
+    {
+      "id": "list_empty_body_token",
+      "operation": "list",
+      "workspace_id": "ws-empty-token",
+      "responses": [{"status": 200, "headers": {}, "body": {"value": [], "continuationToken": ""}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-empty-token/items", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "rows": []
+      },
+      "python_expected": {"status_code": 200, "body": {"value": [], "continuationToken": ""}}
+    },
+    {
+      "id": "list_null_body_token",
+      "operation": "list",
+      "workspace_id": "ws-null-token",
+      "responses": [{"status": 200, "headers": {}, "body": {"value": [], "continuationToken": null}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-null-token/items", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "rows": []
+      },
+      "python_expected": {"status_code": 200, "body": {"value": [], "continuationToken": null}}
+    },
+    {
+      "id": "list_continuation_uri_alone_ignored",
+      "operation": "list",
+      "workspace_id": "ws-uri",
+      "responses": [{"status": 200, "headers": {}, "body": {"value": [], "continuationUri": "https://untrusted.invalid/next?token=x"}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-uri/items", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "rows": []
+      },
+      "python_expected": {"status_code": 200, "body": {"value": [], "continuationUri": "https://untrusted.invalid/next?token=x"}}
+    },
+    {
+      "id": "get_generic_preserves_nested_extra",
+      "operation": "get",
+      "workspace_id": "ws-get",
+      "item_id": "item-one",
+      "responses": [{"status": 200, "headers": {}, "body": {"id": "item-one", "displayName": "Generic", "type": "Notebook", "description": null, "workspaceId": "ws-get", "properties": {"a": [1, 2.5, null, true], "nested": {"future": "kept"}}, "unknown": "untouched"}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-get/items/item-one", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "rows": [{"id": "item-one", "displayName": "Generic", "type": "Notebook", "description": null, "workspaceId": "ws-get", "properties": {"a": [1, 2.5, null, true], "nested": {"future": "kept"}}, "unknown": "untouched"}]
+      },
+      "python_expected": {"status_code": 200, "body": {"id": "item-one", "displayName": "Generic", "type": "Notebook", "description": null, "workspaceId": "ws-get", "properties": {"a": [1, 2.5, null, true], "nested": {"future": "kept"}}, "unknown": "untouched"}}
+    },
+    {
+      "id": "get_missing_type",
+      "operation": "get",
+      "workspace_id": "ws-get",
+      "item_id": "missing-type",
+      "responses": [{"status": 200, "headers": {}, "body": {"id": "missing-type", "displayName": "Missing type", "folderId": "folder"}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-get/items/missing-type", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "rows": [{"id": "missing-type", "displayName": "Missing type", "folderId": "folder"}]
+      },
+      "python_expected": {"status_code": 200, "body": {"id": "missing-type", "displayName": "Missing type", "folderId": "folder"}}
+    },
+    {
+      "id": "get_null_type",
+      "operation": "get",
+      "workspace_id": "ws-get",
+      "item_id": "null-type",
+      "responses": [{"status": 200, "headers": {}, "body": {"id": "null-type", "displayName": "", "type": null}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-get/items/null-type", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "rows": [{"id": "null-type", "displayName": "", "type": null}]
+      },
+      "python_expected": {"status_code": 200, "body": {"id": "null-type", "displayName": "", "type": null}}
+    },
+    {
+      "id": "get_future_type_unicode",
+      "operation": "get",
+      "workspace_id": "ws-get",
+      "item_id": "future",
+      "responses": [{"status": 200, "headers": {}, "body": {"id": "future", "displayName": "\u96ea \ud83d\ude80 e\u0301", "type": "FutureWidget", "futureField": {"mode": null}}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-get/items/future", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "rows": [{"id": "future", "displayName": "\u96ea \ud83d\ude80 e\u0301", "type": "FutureWidget", "futureField": {"mode": null}}]
+      },
+      "python_expected": {"status_code": 200, "body": {"id": "future", "displayName": "\u96ea \ud83d\ude80 e\u0301", "type": "FutureWidget", "futureField": {"mode": null}}}
+    },
+    {
+      "id": "get_request_params_query_encoding",
+      "operation": "get",
+      "workspace_id": "ws-get",
+      "item_id": "encoded-query",
+      "query": [["type", "Notebook"], ["q", "+ /%=&\u96ea"], ["empty", ""]],
+      "responses": [{"status": 200, "headers": {}, "body": {"id": "encoded-query", "displayName": "Encoded"}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-get/items/encoded-query?type=Notebook&q=%2B+%2F%25%3D%26%E9%9B%AA&empty=", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "rows": [{"id": "encoded-query", "displayName": "Encoded"}]
+      },
+      "python_expected": {"status_code": 200, "body": {"id": "encoded-query", "displayName": "Encoded"}}
+    },
+    {
+      "id": "list_403_public_header_precedence",
+      "operation": "list",
+      "workspace_id": "ws-errors",
+      "responses": [{"status": 403, "headers": {"X-MS-PUBLIC-API-ERROR-CODE": "PublicDenied", "x-ms-error-code": "SecondaryDenied"}, "body": {"errorCode": "BodyDenied", "message": "Body must not win.", "requestId": "body-request"}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-errors/items", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "error_code": "PublicDenied"
+      },
+      "python_expected": {"exception_type": "FabricCLIError", "error_code": "PublicDenied", "message": "Access is forbidden. You do not have permission to access this resource", "request_id": null}
+    },
+    {
+      "id": "get_403_secondary_header",
+      "operation": "get",
+      "workspace_id": "ws-errors",
+      "item_id": "denied",
+      "responses": [{"status": 403, "headers": {"x-ms-error-code": "SecondaryDenied"}, "body": {"errorCode": "BodyDenied", "message": "Ignored."}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-errors/items/denied", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "error_code": "SecondaryDenied"
+      },
+      "python_expected": {"exception_type": "FabricCLIError", "error_code": "SecondaryDenied", "message": "Access is forbidden. You do not have permission to access this resource", "request_id": null}
+    },
+    {
+      "id": "get_403_default_ignores_body",
+      "operation": "get",
+      "workspace_id": "ws-errors",
+      "item_id": "denied",
+      "responses": [{"status": 403, "headers": {}, "body": {"errorCode": "BodyDenied", "message": "Ignored."}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-errors/items/denied", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "error_code": "Forbidden"
+      },
+      "python_expected": {"exception_type": "FabricCLIError", "error_code": "Forbidden", "message": "Access is forbidden. You do not have permission to access this resource", "request_id": null}
+    },
+    {
+      "id": "list_401_public_header",
+      "operation": "list",
+      "workspace_id": "ws-errors",
+      "responses": [{"status": 401, "headers": {"x-ms-public-api-error-code": "TokenRejected", "x-ms-error-code": "Secondary"}, "body": {"errorCode": "BodyCode", "message": "Ignored."}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-errors/items", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "error_code": "TokenRejected"
+      },
+      "python_expected": {"exception_type": "FabricCLIError", "error_code": "TokenRejected", "message": "Access is unauthorized", "request_id": null}
+    },
+    {
+      "id": "get_404_ignores_headers_and_body",
+      "operation": "get",
+      "workspace_id": "ws-errors",
+      "item_id": "absent",
+      "responses": [{"status": 404, "headers": {"x-ms-public-api-error-code": "PublicMissing", "x-ms-error-code": "SecondaryMissing"}, "body": {"errorCode": "BodyMissing", "message": "Body missing.", "requestId": "ignored"}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-errors/items/absent", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "error_code": "NotFound"
+      },
+      "python_expected": {"exception_type": "FabricCLIError", "error_code": "NotFound", "message": "The requested resource could not be found", "request_id": null}
+    },
+    {
+      "id": "list_400_body_over_headers",
+      "operation": "list",
+      "workspace_id": "ws-errors",
+      "responses": [{"status": 400, "headers": {"x-ms-public-api-error-code": "HeaderCode", "x-ms-error-code": "OtherHeader"}, "body": {"errorCode": "BodyCode", "message": "Synthetic body failure...", "requestId": "synthetic-request", "moreDetails": [{"errorCode": "Detail", "message": "Preserved by exception"}]}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-errors/items", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "error_code": "BodyCode"
+      },
+      "python_expected": {"exception_type": "FabricAPIError", "error_code": "BodyCode", "message": "Synthetic body failure", "request_id": "synthetic-request"}
+    },
+    {
+      "id": "get_500_body_error",
+      "operation": "get",
+      "workspace_id": "ws-errors",
+      "item_id": "failure",
+      "responses": [{"status": 500, "headers": {"x-ms-public-api-error-code": "HeaderIgnored"}, "body": {"errorCode": "InternalSynthetic", "message": "Server said no.", "requestId": "r-500"}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-errors/items/failure", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "error_code": "InternalSynthetic"
+      },
+      "python_expected": {"exception_type": "FabricAPIError", "error_code": "InternalSynthetic", "message": "Server said no", "request_id": "r-500"}
+    },
+    {
+      "id": "get_400_missing_body_code",
+      "operation": "get",
+      "workspace_id": "ws-errors",
+      "item_id": "no-code",
+      "responses": [{"status": 400, "headers": {"x-ms-error-code": "IgnoredHeader"}, "body": {"error": {"code": "NestedIgnored", "message": "Not Fabric shape"}}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-errors/items/no-code", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "error_code": "UnknownError"
+      },
+      "python_expected": {"exception_type": "FabricAPIError", "error_code": "UnknownError", "message": "An error occurred while processing the operation", "request_id": null}
+    },
+    {
+      "id": "list_auth_failure_before_request",
+      "operation": "list",
+      "workspace_id": "ws-auth",
+      "auth_error": "AuthenticationFailed",
+      "responses": [],
+      "expected": {"requests": [], "error_code": "AuthenticationFailed"},
+      "python_expected": {"exception_type": "FabricCLIError", "error_code": "AuthenticationFailed", "message": "Synthetic authentication failure", "request_id": null}
+    },
+    {
+      "id": "get_auth_failure_before_request",
+      "operation": "get",
+      "workspace_id": "ws-auth",
+      "item_id": "not-sent",
+      "auth_error": "AuthenticationFailed",
+      "responses": [],
+      "expected": {"requests": [], "error_code": "AuthenticationFailed"},
+      "python_expected": {"exception_type": "FabricCLIError", "error_code": "AuthenticationFailed", "message": "Synthetic authentication failure", "request_id": null}
+    },
+    {
+      "id": "list_page_two_error_no_partial_success",
+      "operation": "list",
+      "workspace_id": "ws-partial",
+      "responses": [
+        {"status": 200, "headers": {}, "body": {"value": [{"id": "first", "displayName": "Not returned on failure"}], "continuationToken": "next"}},
+        {"status": 403, "headers": {"x-ms-public-api-error-code": "NextPageDenied"}, "body": {"errorCode": "Ignored", "message": "Ignored"}}
+      ],
+      "expected": {
+        "requests": [
+          {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-partial/items", "scope": "https://api.fabric.microsoft.com/.default"},
+          {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-partial/items?continuationToken=next", "scope": "https://api.fabric.microsoft.com/.default"}
+        ],
+        "error_code": "NextPageDenied"
+      },
+      "python_expected": {"exception_type": "FabricCLIError", "error_code": "NextPageDenied", "message": "Access is forbidden. You do not have permission to access this resource", "request_id": null}
+    },
+    {
+      "id": "list_403_empty_public_falls_back_secondary",
+      "operation": "list",
+      "workspace_id": "ws-errors",
+      "responses": [{"status": 403, "headers": {"x-ms-public-api-error-code": "", "x-ms-error-code": "FallbackDenied"}, "body": null}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-errors/items", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "error_code": "FallbackDenied"
+      },
+      "python_expected": {"exception_type": "FabricCLIError", "error_code": "FallbackDenied", "message": "Access is forbidden. You do not have permission to access this resource", "request_id": null}
+    },
+    {
+      "id": "get_401_default",
+      "operation": "get",
+      "workspace_id": "ws-errors",
+      "item_id": "unauthorized",
+      "responses": [{"status": 401, "headers": {}, "body": {"errorCode": "Ignored"}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-errors/items/unauthorized", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "error_code": "Unauthorized"
+      },
+      "python_expected": {"exception_type": "FabricCLIError", "error_code": "Unauthorized", "message": "Access is unauthorized", "request_id": null}
+    },
+    {
+      "id": "list_single_page_metadata_not_rewritten",
+      "operation": "list",
+      "workspace_id": "ws-meta",
+      "responses": [{"status": 200, "headers": {}, "body": {"value": [], "total_pages": 42, "future": {"null": null}, "continuationToken": ""}}],
+      "expected": {
+        "requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-meta/items", "scope": "https://api.fabric.microsoft.com/.default"}],
+        "rows": []
+      },
+      "python_expected": {"status_code": 200, "body": {"value": [], "total_pages": 42, "future": {"null": null}, "continuationToken": ""}}
+    },
+    {
+      "id": "list_query_initial_continuation_replaced",
+      "operation": "list",
+      "workspace_id": "ws-initial",
+      "query": [["continuationToken", "initial+/="], ["type", "Notebook"]],
+      "responses": [
+        {"status": 200, "headers": {}, "body": {"value": [], "continuationToken": "returned+/="}},
+        {"status": 200, "headers": {}, "body": {"value": [{"id": "n", "displayName": "N"}]}}
+      ],
+      "expected": {
+        "requests": [
+          {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-initial/items?continuationToken=initial%2B%2F%3D&type=Notebook", "scope": "https://api.fabric.microsoft.com/.default"},
+          {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-initial/items?continuationToken=returned%2B%2F%3D&type=Notebook", "scope": "https://api.fabric.microsoft.com/.default"}
+        ],
+        "rows": [{"id": "n", "displayName": "N"}]
+      },
+      "python_expected": {"status_code": 200, "body": {"value": [{"id": "n", "displayName": "N"}], "total_pages": 1}}
+    }
+  ],
+  "python_only": [
+    {
+      "id": "python_only_get_item_uri_ext_uri",
+      "reason": "Specialized item_uri/ext_uri is outside the generic items Rust slice; both are concatenated literally.",
+      "operation": "get",
+      "workspace_id": "ws-special",
+      "item_id": "env",
+      "item_uri": "environments",
+      "ext_uri": "/staging/libraries?format=raw&format=last",
+      "responses": [{"status": 200, "headers": {}, "body": {"libraries": []}}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-special/environments/env/staging/libraries?format=last", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"status_code": 200, "body": {"libraries": []}}
+    },
+    {
+      "id": "python_only_get_ext_uri_no_separator",
+      "reason": "ext_uri does not insert a separator or validate the resulting endpoint.",
+      "operation": "get",
+      "workspace_id": "ws-special",
+      "item_id": "i",
+      "ext_uri": "suffix",
+      "responses": [{"status": 200, "headers": {}, "body": {"id": "i", "displayName": "Raw suffix"}}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-special/items/isuffix", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"status_code": 200, "body": {"id": "i", "displayName": "Raw suffix"}}
+    },
+    {
+      "id": "python_only_get_dot_item_id",
+      "reason": "Python forwards dot path components; Rust intentionally rejects them before transport.",
+      "operation": "get",
+      "workspace_id": "ws-path",
+      "item_id": ".",
+      "responses": [{"status": 200, "headers": {}, "body": {"id": "synthetic", "displayName": "Dot"}}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-path/items/.", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"status_code": 200, "body": {"id": "synthetic", "displayName": "Dot"}}
+    },
+    {
+      "id": "python_only_get_dotdot_workspace",
+      "reason": "Python does not validate workspace path traversal; Rust rejects this safety exception.",
+      "operation": "get",
+      "workspace_id": "..",
+      "item_id": "i",
+      "responses": [{"status": 200, "headers": {}, "body": {"id": "i", "displayName": "Traversal"}}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/../items/i", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"status_code": 200, "body": {"id": "i", "displayName": "Traversal"}}
+    },
+    {
+      "id": "python_only_get_separators",
+      "reason": "The session boundary sees unescaped slash and backslash identifiers; Rust rejects these.",
+      "operation": "get",
+      "workspace_id": "ws-path",
+      "item_id": "folder/child\\leaf",
+      "responses": [{"status": 200, "headers": {}, "body": {"id": "i", "displayName": "Separators"}}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-path/items/folder/child\\leaf", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"status_code": 200, "body": {"id": "i", "displayName": "Separators"}}
+    },
+    {
+      "id": "python_only_get_raw_space_unicode_fragment",
+      "reason": "This observes the URL passed to Session.request, not requests' subsequent URL preparation.",
+      "operation": "get",
+      "workspace_id": "ws-path",
+      "item_id": "A B/\u96ea#fragment",
+      "responses": [{"status": 200, "headers": {}, "body": {"id": "i", "displayName": "Raw path"}}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-path/items/A B/\u96ea#fragment", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"status_code": 200, "body": {"id": "i", "displayName": "Raw path"}}
+    },
+    {
+      "id": "python_only_get_raw_query_override_double_encoding",
+      "reason": "URI query pairs overwrite request_params without decoding plus/percent escapes.",
+      "operation": "get",
+      "workspace_id": "ws-query",
+      "item_id": "i?type=Lakehouse&x=a+b&encoded=%2F",
+      "query": [["type", "Notebook"], ["x", "before"], ["other", "a b"]],
+      "responses": [{"status": 200, "headers": {}, "body": {"id": "i", "displayName": "Raw query"}}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-query/items/i?type=Lakehouse&x=a%2Bb&other=a+b&encoded=%252F", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"status_code": 200, "body": {"id": "i", "displayName": "Raw query"}}
+    },
+    {
+      "id": "python_only_get_multiple_question_marks",
+      "reason": "do_request uses split('?')[1], silently ignoring subsequent question-mark segments.",
+      "operation": "get",
+      "workspace_id": "ws-query",
+      "item_id": "i?x=first?y=second",
+      "responses": [{"status": 200, "headers": {}, "body": {"id": "i", "displayName": "First only"}}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-query/items/i?x=first", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"status_code": 200, "body": {"id": "i", "displayName": "First only"}}
+    },
+    {
+      "id": "python_only_get_query_missing_equals",
+      "reason": "Raw pair unpacking fails before auth and HTTP, rather than treating a flag as empty.",
+      "operation": "get",
+      "workspace_id": "ws-query",
+      "item_id": "i?flag",
+      "responses": [],
+      "expected": {"requests": []},
+      "python_expected": {"exception_type": "ValueError", "message": "not enough values to unpack (expected 2, got 1)"}
+    },
+    {
+      "id": "python_only_get_query_extra_equals",
+      "reason": "Raw pair splitting has no maxsplit; an unescaped equals in a value raises.",
+      "operation": "get",
+      "workspace_id": "ws-query",
+      "item_id": "i?x=a=b",
+      "responses": [],
+      "expected": {"requests": []},
+      "python_expected": {"exception_type": "ValueError", "message": "too many values to unpack (expected 2)"}
+    },
+    {
+      "id": "python_only_get_query_trailing_ampersand",
+      "reason": "An empty raw query pair raises before auth; it is not silently skipped.",
+      "operation": "get",
+      "workspace_id": "ws-query",
+      "item_id": "i?x=1&",
+      "responses": [],
+      "expected": {"requests": []},
+      "python_expected": {"exception_type": "ValueError", "message": "not enough values to unpack (expected 2, got 1)"}
+    },
+    {
+      "id": "python_only_list_missing_value",
+      "reason": "The API helper returns an unvalidated object; CLI memory-store indexing would later raise KeyError.",
+      "operation": "list",
+      "workspace_id": "ws-malformed",
+      "responses": [{"status": 200, "headers": {}, "body": {}}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-malformed/items", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"status_code": 200, "body": {}}
+    },
+    {
+      "id": "python_only_list_null_value",
+      "reason": "No validation at the API boundary; Rust's typed page policy rejects a null collection.",
+      "operation": "list",
+      "workspace_id": "ws-malformed",
+      "responses": [{"status": 200, "headers": {}, "body": {"value": null}}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-malformed/items", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"status_code": 200, "body": {"value": null}}
+    },
+    {
+      "id": "python_only_list_object_value",
+      "reason": "The helper does not require value to be an array; this is not a valid Rust page.",
+      "operation": "list",
+      "workspace_id": "ws-malformed",
+      "responses": [{"status": 200, "headers": {}, "body": {"value": {"id": "nested"}}}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-malformed/items", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"status_code": 200, "body": {"value": {"id": "nested"}}}
+    },
+    {
+      "id": "python_only_list_array_token_membership",
+      "reason": "Text substring plus list membership reaches string indexing on a list and raises TypeError.",
+      "operation": "list",
+      "workspace_id": "ws-malformed",
+      "responses": [{"status": 200, "headers": {}, "body": ["continuationToken"]}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-malformed/items", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"exception_type": "TypeError", "message": "list indices must be integers or slices, not str"}
+    },
+    {
+      "id": "python_only_get_null_body",
+      "reason": "Literal null is returned as a successful ApiResponse without item validation.",
+      "operation": "get",
+      "workspace_id": "ws-malformed",
+      "item_id": "null",
+      "responses": [{"status": 200, "headers": {}, "body": null}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-malformed/items/null", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"status_code": 200, "body": null}
+    },
+    {
+      "id": "python_only_get_missing_required_fields",
+      "reason": "Python permits missing id/displayName; Rust's explicitly typed item policy requires strings.",
+      "operation": "get",
+      "workspace_id": "ws-malformed",
+      "item_id": "missing",
+      "responses": [{"status": 200, "headers": {}, "body": {}}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-malformed/items/missing", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"status_code": 200, "body": {}}
+    },
+    {
+      "id": "python_only_list_invalid_item_shapes",
+      "reason": "Python preserves malformed row shapes; Rust intentionally requires object rows with string id/displayName.",
+      "operation": "list",
+      "workspace_id": "ws-malformed",
+      "responses": [{"status": 200, "headers": {}, "body": {"value": [{"type": "Notebook"}, {"id": null, "displayName": 7}, null, 4]}}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-malformed/items", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"status_code": 200, "body": {"value": [{"type": "Notebook"}, {"id": null, "displayName": 7}, null, 4]}}
+    },
+    {
+      "id": "python_only_list_next_201_not_merged",
+      "reason": "A fetched page is merged only when its final status is exactly 200; 201 is silently discarded.",
+      "operation": "list",
+      "workspace_id": "ws-status",
+      "responses": [
+        {"status": 200, "headers": {}, "body": {"value": [{"id": "a", "displayName": "A"}], "continuationToken": "next"}},
+        {"status": 201, "headers": {}, "body": {"value": [{"id": "b", "displayName": "Discarded"}]}}
+      ],
+      "expected": {"requests": [
+        {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-status/items", "scope": "https://api.fabric.microsoft.com/.default"},
+        {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-status/items?continuationToken=next", "scope": "https://api.fabric.microsoft.com/.default"}
+      ]},
+      "python_expected": {"status_code": 200, "body": {"value": [{"id": "a", "displayName": "A"}], "continuationToken": "next"}}
+    },
+    {
+      "id": "python_only_list_append_null_next_value",
+      "reason": "append_text blindly extends an original list with null from the next page.",
+      "operation": "list",
+      "workspace_id": "ws-append",
+      "responses": [
+        {"status": 200, "headers": {}, "body": {"value": [], "continuationToken": "next"}},
+        {"status": 200, "headers": {}, "body": {"value": null}}
+      ],
+      "expected": {"requests": [
+        {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-append/items", "scope": "https://api.fabric.microsoft.com/.default"},
+        {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-append/items?continuationToken=next", "scope": "https://api.fabric.microsoft.com/.default"}
+      ]},
+      "python_expected": {"exception_type": "TypeError", "message": "'NoneType' object is not iterable"}
+    },
+    {
+      "id": "python_only_list_append_mapping_keys",
+      "reason": "append_text extends an original list with dictionary keys instead of validating the next collection.",
+      "operation": "list",
+      "workspace_id": "ws-append",
+      "responses": [
+        {"status": 200, "headers": {}, "body": {"value": [], "continuationToken": "next"}},
+        {"status": 200, "headers": {}, "body": {"value": {"not-an-item": true}}}
+      ],
+      "expected": {"requests": [
+        {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-append/items", "scope": "https://api.fabric.microsoft.com/.default"},
+        {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-append/items?continuationToken=next", "scope": "https://api.fabric.microsoft.com/.default"}
+      ]},
+      "python_expected": {"status_code": 200, "body": {"value": ["not-an-item"], "total_pages": 1}}
+    },
+    {
+      "id": "python_only_list_numeric_token",
+      "reason": "Python truthiness permits non-string numeric tokens and urlencode stringifies them.",
+      "operation": "list",
+      "workspace_id": "ws-token",
+      "responses": [
+        {"status": 200, "headers": {}, "body": {"value": [], "continuationToken": 12}},
+        {"status": 200, "headers": {}, "body": {"value": []}}
+      ],
+      "expected": {"requests": [
+        {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-token/items", "scope": "https://api.fabric.microsoft.com/.default"},
+        {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-token/items?continuationToken=12", "scope": "https://api.fabric.microsoft.com/.default"}
+      ]},
+      "python_expected": {"status_code": 200, "body": {"value": [], "total_pages": 1}}
+    },
+    {
+      "id": "python_only_list_false_token",
+      "reason": "Python treats a JSON boolean false token as absent without validation.",
+      "operation": "list",
+      "workspace_id": "ws-token",
+      "responses": [{"status": 200, "headers": {}, "body": {"value": [], "continuationToken": false}}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-token/items", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"status_code": 200, "body": {"value": [], "continuationToken": false}}
+    },
+    {
+      "id": "python_only_get_paginates_any_object",
+      "reason": "The generic success helper even follows tokens on GET objects and extends every common list-valued key.",
+      "operation": "get",
+      "workspace_id": "ws-get",
+      "item_id": "paged",
+      "responses": [
+        {"status": 200, "headers": {}, "body": {"id": "paged", "displayName": "First", "parts": [1], "continuationToken": "next"}},
+        {"status": 200, "headers": {}, "body": {"id": "other", "displayName": "Ignored", "parts": [2], "laterOnly": true}}
+      ],
+      "expected": {"requests": [
+        {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-get/items/paged", "scope": "https://api.fabric.microsoft.com/.default"},
+        {"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-get/items/paged?continuationToken=next", "scope": "https://api.fabric.microsoft.com/.default"}
+      ]},
+      "python_expected": {"status_code": 200, "body": {"id": "paged", "displayName": "First", "parts": [1, 2], "total_pages": 1}}
+    },
+    {
+      "id": "python_only_get_error_body_array",
+      "reason": "FabricAPIError assumes an object after JSON decoding; an array raises an unstructured AttributeError.",
+      "operation": "get",
+      "workspace_id": "ws-errors",
+      "item_id": "array-error",
+      "responses": [{"status": 400, "headers": {}, "body": []}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-errors/items/array-error", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"exception_type": "AttributeError", "message": "'list' object has no attribute 'get'"}
+    },
+    {
+      "id": "python_only_list_204_null",
+      "reason": "204 is accepted by do_request without requiring a list body; body here is the JSON value null, not empty wire bytes.",
+      "operation": "list",
+      "workspace_id": "ws-status",
+      "responses": [{"status": 204, "headers": {}, "body": null}],
+      "expected": {"requests": [{"method": "GET", "url": "https://api.fabric.microsoft.com/v1/workspaces/ws-status/items", "scope": "https://api.fabric.microsoft.com/.default"}]},
+      "python_expected": {"status_code": 204, "body": null}
+    }
+  ]
+}

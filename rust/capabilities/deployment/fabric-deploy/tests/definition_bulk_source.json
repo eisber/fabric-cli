@@ -1,0 +1,151 @@
+{
+  "source": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "all_body": "{\"items\": [], \"mode\": \"All\"}",
+  "selective_body": "{\"items\": [{\"id\": \"11111111-1111-1111-1111-111111111111\"}, {\"id\": \"22222222-2222-2222-2222-222222222222\"}], \"mode\": \"Selective\"}",
+  "items": [
+    {
+      "id": "11111111-1111-1111-1111-111111111111",
+      "supported": true
+    },
+    {
+      "id": "22222222-2222-2222-2222-222222222222",
+      "supported": false
+    },
+    {
+      "id": "33333333-3333-3333-3333-333333333333",
+      "supported": true
+    }
+  ],
+  "workspace_filter": {
+    "input": {
+      "itemDefinitionsIndex": [
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "rootPath": "/Folder/A.Notebook"
+        },
+        {
+          "id": "22222222-2222-2222-2222-222222222222",
+          "rootPath": "/Unsupported.Item"
+        },
+        {
+          "id": "44444444-4444-4444-4444-444444444444",
+          "rootPath": "/Unknown.Item"
+        }
+      ],
+      "definitionParts": [
+        {
+          "path": "/Folder/A.Notebook/a.txt",
+          "payload": "YQ=="
+        },
+        {
+          "path": "/Folder/A.NotebookSibling/b.txt",
+          "payload": "Yg=="
+        },
+        {
+          "path": "/Unsupported.Item/u.txt",
+          "payload": "dQ=="
+        },
+        {
+          "path": "/Unknown.Item/x.txt",
+          "payload": "eA=="
+        }
+      ]
+    },
+    "output": {
+      "itemDefinitionsIndex": [
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "rootPath": "/Folder/A.Notebook"
+        },
+        {
+          "id": "22222222-2222-2222-2222-222222222222",
+          "rootPath": "/Unsupported.Item"
+        },
+        {
+          "id": "44444444-4444-4444-4444-444444444444",
+          "rootPath": "/Unknown.Item"
+        }
+      ],
+      "definitionParts": [
+        {
+          "path": "/Folder/A.Notebook/a.txt",
+          "payload": "YQ=="
+        }
+      ]
+    },
+    "supported_ids": [
+      "11111111-1111-1111-1111-111111111111"
+    ],
+    "unsupported_ids": [
+      "22222222-2222-2222-2222-222222222222",
+      "33333333-3333-3333-3333-333333333333"
+    ]
+  },
+  "paths": [
+    {
+      "from_path": "WS.Workspace",
+      "input": {
+        "definitionParts": [
+          {
+            "path": "/Folder/A.Notebook/a.txt"
+          }
+        ]
+      },
+      "output": {
+        "definitionParts": [
+          {
+            "path": "/Folder/A.Notebook/a.txt"
+          }
+        ]
+      }
+    },
+    {
+      "from_path": "WS.Workspace/Parent.Folder",
+      "input": {
+        "definitionParts": [
+          {
+            "path": "/Parent/A.Notebook/a.txt"
+          }
+        ]
+      },
+      "output": {
+        "definitionParts": [
+          {
+            "path": "/Parent/A.Notebook/a.txt"
+          }
+        ]
+      }
+    },
+    {
+      "from_path": "WS.Workspace/Parent.Folder/Child.Folder",
+      "input": {
+        "definitionParts": [
+          {
+            "path": "/Parent/Child/A.Notebook/a.txt"
+          }
+        ]
+      },
+      "output": {
+        "definitionParts": [
+          {
+            "path": "/Child/A.Notebook/a.txt"
+          }
+        ]
+      }
+    },
+    {
+      "from_path": "WS.Workspace/Parent.Folder/Child.Folder",
+      "input": {
+        "definitionParts": [
+          {
+            "path": "/Wrong/Child/A.Notebook/a.txt"
+          }
+        ]
+      },
+      "error": [
+        "path mismatch",
+        "InvalidDefinitionPayload"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+[
+  {"name":"none","data":null,"expected":"null"},
+  {"name":"false","data":false,"expected":"false"},
+  {"name":"empty-object","data":{},"expected":"{}"},
+  {"name":"empty-array","data":[],"expected":"[]"},
+  {"name":"empty-string","data":"","expected":"\"\""},
+  {"name":"bmp-string","data":"caf\u00e9 \u540d","expected":"\"caf\u00e9 \u540d\""},
+  {"name":"astral-string","data":"\ud83d\ude80","expected":"\"\ud83d\ude80\""},
+  {"name":"del-not-escaped","data":"\u007f","expected":"\"\u007f\""},
+  {"name":"separator-and-nonprintable","data":"\u0085\u00a0\u200b\u2028\u2029","expected":"\"\u0085\u00a0\u200b\u2028\u2029\""},
+  {"name":"quote-slash-controls","data":"\"\\/\b\f\n\r\t\u0000\u001f","expected":"\"\\\"\\\\/\\b\\f\\n\\r\\t\\u0000\\u001f\""},
+  {"name":"unicode-keys-order","data":{"\u540d":"\ud83d\ude80","z":{"\u00e9":"one","a":null}},"expected":"{\n    \"\u540d\": \"\ud83d\ude80\",\n    \"z\": {\n        \"\u00e9\": \"one\",\n        \"a\": null\n    }\n}"},
+  {"name":"definition-metadata","data":{"metadata":{"displayName":"caf\u00e9","description":"\ud83d\ude80"},"parts":[{"path":"definition.json","payload":"synthetic","payloadType":"InlineBase64"}]},"expected":"{\n    \"metadata\": {\n        \"displayName\": \"caf\u00e9\",\n        \"description\": \"\ud83d\ude80\"\n    },\n    \"parts\": [\n        {\n            \"path\": \"definition.json\",\n            \"payload\": \"synthetic\",\n            \"payloadType\": \"InlineBase64\"\n        }\n    ]\n}"},
+  {"name":"numbers-unchanged","data":[-9223372036854775808,18446744073709551615,1.0,-0.0,1e-5,0.0001,1e15,1e16,2.9802322387695312e-8,5e-324],"expected":"[\n    -9223372036854775808,\n    18446744073709551615,\n    1.0,\n    -0.0,\n    1e-05,\n    0.0001,\n    1000000000000000.0,\n    1e+16,\n    2.9802322387695312e-08,\n    5e-324\n]"},
+  {"name":"zero-indent","indent":0,"data":{"\u00e9":["\ud83d\ude80",{},[]]},"expected":"{\n\"\u00e9\": [\n\"\ud83d\ude80\",\n{},\n[]\n]\n}"},
+  {"name":"two-indent","indent":2,"data":{"\u00e9":["\ud83d\ude80",{},[]]},"expected":"{\n  \"\u00e9\": [\n    \"\ud83d\ude80\",\n    {},\n    []\n  ]\n}"},
+  {"name":"default-noindent","indent":null,"data":{"z":"\u00e9","a":["\ud83d\ude80",null,false]},"expected":"{\"z\": \"\u00e9\", \"a\": [\"\ud83d\ude80\", null, false]}"},
+  {"name":"literal-backslash-u","data":{"escaped":"\\u00e9","literal":"\u00e9"},"expected":"{\n    \"escaped\": \"\\\\u00e9\",\n    \"literal\": \"\u00e9\"\n}"},
+  {"name":"unusual-scalar","data":["\uffff","\udbff\udfff"],"expected":"[\n    \"\uffff\",\n    \"\udbff\udfff\"\n]"}
+]

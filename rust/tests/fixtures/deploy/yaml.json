@@ -1,0 +1,69 @@
+{
+  "source": "microsoft/fabric-cicd@5ca096c00a9a878c646c59fe537b883eba951329",
+  "cases": [
+    {
+      "id": "config-safe-load-last-exact-key-wins-case-preserved",
+      "operation": "safe_yaml",
+      "input": "dev: first\ndev: last\nDEV: separate\n",
+      "expected": {"dev": "last", "DEV": "separate"}
+    },
+    {
+      "id": "parameter-case-insensitive-duplicate",
+      "operation": "parameter_yaml",
+      "input": "replace_value:\n  PROD: one\n  prod: two\n",
+      "error": {"type": "YAMLError", "contains": "duplicate key(s) found: ['PROD', 'prod'] (2)"}
+    },
+    {
+      "id": "parameter-sequence-child-duplicate",
+      "operation": "parameter_yaml",
+      "input": "find_replace:\n- find_value: source\n  replace_value:\n    dev: one\n    dev: two\n",
+      "error": {"type": "YAMLError", "contains": "duplicate key(s) found: 'dev' (2)"}
+    },
+    {
+      "id": "parameter-python-bool-int-key-collision",
+      "operation": "parameter_yaml",
+      "input": "on: a\ntrue: b\n1: c\n",
+      "error": {"type": "YAMLError", "contains": "duplicate key(s) found: ['1', 'True'] (3)"}
+    },
+    {
+      "id": "parameter-lower-not-casefold",
+      "operation": "parameter_yaml",
+      "input": "Stra\u00dfe: one\nSTRASSE: two\n",
+      "expected": {"Stra\u00dfe": "one", "STRASSE": "two"}
+    },
+    {
+      "id": "config-safe-load-merge-and-explicit-override",
+      "operation": "safe_yaml",
+      "input": "base: &base\n  enabled: true\n  count: 1\ntarget:\n  <<: *base\n  count: 2\n",
+      "expected": {"base": {"enabled": true, "count": 1}, "target": {"enabled": true, "count": 2}}
+    },
+    {
+      "id": "parameter-merge-tag-not-constructed",
+      "operation": "parameter_yaml",
+      "input": "base: &base\n  count: 1\ntarget:\n  <<: *base\n",
+      "error": {"type": "ConstructorError", "contains": "could not determine a constructor for the tag 'tag:yaml.org,2002:merge'"}
+    },
+    {
+      "id": "pyyaml-implicit-scalar-types",
+      "operation": "yaml_types",
+      "input": "[on, OFF, yes, null, ~, 012, 0x10, 1:20, 1e3, 1.0, .inf, .nan, 2026-01-02, 'on', '012']",
+      "expected": [
+        {"type": "bool", "value": "True"},
+        {"type": "bool", "value": "False"},
+        {"type": "bool", "value": "True"},
+        {"type": "NoneType", "value": "None"},
+        {"type": "NoneType", "value": "None"},
+        {"type": "int", "value": "10"},
+        {"type": "int", "value": "16"},
+        {"type": "int", "value": "80"},
+        {"type": "str", "value": "1e3"},
+        {"type": "float", "value": "1.0"},
+        {"type": "float", "value": "inf"},
+        {"type": "float", "value": "nan"},
+        {"type": "date", "value": "2026-01-02"},
+        {"type": "str", "value": "on"},
+        {"type": "str", "value": "012"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,163 @@
+{
+  "source": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "name": "ordered",
+      "format": null,
+      "files": [
+        {
+          "path": "z.txt",
+          "bytes": "bGFzdCByb290Cg=="
+        },
+        {
+          "path": "a.bin",
+          "bytes": "/wA="
+        },
+        {
+          "path": "sub-z/file.txt",
+          "bytes": "eg=="
+        },
+        {
+          "path": "sub-a/file.txt",
+          "bytes": "YQ=="
+        },
+        {
+          "path": "cache.abf",
+          "bytes": "ZXhjbHVkZWQ="
+        },
+        {
+          "path": "sub-a/cache.abf.copy",
+          "bytes": "ZXhjbHVkZWQgdG9v"
+        }
+      ],
+      "definition": {
+        "parts": [
+          {
+            "path": "a.bin",
+            "payload": "/wA=",
+            "payloadType": "InlineBase64"
+          },
+          {
+            "path": "z.txt",
+            "payload": "bGFzdCByb290Cg==",
+            "payloadType": "InlineBase64"
+          },
+          {
+            "path": "sub-a/file.txt",
+            "payload": "YQ==",
+            "payloadType": "InlineBase64"
+          },
+          {
+            "path": "sub-z/file.txt",
+            "payload": "eg==",
+            "payloadType": "InlineBase64"
+          }
+        ]
+      },
+      "create_body": "{\"type\": \"Notebook\", \"folderId\": null, \"displayName\": \"Synthetic\", \"definition\": {\"parts\": [{\"path\": \"a.bin\", \"payload\": \"/wA=\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"z.txt\", \"payload\": \"bGFzdCByb290Cg==\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"sub-a/file.txt\", \"payload\": \"YQ==\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"sub-z/file.txt\", \"payload\": \"eg==\", \"payloadType\": \"InlineBase64\"}]}}",
+      "update_body": "{\"definition\": {\"parts\": [{\"path\": \"a.bin\", \"payload\": \"/wA=\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"z.txt\", \"payload\": \"bGFzdCByb290Cg==\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"sub-a/file.txt\", \"payload\": \"YQ==\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"sub-z/file.txt\", \"payload\": \"eg==\", \"payloadType\": \"InlineBase64\"}]}}"
+    },
+    {
+      "name": "notebook-format",
+      "format": "ipynb",
+      "files": [
+        {
+          "path": "notebook.ipynb",
+          "bytes": "eyJjZWxscyI6W119DQo="
+        }
+      ],
+      "definition": {
+        "parts": [
+          {
+            "path": "notebook.ipynb",
+            "payload": "eyJjZWxscyI6W119DQo=",
+            "payloadType": "InlineBase64"
+          }
+        ],
+        "format": "ipynb"
+      },
+      "create_body": "{\"type\": \"Notebook\", \"folderId\": null, \"displayName\": \"Synthetic\", \"definition\": {\"parts\": [{\"path\": \"notebook.ipynb\", \"payload\": \"eyJjZWxscyI6W119DQo=\", \"payloadType\": \"InlineBase64\"}], \"format\": \"ipynb\"}}",
+      "update_body": "{\"definition\": {\"parts\": [{\"path\": \"notebook.ipynb\", \"payload\": \"eyJjZWxscyI6W119DQo=\", \"payloadType\": \"InlineBase64\"}], \"format\": \"ipynb\"}}"
+    },
+    {
+      "name": "empty-directory",
+      "format": null,
+      "files": [],
+      "definition": {
+        "parts": []
+      },
+      "create_body": "{\"type\": \"Notebook\", \"folderId\": null, \"displayName\": \"Synthetic\", \"definition\": {\"parts\": []}}",
+      "update_body": "{\"definition\": {\"parts\": []}}"
+    },
+    {
+      "name": "report-connection",
+      "format": null,
+      "files": [
+        {
+          "path": "definition.pbir",
+          "bytes": "eyJkYXRhc2V0UmVmZXJlbmNlIjp7ImJ5Q29ubmVjdGlvbiI6eyJpZCI6InN5bnRoZXRpYyJ9fX0="
+        }
+      ],
+      "definition": {
+        "parts": [
+          {
+            "path": "definition.pbir",
+            "payload": "eyJkYXRhc2V0UmVmZXJlbmNlIjp7ImJ5Q29ubmVjdGlvbiI6eyJpZCI6InN5bnRoZXRpYyJ9fX0=",
+            "payloadType": "InlineBase64"
+          }
+        ]
+      },
+      "create_body": "{\"type\": \"Notebook\", \"folderId\": null, \"displayName\": \"Synthetic\", \"definition\": {\"parts\": [{\"path\": \"definition.pbir\", \"payload\": \"eyJkYXRhc2V0UmVmZXJlbmNlIjp7ImJ5Q29ubmVjdGlvbiI6eyJpZCI6InN5bnRoZXRpYyJ9fX0=\", \"payloadType\": \"InlineBase64\"}]}}",
+      "update_body": "{\"definition\": {\"parts\": [{\"path\": \"definition.pbir\", \"payload\": \"eyJkYXRhc2V0UmVmZXJlbmNlIjp7ImJ5Q29ubmVjdGlvbiI6eyJpZCI6InN5bnRoZXRpYyJ9fX0=\", \"payloadType\": \"InlineBase64\"}]}}"
+    },
+    {
+      "name": "report-null-path",
+      "format": null,
+      "files": [
+        {
+          "path": "definition.pbir",
+          "bytes": "eyJkYXRhc2V0UmVmZXJlbmNlIjp7ImJ5UGF0aCI6bnVsbH19"
+        }
+      ],
+      "definition": {
+        "parts": [
+          {
+            "path": "definition.pbir",
+            "payload": "eyJkYXRhc2V0UmVmZXJlbmNlIjp7ImJ5UGF0aCI6bnVsbH19",
+            "payloadType": "InlineBase64"
+          }
+        ]
+      },
+      "create_body": "{\"type\": \"Notebook\", \"folderId\": null, \"displayName\": \"Synthetic\", \"definition\": {\"parts\": [{\"path\": \"definition.pbir\", \"payload\": \"eyJkYXRhc2V0UmVmZXJlbmNlIjp7ImJ5UGF0aCI6bnVsbH19\", \"payloadType\": \"InlineBase64\"}]}}",
+      "update_body": "{\"definition\": {\"parts\": [{\"path\": \"definition.pbir\", \"payload\": \"eyJkYXRhc2V0UmVmZXJlbmNlIjp7ImJ5UGF0aCI6bnVsbH19\", \"payloadType\": \"InlineBase64\"}]}}"
+    },
+    {
+      "name": "report-relative-path",
+      "format": null,
+      "files": [
+        {
+          "path": "definition.pbir",
+          "bytes": "eyJkYXRhc2V0UmVmZXJlbmNlIjp7ImJ5UGF0aCI6eyJwYXRoIjoiLi4vTW9kZWwifX19"
+        }
+      ],
+      "error": [
+        "Definition includes byPath; switch to byConnection before importing",
+        "InvalidDefinitionPayload"
+      ]
+    },
+    {
+      "name": "report-validation-before-exclusion",
+      "format": null,
+      "files": [
+        {
+          "path": "cache.abf.definition.pbir",
+          "bytes": "eyJkYXRhc2V0UmVmZXJlbmNlIjp7ImJ5UGF0aCI6eyJwYXRoIjoiLi4vTW9kZWwifX19"
+        }
+      ],
+      "error": [
+        "Definition includes byPath; switch to byConnection before importing",
+        "InvalidDefinitionPayload"
+      ]
+    }
+  ]
+}

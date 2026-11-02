@@ -1,0 +1,62 @@
+{
+  "_copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "id": "naked-202-is-not-completion",
+      "initial": {"status": 202},
+      "expected": {"status": 202, "requests": [], "waits": []}
+    },
+    {
+      "id": "operation-header-proves-completion-by-polling",
+      "initial": {"status": 202, "headers": {"x-ms-operation-id": "op", "Retry-After": "2"}},
+      "responses": [
+        {"status": 200, "body": {"status": "Running"}, "headers": {"Retry-After": "3"}},
+        {"status": 200, "body": {"status": "Succeeded"}}
+      ],
+      "expected": {"status": 200, "requests": ["operations/op", "operations/op"], "waits": [2, 3]}
+    },
+    {
+      "id": "completed-alias-is-terminal",
+      "initial": {"status": 202, "headers": {"x-ms-operation-id": "op"}},
+      "responses": [{"status": 200, "body": {"status": "Completed"}}],
+      "expected": {"status": 200, "requests": ["operations/op"], "waits": [10]}
+    },
+    {
+      "id": "terminal-location-fetches-result",
+      "initial": {"status": 202, "headers": {"x-ms-operation-id": "op"}},
+      "responses": [
+        {"status": 200, "body": {"status": "Succeeded"}, "headers": {"Location": "https://api.fabric.microsoft.com/v1/operations/op/result"}},
+        {"status": 200, "body": {"rows": 1}}
+      ],
+      "expected": {"status": 200, "requests": ["operations/op", "operations/op/result"], "waits": [10]}
+    },
+    {
+      "id": "failed-operation-is-not-table-success",
+      "initial": {"status": 202, "headers": {"x-ms-operation-id": "op"}},
+      "responses": [{"status": 200, "body": {"status": "Failed", "error": {"errorCode": "BadData"}}}],
+      "expected": {"error_code": "LongRunningOperationFailed", "requests": ["operations/op"], "waits": [10]}
+    },
+    {
+      "id": "remote-cancel-is-not-rollback",
+      "initial": {"status": 202, "headers": {"x-ms-operation-id": "op"}},
+      "responses": [{"status": 200, "body": {"status": "Cancelled"}}],
+      "expected": {"error_code": "LongRunningOperationCancelled", "requests": ["operations/op"], "waits": [10]}
+    },
+    {
+      "id": "location-without-id-source-polls-empty-id",
+      "initial": {"status": 202, "headers": {"Location": "https://api.fabric.microsoft.com/v1/operations/op"}},
+      "responses": [{"status": 404}],
+      "expected": {"error_code": "NotFound", "requests": ["operations/"], "waits": [10]}
+    },
+    {
+      "id": "unknown-state-is-running-with-finite-native-bound-needed",
+      "initial": {"status": 202, "headers": {"x-ms-operation-id": "op", "Retry-After": "invalid"}},
+      "responses": [
+        {"status": 200, "body": {"status": "InProgress"}},
+        {"status": 200, "body": {"status": "Succeeded"}}
+      ],
+      "expected": {"status": 200, "requests": ["operations/op", "operations/op"], "waits": [10, 10]}
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "name": "connection",
+      "request": {
+        "method": "GET",
+        "url": "https://api.fabric.microsoft.com/v1/connections/resource"
+      }
+    },
+    {
+      "name": "gateway",
+      "request": {
+        "method": "GET",
+        "url": "https://api.fabric.microsoft.com/v1/gateways/resource"
+      }
+    },
+    {
+      "name": "domain",
+      "request": {
+        "method": "GET",
+        "url": "https://api.fabric.microsoft.com/v1/admin/domains/resource"
+      }
+    },
+    {
+      "name": "spark-pool",
+      "request": {
+        "method": "GET",
+        "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/spark/pools/resource"
+      }
+    },
+    {
+      "name": "private-endpoint",
+      "request": {
+        "method": "GET",
+        "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/managedPrivateEndpoints/resource"
+      }
+    },
+    {
+      "name": "share",
+      "request": {
+        "method": "GET",
+        "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/item/externalDataShares/resource"
+      }
+    }
+  ]
+}

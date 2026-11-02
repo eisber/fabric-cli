@@ -1,0 +1,28 @@
+{
+  "source_commit": "5ca096c00a9a878c646c59fe537b883eba951329",
+  "source_function": "_common/_fabric_endpoint.py:handle_retry",
+  "cases": [
+    {
+      "maximum": 30,
+      "seconds": [
+        10.0,
+        20.0,
+        30.0,
+        30.0,
+        30.0,
+        30.0
+      ]
+    },
+    {
+      "maximum": 120,
+      "seconds": [
+        10.0,
+        20.0,
+        40.0,
+        80.0,
+        120.0,
+        120.0
+      ]
+    }
+  ]
+}

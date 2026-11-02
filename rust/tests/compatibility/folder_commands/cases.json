@@ -1,0 +1,671 @@
+{
+  "_copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "schema_version": 1,
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "integration_commit": "d9df14a6acf7fe3d80adf3bb74ee10ad0a7ac92f",
+  "attribution": "Hand-authored synthetic command expectations. No Rust observations, generated snapshots, live service data, or regenerated legacy expectations.",
+  "cases": [
+    {
+      "id": "empty_root", "category": "exact",
+      "purpose": "An empty item collection still loads one complete folder snapshot.",
+      "input": {"responses": [
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"value": []}}
+      ]},
+      "expected": {"result": {"data": []}}
+    },
+    {
+      "id": "root_valid", "category": "exact",
+      "purpose": "Workspace root contains root folders and unparented items, not descendants.",
+      "input": {"command": ["ls", "-l", "--output_format", "json"], "responses": [
+        {"status": 200, "body": {"value": [
+          {"id": "in", "displayName": "Inside", "type": "Notebook", "folderId": "f"},
+          {"id": "out", "displayName": "Outside", "type": "Report"}
+        ]}},
+        {"status": 200, "body": {"value": [
+          {"id": "f", "displayName": "Root"},
+          {"id": "c", "displayName": "Child", "parentFolderId": "f"}
+        ]}}
+      ]},
+      "expected": {"result": {"data": [
+        {"name": "Outside.Report", "id": "out"}, {"name": "Root.Folder", "id": "f"}
+      ]}}
+    },
+    {
+      "id": "nested_context", "category": "exact",
+      "purpose": "Ordered immutable current ancestors match actual source recursive equality.",
+      "input": {
+        "command": ["ls", ".", "-l", "--output_format", "json"],
+        "current_folders": [{"id": "r", "displayName": "Root"}, {"id": "n", "displayName": "Nested"}],
+        "responses": [
+          {"status": 200, "body": {"value": [
+            {"id": "i", "displayName": "Leaf", "type": "Notebook", "folderId": "n"},
+            {"id": "else", "displayName": "Other", "type": "Report", "folderId": "r"}
+          ]}},
+          {"status": 200, "body": {"value": [
+            {"id": "r", "displayName": "Root"}, {"id": "n", "displayName": "Nested", "parentFolderId": "r"},
+            {"id": "c", "displayName": "Child", "parentFolderId": "n"}
+          ]}}
+        ]
+      },
+      "expected": {"result": {"data": [
+        {"name": "Child.Folder", "id": "c"}, {"name": "Leaf.Notebook", "id": "i"}
+      ]}}
+    },
+    {
+      "id": "child_before_parent", "category": "exact",
+      "purpose": "Complete real graph helper resolves reverse API order over multiple passes.",
+      "input": {
+        "current_folders": [{"id": "r", "displayName": "Root"}, {"id": "n", "displayName": "Nested"}],
+        "responses": [
+          {"status": 200, "body": {"value": []}},
+          {"status": 200, "body": {"value": [
+            {"id": "leaf", "displayName": "Leaf", "parentFolderId": "n"},
+            {"id": "n", "displayName": "Nested", "parentFolderId": "r"},
+            {"id": "r", "displayName": "Root"}
+          ]}}
+        ]
+      },
+      "expected": {"result": {"data": [{"name": "Leaf.Folder"}]}}
+    },
+    {
+      "id": "duplicate_first_match", "category": "exact",
+      "purpose": "Duplicate IDs are retained; item parent lookup takes the first folder object, including name.",
+      "input": {
+        "current_folders": [{"id": "f", "displayName": "First"}],
+        "command": ["ls", "-l", "--output_format", "json"],
+        "responses": [
+          {"status": 200, "body": {"value": [
+            {"id": "i", "displayName": "Item", "type": "Notebook", "folderId": "f"}
+          ]}},
+          {"status": 200, "body": {"value": [
+            {"id": "f", "displayName": "First"}, {"id": "f", "displayName": "Second"},
+            {"id": "c", "displayName": "Child", "parentFolderId": "f"}
+          ]}}
+        ]
+      },
+      "expected": {"result": {"data": [
+        {"name": "Child.Folder", "id": "c"}, {"name": "Item.Notebook", "id": "i"}
+      ]}}
+    },
+    {
+      "id": "display_suffix_case", "category": "exact",
+      "purpose": "Raw service folder names do not pass validate_name; a .Folder display suffix is preserved, not stripped.",
+      "input": {"responses": [
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"value": [
+          {"id": "b", "displayName": "beta.folder"},
+          {"id": "a", "displayName": "Alpha.Folder"}
+        ]}}
+      ]},
+      "expected": {"result": {"data": [
+        {"name": "Alpha.Folder.Folder"}, {"name": "beta.folder.Folder"}
+      ]}}
+    },
+    {
+      "id": "byname_ties", "category": "exact",
+      "purpose": "Name sorting uses lowercase short name, then source enum member NAME; identical keys remain service-stable.",
+      "input": {"command": ["ls", "-l", "--output_format", "json"], "responses": [
+        {"status": 200, "body": {"value": [
+          {"id": "n1", "displayName": "same", "type": "Notebook"},
+          {"id": "g", "displayName": "SAME", "type": "GraphModel"},
+          {"id": "q", "displayName": "Same", "type": "GraphQLApi"},
+          {"id": "n2", "displayName": "SAME", "type": "notebook"}
+        ]}},
+        {"status": 200, "body": {"value": [
+          {"id": "f1", "displayName": "same"}, {"id": "f2", "displayName": "SAME"}
+        ]}}
+      ]},
+      "expected": {"result": {"data": [
+        {"name": "same.Folder", "id": "f1"}, {"name": "SAME.Folder", "id": "f2"},
+        {"name": "Same.GraphQLApi", "id": "q"}, {"name": "SAME.GraphModel", "id": "g"},
+        {"name": "same.Notebook", "id": "n1"}, {"name": "SAME.Notebook", "id": "n2"}
+      ]}}
+    },
+    {
+      "id": "bytype_ties", "category": "exact",
+      "purpose": "Folder sorts as Folder, items as enum NAME, with GRAPHQLAPI before GRAPH_MODEL rather than display-value order.",
+      "input": {
+        "command": ["ls", "-l", "--output_format", "json"],
+        "config": {"item_sort": "bytype"}, "responses": [
+          {"status": 200, "body": {"value": [
+            {"id": "n", "displayName": "A", "type": "Notebook"},
+            {"id": "g", "displayName": "A", "type": "GraphModel"},
+            {"id": "q1", "displayName": "z", "type": "GraphQLApi"},
+            {"id": "q2", "displayName": "Z", "type": "GraphQLApi"}
+          ]}},
+          {"status": 200, "body": {"value": [{"id": "f", "displayName": "Zulu"}]}}
+        ]
+      },
+      "expected": {"result": {"data": [
+        {"name": "Zulu.Folder", "id": "f"}, {"name": "z.GraphQLApi", "id": "q1"},
+        {"name": "Z.GraphQLApi", "id": "q2"}, {"name": "A.GraphModel", "id": "g"},
+        {"name": "A.Notebook", "id": "n"}
+      ]}}
+    },
+    {
+      "id": "unicode_opaque_long", "category": "exact",
+      "purpose": "Unicode lowercasing, escaped JSON and opaque long IDs survive long projection without UUID assumptions.",
+      "input": {
+        "command": ["ls", "-l", "--output_format", "json"], "responses": [
+          {"status": 200, "body": {"value": [
+            {"id": "opaque-item:abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789-abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789", "displayName": "\u6771\u4eac", "type": "Notebook"}
+          ]}},
+          {"status": 200, "body": {"value": [
+            {"id": "opaque folder + % : 1234567890", "displayName": "\u00c9quipe"},
+            {"id": "ascii", "displayName": "Zebra"}
+          ]}}
+        ]
+      },
+      "expected": {"result": {"data": [
+        {"name": "Zebra.Folder", "id": "ascii"},
+        {"name": "\u00c9quipe.Folder", "id": "opaque folder + % : 1234567890"},
+        {"name": "\u6771\u4eac.Notebook", "id": "opaque-item:abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789-abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789"}
+      ]}}
+    },
+    {
+      "id": "query_rows", "category": "exact",
+      "purpose": "Workspace applies actual Python JMESPath after sorting/projection; long IDs are available to the query.",
+      "input": {"command": ["ls", "-l", "--query", "[?id", "!=", "'skip'].{label:name,key:id}", "--output_format", "json"], "responses": [
+        {"status": 200, "body": {"value": [{"id": "skip", "displayName": "A", "type": "Notebook"}]}},
+        {"status": 200, "body": {"value": [{"id": "f", "displayName": "B"}]}}
+      ]},
+      "expected": {"result": {"data": [{"label": "B.Folder", "key": "f"}]}}
+    },
+    {
+      "id": "query_identity", "category": "exact",
+      "purpose": "The real source '.' identity branch retains default name-only columns.",
+      "input": {"command": ["ls", "--query", ".", "--output_format", "json"], "responses": [
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"value": [{"id": "f", "displayName": "Root"}]}}
+      ]},
+      "expected": {"result": {"data": [{"name": "Root.Folder"}]}}
+    },
+    {
+      "id": "query_empty", "category": "exact",
+      "purpose": "Present empty nargs query is truthy before process_nargs and therefore invokes real path inventory, unlike absent query.",
+      "input": {"command": ["ls", "--query", "", "--output_format", "json"], "responses": [
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"value": [{"id": "f", "displayName": "Root"}]}}
+      ]},
+      "expected": {"result": {"data": ["[0].name"]}}
+    },
+    {
+      "id": "query_empty_scalar", "category": "exact",
+      "purpose": "Empty string scalar projection is omitted by actual OutputResult truthiness, unlike an empty list.",
+      "input": {"command": ["ls", "--query", "to_string('')", "--output_format", "json"], "responses": [
+        {"status": 200, "body": {"value": []}}, {"status": 200, "body": {"value": []}}
+      ]},
+      "expected": {"result": {}}
+    },
+    {
+      "id": "query_false", "category": "exact",
+      "purpose": "False scalar is the source string False, not false JSON or empty data.",
+      "input": {"command": ["ls", "--query", "`false`", "--output_format", "json"], "responses": [
+        {"status": 200, "body": {"value": []}}, {"status": 200, "body": {"value": []}}
+      ]},
+      "expected": {"result": {"data": ["False"]}}
+    },
+    {
+      "id": "query_no_matches", "category": "exact",
+      "purpose": "Empty list projection is retained as data:[], not omitted.",
+      "input": {"command": ["ls", "--query", "[?name == 'absent']", "--output_format", "json"], "responses": [
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"value": [{"id": "f", "displayName": "Root"}]}}
+      ]},
+      "expected": {"result": {"data": []}}
+    },
+    {
+      "id": "query_null", "category": "exact",
+      "purpose": "Source scalar null stringification is None.",
+      "input": {"command": ["ls", "--query", "[9]", "--output_format", "json"], "responses": [
+        {"status": 200, "body": {"value": []}}, {"status": 200, "body": {"value": []}}
+      ]},
+      "expected": {"result": {"data": ["None"]}}
+    },
+    {
+      "id": "query_count", "category": "exact",
+      "purpose": "Integer query results retain the unchanged scalar string contract.",
+      "input": {"command": ["ls", "--query", "length(@)", "--output_format", "json"], "responses": [
+        {"status": 200, "body": {"value": [{"id": "i", "displayName": "Item", "type": "Notebook"}]}},
+        {"status": 200, "body": {"value": [{"id": "f", "displayName": "Root"}]}}
+      ]},
+      "expected": {"result": {"data": ["2"]}}
+    },
+    {
+      "id": "hidden_all", "category": "exact",
+      "purpose": "Workspace --all supplies actual VirtualItemContainerType values, sorted by output source.",
+      "input": {"command": ["ls", "--all", "--output_format", "json"], "responses": [
+        {"status": 200, "body": {"value": []}}, {"status": 200, "body": {"value": []}}
+      ]},
+      "expected": {"result": {"data": [], "hidden_data": [
+        ".externaldatashares", ".managedidentities", ".managedprivateendpoints", ".sparkpools"
+      ]}}
+    },
+    {
+      "id": "hidden_config", "category": "exact",
+      "purpose": "Workspace hidden configuration is independent of --all and folder enablement.",
+      "input": {"config": {"show_hidden": true}, "responses": [
+        {"status": 200, "body": {"value": []}}, {"status": 200, "body": {"value": []}}
+      ]},
+      "expected": {"result": {"data": [], "hidden_data": [
+        ".externaldatashares", ".managedidentities", ".managedprivateendpoints", ".sparkpools"
+      ]}}
+    },
+    {
+      "id": "folder_ignores_query_all", "category": "exact",
+      "purpose": "Folder exec bypasses query entirely (even invalid syntax) and ignores --all/hidden configuration.",
+      "input": {
+        "command": ["ls", "--all", "--query", "[broken", "--output_format", "json"],
+        "config": {"show_hidden": true},
+        "current_folders": [{"id": "f", "displayName": "Root"}],
+        "responses": [
+          {"status": 200, "body": {"value": [{"id": "i", "displayName": "Item", "type": "Notebook", "folderId": "f"}]}},
+          {"status": 200, "body": {"value": [{"id": "f", "displayName": "Root"}]}}
+        ]
+      },
+      "expected": {"result": {"data": [{"name": "Item.Notebook"}]}}
+    },
+    {
+      "id": "folder_disabled_config", "category": "exact",
+      "purpose": "A current folder always filters children even if workspace folder listing is disabled.",
+      "input": {
+        "config": {"folder_listing_enabled": false},
+        "current_folders": [{"id": "f", "displayName": "Root"}],
+        "responses": [
+          {"status": 200, "body": {"value": [{"id": "i", "displayName": "Item", "type": "Notebook", "folderId": "f"}]}},
+          {"status": 200, "body": {"value": [{"id": "f", "displayName": "Root"}, {"id": "c", "displayName": "Child", "parentFolderId": "f"}]}}
+        ]
+      },
+      "expected": {"result": {"data": [{"name": "Child.Folder"}, {"name": "Item.Notebook"}]}}
+    },
+    {
+      "id": "workspace_flat_disabled", "category": "exact",
+      "purpose": "Disabled workspace folder listing retains all items, but parent evaluation still lazily requests folders.",
+      "input": {"config": {"folder_listing_enabled": false}, "responses": [
+        {"status": 200, "body": {"value": [{"id": "i", "displayName": "Item", "type": "Notebook", "folderId": "f"}]}},
+        {"status": 200, "body": {"value": [{"id": "f", "displayName": "Root"}]}}
+      ]},
+      "expected": {"result": {"data": [{"name": "Item.Notebook"}]}}
+    },
+    {
+      "id": "workspace_flat_no_folder_read", "category": "exact",
+      "purpose": "Disabled workspace listing with no present item folderId performs no folder read at all.",
+      "input": {"config": {"folder_listing_enabled": false}, "responses": [
+        {"status": 200, "body": {"value": [{"id": "i", "displayName": "Item", "type": "Notebook"}]}}
+      ]},
+      "expected": {"result": {"data": [{"name": "Item.Notebook"}]}, "requests": ["items"]}
+    },
+    {
+      "id": "unknown_type_parent_lookup", "category": "exact",
+      "purpose": "Even an unknown item type resolves its present folderId before Item constructor validation filters it; only one cached snapshot is loaded.",
+      "input": {"responses": [
+        {"status": 200, "body": {"value": [{"id": "future", "displayName": "Ignored", "type": "FutureFabricItem", "folderId": "f"}]}},
+        {"status": 200, "body": {"value": [{"id": "f", "displayName": "Root"}]}}
+      ]},
+      "expected": {"result": {"data": [{"name": "Root.Folder"}]}}
+    },
+    {
+      "id": "items_401", "category": "exact", "purpose": "Item read unauthorized exits 4 before any folder call.",
+      "input": {"responses": [{"status": 401, "body": {}}]},
+      "expected": {"exit_code": 4, "result": {"error_code": "Unauthorized", "message": "Access is unauthorized"}, "requests": ["items"]}
+    },
+    {
+      "id": "items_403", "category": "exact", "purpose": "Item forbidden code/message use actual source status mapping.",
+      "input": {"responses": [{"status": 403, "body": {}}]},
+      "expected": {"exit_code": 1, "result": {"error_code": "Forbidden", "message": "Access is forbidden. You do not have permission to access this resource"}, "requests": ["items"]}
+    },
+    {
+      "id": "items_404", "category": "exact", "purpose": "Item not-found ends before folders are loaded.",
+      "input": {"responses": [{"status": 404, "body": {}}]},
+      "expected": {"exit_code": 1, "result": {"error_code": "NotFound", "message": "The requested resource could not be found"}, "requests": ["items"]}
+    },
+    {
+      "id": "folders_401", "category": "exact", "purpose": "Folder unauthorized after item success preserves source exit 4.",
+      "input": {"responses": [{"status": 200, "body": {"value": []}}, {"status": 401, "body": {}}]},
+      "expected": {"exit_code": 4, "result": {"error_code": "Unauthorized", "message": "Access is unauthorized"}}
+    },
+    {
+      "id": "folders_403", "category": "exact", "purpose": "Folder error occurs during parent evaluation even for an unknown item type.",
+      "input": {"responses": [
+        {"status": 200, "body": {"value": [{"id": "future", "displayName": "Ignored", "type": "FutureFabricItem", "folderId": "f"}]}},
+        {"status": 403, "body": {}}
+      ]},
+      "expected": {"exit_code": 1, "result": {"error_code": "Forbidden", "message": "Access is forbidden. You do not have permission to access this resource"}}
+    },
+    {
+      "id": "folders_404", "category": "exact", "purpose": "Folder not-found is a command failure, not an empty folder collection.",
+      "input": {"responses": [{"status": 200, "body": {"value": []}}, {"status": 404, "body": {}}]},
+      "expected": {"exit_code": 1, "result": {"error_code": "NotFound", "message": "The requested resource could not be found"}}
+    },
+    {
+      "id": "item_pagination", "category": "exact",
+      "purpose": "Successful real recursive item pagination preserves encoded opaque continuation tokens before lazy folders.",
+      "input": {"responses": [
+        {"status": 200, "body": {"value": [{"id": "z", "displayName": "Zulu", "type": "Notebook"}], "continuationToken": "next +/="}},
+        {"status": 200, "body": {"value": [{"id": "a", "displayName": "Alpha", "type": "Notebook", "folderId": "f"}]}},
+        {"status": 200, "body": {"value": [{"id": "f", "displayName": "Root"}]}}
+      ]},
+      "expected": {"result": {"data": [{"name": "Root.Folder"}, {"name": "Zulu.Notebook"}]}, "requests": [
+        "items", "items?continuationToken=next+%2B%2F%3D", "folders?recursive=True"
+      ]}
+    },
+    {
+      "id": "folder_pagination", "category": "exact",
+      "purpose": "Real folder pagination aggregates before graph assembly, so a parent on the second page resolves its earlier child.",
+      "input": {
+        "current_folders": [{"id": "r", "displayName": "Root"}],
+        "responses": [
+          {"status": 200, "body": {"value": []}},
+          {"status": 200, "body": {"value": [{"id": "c", "displayName": "Child", "parentFolderId": "r"}], "continuationToken": "next"}},
+          {"status": 200, "body": {"value": [{"id": "r", "displayName": "Root"}]}}
+        ]
+      },
+      "expected": {"result": {"data": [{"name": "Child.Folder"}]}, "requests": [
+        "items", "folders?recursive=True", "folders?recursive=True&continuationToken=next"
+      ]}
+    },
+    {
+      "id": "orphan_graph", "category": "safety",
+      "purpose": "Missing graph parent cannot make source progress.",
+      "boundary": "fab_mem_store._get_workspace_folders_from_api while loop never removes orphan; bounded root-reachability evidence only, source graph function NOT executed.",
+      "python_nonprogress": true,
+      "input": {"responses": [
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"value": [{"id": "o", "displayName": "Orphan", "parentFolderId": "absent"}]}}
+      ]},
+      "expected": {"exit_code": 1, "result": {"error_code": "NotSupported", "message": "Folder graph is unsupported (UnresolvedParent safety boundary)"}}
+    },
+    {
+      "id": "null_parent_graph", "category": "safety",
+      "purpose": "Explicit null parent is not a missing parent key/root in the source.",
+      "boundary": "_extract_root_folders tests key presence; _extract_nested_folders finds no None ID, so source graph loop cannot progress and is not run.",
+      "python_nonprogress": true,
+      "input": {"responses": [
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"value": [{"id": "o", "displayName": "Null", "parentFolderId": null}]}}
+      ]},
+      "expected": {"exit_code": 1, "result": {"error_code": "NotSupported", "message": "Folder graph is unsupported (NullParent safety boundary)"}}
+    },
+    {
+      "id": "nonstring_parent_graph", "category": "safety",
+      "purpose": "A non-string parent reference cannot resolve against valid string folder IDs in the source graph.",
+      "boundary": "Source key-presence root detection retains this row, but _extract_nested_folders can never match the numeric parent to a string ID. Bounded evidence rejects it before the source graph function is invoked; native explicitly reports NonStringParent.",
+      "python_nonprogress": true,
+      "input": {"responses": [
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"value": [{"id": "o", "displayName": "Numeric parent", "parentFolderId": 7}]}}
+      ]},
+      "expected": {"exit_code": 1, "result": {"error_code": "NotSupported", "message": "Folder graph is unsupported (NonStringParent safety boundary)"}}
+    },
+    {
+      "id": "cycle_graph", "category": "safety",
+      "purpose": "Unrooted two-node cycle is rejected without entering the known infinite source loop.",
+      "boundary": "Neither cyclic row can be appended by _extract_nested_folders; bounded evidence is separate from source parity.",
+      "python_nonprogress": true,
+      "input": {"responses": [
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"value": [{"id": "a", "displayName": "A", "parentFolderId": "b"}, {"id": "b", "displayName": "B", "parentFolderId": "a"}]}}
+      ]},
+      "expected": {"exit_code": 1, "result": {"error_code": "NotSupported", "message": "Folder graph is unsupported (Cycle safety boundary)"}}
+    },
+    {
+      "id": "self_cycle_graph", "category": "safety",
+      "purpose": "A self-cycle remains nonprogress even when an unrelated valid root exists.",
+      "boundary": "A source root elsewhere does not resolve the self-parent; the graph function is never invoked.",
+      "python_nonprogress": true,
+      "input": {"responses": [
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"value": [{"id": "r", "displayName": "Root"}, {"id": "a", "displayName": "A", "parentFolderId": "a"}]}}
+      ]},
+      "expected": {"exit_code": 1, "result": {"error_code": "NotSupported", "message": "Folder graph is unsupported (Cycle safety boundary)"}}
+    },
+    {
+      "id": "missing_item_type", "category": "safety",
+      "purpose": "Source missing type KeyError is observed after real parent lookup, unlike native explicit malformed-item response.",
+      "boundary": "_get_workspace_items_from_api evaluates get_folder before item['type']; main._handle_unexpected_error has no command field.",
+      "input": {"responses": [
+        {"status": 200, "body": {"value": [{"id": "i", "displayName": "Item", "folderId": "f"}]}},
+        {"status": 200, "body": {"value": [{"id": "f", "displayName": "Root"}]}}
+      ]},
+      "python_expected": {"exit_code": 1, "command": null, "result": {"error_code": "UnexpectedError", "message": "type"}},
+      "expected": {"exit_code": 1, "result": {"error_code": "InvalidResponse", "message": "Fabric returned an item without its type"}}
+    },
+    {
+      "id": "missing_folder_name", "category": "safety",
+      "purpose": "Malformed root folder raises real source KeyError instead of successful empty output.",
+      "boundary": "_extract_root_folders indexes displayName; native typed folder response rejects it explicitly.",
+      "input": {"responses": [
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"value": [{"id": "f"}]}}
+      ]},
+      "python_expected": {"exit_code": 1, "command": null, "result": {"error_code": "UnexpectedError", "message": "displayName"}},
+      "expected": {"exit_code": 1, "result": {"error_code": "InvalidResponse", "message": "Fabric returned an invalid folder response"}}
+    },
+    {
+      "id": "missing_items_value", "category": "safety",
+      "purpose": "Malformed item page has no value key.",
+      "boundary": "Source memstore indexes value and reaches main unexpected error; SDK validates page shape.",
+      "input": {"responses": [{"status": 200, "body": {}}]},
+      "python_expected": {"exit_code": 1, "command": null, "result": {"error_code": "UnexpectedError", "message": "value"}, "requests": ["items"]},
+      "expected": {"exit_code": 1, "result": {"error_code": "InvalidResponse", "message": "Fabric returned an invalid item-list page"}, "requests": ["items"]}
+    },
+    {
+      "id": "missing_folders_value", "category": "safety",
+      "purpose": "Malformed folder page has no value key.",
+      "boundary": "Source folder graph helper raises KeyError before looping; native typed page validation is a distinct safety outcome.",
+      "input": {"responses": [{"status": 200, "body": {"value": []}}, {"status": 200, "body": {}}]},
+      "python_expected": {"exit_code": 1, "command": null, "result": {"error_code": "UnexpectedError", "message": "value"}},
+      "expected": {"exit_code": 1, "result": {"error_code": "InvalidResponse", "message": "Fabric returned an invalid folder response"}}
+    },
+    {
+      "id": "malformed_items_json", "category": "safety",
+      "purpose": "Actual malformed JSON decoder failure is kept distinct from typed native invalid-response.",
+      "boundary": "json.loads in source memstore raises JSONDecodeError with its original message; main strips command.",
+      "input": {"responses": [{"status": 200, "body": "not-json"}]},
+      "python_expected": {"exit_code": 1, "command": null, "result": {"error_code": "UnexpectedError", "message": "Expecting value: line 1 column 1 (char 0)"}, "requests": ["items"]},
+      "expected": {"exit_code": 1, "result": {"error_code": "InvalidResponse", "message": "Fabric returned an invalid item-list page"}, "requests": ["items"]}
+    },
+    {
+      "id": "cancel_before", "category": "safety",
+      "purpose": "Native cancellation before execution performs no credential or HTTP operation.",
+      "boundary": "Python ls has no injected cancellation; its independently scripted ordinary empty result is not cancellation parity.",
+      "input": {"cancellation": "before", "responses": []},
+      "python_input": {"responses": [{"status": 200, "body": {"value": []}}, {"status": 200, "body": {"value": []}}]},
+      "python_expected": {"result": {"data": []}},
+      "expected": {"exit_code": 1, "result": {"error_code": "ReadFailed", "message": "Item operation did not complete"}, "requests": []}
+    },
+    {
+      "id": "item_null_folder", "category": "safety",
+      "purpose": "A present null item folderId still causes lookup and is not treated as an absent/root folderId.",
+      "boundary": "Source get_folder returns None after loading the valid empty folder snapshot; Item.parent then asserts during filtering and main emits its default unexpected-error message. Native explicitly rejects the invalid hierarchy.",
+      "input": {"responses": [
+        {"status": 200, "body": {"value": [{"id": "i", "displayName": "Item", "type": "Notebook", "folderId": null}]}},
+        {"status": 200, "body": {"value": []}}
+      ]},
+      "python_expected": {"exit_code": 1, "command": null, "result": {"error_code": "UnexpectedError", "message": "An error occurred while processing the operation"}},
+      "expected": {"exit_code": 1, "result": {"error_code": "NotSupported", "message": "Folder item parent is unsupported (ItemParent safety boundary)"}}
+    },
+    {
+      "id": "item_orphan_folder", "category": "safety",
+      "purpose": "A dangling item folderId is distinct from a nonprogress folder graph.",
+      "boundary": "The empty source folder graph terminates; missing item parent later raises an assertion through Item.parent. This terminating oddity is observed independently, not silently flattened.",
+      "input": {"responses": [
+        {"status": 200, "body": {"value": [{"id": "i", "displayName": "Item", "type": "Notebook", "folderId": "absent"}]}},
+        {"status": 200, "body": {"value": []}}
+      ]},
+      "python_expected": {"exit_code": 1, "command": null, "result": {"error_code": "UnexpectedError", "message": "An error occurred while processing the operation"}},
+      "expected": {"exit_code": 1, "result": {"error_code": "NotSupported", "message": "Folder item parent is unsupported (ItemParent safety boundary)"}}
+    },
+    {
+      "id": "item_count_limit", "category": "safety",
+      "purpose": "Native item count bound fails atomically before folder loading; Python has no such bound.",
+      "boundary": "SDK max_items is an explicit safety exception, not source filtering.",
+      "input": {"item_limits": {"max_items": 1}, "responses": [
+        {"status": 200, "body": {"value": [{"id": "a", "displayName": "A", "type": "Notebook"}, {"id": "b", "displayName": "B", "type": "Report"}]}},
+        {"status": 200, "body": {"value": []}}
+      ]},
+      "python_expected": {"result": {"data": [{"name": "A.Notebook"}, {"name": "B.Report"}]}},
+      "expected": {"exit_code": 1, "result": {"error_code": "ReadFailed", "message": "Folder operation did not complete"}, "requests": ["items"]}
+    },
+    {
+      "id": "folder_count_limit", "category": "safety",
+      "purpose": "Native folder count bound rejects a two-root page with max_items one.",
+      "boundary": "Python graph helper terminates successfully with both roots; SDK resource bounds are not parity.",
+      "input": {"folder_limits": {"max_items": 1}, "responses": [
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"value": [{"id": "a", "displayName": "A"}, {"id": "b", "displayName": "B"}]}}
+      ]},
+      "python_expected": {"result": {"data": [{"name": "A.Folder"}, {"name": "B.Folder"}]}},
+      "expected": {"exit_code": 1, "result": {"error_code": "ReadFailed", "message": "Folder operation did not complete"}}
+    },
+    {
+      "id": "item_response_bytes", "category": "safety",
+      "purpose": "Real shared HTTP item response body limit is enforced before JSON parsing.",
+      "boundary": "Source has no per-response byte bound; empty page is still longer than one byte.",
+      "input": {"item_limits": {"max_response_bytes": 1}, "responses": [
+        {"status": 200, "body": {"value": []}}, {"status": 200, "body": {"value": []}}
+      ]},
+      "python_expected": {"result": {"data": []}},
+      "expected": {"exit_code": 1, "result": {"error_code": "ReadFailed", "message": "Folder operation did not complete"}, "requests": ["items"]}
+    },
+    {
+      "id": "folder_response_bytes", "category": "safety",
+      "purpose": "Real shared HTTP folder body bound applies after the item page is committed.",
+      "boundary": "Source ordinary folder read succeeds; bounded native transport rejects body bytes.",
+      "input": {"folder_limits": {"max_response_bytes": 1}, "responses": [
+        {"status": 200, "body": {"value": []}}, {"status": 200, "body": {"value": []}}
+      ]},
+      "python_expected": {"result": {"data": []}},
+      "expected": {"exit_code": 1, "result": {"error_code": "ReadFailed", "message": "Folder operation did not complete"}}
+    },
+    {
+      "id": "item_page_limit", "category": "safety",
+      "purpose": "Item max_pages one prevents a second token request and subsequent folder read.",
+      "boundary": "Source recursively aggregates both item pages with no page bound; native bound is separate.",
+      "input": {"item_limits": {"max_pages": 1}, "responses": [
+        {"status": 200, "body": {"value": [], "continuationToken": "next"}},
+        {"status": 200, "body": {"value": [{"id": "a", "displayName": "A", "type": "Notebook"}]}},
+        {"status": 200, "body": {"value": []}}
+      ]},
+      "python_expected": {"result": {"data": [{"name": "A.Notebook"}]}, "requests": ["items", "items?continuationToken=next", "folders?recursive=True"]},
+      "expected": {"exit_code": 1, "result": {"error_code": "ReadFailed", "message": "Folder operation did not complete"}, "requests": ["items"]}
+    },
+    {
+      "id": "folder_page_limit", "category": "safety",
+      "purpose": "Folder max_pages one prevents a second page but does not erase the item request.",
+      "boundary": "Actual source recursive API aggregation is observed separately from native bounded traversal.",
+      "input": {"folder_limits": {"max_pages": 1}, "responses": [
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"value": [], "continuationToken": "next"}},
+        {"status": 200, "body": {"value": [{"id": "a", "displayName": "A"}]}}
+      ]},
+      "python_expected": {"result": {"data": [{"name": "A.Folder"}]}, "requests": ["items", "folders?recursive=True", "folders?recursive=True&continuationToken=next"]},
+      "expected": {"exit_code": 1, "result": {"error_code": "ReadFailed", "message": "Folder operation did not complete"}}
+    },
+    {
+      "id": "foreign_items_continuation", "category": "safety",
+      "purpose": "Foreign active item continuation URI is not followed or silently equated with source token-only paging.",
+      "boundary": "_handle_successful_response ignores continuationUri and follows token at the original collection; SDK rejects foreign hints before another request.",
+      "input": {"responses": [
+        {"status": 200, "body": {"value": [], "continuationToken": "next", "continuationUri": "https://outside.invalid/private"}},
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"value": []}}
+      ]},
+      "python_expected": {"result": {"data": []}, "requests": ["items", "items?continuationToken=next", "folders?recursive=True"]},
+      "expected": {"exit_code": 1, "result": {"error_code": "ReadFailed", "message": "Folder operation did not complete"}, "requests": ["items"]}
+    },
+    {
+      "id": "foreign_folders_continuation", "category": "safety",
+      "purpose": "Foreign folder continuation hints are rejected by SDK, not used as network destinations.",
+      "boundary": "Source ignores URI and requests next token with recursive=True; native rejection is safety, not exact requests.",
+      "input": {"responses": [
+        {"status": 200, "body": {"value": []}},
+        {"status": 200, "body": {"value": [], "continuationToken": "next", "continuationUri": "https://outside.invalid/private"}},
+        {"status": 200, "body": {"value": []}}
+      ]},
+      "python_expected": {"result": {"data": []}, "requests": ["items", "folders?recursive=True", "folders?recursive=True&continuationToken=next"]},
+      "expected": {"exit_code": 1, "result": {"error_code": "ReadFailed", "message": "Folder operation did not complete"}}
+    },
+    {
+      "id": "cache_disabled_repeat", "category": "snapshot-difference",
+      "purpose": "Disabled Python cache repeats folder loading per item parent lookup and again for root listing.",
+      "boundary": "Source get_folder calls get_workspace_folders each time with FAB_CACHE_ENABLED=false. Native command caches one SDK snapshot. Requests differ and this is never full exact parity.",
+      "python_cache_enabled": false,
+      "input": {"responses": [
+        {"status": 200, "body": {"value": [{"id": "i", "displayName": "Item", "type": "Notebook", "folderId": "f"}]}},
+        {"status": 200, "body": {"value": [{"id": "f", "displayName": "Root"}]}}
+      ]},
+      "python_input": {"responses": [
+        {"status": 200, "body": {"value": [{"id": "i", "displayName": "Item", "type": "Notebook", "folderId": "f"}]}},
+        {"status": 200, "body": {"value": [{"id": "f", "displayName": "Root"}]}},
+        {"status": 200, "body": {"value": [{"id": "f", "displayName": "Root"}]}}
+      ]},
+      "python_expected": {"result": {"data": [{"name": "Root.Folder"}]}, "requests": ["items", "folders?recursive=True", "folders?recursive=True"]},
+      "expected": {"result": {"data": [{"name": "Root.Folder"}]}}
+    },
+    {
+      "id": "cache_disabled_change", "category": "snapshot-difference",
+      "purpose": "Changing service responses expose the coherent single-command snapshot exception in both requests and output.",
+      "boundary": "With cache disabled Python's root listing reloads folders after parent assignment; native retains the first coherent folder snapshot.",
+      "python_cache_enabled": false,
+      "input": {"responses": [
+        {"status": 200, "body": {"value": [{"id": "i", "displayName": "Item", "type": "Notebook", "folderId": "f"}]}},
+        {"status": 200, "body": {"value": [{"id": "f", "displayName": "Before"}]}}
+      ]},
+      "python_input": {"responses": [
+        {"status": 200, "body": {"value": [{"id": "i", "displayName": "Item", "type": "Notebook", "folderId": "f"}]}},
+        {"status": 200, "body": {"value": [{"id": "f", "displayName": "Before"}]}},
+        {"status": 200, "body": {"value": [{"id": "f", "displayName": "After"}]}}
+      ]},
+      "python_expected": {"result": {"data": [{"name": "After.Folder"}]}, "requests": ["items", "folders?recursive=True", "folders?recursive=True"]},
+      "expected": {"result": {"data": [{"name": "Before.Folder"}]}}
+    },
+    {
+      "id": "current_snapshot_name", "category": "snapshot-difference",
+      "purpose": "Preloaded current folder name differs from the service snapshot although ID is equal.",
+      "boundary": "Source Folder.__eq__ recursively compares id/name/type/parents; immutable native context selects current folder by stable ID against its single snapshot. This is an explicit read-host snapshot exception.",
+      "input": {
+        "current_folders": [{"id": "f", "displayName": "Pinned"}],
+        "responses": [
+          {"status": 200, "body": {"value": [{"id": "i", "displayName": "Item", "type": "Notebook", "folderId": "f"}]}},
+          {"status": 200, "body": {"value": [{"id": "f", "displayName": "Service"}]}}
+        ]
+      },
+      "python_expected": {"result": {"data": []}},
+      "expected": {"result": {"data": [{"name": "Item.Notebook"}]}}
+    },
+    {
+      "id": "query_wide_sum", "category": "unsupported",
+      "purpose": "Do not relax the existing native over-i64 numeric sum boundary to make folder commands appear exact.",
+      "boundary": "Unchanged query oracle sum-int-over-i64 is unsupported. Source Python integers are unbounded; real native PythonQuery must return its existing InvalidInput failure.",
+      "input": {"command": ["ls", "--query", "sum(`[9223372036854775807,1]`)", "--output_format", "json"], "responses": [
+        {"status": 200, "body": {"value": []}}, {"status": 200, "body": {"value": []}}
+      ]},
+      "python_expected": {"result": {"data": ["9223372036854775808"]}},
+      "expected": {"exit_code": 1, "result": {"error_code": "InvalidInput", "message": "Invalid jmespath query (https://jmespath.org)"}}
+    },
+    {
+      "id": "query_provider_disabled", "category": "unsupported",
+      "purpose": "Explicitly selecting NoQuery cannot silently return unprojected workspace rows or substitute the real provider.",
+      "boundary": "The native host supports config.projection='none'; source Python has no corresponding provider-disable switch and still executes the actual scalar query. This independently declared configuration difference is not full exact parity.",
+      "input": {
+        "command": ["ls", "--query", "length(@)", "--output_format", "json"],
+        "config": {"projection": "none"},
+        "responses": [{"status": 200, "body": {"value": []}}, {"status": 200, "body": {"value": []}}]
+      },
+      "python_expected": {"result": {"data": ["0"]}},
+      "expected": {"exit_code": 1, "result": {"error_code": "NotSupported", "message": "Query projection and GET path discovery require a configured projection provider"}}
+    },
+    {
+      "id": "query_big_literal", "category": "unsupported",
+      "purpose": "The unchanged out-of-u64 literal limitation remains visible through real command projection.",
+      "boundary": "Unchanged query oracle unsupported-big-int-literal is not folder parity; no custom query substitution or limit widening is allowed.",
+      "input": {"command": ["ls", "--query", "`18446744073709551616`", "--output_format", "json"], "responses": [
+        {"status": 200, "body": {"value": []}}, {"status": 200, "body": {"value": []}}
+      ]},
+      "python_expected": {"result": {"data": ["18446744073709551616"]}},
+      "expected": {"exit_code": 1, "result": {"error_code": "InvalidInput", "message": "Invalid jmespath query (https://jmespath.org)"}}
+    }
+  ]
+}

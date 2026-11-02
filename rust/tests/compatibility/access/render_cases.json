@@ -1,0 +1,2972 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "kind": "acl",
+      "name": "workspace-ls-default-text",
+      "resource": "workspace",
+      "command": "ls",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "stdout": "acl      identity                type\n-------------------------------------\nAdmin    Team                    Group\nViewer   alice@example.invalid   User\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "acl      identity                type\n-------------------------------------\nAdmin    Team                    Group\nViewer   alice@example.invalid   User\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "workspace-ls-default-json",
+      "resource": "workspace",
+      "command": "ls",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"acl\": \"Admin\",\n                \"identity\": \"Team\",\n                \"type\": \"Group\"\n            },\n            {\n                \"acl\": \"Viewer\",\n                \"identity\": \"alice@example.invalid\",\n                \"type\": \"User\"\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"acl\": \"Admin\",\n                \"identity\": \"Team\",\n                \"type\": \"Group\"\n            },\n            {\n                \"acl\": \"Viewer\",\n                \"identity\": \"alice@example.invalid\",\n                \"type\": \"User\"\n            }\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "workspace-ls-long-text",
+      "resource": "workspace",
+      "command": "ls",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": true,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "stdout": "acl      identity   type     objectId   name\n--------------------------------------------\nAdmin    Team       Group    assignment Team\n                             -a\nViewer   alice@exam User     assignment Alice\n         ple.invali          -b\n         d\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "acl      identity   type     objectId   name\n--------------------------------------------\nAdmin    Team       Group    assignment Team\n                             -a\nViewer   alice@exam User     assignment Alice\n         ple.invali          -b\n         d\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "workspace-ls-long-json",
+      "resource": "workspace",
+      "command": "ls",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": true,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"acl\": \"Admin\",\n                \"identity\": \"Team\",\n                \"type\": \"Group\",\n                \"objectId\": \"assignment-a\",\n                \"name\": \"Team\"\n            },\n            {\n                \"acl\": \"Viewer\",\n                \"identity\": \"alice@example.invalid\",\n                \"type\": \"User\",\n                \"objectId\": \"assignment-b\",\n                \"name\": \"Alice\"\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"acl\": \"Admin\",\n                \"identity\": \"Team\",\n                \"type\": \"Group\",\n                \"objectId\": \"assignment-a\",\n                \"name\": \"Team\"\n            },\n            {\n                \"acl\": \"Viewer\",\n                \"identity\": \"alice@example.invalid\",\n                \"type\": \"User\",\n                \"objectId\": \"assignment-b\",\n                \"name\": \"Alice\"\n            }\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "workspace-get-.-text",
+      "resource": "workspace",
+      "command": "get",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": ".",
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "stdout": "[\n  {\n    \"id\": \"assignment-b\",\n    \"role\": \"Viewer\",\n    \"principal\": {\n      \"id\": \"object\",\n      \"displayName\": \"Alice\",\n      \"type\": \"User\",\n      \"userDetails\": {\n        \"userPrincipalName\": \"alice@example.invalid\"\n      }\n    }\n  },\n  {\n    \"id\": \"assignment-a\",\n    \"role\": \"Admin\",\n    \"principal\": {\n      \"id\": \"group\",\n      \"displayName\": \"Team\",\n      \"type\": \"Group\",\n      \"groupDetails\": {\n        \"groupType\": \"SecurityGroup\"\n      }\n    }\n  }\n]\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "[\n  {\n    \"id\": \"assignment-b\",\n    \"role\": \"Viewer\",\n    \"principal\": {\n      \"id\": \"object\",\n      \"displayName\": \"Alice\",\n      \"type\": \"User\",\n      \"userDetails\": {\n        \"userPrincipalName\": \"alice@example.invalid\"\n      }\n    }\n  },\n  {\n    \"id\": \"assignment-a\",\n    \"role\": \"Admin\",\n    \"principal\": {\n      \"id\": \"group\",\n      \"displayName\": \"Team\",\n      \"type\": \"Group\",\n      \"groupDetails\": {\n        \"groupType\": \"SecurityGroup\"\n      }\n    }\n  }\n]\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "workspace-get-.-json",
+      "resource": "workspace",
+      "command": "get",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": ".",
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"Viewer\",\n                \"principal\": {\n                    \"id\": \"object\",\n                    \"displayName\": \"Alice\",\n                    \"type\": \"User\",\n                    \"userDetails\": {\n                        \"userPrincipalName\": \"alice@example.invalid\"\n                    }\n                }\n            },\n            {\n                \"id\": \"assignment-a\",\n                \"role\": \"Admin\",\n                \"principal\": {\n                    \"id\": \"group\",\n                    \"displayName\": \"Team\",\n                    \"type\": \"Group\",\n                    \"groupDetails\": {\n                        \"groupType\": \"SecurityGroup\"\n                    }\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"Viewer\",\n                \"principal\": {\n                    \"id\": \"object\",\n                    \"displayName\": \"Alice\",\n                    \"type\": \"User\",\n                    \"userDetails\": {\n                        \"userPrincipalName\": \"alice@example.invalid\"\n                    }\n                }\n            },\n            {\n                \"id\": \"assignment-a\",\n                \"role\": \"Admin\",\n                \"principal\": {\n                    \"id\": \"group\",\n                    \"displayName\": \"Team\",\n                    \"type\": \"Group\",\n                    \"groupDetails\": {\n                        \"groupType\": \"SecurityGroup\"\n                    }\n                }\n            }\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "workspace-get-default-text",
+      "resource": "workspace",
+      "command": "get",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "stdout": "[0].id\n[0].role\n[0].principal.id\n[0].principal.displayName\n[0].principal.type\n[0].principal.userDetails.userPrincipalName\n[1].id\n[1].role\n[1].principal.id\n[1].principal.displayName\n[1].principal.type\n[1].principal.groupDetails.groupType\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "[0].id\n[0].role\n[0].principal.id\n[0].principal.displayName\n[0].principal.type\n[0].principal.userDetails.userPrincipalName\n[1].id\n[1].role\n[1].principal.id\n[1].principal.displayName\n[1].principal.type\n[1].principal.groupDetails.groupType\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "workspace-get-default-json",
+      "resource": "workspace",
+      "command": "get",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "Viewer",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Admin",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            \"[0].id\",\n            \"[0].role\",\n            \"[0].principal.id\",\n            \"[0].principal.displayName\",\n            \"[0].principal.type\",\n            \"[0].principal.userDetails.userPrincipalName\",\n            \"[1].id\",\n            \"[1].role\",\n            \"[1].principal.id\",\n            \"[1].principal.displayName\",\n            \"[1].principal.type\",\n            \"[1].principal.groupDetails.groupType\"\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            \"[0].id\",\n            \"[0].role\",\n            \"[0].principal.id\",\n            \"[0].principal.displayName\",\n            \"[0].principal.type\",\n            \"[0].principal.userDetails.userPrincipalName\",\n            \"[1].id\",\n            \"[1].role\",\n            \"[1].principal.id\",\n            \"[1].principal.displayName\",\n            \"[1].principal.type\",\n            \"[1].principal.groupDetails.groupType\"\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "workspace-empty-ls-text",
+      "resource": "workspace",
+      "command": "ls",
+      "body": {
+        "value": []
+      },
+      "long": false,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "stdout": "",
+        "stderr": "",
+        "events": [],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "workspace-empty-ls-json",
+      "resource": "workspace",
+      "command": "ls",
+      "body": {
+        "value": []
+      },
+      "long": false,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments"
+          }
+        ],
+        "stdout": "",
+        "stderr": "",
+        "events": [],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "gateway-ls-default-text",
+      "resource": "gateway",
+      "command": "ls",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "stdout": "role    principalId   principalType\n-----------------------------------\nOwner   group         Group\nUser    object        User\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "role    principalId   principalType\n-----------------------------------\nOwner   group         Group\nUser    object        User\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "gateway-ls-default-json",
+      "resource": "gateway",
+      "command": "ls",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"role\": \"Owner\",\n                \"principalId\": \"group\",\n                \"principalType\": \"Group\"\n            },\n            {\n                \"role\": \"User\",\n                \"principalId\": \"object\",\n                \"principalType\": \"User\"\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"role\": \"Owner\",\n                \"principalId\": \"group\",\n                \"principalType\": \"Group\"\n            },\n            {\n                \"role\": \"User\",\n                \"principalId\": \"object\",\n                \"principalType\": \"User\"\n            }\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "gateway-ls-long-text",
+      "resource": "gateway",
+      "command": "ls",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": true,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "stdout": "id           role     principalId principalType\n-----------------------------------------------\nassignment-a Owner    group       Group\nassignment-b User     object      User\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "id           role     principalId principalType\n-----------------------------------------------\nassignment-a Owner    group       Group\nassignment-b User     object      User\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "gateway-ls-long-json",
+      "resource": "gateway",
+      "command": "ls",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": true,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-a\",\n                \"role\": \"Owner\",\n                \"principalId\": \"group\",\n                \"principalType\": \"Group\"\n            },\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"User\",\n                \"principalId\": \"object\",\n                \"principalType\": \"User\"\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-a\",\n                \"role\": \"Owner\",\n                \"principalId\": \"group\",\n                \"principalType\": \"Group\"\n            },\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"User\",\n                \"principalId\": \"object\",\n                \"principalType\": \"User\"\n            }\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "gateway-get-.-text",
+      "resource": "gateway",
+      "command": "get",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": ".",
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "stdout": "[\n  {\n    \"id\": \"assignment-b\",\n    \"role\": \"User\",\n    \"principal\": {\n      \"id\": \"object\",\n      \"displayName\": \"Alice\",\n      \"type\": \"User\",\n      \"userDetails\": {\n        \"userPrincipalName\": \"alice@example.invalid\"\n      }\n    }\n  },\n  {\n    \"id\": \"assignment-a\",\n    \"role\": \"Owner\",\n    \"principal\": {\n      \"id\": \"group\",\n      \"displayName\": \"Team\",\n      \"type\": \"Group\",\n      \"groupDetails\": {\n        \"groupType\": \"SecurityGroup\"\n      }\n    }\n  }\n]\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "[\n  {\n    \"id\": \"assignment-b\",\n    \"role\": \"User\",\n    \"principal\": {\n      \"id\": \"object\",\n      \"displayName\": \"Alice\",\n      \"type\": \"User\",\n      \"userDetails\": {\n        \"userPrincipalName\": \"alice@example.invalid\"\n      }\n    }\n  },\n  {\n    \"id\": \"assignment-a\",\n    \"role\": \"Owner\",\n    \"principal\": {\n      \"id\": \"group\",\n      \"displayName\": \"Team\",\n      \"type\": \"Group\",\n      \"groupDetails\": {\n        \"groupType\": \"SecurityGroup\"\n      }\n    }\n  }\n]\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "gateway-get-.-json",
+      "resource": "gateway",
+      "command": "get",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": ".",
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"User\",\n                \"principal\": {\n                    \"id\": \"object\",\n                    \"displayName\": \"Alice\",\n                    \"type\": \"User\",\n                    \"userDetails\": {\n                        \"userPrincipalName\": \"alice@example.invalid\"\n                    }\n                }\n            },\n            {\n                \"id\": \"assignment-a\",\n                \"role\": \"Owner\",\n                \"principal\": {\n                    \"id\": \"group\",\n                    \"displayName\": \"Team\",\n                    \"type\": \"Group\",\n                    \"groupDetails\": {\n                        \"groupType\": \"SecurityGroup\"\n                    }\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"User\",\n                \"principal\": {\n                    \"id\": \"object\",\n                    \"displayName\": \"Alice\",\n                    \"type\": \"User\",\n                    \"userDetails\": {\n                        \"userPrincipalName\": \"alice@example.invalid\"\n                    }\n                }\n            },\n            {\n                \"id\": \"assignment-a\",\n                \"role\": \"Owner\",\n                \"principal\": {\n                    \"id\": \"group\",\n                    \"displayName\": \"Team\",\n                    \"type\": \"Group\",\n                    \"groupDetails\": {\n                        \"groupType\": \"SecurityGroup\"\n                    }\n                }\n            }\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "gateway-get-default-text",
+      "resource": "gateway",
+      "command": "get",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "stdout": "[0].id\n[0].role\n[0].principal.id\n[0].principal.displayName\n[0].principal.type\n[0].principal.userDetails.userPrincipalName\n[1].id\n[1].role\n[1].principal.id\n[1].principal.displayName\n[1].principal.type\n[1].principal.groupDetails.groupType\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "[0].id\n[0].role\n[0].principal.id\n[0].principal.displayName\n[0].principal.type\n[0].principal.userDetails.userPrincipalName\n[1].id\n[1].role\n[1].principal.id\n[1].principal.displayName\n[1].principal.type\n[1].principal.groupDetails.groupType\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "gateway-get-default-json",
+      "resource": "gateway",
+      "command": "get",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            \"[0].id\",\n            \"[0].role\",\n            \"[0].principal.id\",\n            \"[0].principal.displayName\",\n            \"[0].principal.type\",\n            \"[0].principal.userDetails.userPrincipalName\",\n            \"[1].id\",\n            \"[1].role\",\n            \"[1].principal.id\",\n            \"[1].principal.displayName\",\n            \"[1].principal.type\",\n            \"[1].principal.groupDetails.groupType\"\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            \"[0].id\",\n            \"[0].role\",\n            \"[0].principal.id\",\n            \"[0].principal.displayName\",\n            \"[0].principal.type\",\n            \"[0].principal.userDetails.userPrincipalName\",\n            \"[1].id\",\n            \"[1].role\",\n            \"[1].principal.id\",\n            \"[1].principal.displayName\",\n            \"[1].principal.type\",\n            \"[1].principal.groupDetails.groupType\"\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "gateway-empty-ls-text",
+      "resource": "gateway",
+      "command": "ls",
+      "body": {
+        "value": []
+      },
+      "long": false,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "stdout": "",
+        "stderr": "",
+        "events": [],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "gateway-empty-ls-json",
+      "resource": "gateway",
+      "command": "ls",
+      "body": {
+        "value": []
+      },
+      "long": false,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/gateways/resource/roleAssignments"
+          }
+        ],
+        "stdout": "",
+        "stderr": "",
+        "events": [],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "connection-ls-default-text",
+      "resource": "connection",
+      "command": "ls",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "stdout": "role    principalId   principalType\n-----------------------------------\nOwner   group         Group\nUser    object        User\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "role    principalId   principalType\n-----------------------------------\nOwner   group         Group\nUser    object        User\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "connection-ls-default-json",
+      "resource": "connection",
+      "command": "ls",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"role\": \"Owner\",\n                \"principalId\": \"group\",\n                \"principalType\": \"Group\"\n            },\n            {\n                \"role\": \"User\",\n                \"principalId\": \"object\",\n                \"principalType\": \"User\"\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"role\": \"Owner\",\n                \"principalId\": \"group\",\n                \"principalType\": \"Group\"\n            },\n            {\n                \"role\": \"User\",\n                \"principalId\": \"object\",\n                \"principalType\": \"User\"\n            }\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "connection-ls-long-text",
+      "resource": "connection",
+      "command": "ls",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": true,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "stdout": "id           role     principalId principalType\n-----------------------------------------------\nassignment-a Owner    group       Group\nassignment-b User     object      User\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "id           role     principalId principalType\n-----------------------------------------------\nassignment-a Owner    group       Group\nassignment-b User     object      User\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "connection-ls-long-json",
+      "resource": "connection",
+      "command": "ls",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": true,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-a\",\n                \"role\": \"Owner\",\n                \"principalId\": \"group\",\n                \"principalType\": \"Group\"\n            },\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"User\",\n                \"principalId\": \"object\",\n                \"principalType\": \"User\"\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-a\",\n                \"role\": \"Owner\",\n                \"principalId\": \"group\",\n                \"principalType\": \"Group\"\n            },\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"User\",\n                \"principalId\": \"object\",\n                \"principalType\": \"User\"\n            }\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "connection-get-.-text",
+      "resource": "connection",
+      "command": "get",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": ".",
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "stdout": "[\n  {\n    \"id\": \"assignment-b\",\n    \"role\": \"User\",\n    \"principal\": {\n      \"id\": \"object\",\n      \"displayName\": \"Alice\",\n      \"type\": \"User\",\n      \"userDetails\": {\n        \"userPrincipalName\": \"alice@example.invalid\"\n      }\n    }\n  },\n  {\n    \"id\": \"assignment-a\",\n    \"role\": \"Owner\",\n    \"principal\": {\n      \"id\": \"group\",\n      \"displayName\": \"Team\",\n      \"type\": \"Group\",\n      \"groupDetails\": {\n        \"groupType\": \"SecurityGroup\"\n      }\n    }\n  }\n]\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "[\n  {\n    \"id\": \"assignment-b\",\n    \"role\": \"User\",\n    \"principal\": {\n      \"id\": \"object\",\n      \"displayName\": \"Alice\",\n      \"type\": \"User\",\n      \"userDetails\": {\n        \"userPrincipalName\": \"alice@example.invalid\"\n      }\n    }\n  },\n  {\n    \"id\": \"assignment-a\",\n    \"role\": \"Owner\",\n    \"principal\": {\n      \"id\": \"group\",\n      \"displayName\": \"Team\",\n      \"type\": \"Group\",\n      \"groupDetails\": {\n        \"groupType\": \"SecurityGroup\"\n      }\n    }\n  }\n]\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "connection-get-.-json",
+      "resource": "connection",
+      "command": "get",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": ".",
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"User\",\n                \"principal\": {\n                    \"id\": \"object\",\n                    \"displayName\": \"Alice\",\n                    \"type\": \"User\",\n                    \"userDetails\": {\n                        \"userPrincipalName\": \"alice@example.invalid\"\n                    }\n                }\n            },\n            {\n                \"id\": \"assignment-a\",\n                \"role\": \"Owner\",\n                \"principal\": {\n                    \"id\": \"group\",\n                    \"displayName\": \"Team\",\n                    \"type\": \"Group\",\n                    \"groupDetails\": {\n                        \"groupType\": \"SecurityGroup\"\n                    }\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"assignment-b\",\n                \"role\": \"User\",\n                \"principal\": {\n                    \"id\": \"object\",\n                    \"displayName\": \"Alice\",\n                    \"type\": \"User\",\n                    \"userDetails\": {\n                        \"userPrincipalName\": \"alice@example.invalid\"\n                    }\n                }\n            },\n            {\n                \"id\": \"assignment-a\",\n                \"role\": \"Owner\",\n                \"principal\": {\n                    \"id\": \"group\",\n                    \"displayName\": \"Team\",\n                    \"type\": \"Group\",\n                    \"groupDetails\": {\n                        \"groupType\": \"SecurityGroup\"\n                    }\n                }\n            }\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "connection-get-default-text",
+      "resource": "connection",
+      "command": "get",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "stdout": "[0].id\n[0].role\n[0].principal.id\n[0].principal.displayName\n[0].principal.type\n[0].principal.userDetails.userPrincipalName\n[1].id\n[1].role\n[1].principal.id\n[1].principal.displayName\n[1].principal.type\n[1].principal.groupDetails.groupType\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "[0].id\n[0].role\n[0].principal.id\n[0].principal.displayName\n[0].principal.type\n[0].principal.userDetails.userPrincipalName\n[1].id\n[1].role\n[1].principal.id\n[1].principal.displayName\n[1].principal.type\n[1].principal.groupDetails.groupType\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "connection-get-default-json",
+      "resource": "connection",
+      "command": "get",
+      "body": {
+        "value": [
+          {
+            "id": "assignment-b",
+            "role": "User",
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            }
+          },
+          {
+            "id": "assignment-a",
+            "role": "Owner",
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            \"[0].id\",\n            \"[0].role\",\n            \"[0].principal.id\",\n            \"[0].principal.displayName\",\n            \"[0].principal.type\",\n            \"[0].principal.userDetails.userPrincipalName\",\n            \"[1].id\",\n            \"[1].role\",\n            \"[1].principal.id\",\n            \"[1].principal.displayName\",\n            \"[1].principal.type\",\n            \"[1].principal.groupDetails.groupType\"\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            \"[0].id\",\n            \"[0].role\",\n            \"[0].principal.id\",\n            \"[0].principal.displayName\",\n            \"[0].principal.type\",\n            \"[0].principal.userDetails.userPrincipalName\",\n            \"[1].id\",\n            \"[1].role\",\n            \"[1].principal.id\",\n            \"[1].principal.displayName\",\n            \"[1].principal.type\",\n            \"[1].principal.groupDetails.groupType\"\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "connection-empty-ls-text",
+      "resource": "connection",
+      "command": "ls",
+      "body": {
+        "value": []
+      },
+      "long": false,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "stdout": "",
+        "stderr": "",
+        "events": [],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "connection-empty-ls-json",
+      "resource": "connection",
+      "command": "ls",
+      "body": {
+        "value": []
+      },
+      "long": false,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/connections/resource/roleAssignments"
+          }
+        ],
+        "stdout": "",
+        "stderr": "",
+        "events": [],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "item-ls-default-text",
+      "resource": "item",
+      "command": "ls",
+      "body": {
+        "accessDetails": [
+          {
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read",
+                "Write"
+              ]
+            }
+          },
+          {
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read"
+              ]
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "stdout": "acl               identity              type\n--------------------------------------------\n['Read']          SecurityGroup         Group\n['Read', 'Write'] alice@example.invalid User\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "acl               identity              type\n--------------------------------------------\n['Read']          SecurityGroup         Group\n['Read', 'Write'] alice@example.invalid User\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "item-ls-default-json",
+      "resource": "item",
+      "command": "ls",
+      "body": {
+        "accessDetails": [
+          {
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read",
+                "Write"
+              ]
+            }
+          },
+          {
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read"
+              ]
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"acl\": [\n                    \"Read\"\n                ],\n                \"identity\": \"SecurityGroup\",\n                \"type\": \"Group\"\n            },\n            {\n                \"acl\": [\n                    \"Read\",\n                    \"Write\"\n                ],\n                \"identity\": \"alice@example.invalid\",\n                \"type\": \"User\"\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"acl\": [\n                    \"Read\"\n                ],\n                \"identity\": \"SecurityGroup\",\n                \"type\": \"Group\"\n            },\n            {\n                \"acl\": [\n                    \"Read\",\n                    \"Write\"\n                ],\n                \"identity\": \"alice@example.invalid\",\n                \"type\": \"User\"\n            }\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "item-ls-long-text",
+      "resource": "item",
+      "command": "ls",
+      "body": {
+        "accessDetails": [
+          {
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read",
+                "Write"
+              ]
+            }
+          },
+          {
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read"
+              ]
+            }
+          }
+        ]
+      },
+      "long": true,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "stdout": "id       name     acl        identity   type\n--------------------------------------------\ngroup    Team     ['Read']   SecurityGr Group\n                             oup\nobject   Alice    ['Read', ' alice@exam User\n                  Write']    ple.invali\n                             d\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "id       name     acl        identity   type\n--------------------------------------------\ngroup    Team     ['Read']   SecurityGr Group\n                             oup\nobject   Alice    ['Read', ' alice@exam User\n                  Write']    ple.invali\n                             d\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "item-ls-long-json",
+      "resource": "item",
+      "command": "ls",
+      "body": {
+        "accessDetails": [
+          {
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read",
+                "Write"
+              ]
+            }
+          },
+          {
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read"
+              ]
+            }
+          }
+        ]
+      },
+      "long": true,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"group\",\n                \"name\": \"Team\",\n                \"acl\": [\n                    \"Read\"\n                ],\n                \"identity\": \"SecurityGroup\",\n                \"type\": \"Group\"\n            },\n            {\n                \"id\": \"object\",\n                \"name\": \"Alice\",\n                \"acl\": [\n                    \"Read\",\n                    \"Write\"\n                ],\n                \"identity\": \"alice@example.invalid\",\n                \"type\": \"User\"\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"id\": \"group\",\n                \"name\": \"Team\",\n                \"acl\": [\n                    \"Read\"\n                ],\n                \"identity\": \"SecurityGroup\",\n                \"type\": \"Group\"\n            },\n            {\n                \"id\": \"object\",\n                \"name\": \"Alice\",\n                \"acl\": [\n                    \"Read\",\n                    \"Write\"\n                ],\n                \"identity\": \"alice@example.invalid\",\n                \"type\": \"User\"\n            }\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "item-get-.-text",
+      "resource": "item",
+      "command": "get",
+      "body": {
+        "accessDetails": [
+          {
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read",
+                "Write"
+              ]
+            }
+          },
+          {
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read"
+              ]
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": ".",
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "stdout": "[\n  {\n    \"principal\": {\n      \"id\": \"object\",\n      \"displayName\": \"Alice\",\n      \"type\": \"User\",\n      \"userDetails\": {\n        \"userPrincipalName\": \"alice@example.invalid\"\n      }\n    },\n    \"itemAccessDetails\": {\n      \"permissions\": [\n        \"Read\",\n        \"Write\"\n      ]\n    }\n  },\n  {\n    \"principal\": {\n      \"id\": \"group\",\n      \"displayName\": \"Team\",\n      \"type\": \"Group\",\n      \"groupDetails\": {\n        \"groupType\": \"SecurityGroup\"\n      }\n    },\n    \"itemAccessDetails\": {\n      \"permissions\": [\n        \"Read\"\n      ]\n    }\n  }\n]\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "[\n  {\n    \"principal\": {\n      \"id\": \"object\",\n      \"displayName\": \"Alice\",\n      \"type\": \"User\",\n      \"userDetails\": {\n        \"userPrincipalName\": \"alice@example.invalid\"\n      }\n    },\n    \"itemAccessDetails\": {\n      \"permissions\": [\n        \"Read\",\n        \"Write\"\n      ]\n    }\n  },\n  {\n    \"principal\": {\n      \"id\": \"group\",\n      \"displayName\": \"Team\",\n      \"type\": \"Group\",\n      \"groupDetails\": {\n        \"groupType\": \"SecurityGroup\"\n      }\n    },\n    \"itemAccessDetails\": {\n      \"permissions\": [\n        \"Read\"\n      ]\n    }\n  }\n]\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "item-get-.-json",
+      "resource": "item",
+      "command": "get",
+      "body": {
+        "accessDetails": [
+          {
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read",
+                "Write"
+              ]
+            }
+          },
+          {
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read"
+              ]
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": ".",
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"principal\": {\n                    \"id\": \"object\",\n                    \"displayName\": \"Alice\",\n                    \"type\": \"User\",\n                    \"userDetails\": {\n                        \"userPrincipalName\": \"alice@example.invalid\"\n                    }\n                },\n                \"itemAccessDetails\": {\n                    \"permissions\": [\n                        \"Read\",\n                        \"Write\"\n                    ]\n                }\n            },\n            {\n                \"principal\": {\n                    \"id\": \"group\",\n                    \"displayName\": \"Team\",\n                    \"type\": \"Group\",\n                    \"groupDetails\": {\n                        \"groupType\": \"SecurityGroup\"\n                    }\n                },\n                \"itemAccessDetails\": {\n                    \"permissions\": [\n                        \"Read\"\n                    ]\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"principal\": {\n                    \"id\": \"object\",\n                    \"displayName\": \"Alice\",\n                    \"type\": \"User\",\n                    \"userDetails\": {\n                        \"userPrincipalName\": \"alice@example.invalid\"\n                    }\n                },\n                \"itemAccessDetails\": {\n                    \"permissions\": [\n                        \"Read\",\n                        \"Write\"\n                    ]\n                }\n            },\n            {\n                \"principal\": {\n                    \"id\": \"group\",\n                    \"displayName\": \"Team\",\n                    \"type\": \"Group\",\n                    \"groupDetails\": {\n                        \"groupType\": \"SecurityGroup\"\n                    }\n                },\n                \"itemAccessDetails\": {\n                    \"permissions\": [\n                        \"Read\"\n                    ]\n                }\n            }\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "item-get-default-text",
+      "resource": "item",
+      "command": "get",
+      "body": {
+        "accessDetails": [
+          {
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read",
+                "Write"
+              ]
+            }
+          },
+          {
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read"
+              ]
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "stdout": "[0].principal.id\n[0].principal.displayName\n[0].principal.type\n[0].principal.userDetails.userPrincipalName\n[0].itemAccessDetails.permissions[0]\n[0].itemAccessDetails.permissions[1]\n[1].principal.id\n[1].principal.displayName\n[1].principal.type\n[1].principal.groupDetails.groupType\n[1].itemAccessDetails.permissions[0]\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "[0].principal.id\n[0].principal.displayName\n[0].principal.type\n[0].principal.userDetails.userPrincipalName\n[0].itemAccessDetails.permissions[0]\n[0].itemAccessDetails.permissions[1]\n[1].principal.id\n[1].principal.displayName\n[1].principal.type\n[1].principal.groupDetails.groupType\n[1].itemAccessDetails.permissions[0]\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "item-get-default-json",
+      "resource": "item",
+      "command": "get",
+      "body": {
+        "accessDetails": [
+          {
+            "principal": {
+              "id": "object",
+              "displayName": "Alice",
+              "type": "User",
+              "userDetails": {
+                "userPrincipalName": "alice@example.invalid"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read",
+                "Write"
+              ]
+            }
+          },
+          {
+            "principal": {
+              "id": "group",
+              "displayName": "Team",
+              "type": "Group",
+              "groupDetails": {
+                "groupType": "SecurityGroup"
+              }
+            },
+            "itemAccessDetails": {
+              "permissions": [
+                "Read"
+              ]
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            \"[0].principal.id\",\n            \"[0].principal.displayName\",\n            \"[0].principal.type\",\n            \"[0].principal.userDetails.userPrincipalName\",\n            \"[0].itemAccessDetails.permissions[0]\",\n            \"[0].itemAccessDetails.permissions[1]\",\n            \"[1].principal.id\",\n            \"[1].principal.displayName\",\n            \"[1].principal.type\",\n            \"[1].principal.groupDetails.groupType\",\n            \"[1].itemAccessDetails.permissions[0]\"\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            \"[0].principal.id\",\n            \"[0].principal.displayName\",\n            \"[0].principal.type\",\n            \"[0].principal.userDetails.userPrincipalName\",\n            \"[0].itemAccessDetails.permissions[0]\",\n            \"[0].itemAccessDetails.permissions[1]\",\n            \"[1].principal.id\",\n            \"[1].principal.displayName\",\n            \"[1].principal.type\",\n            \"[1].principal.groupDetails.groupType\",\n            \"[1].itemAccessDetails.permissions[0]\"\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "item-empty-ls-text",
+      "resource": "item",
+      "command": "ls",
+      "body": {
+        "accessDetails": []
+      },
+      "long": false,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "stdout": "",
+        "stderr": "",
+        "events": [],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "item-empty-ls-json",
+      "resource": "item",
+      "command": "ls",
+      "body": {
+        "accessDetails": []
+      },
+      "long": false,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/admin/workspaces/workspace/items/resource/users"
+          }
+        ],
+        "stdout": "",
+        "stderr": "",
+        "events": [],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "onelake-ls-default-text",
+      "resource": "onelake",
+      "command": "ls",
+      "body": {
+        "value": [
+          {
+            "name": "ReadAll",
+            "decisionRules": [
+              {
+                "effect": "Permit"
+              }
+            ],
+            "members": {
+              "microsoftEntraMembers": [
+                {
+                  "objectId": "object"
+                }
+              ],
+              "fabricItemMembers": [
+                {
+                  "sourcePath": "/source"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "stdout": "acl       identity   type\n-------------------------\nReadAll   object     microsoftEntraMember\nReadAll   /source    fabricItemMember\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "acl       identity   type\n-------------------------\nReadAll   object     microsoftEntraMember\nReadAll   /source    fabricItemMember\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "onelake-ls-default-json",
+      "resource": "onelake",
+      "command": "ls",
+      "body": {
+        "value": [
+          {
+            "name": "ReadAll",
+            "decisionRules": [
+              {
+                "effect": "Permit"
+              }
+            ],
+            "members": {
+              "microsoftEntraMembers": [
+                {
+                  "objectId": "object"
+                }
+              ],
+              "fabricItemMembers": [
+                {
+                  "sourcePath": "/source"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"acl\": \"ReadAll\",\n                \"identity\": \"object\",\n                \"type\": \"microsoftEntraMember\"\n            },\n            {\n                \"acl\": \"ReadAll\",\n                \"identity\": \"/source\",\n                \"type\": \"fabricItemMember\"\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"acl\": \"ReadAll\",\n                \"identity\": \"object\",\n                \"type\": \"microsoftEntraMember\"\n            },\n            {\n                \"acl\": \"ReadAll\",\n                \"identity\": \"/source\",\n                \"type\": \"fabricItemMember\"\n            }\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "onelake-ls-long-text",
+      "resource": "onelake",
+      "command": "ls",
+      "body": {
+        "value": [
+          {
+            "name": "ReadAll",
+            "decisionRules": [
+              {
+                "effect": "Permit"
+              }
+            ],
+            "members": {
+              "microsoftEntraMembers": [
+                {
+                  "objectId": "object"
+                }
+              ],
+              "fabricItemMembers": [
+                {
+                  "sourcePath": "/source"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "long": true,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "stdout": "acl       identity   type\n-------------------------\nReadAll   object     microsoftEntraMember\nReadAll   /source    fabricItemMember\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "acl       identity   type\n-------------------------\nReadAll   object     microsoftEntraMember\nReadAll   /source    fabricItemMember\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "onelake-ls-long-json",
+      "resource": "onelake",
+      "command": "ls",
+      "body": {
+        "value": [
+          {
+            "name": "ReadAll",
+            "decisionRules": [
+              {
+                "effect": "Permit"
+              }
+            ],
+            "members": {
+              "microsoftEntraMembers": [
+                {
+                  "objectId": "object"
+                }
+              ],
+              "fabricItemMembers": [
+                {
+                  "sourcePath": "/source"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "long": true,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"acl\": \"ReadAll\",\n                \"identity\": \"object\",\n                \"type\": \"microsoftEntraMember\"\n            },\n            {\n                \"acl\": \"ReadAll\",\n                \"identity\": \"/source\",\n                \"type\": \"fabricItemMember\"\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"acl\": \"ReadAll\",\n                \"identity\": \"object\",\n                \"type\": \"microsoftEntraMember\"\n            },\n            {\n                \"acl\": \"ReadAll\",\n                \"identity\": \"/source\",\n                \"type\": \"fabricItemMember\"\n            }\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "onelake-get-.-text",
+      "resource": "onelake",
+      "command": "get",
+      "body": {
+        "value": [
+          {
+            "name": "ReadAll",
+            "decisionRules": [
+              {
+                "effect": "Permit"
+              }
+            ],
+            "members": {
+              "microsoftEntraMembers": [
+                {
+                  "objectId": "object"
+                }
+              ],
+              "fabricItemMembers": [
+                {
+                  "sourcePath": "/source"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": ".",
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "stdout": "{\n  \"name\": \"ReadAll\",\n  \"decisionRules\": [\n    {\n      \"effect\": \"Permit\"\n    }\n  ],\n  \"members\": {\n    \"microsoftEntraMembers\": [\n      {\n        \"objectId\": \"object\"\n      }\n    ],\n    \"fabricItemMembers\": [\n      {\n        \"sourcePath\": \"/source\"\n      }\n    ]\n  }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n  \"name\": \"ReadAll\",\n  \"decisionRules\": [\n    {\n      \"effect\": \"Permit\"\n    }\n  ],\n  \"members\": {\n    \"microsoftEntraMembers\": [\n      {\n        \"objectId\": \"object\"\n      }\n    ],\n    \"fabricItemMembers\": [\n      {\n        \"sourcePath\": \"/source\"\n      }\n    ]\n  }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "onelake-get-.-json",
+      "resource": "onelake",
+      "command": "get",
+      "body": {
+        "value": [
+          {
+            "name": "ReadAll",
+            "decisionRules": [
+              {
+                "effect": "Permit"
+              }
+            ],
+            "members": {
+              "microsoftEntraMembers": [
+                {
+                  "objectId": "object"
+                }
+              ],
+              "fabricItemMembers": [
+                {
+                  "sourcePath": "/source"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": ".",
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"name\": \"ReadAll\",\n                \"decisionRules\": [\n                    {\n                        \"effect\": \"Permit\"\n                    }\n                ],\n                \"members\": {\n                    \"microsoftEntraMembers\": [\n                        {\n                            \"objectId\": \"object\"\n                        }\n                    ],\n                    \"fabricItemMembers\": [\n                        {\n                            \"sourcePath\": \"/source\"\n                        }\n                    ]\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            {\n                \"name\": \"ReadAll\",\n                \"decisionRules\": [\n                    {\n                        \"effect\": \"Permit\"\n                    }\n                ],\n                \"members\": {\n                    \"microsoftEntraMembers\": [\n                        {\n                            \"objectId\": \"object\"\n                        }\n                    ],\n                    \"fabricItemMembers\": [\n                        {\n                            \"sourcePath\": \"/source\"\n                        }\n                    ]\n                }\n            }\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "onelake-get-default-text",
+      "resource": "onelake",
+      "command": "get",
+      "body": {
+        "value": [
+          {
+            "name": "ReadAll",
+            "decisionRules": [
+              {
+                "effect": "Permit"
+              }
+            ],
+            "members": {
+              "microsoftEntraMembers": [
+                {
+                  "objectId": "object"
+                }
+              ],
+              "fabricItemMembers": [
+                {
+                  "sourcePath": "/source"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "stdout": "[0].name\n[0].decisionRules[0].effect\n[0].members.microsoftEntraMembers[0].objectId\n[0].members.fabricItemMembers[0].sourcePath\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "[0].name\n[0].decisionRules[0].effect\n[0].members.microsoftEntraMembers[0].objectId\n[0].members.fabricItemMembers[0].sourcePath\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "kind": "acl",
+      "name": "onelake-get-default-json",
+      "resource": "onelake",
+      "command": "get",
+      "body": {
+        "value": [
+          {
+            "name": "ReadAll",
+            "decisionRules": [
+              {
+                "effect": "Permit"
+              }
+            ],
+            "members": {
+              "microsoftEntraMembers": [
+                {
+                  "objectId": "object"
+                }
+              ],
+              "fabricItemMembers": [
+                {
+                  "sourcePath": "/source"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "long": false,
+      "query": null,
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/workspace/items/resource/dataAccessRoles"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            \"[0].name\",\n            \"[0].decisionRules[0].effect\",\n            \"[0].members.microsoftEntraMembers[0].objectId\",\n            \"[0].members.fabricItemMembers[0].sourcePath\"\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"data\": [\n            \"[0].name\",\n            \"[0].decisionRules[0].effect\",\n            \"[0].members.microsoftEntraMembers[0].objectId\",\n            \"[0].members.fabricItemMembers[0].sourcePath\"\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "name": "label-local-text",
+      "kind": "label-local",
+      "labels": [
+        {
+          "name": "Public",
+          "id": "label"
+        }
+      ],
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [],
+        "stdout": "name     id\n-----------\nPublic   label\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "name     id\n-----------\nPublic   label\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "name": "label-local-json",
+      "kind": "label-local",
+      "labels": [
+        {
+          "name": "Public",
+          "id": "label"
+        }
+      ],
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"label\",\n    \"result\": {\n        \"data\": [\n            {\n                \"name\": \"Public\",\n                \"id\": \"label\"\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"label\",\n    \"result\": {\n        \"data\": [\n            {\n                \"name\": \"Public\",\n                \"id\": \"label\"\n            }\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "name": "label-local-empty-text",
+      "kind": "label-local",
+      "labels": [],
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [],
+        "stdout": "",
+        "stderr": "",
+        "events": [],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "name": "label-local-empty-json",
+      "kind": "label-local",
+      "labels": [],
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"label\",\n    \"result\": {\n        \"data\": []\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"label\",\n    \"result\": {\n        \"data\": []\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "name": "find-False-text",
+      "kind": "find",
+      "long": false,
+      "body": {
+        "value": [
+          {
+            "id": "one",
+            "displayName": "Report",
+            "type": "Report",
+            "workspaceName": "Workspace",
+            "description": "A description long enough to require narrow column truncation"
+          }
+        ]
+      },
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search"
+          }
+        ],
+        "stdout": "name     type     workspace  description\n----------------------------------------\nReport   Report   Workspace  A description long\u2026\n",
+        "stderr": "Searching...\n\n1 item found\n\n\n",
+        "events": [
+          {
+            "stream": "stderr",
+            "payload": "Searching...\n\n1 item found\n\n"
+          },
+          {
+            "stream": "stdout",
+            "payload": "name     type     workspace  description\n----------------------------------------\nReport   Report   Workspace  A description long\u2026\n"
+          },
+          {
+            "stream": "stderr",
+            "payload": "\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "name": "find-False-json",
+      "kind": "find",
+      "long": false,
+      "body": {
+        "value": [
+          {
+            "id": "one",
+            "displayName": "Report",
+            "type": "Report",
+            "workspaceName": "Workspace",
+            "description": "A description long enough to require narrow column truncation"
+          }
+        ]
+      },
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"find\",\n    \"result\": {\n        \"data\": [\n            {\n                \"name\": \"Report\",\n                \"type\": \"Report\",\n                \"workspace\": \"Workspace\",\n                \"description\": \"A description long enough to require narrow column truncation\"\n            }\n        ]\n    }\n}\n",
+        "stderr": "Searching...\n\n1 item found\n\n\n",
+        "events": [
+          {
+            "stream": "stderr",
+            "payload": "Searching...\n\n1 item found\n\n"
+          },
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"find\",\n    \"result\": {\n        \"data\": [\n            {\n                \"name\": \"Report\",\n                \"type\": \"Report\",\n                \"workspace\": \"Workspace\",\n                \"description\": \"A description long enough to require narrow column truncation\"\n            }\n        ]\n    }\n}\n"
+          },
+          {
+            "stream": "stderr",
+            "payload": "\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "name": "find-True-text",
+      "kind": "find",
+      "long": true,
+      "body": {
+        "value": [
+          {
+            "id": "one",
+            "displayName": "Report",
+            "type": "Report",
+            "workspaceName": "Workspace",
+            "description": "A description long enough to require narrow column truncation"
+          }
+        ]
+      },
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search"
+          }
+        ],
+        "stdout": "name    id      type    workspa workspa descript\n                        ce      ce_id   ion\n------------------------------------------------\nReport  one     Report  Workspa None    A descri\n                        ce              ption lo\n                                        ng enoug\n                                        h to req\n                                        uire nar\n                                        row colu\n                                        mn trunc\n                                        ation\n",
+        "stderr": "Searching...\n\n1 item found\n\n\n",
+        "events": [
+          {
+            "stream": "stderr",
+            "payload": "Searching...\n\n1 item found\n\n"
+          },
+          {
+            "stream": "stdout",
+            "payload": "name    id      type    workspa workspa descript\n                        ce      ce_id   ion\n------------------------------------------------\nReport  one     Report  Workspa None    A descri\n                        ce              ption lo\n                                        ng enoug\n                                        h to req\n                                        uire nar\n                                        row colu\n                                        mn trunc\n                                        ation\n"
+          },
+          {
+            "stream": "stderr",
+            "payload": "\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "name": "find-True-json",
+      "kind": "find",
+      "long": true,
+      "body": {
+        "value": [
+          {
+            "id": "one",
+            "displayName": "Report",
+            "type": "Report",
+            "workspaceName": "Workspace",
+            "description": "A description long enough to require narrow column truncation"
+          }
+        ]
+      },
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/catalog/search"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"find\",\n    \"result\": {\n        \"data\": [\n            {\n                \"name\": \"Report\",\n                \"id\": \"one\",\n                \"type\": \"Report\",\n                \"workspace\": \"Workspace\",\n                \"workspace_id\": null,\n                \"description\": \"A description long enough to require narrow column truncation\"\n            }\n        ]\n    }\n}\n",
+        "stderr": "Searching...\n\n1 item found\n\n\n",
+        "events": [
+          {
+            "stream": "stderr",
+            "payload": "Searching...\n\n1 item found\n\n"
+          },
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"find\",\n    \"result\": {\n        \"data\": [\n            {\n                \"name\": \"Report\",\n                \"id\": \"one\",\n                \"type\": \"Report\",\n                \"workspace\": \"Workspace\",\n                \"workspace_id\": null,\n                \"description\": \"A description long enough to require narrow column truncation\"\n            }\n        ]\n    }\n}\n"
+          },
+          {
+            "stream": "stderr",
+            "payload": "\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "name": "label-remove-text",
+      "kind": "label-remove",
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/admin/items/bulkRemoveLabels"
+          }
+        ],
+        "stdout": "\n* Label removed\n\n",
+        "stderr": "Removing label...\n",
+        "events": [
+          {
+            "stream": "stderr",
+            "payload": "Removing label...\n"
+          },
+          {
+            "stream": "stdout",
+            "payload": "\n* Label removed\n\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "name": "label-remove-json",
+      "kind": "label-remove",
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/admin/items/bulkRemoveLabels"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"label\",\n    \"result\": {\n        \"message\": \"Label removed\"\n    }\n}\n",
+        "stderr": "Removing label...\n",
+        "events": [
+          {
+            "stream": "stderr",
+            "payload": "Removing label...\n"
+          },
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"label\",\n    \"result\": {\n        \"message\": \"Label removed\"\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "name": "raw-api-text",
+      "kind": "api",
+      "body": {
+        "value": [
+          {
+            "id": "one"
+          }
+        ]
+      },
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/synthetic"
+          }
+        ],
+        "stdout": "{\n  \"status_code\": 200,\n  \"text\": {\n    \"value\": [\n      {\n        \"id\": \"one\"\n      }\n    ]\n  }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n  \"status_code\": 200,\n  \"text\": {\n    \"value\": [\n      {\n        \"id\": \"one\"\n      }\n    ]\n  }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "name": "raw-api-json",
+      "kind": "api",
+      "body": {
+        "value": [
+          {
+            "id": "one"
+          }
+        ]
+      },
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/synthetic"
+          }
+        ],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            {\n                \"status_code\": 200,\n                \"text\": {\n                    \"value\": [\n                        {\n                            \"id\": \"one\"\n                        }\n                    ]\n                }\n            }\n        ]\n    }\n}\n",
+        "stderr": "",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Success\",\n    \"command\": \"api\",\n    \"result\": {\n        \"data\": [\n            {\n                \"status_code\": 200,\n                \"text\": {\n                    \"value\": [\n                        {\n                            \"id\": \"one\"\n                        }\n                    ]\n                }\n            }\n        ]\n    }\n}\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "name": "handled-security-text",
+      "kind": "error",
+      "handled": true,
+      "code": "UniversalSecurityDisabled",
+      "message": "Universal security is disabled for 'Lakehouse'",
+      "diagnostics": [
+        "\u2192 Run 'open /Workspace/Lakehouse' and enable it"
+      ],
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [],
+        "stdout": "x acl: [UniversalSecurityDisabled] Universal security is disabled for 'Lakehouse'\n",
+        "stderr": "\u2192 Run 'open /Workspace/Lakehouse' and enable it\n",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "x acl: [UniversalSecurityDisabled] Universal security is disabled for 'Lakehouse'\n"
+          },
+          {
+            "stream": "stderr",
+            "payload": "\u2192 Run 'open /Workspace/Lakehouse' and enable it\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "name": "handled-security-json",
+      "kind": "error",
+      "handled": true,
+      "code": "UniversalSecurityDisabled",
+      "message": "Universal security is disabled for 'Lakehouse'",
+      "diagnostics": [
+        "\u2192 Run 'open /Workspace/Lakehouse' and enable it"
+      ],
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Failure\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"error_code\": \"UniversalSecurityDisabled\",\n        \"message\": \"Universal security is disabled for 'Lakehouse'\"\n    }\n}\n",
+        "stderr": "\u2192 Run 'open /Workspace/Lakehouse' and enable it\n",
+        "events": [
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Failure\",\n    \"command\": \"acl\",\n    \"result\": {\n        \"error_code\": \"UniversalSecurityDisabled\",\n        \"message\": \"Universal security is disabled for 'Lakehouse'\"\n    }\n}\n"
+          },
+          {
+            "stream": "stderr",
+            "payload": "\u2192 Run 'open /Workspace/Lakehouse' and enable it\n"
+          }
+        ],
+        "exit": 0,
+        "error": null
+      }
+    },
+    {
+      "name": "unauthorized-text",
+      "kind": "error",
+      "handled": false,
+      "code": "Unauthorized",
+      "message": "Access is unauthorized",
+      "diagnostics": [
+        "Searching..."
+      ],
+      "format": "text",
+      "width": 48,
+      "expected": {
+        "requests": [],
+        "stdout": "x find: [Unauthorized] Access is unauthorized\n",
+        "stderr": "Searching...\n",
+        "events": [
+          {
+            "stream": "stderr",
+            "payload": "Searching...\n"
+          },
+          {
+            "stream": "stdout",
+            "payload": "x find: [Unauthorized] Access is unauthorized\n"
+          }
+        ],
+        "exit": 4,
+        "error": null
+      }
+    },
+    {
+      "name": "unauthorized-json",
+      "kind": "error",
+      "handled": false,
+      "code": "Unauthorized",
+      "message": "Access is unauthorized",
+      "diagnostics": [
+        "Searching..."
+      ],
+      "format": "json",
+      "width": 48,
+      "expected": {
+        "requests": [],
+        "stdout": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Failure\",\n    \"command\": \"find\",\n    \"result\": {\n        \"error_code\": \"Unauthorized\",\n        \"message\": \"Access is unauthorized\"\n    }\n}\n",
+        "stderr": "Searching...\n",
+        "events": [
+          {
+            "stream": "stderr",
+            "payload": "Searching...\n"
+          },
+          {
+            "stream": "stdout",
+            "payload": "{\n    \"timestamp\": \"2026-01-02T03:04:05.000006Z\",\n    \"status\": \"Failure\",\n    \"command\": \"find\",\n    \"result\": {\n        \"error_code\": \"Unauthorized\",\n        \"message\": \"Access is unauthorized\"\n    }\n}\n"
+          }
+        ],
+        "exit": 4,
+        "error": null
+      }
+    }
+  ]
+}

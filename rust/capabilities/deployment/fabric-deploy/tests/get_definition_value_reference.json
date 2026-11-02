@@ -1,0 +1,7560 @@
+{
+  "source": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "runtime": {
+    "implementation": "cpython",
+    "version": "3.13.15"
+  },
+  "digests": {
+    "core/fab_types.py": {
+      "pinned_sha256": "a613c525a9740204423108bb9c95aeb092d3db6baa92b3c1531d4b4d9f79218d",
+      "checkout_sha256": "f9c37676076a09ad83d09bdee3166f99e9ddec32ad1c7bdf474c73a04980ce84",
+      "checkout_matches_pin": false
+    },
+    "utils/fab_item_util.py": {
+      "pinned_sha256": "99a5045c607e20bfa4a126f5342cb0e29e5357343a85a3db177ec32d80ac4983",
+      "checkout_sha256": "99a5045c607e20bfa4a126f5342cb0e29e5357343a85a3db177ec32d80ac4983",
+      "checkout_matches_pin": true
+    },
+    "utils/fab_cmd_export_utils.py": {
+      "pinned_sha256": "ccb9c06458c968d8874892b9ea07f96be7da370edb94a93e09e20eaeca0c4c4b",
+      "checkout_sha256": "ccb9c06458c968d8874892b9ea07f96be7da370edb94a93e09e20eaeca0c4c4b",
+      "checkout_matches_pin": true
+    },
+    "client/fab_api_item.py": {
+      "pinned_sha256": "d0f257eb327f759bbdc468a8f9be1af4cce0116e7f4ee6f8e2536c10ca36d740",
+      "checkout_sha256": "d0f257eb327f759bbdc468a8f9be1af4cce0116e7f4ee6f8e2536c10ca36d740",
+      "checkout_matches_pin": true
+    },
+    "commands/fs/export/fab_fs_export_item.py": {
+      "pinned_sha256": "e47e67fcc24a7cdea014c0d6a7b75b38b4f38c60d6db5c0d0fb0c52a0c116476",
+      "checkout_sha256": "e47e67fcc24a7cdea014c0d6a7b75b38b4f38c60d6db5c0d0fb0c52a0c116476",
+      "checkout_matches_pin": true
+    }
+  },
+  "cases": [
+    {
+      "name": "metadata-only",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": null,
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "missing-parts",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "format": "native"
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "format": "native"
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "empty-parts",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": []
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": []
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "top-level-definitionParts",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definitionParts": [
+          {
+            "path": "value.json",
+            "payload": "ZmFsc2U=",
+            "payloadType": "InlineBase64"
+          }
+        ]
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definitionParts": [
+          {
+            "path": "value.json",
+            "payload": false,
+            "payloadType": "DecodeBase64"
+          }
+        ]
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definitionParts"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "parts-precedence",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": []
+        },
+        "definitionParts": [
+          {
+            "path": "value.json",
+            "payload": "dHJ1ZQ==",
+            "payloadType": "InlineBase64"
+          }
+        ]
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": []
+        },
+        "definitionParts": [
+          {
+            "path": "value.json",
+            "payload": "dHJ1ZQ==",
+            "payloadType": "InlineBase64"
+          }
+        ]
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition",
+        "definitionParts"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "fallback-definitionParts",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {},
+        "definitionParts": [
+          {
+            "path": "value.json",
+            "payload": "dHJ1ZQ==",
+            "payloadType": "InlineBase64"
+          }
+        ]
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {},
+        "definitionParts": [
+          {
+            "path": "value.json",
+            "payload": true,
+            "payloadType": "DecodeBase64"
+          }
+        ]
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition",
+        "definitionParts"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "ordered-merge",
+      "metadata": {
+        "first": 0,
+        "id": "original",
+        "properties": {
+          "specialized": true
+        }
+      },
+      "definition": {
+        "id": "overwritten",
+        "first": 1,
+        "definition": {
+          "parts": []
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "first": 1,
+        "id": "overwritten",
+        "properties": {
+          "specialized": true
+        },
+        "definition": {
+          "parts": []
+        }
+      },
+      "expected_key_order": [
+        "first",
+        "id",
+        "properties",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "order-paths-and-duplicate-paths",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "/../same.txt",
+              "payload": "Zmlyc3Q=",
+              "payloadType": "InlineBase64"
+            },
+            {
+              "path": "/../same.txt",
+              "payload": "c2Vjb25k",
+              "payloadType": "InlineBase64"
+            },
+            {
+              "path": "CON.txt",
+              "payload": "dGhpcmQ=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "/../same.txt",
+              "payload": "first",
+              "payloadType": "DecodeBase64"
+            },
+            {
+              "path": "/../same.txt",
+              "payload": "second",
+              "payloadType": "DecodeBase64"
+            },
+            {
+              "path": "CON.txt",
+              "payload": "third",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-8",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "bnVsbA==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": null,
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-9",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "dHJ1ZQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": true,
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-10",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "ZmFsc2U=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": false,
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-11",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "MA==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": 0,
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-12",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "LTAuMA==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": -0.0,
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-13",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "MS4yNQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": 1.25,
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-14",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "InRleHQi",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "text",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-15",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "IiI=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-16",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "W10=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": [],
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-17",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "e30=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": {},
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-18",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "eyJ6IjoxLCJhIjoyLCJ6IjozfQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": {
+                "z": 3,
+                "a": 2
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-19",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "W2ZhbHNlLG51bGwsMl0=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": [
+                false,
+                null,
+                2
+              ],
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-20",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "MTg0NDY3NDQwNzM3MDk1NTE2MTYwMTIzNDU2Nzg5",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": {
+                "$python": "184467440737095516160123456789"
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-21",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "eyJ3aWRlIjotMTg0NDY3NDQwNzM3MDk1NTE2MTYwMTIzNDU2Nzg5LCJvayI6Mn0=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": {
+                "wide": {
+                  "$python": "-184467440737095516160123456789"
+                },
+                "ok": 2
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-22",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "TmFO",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": {
+                "$python": "NaN"
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-23",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "SW5maW5pdHk=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": {
+                "$python": "Infinity"
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-24",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "LUluZmluaXR5",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": {
+                "$python": "-Infinity"
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-25",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "MWU5OTk=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": {
+                "$python": "Infinity"
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-26",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "Ilx1ZDgwMCI=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": {
+                "$python": "\"\\ud800\""
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-27",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "eyJzdXJyb2dhdGUiOiJcdWRmZmYiLCJhc3RyYWwiOiJcdWQ4M2RcdWRlMDAifQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": {
+                "surrogate": {
+                  "$python": "\"\\udfff\""
+                },
+                "astral": "\ud83d\ude00"
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "json-28",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "eyJcdWQ4MDAiOjF9",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": {
+                "$python": "{\"\\ud800\": 1}"
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "suffix-v.json",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": "eyJhIjoxfQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": {
+                "a": 1
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "suffix-v.ipynb",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.ipynb",
+              "payload": "eyJhIjoxfQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.ipynb",
+              "payload": {
+                "a": 1
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "suffix-v.pbir",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.pbir",
+              "payload": "eyJhIjoxfQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.pbir",
+              "payload": {
+                "a": 1
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "suffix-v.platform",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.platform",
+              "payload": "eyJhIjoxfQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.platform",
+              "payload": {
+                "a": 1
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "suffix-v.pbism",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.pbism",
+              "payload": "eyJhIjoxfQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.pbism",
+              "payload": {
+                "a": 1
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "text-v.JSON",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.JSON",
+              "payload": "ZmFsc2U=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.JSON",
+              "payload": "false",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "text-v.json.txt",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json.txt",
+              "payload": "ZmFsc2U=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json.txt",
+              "payload": "false",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "text-",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "",
+              "payload": "ZmFsc2U=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "",
+              "payload": "false",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "text-model.tmdl",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "model.tmdl",
+              "payload": "ZmFsc2U=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "model.tmdl",
+              "payload": "false",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "text-env.yml",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "env.yml",
+              "payload": "ZmFsc2U=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "env.yml",
+              "payload": "false",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "text-source.py",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "source.py",
+              "payload": "ZmFsc2U=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "source.py",
+              "payload": "false",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-40",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-41",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "e2Jyb2tlbg==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "e2Jyb2tlbg==",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-42",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "WzEsXQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "WzEsXQ==",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: Illegal trailing comma before end of array: line 1 column 3 (char 2)"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-43",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "eyJ4Ijp9",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "eyJ4Ijp9",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: Expecting value: line 1 column 6 (char 5)"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-44",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "eyJ4IiAxfQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "eyJ4IiAxfQ==",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: Expecting ':' delimiter: line 1 column 6 (char 5)"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-45",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "eyJ4IjoxLH0=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "eyJ4IjoxLH0=",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: Illegal trailing comma before end of object: line 1 column 7 (char 6)"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-46",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "InVudGVybWluYXRlZA==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "InVudGVybWluYXRlZA==",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: Unterminated string starting at: line 1 column 1 (char 0)"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-47",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "ImJhZFxxIg==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "ImJhZFxxIg==",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: Invalid \\escape: line 1 column 5 (char 4)"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-48",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "ImJhZFx1MTJ4eiI=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "ImJhZFx1MTJ4eiI=",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: Invalid \\uXXXX escape: line 1 column 6 (char 5)"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-49",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "ImJhZAp4Ig==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "ImJhZAp4Ig==",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: Invalid control character at: line 1 column 5 (char 4)"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-50",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "MS4=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "MS4=",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: Extra data: line 1 column 2 (char 1)"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-51",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "MWUr",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "MWUr",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: Extra data: line 1 column 2 (char 1)"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-52",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "MDE=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "MDE=",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: Extra data: line 1 column 2 (char 1)"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-53",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "dHJ1ZSBmYWxzZQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "dHJ1ZSBmYWxzZQ==",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: Extra data: line 1 column 6 (char 5)"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-54",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "77u/e30=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "77u/e30=",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: Unexpected UTF-8 BOM (decode using utf-8-sig): line 1 column 1 (char 0)"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-55",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "ICAKWzEsCsOpXQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "ICAKWzEsCsOpXQ==",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: Expecting value: line 3 column 1 (char 7)"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-56",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "eyLDqSI6Cn0=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "eyLDqSI6Cn0=",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: Expecting value: line 2 column 1 (char 6)"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "malformed-json-57",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "Ilx1ZDgwMFx1MDAwIg==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "Ilx1ZDgwMFx1MDAwIg==",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: Invalid \\uXXXX escape: line 1 column 9 (char 8)"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "binary-json",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "/wANCg==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": {
+                "$bytes": [
+                  255,
+                  0,
+                  13,
+                  10
+                ]
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "binary-text",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.txt",
+              "payload": "wIA=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.txt",
+              "payload": {
+                "$bytes": [
+                  192,
+                  128
+                ]
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "utf8-text",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.txt",
+              "payload": "w6kg8J+YgA0K",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.txt",
+              "payload": "\u00e9 \ud83d\ude00\r\n",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "utf8-bom-text",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.txt",
+              "payload": "77u/dGV4dA==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "value.txt",
+              "payload": "\ufefftext",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "per-part-error-62",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": "a",
+              "error": "old"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": "a",
+              "error": "Decoding error: Invalid base64-encoded string: number of data characters (1) cannot be 1 more than a multiple of 4"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "per-part-error-63",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": "ab",
+              "error": "old"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": "ab",
+              "error": "Decoding error: Incorrect padding"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "per-part-error-64",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": "abc",
+              "error": "old"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": "abc",
+              "error": "Decoding error: Incorrect padding"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "per-part-error-65",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": "abcde",
+              "error": "old"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": "abcde",
+              "error": "Decoding error: Invalid base64-encoded string: number of data characters (5) cannot be 1 more than a multiple of 4"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "per-part-error-66",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": "\u00e9",
+              "error": "old"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": "\u00e9",
+              "error": "Decoding error: string argument should contain only ASCII characters"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "per-part-error-67",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": 1,
+              "error": "old"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": 1,
+              "error": "Decoding error: argument should be a bytes-like object or ASCII string, not 'int'"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "per-part-error-68",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": true,
+              "error": "old"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": true,
+              "error": "Decoding error: argument should be a bytes-like object or ASCII string, not 'bool'"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "per-part-error-69",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": 1.5,
+              "error": "old"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": 1.5,
+              "error": "Decoding error: argument should be a bytes-like object or ASCII string, not 'float'"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "per-part-error-70",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": [
+                1
+              ],
+              "error": "old"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": [
+                1
+              ],
+              "error": "Decoding error: argument should be a bytes-like object or ASCII string, not 'list'"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "per-part-error-71",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": {
+                "a": 1
+              },
+              "error": "old"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": {
+                "a": 1
+              },
+              "error": "Decoding error: argument should be a bytes-like object or ASCII string, not 'dict'"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "false-payload-72",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": "",
+              "payloadType": "Original"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": "",
+              "payloadType": "Original"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "false-payload-73",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": 0,
+              "payloadType": "Original"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": 0,
+              "payloadType": "Original"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "false-payload-74",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": false,
+              "payloadType": "Original"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": false,
+              "payloadType": "Original"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "false-payload-75",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": null,
+              "payloadType": "Original"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": null,
+              "payloadType": "Original"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "false-payload-76",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": [],
+              "payloadType": "Original"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": [],
+              "payloadType": "Original"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "false-payload-77",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": {},
+              "payloadType": "Original"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payload": {},
+              "payloadType": "Original"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "missing-payload",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payloadType": "Original"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.json",
+              "payloadType": "Original"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "payloadType-ignored",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "dGV4dA==",
+              "payloadType": "NotBase64",
+              "error": "old"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "text",
+              "payloadType": "DecodeBase64",
+              "error": "old"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "invalid-path-80",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": null,
+              "payload": "dGV4dA==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": null,
+              "payload": "dGV4dA==",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: 'NoneType' object has no attribute 'endswith'"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "invalid-path-81",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": 42,
+              "payload": "dGV4dA==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": 42,
+              "payload": "dGV4dA==",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: 'int' object has no attribute 'endswith'"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "invalid-path-82",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": false,
+              "payload": "dGV4dA==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": false,
+              "payload": "dGV4dA==",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: 'bool' object has no attribute 'endswith'"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "invalid-path-83",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": [],
+              "payload": "dGV4dA==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": [],
+              "payload": "dGV4dA==",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: 'list' object has no attribute 'endswith'"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "invalid-path-84",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": {},
+              "payload": "dGV4dA==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": {},
+              "payload": "dGV4dA==",
+              "payloadType": "InlineBase64",
+              "error": "Decoding error: 'dict' object has no attribute 'endswith'"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "missing-path",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "payload": "ZmFsc2U="
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "payload": "false",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "nested-source-selector",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "o.txt",
+              "payload": "b3V0ZXI=",
+              "payloadType": "InlineBase64",
+              "nested_parts": null,
+              "definitionParts": [
+                {
+                  "path": "value.json",
+                  "payload": "eyJpbm5lciI6dHJ1ZX0=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "o.txt",
+              "payload": "outer",
+              "payloadType": "DecodeBase64",
+              "nested_parts": null,
+              "definitionParts": [
+                {
+                  "path": "value.json",
+                  "payload": {
+                    "inner": true
+                  },
+                  "payloadType": "DecodeBase64"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "nested-key-does-not-traverse-array",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "o.txt",
+              "payload": "b3V0ZXI=",
+              "payloadType": "InlineBase64",
+              "nested_parts": [
+                {
+                  "path": "value.json",
+                  "payload": "dHJ1ZQ==",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "o.txt",
+              "payload": "outer",
+              "payloadType": "DecodeBase64",
+              "nested_parts": [
+                {
+                  "path": "value.json",
+                  "payload": "dHJ1ZQ==",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "nested-without-marker-not-decoded",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "o.txt",
+              "payload": "b3V0ZXI=",
+              "payloadType": "InlineBase64",
+              "definitionParts": [
+                {
+                  "path": "value.json",
+                  "payload": "dHJ1ZQ==",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "o.txt",
+              "payload": "outer",
+              "payloadType": "DecodeBase64",
+              "definitionParts": [
+                {
+                  "path": "value.json",
+                  "payload": "dHJ1ZQ==",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "nested-recursive-definition",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "nested_parts": false,
+              "definition": {
+                "parts": [
+                  {
+                    "nested_parts": [],
+                    "definitionParts": [
+                      {
+                        "path": "value.json",
+                        "payload": "bnVsbA==",
+                        "payloadType": "InlineBase64"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "nested_parts": false,
+              "definition": {
+                "parts": [
+                  {
+                    "nested_parts": [],
+                    "definitionParts": [
+                      {
+                        "path": "value.json",
+                        "payload": null,
+                        "payloadType": "DecodeBase64"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "notebook-first-existing-outputs-only",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "eyJjZWxscyI6W3sib3V0cHV0cyI6WzFdLCJleGVjdXRpb25fY291bnQiOjd9LHsic291cmNlIjpbIngiXX1dLCJtZXRhZGF0YSI6eyJuIjoxfX0=",
+              "payloadType": "InlineBase64"
+            },
+            {
+              "path": "second.ipynb",
+              "payload": "eyJjZWxscyI6W3sib3V0cHV0cyI6WzJdfV19",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": {
+                "cells": [
+                  {
+                    "outputs": [],
+                    "execution_count": 7
+                  },
+                  {
+                    "source": [
+                      "x"
+                    ]
+                  }
+                ],
+                "metadata": {
+                  "n": 1
+                }
+              },
+              "payloadType": "DecodeBase64"
+            },
+            {
+              "path": "second.ipynb",
+              "payload": {
+                "cells": [
+                  {
+                    "outputs": [
+                      2
+                    ]
+                  }
+                ]
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "notebook-preserve",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "eyJjZWxscyI6W3sib3V0cHV0cyI6WzFdLCJleGVjdXRpb25fY291bnQiOjd9LHsic291cmNlIjpbIngiXX1dLCJtZXRhZGF0YSI6eyJuIjoxfX0=",
+              "payloadType": "InlineBase64"
+            },
+            {
+              "path": "second.ipynb",
+              "payload": "eyJjZWxscyI6W3sib3V0cHV0cyI6WzJdfV19",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": false,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "eyJjZWxscyI6W3sib3V0cHV0cyI6WzFdLCJleGVjdXRpb25fY291bnQiOjd9LHsic291cmNlIjpbIngiXX1dLCJtZXRhZGF0YSI6eyJuIjoxfX0=",
+              "payloadType": "InlineBase64"
+            },
+            {
+              "path": "second.ipynb",
+              "payload": "eyJjZWxscyI6W3sib3V0cHV0cyI6WzJdfV19",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "report-not-notebook-cleaning",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "eyJjZWxscyI6W3sib3V0cHV0cyI6WzFdLCJleGVjdXRpb25fY291bnQiOjd9LHsic291cmNlIjpbIngiXX1dLCJtZXRhZGF0YSI6eyJuIjoxfX0=",
+              "payloadType": "InlineBase64"
+            },
+            {
+              "path": "second.ipynb",
+              "payload": "eyJjZWxscyI6W3sib3V0cHV0cyI6WzJdfV19",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": {
+                "cells": [
+                  {
+                    "outputs": [
+                      1
+                    ],
+                    "execution_count": 7
+                  },
+                  {
+                    "source": [
+                      "x"
+                    ]
+                  }
+                ],
+                "metadata": {
+                  "n": 1
+                }
+              },
+              "payloadType": "DecodeBase64"
+            },
+            {
+              "path": "second.ipynb",
+              "payload": {
+                "cells": [
+                  {
+                    "outputs": [
+                      2
+                    ]
+                  }
+                ]
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "notebook-source-format",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "notebook-content.py",
+              "payload": "cHJpbnQoJ3gnKQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "notebook-content.py",
+              "payload": "print('x')",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "notebook-error-94",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "bnVsbA==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "source_error": "TypeError",
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "notebook-error-95",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "dHJ1ZQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "source_error": "TypeError",
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "notebook-error-96",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "eyJjZWxscyI6bnVsbH0=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "source_error": "TypeError",
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "notebook-error-97",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "eyJjZWxscyI6W251bGxdfQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "source_error": "TypeError",
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "notebook-error-98",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "ImNlbGxzIg==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "source_error": "TypeError",
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "notebook-binary-error",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "value.json",
+              "payload": "/w==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "source_error": "TypeError",
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "notebook-membership-100",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "eyJjZWxscyI6ImFiYyJ9",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": {
+                "cells": "abc"
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "notebook-membership-101",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "eyJjZWxscyI6eyJvcmRpbmFyeSI6MX19",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": {
+                "cells": {
+                  "ordinary": 1
+                }
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "notebook-membership-102",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "eyJjZWxscyI6WyJzYWZlIixbXSx7fV19",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": {
+                "cells": [
+                  "safe",
+                  [],
+                  {}
+                ]
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "notebook-membership-103",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "eyJjZWxscyI6W119",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": {
+                "cells": []
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "notebook-membership-104",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "W10=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": [],
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "notebook-membership-105",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "InNhZmUgdGV4dCI=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "safe text",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "notebook-membership-106",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "eyJjZWxscyI6W1sib3V0cHV0cyJdXX0=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "source_error": "TypeError",
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "notebook-membership-107",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "eyJjZWxscyI6WyJvdXRwdXRzIl19",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "source_error": "TypeError",
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "notebook-membership-108",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "eyJjZWxscyI6eyJvdXRwdXRzIjoxfX0=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "source_error": "TypeError",
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "notebook-membership-109",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Notebook",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "n.ipynb",
+              "payload": "WyJjZWxscyJd",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Notebook",
+      "decode": true,
+      "strict_base64_exception": false,
+      "source_error": "TypeError",
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "ipynb"
+        ]
+      ]
+    },
+    {
+      "name": "type-Report-definition.pbir",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "definition.pbir",
+              "payload": "eyJkYXRhc2V0UmVmZXJlbmNlIjp7ImJ5UGF0aCI6eyJwYXRoIjoiLi4vTSJ9fX0=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "definition.pbir",
+              "payload": {
+                "datasetReference": {
+                  "byPath": {
+                    "path": "../M"
+                  }
+                }
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "type-SemanticModel-definition/model.tmdl",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "SemanticModel",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "definition/model.tmdl",
+              "payload": "bW9kZWwgTW9kZWwKCWN1bHR1cmU6IGVuLVVT",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "SemanticModel",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "SemanticModel",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "definition/model.tmdl",
+              "payload": "model Model\n\tculture: en-US",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "type-SemanticModel-model.bim",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "SemanticModel",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "model.bim",
+              "payload": "eyJtb2RlbCI6eyJ0YWJsZXMiOltdfX0=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "SemanticModel",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "SemanticModel",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "model.bim",
+              "payload": "{\"model\":{\"tables\":[]}}",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "type-Environment-environment.yml",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Environment",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "environment.yml",
+              "payload": "ZGVwZW5kZW5jaWVzOgogIC0gcGFja2FnZQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "Environment",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Environment",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "environment.yml",
+              "payload": "dependencies:\n  - package",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "type-DataPipeline-pipeline-content.json",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "DataPipeline",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "pipeline-content.json",
+              "payload": "eyJwcm9wZXJ0aWVzIjp7ImFjdGl2aXRpZXMiOltdfX0=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "DataPipeline",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "DataPipeline",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "pipeline-content.json",
+              "payload": {
+                "properties": {
+                  "activities": []
+                }
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "type-SparkJobDefinition-SparkJobDefinitionV1.json",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "SparkJobDefinition",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "SparkJobDefinitionV1.json",
+              "payload": "eyJtYWluRGVmaW5pdGlvbkZpbGUiOiJ4LnB5In0=",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "SparkJobDefinition",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "SparkJobDefinition",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "SparkJobDefinitionV1.json",
+              "payload": {
+                "mainDefinitionFile": "x.py"
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          "SparkJobDefinitionV1"
+        ]
+      ]
+    },
+    {
+      "name": "type-VariableLibrary-variables.json",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "VariableLibrary",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "variables.json",
+              "payload": "eyJ2YXJpYWJsZXMiOltdfQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "VariableLibrary",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "VariableLibrary",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "variables.json",
+              "payload": {
+                "variables": []
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "type-MirroredDatabase-mirroring.json",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "MirroredDatabase",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "mirroring.json",
+              "payload": "eyJwcm9wZXJ0aWVzIjp7InNvdXJjZSI6e319fQ==",
+              "payloadType": "InlineBase64"
+            }
+          ]
+        }
+      },
+      "item_type": "MirroredDatabase",
+      "decode": true,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "MirroredDatabase",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "mirroring.json",
+              "payload": {
+                "properties": {
+                  "source": {}
+                }
+              },
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "strict-policy-118",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "eA==%"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": true,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "x",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "strict-policy-119",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "e%A=="
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": true,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "x",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "strict-policy-120",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "eA==\n"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": true,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "x",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "strict-policy-121",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "Zh=="
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": true,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "f",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "strict-policy-122",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "eA==="
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": true,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "x",
+              "payloadType": "DecodeBase64"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "strict-policy-123",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "YQ="
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": true,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "YQ=",
+              "error": "Decoding error: Incorrect padding"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "strict-policy-124",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "A==="
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": true,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "A===",
+              "error": "Decoding error: Invalid base64-encoded string: number of data characters (1) cannot be 1 more than a multiple of 4"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "preserve-noncanonical",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "eA==%"
+            }
+          ]
+        }
+      },
+      "item_type": "Report",
+      "decode": false,
+      "strict_base64_exception": false,
+      "expected": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original",
+        "definition": {
+          "parts": [
+            {
+              "path": "v.txt",
+              "payload": "eA==%"
+            }
+          ]
+        }
+      },
+      "expected_key_order": [
+        "id",
+        "type",
+        "properties",
+        "displayName",
+        "definition"
+      ],
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "invalid-acquisition-126",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": [],
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "source_error": "SourceError",
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "invalid-acquisition-127",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": 1,
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "source_error": "SourceError",
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "invalid-acquisition-128",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": "not-a-dictionary",
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "source_error": "SourceError",
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "invalid-parts",
+      "metadata": {
+        "id": "synthetic-item",
+        "type": "Report",
+        "properties": {
+          "specialized": "retained"
+        },
+        "displayName": "Original"
+      },
+      "definition": {
+        "definition": {
+          "parts": null
+        }
+      },
+      "item_type": "Report",
+      "decode": true,
+      "strict_base64_exception": false,
+      "source_error": "TypeError",
+      "events": [
+        [
+          "metadata",
+          true
+        ],
+        [
+          "definition",
+          ""
+        ]
+      ]
+    }
+  ]
+}

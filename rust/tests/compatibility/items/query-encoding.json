@@ -1,0 +1,18 @@
+{
+  "_copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "id": "list_python_query_punctuation",
+  "operation": "list",
+  "workspace_id": "ws",
+  "query": [["k*~", "!*'()~ -._+=/%?#& \u96ea"]],
+  "responses": [{"status": 200, "headers": {}, "body": {"value": []}}],
+  "expected": {
+    "requests": [{
+      "method": "GET",
+      "url": "https://api.fabric.microsoft.com/v1/workspaces/ws/items?k%2A~=%21%2A%27%28%29~+-._%2B%3D%2F%25%3F%23%26+%E9%9B%AA",
+      "scope": "https://api.fabric.microsoft.com/.default"
+    }],
+    "rows": []
+  },
+  "python_expected": {"status_code": 200, "body": {"value": []}}
+}

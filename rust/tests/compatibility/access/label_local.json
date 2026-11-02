@@ -1,0 +1,12 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {"name":"definitions","input":"{\"labels\":[{\"name\":\"Public\",\"id\":\"label\"}]}","data":[{"name":"Public","id":"label"}],"error":null},
+    {"name":"empty","input":"{\"labels\":[]}","data":[],"error":null},
+    {"name":"null","input":"{\"labels\":null}","data":null,"error":null},
+    {"name":"string","input":"{\"labels\":\"Public\"}","data":"Public","error":null},
+    {"name":"missing-key","input":"{}","data":null,"error":{"code":"InvalidEntriesFormat","message":"The entries format in the labels definition file is invalid. Please check the file structure and ensure it follows the expected format"}},
+    {"name":"malformed","input":"bad-json","data":null,"error":{"code":"InvalidJson","message":"Invalid JSON format"}},
+    {"name":"missing-file","input":null,"data":null,"error":{"code":"InvalidPath","message":"The specified file or directory does not exist"}}
+  ]
+}

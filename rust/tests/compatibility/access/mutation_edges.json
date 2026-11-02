@@ -1,0 +1,283 @@
+{
+  "source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "resource": "workspace",
+      "role": "viewer",
+      "identity": "object",
+      "force": true,
+      "confirmations": [],
+      "name": "duplicate-first-match",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "first",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              },
+              {
+                "id": "second",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "DELETE",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments/first",
+            "body": null
+          }
+        ],
+        "message": "ACL removed",
+        "diagnostics": [
+          "Deleting ACL from 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "workspace",
+      "role": "viewer",
+      "identity": "object",
+      "force": true,
+      "confirmations": [],
+      "name": "match-before-malformed",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "first",
+                "role": "Admin",
+                "principal": {
+                  "id": "object",
+                  "displayName": "Alice",
+                  "userDetails": {
+                    "userPrincipalName": "alice@example.invalid"
+                  },
+                  "servicePrincipalDetails": {
+                    "aadAppId": "app"
+                  }
+                }
+              },
+              {}
+            ]
+          }
+        },
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments",
+            "body": null
+          },
+          {
+            "method": "DELETE",
+            "url": "https://api.fabric.microsoft.com/v1/workspaces/resource/roleAssignments/first",
+            "body": null
+          }
+        ],
+        "message": "ACL removed",
+        "diagnostics": [
+          "Deleting ACL from 'Resource'..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    },
+    {
+      "resource": "workspace",
+      "role": "viewer",
+      "identity": "object",
+      "force": true,
+      "confirmations": [],
+      "name": "missing-principal",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {}
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "python_exception": "KeyError"
+      }
+    },
+    {
+      "resource": "workspace",
+      "role": "viewer",
+      "identity": "object",
+      "force": true,
+      "confirmations": [],
+      "name": "null-user-details",
+      "command": "rm",
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "value": [
+              {
+                "id": "assignment",
+                "principal": {
+                  "userDetails": null
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "python_exception": "AttributeError"
+      }
+    },
+    {
+      "resource": "workspace",
+      "role": "",
+      "identity": "new",
+      "force": true,
+      "confirmations": [],
+      "name": "empty-role",
+      "command": "set",
+      "responses": [],
+      "expected": {
+        "requests": [],
+        "message": null,
+        "diagnostics": [],
+        "warnings": [],
+        "questions": [],
+        "error": {
+          "code": "InvalidInput",
+          "message": "Role must be provided"
+        }
+      }
+    },
+    {
+      "name": "label-missing-labels-key",
+      "resource": "label",
+      "command": "set",
+      "force": true,
+      "confirmations": [],
+      "configured": true,
+      "label_name": "Public",
+      "responses": [
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "definitions": {},
+      "expected": {
+        "requests": [],
+        "message": null,
+        "diagnostics": [],
+        "warnings": [],
+        "questions": [],
+        "error": {
+          "code": "InvalidInput",
+          "message": "Id not found for label 'Public'"
+        }
+      }
+    },
+    {
+      "name": "label-duplicate-first-match",
+      "resource": "label",
+      "command": "set",
+      "force": true,
+      "confirmations": [],
+      "configured": true,
+      "label_name": "Public",
+      "responses": [
+        {
+          "status": 200,
+          "body": {}
+        }
+      ],
+      "definitions": {
+        "labels": [
+          {
+            "name": "Public",
+            "id": "first"
+          },
+          {
+            "name": "Public",
+            "id": "second"
+          }
+        ]
+      },
+      "expected": {
+        "requests": [
+          {
+            "method": "POST",
+            "url": "https://api.fabric.microsoft.com/v1/admin/items/bulkSetLabels",
+            "body": {
+              "items": [
+                {
+                  "id": "resource",
+                  "type": "Notebook"
+                }
+              ],
+              "labelId": "first",
+              "assignmentMethod": "Standard"
+            }
+          }
+        ],
+        "message": "Label set",
+        "diagnostics": [
+          "Setting 'Public' label..."
+        ],
+        "warnings": [],
+        "questions": [],
+        "error": null
+      }
+    }
+  ]
+}

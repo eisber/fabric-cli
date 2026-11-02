@@ -1,0 +1,71 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-sdk-transport"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Explicit optional native HTTP/TLS transport and caller-runtime timer"
+
+[package.metadata.fabric]
+layer = "sdk"
+
+[features]
+default = []
+hyper-rustls = [
+    "dep:async-trait",
+    "dep:azure_core",
+    "dep:hyper",
+    "dep:hyper-util",
+    "dep:hyper-rustls",
+    "dep:hyper-timeout",
+    "dep:http",
+    "dep:http-body-util",
+    "dep:tower-service",
+    "dep:rustls",
+    "dep:rustls-platform-verifier",
+    "dep:rustls-native-certs",
+    "dep:async-compression",
+    "dep:tokio-util",
+    "dep:futures-util",
+]
+
+[dependencies]
+fabric-sdk-http.workspace = true
+tokio.workspace = true
+async-trait = { workspace = true, optional = true }
+azure_core = { workspace = true, optional = true }
+hyper = { workspace = true, optional = true }
+hyper-util = { workspace = true, optional = true }
+hyper-rustls = { workspace = true, optional = true }
+hyper-timeout = { workspace = true, optional = true }
+http = { workspace = true, optional = true }
+http-body-util = { workspace = true, optional = true }
+tower-service = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+rustls-platform-verifier = { workspace = true, optional = true }
+async-compression = { workspace = true, optional = true }
+tokio-util = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rustls-native-certs = { workspace = true, optional = true }
+
+[dev-dependencies]
+fabric-core.workspace = true
+fabric-sdk.workspace = true
+rcgen.workspace = true
+tokio-rustls.workspace = true
+flate2.workspace = true
+serde_json.workspace = true
+
+[[example]]
+name = "sdk_consumer"
+required-features = ["hyper-rustls"]
+test = true
+
+[lints]
+workspace = true

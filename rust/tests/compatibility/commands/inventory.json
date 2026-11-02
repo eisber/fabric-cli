@@ -1,0 +1,1862 @@
+{
+  "python_source_commit": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "method": "AST of create_parser_and_subparsers and called registrations; no product imports",
+  "groups": 6,
+  "leaves": 52,
+  "root_arguments": [
+    {
+      "names": [
+        "-c",
+        "--command"
+      ],
+      "action": "append"
+    },
+    {
+      "names": [
+        "-v",
+        "--version"
+      ],
+      "action": "store_true"
+    }
+  ],
+  "global_arguments": [
+    {
+      "names": [
+        "-help"
+      ],
+      "action": "help"
+    },
+    {
+      "names": [
+        "--output_format"
+      ],
+      "required": false,
+      "choices": [
+        "json",
+        "text"
+      ]
+    },
+    {
+      "names": [
+        "--skill"
+      ],
+      "required": false,
+      "default": {
+        "expression": "argparse.SUPPRESS"
+      }
+    }
+  ],
+  "commands": [
+    {
+      "command": "acl",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_acls_parser.py",
+      "line": 27,
+      "registration": "register_parser",
+      "arguments": [],
+      "handler": "show_help",
+      "kind": "group"
+    },
+    {
+      "command": "acl get",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_acls_parser.py",
+      "line": 103,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-q",
+            "--query"
+          ],
+          "nargs": "+",
+          "required": false
+        },
+        {
+          "names": [
+            "-o",
+            "--output"
+          ],
+          "required": false
+        }
+      ],
+      "handler": "fabric_cli.commands.acls.fab_acls.get_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "acl ls",
+      "aliases": [
+        "acl dir"
+      ],
+      "source": "src/fabric_cli/parsers/fab_acls_parser.py",
+      "line": 40,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-l",
+            "--long"
+          ],
+          "required": false,
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "-q",
+            "--query"
+          ],
+          "required": false
+        }
+      ],
+      "handler": "fabric_cli.commands.acls.fab_acls.ls_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "acl rm",
+      "aliases": [
+        "acl del"
+      ],
+      "source": "src/fabric_cli/parsers/fab_acls_parser.py",
+      "line": 74,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-I",
+            "--identity"
+          ],
+          "required": true
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.acls.fab_acls.rm_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "acl set",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_acls_parser.py",
+      "line": 135,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-I",
+            "--identity"
+          ],
+          "required": true
+        },
+        {
+          "names": [
+            "-R",
+            "--role"
+          ],
+          "required": true
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.acls.fab_acls.set_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "api",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_api_parser.py",
+      "line": 21,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "endpoint"
+          ]
+        },
+        {
+          "names": [
+            "-X",
+            "--method"
+          ],
+          "required": false,
+          "default": "get",
+          "choices": [
+            "get",
+            "post",
+            "delete",
+            "put",
+            "patch"
+          ]
+        },
+        {
+          "names": [
+            "-i",
+            "--input"
+          ],
+          "nargs": "+",
+          "default": null
+        },
+        {
+          "names": [
+            "-A",
+            "--audience"
+          ],
+          "required": false,
+          "default": null,
+          "choices": [
+            "fabric",
+            "storage",
+            "azure",
+            "powerbi"
+          ]
+        },
+        {
+          "names": [
+            "-P",
+            "--params"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "-H",
+            "--headers"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "-q",
+            "--query"
+          ],
+          "nargs": "+",
+          "required": false
+        },
+        {
+          "names": [
+            "--show_headers"
+          ],
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.api.fab_api.request_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "assign",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 693,
+      "registration": "register_assign_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-W",
+            "--workspace"
+          ],
+          "nargs": "+",
+          "required": true
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "required": false,
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.assign_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "auth",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_auth_parser.py",
+      "line": 23,
+      "registration": "register_parser",
+      "arguments": [],
+      "handler": "show_help",
+      "kind": "group"
+    },
+    {
+      "command": "auth login",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_auth_parser.py",
+      "line": 43,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "-u",
+            "--username"
+          ],
+          "required": false
+        },
+        {
+          "names": [
+            "-p",
+            "--password"
+          ],
+          "required": false
+        },
+        {
+          "names": [
+            "-t",
+            "--tenant"
+          ],
+          "required": false
+        },
+        {
+          "names": [
+            "-I",
+            "--identity"
+          ],
+          "required": false,
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "--certificate"
+          ],
+          "required": false
+        },
+        {
+          "names": [
+            "--federated-token"
+          ],
+          "required": false
+        },
+        {
+          "names": [
+            "--azure-cli"
+          ],
+          "required": false,
+          "action": "store_true",
+          "dest": "azure_cli"
+        }
+      ],
+      "handler": "fabric_cli.commands.auth.fab_auth.init",
+      "kind": "leaf"
+    },
+    {
+      "command": "auth logout",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_auth_parser.py",
+      "line": 108,
+      "registration": "register_parser",
+      "arguments": [],
+      "handler": "fabric_cli.commands.auth.fab_auth.logout",
+      "kind": "leaf"
+    },
+    {
+      "command": "auth status",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_auth_parser.py",
+      "line": 125,
+      "registration": "register_parser",
+      "arguments": [],
+      "handler": "fabric_cli.commands.auth.fab_auth.status",
+      "kind": "leaf"
+    },
+    {
+      "command": "bulk-export",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 355,
+      "registration": "register_bulk_export_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-o",
+            "--output"
+          ],
+          "required": true
+        },
+        {
+          "names": [
+            "--recursive"
+          ],
+          "required": false,
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "required": false,
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.bulk_export_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "cd",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 108,
+      "registration": "register_cd_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.cd_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "clear",
+      "aliases": [
+        "cls"
+      ],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 578,
+      "registration": "register_clear_parser",
+      "arguments": [],
+      "handler": "do_clear",
+      "kind": "leaf"
+    },
+    {
+      "command": "config",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_config_parser.py",
+      "line": 26,
+      "registration": "register_parser",
+      "arguments": [],
+      "handler": "show_help",
+      "kind": "group"
+    },
+    {
+      "command": "config clear-cache",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_config_parser.py",
+      "line": 100,
+      "registration": "register_parser",
+      "arguments": [],
+      "handler": "fabric_cli.commands.config.fab_config.clear_cache",
+      "kind": "leaf"
+    },
+    {
+      "command": "config get",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_config_parser.py",
+      "line": 68,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "key"
+          ]
+        }
+      ],
+      "handler": "fabric_cli.commands.config.fab_config.get_config",
+      "kind": "leaf"
+    },
+    {
+      "command": "config ls",
+      "aliases": [
+        "config dir"
+      ],
+      "source": "src/fabric_cli/parsers/fab_config_parser.py",
+      "line": 87,
+      "registration": "register_parser",
+      "arguments": [],
+      "handler": "fabric_cli.commands.config.fab_config.list_configs",
+      "kind": "leaf"
+    },
+    {
+      "command": "config set",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_config_parser.py",
+      "line": 40,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "key"
+          ]
+        },
+        {
+          "names": [
+            "value"
+          ]
+        }
+      ],
+      "handler": "fabric_cli.commands.config.fab_config.set_config",
+      "kind": "leaf"
+    },
+    {
+      "command": "cp",
+      "aliases": [
+        "copy"
+      ],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 205,
+      "registration": "register_cp_parser",
+      "arguments": [
+        {
+          "names": [
+            "from_path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "to_path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "required": false,
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "-r",
+            "--recursive"
+          ],
+          "required": false,
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "-bpc",
+            "--block_on_path_collision"
+          ],
+          "required": false,
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.cp_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "deploy",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 495,
+      "registration": "register_deploy_parser",
+      "arguments": [
+        {
+          "names": [
+            "--config"
+          ],
+          "type": {
+            "expression": "str"
+          },
+          "required": true
+        },
+        {
+          "names": [
+            "-tenv",
+            "--target_env"
+          ],
+          "type": {
+            "expression": "str"
+          },
+          "default": "N/A"
+        },
+        {
+          "names": [
+            "-P",
+            "--params"
+          ],
+          "type": {
+            "expression": "str"
+          },
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "required": false,
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "--bulk_publish"
+          ],
+          "required": false,
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.deploy_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "desc",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_describe_parser.py",
+      "line": 26,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "*",
+          "type": {
+            "expression": "str"
+          },
+          "default": null
+        }
+      ],
+      "handler": "fabric_cli.commands.desc.fab_describe.show_commands_supported",
+      "kind": "leaf"
+    },
+    {
+      "command": "exists",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 251,
+      "registration": "register_exists_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.exists_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "export",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 307,
+      "registration": "register_export_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-o",
+            "--output"
+          ],
+          "nargs": "+",
+          "required": true
+        },
+        {
+          "names": [
+            "-a",
+            "--all"
+          ],
+          "required": false,
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "--format"
+          ]
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "required": false,
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.export_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "extension",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_extension_parser.py",
+      "line": 10,
+      "registration": "register_parser",
+      "arguments": [],
+      "handler": "show_help",
+      "kind": "leaf"
+    },
+    {
+      "command": "find",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_find_parser.py",
+      "line": 45,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "search_text"
+          ]
+        },
+        {
+          "names": [
+            "-P",
+            "--params"
+          ],
+          "nargs": "?"
+        },
+        {
+          "names": [
+            "-l",
+            "--long"
+          ],
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "-q",
+            "--query"
+          ],
+          "nargs": "+"
+        }
+      ],
+      "handler": "find.find_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "get",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 402,
+      "registration": "register_get_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-q",
+            "--query"
+          ],
+          "nargs": "+",
+          "required": false
+        },
+        {
+          "names": [
+            "-o",
+            "--output"
+          ],
+          "nargs": "+",
+          "required": false
+        },
+        {
+          "names": [
+            "-v",
+            "--verbose"
+          ],
+          "required": false,
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "required": false,
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.get_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "import",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 453,
+      "registration": "register_import_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-i",
+            "--input"
+          ],
+          "nargs": "+",
+          "required": true
+        },
+        {
+          "names": [
+            "--format"
+          ]
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "required": false,
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.import_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "job",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_jobs_parser.py",
+      "line": 29,
+      "registration": "register_parser",
+      "arguments": [],
+      "handler": "show_help",
+      "kind": "group"
+    },
+    {
+      "command": "job run",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_jobs_parser.py",
+      "line": 81,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "-P",
+            "--params"
+          ],
+          "required": false,
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "-C",
+            "--config"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "-i",
+            "--input"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "--timeout"
+          ],
+          "type": {
+            "expression": "int"
+          }
+        },
+        {
+          "names": [
+            "--polling_interval"
+          ],
+          "dest": "polling_interval",
+          "type": {
+            "expression": "validate_positive_int"
+          }
+        }
+      ],
+      "handler": "fabric_cli.commands.jobs.fab_jobs.run_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "job run-cancel",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_jobs_parser.py",
+      "line": 153,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "--id"
+          ],
+          "required": true,
+          "dest": "id"
+        },
+        {
+          "names": [
+            "-w",
+            "--wait"
+          ],
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.jobs.fab_jobs.run_cancel_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "job run-list",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_jobs_parser.py",
+      "line": 127,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "--schedule"
+          ],
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.jobs.fab_jobs.run_list_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "job run-rm",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_jobs_parser.py",
+      "line": 296,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "--id"
+          ],
+          "required": true,
+          "dest": "schedule_id"
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.jobs.fab_jobs.run_rm_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "job run-sch",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_jobs_parser.py",
+      "line": 186,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "-i",
+            "--input"
+          ],
+          "nargs": "+",
+          "required": false
+        },
+        {
+          "names": [
+            "--enable"
+          ],
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "--type"
+          ],
+          "choices": [
+            "cron",
+            "daily",
+            "weekly"
+          ]
+        },
+        {
+          "names": [
+            "--interval"
+          ]
+        },
+        {
+          "names": [
+            "--start"
+          ]
+        },
+        {
+          "names": [
+            "--end"
+          ]
+        },
+        {
+          "names": [
+            "--days"
+          ]
+        }
+      ],
+      "handler": "fabric_cli.commands.jobs.fab_jobs.run_sch_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "job run-status",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_jobs_parser.py",
+      "line": 327,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "--id"
+          ],
+          "required": true,
+          "dest": "id"
+        },
+        {
+          "names": [
+            "--schedule"
+          ],
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.jobs.fab_jobs.run_status_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "job run-update",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_jobs_parser.py",
+      "line": 235,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "--id"
+          ],
+          "required": true,
+          "dest": "schedule_id"
+        },
+        {
+          "names": [
+            "-i",
+            "--input"
+          ],
+          "nargs": "+",
+          "required": false
+        },
+        {
+          "names": [
+            "--enable"
+          ],
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "--disable"
+          ],
+          "action": "store_false"
+        },
+        {
+          "names": [
+            "--type"
+          ],
+          "choices": [
+            "cron",
+            "daily",
+            "weekly"
+          ]
+        },
+        {
+          "names": [
+            "--interval"
+          ]
+        },
+        {
+          "names": [
+            "--start"
+          ]
+        },
+        {
+          "names": [
+            "--end"
+          ]
+        },
+        {
+          "names": [
+            "--days"
+          ]
+        }
+      ],
+      "handler": "fabric_cli.commands.jobs.fab_jobs.run_update_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "job start",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_jobs_parser.py",
+      "line": 41,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "-P",
+            "--params"
+          ],
+          "required": false,
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "-C",
+            "--config"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "-i",
+            "--input"
+          ],
+          "nargs": "+"
+        }
+      ],
+      "handler": "fabric_cli.commands.jobs.fab_jobs.run_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "label",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_labels_parser.py",
+      "line": 24,
+      "registration": "register_parser",
+      "arguments": [],
+      "handler": "show_help",
+      "kind": "group"
+    },
+    {
+      "command": "label list-local",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_labels_parser.py",
+      "line": 81,
+      "registration": "register_parser",
+      "arguments": [],
+      "handler": "fabric_cli.commands.labels.fab_labels.listlocal_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "label rm",
+      "aliases": [
+        "label del"
+      ],
+      "source": "src/fabric_cli/parsers/fab_labels_parser.py",
+      "line": 62,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.labels.fab_labels.rm_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "label set",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_labels_parser.py",
+      "line": 38,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-n",
+            "--name"
+          ],
+          "required": true,
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.labels.fab_labels.set_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "ln",
+      "aliases": [
+        "mklink"
+      ],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 594,
+      "registration": "register_ln_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "--type"
+          ],
+          "required": true,
+          "choices": [
+            "adlsGen2",
+            "amazonS3",
+            "dataverse",
+            "googleCloudStorage",
+            "oneLake",
+            "s3Compatible"
+          ]
+        },
+        {
+          "names": [
+            "--target"
+          ],
+          "nargs": "+",
+          "required": false,
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-i",
+            "--input"
+          ],
+          "nargs": "+",
+          "required": false
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "required": false,
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.ln_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "ls",
+      "aliases": [
+        "dir"
+      ],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 26,
+      "registration": "register_ls_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "*",
+          "type": {
+            "expression": "str"
+          },
+          "default": null
+        },
+        {
+          "names": [
+            "-l",
+            "--long"
+          ],
+          "required": false,
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "-a",
+            "--all"
+          ],
+          "required": false,
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "-q",
+            "--query"
+          ],
+          "required": false
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.ls_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "mkdir",
+      "aliases": [
+        "create"
+      ],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 76,
+      "registration": "register_mkdir_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-P",
+            "--params"
+          ],
+          "required": false,
+          "default": [
+            "run=true"
+          ],
+          "nargs": "*"
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.mkdir_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "mv",
+      "aliases": [
+        "move"
+      ],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 165,
+      "registration": "register_mv_parser",
+      "arguments": [
+        {
+          "names": [
+            "from_path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "to_path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "required": false,
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "-r",
+            "--recursive"
+          ],
+          "required": false,
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.mv_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "open",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 286,
+      "registration": "register_open_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.open_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "pwd",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 266,
+      "registration": "register_pwd_parser",
+      "arguments": [],
+      "handler": "fabric_cli.commands.fs.fab_fs.pwd_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "rm",
+      "aliases": [
+        "del"
+      ],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 131,
+      "registration": "register_rm_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "required": false,
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "--hard"
+          ],
+          "required": false,
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.rm_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "set",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 551,
+      "registration": "register_set_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-q",
+            "--query"
+          ],
+          "required": true
+        },
+        {
+          "names": [
+            "-i",
+            "--input"
+          ],
+          "nargs": "+",
+          "required": true
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "required": false,
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.set_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "start",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 645,
+      "registration": "register_start_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "required": false,
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.start_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "stop",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 669,
+      "registration": "register_stop_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "required": false,
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.stop_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "table",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_tables_parser.py",
+      "line": 24,
+      "registration": "register_parser",
+      "arguments": [],
+      "handler": "show_help",
+      "kind": "group"
+    },
+    {
+      "command": "table load",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_tables_parser.py",
+      "line": 57,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "--file"
+          ],
+          "nargs": "+",
+          "required": true
+        },
+        {
+          "names": [
+            "--extension"
+          ]
+        },
+        {
+          "names": [
+            "--mode"
+          ],
+          "choices": [
+            "append",
+            "overwrite"
+          ],
+          "default": "overwrite",
+          "required": false
+        },
+        {
+          "names": [
+            "--format"
+          ]
+        }
+      ],
+      "handler": "fabric_cli.commands.tables.fab_tables.load_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "table optimize",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_tables_parser.py",
+      "line": 123,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "--vorder"
+          ],
+          "action": "store_true"
+        },
+        {
+          "names": [
+            "--zorder"
+          ]
+        }
+      ],
+      "handler": "fabric_cli.commands.tables.fab_tables.optimize_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "table schema",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_tables_parser.py",
+      "line": 38,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+"
+        }
+      ],
+      "handler": "fabric_cli.commands.tables.fab_tables.schema_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "table vacuum",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_tables_parser.py",
+      "line": 96,
+      "registration": "register_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+"
+        },
+        {
+          "names": [
+            "--retain_n_hours"
+          ],
+          "default": "168"
+        }
+      ],
+      "handler": "fabric_cli.commands.tables.fab_tables.vacuum_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "unassign",
+      "aliases": [],
+      "source": "src/fabric_cli/parsers/fab_fs_parser.py",
+      "line": 724,
+      "registration": "register_unassign_parser",
+      "arguments": [
+        {
+          "names": [
+            "path"
+          ],
+          "nargs": "+",
+          "type": {
+            "expression": "str"
+          }
+        },
+        {
+          "names": [
+            "-W",
+            "--workspace"
+          ],
+          "nargs": "+",
+          "required": true
+        },
+        {
+          "names": [
+            "-f",
+            "--force"
+          ],
+          "required": false,
+          "action": "store_true"
+        }
+      ],
+      "handler": "fabric_cli.commands.fs.fab_fs.unassign_command",
+      "kind": "leaf"
+    },
+    {
+      "command": "version",
+      "aliases": [],
+      "source": "src/fabric_cli/core/fab_parser_setup.py",
+      "line": 228,
+      "registration": "create_parser_and_subparsers",
+      "arguments": [],
+      "handler": "fab_ui.print_version",
+      "kind": "leaf"
+    }
+  ]
+}

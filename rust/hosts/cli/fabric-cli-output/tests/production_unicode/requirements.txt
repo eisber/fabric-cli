@@ -1,0 +1,4 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+# Development-only oracle; not a production dependency.
+rich==14.3.3

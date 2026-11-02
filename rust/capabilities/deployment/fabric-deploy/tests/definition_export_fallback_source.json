@@ -1,0 +1,188 @@
+{
+  "source": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "platform": "win32",
+  "cases": [
+    {
+      "name": "malformed-json",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "bad.json",
+              "payload": "e2Jyb2tlbg=="
+            }
+          ]
+        }
+      },
+      "path": "bad.json",
+      "local_base64": "ZTJKeWIydGxiZz09"
+    },
+    {
+      "name": "invalid-base64",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "bad.txt",
+              "payload": "a"
+            }
+          ]
+        }
+      },
+      "path": "bad.txt",
+      "local_base64": "YQ=="
+    },
+    {
+      "name": "non-string-object",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "object.json",
+              "payload": {
+                "z": "\u00e9"
+              }
+            }
+          ]
+        }
+      },
+      "path": "object.json",
+      "local_base64": "ew0KICAgICJ6IjogIsOpIg0KfQ=="
+    },
+    {
+      "name": "missing-payload",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "missing.txt"
+            }
+          ]
+        }
+      },
+      "path": "missing.txt",
+      "local_base64": "e30="
+    },
+    {
+      "name": "empty-payload",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "empty.json",
+              "payload": ""
+            }
+          ]
+        }
+      },
+      "path": "empty.json",
+      "local_base64": ""
+    },
+    {
+      "name": "nested-marker",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "outer.txt",
+              "payload": "eA==",
+              "nested_parts": []
+            }
+          ]
+        }
+      },
+      "path": "outer.txt",
+      "local_base64": "eA=="
+    },
+    {
+      "name": "remote-json",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "object.json",
+              "payload": "eyJ6Ijoiw6kiLCJhIjpbMSx0cnVlXX0="
+            }
+          ]
+        }
+      },
+      "path": "object.json",
+      "local_base64": "ew0KICAgICJ6IjogIsOpIiwNCiAgICAiYSI6IFsNCiAgICAgICAgMSwNCiAgICAgICAgdHJ1ZQ0KICAgIF0NCn0=",
+      "remote": [
+        {
+          "stage": "create",
+          "path": "Demo/Lake.Lakehouse/Files/object.json"
+        },
+        {
+          "stage": "append",
+          "base64": "eyJ6IjogIlx1MDBlOSIsICJhIjogWzEsIHRydWVdfQ==",
+          "position": 0
+        },
+        {
+          "stage": "flush",
+          "position": 31
+        }
+      ]
+    },
+    {
+      "name": "remote-text",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "code.py",
+              "payload": "YQ0KYgo="
+            }
+          ]
+        }
+      },
+      "path": "code.py",
+      "local_base64": "YQ0NCmINCg==",
+      "remote": [
+        {
+          "stage": "create",
+          "path": "Demo/Lake.Lakehouse/Files/code.py"
+        },
+        {
+          "stage": "append",
+          "base64": "YQ0KYgo=",
+          "position": 0
+        },
+        {
+          "stage": "flush",
+          "position": 5
+        }
+      ]
+    },
+    {
+      "name": "remote-binary",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "bytes.bin",
+              "payload": "/w0KAA=="
+            }
+          ]
+        }
+      },
+      "path": "bytes.bin",
+      "local_base64": "/w0KAA==",
+      "remote": [
+        {
+          "stage": "create",
+          "path": "Demo/Lake.Lakehouse/Files/bytes.bin"
+        },
+        {
+          "stage": "append",
+          "base64": "/w0KAA==",
+          "position": 0
+        },
+        {
+          "stage": "flush",
+          "position": 4
+        }
+      ]
+    }
+  ]
+}

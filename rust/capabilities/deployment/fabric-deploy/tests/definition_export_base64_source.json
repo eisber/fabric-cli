@@ -1,0 +1,110 @@
+{
+  "source": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "cases": [
+    {
+      "name": "canonical",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.txt",
+              "payload": "eA=="
+            }
+          ]
+        }
+      },
+      "source_part_error": null,
+      "expected_base64": "eA=="
+    },
+    {
+      "name": "percent-after-padding",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.txt",
+              "payload": "eA==%"
+            }
+          ]
+        }
+      },
+      "source_part_error": null,
+      "expected_base64": "eA=="
+    },
+    {
+      "name": "percent-within-data",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.txt",
+              "payload": "e%A=="
+            }
+          ]
+        }
+      },
+      "source_part_error": null,
+      "expected_base64": "eA=="
+    },
+    {
+      "name": "whitespace-after-padding",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.txt",
+              "payload": "eA==\n"
+            }
+          ]
+        }
+      },
+      "source_part_error": null,
+      "expected_base64": "eA=="
+    },
+    {
+      "name": "nonzero-pad-bits",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.txt",
+              "payload": "Zh=="
+            }
+          ]
+        }
+      },
+      "source_part_error": null,
+      "expected_base64": "Zg=="
+    },
+    {
+      "name": "excess-padding",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.txt",
+              "payload": "eA==="
+            }
+          ]
+        }
+      },
+      "source_part_error": null,
+      "expected_base64": "eA=="
+    },
+    {
+      "name": "source-error-original-payload",
+      "input": {
+        "definition": {
+          "parts": [
+            {
+              "path": "part.txt",
+              "payload": "a"
+            }
+          ]
+        }
+      },
+      "source_part_error": "Decoding error: Invalid base64-encoded string: number of data characters (1) cannot be 1 more than a multiple of 4",
+      "expected_base64": "YQ=="
+    }
+  ]
+}

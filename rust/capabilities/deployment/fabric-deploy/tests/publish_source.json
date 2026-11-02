@@ -1,0 +1,89 @@
+{
+  "source": "microsoft/fabric-cicd@5ca096c00a9a878c646c59fe537b883eba951329",
+  "boundary": "Actual NotebookPublisher.publish_one, FabricWorkspace._publish_item/filter/transform methods and File.base64_payload. Synthetic endpoint records requests; no package/auth/transport initialization.",
+  "hashes": {
+    "fabric_workspace.py": "10bae33f95026065fc22d558dc02b8ee17929cac77fa0dde298cc4d41ac7a890",
+    "_items\\_notebook.py": "4fe01e8349a9322b03052950efe05ee52a6c9294f7af27af9e1dae1d9ce55bec",
+    "_common\\_file.py": "e3355695912a04a588b6cc0a6b0568d373cdce13a903f5643e894dc0ed5010d8"
+  },
+  "cases": [
+    {
+      "id": "create",
+      "files": [
+        [
+          ".platform",
+          "{\"metadata\":{\"displayName\":\"Book\",\"type\":\"Notebook\",\"description\":\"Synthetic\"},\"config\":{\"logicalId\":\"logical-book\"}}"
+        ],
+        [
+          "notebook-content.py",
+          "# Fabric notebook source\nprint('synthetic')\n"
+        ]
+      ],
+      "requests": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items",
+          "body": {
+            "displayName": "Book",
+            "type": "Notebook",
+            "description": "Synthetic",
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6eyJkaXNwbGF5TmFtZSI6IkJvb2siLCJ0eXBlIjoiTm90ZWJvb2siLCJkZXNjcmlwdGlvbiI6IlN5bnRoZXRpYyJ9LCJjb25maWciOnsibG9naWNhbElkIjoibG9naWNhbC1ib29rIn19",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "notebook-content.py",
+                  "payload": "IyBGYWJyaWMgbm90ZWJvb2sgc291cmNlCnByaW50KCdzeW50aGV0aWMnKQo=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            },
+            "folderId": ""
+          }
+        }
+      ],
+      "body_bytes": "{\"displayName\": \"Book\", \"type\": \"Notebook\", \"description\": \"Synthetic\", \"definition\": {\"parts\": [{\"path\": \".platform\", \"payload\": \"eyJtZXRhZGF0YSI6eyJkaXNwbGF5TmFtZSI6IkJvb2siLCJ0eXBlIjoiTm90ZWJvb2siLCJkZXNjcmlwdGlvbiI6IlN5bnRoZXRpYyJ9LCJjb25maWciOnsibG9naWNhbElkIjoibG9naWNhbC1ib29rIn19\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"notebook-content.py\", \"payload\": \"IyBGYWJyaWMgbm90ZWJvb2sgc291cmNlCnByaW50KCdzeW50aGV0aWMnKQo=\", \"payloadType\": \"InlineBase64\"}]}, \"folderId\": \"\"}",
+      "observed_id": "22222222-2222-2222-2222-222222222222"
+    },
+    {
+      "id": "update",
+      "files": [
+        [
+          ".platform",
+          "{\"metadata\":{\"displayName\":\"Book\",\"type\":\"Notebook\",\"description\":\"Synthetic\"},\"config\":{\"logicalId\":\"logical-book\"}}"
+        ],
+        [
+          "notebook-content.py",
+          "# Fabric notebook source\nprint('synthetic')\n"
+        ]
+      ],
+      "requests": [
+        {
+          "method": "POST",
+          "url": "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/updateDefinition?updateMetadata=True",
+          "body": {
+            "definition": {
+              "parts": [
+                {
+                  "path": ".platform",
+                  "payload": "eyJtZXRhZGF0YSI6eyJkaXNwbGF5TmFtZSI6IkJvb2siLCJ0eXBlIjoiTm90ZWJvb2siLCJkZXNjcmlwdGlvbiI6IlN5bnRoZXRpYyJ9LCJjb25maWciOnsibG9naWNhbElkIjoibG9naWNhbC1ib29rIn19",
+                  "payloadType": "InlineBase64"
+                },
+                {
+                  "path": "notebook-content.py",
+                  "payload": "IyBGYWJyaWMgbm90ZWJvb2sgc291cmNlCnByaW50KCdzeW50aGV0aWMnKQo=",
+                  "payloadType": "InlineBase64"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "body_bytes": "{\"definition\": {\"parts\": [{\"path\": \".platform\", \"payload\": \"eyJtZXRhZGF0YSI6eyJkaXNwbGF5TmFtZSI6IkJvb2siLCJ0eXBlIjoiTm90ZWJvb2siLCJkZXNjcmlwdGlvbiI6IlN5bnRoZXRpYyJ9LCJjb25maWciOnsibG9naWNhbElkIjoibG9naWNhbC1ib29rIn19\", \"payloadType\": \"InlineBase64\"}, {\"path\": \"notebook-content.py\", \"payload\": \"IyBGYWJyaWMgbm90ZWJvb2sgc291cmNlCnByaW50KCdzeW50aGV0aWMnKQo=\", \"payloadType\": \"InlineBase64\"}]}}",
+      "observed_id": "22222222-2222-2222-2222-222222222222"
+    }
+  ]
+}

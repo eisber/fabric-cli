@@ -1,0 +1,54 @@
+{
+  "source_commit": "5ca096c00a9a878c646c59fe537b883eba951329",
+  "source_sha256": {
+    "_manage_dependencies.py": "3f3c4ce2c6088ce87d9a3472cca74752a87fb5eef15bd54544490f1fa16b07a0",
+    "_datapipeline.py": "880856480aedc8b3c54cf355fb24d16032471b91842e383787638f50d6c5e6f3",
+    "fabric_workspace.py": "3e4b545fff726a9166e4e1e839cede1fc034b99b068cb2d28fd7b719e1546666",
+    "_base_publisher.py": "7369ebc3b230278ebccee6c9a3621f66c5d4f1166787150bdb72f381c4930328"
+  },
+  "logical_ids": {
+    "Selected": "33333333-3333-3333-3333-333333333333",
+    "Left": "55555555-5555-5555-5555-555555555555",
+    "Right": "66666666-6666-6666-6666-666666666666"
+  },
+  "definitions": {
+    "Selected": {
+      "properties": {
+        "activities": []
+      }
+    },
+    "Left": {
+      "properties": {
+        "activities": [
+          {
+            "type": "InvokePipeline",
+            "typeProperties": {
+              "pipelineId": "66666666-6666-6666-6666-666666666666"
+            }
+          }
+        ]
+      }
+    },
+    "Right": {
+      "properties": {
+        "activities": [
+          {
+            "type": "InvokePipeline",
+            "typeProperties": {
+              "pipelineId": "55555555-5555-5555-5555-555555555555"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "items_to_include": [
+    "Selected.DataPipeline"
+  ],
+  "selected": [
+    "Selected"
+  ],
+  "order": {
+    "error": "cycle"
+  }
+}
