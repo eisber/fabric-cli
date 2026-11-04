@@ -936,7 +936,7 @@
       "id": "frozen-verify",
       "packages": [],
       "components": [],
-      "inputs": [],
+      "inputs": ["rust/scripts/v2_upstream.py", "rust/scripts/test_v2_upstream.py"],
       "platforms": ["windows", "linux", "macos"],
       "depends_on": ["oracle-tools"]
     },

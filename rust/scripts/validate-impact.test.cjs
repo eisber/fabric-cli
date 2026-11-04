@@ -11,6 +11,8 @@ const {packageArgs, ownFeatures, testCommands, coreCommands, commandResult,
   oracleVersions, restoreOracleDependencies, runContracts, options} =
   require('./validate-impact.cjs');
 const {selection, equalSelection} = require('./impact-ci.cjs');
+const {plan: impactPlan} = require('./impact-plan.cjs');
+const validationRegistry = require('./validation-checks.cjs');
 
 function temporary(t) {
   const directory = fs.mkdtempSync(path.join(process.env.IMPACT_TEST_ROOT ||
@@ -196,6 +198,42 @@ test('a failed source comparison still verifies frozen source and overlays exact
   assert.throws(() => runContracts(context, registry, run,
     () => ({status: 0})), /comparison rejected mismatch/);
   assert.deepEqual(calls, ['oracle-tools', 'comparison', 'frozen-verify']);
+});
+
+test('upstream-helper-only changes execute tooling and its frozen integrity gate', t => {
+  const root = path.resolve(__dirname, '..', '..');
+  const artifacts = temporary(t);
+  const frozen = path.join(artifacts, 'frozen');
+  fs.mkdirSync(frozen);
+  const actual = JSON.parse(fs.readFileSync(
+    path.join(root, 'rust', 'validation', 'impact-graph.json'), 'utf8'));
+  const graph = {schema: 1, components: [], profiles: [],
+    checks: actual.checks.filter(check =>
+      ['selector-tests', 'oracle-tools', 'frozen-verify'].includes(check.id))};
+  const packageId = 'path+fabric-core#0.1.0';
+  const metadata = {version: 1, packages: [{
+    id: packageId, name: 'fabric-core',
+    manifest_path: path.join(root, 'rust', 'infrastructure', 'core', 'fabric-core', 'Cargo.toml'),
+    dependencies: [], features: {default: []}, targets: [],
+  }], workspace_members: [packageId], workspace_default_members: [packageId]};
+  for (const file of ['rust/scripts/v2_upstream.py', 'rust/scripts/test_v2_upstream.py']) {
+    const selected = impactPlan({root, graph, metadata, files: [file]});
+    assert.equal(selected.mode, 'affected', file);
+    assert.deepEqual(selected.packages, [], file);
+    assert.deepEqual([...selected.checks].sort(),
+      ['frozen-verify', 'oracle-tools', 'selector-tests'], file);
+    const context = {root, artifacts, platform: 'linux', python: 'python',
+      plan: selected};
+    const calls = [];
+    runContracts(context, validationRegistry, command => {
+      calls.push(command);
+      return command.id === 'oracle:prepare' ? JSON.stringify({rust_root: frozen}) : '';
+    }, () => ({status: 0}));
+    assert.equal(calls.filter(command => command.args.includes('test_v2_upstream.py')).length, 1);
+    assert.equal(calls.filter(command => command.id === 'oracle:prepare').length, 1);
+    assert.equal(calls.filter(command => command.id === 'frozen-verify').length, 1);
+    assert.equal(calls.at(-1).id, 'frozen-verify');
+  }
 });
 
 test('CI comparison binds scopes despite host-specific metadata, and rejects missing consumers', () => {

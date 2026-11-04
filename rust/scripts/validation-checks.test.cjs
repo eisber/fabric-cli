@@ -213,12 +213,13 @@ test('selector tests include all shared planners, runner, registry and legacy te
     path.join('scripts', 'rust-fast-check.test.cjs')]);
 });
 
-test('oracle preparation runs all five dependency tests before its captured marker', () => {
+test('oracle preparation runs all six dependency tests before its captured marker', () => {
   const result = commands('oracle-tools');
-  assert.equal(result.length, 6);
+  assert.equal(result.length, 7);
   assert.deepEqual(result.slice(0, -1).map(command => valueAfter(command, '-p')).sort(), [
     'test_assemble_native_release.py', 'test_check_report.py',
     'test_native_acceptance.py', 'test_pinned_python_source.py', 'test_release_verify.py',
+    'test_v2_upstream.py',
   ]);
   const identity = result.find(command => command.args.includes('test_check_report.py'));
   assert.equal(valueAfter(identity, '-s'), path.join('tests', 'acceptance', 'identity'));
@@ -235,6 +236,20 @@ test('oracle preparation runs all five dependency tests before its captured mark
   assert.deepEqual(verify.args, ['-B', path.join('scripts', 'pinned_python_source.py'),
     'verify', '--output', pinnedOutput]);
   assert.equal(verify.stdout, undefined);
+});
+
+test('upstream tracking inputs select the candidate-only offline tooling tests', () => {
+  const actual = JSON.parse(fs.readFileSync(
+    path.join(__dirname, '..', 'validation', 'impact-graph.json'), 'utf8'));
+  const tooling = actual.checks.find(check => check.id === 'frozen-verify');
+  for (const file of ['rust/scripts/v2_upstream.py', 'rust/scripts/test_v2_upstream.py']) {
+    assert.ok(tooling.inputs.includes(file), `${file} must select tooling validation and integrity`);
+  }
+  const unit = commands('oracle-tools').find(command => command.args.includes('test_v2_upstream.py'));
+  assert.equal(unit.program, 'python');
+  assert.equal(unit.cwd, rust);
+  assert.deepEqual(unit.args, ['-B', '-m', 'unittest', 'discover',
+    '-s', 'scripts', '-p', 'test_v2_upstream.py', '-v']);
 });
 
 test('all six JSON observations feed their exact pinned assertions and unit selectors', () => {

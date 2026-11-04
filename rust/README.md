@@ -22,6 +22,11 @@ to an account. Remote command execution requires an explicitly configured host.
 See the [CLI guide](hosts/cli/fabric-cli/README.md) for command composition and
 [native host configuration](docs/native-read-host.md) for service execution.
 
+For the separate CLI v2 effort, follow the
+[delivery and upstream synchronization process](docs/v2-delivery.md). Command
+implementation starts only after the selected specification and first wave
+are confirmed; this process does not change the existing CLI contract.
+
 ## Workspace components
 
 The workspace groups service clients and command adapters by capability:
