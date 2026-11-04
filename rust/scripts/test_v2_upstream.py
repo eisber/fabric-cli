@@ -439,8 +439,9 @@ class UpstreamTests(unittest.TestCase):
         self.assertTrue(tracker.report(linked, self.base)["worktree"]["clean"])
         self.assertEqual(before, self.snapshot())
         merge = Path(
-            self.git("-C", str(linked), "rev-parse", "--git-path", "MERGE_HEAD")
-            .stdout.strip()
+            self.git(
+                "-C", str(linked), "rev-parse", "--git-path", "MERGE_HEAD"
+            ).stdout.strip()
         )
         merge.write_text(self.base + "\n", encoding="utf-8")
         with self.assertRaises(tracker.TrackingError) as caught:

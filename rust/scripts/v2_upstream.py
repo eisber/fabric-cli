@@ -132,8 +132,9 @@ def _commit(root: Path, value: str) -> str:
 
 def _ancestor(root: Path, older: str, newer: str) -> bool:
     return (
-        _git(root, "merge-base", "--is-ancestor", older, newer, ok_codes=(0, 1))
-        .returncode
+        _git(
+            root, "merge-base", "--is-ancestor", older, newer, ok_codes=(0, 1)
+        ).returncode
         == 0
     )
 
@@ -188,9 +189,7 @@ def _fetch(root: Path) -> str:
         root, "ls-remote", "--exit-code", UPSTREAM_URL, UPSTREAM_BRANCH
     ).stdout.splitlines()
     if len(observed) != 1:
-        raise TrackingError(
-            "invalid_upstream", "Expected exactly one upstream branch."
-        )
+        raise TrackingError("invalid_upstream", "Expected exactly one upstream branch.")
     fields = observed[0].split()
     if (
         len(fields) != 2
@@ -245,9 +244,7 @@ def report(
     if top != root:
         raise TrackingError("invalid_repository", "--repo must be the worktree root.")
     if _git(root, "rev-parse", "--is-shallow-repository").stdout.strip() != "false":
-        raise TrackingError(
-            "incomplete_history", "Shallow history cannot prove drift."
-        )
+        raise TrackingError("incomplete_history", "Shallow history cannot prove drift.")
     partial = _git(
         root,
         "config",
@@ -300,9 +297,7 @@ def report(
     if (
         _commit(root, "HEAD") != head
         or _commit(root, UPSTREAM_REF) != cached
-        or _git(
-            root, "symbolic-ref", "--quiet", "HEAD", ok_codes=(0, 1)
-        ).stdout.strip()
+        or _git(root, "symbolic-ref", "--quiet", "HEAD", ok_codes=(0, 1)).stdout.strip()
         != branch
     ):
         raise TrackingError(
