@@ -475,11 +475,11 @@ pub async fn execute_once(
     let mut response = match executor.execute(request).await {
         Ok(response) => response,
         Err(mut error) => {
-            if let Some(response) = &mut error.response {
-                if response.body.len() > request.max_response_bytes {
-                    response.body.truncate(request.max_response_bytes);
-                    error.kind = WorkloadErrorKind::Limit;
-                }
+            if let Some(response) = &mut error.response
+                && response.body.len() > request.max_response_bytes
+            {
+                response.body.truncate(request.max_response_bytes);
+                error.kind = WorkloadErrorKind::Limit;
             }
             return Err(error);
         }

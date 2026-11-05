@@ -795,15 +795,14 @@ fn decode_result(value: Value, script: &ScriptRequest) -> Result<ScriptResult, W
                     .ok_or_else(|| WorkloadError::invalid("script deleted flag"))?,
             ),
         };
-        let typed_object;
-        if verb == ScriptVerb::Delete {
+        let typed_object = if verb == ScriptVerb::Delete {
             if target != operation.target
                 || deleted != Some(true)
                 || object.as_ref().is_some_and(|v| !v.is_null())
             {
                 return Err(WorkloadError::invalid("delete result contract"));
             }
-            typed_object = None;
+            None
         } else {
             if deleted.is_some()
                 || object
@@ -817,12 +816,12 @@ fn decode_result(value: Value, script: &ScriptRequest) -> Result<ScriptResult, W
             if target.name != operation.target.name {
                 return Err(WorkloadError::invalid("script result target name"));
             }
-            typed_object = object
+            object
                 .as_ref()
                 .filter(|v| !v.is_null())
                 .map(|raw| decode_object(operation.target.kind, raw.clone()))
-                .transpose()?;
-        }
+                .transpose()?
+        };
         results.push(OperationResult {
             op_index,
             verb,
