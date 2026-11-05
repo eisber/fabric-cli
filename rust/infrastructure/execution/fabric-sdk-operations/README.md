@@ -29,6 +29,15 @@ The GET-only `with_source_read_operation_ids` option accepts a bounded opaque
 operation ID; default mutation and reconciliation paths retain stricter ID
 validation.
 
+`FabricOperation::with_accept` opts into finite `OperationAccept::ArrowV1` or
+`ArrowV2` response negotiation. The selected value reaches the initial request
+and result retrieval; JSON operation-state polling keeps its existing defaults.
+`OperationRequest::accept` exposes the validated selection to the injected
+executor. No arbitrary/authentication header override is exposed, and existing
+constructors remain unchanged. `reconcile_accepted_with_accept` supplies the
+same result negotiation for an already-received 202 without replaying its
+original request.
+
 ## Evidence and cancellation
 
 `OperationError` retains typed classification, operation ID, raw service

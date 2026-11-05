@@ -38,6 +38,29 @@ pub struct FabricOperation {
     body: Vec<u8>,
     completion: CompletionPolicy,
     source_read_operation_ids: bool,
+    accept: Option<OperationAccept>,
+}
+
+/// Finite opt-in response negotiation for binary operation results.
+///
+/// This is deliberately not an arbitrary header override. Authentication,
+/// endpoint binding and the existing JSON defaults remain caller-independent.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OperationAccept {
+    /// Original Arrow streaming encoding, including on-premises gateways.
+    ArrowV1,
+    /// Newer Arrow encoding; callers must account for gateway restrictions.
+    ArrowV2,
+}
+
+impl OperationAccept {
+    /// Exact validated `Accept` header value.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ArrowV1 => "application/vnd.apache.arrow.stream;pq-arrow-version=1",
+            Self::ArrowV2 => "application/vnd.apache.arrow.stream;pq-arrow-version=2",
+        }
+    }
 }
 
 impl FabricOperation {
@@ -78,6 +101,7 @@ impl FabricOperation {
             body,
             completion,
             source_read_operation_ids: false,
+            accept: None,
         })
     }
 
@@ -102,7 +126,17 @@ impl FabricOperation {
             body,
             completion: operation.completion(),
             source_read_operation_ids: false,
+            accept: None,
         })
+    }
+
+    /// Negotiate a finite binary media type on the initial and result requests.
+    ///
+    /// State polling retains its existing JSON negotiation. Constructors that
+    /// do not opt in retain the existing transport defaults.
+    pub const fn with_accept(mut self, accept: OperationAccept) -> Self {
+        self.accept = Some(accept);
+        self
     }
 
     /// Permit bounded opaque operation IDs for an explicit source-synchronous GET.
@@ -132,6 +166,7 @@ pub struct OperationRequest<'a> {
     body: Vec<u8>,
     token: &'a AccessToken,
     max_response_bytes: NonZeroUsize,
+    accept: Option<OperationAccept>,
 }
 
 impl OperationRequest<'_> {
@@ -154,6 +189,10 @@ impl OperationRequest<'_> {
     /// Streaming byte bound for the existing shared executor.
     pub const fn max_response_bytes(&self) -> NonZeroUsize {
         self.max_response_bytes
+    }
+    /// Explicit finite response negotiation, or the unchanged transport default.
+    pub const fn accept(&self) -> Option<OperationAccept> {
+        self.accept
     }
 }
 
@@ -449,6 +488,32 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         response: OperationResponse,
         completion: CompletionPolicy,
     ) -> Result<OperationResponse, OperationError> {
+        self.reconcile_accepted_inner(response, completion, None).await
+    }
+
+    /// Reconcile an external 202 with explicit finite result negotiation.
+    ///
+    /// The initial mutation is never repeated. This has the same fresh-session
+    /// and evidence rules as [`Self::reconcile_accepted`]; only the result GET
+    /// receives the selected `Accept` value, not JSON state polling.
+    ///
+    /// # Errors
+    /// Preserves the existing validation, service, bounds and cancellation errors.
+    pub async fn reconcile_accepted_with_accept(
+        &mut self,
+        response: OperationResponse,
+        completion: CompletionPolicy,
+        accept: OperationAccept,
+    ) -> Result<OperationResponse, OperationError> {
+        self.reconcile_accepted_inner(response, completion, Some(accept)).await
+    }
+
+    async fn reconcile_accepted_inner(
+        &mut self,
+        response: OperationResponse,
+        completion: CompletionPolicy,
+        accept: Option<OperationAccept>,
+    ) -> Result<OperationResponse, OperationError> {
         let result = async {
             if response.status != 202 || self.requests != 0 || self.mutation_may_have_occurred {
                 return Err(OperationErrorKind::InvalidInput);
@@ -476,7 +541,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             if response.body.len() > self.limits.max_response_bytes.get() {
                 return Err(OperationErrorKind::Limit);
             }
-            self.resolve_accepted(response, completion, false).await
+            self.resolve_accepted(response, completion, false, accept).await
         }
         .await;
         result.map_err(|kind| self.evidence(kind))
@@ -490,7 +555,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         let url = service_url(&self.endpoint, &operation.path)?;
         let response = if operation.method == ResourceMethod::Get && !python {
             let response = self
-                .request(operation.method, url, operation.body, false)
+                .request(operation.method, url, operation.body, false, operation.accept)
                 .await?;
             ensure_status(&response, &[200, 201, 204])?;
             return Ok(response);
@@ -503,6 +568,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
                 url,
                 operation.body,
                 operation.source_read_operation_ids,
+                operation.accept,
             )
             .await?
         };
@@ -514,6 +580,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             response,
             operation.completion,
             operation.source_read_operation_ids,
+            operation.accept,
         )
         .await
     }
@@ -523,6 +590,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         mut response: OperationResponse,
         completion: CompletionPolicy,
         source_read_operation_ids: bool,
+        accept: Option<OperationAccept>,
     ) -> Result<OperationResponse, OperationErrorKind> {
         let python = completion == CompletionPolicy::PythonSynchronous;
         if completion == CompletionPolicy::ReturnAccepted {
@@ -593,6 +661,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
                     service_url(&self.endpoint, &path)?,
                     Vec::new(),
                     false,
+                    None,
                 )
                 .await?;
             ensure_source_status(&response, &[200], python)?;
@@ -628,6 +697,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
                             service_url(&self.endpoint, &format!("{path}/result"))?,
                             Vec::new(),
                             false,
+                            accept,
                         )
                         .await?;
                     match ensure_source_status(&result, &[200, 201, 202, 204], true) {
@@ -655,6 +725,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
                                 service_url(&self.endpoint, &result_path)?,
                                 Vec::new(),
                                 false,
+                                accept,
                             )
                             .await?;
                         ensure_status(&result, &[200])?;
@@ -690,6 +761,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         url: Url,
         body: Vec<u8>,
         source_read_operation_ids: bool,
+        accept: Option<OperationAccept>,
     ) -> Result<OperationResponse, OperationErrorKind> {
         self.raw_service_error = None;
         Self::run(
@@ -715,6 +787,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             mutation_may_have_occurred: &mut self.mutation_may_have_occurred,
             source_read_operation_ids,
             accepted_operation_id: None,
+            accept,
         };
         let cancelled = &mut self.cancelled;
         let observed = &mut self.cancelled_observed;
@@ -790,6 +863,7 @@ struct SessionExecution<'a, E> {
     mutation_may_have_occurred: &'a mut bool,
     source_read_operation_ids: bool,
     accepted_operation_id: Option<String>,
+    accept: Option<OperationAccept>,
 }
 
 impl<E: OperationExecutor> AuthenticatedExecution for SessionExecution<'_, E> {
@@ -814,6 +888,7 @@ impl<E: OperationExecutor> AuthenticatedExecution for SessionExecution<'_, E> {
                     body: std::mem::take(&mut self.body),
                     token,
                     max_response_bytes: self.max_response_bytes,
+                    accept: self.accept,
                 })
                 .await?;
             if response.status == 202 {
