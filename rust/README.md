@@ -27,6 +27,11 @@ For the separate CLI v2 effort, follow the
 implementation starts only after the selected specification and first wave
 are confirmed; this process does not change the existing CLI contract.
 
+The owner-selected [nonrecursive delete preview](docs/nonrecursive-delete.md)
+adds exact Notebook deletion with explicit permanent intent and host approval.
+Its typed operation metadata propagates through SDK results and CLI receipts.
+It does not replace `rm` or promise recoverable deletion or physical erasure.
+
 ## Workspace components
 
 The workspace groups service clients and command adapters by capability:

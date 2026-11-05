@@ -731,6 +731,7 @@ name = "fabric-core"
 version = "0.1.0"
 dependencies = [
  "azure_core",
+ "serde",
  "thiserror",
 ]
 

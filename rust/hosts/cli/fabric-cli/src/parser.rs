@@ -10,6 +10,8 @@ mod diagnostics;
 pub use diagnostics::invalid_arguments_message;
 
 pub mod batch;
+pub mod delete;
+pub use delete::DeleteCommand;
 
 #[cfg(feature = "self-update")]
 mod update;
@@ -68,6 +70,8 @@ pub enum Invocation {
     Batch(batch::BatchInvocation),
     /// A command requiring explicitly supplied dependencies.
     Read(ReadCommand),
+    /// V2 nonrecursive typed delete; never routed through the source `rm` handler.
+    Delete(DeleteCommand),
     /// Read-only job leaf; never submission, cancellation or schedule mutation.
     JobRead(JobReadCommand),
     /// Submission or synchronous execution, using the same explicitly selected host.
@@ -134,7 +138,7 @@ pub fn command() -> Command {
         .subcommands(fabric_cli_local::root_commands())
         .subcommands(fabric_cli_mutations::frontdoor::resource_subcommands())
         .subcommands(fabric_cli_transfer::transfer_subcommands());
-    command
+    delete::register(command)
         .subcommand(fabric_cli_tables::command())
         .subcommand(jobs::register())
         .subcommand(
@@ -194,6 +198,9 @@ where
 {
     let mut args: Vec<OsString> = args.into_iter().map(Into::into).collect();
     let root = root_argument(&args);
+    if root.and_then(|index| args[index].to_str()) == Some("delete") {
+        args = delete::normalize(&args, root.expect("selected delete root"));
+    }
     if root.and_then(|index| args[index].to_str()) == Some("deploy") {
         for token in &mut args[root.expect("selected root") + 1..] {
             if token == "-tenv" {
@@ -294,6 +301,9 @@ where
             .take()
             .or_else(|| matches.get_one::<String>("output_format").cloned());
         return Ok(invocation);
+    }
+    if name == "delete" {
+        return DeleteCommand::from_matches(values).map(Invocation::Delete);
     }
     if !matches!(name, "ls" | "get") {
         return family_invocation(&matches);
