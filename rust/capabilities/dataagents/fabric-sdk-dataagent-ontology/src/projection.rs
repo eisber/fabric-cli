@@ -34,11 +34,11 @@ impl<T: Projection> Projection for Page<T> {
     fn matches(&self, resource: &Resource, selected: Option<&[String]>) -> bool {
         self.value.iter().all(|value| value.matches(resource, selected))
     }
+}
 
-    impl<T: Projection> Projection for Option<T> {
-        fn matches(&self, resource: &Resource, selected: Option<&[String]>) -> bool {
-            self.as_ref().is_none_or(|value| value.matches(resource, selected))
-        }
+impl<T: Projection> Projection for Option<T> {
+    fn matches(&self, resource: &Resource, selected: Option<&[String]>) -> bool {
+        self.as_ref().is_none_or(|value| value.matches(resource, selected))
     }
 }
 
@@ -54,11 +54,11 @@ impl Projection for SourceSchema {
             && !self.cache_last_updated_time.trim().is_empty()
             && self.elements.iter().all(valid_schema_element)
     }
+}
 
-    fn valid_schema_element(element: &SchemaElement) -> bool {
-        (element.kind.is_string() || element.kind.is_u64())
-            && element.children.iter().all(valid_schema_element)
-    }
+fn valid_schema_element(element: &SchemaElement) -> bool {
+    (element.kind.is_string() || element.kind.is_u64())
+        && element.children.iter().all(valid_schema_element)
 }
 
 impl Projection for FewShot {
