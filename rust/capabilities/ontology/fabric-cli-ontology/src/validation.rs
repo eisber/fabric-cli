@@ -12,6 +12,8 @@ use std::fmt;
 /// Local incompatibility discovered before any credential or host access.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ValidationError {
+    /// Public argument fields contain empty selectors or options for another verb.
+    InvalidArguments,
     /// The resolved type/generation/representation is not admitted.
     Selection(SelectionError),
     /// The body contract requires explicit local input.
@@ -35,6 +37,7 @@ pub enum ValidationError {
 impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidArguments => f.write_str("The arguments are invalid for this operation."),
             Self::Selection(error) => fmt::Display::fmt(error, f),
             Self::InputRequired => {
                 f.write_str("This representation requires explicit typed input.")
@@ -79,6 +82,7 @@ pub fn validate_arguments(
     owner_type: &str,
     generation: Option<u64>,
 ) -> Result<&'static OntologyBinding, ValidationError> {
+    validate_argument_shape(args)?;
     let binding = select_binding(args.verb, target, owner_type, generation)
         .map_err(ValidationError::Selection)?;
     if matches!(args.verb, OntologyVerb::Link | OntologyVerb::Move) {
@@ -110,10 +114,41 @@ pub fn validate_arguments(
     if args.mode != required_mode {
         return Err(ValidationError::UnsupportedUpdateMode);
     }
-    let can_observe = binding.backend == Backend::PublicDefinition
-        || (args.verb == OntologyVerb::Create && target == OntologyTarget::Item);
+    let can_observe = matches!(
+        binding.backend,
+        Backend::PublicDefinition | Backend::PublicModel
+    ) || (args.verb == OntologyVerb::Create && target == OntologyTarget::Item);
     if args.wait && !can_observe {
         return Err(ValidationError::UnsupportedWait);
     }
     Ok(binding)
+}
+
+fn validate_argument_shape(args: &OntologyArguments) -> Result<(), ValidationError> {
+    let mutation_input = matches!(args.verb, OntologyVerb::Create | OntologyVerb::Update);
+    if args.path.trim().is_empty()
+        || (!mutation_input && args.input.is_some())
+        || (args.verb != OntologyVerb::Update && args.mode.is_some())
+        || (args.verb != OntologyVerb::Delete && (args.permanent || args.recursive))
+        || (!matches!(args.verb, OntologyVerb::Update | OntologyVerb::Delete)
+            && args.if_match.is_some())
+        || (!matches!(args.verb, OntologyVerb::Get | OntologyVerb::List)
+            && args.max_bytes.is_some())
+        || (args.verb != OntologyVerb::List
+            && (args.limit.is_some() || args.continuation.is_some()))
+        || args.timeout.is_some_and(|timeout| {
+            timeout.is_zero() || timeout > std::time::Duration::from_secs(86_400)
+        })
+        || [
+            &args.profile,
+            &args.project,
+            &args.continuation,
+            &args.if_match,
+        ]
+        .into_iter()
+        .any(|value| value.as_ref().is_some_and(|value| value.trim().is_empty()))
+    {
+        return Err(ValidationError::InvalidArguments);
+    }
+    Ok(())
 }

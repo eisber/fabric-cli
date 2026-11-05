@@ -347,4 +347,33 @@ fn create_needs_typed_input_and_metadata_does_not_inherit_definition_wait() {
         Err(ValidationError::UnsupportedWait),
     );
     assert!(validate_arguments(&args, Target::Definition, "Ontology", Some(2)).is_ok());
+    assert!(validate_arguments(&args, Target::PublicModelMinimized, "Ontology", Some(2)).is_ok());
+    assert!(validate_arguments(&args, Target::PublicModelExpanded, "Ontology", Some(2)).is_ok());
+}
+
+#[test]
+fn programmatic_arguments_cannot_silently_add_unrelated_mutation_options() {
+    let original = parse_common_args(Verb::Get, ["get", "/target"]).unwrap();
+    let mut cases = Vec::new();
+    let mut args = original.clone();
+    args.permanent = true;
+    cases.push(args);
+    let mut args = original.clone();
+    args.limit = Some(std::num::NonZeroUsize::new(1).unwrap());
+    cases.push(args);
+    let mut args = original.clone();
+    args.timeout = Some(Duration::ZERO);
+    cases.push(args);
+    let mut args = original.clone();
+    args.timeout = Some(Duration::from_secs(86_400) + Duration::from_nanos(1));
+    cases.push(args);
+    let mut args = original;
+    args.path.clear();
+    cases.push(args);
+    for args in cases {
+        assert_eq!(
+            validate_arguments(&args, Target::Item, "Ontology", Some(2)),
+            Err(ValidationError::InvalidArguments),
+        );
+    }
 }
