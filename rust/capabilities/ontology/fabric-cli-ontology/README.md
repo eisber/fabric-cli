@@ -1,11 +1,13 @@
 <!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
 
-# Ontology alias catalog and local argument validation
+# Ontology capability adapter
 
 This CLI-layer package implements the independently testable local portion of
 the selected seven-alias Ontology facade: create, delete, get, link, list, move
-and update. It does **not** implement remote execution, a global registry, a
-path resolver, an SDK, an MCP host or the complete Ontology feature.
+and update, plus actual public SDK Get and representation-replacement execution
+through caller-injected hosts. It does **not** install a global registry, path
+resolver, production host, SDK engine or MCP server, or implement the complete
+Ontology feature.
 
 `ontology_command` composes `operation_command` for each selected common verb.
 `parse_common_args` and `parse_facade_args` use that same schema and produce
@@ -54,26 +56,56 @@ byte/record bounds and duration syntax/24-hour ceiling without choosing a
 hidden host timeout. The coordinator must supply accepted finite policies
 before execution.
 
-## Required producer integration
+## Public SDK execution
 
-The approved source baseline is
-`eca98ab84c4a14d1ee158c2438e76dd77d2b0af0`. Its generic item SDK already recognizes
-Ontology, but there is no shared v2 registry/path/receipt contract or MCP head.
-Do not promote this CLI catalog into the SDK or infer operation support from
-schema/help construction.
+`bind_public_operations` transactionally binds the caller's existing common
+descriptors and schemas to these accepted selectors. It neither registers
+duplicate descriptors nor assigns separate Ontology MCP tool IDs.
 
-The coordinator must supply accepted neutral registration/target/effect/receipt
-types and exact released public/native SDK commits. Runtime integration must
-reuse injected credentials, transport, paging, operation reconciliation and the
-caller runtime. No separate HTTP/auth/runtime/poller belongs here.
+| Verb | Facet / representation | Existing operation ID |
+| --- | --- | --- |
+| Get | metadata / json | item.metadata.get |
+| Get | definition / native | item.definition.get |
+| Update, replace | definition / native | item.definition.replace |
+| Get | model / minimized or expanded | ontology.model.get |
+| Update, replace | model / minimized | ontology.model.replace |
 
-The host must validate strict UTF-8/JSON, duplicate/unknown fields, representation
-media and input/response byte limits; resolve exact IDs/generation/native child
-identity; atomically reserve no-clobber output; bind approval to exact effects
-and conditions; then call the accepted SDK once. Receipts must distinguish
-succeeded, accepted, partial, failed and unknown and retain original scoped
-operation evidence on timeout or output failure. Output failure must not replay
-remote work. These are pending integration obligations, not implemented tests.
+The neutral registry/approval/receipt types are imported through the released
+SDK-layer `fabric_sdk_ontology::v2` bridge, not a new CLI-to-core dependency.
+The producer checkpoint is `907ccfad98e8df8400d36c37fe5222e5d12d69c1`; the
+original source baseline is `eca98ab84c4a14d1ee158c2438e76dd77d2b0af0`.
+SDK credentials, endpoint binding, HTTP execution, bounded operation observation
+and caller runtime are reused. There is no separate auth/runtime/poller.
+
+`execute` accepts the same parsed arguments for generic and facade invocation.
+The injected host supplies exact resolved IDs and canonical selectors, bounded
+local input, finite deadline/cancellation policy, atomic no-clobber output
+reservation, and approval bound to the immutable request/body/output/effects.
+Optional local-write effects must have been declared by the existing descriptor.
+Required effects cannot be omitted. Replacement records existing-only and
+unguarded concurrency; unsupported revision conditions never disappear.
+
+Only after these phases does the adapter call the released metadata,
+definition/model Get, or definition/model replacement SDK API. Exact native
+envelopes are retained; expanded models are not accepted as authoring inputs.
+Definition replacement does not implicitly update metadata. Input JSON and
+serialized result data have separate explicit bounds; oversized source is an
+error, never clipped content. The native SDK validates its own request/response
+contracts and retains service authority over individual model object semantics.
+The host must verify feature gates, scoped authorization, complete input schema
+and any required concurrency/approval restrictions before approving.
+
+Successful/accepted JSON receipts go only to the reserved stdout/file writer;
+failed/unknown results go to stderr with non-success `command_succeeded()`.
+Original `PublicError`, native handles, uncertainty and engine warnings remain
+available in `ExecutionReport`. `AdapterError::Output` retains that original
+report even when the writer fails after partial local output; the SDK operation
+is never replayed to repair a receipt.
+
+Projection, create/delete/metadata-patch execution, schema CRUDL, native
+link/rename, internal models, OWL conversion, docs/context and model-backed
+execution remain explicit execution gaps, not fallback SDK calls. The local
+catalog is broader source evidence, not an enabled-operation list.
 
 ## Source and spec evidence
 
@@ -89,11 +121,13 @@ native V4 lineage-tag CRUDL and JSON Merge Patch. IOntologyScriptManager declare
 transactional strict scripting; it is not permission for generic createOrReplace
 under create. Source presence does not establish rollout or caller permission.
 
-Local tests cover alias/schema equivalence, exact vocabulary, typed arguments,
-numeric boundaries, representation separation and explicit unsupported states.
-They do not establish argument-to-SDK execution, stdout/stderr receipts,
-credential ordering, input/media limits or output writer/no-replay behavior.
-Those tests require the producer/host integration and an explicit shared-host
-validation slot. Workspace membership is discovered by the existing glob;
+Tests cover alias/schema equivalence, exact vocabulary, typed arguments,
+numeric/JSON boundaries, representation separation and explicit unsupported
+states. Injected execution tests exercise actual SDK wire requests, credentials,
+generic/facade identity, receipt streams, predispatch approval/collision failures
+and post-acceptance output failure without replay. They do not prove a production
+path resolver, filesystem reservation host, tenant permission or live rollout.
+Rust checks require an explicitly allocated shared-host validation slot.
+Workspace membership is discovered by the existing glob;
 default-members, centralized internal dependencies and lockfile changes remain
 coordinator-owned.

@@ -1,12 +1,14 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Ontology facade catalog and local argument validation.
+//! Ontology facade catalog, local validation and injected public SDK execution.
 //!
 //! These CLI-layer descriptions are source-backed proposals, not a shared SDK
-//! registry, accepted path grammar or executable remote capability. Common and
+//! registry, accepted path grammar or production remote host. Common and
 //! facade argument entry points use the same schema and common verb identity.
-//! No credentials, filesystem, HTTP, runtime or operation submission are accessed.
+//! Parsing accesses no credentials, files or remote service. The explicit
+//! execution adapter requires caller-owned resolution, reservation, approval,
+//! SDK credentials/transport/runtime and finite policies before submitting work.
 
 mod adapter;
 mod args;

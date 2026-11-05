@@ -66,8 +66,9 @@ impl TokenCredential for Credential {
 #[derive(Clone, Default)]
 struct Executor {
     responses: Arc<Mutex<VecDeque<OperationResponse>>>,
-    seen: Arc<Mutex<Vec<(String, String, Vec<u8>)>>>,
+    seen: Arc<Mutex<Vec<Seen>>>,
 }
+type Seen = (String, String, Vec<u8>);
 impl Executor {
     fn new(responses: Vec<OperationResponse>) -> Self {
         Self {
@@ -226,7 +227,7 @@ impl AdapterHost for Host {
 
 fn registry() -> Registry {
     let mut registry = Registry::default();
-    for (id, verb, mut effects) in [
+    for (id, verb, effects) in [
         ("item.metadata.get", Verb::Get, vec![Effect::RemoteRead]),
         ("item.definition.get", Verb::Get, vec![Effect::RemoteRead]),
         (
@@ -249,7 +250,6 @@ fn registry() -> Registry {
             ],
         ),
     ] {
-        effects.shrink_to_fit();
         registry
             .register(
                 OperationDescriptor::new(
@@ -651,4 +651,128 @@ fn owner_binding_is_transactional_and_does_not_duplicate_caller_descriptors() {
     assert!(bind_public_operations(&mut registry).is_err());
     assert_eq!(serde_json::to_value(registry.bindings()).unwrap(), before);
     assert_eq!(registry.operations().count(), 5);
+}
+
+#[tokio::test]
+async fn accepted_observation_budget_exhaustion_is_unknown_and_keeps_original_operation() {
+    let args = parse_facade_args(["ontology", "get", PATH, "--wait"]).unwrap();
+    let mut host = Host::new("definition", "native");
+    let executor = Executor::new(vec![accepted()]);
+    let mut limits = limits();
+    limits.operation.max_requests = NonZeroUsize::new(1).unwrap();
+    let report = execute(
+        &args,
+        true,
+        &registry(),
+        &mut host,
+        &client(Arc::new(Credential::default())),
+        executor.clone(),
+        limits,
+        pending(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(report.receipt.outcome(), Outcome::Unknown { .. }));
+    assert!(!report.command_succeeded());
+    assert!(report.sdk_error.is_some());
+    assert!(report.receipt.evidence().mutation_may_have_occurred);
+    let receipt: Value = serde_json::from_slice(&host.stderr).unwrap();
+    assert_eq!(receipt["meta"]["evidence"]["handles"][0]["id"], OPERATION);
+    assert!(host.output.lock().unwrap().is_empty());
+    assert_eq!(executor.seen.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn resultless_definition_wait_retains_handle_without_fetching_result_or_replaying_post() {
+    let args = parse_facade_args([
+        "ontology", "update", PATH, "--input", "-", "--mode", "replace", "--wait",
+    ])
+    .unwrap();
+    let mut host = Host::new("definition", "native");
+    host.input = serde_json::to_vec(&definition()).unwrap();
+    let executor = Executor::new(vec![
+        accepted(),
+        response(200, json!({"status":"Succeeded"})),
+    ]);
+    let report = execute(
+        &args,
+        true,
+        &registry(),
+        &mut host,
+        &client(Arc::new(Credential::default())),
+        executor.clone(),
+        limits(),
+        pending(),
+    )
+    .await
+    .unwrap();
+    assert!(report.command_succeeded());
+    let receipt: Value = serde_json::from_slice(&host.output.lock().unwrap()).unwrap();
+    assert_eq!(receipt["status"], "succeeded");
+    assert_eq!(receipt["meta"]["evidence"]["handles"][0]["id"], OPERATION);
+    let seen = executor.seen.lock().unwrap();
+    assert_eq!(seen.len(), 2);
+    assert_eq!(seen[0].0, "Post");
+    assert_eq!(seen[1].0, "Get");
+    assert!(seen[1].1.ends_with(&format!("/operations/{OPERATION}")));
+    assert!(seen.iter().all(|(_, url, _)| !url.ends_with("/result")));
+}
+
+#[tokio::test]
+async fn serialized_source_and_decoded_native_bounds_are_measured_exactly_without_clipping() {
+    let source = definition();
+    let bytes = serde_json::to_vec(&source).unwrap().len();
+    for (maximum, succeeded) in [(bytes, true), (bytes - 1, false)] {
+        let args = parse_facade_args(["ontology", "get", PATH]).unwrap();
+        let mut host = Host::new("definition", "native");
+        let executor = Executor::new(vec![response(200, source.clone())]);
+        let mut limits = limits();
+        limits.data_bytes = NonZeroUsize::new(maximum).unwrap();
+        limits.definition.max_decoded_bytes = NonZeroUsize::new(1).unwrap();
+        let report = execute(
+            &args,
+            true,
+            &registry(),
+            &mut host,
+            &client(Arc::new(Credential::default())),
+            executor.clone(),
+            limits,
+            pending(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(report.command_succeeded(), succeeded);
+        assert_eq!(executor.seen.lock().unwrap().len(), 1);
+        if succeeded {
+            let receipt: Value = serde_json::from_slice(&host.output.lock().unwrap()).unwrap();
+            assert_eq!(receipt["data"], source);
+        } else {
+            assert!(host.output.lock().unwrap().is_empty());
+            let receipt: Value = serde_json::from_slice(&host.stderr).unwrap();
+            assert_eq!(receipt["error"]["code"], "BudgetExceeded");
+        }
+    }
+    let mut source = source;
+    source["definition"]["parts"][0]["payload"] = json!("YWI=");
+    let args = parse_facade_args(["ontology", "get", PATH]).unwrap();
+    let mut host = Host::new("definition", "native");
+    let mut limits = limits();
+    limits.definition.max_decoded_bytes = NonZeroUsize::new(1).unwrap();
+    let report = execute(
+        &args,
+        true,
+        &registry(),
+        &mut host,
+        &client(Arc::new(Credential::default())),
+        Executor::new(vec![response(200, source)]),
+        limits,
+        pending(),
+    )
+    .await
+    .unwrap();
+    assert!(!report.command_succeeded());
+    assert!(report.sdk_error.is_some());
+    assert!(host.output.lock().unwrap().is_empty());
+    let receipt: Value = serde_json::from_slice(&host.stderr).unwrap();
+    assert_eq!(receipt["error"]["code"], "BudgetExceeded");
 }
