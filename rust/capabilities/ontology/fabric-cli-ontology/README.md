@@ -102,6 +102,11 @@ available in `ExecutionReport`. `AdapterError::Output` retains that original
 report even when the writer fails after partial local output; the SDK operation
 is never replayed to repair a receipt.
 
+An HTTP rejection of the initial submission is a failed request. An HTTP error
+observing an already accepted operation is instead an unknown final outcome,
+retaining the original operation handle and observed HTTP status. Only a
+provider-reported terminal failure establishes that accepted work failed.
+
 Projection, create/delete/metadata-patch execution, schema CRUDL, native
 link/rename, internal models, OWL conversion, docs/context and model-backed
 execution remain explicit execution gaps, not fallback SDK calls. The local

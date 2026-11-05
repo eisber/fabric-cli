@@ -622,10 +622,11 @@ fn failure(error: PublicError) -> DispatchResult {
     let code = match &error.kind {
         PublicErrorKind::Operation(cause) => {
             evidence = operation_evidence(cause);
-            uncertain = !matches!(
-                cause.kind,
-                OperationErrorKind::Http { .. } | OperationErrorKind::OperationFailed { .. }
-            ) && (evidence.mutation_may_have_occurred || !evidence.handles.is_empty());
+            uncertain = match cause.kind {
+                OperationErrorKind::OperationFailed { .. } => false,
+                OperationErrorKind::Http { .. } => !evidence.handles.is_empty(),
+                _ => evidence.mutation_may_have_occurred || !evidence.handles.is_empty(),
+            };
             match cause.kind {
                 OperationErrorKind::Http { status: 401, .. } => "Unauthenticated",
                 OperationErrorKind::Http { status: 403, .. } => "AccessDenied",
