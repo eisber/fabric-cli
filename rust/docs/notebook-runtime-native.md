@@ -260,3 +260,140 @@ remain **unexecuted in this lane**, not passed; queued parent validation is not 
 test result.
 Static source checks and `git diff --check` are separate evidence, not replacements
 for an authorized all-target check.
+
+## Managed execution driver: already-ready injected channel slice
+
+`notebook_runtime::driver` adds actual managed send/receive execution over a
+caller-injected persistent `NotebookChannel`. This is not a request printer:
+`ManagedExecution::submit` sends the encoded `ExecuteRequest` once; `run` and
+`observe_next` pull actual channel frames, decode them through `JupyterMessage`,
+correlate them through the existing `ExecutionTracker`, and await a bounded
+`OutputSink` before receiving another frame.
+
+The source pin remains FNTK `e250d5d32b04efcc5623a414a361727a93c271ce`.
+The implementation was read directly, particularly
+`client/ws_client.py:254-258` (actual single JSON send), `286-310` (parent-message
+routing and execute-reply completion), `371-440` (submit/observe native outcomes),
+`516-541` and `587-628` (explicit exact-message cancellation and control ACK),
+and `228-238` (local connection disposal). Existing `jupyter_protocol.py` codecs
+remain the wire format authority. This slice does not infer a startup sequence
+from documentation or translate the source's daemon/global event loop.
+
+### Interfaces and ownership
+
+- `ReadySession::new` binds the existing `NotebookRuntime` origin, capacity,
+  workspace and Notebook scope to explicit Jupyter session, kernel and established
+  control comm IDs. It is a **caller attestation of already-ready compute**, not
+  a readiness check. REST Jupyter create is never treated as Spark ready.
+- `NotebookChannel` owns the persistent authenticated connection, reports its
+  immutable actual `ReadySession`, and implements bounded single-frame
+  `send`, `receive` and local `close`. Its binding must match the expected owner,
+  session, kernel and comm before and after I/O. There is no ambient lookup.
+- `DeadlineAlarm` adapts the caller's existing runtime timer. It must register a
+  waker and complete at the supplied deadline, never early. The driver installs
+  no async runtime and has no production Tokio dependency.
+- `OutputSink` receives typed `LiveOutput` and its exact encoded-content bound.
+  Sink I/O is deadline-bound and backpressured. The sink must bound its own
+  buffering; the driver does not create an unbounded consumer queue.
+- `DriverOptions` requires the ready binding, caller-local `ExecutionId`, frozen
+  `DriverLimits`, and one absolute `NativeDeadline`. The caller also supplies the
+  explicit remote execute `MessageId` in the existing `ExecuteRequest`.
+
+The driver checks owner equality before any send, preflights the existing request
+against destination protocol/code/output limits, and keeps only bounded encoded
+source and partial outputs. Incoming `parent_header.msg_id` is the response
+correlation identity. If a parent session is present for the original execution
+or cancellation, it must match the explicit Jupyter client session; a contradictory
+or mistyped parent session is rejected. Incoming `header.session` may identify
+the kernel sender and is deliberately not substituted for the client session.
+The host's authenticated channel binding provides Notebook/kernel isolation.
+
+Default limits are the existing 4 MiB/frame, 1 MiB/code, 20,000 correlated messages,
+10,000 outputs and 16 MiB retained output content, plus 20,000 **total** received
+frames and 64 MiB total received bytes. The latter include unrelated traffic,
+unknown types and duplicates, preventing an endless stream of skipped messages.
+Every receive is capped by both the per-frame limit and remaining total bytes.
+The host must enforce this cap before allocation and may not precollect or read
+ahead while the sink/caller is paused. Malformed JSON/envelopes and malformed
+correlated payloads fail explicitly; unsupported binary framing remains a host
+error rather than a synthetic JSON result.
+
+### Deadlines, outcomes and failure custody
+
+The **same original** `NativeDeadline` is passed to submit, receive, sink,
+explicit cancellation and close. Caller pauses consume that same budget.
+Channel/sink implementations must enforce it while awaiting their own I/O.
+Independently, the driver races every pending operation against `DeadlineAlarm`
+using a wake-driven future: a stalled I/O future need not return or wake itself
+for the driver's deadline to fire. Checks before and after I/O/decoding prevent
+per-step watchdog resets or late success. No timeout causes a remote cancel.
+
+`DriverState` is local lifecycle; `RemoteOutcome` is independent evidence.
+Before submission the outcome is `NotSubmitted`. The driver reserves the
+once-only send attempt **before awaiting** it. Failed/partially sent/dropped
+submission, lost channel, poisoned sink or observation timeout remains `Unknown`
+until an authoritative execute reply was actually observed. Dropped receive,
+control or sink futures leave `Interrupted` and cannot be continued or replayed.
+These rules hold even when the host cannot say whether the send reached compute.
+There is no backend retry and no new-driver/cross-process deduplication claim.
+
+Native `execute_reply` is terminal, as in the pinned source and existing observer.
+Kernel idle, stream/error output and cancellation ACK are not terminal.
+`run` returns `Ok(ExecuteStatus::Error)` or `Ok(Abort)` when those native workload
+outcomes were successfully observed: neither means workload success. Complete
+MIME/error/traceback data and partial outputs stay available through the read-only
+observer. Outputs are separate from persisted IPYNB cell outputs and never saved
+implicitly. Late IOPub output after the terminal reply is not drained by this slice.
+
+Received outputs remain in the bounded observer before sink delivery. Only a
+successful sink acknowledgement increments `delivered_outputs`. A failed, timed
+out or dropped sink write may have consumed part of a record and permanently
+poisons continuation: the driver neither redelivers that record nor pulls the
+next frame. Errors/debug output never print source, owner IDs, raw payloads or
+tracebacks; workload data is available only through explicit result access.
+
+### Explicit cancellation and local disposal
+
+`cancel(control_message_id)` sends one source-backed `cancel_cell_execution`
+control on the same established channel/comm, targeting the original remote
+execute message ID, not the local operation handle. It acknowledges **send only**;
+continue observation for `DriverEvent::CancellationAck`, whose accepted/rejected
+status never overwrites the execution outcome. Completion can win while an ACK
+is pending; the driver stops at that terminal reply without inventing an ACK.
+A failed/dropped control send is never retried. Session-wide interrupts,
+cancel-all and other lifecycle controls are not installed by this driver.
+`cancellation_attempted` retains attempted-send evidence even if the existing
+observer cannot record a successful send or ACK; absence of an ACK is never
+reported as evidence that cancellation did not reach the kernel.
+Cancellation is callable between incremental pull calls; this single-owner
+slice does not install a background multiplexer or concurrent cancellation task.
+Dropping a pending pull poisons continuation rather than opening a second
+connection or implicitly interrupting compute.
+
+`close` takes and disposes the owned channel at most once under the original
+deadline. Failure, expiry or dropped close futures still drop the owned channel.
+Channel drop must release local socket resources; it must never issue an
+interrupt, delete a Jupyter session, terminate Livy or otherwise clean up remote
+compute. A second close only confirms local disposal. Driver drop relies on this
+same host contract and sends no remote control.
+
+### Remaining gaps and driver validation
+
+This positive driver path requires an explicitly supplied ready channel **and**
+runtime alarm. It does not change `NotebookRuntime::require_websocket_host` or
+`resume` into successful default transport/reattach operations. Standalone native
+WebSocket framing/connection establishment, MWC bootstrap, authentication/host
+composition, redirects/trust, comm establishment, session pooling, reconnect,
+output replay, startup/configuration ordering and verified Spark readiness remain
+unsupported here. Callers needing startup must not substitute a REST-created
+session for `ReadySession`. No default transport or fabricated readiness exists.
+Full Notebook/facade and live backend acceptance remain separate work.
+
+Instrumented offline driver tests cover actual encoded send-once, mixed traffic,
+native workload errors/MIME, bounded unrelated/duplicate traffic, partial-output
+budgets, sink backpressure/poisoning, malformed/oversized frames, owner/ID mismatch,
+stalled-I/O deadlines, lost-after-send unknown, no resubmit, cancellation ACK races,
+future drop and local closure/disposal. They use injected channels, sinks and the
+test runtime's alarm; no live service or credential access is performed.
+Workers have no compiler slot: driver tests, compilation, clippy and formatting
+are unexecuted in this lane and remain coordinator-owned validation gates.

@@ -16,6 +16,7 @@
 #![deny(missing_docs)]
 
 pub mod content;
+pub mod driver;
 pub mod protocol;
 
 use crate::runtime::{
