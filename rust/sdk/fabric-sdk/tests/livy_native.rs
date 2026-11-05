@@ -74,6 +74,21 @@ async fn exercise<T: ResponseModel>(
     assert_eq!(request.native().url().path(), path);
     assert_eq!(request.native().effect(), effect);
     assert_eq!(request.native().accept(), "application/json");
+    assert_eq!(request.native().headers().get("accept-encoding").map(String::as_str), Some("identity"));
+    let requested_by = request.native().headers().get("x-requested-by").map(String::as_str);
+    if request.profile() == ServiceProfile::NativeWildfire {
+        assert_eq!(requested_by, Some("fabric-sdk-rust-livy"));
+    } else {
+        assert!(requested_by.is_none());
+    }
+    if request.contract().encoding == RequestEncoding::Multipart {
+        assert!(request.native().content_type().starts_with("multipart/form-data; boundary="));
+        assert!(request.native().bytes().is_some());
+        assert!(request.native().body().is_none());
+    } else {
+        assert_eq!(request.native().content_type(), "application/json");
+        assert!(request.native().bytes().is_none());
+    }
     assert_eq!(request.contract().maturity(), Maturity::SourceModeledDeploymentUnverified);
     let executor = Synthetic::json(json!({"state": "idle", "opaque": {"preserved": true}}));
     let reply = request.execute(&executor, 4096).await.unwrap();
@@ -94,7 +109,7 @@ fn assert_matrix(seen: &[RouteContract], expected: &[RouteContract]) {
 }
 
 #[tokio::test]
-async fn all_49_native_routes_are_executable_json_or_explicit_multipart_gaps() {
+async fn all_49_native_routes_dispatch_json_or_explicit_multipart_bytes() {
     let service = native();
     let session = service.session("s").unwrap();
     let repl = session.repl("r").unwrap();
@@ -142,13 +157,17 @@ async fn all_49_native_routes_are_executable_json_or_explicit_multipart_gaps() {
         assert_eq!(descriptor.url().path(), format!("/proxy/sessions/s{upload}"));
         assert_eq!(descriptor.contract().method, NativeMethod::Post);
         assert_eq!(descriptor.contract().encoding, RequestEncoding::Multipart);
-        assert_eq!(descriptor.contract().maturity(), Maturity::MultipartTransportRequired);
+        assert_eq!(descriptor.contract().maturity(), Maturity::SourceModeledDeploymentUnverified);
         assert_eq!(descriptor.part_name(), field);
         assert_eq!(descriptor.filename(), "a file.bin");
         assert_eq!(descriptor.content_length(), 512);
         assert_eq!(descriptor.content_type(), "application/octet-stream");
-        seen.push(*descriptor.contract());
-        assert_eq!(descriptor.into_json_request().unwrap_err(), NativeError::UnsupportedCapability);
+        assert_eq!(descriptor.clone().into_json_request().unwrap_err(), NativeError::UnsupportedCapability);
+        exercise(
+            descriptor.into_multipart_request(vec![b'x'; 512], "livy-test-boundary", 2048).unwrap(),
+            NativeMethod::Post, &format!("/proxy/sessions/s{upload}"), NativeEffect::Update,
+            &mut seen,
+        ).await;
     }
     let serialized = SerializedJob::new(b"\x00\xffopaque", "spark").unwrap();
     call!(session.submit_job(&serialized), Post, "/sessions/s/submit-job", Execute);
@@ -428,7 +447,9 @@ async fn dispatch_once_errors_status_acceptance_and_wire_evidence_are_truthful()
     let too_large = Synthetic::new(vec![Ok(response(200, b"0123456789", None))]);
     let error = request.execute(&too_large, 4).await.unwrap_err();
     assert_eq!(error.native_error(), NativeError::Limit);
-    assert_eq!(error.raw(), b"0123");
+    assert_eq!(error.phase(), FailurePhase::ResponseLimit);
+    assert!(error.raw().is_empty());
+    assert_eq!(error.status(), None);
     assert_eq!(too_large.count(), 1);
     let accepted = Synthetic::new(vec![Ok(response(202, b"", None))]);
     let reply = request.execute(&accepted, 512).await.unwrap();
@@ -688,4 +709,63 @@ async fn hc_acquisition_isolation_survives_identical_backing_and_statement_ids()
     let other_workspace = LivyService::fabric(endpoint(), "other-workspace", "lakehouse").unwrap();
     assert_ne!(service.session("s").unwrap().get().unwrap().native().url(),
         other_workspace.session("s").unwrap().get().unwrap().native().url());
+}
+
+#[test]
+fn buffered_multipart_bytes_headers_and_total_wire_limits_are_exact() {
+    let service = native();
+    let session = service.session("s").unwrap();
+    for (kind, part) in [
+        (ResourceKind::Jar, "jar"),
+        (ResourceKind::PyFile, "file"),
+        (ResourceKind::File, "file"),
+    ] {
+        let descriptor = session.upload_descriptor(kind, "a\"b.bin", 3).unwrap();
+        let request = descriptor.clone().into_multipart_request(vec![0, 255, 0], "boundary", 1024).unwrap();
+        let native = request.native();
+        let mut expected = format!(
+            "--boundary\r\nContent-Disposition: form-data; name=\"{part}\"; filename=\"a%22b.bin\"\r\n\
+             Content-Type: application/octet-stream\r\n\r\n"
+        ).into_bytes();
+        expected.extend_from_slice(&[0, 255, 0]);
+        expected.extend_from_slice(b"\r\n--boundary--\r\n");
+        assert_eq!(native.bytes(), Some(expected.as_slice()));
+        assert_eq!(native.content_type(), "multipart/form-data; boundary=boundary");
+        assert!(native.body().is_none());
+        assert_eq!(native.headers().get("x-requested-by").map(String::as_str), Some("fabric-sdk-rust-livy"));
+        assert_eq!(native.headers().get("accept-encoding").map(String::as_str), Some("identity"));
+        assert!(!native.headers().contains_key("authorization"));
+        assert!(!native.headers().contains_key("host"));
+        assert!(descriptor.clone().into_multipart_request(vec![0, 255, 0], "boundary", expected.len()).is_ok());
+        assert_eq!(
+            descriptor.clone().into_multipart_request(vec![0, 255, 0], "boundary", expected.len() - 1).unwrap_err(),
+            NativeError::Limit,
+        );
+        assert_eq!(
+            descriptor.clone().into_multipart_request(vec![0, 255], "boundary", 1024).unwrap_err(),
+            NativeError::InvalidInput,
+        );
+        assert_eq!(
+            descriptor.clone().into_multipart_request(vec![0, 255, 0], "boundary", 0).unwrap_err(),
+            NativeError::InvalidInput,
+        );
+        for boundary in ["", "bad\r\nboundary", "with spaces", "bad;header", "\"quoted\""] {
+            assert_eq!(
+                descriptor.clone().into_multipart_request(vec![0, 255, 0], boundary, 1024).unwrap_err(),
+                NativeError::InvalidInput,
+            );
+        }
+        assert_eq!(
+            descriptor.into_multipart_request(vec![0, 255, 0], &"x".repeat(71), 1024).unwrap_err(),
+            NativeError::InvalidInput,
+        );
+    }
+    let content = b"before--boundary\r\nafter".to_vec();
+    let descriptor = session.upload_descriptor(ResourceKind::File, "file.bin", content.len() as u64).unwrap();
+    assert_eq!(
+        descriptor.into_multipart_request(content, "boundary", 1024).unwrap_err(),
+        NativeError::InvalidInput,
+    );
+    assert!(session.upload_descriptor(ResourceKind::File, "empty.bin", 0).unwrap()
+        .into_multipart_request(Vec::new(), "empty-boundary", 1024).is_ok());
 }

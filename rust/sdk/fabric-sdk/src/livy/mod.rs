@@ -25,6 +25,18 @@ use crate::runtime::{
 use serde_json::Value;
 use std::{fmt, marker::PhantomData, sync::Arc};
 
+fn protocol_headers(
+    request: NativeRequest,
+    profile: ServiceProfile,
+) -> Result<NativeRequest, NativeError> {
+    let request = request.with_header("Accept-Encoding", "identity")?;
+    if profile == ServiceProfile::NativeWildfire {
+        request.with_header("X-Requested-By", "fabric-sdk-rust-livy")
+    } else {
+        Ok(request)
+    }
+}
+
 pub(super) fn segment(value: &str) -> Result<(), NativeError> {
     validate_segment(value)?;
     if !value
@@ -93,6 +105,7 @@ impl Scope {
             .binding
             .endpoint
             .request(method, &parts, query, body, effect)?;
+        let native = protocol_headers(native, self.binding.profile)?;
         Ok(LivyRequest {
             native,
             binding: self.binding.clone(),
@@ -374,7 +387,7 @@ impl Session {
         self.scope.request(NativeMethod::Post, kind.add_suffix(), &[], Some(uri.as_json().clone()), NativeEffect::Update)
     }
 
-    /// Describe a binary upload without opening a file or pretending JSON supports multipart.
+    /// Describe a binary upload without opening a file or consuming its content.
     ///
     /// # Errors
     /// Rejects Fabric, unsafe filenames and unsupported lengths.
@@ -398,7 +411,15 @@ impl Session {
         let mut segments: Vec<&str> = self.scope.segments.iter().map(String::as_str).collect();
         segments.push(kind.upload_suffix().trim_start_matches('/'));
         let native = self.scope.binding.endpoint.request(NativeMethod::Post, &segments, &[], None, NativeEffect::Update)?;
-        Ok(UploadDescriptor { native, contract, kind, filename: filename.into(), content_length })
+        let native = protocol_headers(native, self.scope.binding.profile)?;
+        Ok(UploadDescriptor {
+            native,
+            binding: self.scope.binding.clone(),
+            contract,
+            kind,
+            filename: filename.into(),
+            content_length,
+        })
     }
 
     /// Construct a native REPL owner without creating it.
@@ -627,8 +648,10 @@ impl ResourceKind {
 }
 
 /// Native binary upload descriptor. No file is opened and no bytes are dispatched.
+#[derive(Clone)]
 pub struct UploadDescriptor {
     native: NativeRequest,
+    binding: Arc<Binding>,
     contract: &'static RouteContract,
     kind: ResourceKind,
     filename: String,
@@ -636,7 +659,7 @@ pub struct UploadDescriptor {
 }
 
 impl UploadDescriptor {
-    /// Exact native source operation, explicitly marked as a transport gap.
+    /// Exact native multipart source operation.
     pub const fn contract(&self) -> &'static RouteContract {
         self.contract
     }
@@ -669,10 +692,84 @@ impl UploadDescriptor {
         "application/octet-stream"
     }
 
+    /// Build a bounded binary multipart request using caller-supplied bytes and boundary.
+    ///
+    /// The complete encoded body, not just file bytes, must fit the supplied limit.
+    /// No stream/file is opened, content is never serialized as JSON/base64, and
+    /// no network access occurs. Streaming uploads remain a separate host capability.
+    ///
+    /// # Errors
+    /// Rejects length mismatch, an unsafe/colliding boundary or an exceeded bound.
+    pub fn into_multipart_request(
+        self,
+        content: Vec<u8>,
+        boundary: &str,
+        max_request_bytes: usize,
+    ) -> Result<LivyRequest<Acknowledgement>, NativeError> {
+        if boundary.is_empty()
+            || boundary.len() > 70
+            || !boundary.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')
+            })
+            || u64::try_from(content.len()).map_err(|_| NativeError::Limit)? != self.content_length
+            || max_request_bytes == 0
+        {
+            return Err(NativeError::InvalidInput);
+        }
+        if content.len() > max_request_bytes {
+            return Err(NativeError::Limit);
+        }
+        let delimiter = format!("--{boundary}");
+        if content.windows(delimiter.len()).any(|window| window == delimiter.as_bytes()) {
+            return Err(NativeError::InvalidInput);
+        }
+        let prefix = format!(
+            "{delimiter}\r\nContent-Disposition: form-data; name=\"{}\"; filename=\"",
+            self.part_name(),
+        );
+        let header_end = b"\"\r\nContent-Type: application/octet-stream\r\n\r\n";
+        let suffix = format!("\r\n{delimiter}--\r\n");
+        let escaped_name_len = self.filename.bytes().filter(|byte| *byte == b'"').count()
+            .checked_mul(2)
+            .and_then(|extra| extra.checked_add(self.filename.len()))
+            .ok_or(NativeError::Limit)?;
+        let length = [
+            prefix.len(), escaped_name_len, header_end.len(), content.len(), suffix.len(),
+        ].into_iter().try_fold(0usize, |total, length| total.checked_add(length))
+            .ok_or(NativeError::Limit)?;
+        if length > max_request_bytes {
+            return Err(NativeError::Limit);
+        }
+        let mut bytes = Vec::with_capacity(length);
+        bytes.extend_from_slice(prefix.as_bytes());
+        for byte in self.filename.bytes() {
+            if byte == b'"' {
+                bytes.extend_from_slice(b"%22");
+            } else {
+                bytes.push(byte);
+            }
+        }
+        bytes.extend_from_slice(header_end);
+        bytes.extend_from_slice(&content);
+        bytes.extend_from_slice(suffix.as_bytes());
+        let native = self.native.with_bytes(
+            bytes,
+            &format!("multipart/form-data; boundary={boundary}"),
+            max_request_bytes,
+        )?;
+        Ok(LivyRequest {
+            native,
+            binding: self.binding,
+            acquisition: None,
+            contract: self.contract,
+            marker: PhantomData,
+        })
+    }
+
     /// Refuse to disguise binary multipart as a JSON request.
     ///
     /// # Errors
-    /// Always returns `UnsupportedCapability`: shared multipart/streaming support is required.
+    /// Always returns `UnsupportedCapability`: use the explicit multipart byte representation.
     pub fn into_json_request(self) -> Result<LivyRequest<Acknowledgement>, NativeError> {
         Err(NativeError::UnsupportedCapability)
     }
@@ -787,14 +884,14 @@ impl<T: ResponseModel> LivyRequest<T> {
     /// Execute once through the caller's existing stack, with no retry, polling or LRO.
     ///
     /// The executor owns authorization binding, redirects, deadlines, cancellation,
-    /// streamed byte enforcement and native `X-Requested-By` requirements.
+    /// streamed byte enforcement and host-controlled security headers.
     ///
     /// # Errors
     /// Returns sanitized execution/HTTP/representation failures. A dispatched mutation
     /// failure is conservatively outcome-unknown; retain this request/owner for reconciliation.
     pub async fn execute(
         &self,
-        executor: &(impl NativeExecutor + ?Sized),
+        executor: &dyn NativeExecutor,
         max_response_bytes: usize,
     ) -> Result<LivyResponse<T>, LivyError> {
         let mutation = self.native.method() != NativeMethod::Get;
@@ -804,12 +901,15 @@ impl<T: ResponseModel> LivyRequest<T> {
         if max_response_bytes == 0 {
             return Err(error(NativeError::InvalidInput, FailurePhase::Validation, None, Vec::new(), false));
         }
-        let mut response = executor.execute(&self.native, max_response_bytes).await
-            .map_err(|source| error(source, FailurePhase::Execution, None, Vec::new(), true))?;
-        if response.body.len() > max_response_bytes {
-            response.body.truncate(max_response_bytes);
-            return Err(error(NativeError::Limit, FailurePhase::ResponseLimit, Some(response.status), response.body, true));
-        }
+        let response = self.native.execute(executor, max_response_bytes).await
+            .map_err(|source| {
+                let phase = if source == NativeError::Limit {
+                    FailurePhase::ResponseLimit
+                } else {
+                    FailurePhase::Execution
+                };
+                error(source, phase, None, Vec::new(), true)
+            })?;
         if !(200..300).contains(&response.status) {
             return Err(error(NativeError::Http(response.status), FailurePhase::Http, Some(response.status), response.body, true));
         }

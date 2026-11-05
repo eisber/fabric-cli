@@ -22,7 +22,7 @@ pub enum ServiceProfile {
 pub enum Maturity {
     /// Implemented against pinned source; deployed reachability has not been validated.
     SourceModeledDeploymentUnverified,
-    /// Inventoried native multipart route, blocked by the shared JSON request seam.
+    /// A separately selected streaming multipart transport is still required.
     MultipartTransportRequired,
 }
 
@@ -31,7 +31,7 @@ pub enum Maturity {
 pub enum RequestEncoding {
     /// JSON object or no body.
     Json,
-    /// One binary multipart part; cannot be represented by `NativeRequest`.
+    /// One binary multipart part in the shared request's explicit byte slot.
     Multipart,
 }
 
@@ -53,10 +53,7 @@ pub struct RouteContract {
 impl RouteContract {
     /// Report source coverage without claiming deployed/native qualification.
     pub const fn maturity(&self) -> Maturity {
-        match self.encoding {
-            RequestEncoding::Json => Maturity::SourceModeledDeploymentUnverified,
-            RequestEncoding::Multipart => Maturity::MultipartTransportRequired,
-        }
+        Maturity::SourceModeledDeploymentUnverified
     }
 }
 
@@ -81,7 +78,7 @@ macro_rules! route {
     };
 }
 
-/// All 49 native source pairs, including the three explicitly unsupported multipart transports.
+/// All 49 native source pairs, including three bounded buffered multipart uploads.
 ///
 /// Source: `docs/reference/native-rest.md`, `python/src/microsoft/fabric/livy/client.py`.
 pub const NATIVE_ROUTES: &[RouteContract] = &[

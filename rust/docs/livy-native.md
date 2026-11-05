@@ -25,7 +25,11 @@ explicit assignment selects the first native SDK wave, not full Notebook/Livy
 CLI delivery. Existing Python behavior and Rust command registration are untouched.
 
 The agreed shared runtime interface was cherry-picked first from
-`5fe13bd171c3bccf76da519b556173570c786603`. Integration must export
+`5fe13bd171c3bccf76da519b556173570c786603`, followed by the authorized bounded
+execution/media/header enhancement
+`2cca2b509c2e0b7c0f7bf0968f9fbe8e427bfb1f`. Livy execution delegates to
+`NativeRequest::execute`, and native protocol headers and multipart bytes use
+the shared request's validated header/media builders. Integration must export
 `pub mod livy;` in `fabric-sdk/src/lib.rs`; this lane deliberately does not edit
 that coordinator-owned file. The intended public tests import `fabric_sdk::livy`
 and become buildable after that export.
@@ -80,13 +84,13 @@ The capability check occurs during request building, before the executor runs.
 | Service version | 1 | `service.version` |
 | Session collection | 2 | `list_sessions`, `create_session` |
 | Classic session and tooling | 16 | `get`, `delete`, `get_state`, `logs`, `reset_timeout`, `stop`, `interrupt`, `connect`, `get_timeout`, `set_timeout`, `completion`, `inspect`, `debug`, `add_resource` for three kinds |
-| Binary upload descriptors | 3 | `upload_descriptor` for JAR, Python and ordinary files |
+| Buffered binary uploads | 3 | `upload_descriptor(...).into_multipart_request(...)` for JAR, Python and ordinary files |
 | Serialized native jobs | 4 | `submit_job`, `run_job`, `job.get`, `job.cancel` |
 | Classic statements | 4 | `list`, `submit`, `statement.get`, `statement.cancel` |
 | Native REPL collection/management | 8 | `list_repls`, `repl.create/get/delete/stop/reset_timeout/get_timeout/set_timeout` |
 | Native REPL statements | 4 | Same statement API with full REPL owner |
 | Batches | 7 | `list_batches`, `create_batch`, `batch.get/cancel/get_state/logs/reset_timeout` |
-| **Total** | **49** | **46 JSON/bodyless dispatches; 3 explicit multipart transport gaps** |
+| **Total** | **49** | **46 JSON/bodyless dispatches; 3 bounded buffered multipart dispatches** |
 
 The 20 Fabric operations are exactly four batch operations, five classic
 session operations (list/create/get/delete/reset), four classic statement
@@ -101,17 +105,24 @@ Batch termination is the actual **DELETE** route with `NativeEffect::Cancel`.
 Native job cancellation can remove its remote handle; there is no invented
 follow-up terminal polling contract.
 
-### Multipart gap: explicit, not simulated
+### Bounded multipart, distinct from JSON and streaming
 
 `UploadDescriptor` describes native POST `upload-jar`, `upload-pyfile` and
 `upload-file`, including scoped URL, validated basename, explicit content length,
 `application/octet-stream`, and the exact part name (`jar` or `file`). Factories
-do not open files or consume streams. `into_json_request()` always returns
-`NativeError::UnsupportedCapability`. No upload is executed and no binary bytes
-are base64-disguised as a JSON upload. `NativeRequest` currently carries only an
-optional JSON object; shared bounded multipart/streaming support requires a
-coordinator-owned interface change. URI loading is implemented separately through
-`add_resource` and is not an upload substitute.
+do not open files or consume streams. `into_multipart_request(content, boundary,
+max_request_bytes)` builds the exact multipart framing in the shared request's
+explicit byte slot, without dispatching. File length must match the descriptor,
+the caller-selected ASCII boundary must be nonempty, safe, at most 70 bytes and
+absent from content, and the complete framed body must fit the byte limit before
+allocation. Quoted filename characters are encoded as `%22` in the disposition.
+
+`into_json_request()` still returns `NativeError::UnsupportedCapability`:
+binary multipart is never disguised as JSON/base64. Dispatch is the same explicit
+single `LivyRequest::execute` call as other routes. This is a bounded **buffered**
+API, not streamed-file parity; file reading and streaming transport remain
+caller/host capabilities. URI loading through `add_resource` is separate and is
+not an upload substitute.
 
 ## Payloads and parameters
 
@@ -168,10 +179,14 @@ cancellation or generic `Location`/operation-LRO assumption.
 
 The host remains responsible for authorization bound to the selected endpoint/
 profile/audience/tenant, redirects, deadlines, cancellation, streamed byte limits,
-and source-required native `X-Requested-By` (and appropriate content/encoding
-headers). The shared request seam cannot represent arbitrary custom headers or
-multipart; this lane does not work around it. `NativeResponse` does not expose
-correlation/retry headers; this SDK does not manufacture those values.
+and host-controlled security/transport headers. All Livy requests explicitly
+declare `Accept-Encoding: identity`; native requests additionally declare
+`X-Requested-By: fabric-sdk-rust-livy`. Fabric never inherits that native marker.
+These use the shared validated header builder, without injecting authorization,
+Host or Content-Length. Hosts must honor `NativeRequest::bytes()` and
+`content_type()` for multipart rather than serializing binary content as JSON.
+`NativeResponse` does not expose correlation/retry headers; this SDK does not
+manufacture those values.
 
 `LivyResponse<T>` preserves actual HTTP status, original content type, exact
 bounded bytes, original request, source-only maturity and an immutable parsed
@@ -185,6 +200,9 @@ Unknown nested JSON and opaque serialized results remain unchanged.
 
 `LivyError` separates input/executor/HTTP/decode/bound failures, preserves actual
 HTTP status and bounded error bytes, and never prints provider/code content.
+An executor/shared-runtime `Limit` exposes no fabricated status or truncated body:
+that response was rejected by the common bound before Livy decoding. The error
+still identifies a bound failure and conservatively preserves mutation ambiguity.
 Runtime HTTP 404 remains actual HTTP 404, not proof that the entire selected
 source profile is unavailable. A failed dispatched non-GET is conservatively
 `outcome_unknown`, including decode/output failure: reconcile the retained owner,
@@ -230,7 +248,8 @@ resume/checkpoint, Arrow framing/codec, dataframe conversion or implicit fallbac
 49/20 route matrix, native/Fabric payload and query defaults, HC acquisition/
 backing ownership isolation, native-only rejection on Fabric, bad IDs/bodies,
 single-dispatch error paths, immutable raw/error payloads, state/output failures,
-nonterminal cancellation acknowledgements and bounded byte-cursor invariants.
+nonterminal cancellation acknowledgements, exact native protocol headers,
+multipart binary/framing/total-wire bounds and bounded byte-cursor invariants.
 They are intended final integration tests, not temporary private-module tests.
 
 **Actually performed in this lane:** pure Python comparison of the public
@@ -239,14 +258,17 @@ method/path registries against the pinned native markdown and Fabric OpenAPI;
 stub and diff-whitespace checks were also performed. These are static evidence,
 not executed Rust tests.
 
-**Not run:** rustfmt, Cargo check/test/clippy, architecture or downstream/native
-host validation. Cargo/rustc/rustfmt are absent from PATH and no shared-host
-heavy-build slot was granted. No toolchain or dependency was installed. After
-the coordinator exports the module and obtains the build slot, run the focused
+**Not run by this lane:** rustfmt, Cargo check/test/clippy, architecture or
+downstream/native host validation. The coordinator reports restored session-local
+Rust tools and focused tests queued under the shared heavy-validation mutex;
+queued work is not a passed result. Rust tools are still absent from this lane's
+PATH, and workers are not authorized to launch compiles. This lane installed no
+toolchain/dependency. After the coordinator exports the module and obtains the
+build slot, run the focused
 `fabric-sdk` Livy tests/all-target checks, pinned formatting/lints/architecture
 checks and affected-consumer checks from `rust/`. Compile/registration/type
 visibility and independent review remain integration gates.
 
 No live service/auth/settings/credential discovery, pushes, PRs or merges were
-performed. Missing host integration, three multipart routes and deployed
+performed. Missing host integration, streamed upload transport and deployed
 qualification remain explicit gaps; this is not whole-feature completion.
