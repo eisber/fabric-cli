@@ -275,3 +275,23 @@ test('workflow always tests the planner, covers merge groups and periodic full r
   assert.match(workflow, /"\$RUN_NATIVE" == false && "\$NATIVE_RESULT" == skipped/);
   assert.ok(!workflow.includes('function select(files'));
 });
+
+test('the common v2 branch runs the existing combined-candidate gate without privileged merge automation', () => {
+  const workflow = fs.readFileSync(path.resolve(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
+  const branch = 'dev/marcozo/fab-cli-v2-integration-20261104';
+  const push = workflow.slice(workflow.indexOf('\n  push:'), workflow.indexOf('\n  merge_group:'));
+  assert.ok(push.includes(branch));
+  assert.match(push, /\bmain\b/);
+  assert.ok(push.includes('feature/rust'));
+  const concurrency = workflow.slice(workflow.indexOf('\nconcurrency:'), workflow.indexOf('\njobs:'));
+  assert.ok(concurrency.includes(`github.event_name == 'push' && github.ref == 'refs/heads/${branch}' && github.ref`));
+  assert.ok(concurrency.includes('github.event.pull_request.number ||'));
+  assert.ok(concurrency.includes('|| github.run_id'));
+  assert.ok(concurrency.includes("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"));
+  assert.match(workflow, /permissions:\n  contents: read/);
+  assert.ok(!workflow.includes('pull_request_target:'));
+  assert.ok(!workflow.includes('contents: write'));
+  assert.ok(workflow.includes('os: [windows-2025, ubuntu-24.04, macos-15]'));
+  assert.ok(workflow.includes('github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before'));
+  assert.ok(workflow.includes('persist-credentials: false'));
+});

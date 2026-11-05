@@ -96,6 +96,10 @@ The shared Rust integration branch is `feature/rust` in the owner's existing
 but integrate small changes through one trunk rather than a hierarchy of merger
 branches. The assigned integration owner remains the only writer until separately
 authorized automation replaces that role; these instructions do not enable it.
+CLI v2 is a separate owner-authorized effort: v2 lanes target the common
+`dev/marcozo/fab-cli-v2-integration-20261104` branch in `eisber/fabric-cli`,
+not `feature/rust`. Follow the [v2 central merge pipeline](rust/docs/v2-delivery.md#central-merge-pipeline)
+for its single-writer queue, immutable handoffs, publication and exact-head gates.
 Lane work stays on separate branches and adopts an exact validated checkpoint
 without resetting or force-pushing. See the
 [integration handoff](rust/docs/integration-handoff.md) for safe synchronization
