@@ -26,6 +26,7 @@ selected endpoint with the appropriate audience.
 | `folders` | Folder listing and lookup with explicit query options |
 | `capacities` | Fabric capacity listing |
 | `notebooks` | Prepared Notebook definitions and publication |
+| `runtime` | Validated caller-owned Notebook/Livy runtime request and execution contracts |
 
 `get_item_metadata` preserves the insertion-ordered response object separately
 from the typed `Item` representation. Workspace enrichments retain typed optional
@@ -47,6 +48,20 @@ focused interfaces over one request policy. The separate
 Paging preserves order and partial-error evidence. Mutations retain acceptance,
 operation IDs and uncertain effects. Failed delivery, cancellation or lost
 responses never authorize automatic replay.
+
+Runtime requests keep native HTTP methods, effects, JSON bodies, explicit
+binary media and provider headers separate. `NativeEndpoint` accepts an
+explicit HTTPS service base, or loopback HTTP for offline transports; it does
+not discover a Notebook workload, acquire an MWC token or switch identity.
+Owner identifiers are validated before dispatch. Authorization, redirects,
+timeouts and streaming limits remain the injected executor's responsibility.
+The request wrapper additionally checks a nonzero response limit and dispatches
+exactly once. It preserves the actual HTTP status: 202 is not workload success.
+
+These are additive SDK contracts, not registration of a v2 CLI command or proof
+that a native extension is available on every Fabric gateway. No default
+authentication, subprocess bridge, background daemon or remote cleanup is
+installed. Debug output omits URLs, resource identifiers and executable content.
 
 From `rust/`, run the synthetic injected-credential example:
 
