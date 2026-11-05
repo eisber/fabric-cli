@@ -132,12 +132,35 @@ test('recorded command execution retains failures, output hashes, counts and lit
   commandResult(command, context, execute);
   assert.equal(context.results[0].tests_passed, 4);
   assert.equal(context.results[0].tests_ignored, 1);
+  assert.equal(path.basename(context.results[0].stdout), '000-literal_test.stdout.log');
   assert.match(context.results[0].stdout_sha256, /^[a-f0-9]{64}$/);
   assert.throws(() => commandResult(command, context, () => ({
     status: null, error: new Error('deadline exceeded'), stdout: '', stderr: 'partial',
   })), /Validation failed/);
   assert.equal(context.results.length, 2);
   assert.equal(context.results[1].exit, null);
+});
+
+test('full-workspace command ids use bounded diagnostic filenames without losing receipt identity', t => {
+  const root = temporary(t);
+  const context = {root, artifacts: root, commandTimeout: 1000, deadline: Date.now() + 10000, results: []};
+  const id = `default:test:${Array.from({length: 35}, (_, index) =>
+    `fabric-workspace-component-${index}`).join(',')}`;
+  const execute = () => ({status: 0, stdout: 'recorded stdout', stderr: 'recorded stderr'});
+  for (const suffix of ['', ',different-final-component']) {
+    commandResult({id: id + suffix, program: 'cargo', args: ['test', '--all-targets']},
+      context, execute);
+  }
+  assert.deepEqual(context.results.map(record => record.id), [id, `${id},different-final-component`]);
+  for (const record of context.results) {
+    assert.ok(Buffer.byteLength(path.basename(record.stdout)) <= 80);
+    assert.ok(Buffer.byteLength(path.basename(record.stderr)) <= 80);
+    assert.equal(fs.readFileSync(record.stdout, 'utf8'), 'recorded stdout');
+    assert.equal(fs.readFileSync(record.stderr, 'utf8'), 'recorded stderr');
+    assert.deepEqual(record.args, ['test', '--all-targets']);
+  }
+  assert.notEqual(path.basename(context.results[0].stdout).slice(4),
+    path.basename(context.results[1].stdout).slice(4));
 });
 
 test('missing full-gate marker profiles fail, rather than passing an empty contract', t => {

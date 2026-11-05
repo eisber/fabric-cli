@@ -140,8 +140,12 @@ function commandResult(command, context, execute = spawnSync) {
     windowsHide: true,
     shell: false,
   });
-  const prefix = `${String(context.results.length).padStart(3, '0')}-${command.id || 'contract'}`
-    .replace(/[^a-zA-Z0-9._-]/g, '_');
+  const commandId = String(command.id || 'contract');
+  const safeId = commandId.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const label = safeId.length > 64 ?
+    `${safeId.slice(0, 40)}-${crypto.createHash('sha256').update(commandId).digest('hex').slice(0, 16)}` :
+    safeId;
+  const prefix = `${String(context.results.length).padStart(3, '0')}-${label}`;
   const stdout = result.stdout || '';
   const stderr = result.stderr || '';
   const stdoutFile = path.join(context.artifacts, `${prefix}.stdout.log`);
