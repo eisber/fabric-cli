@@ -126,7 +126,7 @@ pub struct SourceScope {
     pub source_id: Guid,
 }
 
-/// Exact resource whose representation an ETag validates.
+/// Authority scope of an ETag; navigation/cache representations never authorize writes.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Resource {
     /// Whole DataAgent staging tree, used only by explicit publication.
@@ -135,12 +135,16 @@ pub enum Resource {
     Attachments(AgentScope, Stage),
     /// Attachment metadata and entity selection.
     Attachment(AttachmentScope),
+    /// Ontology entity navigation, whose ETag hashes a served representation.
+    OntologyElements(AttachmentScope),
     /// Generated context projection, never a validator for authored configuration.
     ContextMarkdown(AttachmentScope),
     /// Read-only derived source collection.
     Sources(AttachmentScope),
-    /// Read-only source schema/elements.
-    Source(SourceScope),
+    /// Read-only cached source schema.
+    SourceSchema(SourceScope),
+    /// Read-only source element navigation.
+    SourceElements(SourceScope),
     /// Authored source instructions/description.
     Instructions(SourceScope),
     /// Authored source examples collection.
@@ -156,10 +160,13 @@ impl Resource {
     pub fn agent_stage(&self) -> (&AgentScope, Stage) {
         match self {
             Self::Agent(agent, stage) | Self::Attachments(agent, stage) => (agent, *stage),
-            Self::Attachment(scope) | Self::ContextMarkdown(scope) | Self::Sources(scope) => {
-                (&scope.agent, scope.stage)
-            }
-            Self::Source(scope) | Self::Instructions(scope)
+            Self::Attachment(scope)
+            | Self::OntologyElements(scope)
+            | Self::ContextMarkdown(scope)
+            | Self::Sources(scope) => (&scope.agent, scope.stage),
+            Self::SourceSchema(scope)
+            | Self::SourceElements(scope)
+            | Self::Instructions(scope)
             | Self::FewShots(scope)
             | Self::FewShot(scope, _)
             | Self::CustomSetup(scope) => (&scope.attachment.agent, scope.attachment.stage),
@@ -191,7 +198,11 @@ impl Validator {
         {
             return Err(ValidationError::InvalidETag);
         }
-        Ok(Self { caller, resource, value })
+        Ok(Self {
+            caller,
+            resource,
+            value,
+        })
     }
 
     /// Checks caller and full resource identity before sending an optional condition.
@@ -210,7 +221,8 @@ impl Validator {
 
 impl fmt::Debug for Validator {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("Validator")
+        formatter
+            .debug_struct("Validator")
             .field("resource", &self.resource)
             .field("value", &"<opaque>")
             .finish()

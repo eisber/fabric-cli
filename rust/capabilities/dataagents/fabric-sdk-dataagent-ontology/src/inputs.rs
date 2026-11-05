@@ -28,7 +28,10 @@ impl AttachOntology {
         {
             return Err(ValidationError::InvalidDisplayName);
         }
-        Ok(Self { ontology_reference, display_name })
+        Ok(Self {
+            ontology_reference,
+            display_name,
+        })
     }
 
     /// Returns the referenced ontology identity, not the agent route identity.
@@ -49,7 +52,10 @@ pub struct SelectEntities {
 impl SelectEntities {
     /// Explicitly applies to all entities, without manufacturing an empty ID list.
     pub fn all(is_selected: bool) -> Self {
-        Self { element_ids: None, is_selected }
+        Self {
+            element_ids: None,
+            is_selected,
+        }
     }
 
     /// Uses returned opaque entity IDs as-is; grouping/schema IDs remain server-rejected.
@@ -60,7 +66,10 @@ impl SelectEntities {
         for id in &element_ids {
             selector(id, 8192)?;
         }
-        Ok(Self { element_ids: Some(element_ids), is_selected })
+        Ok(Self {
+            element_ids: Some(element_ids),
+            is_selected,
+        })
     }
 
     /// Expected per-element result order for explicit selection.
@@ -93,7 +102,10 @@ impl InstructionsPatch {
         if let Some(value) = &description {
             text_bound(value, 500_000)?;
         }
-        Ok(Self { instructions, description })
+        Ok(Self {
+            instructions,
+            description,
+        })
     }
 }
 
@@ -111,7 +123,10 @@ impl InstructionsReplace {
         description: Option<String>,
     ) -> Result<Self, ValidationError> {
         InstructionsPatch::new(instructions.clone(), description.clone())?;
-        Ok(Self { instructions, description })
+        Ok(Self {
+            instructions,
+            description,
+        })
     }
 }
 
@@ -162,7 +177,10 @@ impl FewShotPatch {
 /// Explicit whole-agent publish request, never attached to a staging edit.
 #[derive(Clone, Debug, Serialize)]
 pub struct Publish {
-    #[serde(rename = "publishedDescription", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "publishedDescription",
+        skip_serializing_if = "Option::is_none"
+    )]
     description: Option<String>,
 }
 

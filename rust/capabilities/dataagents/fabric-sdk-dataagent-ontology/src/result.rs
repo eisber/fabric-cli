@@ -3,10 +3,11 @@
 
 //! Explicit endpoint effects, acceptance and lossless bounded failure evidence.
 
-use crate::{ValidationError, scope::{CallerScope, Resource, Validator}};
-use fabric_sdk_ontology_workload::workload::{
-    DispatchState, WorkloadError, WorkloadResponse,
+use crate::{
+    ValidationError,
+    scope::{CallerScope, Resource, Validator},
 };
+use fabric_sdk_ontology_workload::workload::{DispatchState, WorkloadError, WorkloadResponse};
 use std::fmt;
 
 /// Source-backed effects; GET is not a promise of an inert server operation.
@@ -30,11 +31,18 @@ pub struct Effects {
 
 impl Effects {
     pub(crate) fn read() -> Self {
-        Self { may_migrate_configuration: true, may_refresh_caller_cache: true, ..Self::default() }
+        Self {
+            may_migrate_configuration: true,
+            may_refresh_caller_cache: true,
+            ..Self::default()
+        }
     }
 
     pub(crate) fn write() -> Self {
-        Self { edits_agent_configuration: true, ..Self::read() }
+        Self {
+            edits_agent_configuration: true,
+            ..Self::read()
+        }
     }
 }
 
@@ -94,8 +102,6 @@ pub enum ErrorKind {
     Conflict,
     /// HTTP 412; original optional condition is never removed or retried.
     PreconditionFailed,
-    /// Multi-page traversal observed a changed or missing snapshot validator.
-    SnapshotChanged,
     /// HTTP 429; this SDK does not retry.
     Throttled,
     /// Other provider status, retained unchanged.
@@ -132,7 +138,8 @@ pub struct Error {
 impl Error {
     pub(crate) fn local(error: ValidationError) -> Self {
         Self {
-            resource: None, caller: None,
+            resource: None,
+            caller: None,
             kind: ErrorKind::Validation(error),
             dispatch: DispatchState::NotSent,
             response: None,
@@ -145,7 +152,8 @@ impl Error {
 
     pub(crate) fn observed(kind: ErrorKind, response: WorkloadResponse, effects: Effects) -> Self {
         Self {
-            resource: None, caller: None,
+            resource: None,
+            caller: None,
             kind,
             dispatch: if effects.edits_agent_configuration && response.status < 300 {
                 DispatchState::Unknown
@@ -169,7 +177,8 @@ impl Error {
 
 impl fmt::Debug for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("Error")
+        formatter
+            .debug_struct("Error")
             .field("kind", &self.kind)
             .field("resource", &self.resource)
             .field("dispatch", &self.dispatch)
@@ -182,7 +191,9 @@ impl fmt::Debug for Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("DataAgent ontology operation failed or is incomplete; inspect structured evidence")
+        formatter.write_str(
+            "DataAgent ontology operation failed or is incomplete; inspect structured evidence",
+        )
     }
 }
 

@@ -14,7 +14,10 @@ impl Projection for OntologyAttachment {
             _ => None,
         };
         requested.is_none_or(|id| id == &self.id)
-            && self.ontology_reference.as_ref().is_none_or(|reference| reference.item_id == self.id)
+            && self
+                .ontology_reference
+                .as_ref()
+                .is_none_or(|reference| reference.item_id == self.id)
     }
 }
 
@@ -32,13 +35,16 @@ impl Projection for OntologySource {
 
 impl<T: Projection> Projection for Page<T> {
     fn matches(&self, resource: &Resource, selected: Option<&[String]>) -> bool {
-        self.value.iter().all(|value| value.matches(resource, selected))
+        self.value
+            .iter()
+            .all(|value| value.matches(resource, selected))
     }
 }
 
 impl<T: Projection> Projection for Option<T> {
     fn matches(&self, resource: &Resource, selected: Option<&[String]>) -> bool {
-        self.as_ref().is_none_or(|value| value.matches(resource, selected))
+        self.as_ref()
+            .is_none_or(|value| value.matches(resource, selected))
     }
 }
 
@@ -50,7 +56,7 @@ impl Projection for SourceInstructions {
 
 impl Projection for SourceSchema {
     fn matches(&self, resource: &Resource, _: Option<&[String]>) -> bool {
-        matches!(resource, Resource::Source(scope) if scope.source_id == self.data_source_id)
+        matches!(resource, Resource::SourceSchema(scope) if scope.source_id == self.data_source_id)
             && !self.cache_last_updated_time.trim().is_empty()
             && self.elements.iter().all(valid_schema_element)
     }
@@ -77,19 +83,28 @@ impl Projection for SelectionResult {
                 && matches!(entry.status.as_str(), "Succeeded" | "NotFound" | "Failed")
         }) && selected.is_none_or(|ids| {
             ids.len() == self.elements_status.len()
-                && ids.iter().zip(&self.elements_status).all(|(id, status)| id == &status.element_id)
+                && ids
+                    .iter()
+                    .zip(&self.elements_status)
+                    .all(|(id, status)| id == &status.element_id)
         })
     }
 }
 
 impl Projection for PublishResult {
-    fn matches(&self, _: &Resource, _: Option<&[String]>) -> bool { true }
+    fn matches(&self, _: &Resource, _: Option<&[String]>) -> bool {
+        true
+    }
 }
 
 impl Projection for ContextMarkdown {
-    fn matches(&self, _: &Resource, _: Option<&[String]>) -> bool { true }
+    fn matches(&self, _: &Resource, _: Option<&[String]>) -> bool {
+        true
+    }
 }
 
 impl Projection for () {
-    fn matches(&self, _: &Resource, _: Option<&[String]>) -> bool { true }
+    fn matches(&self, _: &Resource, _: Option<&[String]>) -> bool {
+        true
+    }
 }

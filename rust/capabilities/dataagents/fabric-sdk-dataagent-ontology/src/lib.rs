@@ -9,8 +9,8 @@
 pub mod inputs;
 pub mod models;
 pub mod paging;
-mod projection;
 pub mod private;
+mod projection;
 pub mod public;
 pub mod result;
 pub mod scope;

@@ -29,7 +29,11 @@ pub struct ItemReference {
 impl ItemReference {
     /// Creates an explicit ById reference.
     pub fn by_id(item_id: Guid, workspace_id: Guid) -> Self {
-        Self { reference_type: ReferenceType::ById, item_id, workspace_id }
+        Self {
+            reference_type: ReferenceType::ById,
+            item_id,
+            workspace_id,
+        }
     }
 }
 

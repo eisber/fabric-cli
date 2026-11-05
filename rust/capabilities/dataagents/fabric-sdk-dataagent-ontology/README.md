@@ -59,8 +59,10 @@ Returned ETags become `Validator`s scoped to caller and exact resource. Optional
 conditions stay optional and are sent unchanged. Stale HTTP 412 and native 409
 conflicts remain distinct failures with original provider data; there is no
 unconditional retry, GET/RMW emulation or condition weakening. An add accepts
-the native collection condition or existing attachment condition. Context,
-schema and source-list validators cannot be reused as authored-source validators.
+the native collection condition or existing attachment condition. Context, ontology navigation, cached schema, source navigation and source-list
+validators cannot be reused as authored-configuration validators. Ontology
+navigation hashes a served element representation; selection/removal require
+the configuration-file validator returned by attachment metadata/authoring.
 The source publish endpoint does **not** consume If-Match, so publish has no
 misleading condition argument.
 
@@ -116,8 +118,13 @@ the response and unknown resulting identity/effects rather than empty success.
 Display/Debug of structured errors do not implicitly print service bodies.
 
 Private element traversal reuses `fabric-sdk-paging::TokenPager`, not an
-endpoint-owned pager. It enforces page/row/decoded-byte bounds, repeated cursors,
-same origin/exact route, and unchanged optional page ETags. The caller supplies
+endpoint-owned pager. It enforces page/row/decoded-byte bounds, repeated cursors
+and same origin/exact route. Source ETags hash the paginated representation and
+may legitimately differ on every page; they are not configuration snapshot
+revisions. Traversal explicitly returns `SnapshotConsistency::NonAtomic` on
+results and partial failures because no stable snapshot revision is exposed.
+Completing all pages does not certify a single atomic schema/configuration view.
+The caller supplies
 an approved continuation origin for URI **validation only**; it never becomes a
 transport destination. Traversal failures carry committed earlier rows/pages.
 The injected executor must enforce the response bound while streaming; a
