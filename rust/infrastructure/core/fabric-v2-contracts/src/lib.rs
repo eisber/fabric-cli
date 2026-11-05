@@ -54,6 +54,8 @@ pub enum Verb {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Effect {
+    /// Read explicitly supplied local input, distinct from remote source access.
+    LocalRead,
     /// Read remote metadata or source.
     RemoteRead,
     /// Write or replace remote state.

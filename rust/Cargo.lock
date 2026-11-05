@@ -612,6 +612,8 @@ name = "fabric-cli-ontology"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -801,10 +803,14 @@ dependencies = [
  "base64 0.22.1",
  "fabric-core",
  "fabric-sdk-capacities",
+ "fabric-sdk-dataagent-ontology",
  "fabric-sdk-folders",
  "fabric-sdk-items",
+ "fabric-sdk-ontology",
+ "fabric-sdk-ontology-workload",
  "fabric-sdk-operations",
  "fabric-sdk-workspaces",
+ "fabric-v2-contracts",
  "serde",
  "serde_json",
  "tokio",
