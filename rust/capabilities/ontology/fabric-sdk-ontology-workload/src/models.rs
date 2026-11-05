@@ -103,11 +103,11 @@ macro_rules! wire_model {
                         _ => return Err(WorkloadError::invalid("unknown or read-only native write field")),
                     }
                 }
-                if !patch { $(
-                    if !map.contains_key($req_wire) {
+                $(
+                    if !patch && !map.contains_key($req_wire) {
                         return Err(WorkloadError::invalid("required native field"));
                     }
-                )* }
+                )*
                 check_members(map, stringify!($name), patch)
             }
             fn project(value: &Value) -> Value {
@@ -884,7 +884,30 @@ pub fn validate_composite_name(name: &str) -> Result<(), WorkloadError> {
 }
 
 wire_model!(PrimitiveNode { required { data_type: DataType => "dataType" } optional {} });
-wire_model!(EmptyNode { required {} optional {} });
+/// Closed empty body of an Any logical node; it carries no authoring fields.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EmptyNode {}
+
+impl Shape for EmptyNode {
+    fn check(value: &Value, _: bool) -> Result<(), WorkloadError> {
+        if value.as_object().is_some_and(Map::is_empty) {
+            Ok(())
+        } else {
+            Err(WorkloadError::invalid("empty native node body"))
+        }
+    }
+
+    fn project(value: &Value) -> Value {
+        if value.is_object() {
+            Value::Object(Map::new())
+        } else {
+            value.clone()
+        }
+    }
+}
+impl sealed::Sealed for EmptyNode {}
+impl NativeModel for EmptyNode {}
 wire_model!(StructNode { required { fields: Vec<StructField> => "fields" } optional {} });
 wire_model!(TimeSeriesNode { required { element_type: Box<LogicalType> => "elementType" } optional {} });
 wire_model!(DefaultBackingNode { required { value_column: BackingColumn => "valueColumn" } optional {} });

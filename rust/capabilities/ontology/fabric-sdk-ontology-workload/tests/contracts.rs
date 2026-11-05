@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Offline request, response, identity, schema, effect and byte-bound contracts.
+
 #![deny(unnameable_test_items)]
 
 use fabric_sdk_ontology_workload::{
