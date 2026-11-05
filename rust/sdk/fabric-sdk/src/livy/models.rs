@@ -105,13 +105,11 @@ fn fail(raw: &Value, kind: WorkloadFailureKind) -> WorkloadFailure {
     }
 }
 
-fn fields(
-    value: &Value,
-    keys: &[&str],
-    valid: fn(&Value) -> bool,
-) -> Result<(), NativeError> {
+fn fields(value: &Value, keys: &[&str], valid: fn(&Value) -> bool) -> Result<(), NativeError> {
     if keys.iter().any(|key| {
-        value.get(key).is_some_and(|field| !field.is_null() && !valid(field))
+        value
+            .get(key)
+            .is_some_and(|field| !field.is_null() && !valid(field))
     }) {
         return Err(NativeError::InvalidResponse);
     }
@@ -119,11 +117,15 @@ fn fields(
 }
 
 fn objects(value: &Value) -> bool {
-    value.as_array().is_some_and(|items| items.iter().all(Value::is_object))
+    value
+        .as_array()
+        .is_some_and(|items| items.iter().all(Value::is_object))
 }
 
 fn strings(value: &Value) -> bool {
-    value.as_array().is_some_and(|items| items.iter().all(Value::is_string))
+    value
+        .as_array()
+        .is_some_and(|items| items.iter().all(Value::is_string))
 }
 
 fn signed(value: &Value) -> bool {
@@ -131,20 +133,36 @@ fn signed(value: &Value) -> bool {
 }
 
 fn unsigned(value: &Value) -> bool {
-    value.as_u64().is_some_and(|number| number <= i64::MAX as u64)
+    value
+        .as_u64()
+        .is_some_and(|number| number <= i64::MAX as u64)
 }
 
 fn validate_model(name: &str, value: &Value) -> Result<(), NativeError> {
     if !value.is_object() {
         return Err(NativeError::InvalidResponse);
     }
-    if matches!(name, "SessionSnapshot" | "BatchSnapshot" | "StatementSnapshot" | "JobSnapshot") {
+    if matches!(
+        name,
+        "SessionSnapshot" | "BatchSnapshot" | "StatementSnapshot" | "JobSnapshot"
+    ) {
         fields(value, &["state", "name", "appId"], Value::is_string)?;
         fields(value, &["id"], |id| id.is_string() || signed(id))?;
     }
     match name {
         "SessionSnapshot" => {
-            fields(value, &["sessionId", "replId", "sessionTag", "creatorId", "livyInstanceId", "acquiredAtUtc"], Value::is_string)?;
+            fields(
+                value,
+                &[
+                    "sessionId",
+                    "replId",
+                    "sessionTag",
+                    "creatorId",
+                    "livyInstanceId",
+                    "acquiredAtUtc",
+                ],
+                Value::is_string,
+            )?;
             fields(value, &["errorInfo"], objects)?;
         }
         "BatchSnapshot" => fields(value, &["result", "cancellationReason"], Value::is_string)?,
@@ -160,13 +178,26 @@ fn validate_model(name: &str, value: &Value) -> Result<(), NativeError> {
         }
         "ActivityList" => {
             fields(value, &["items", "sessions", "statements"], objects)?;
-            fields(value, &["totalCountOfMatchedItems", "total", "total_statements", "pageSize"], unsigned)?;
+            fields(
+                value,
+                &[
+                    "totalCountOfMatchedItems",
+                    "total",
+                    "total_statements",
+                    "pageSize",
+                ],
+                unsigned,
+            )?;
         }
         "Logs" => {
             fields(value, &["log"], strings)?;
             fields(value, &["from", "total"], unsigned)?;
         }
-        "Timeout" => fields(value, &["serverTimeout", "sessionTimeout", "replTimeout"], signed)?,
+        "Timeout" => fields(
+            value,
+            &["serverTimeout", "sessionTimeout", "replTimeout"],
+            signed,
+        )?,
         "Completion" => fields(value, &["candidates"], strings)?,
         "Inspection" => fields(value, &["vars"], objects)?,
         "CancellationResult" => fields(value, &["msg"], Value::is_string)?,
@@ -203,9 +234,9 @@ macro_rules! model {
 
             /// Native integer or string ID. No backing/acquisition identity substitution.
             pub fn id(&self) -> Option<&Value> {
-                self.0.get("id").filter(|value| {
-                    value.is_string() || value.as_i64().is_some()
-                })
+                self.0
+                    .get("id")
+                    .filter(|value| value.is_string() || value.as_i64().is_some())
             }
 
             /// Explicit provider name, if supplied.
@@ -227,18 +258,48 @@ macro_rules! model {
     };
 }
 
-model!(ServiceMetadata, "Opaque native service version metadata, not a workload state.");
-model!(SessionSnapshot, "Classic session, REPL or HC management snapshot; identities remain distinct.");
-model!(BatchSnapshot, "Batch application state, result and cancellation reason.");
-model!(StatementSnapshot, "Statement state and raw output, including error and byte fragments.");
-model!(JobSnapshot, "Serialized job state and opaque result; no deserialization is performed.");
-model!(ActivityList, "Fabric items or native sessions/statements list, without paging inference.");
-model!(Logs, "One native log page, not a complete Spark/container log inventory.");
-model!(Timeout, "Timeout values in milliseconds, including inherited negative values.");
+model!(
+    ServiceMetadata,
+    "Opaque native service version metadata, not a workload state."
+);
+model!(
+    SessionSnapshot,
+    "Classic session, REPL or HC management snapshot; identities remain distinct."
+);
+model!(
+    BatchSnapshot,
+    "Batch application state, result and cancellation reason."
+);
+model!(
+    StatementSnapshot,
+    "Statement state and raw output, including error and byte fragments."
+);
+model!(
+    JobSnapshot,
+    "Serialized job state and opaque result; no deserialization is performed."
+);
+model!(
+    ActivityList,
+    "Fabric items or native sessions/statements list, without paging inference."
+);
+model!(
+    Logs,
+    "One native log page, not a complete Spark/container log inventory."
+);
+model!(
+    Timeout,
+    "Timeout values in milliseconds, including inherited negative values."
+);
 model!(Completion, "Interpreter-provided completion candidates.");
 model!(Inspection, "Interpreter-provided variable metadata.");
-model!(OpaqueJson, "Opaque JSON response, including embedded Jupyter debug messages.");
-model!(CancellationResult, "A cancellation/interrupt/reset acknowledgement, not terminal evidence.");
+model!(
+    OpaqueJson,
+    "Opaque JSON response, including embedded Jupyter debug messages."
+);
+model!(
+    CancellationResult,
+    "A cancellation/interrupt/reset acknowledgement, not terminal evidence."
+);
 
 /// A bodyless or textual native acknowledgement; raw bytes remain on the enclosing response.
 #[derive(Clone, PartialEq)]
@@ -354,9 +415,11 @@ impl SessionSnapshot {
     /// # Errors
     /// Reports native failed states or nonempty structured `errorInfo`.
     pub fn observe(&self) -> Result<Observation, WorkloadFailure> {
-        if self.0.get("errorInfo").is_some_and(|value| {
-            value.as_array().is_some_and(|items| !items.is_empty())
-        }) {
+        if self
+            .0
+            .get("errorInfo")
+            .is_some_and(|value| value.as_array().is_some_and(|items| !items.is_empty()))
+        {
             return Err(fail(&self.0, WorkloadFailureKind::Session));
         }
         match self.state().map(str::to_ascii_lowercase).as_deref() {
@@ -430,7 +493,9 @@ impl StatementSnapshot {
 
     /// Provider total metadata; not proof that all original rows were retained.
     pub fn total(&self) -> Option<i64> {
-        self.0.get("total").and_then(Value::as_i64)
+        self.0
+            .get("total")
+            .and_then(Value::as_i64)
             .or_else(|| self.output()?.get("data")?.get("total")?.as_i64())
     }
 
@@ -439,7 +504,10 @@ impl StatementSnapshot {
     /// # Errors
     /// `available` with output `status=error` is workload failure, not success.
     pub fn observe(&self) -> Result<Observation, WorkloadFailure> {
-        if self.output().and_then(|output| output.get("status")).and_then(Value::as_str)
+        if self
+            .output()
+            .and_then(|output| output.get("status"))
+            .and_then(Value::as_str)
             == Some("error")
         {
             return Err(fail(&self.0, WorkloadFailureKind::StatementOutput));
@@ -448,7 +516,10 @@ impl StatementSnapshot {
             Some("error" | "failed") => Err(fail(&self.0, WorkloadFailureKind::StatementState)),
             Some("cancelled" | "canceled") => Ok(Observation::Cancelled),
             Some("available") => {
-                if self.output().and_then(|output| output.get("status")).and_then(Value::as_str)
+                if self
+                    .output()
+                    .and_then(|output| output.get("status"))
+                    .and_then(Value::as_str)
                     == Some("ok")
                 {
                     Ok(Observation::Succeeded)
@@ -535,7 +606,11 @@ impl ActivityList {
     /// # Errors
     /// Rejects missing/malformed entries or known session field types.
     pub fn sessions(&self) -> Result<Vec<SessionSnapshot>, NativeError> {
-        self.items()?.iter().cloned().map(SessionSnapshot::decode).collect()
+        self.items()?
+            .iter()
+            .cloned()
+            .map(SessionSnapshot::decode)
+            .collect()
     }
 
     /// Decode this list's entries as batch snapshots.
@@ -543,7 +618,11 @@ impl ActivityList {
     /// # Errors
     /// Rejects malformed batch entries.
     pub fn batches(&self) -> Result<Vec<BatchSnapshot>, NativeError> {
-        self.items()?.iter().cloned().map(BatchSnapshot::decode).collect()
+        self.items()?
+            .iter()
+            .cloned()
+            .map(BatchSnapshot::decode)
+            .collect()
     }
 
     /// Decode this list's entries as statement snapshots.
@@ -551,7 +630,11 @@ impl ActivityList {
     /// # Errors
     /// Rejects malformed statement entries.
     pub fn statements(&self) -> Result<Vec<StatementSnapshot>, NativeError> {
-        self.items()?.iter().cloned().map(StatementSnapshot::decode).collect()
+        self.items()?
+            .iter()
+            .cloned()
+            .map(StatementSnapshot::decode)
+            .collect()
     }
 }
 
@@ -604,7 +687,9 @@ impl Completion {
     /// # Errors
     /// Rejects malformed or absent candidate lists.
     pub fn candidates(&self) -> Result<Vec<&str>, NativeError> {
-        self.0.get("candidates").and_then(Value::as_array)
+        self.0
+            .get("candidates")
+            .and_then(Value::as_array)
             .ok_or(NativeError::InvalidResponse)?
             .iter()
             .map(|item| item.as_str().ok_or(NativeError::InvalidResponse))
@@ -618,7 +703,10 @@ impl Inspection {
     /// # Errors
     /// Rejects malformed or missing variable lists.
     pub fn variables(&self) -> Result<&[Value], NativeError> {
-        let variables = self.0.get("vars").and_then(Value::as_array)
+        let variables = self
+            .0
+            .get("vars")
+            .and_then(Value::as_array)
             .ok_or(NativeError::InvalidResponse)?;
         if variables.iter().any(|value| !value.is_object()) {
             return Err(NativeError::InvalidResponse);

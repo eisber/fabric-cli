@@ -86,51 +86,226 @@ pub const NATIVE_ROUTES: &[RouteContract] = &[
     route!(Get, "/sessions", "SessionsClient.list", "SessionList"),
     route!(Post, "/sessions", "SessionsClient.create", "Session"),
     route!(Get, "/sessions/{id}", "SessionClient.get", "Session"),
-    route!(Delete, "/sessions/{id}", "SessionClient.delete", "Acknowledgement"),
-    route!(Get, "/sessions/{id}/state", "SessionClient.get_state", "Session"),
+    route!(
+        Delete,
+        "/sessions/{id}",
+        "SessionClient.delete",
+        "Acknowledgement"
+    ),
+    route!(
+        Get,
+        "/sessions/{id}/state",
+        "SessionClient.get_state",
+        "Session"
+    ),
     route!(Get, "/sessions/{id}/log", "SessionClient.logs", "Logs"),
-    route!(Put, "/sessions/{id}/reset-timeout", "SessionClient.reset_timeout", "Acknowledgement"),
-    route!(Post, "/sessions/{id}/stop", "SessionClient.stop", "Acknowledgement"),
-    route!(Post, "/sessions/{id}/interrupt", "SessionClient.interrupt", "CancellationResult"),
-    route!(Post, "/sessions/{id}/connect", "SessionClient.connect", "Session"),
-    route!(Get, "/sessions/{id}/timeout", "SessionClient.get_timeout", "Timeout"),
-    route!(Put, "/sessions/{id}/timeout", "SessionClient.set_timeout", "Timeout"),
-    route!(Post, "/sessions/{id}/completion", "SessionClient.completion", "Completion"),
-    route!(Post, "/sessions/{id}/inspect", "SessionClient.inspect", "Inspection"),
-    route!(Post, "/sessions/{id}/debug", "SessionClient.debug", "LivyModel"),
-    route!(Post, "/sessions/{id}/add-jar", "SessionClient.add_jar", "Acknowledgement"),
-    route!(Post, "/sessions/{id}/add-pyfile", "SessionClient.add_pyfile", "Acknowledgement"),
-    route!(Post, "/sessions/{id}/add-file", "SessionClient.add_file", "Acknowledgement"),
+    route!(
+        Put,
+        "/sessions/{id}/reset-timeout",
+        "SessionClient.reset_timeout",
+        "Acknowledgement"
+    ),
+    route!(
+        Post,
+        "/sessions/{id}/stop",
+        "SessionClient.stop",
+        "Acknowledgement"
+    ),
+    route!(
+        Post,
+        "/sessions/{id}/interrupt",
+        "SessionClient.interrupt",
+        "CancellationResult"
+    ),
+    route!(
+        Post,
+        "/sessions/{id}/connect",
+        "SessionClient.connect",
+        "Session"
+    ),
+    route!(
+        Get,
+        "/sessions/{id}/timeout",
+        "SessionClient.get_timeout",
+        "Timeout"
+    ),
+    route!(
+        Put,
+        "/sessions/{id}/timeout",
+        "SessionClient.set_timeout",
+        "Timeout"
+    ),
+    route!(
+        Post,
+        "/sessions/{id}/completion",
+        "SessionClient.completion",
+        "Completion"
+    ),
+    route!(
+        Post,
+        "/sessions/{id}/inspect",
+        "SessionClient.inspect",
+        "Inspection"
+    ),
+    route!(
+        Post,
+        "/sessions/{id}/debug",
+        "SessionClient.debug",
+        "LivyModel"
+    ),
+    route!(
+        Post,
+        "/sessions/{id}/add-jar",
+        "SessionClient.add_jar",
+        "Acknowledgement"
+    ),
+    route!(
+        Post,
+        "/sessions/{id}/add-pyfile",
+        "SessionClient.add_pyfile",
+        "Acknowledgement"
+    ),
+    route!(
+        Post,
+        "/sessions/{id}/add-file",
+        "SessionClient.add_file",
+        "Acknowledgement"
+    ),
     route!(upload "/sessions/{id}/upload-jar", "SessionClient.upload_jar"),
     route!(upload "/sessions/{id}/upload-pyfile", "SessionClient.upload_pyfile"),
     route!(upload "/sessions/{id}/upload-file", "SessionClient.upload_file"),
-    route!(Post, "/sessions/{id}/submit-job", "JobsClient.submit", "Job"),
+    route!(
+        Post,
+        "/sessions/{id}/submit-job",
+        "JobsClient.submit",
+        "Job"
+    ),
     route!(Post, "/sessions/{id}/run-job", "JobsClient.run", "Job"),
     route!(Get, "/sessions/{id}/jobs/{jobId}", "JobsClient.get", "Job"),
-    route!(Post, "/sessions/{id}/jobs/{jobId}/cancel", "JobsClient.cancel", "Acknowledgement"),
-    route!(Get, "/sessions/{id}/statements", "StatementsClient.list", "StatementList"),
-    route!(Post, "/sessions/{id}/statements", "StatementsClient.submit", "Statement"),
-    route!(Get, "/sessions/{id}/statements/{statementId}", "StatementClient.get", "Statement"),
-    route!(Post, "/sessions/{id}/statements/{statementId}/cancel", "StatementClient.cancel", "CancellationResult"),
-    route!(Get, "/sessions/{id}/repls", "ReplsClient.list", "SessionList"),
-    route!(Put, "/sessions/{id}/repls/{replId}", "ReplsClient.create", "Session"),
-    route!(Get, "/sessions/{id}/repls/{replId}", "ReplClient.get", "Session"),
-    route!(Delete, "/sessions/{id}/repls/{replId}", "ReplClient.delete", "Acknowledgement"),
-    route!(Post, "/sessions/{id}/repls/{replId}/stop", "ReplClient.stop", "Acknowledgement"),
-    route!(Put, "/sessions/{id}/repls/{replId}/reset-timeout", "ReplClient.reset_timeout", "CancellationResult"),
-    route!(Get, "/sessions/{id}/repls/{replId}/timeout", "ReplClient.get_timeout", "Timeout"),
-    route!(Put, "/sessions/{id}/repls/{replId}/timeout", "ReplClient.set_timeout", "Timeout"),
-    route!(Get, "/sessions/{id}/repls/{replId}/statements", "StatementsClient.list", "StatementList"),
-    route!(Post, "/sessions/{id}/repls/{replId}/statements", "StatementsClient.submit", "Statement"),
-    route!(Get, "/sessions/{id}/repls/{replId}/statements/{statementId}", "StatementClient.get", "Statement"),
-    route!(Post, "/sessions/{id}/repls/{replId}/statements/{statementId}/cancel", "StatementClient.cancel", "CancellationResult"),
+    route!(
+        Post,
+        "/sessions/{id}/jobs/{jobId}/cancel",
+        "JobsClient.cancel",
+        "Acknowledgement"
+    ),
+    route!(
+        Get,
+        "/sessions/{id}/statements",
+        "StatementsClient.list",
+        "StatementList"
+    ),
+    route!(
+        Post,
+        "/sessions/{id}/statements",
+        "StatementsClient.submit",
+        "Statement"
+    ),
+    route!(
+        Get,
+        "/sessions/{id}/statements/{statementId}",
+        "StatementClient.get",
+        "Statement"
+    ),
+    route!(
+        Post,
+        "/sessions/{id}/statements/{statementId}/cancel",
+        "StatementClient.cancel",
+        "CancellationResult"
+    ),
+    route!(
+        Get,
+        "/sessions/{id}/repls",
+        "ReplsClient.list",
+        "SessionList"
+    ),
+    route!(
+        Put,
+        "/sessions/{id}/repls/{replId}",
+        "ReplsClient.create",
+        "Session"
+    ),
+    route!(
+        Get,
+        "/sessions/{id}/repls/{replId}",
+        "ReplClient.get",
+        "Session"
+    ),
+    route!(
+        Delete,
+        "/sessions/{id}/repls/{replId}",
+        "ReplClient.delete",
+        "Acknowledgement"
+    ),
+    route!(
+        Post,
+        "/sessions/{id}/repls/{replId}/stop",
+        "ReplClient.stop",
+        "Acknowledgement"
+    ),
+    route!(
+        Put,
+        "/sessions/{id}/repls/{replId}/reset-timeout",
+        "ReplClient.reset_timeout",
+        "CancellationResult"
+    ),
+    route!(
+        Get,
+        "/sessions/{id}/repls/{replId}/timeout",
+        "ReplClient.get_timeout",
+        "Timeout"
+    ),
+    route!(
+        Put,
+        "/sessions/{id}/repls/{replId}/timeout",
+        "ReplClient.set_timeout",
+        "Timeout"
+    ),
+    route!(
+        Get,
+        "/sessions/{id}/repls/{replId}/statements",
+        "StatementsClient.list",
+        "StatementList"
+    ),
+    route!(
+        Post,
+        "/sessions/{id}/repls/{replId}/statements",
+        "StatementsClient.submit",
+        "Statement"
+    ),
+    route!(
+        Get,
+        "/sessions/{id}/repls/{replId}/statements/{statementId}",
+        "StatementClient.get",
+        "Statement"
+    ),
+    route!(
+        Post,
+        "/sessions/{id}/repls/{replId}/statements/{statementId}/cancel",
+        "StatementClient.cancel",
+        "CancellationResult"
+    ),
     route!(Get, "/batches", "BatchesClient.list", "BatchList"),
     route!(Post, "/batches", "BatchesClient.create", "Batch"),
     route!(Get, "/batches/{id}", "BatchesClient.get", "Batch"),
-    route!(Delete, "/batches/{id}", "BatchesClient.delete", "Acknowledgement"),
-    route!(Get, "/batches/{id}/state", "BatchesClient.get_state", "Batch"),
+    route!(
+        Delete,
+        "/batches/{id}",
+        "BatchesClient.delete",
+        "Acknowledgement"
+    ),
+    route!(
+        Get,
+        "/batches/{id}/state",
+        "BatchesClient.get_state",
+        "Batch"
+    ),
     route!(Get, "/batches/{id}/log", "BatchesClient.logs", "Logs"),
-    route!(Put, "/batches/{id}/reset-timeout", "BatchesClient.reset_timeout", "Acknowledgement"),
+    route!(
+        Put,
+        "/batches/{id}/reset-timeout",
+        "BatchesClient.reset_timeout",
+        "Acknowledgement"
+    ),
 ];
 
 /// All 20 Fabric operations from `contracts/rest/generated/openapi.yaml`.
@@ -141,22 +316,82 @@ pub const FABRIC_ROUTES: &[RouteContract] = &[
     route!(Post, "/batches", "createBatch", "Batch"),
     route!(Get, "/batches/{id}", "getBatch", "Batch"),
     route!(Delete, "/batches/{id}", "deleteBatch", "Acknowledgement"),
-    route!(Post, "/highConcurrencySessions", "acquireHighConcurrencySession", "Session"),
-    route!(Get, "/highConcurrencySessions/{id}", "getHighConcurrencySession", "Session"),
-    route!(Delete, "/highConcurrencySessions/{id}", "deleteHighConcurrencySession", "Acknowledgement"),
-    route!(Get, "/highConcurrencySessions/{id}/repls/{replId}/statements", "listHighConcurrencyStatements", "ActivityList"),
-    route!(Post, "/highConcurrencySessions/{id}/repls/{replId}/statements", "submitHighConcurrencyStatement", "Statement"),
-    route!(Get, "/highConcurrencySessions/{id}/repls/{replId}/statements/{statementId}", "getHighConcurrencyStatement", "Statement"),
-    route!(Post, "/highConcurrencySessions/{id}/repls/{replId}/statements/{statementId}/cancel", "cancelHighConcurrencyStatement", "CancellationResult"),
+    route!(
+        Post,
+        "/highConcurrencySessions",
+        "acquireHighConcurrencySession",
+        "Session"
+    ),
+    route!(
+        Get,
+        "/highConcurrencySessions/{id}",
+        "getHighConcurrencySession",
+        "Session"
+    ),
+    route!(
+        Delete,
+        "/highConcurrencySessions/{id}",
+        "deleteHighConcurrencySession",
+        "Acknowledgement"
+    ),
+    route!(
+        Get,
+        "/highConcurrencySessions/{id}/repls/{replId}/statements",
+        "listHighConcurrencyStatements",
+        "ActivityList"
+    ),
+    route!(
+        Post,
+        "/highConcurrencySessions/{id}/repls/{replId}/statements",
+        "submitHighConcurrencyStatement",
+        "Statement"
+    ),
+    route!(
+        Get,
+        "/highConcurrencySessions/{id}/repls/{replId}/statements/{statementId}",
+        "getHighConcurrencyStatement",
+        "Statement"
+    ),
+    route!(
+        Post,
+        "/highConcurrencySessions/{id}/repls/{replId}/statements/{statementId}/cancel",
+        "cancelHighConcurrencyStatement",
+        "CancellationResult"
+    ),
     route!(Get, "/sessions", "listSessions", "ActivityList"),
     route!(Post, "/sessions", "createSession", "Session"),
     route!(Get, "/sessions/{id}", "getSession", "Session"),
     route!(Delete, "/sessions/{id}", "deleteSession", "Acknowledgement"),
-    route!(Post, "/sessions/{id}/reset-timeout", "resetSessionTimeout", "Session"),
-    route!(Get, "/sessions/{id}/statements", "listSessionStatements", "ActivityList"),
-    route!(Post, "/sessions/{id}/statements", "submitSessionStatement", "Statement"),
-    route!(Get, "/sessions/{id}/statements/{statementId}", "getSessionStatement", "Statement"),
-    route!(Post, "/sessions/{id}/statements/{statementId}/cancel", "cancelSessionStatement", "CancellationResult"),
+    route!(
+        Post,
+        "/sessions/{id}/reset-timeout",
+        "resetSessionTimeout",
+        "Session"
+    ),
+    route!(
+        Get,
+        "/sessions/{id}/statements",
+        "listSessionStatements",
+        "ActivityList"
+    ),
+    route!(
+        Post,
+        "/sessions/{id}/statements",
+        "submitSessionStatement",
+        "Statement"
+    ),
+    route!(
+        Get,
+        "/sessions/{id}/statements/{statementId}",
+        "getSessionStatement",
+        "Statement"
+    ),
+    route!(
+        Post,
+        "/sessions/{id}/statements/{statementId}/cancel",
+        "cancelSessionStatement",
+        "CancellationResult"
+    ),
 ];
 
 impl ServiceProfile {

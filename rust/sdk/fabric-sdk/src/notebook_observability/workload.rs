@@ -3,7 +3,8 @@
 
 use super::{
     ActivityId, ApplicationId, AttemptId, ContainerId, JobGroupId, JobType, LogFile, LogWindow,
-    PlanCoverage, RequestPlan, SparkJobId, WorkloadProgressPlan, positive, require_prefix, validate_scope,
+    PlanCoverage, RequestPlan, SparkJobId, WorkloadProgressPlan, positive, require_prefix,
+    validate_scope,
 };
 use crate::runtime::{NativeEffect, NativeEndpoint, NativeError, NativeMethod, NativeRequest};
 
@@ -26,21 +27,38 @@ pub struct WorkloadApplication {
 
 impl WorkloadApplication {
     /// Bind the exact activity, application and caller-selected history route.
-    pub fn new(activity: ActivityId, application: ApplicationId, location: ApplicationLocation) -> Self {
-        Self { activity, application, location }
+    pub fn new(
+        activity: ActivityId,
+        application: ApplicationId,
+        location: ApplicationLocation,
+    ) -> Self {
+        Self {
+            activity,
+            application,
+            location,
+        }
     }
 
     fn path(&self) -> Vec<&str> {
         let mut path = vec!["activities", self.activity.as_str()];
         match &self.location {
-            ApplicationLocation::Active => path.extend(["hs", "applications", self.application.as_str()]),
-            ApplicationLocation::Completed(attempt) => path.extend(["applications", self.application.as_str(), attempt.as_str()]),
+            ApplicationLocation::Active => {
+                path.extend(["hs", "applications", self.application.as_str()])
+            }
+            ApplicationLocation::Completed(attempt) => {
+                path.extend(["applications", self.application.as_str(), attempt.as_str()])
+            }
         }
         path
     }
 
     fn metadata_path(&self) -> Vec<&str> {
-        vec!["activities", self.activity.as_str(), "applications", self.application.as_str()]
+        vec![
+            "activities",
+            self.activity.as_str(),
+            "applications",
+            self.application.as_str(),
+        ]
     }
 }
 
@@ -78,17 +96,29 @@ pub enum ApplicationView<'a> {
     /// Rolling log metadata; source always uses the unattempted non-HS path.
     RollingDriverMetadata { file: LogFile, page: u64 },
     /// Container metadata; source always uses the unattempted non-HS path.
-    ContainerMetadata { container: &'a ContainerId, file: LogFile, page: u64 },
+    ContainerMetadata {
+        container: &'a ContainerId,
+        file: LogFile,
+        page: u64,
+    },
     /// Exact driver log byte window.
     DriverLog { file: LogFile, window: LogWindow },
     /// Driver log metadata.
     DriverLogMetadata { file: LogFile },
     /// Exact YARN container log byte window.
-    ExecutorLog { container: &'a ContainerId, file: LogFile, window: LogWindow },
+    ExecutorLog {
+        container: &'a ContainerId,
+        file: LogFile,
+        window: LogWindow,
+    },
     /// YARN container collection metadata.
     ExecutorLogMetadata,
     /// Per-job-group driver log, not authored cell index.
-    CellLog { group: &'a JobGroupId, file: LogFile, window: LogWindow },
+    CellLog {
+        group: &'a JobGroupId,
+        file: LogFile,
+        window: LogWindow,
+    },
     /// Runtime cell-to-job-group mapping.
     ReplMaps,
     /// Existing grouped provider advice.
@@ -119,7 +149,11 @@ impl MetricsWindow<'_> {
         if self.start.is_empty() || self.end.is_empty() {
             return Err(NativeError::InvalidInput);
         }
-        Ok(vec![("from", self.start.into()), ("to", self.end.into()), ("maxItems", positive(self.max_items)?)])
+        Ok(vec![
+            ("from", self.start.into()),
+            ("to", self.end.into()),
+            ("maxItems", positive(self.max_items)?),
+        ])
     }
 }
 
@@ -127,15 +161,28 @@ impl MetricsWindow<'_> {
 #[derive(Clone, Copy)]
 pub enum WorkloadView<'a> {
     /// Explicit active or completed collection, with no automatic fallback.
-    Applications { activity: &'a ActivityId, active: bool },
+    Applications {
+        activity: &'a ActivityId,
+        active: bool,
+    },
     /// One application-native view.
-    Application { app: &'a WorkloadApplication, view: ApplicationView<'a> },
+    Application {
+        app: &'a WorkloadApplication,
+        view: ApplicationView<'a>,
+    },
     /// SparkCore jobs, preserving native OData query fields.
-    Jobs { skip: u64, top: u32, filter: Option<&'a str> },
+    Jobs {
+        skip: u64,
+        top: u32,
+        filter: Option<&'a str>,
+    },
     /// SparkCore job detail.
     Job(&'a SparkJobId),
     /// Workload Livy log window.
-    LivyLog { activity: &'a ActivityId, window: LogWindow },
+    LivyLog {
+        activity: &'a ActivityId,
+        window: LogWindow,
+    },
     /// Workload Livy log metadata.
     LivyLogMetadata(&'a ActivityId),
     /// Session status; same route as the source's get_livy_session callable.
@@ -145,9 +192,17 @@ pub enum WorkloadView<'a> {
     /// Activity summary.
     ActivitySummary(&'a ActivityId),
     /// Spark metrics info list with all source query options.
-    Metrics { window: MetricsWindow<'a>, activity: Option<&'a ActivityId>, running: bool, trigger_type: Option<&'a str> },
+    Metrics {
+        window: MetricsWindow<'a>,
+        activity: Option<&'a ActivityId>,
+        running: bool,
+        trigger_type: Option<&'a str>,
+    },
     /// Anomaly info list.
-    Anomalies { window: MetricsWindow<'a>, offset: u64 },
+    Anomalies {
+        window: MetricsWindow<'a>,
+        offset: u64,
+    },
     /// One activity's metrics.
     ActivityMetrics(&'a ActivityId),
     /// Native workload Livy-session collection, not public history.
@@ -180,32 +235,87 @@ impl WorkloadMonitor {
     ///
     /// # Errors
     /// Rejects unsafe IDs and mismatched capability prefixes.
-    pub fn new(notebook: NativeEndpoint, sparkcore: Option<NativeEndpoint>, capacity: &str, workspace: &str, artifact: &str) -> Result<Self, NativeError> {
+    pub fn new(
+        notebook: NativeEndpoint,
+        sparkcore: Option<NativeEndpoint>,
+        capacity: &str,
+        workspace: &str,
+        artifact: &str,
+    ) -> Result<Self, NativeError> {
         validate_scope(&[capacity, workspace, artifact])?;
-        require_prefix(&notebook, &format!("/webapi/capacities/{capacity}/workloads/Notebook"))?;
+        require_prefix(
+            &notebook,
+            &format!("/webapi/capacities/{capacity}/workloads/Notebook"),
+        )?;
         if let Some(endpoint) = &sparkcore {
-            require_prefix(endpoint, &format!("/webapi/capacities/{capacity}/workloads/SparkCore"))?;
+            require_prefix(
+                endpoint,
+                &format!("/webapi/capacities/{capacity}/workloads/SparkCore"),
+            )?;
         }
-        Ok(Self { notebook, sparkcore, workspace: workspace.into(), artifact: artifact.into() })
+        Ok(Self {
+            notebook,
+            sparkcore,
+            workspace: workspace.into(),
+            artifact: artifact.into(),
+        })
     }
 
-    fn notebook_request(&self, prefix: &[&str], suffix: &[&str], query: &[(&str, String)], method: NativeMethod, effect: NativeEffect) -> Result<NativeRequest, NativeError> {
+    fn notebook_request(
+        &self,
+        prefix: &[&str],
+        suffix: &[&str],
+        query: &[(&str, String)],
+        method: NativeMethod,
+        effect: NativeEffect,
+    ) -> Result<NativeRequest, NativeError> {
         let mut path = prefix.to_vec();
         path.extend_from_slice(suffix);
-        self.notebook.request(method, &path, query, None, effect)?.with_header("x-ms-workload-resource-moniker", &self.artifact)
+        self.notebook
+            .request(method, &path, query, None, effect)?
+            .with_header("x-ms-workload-resource-moniker", &self.artifact)
     }
 
-    fn sparkui(&self, suffix: &[&str], query: &[(&str, String)], versioned: bool, method: NativeMethod, effect: NativeEffect) -> Result<NativeRequest, NativeError> {
+    fn sparkui(
+        &self,
+        suffix: &[&str],
+        query: &[(&str, String)],
+        versioned: bool,
+        method: NativeMethod,
+        effect: NativeEffect,
+    ) -> Result<NativeRequest, NativeError> {
         let mut prefix = vec!["Data", "Automatic", "sparkui", "api"];
-        if versioned { prefix.extend(["versions", "1"]); } else { prefix.push("v1"); }
+        if versioned {
+            prefix.extend(["versions", "1"]);
+        } else {
+            prefix.push("v1");
+        }
         self.notebook_request(&prefix, suffix, query, method, effect)
     }
 
-    fn core(&self, suffix: &[&str], query: &[(&str, String)]) -> Result<NativeRequest, NativeError> {
-        let endpoint = self.sparkcore.as_ref().ok_or(NativeError::UnsupportedCapability)?;
-        let mut path = vec!["SparkCoreService", "automatic", "v1", "monitoring", "workspaces", self.workspace.as_str(), "artifacts", self.artifact.as_str()];
+    fn core(
+        &self,
+        suffix: &[&str],
+        query: &[(&str, String)],
+    ) -> Result<NativeRequest, NativeError> {
+        let endpoint = self
+            .sparkcore
+            .as_ref()
+            .ok_or(NativeError::UnsupportedCapability)?;
+        let mut path = vec![
+            "SparkCoreService",
+            "automatic",
+            "v1",
+            "monitoring",
+            "workspaces",
+            self.workspace.as_str(),
+            "artifacts",
+            self.artifact.as_str(),
+        ];
         path.extend_from_slice(suffix);
-        endpoint.request(NativeMethod::Get, &path, query, None, NativeEffect::Read)?.with_header("x-ms-workload-resource-moniker", &self.artifact)
+        endpoint
+            .request(NativeMethod::Get, &path, query, None, NativeEffect::Read)?
+            .with_header("x-ms-workload-resource-moniker", &self.artifact)
     }
 
     /// Build one native workload observation; positive routes are source-backed.
@@ -219,10 +329,16 @@ impl WorkloadMonitor {
         match view {
             WorkloadView::Application { app, view } => return self.application(app, view),
             WorkloadView::Jobs { skip, top, filter } => {
-                if skip != 0 { query.push(("$skip", skip.to_string())); }
-                if top != 0 { query.push(("$top", top.to_string())); }
+                if skip != 0 {
+                    query.push(("$skip", skip.to_string()));
+                }
+                if top != 0 {
+                    query.push(("$top", top.to_string()));
+                }
                 if let Some(filter) = filter {
-                    if filter.is_empty() { return Err(NativeError::InvalidInput); }
+                    if filter.is_empty() {
+                        return Err(NativeError::InvalidInput);
+                    }
                     query.push(("$filter", filter.into()));
                 }
                 return self.core(&["jobs"], &query);
@@ -230,60 +346,115 @@ impl WorkloadMonitor {
             WorkloadView::Job(job) => return self.core(&["jobs", job.as_str()], &[]),
             WorkloadView::ReplStatus(activity) => {
                 // OData string literals escape single quotes, independently of URL encoding.
-                query.push(("$filter", format!("sessionId eq '{}'", activity.as_str().replace('\'', "''"))));
+                query.push((
+                    "$filter",
+                    format!("sessionId eq '{}'", activity.as_str().replace('\'', "''")),
+                ));
                 return self.core(&["repls"], &query);
             }
             WorkloadView::Applications { activity, active } => {
                 path.extend(["activities", activity.as_str()]);
-                if active { path.push("hs"); }
+                if active {
+                    path.push("hs");
+                }
                 path.push("applications");
             }
             WorkloadView::LivyLog { activity, window } => {
                 path.extend(["activities", activity.as_str(), "livylog"]);
                 query = window.query()?;
             }
-            WorkloadView::LivyLogMetadata(activity) => path.extend(["activities", activity.as_str(), "livylog", "metadata"]),
+            WorkloadView::LivyLogMetadata(activity) => {
+                path.extend(["activities", activity.as_str(), "livylog", "metadata"])
+            }
             WorkloadView::SessionStatus(activity) => {
                 path.extend(["sessions", activity.as_str()]);
                 versioned = true;
             }
-            WorkloadView::ActivitySummary(activity) => path.extend(["activities", activity.as_str(), "summary"]),
+            WorkloadView::ActivitySummary(activity) => {
+                path.extend(["activities", activity.as_str(), "summary"])
+            }
             WorkloadView::LivySessions => {
                 path.push("sessions");
                 versioned = true;
             }
             WorkloadView::HistoryServerProperties => path = vec!["historyServerProperties"],
-            WorkloadView::Metrics { window, activity, running, trigger_type } => {
-                query.extend([("startTime", window.start.into()), ("endTime", window.end.into())]);
+            WorkloadView::Metrics {
+                window,
+                activity,
+                running,
+                trigger_type,
+            } => {
+                query.extend([
+                    ("startTime", window.start.into()),
+                    ("endTime", window.end.into()),
+                ]);
                 query.extend(window.query()?);
-                query.extend([("src", "fntk".into()), ("artifactType", "SynapseNotebook".into())]);
-                if let Some(activity) = activity { query.push(("activityId", activity.as_str().into())); }
-                if running { query.push(("isRunning", "true".into())); }
+                query.extend([
+                    ("src", "fntk".into()),
+                    ("artifactType", "SynapseNotebook".into()),
+                ]);
+                if let Some(activity) = activity {
+                    query.push(("activityId", activity.as_str().into()));
+                }
+                if running {
+                    query.push(("isRunning", "true".into()));
+                }
                 if let Some(trigger) = trigger_type {
-                    if trigger.is_empty() { return Err(NativeError::InvalidInput); }
+                    if trigger.is_empty() {
+                        return Err(NativeError::InvalidInput);
+                    }
                     query.push(("triggerType", trigger.into()));
                 }
                 path.push("infolist");
-                return self.notebook_request(&["Data", "Automatic", "sparkmetrics", "api", "v1"], &path, &query, NativeMethod::Get, NativeEffect::Read);
+                return self.notebook_request(
+                    &["Data", "Automatic", "sparkmetrics", "api", "v1"],
+                    &path,
+                    &query,
+                    NativeMethod::Get,
+                    NativeEffect::Read,
+                );
             }
             WorkloadView::Anomalies { window, offset } => {
                 query = window.query()?;
                 query.push(("offset", offset.to_string()));
                 path.push("anomalyinfolist");
-                return self.notebook_request(&["Data", "Automatic", "sparkmetrics", "api", "v1"], &path, &query, NativeMethod::Get, NativeEffect::Read);
+                return self.notebook_request(
+                    &["Data", "Automatic", "sparkmetrics", "api", "v1"],
+                    &path,
+                    &query,
+                    NativeMethod::Get,
+                    NativeEffect::Read,
+                );
             }
             WorkloadView::ActivityMetrics(activity) => {
                 path.extend(["activities", activity.as_str(), "info"]);
-                return self.notebook_request(&["Data", "Automatic", "sparkmetrics", "api", "v1"], &path, &[], NativeMethod::Get, NativeEffect::Read);
+                return self.notebook_request(
+                    &["Data", "Automatic", "sparkmetrics", "api", "v1"],
+                    &path,
+                    &[],
+                    NativeMethod::Get,
+                    NativeEffect::Read,
+                );
             }
         }
-        self.sparkui(&path, &query, versioned, NativeMethod::Get, NativeEffect::Read)
+        self.sparkui(
+            &path,
+            &query,
+            versioned,
+            NativeMethod::Get,
+            NativeEffect::Read,
+        )
     }
 
-    fn application(&self, app: &WorkloadApplication, view: ApplicationView<'_>) -> Result<NativeRequest, NativeError> {
+    fn application(
+        &self,
+        app: &WorkloadApplication,
+        view: ApplicationView<'_>,
+    ) -> Result<NativeRequest, NativeError> {
         let mut path = vec!["artifacts", self.artifact.as_str()];
         path.extend(match view {
-            ApplicationView::RollingDriverMetadata { .. } | ApplicationView::ContainerMetadata { .. } => app.metadata_path(),
+            ApplicationView::RollingDriverMetadata { .. }
+            | ApplicationView::ContainerMetadata { .. } => app.metadata_path(),
             _ => app.path(),
         });
         let mut query = Vec::new();
@@ -308,26 +479,62 @@ impl WorkloadMonitor {
             ApplicationView::Graph => path.extend(["enhancement", "graph"]),
             ApplicationView::ResourceUsage => path.push("resourceUsage"),
             ApplicationView::ResourceOverview => path.extend(["resourceUsage", "overview"]),
-            ApplicationView::EventLog => { path.push("logs"); accept = "application/zip"; }
+            ApplicationView::EventLog => {
+                path.push("logs");
+                accept = "application/zip";
+            }
             ApplicationView::RollingDriverMetadata { file, page } => {
                 path.extend(["rollingdriverlog", "metadata", file.as_str()]);
-                query.push(("offset", page.checked_mul(3000).ok_or(NativeError::Limit)?.to_string()));
+                query.push((
+                    "offset",
+                    page.checked_mul(3000)
+                        .ok_or(NativeError::Limit)?
+                        .to_string(),
+                ));
             }
-            ApplicationView::ContainerMetadata { container, file, page } => {
+            ApplicationView::ContainerMetadata {
+                container,
+                file,
+                page,
+            } => {
                 path.extend(["executorlogs", "containers", container.as_str(), "metadata"]);
-                query.extend([("filenamePrefix", file.as_str().into()), ("offset", page.checked_mul(3000).ok_or(NativeError::Limit)?.to_string())]);
+                query.extend([
+                    ("filenamePrefix", file.as_str().into()),
+                    (
+                        "offset",
+                        page.checked_mul(3000)
+                            .ok_or(NativeError::Limit)?
+                            .to_string(),
+                    ),
+                ]);
             }
             ApplicationView::DriverLog { file, window } => {
                 path.extend(["driverlog", file.as_str()]);
                 query = window.query()?;
             }
-            ApplicationView::DriverLogMetadata { file } => path.extend(["driverlog", "metadata", file.as_str()]),
-            ApplicationView::ExecutorLog { container, file, window } => {
-                path.extend(["yarnaggregationlog", "containers", container.as_str(), "files", file.as_str()]);
+            ApplicationView::DriverLogMetadata { file } => {
+                path.extend(["driverlog", "metadata", file.as_str()])
+            }
+            ApplicationView::ExecutorLog {
+                container,
+                file,
+                window,
+            } => {
+                path.extend([
+                    "yarnaggregationlog",
+                    "containers",
+                    container.as_str(),
+                    "files",
+                    file.as_str(),
+                ]);
                 query = window.query()?;
             }
             ApplicationView::ExecutorLogMetadata => path.extend(["yarnaggregationlog", "metadata"]),
-            ApplicationView::CellLog { group, file, window } => {
+            ApplicationView::CellLog {
+                group,
+                file,
+                window,
+            } => {
                 path.extend([group.as_str(), "driverlog", file.as_str()]);
                 query = window.query()?;
             }
@@ -338,8 +545,14 @@ impl WorkloadMonitor {
                 query.push(("outputMode", "UX".into()));
             }
             ApplicationView::LoadingProgress | ApplicationView::DiagnosticMetrics => {
-                if !matches!(app.location, ApplicationLocation::Completed(_)) { return Err(NativeError::UnsupportedCapability); }
-                path.push(if matches!(view, ApplicationView::LoadingProgress) { "loadingProgress" } else { "diagnosticmetrics" });
+                if !matches!(app.location, ApplicationLocation::Completed(_)) {
+                    return Err(NativeError::UnsupportedCapability);
+                }
+                path.push(if matches!(view, ApplicationView::LoadingProgress) {
+                    "loadingProgress"
+                } else {
+                    "diagnosticmetrics"
+                });
             }
             ApplicationView::ResourceSnapshot { timestamp } => {
                 let timestamp = timestamp.to_string();
@@ -349,15 +562,31 @@ impl WorkloadMonitor {
                 return self.sparkui(&path, &query, false, NativeMethod::Get, NativeEffect::Read);
             }
         }
-        self.sparkui(&path, &query, false, NativeMethod::Get, NativeEffect::Read)?.with_accept(accept)
+        self.sparkui(&path, &query, false, NativeMethod::Get, NativeEffect::Read)?
+            .with_accept(accept)
     }
 
     /// Build a native cancellation, disclosing its remote cancel effect.
     ///
     /// # Errors
     /// Fails before dispatch for invalid scoped route segments.
-    pub fn cancel(&self, activity: &ActivityId, job_type: JobType) -> Result<NativeRequest, NativeError> {
-        self.sparkui(&["artifacts", &self.artifact, job_type.as_str(), activity.as_str()], &[], true, NativeMethod::Delete, NativeEffect::Cancel)
+    pub fn cancel(
+        &self,
+        activity: &ActivityId,
+        job_type: JobType,
+    ) -> Result<NativeRequest, NativeError> {
+        self.sparkui(
+            &[
+                "artifacts",
+                &self.artifact,
+                job_type.as_str(),
+                activity.as_str(),
+            ],
+            &[],
+            true,
+            NativeMethod::Delete,
+            NativeEffect::Cancel,
+        )
     }
 
     /// Request a signed event-log ticket: provider POST, semantically a read.
@@ -366,8 +595,24 @@ impl WorkloadMonitor {
     ///
     /// # Errors
     /// Fails before dispatch for invalid scoped route segments.
-    pub fn event_log_ticket(&self, activity: &ActivityId, job_type: JobType) -> Result<NativeRequest, NativeError> {
-        self.notebook_request(&["sparkdiagnostic", "api", "v1"], &["artifacts", &self.artifact, "activities", activity.as_str(), "GetSasTokenForEventLogs"], &[("jobType", job_type.as_str().into())], NativeMethod::Post, NativeEffect::Read)
+    pub fn event_log_ticket(
+        &self,
+        activity: &ActivityId,
+        job_type: JobType,
+    ) -> Result<NativeRequest, NativeError> {
+        self.notebook_request(
+            &["sparkdiagnostic", "api", "v1"],
+            &[
+                "artifacts",
+                &self.artifact,
+                "activities",
+                activity.as_str(),
+                "GetSasTokenForEventLogs",
+            ],
+            &[("jobType", job_type.as_str().into())],
+            NativeMethod::Post,
+            NativeEffect::Read,
+        )
     }
 
     /// Build progress reads for an explicitly selected set of Spark jobs.
@@ -378,12 +623,22 @@ impl WorkloadMonitor {
     ///
     /// # Errors
     /// Rejects insufficient request budgets, duplicate IDs and invalid bounds.
-    pub fn progress_selected(&self, app: &WorkloadApplication, jobs: &[SparkJobId], limit: u32, max_requests: usize) -> Result<RequestPlan, NativeError> {
-        if jobs.len().checked_add(1).ok_or(NativeError::Limit)? > max_requests { return Err(NativeError::Limit); }
+    pub fn progress_selected(
+        &self,
+        app: &WorkloadApplication,
+        jobs: &[SparkJobId],
+        limit: u32,
+        max_requests: usize,
+    ) -> Result<RequestPlan, NativeError> {
+        if jobs.len().checked_add(1).ok_or(NativeError::Limit)? > max_requests {
+            return Err(NativeError::Limit);
+        }
         let mut seen = std::collections::BTreeSet::new();
         let mut requests = vec![self.application(app, ApplicationView::Jobs { limit })?];
         for job in jobs {
-            if !seen.insert(job.as_str()) { return Err(NativeError::InvalidInput); }
+            if !seen.insert(job.as_str()) {
+                return Err(NativeError::InvalidInput);
+            }
             requests.push(self.application(app, ApplicationView::Stages { job, limit })?);
         }
         RequestPlan::new(requests, max_requests, PlanCoverage::SelectedJobs)
@@ -397,7 +652,12 @@ impl WorkloadMonitor {
     ///
     /// # Errors
     /// Rejects zero bounds and invalid scoped requests before dispatch.
-    pub fn progress(&self, app: &WorkloadApplication, limit: u32, max_requests: usize) -> Result<WorkloadProgressPlan, NativeError> {
+    pub fn progress(
+        &self,
+        app: &WorkloadApplication,
+        limit: u32,
+        max_requests: usize,
+    ) -> Result<WorkloadProgressPlan, NativeError> {
         WorkloadProgressPlan::new(self.clone(), app.clone(), limit, max_requests)
     }
 }

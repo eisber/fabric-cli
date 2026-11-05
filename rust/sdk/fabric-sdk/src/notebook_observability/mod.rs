@@ -43,9 +43,7 @@ pub use plans::{
     WorkloadProgressPlan,
 };
 pub use public::{PublicApplication, PublicMonitor, PublicView};
-pub use resources::{
-    EntryType, ResourceContent, ResourcePath, ResourceWriteAdmission, Resources,
-};
+pub use resources::{EntryType, ResourceContent, ResourcePath, ResourceWriteAdmission, Resources};
 pub use workload::{
     ApplicationLocation, ApplicationView, MetricsWindow, WorkloadApplication, WorkloadMonitor,
     WorkloadView,
@@ -84,12 +82,24 @@ macro_rules! identifier {
     };
 }
 
-identifier!(LivyId, "A public Livy-history session ID, never an activity ID.");
-identifier!(ActivityId, "A workload activity ID, never a public Livy ID.");
+identifier!(
+    LivyId,
+    "A public Livy-history session ID, never an activity ID."
+);
+identifier!(
+    ActivityId,
+    "A workload activity ID, never a public Livy ID."
+);
 identifier!(ApplicationId, "An exact Spark application ID.");
 identifier!(AttemptId, "An explicit completed-application attempt ID.");
-identifier!(SparkJobId, "A Spark job ID, not a job-group or activity ID.");
-identifier!(JobGroupId, "A runtime job-group ID, not an authored cell ID.");
+identifier!(
+    SparkJobId,
+    "A Spark job ID, not a job-group or activity ID."
+);
+identifier!(
+    JobGroupId,
+    "A runtime job-group ID, not an authored cell ID."
+);
 identifier!(ContainerId, "A YARN container ID, not an executor ordinal.");
 identifier!(StageId, "An exact Spark stage ID.");
 identifier!(SqlExecutionId, "A Spark SQL execution-history ID.");
@@ -126,7 +136,10 @@ impl LogWindow {
         if self.size == 0 {
             return Err(NativeError::InvalidInput);
         }
-        Ok(vec![("offset", self.offset.to_string()), ("size", self.size.to_string())])
+        Ok(vec![
+            ("offset", self.offset.to_string()),
+            ("size", self.size.to_string()),
+        ])
     }
 }
 

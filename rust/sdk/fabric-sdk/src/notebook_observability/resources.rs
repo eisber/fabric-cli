@@ -36,11 +36,17 @@ impl ResourcePath {
     }
 
     fn segments(&self) -> Vec<&str> {
-        if self.0.is_empty() { Vec::new() } else { self.0.split('/').collect() }
+        if self.0.is_empty() {
+            Vec::new()
+        } else {
+            self.0.split('/').collect()
+        }
     }
 
     fn require_entry(&self) -> Result<(), NativeError> {
-        if self.0.is_empty() { return Err(NativeError::InvalidInput); }
+        if self.0.is_empty() {
+            return Err(NativeError::InvalidInput);
+        }
         Ok(())
     }
 }
@@ -62,7 +68,10 @@ pub enum EntryType {
 
 impl EntryType {
     const fn as_str(self) -> &'static str {
-        match self { Self::File => "file", Self::Folder => "folder" }
+        match self {
+            Self::File => "file",
+            Self::Folder => "folder",
+        }
     }
 }
 
@@ -98,10 +107,18 @@ impl ResourceContent {
     /// # Errors
     /// Preserves non-success HTTP statuses and rejects malformed UTF-8 text.
     pub fn from_response(response: NativeResponse) -> Result<Self, NativeError> {
-        if !(200..300).contains(&response.status) { return Err(NativeError::Http(response.status)); }
-        let media = response.content_type.as_deref().unwrap_or("").to_ascii_lowercase();
+        if !(200..300).contains(&response.status) {
+            return Err(NativeError::Http(response.status));
+        }
+        let media = response
+            .content_type
+            .as_deref()
+            .unwrap_or("")
+            .to_ascii_lowercase();
         if media.contains("text") || media.contains("json") || media.contains("xml") {
-            Ok(Self::Text(String::from_utf8(response.body).map_err(|_| NativeError::InvalidResponse)?))
+            Ok(Self::Text(
+                String::from_utf8(response.body).map_err(|_| NativeError::InvalidResponse)?,
+            ))
         } else {
             Ok(Self::Binary(response.body))
         }
@@ -125,16 +142,33 @@ impl Resources {
     ///
     /// # Errors
     /// Rejects unsafe IDs and mismatched capability/owner prefixes.
-    pub fn new(endpoint: NativeEndpoint, capacity: &str, workspace: &str, artifact: &str) -> Result<Self, NativeError> {
+    pub fn new(
+        endpoint: NativeEndpoint,
+        capacity: &str,
+        workspace: &str,
+        artifact: &str,
+    ) -> Result<Self, NativeError> {
         validate_scope(&[capacity, workspace, artifact])?;
-        require_prefix(&endpoint, &format!("/webapi/capacities/{capacity}/workloads/Notebook/Data/Direct/api/workspaces/{workspace}/artifacts/{artifact}/filesystem"))?;
+        require_prefix(
+            &endpoint,
+            &format!(
+                "/webapi/capacities/{capacity}/workloads/Notebook/Data/Direct/api/workspaces/{workspace}/artifacts/{artifact}/filesystem"
+            ),
+        )?;
         Ok(Self { endpoint })
     }
 
-    fn request(&self, path: &ResourcePath, method: NativeMethod, query: &[(&str, String)], effect: NativeEffect) -> Result<NativeRequest, NativeError> {
+    fn request(
+        &self,
+        path: &ResourcePath,
+        method: NativeMethod,
+        query: &[(&str, String)],
+        effect: NativeEffect,
+    ) -> Result<NativeRequest, NativeError> {
         let mut segments = vec!["workdir"];
         segments.extend(path.segments());
-        self.endpoint.request(method, &segments, query, None, effect)
+        self.endpoint
+            .request(method, &segments, query, None, effect)
     }
 
     /// List file and folder entries, explicitly selecting recursion.
@@ -144,7 +178,13 @@ impl Resources {
     /// # Errors
     /// Fails for invalid scoped route segments before dispatch.
     pub fn list(&self, path: &ResourcePath, recursive: bool) -> Result<NativeRequest, NativeError> {
-        self.request(path, NativeMethod::Get, &[("recursive", recursive.to_string())], NativeEffect::Read)?.with_header("Cache-Control", "no-cache")
+        self.request(
+            path,
+            NativeMethod::Get,
+            &[("recursive", recursive.to_string())],
+            NativeEffect::Read,
+        )?
+        .with_header("Cache-Control", "no-cache")
     }
 
     /// Read exact file content as bytes; response decoding is explicit.
@@ -153,7 +193,8 @@ impl Resources {
     /// Rejects a root-as-file request.
     pub fn get(&self, path: &ResourcePath) -> Result<NativeRequest, NativeError> {
         path.require_entry()?;
-        self.request(path, NativeMethod::Get, &[], NativeEffect::Read)?.with_accept("*/*")
+        self.request(path, NativeMethod::Get, &[], NativeEffect::Read)?
+            .with_accept("*/*")
     }
 
     /// Upload exact bytes with explicit media, bound and upsert admission.
@@ -162,7 +203,14 @@ impl Resources {
     ///
     /// # Errors
     /// Rejects create-only admission, root, invalid media and oversized payloads.
-    pub fn update(&self, path: &ResourcePath, bytes: Vec<u8>, media: &str, max_request_bytes: usize, admission: ResourceWriteAdmission) -> Result<NativeRequest, NativeError> {
+    pub fn update(
+        &self,
+        path: &ResourcePath,
+        bytes: Vec<u8>,
+        media: &str,
+        max_request_bytes: usize,
+        admission: ResourceWriteAdmission,
+    ) -> Result<NativeRequest, NativeError> {
         admission.validate()?;
         path.require_entry()?;
         self.request(path, NativeMethod::Put, &[], NativeEffect::Update)?
@@ -176,21 +224,38 @@ impl Resources {
     ///
     /// # Errors
     /// Rejects root and unsupported create-only admission before dispatch.
-    pub fn update_folder(&self, path: &ResourcePath, admission: ResourceWriteAdmission) -> Result<NativeRequest, NativeError> {
+    pub fn update_folder(
+        &self,
+        path: &ResourcePath,
+        admission: ResourceWriteAdmission,
+    ) -> Result<NativeRequest, NativeError> {
         admission.validate()?;
         path.require_entry()?;
-        self.request(path, NativeMethod::Put, &[], NativeEffect::Update)?.with_header("Ms-FileSystem-Entry-Type", "folder")
+        self.request(path, NativeMethod::Put, &[], NativeEffect::Update)?
+            .with_header("Ms-FileSystem-Entry-Type", "folder")
     }
 
     /// Delete an exact entry, declaring type and recursion explicitly.
     ///
     /// # Errors
     /// Rejects root deletion and meaningless recursive file deletion.
-    pub fn delete(&self, path: &ResourcePath, entry: EntryType, recursive: bool) -> Result<NativeRequest, NativeError> {
+    pub fn delete(
+        &self,
+        path: &ResourcePath,
+        entry: EntryType,
+        recursive: bool,
+    ) -> Result<NativeRequest, NativeError> {
         path.require_entry()?;
-        if entry == EntryType::File && recursive { return Err(NativeError::InvalidInput); }
-        let query = if recursive { vec![("recursive", "true".into())] } else { Vec::new() };
-        self.request(path, NativeMethod::Delete, &query, NativeEffect::Delete)?.with_header("Ms-FileSystem-Entry-Type", entry.as_str())
+        if entry == EntryType::File && recursive {
+            return Err(NativeError::InvalidInput);
+        }
+        let query = if recursive {
+            vec![("recursive", "true".into())]
+        } else {
+            Vec::new()
+        };
+        self.request(path, NativeMethod::Delete, &query, NativeEffect::Delete)?
+            .with_header("Ms-FileSystem-Entry-Type", entry.as_str())
     }
 
     /// Read actual provider usage/quota JSON, not a synthesized local estimate.
@@ -198,6 +263,12 @@ impl Resources {
     /// # Errors
     /// Fails for invalid scoped route segments before dispatch.
     pub fn usage(&self) -> Result<NativeRequest, NativeError> {
-        self.endpoint.request(NativeMethod::Get, &["workdirUsage"], &[], None, NativeEffect::Read)
+        self.endpoint.request(
+            NativeMethod::Get,
+            &["workdirUsage"],
+            &[],
+            None,
+            NativeEffect::Read,
+        )
     }
 }

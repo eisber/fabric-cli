@@ -3,10 +3,7 @@
 
 //! Bounded, owner-bound JSON byte cursor observation, without automatic I/O.
 
-use super::{
-    BytePage, LivyRequest, LivyResponse, Observation, Statement,
-    StatementSnapshot,
-};
+use super::{BytePage, LivyRequest, LivyResponse, Observation, Statement, StatementSnapshot};
 use crate::runtime::NativeRequest;
 use serde_json::Value;
 use std::{fmt, sync::Arc};
@@ -118,7 +115,10 @@ impl StatementPages {
         }
         let page = BytePage::new(Some(self.offset), Some(self.size))
             .map_err(|_| CursorError::InvalidInput)?;
-        let request = self.statement.get(page).map_err(|_| CursorError::InvalidRequest)?;
+        let request = self
+            .statement
+            .get(page)
+            .map_err(|_| CursorError::InvalidRequest)?;
         self.pending = Some(request.native().clone());
         self.requested += 1;
         Ok(request)
@@ -148,25 +148,37 @@ impl StatementPages {
         if model.observe().map_err(|_| CursorError::NotSuccessful)? != Observation::Succeeded {
             return Err(CursorError::NotSuccessful);
         }
-        let bytes = self.received_bytes.checked_add(response.raw().len()).ok_or(CursorError::Limit)?;
+        let bytes = self
+            .received_bytes
+            .checked_add(response.raw().len())
+            .ok_or(CursorError::Limit)?;
         if bytes > self.max_total_bytes {
             return Err(CursorError::Limit);
         }
-        let metadata = model.cursor_metadata().ok_or(CursorError::InvalidMetadata)?;
+        let metadata = model
+            .cursor_metadata()
+            .ok_or(CursorError::InvalidMetadata)?;
         if !metadata.is_object() {
             return Err(CursorError::InvalidMetadata);
         }
-        if metadata.get("from").is_some_and(|start| start.as_u64() != Some(self.offset)) {
+        if metadata
+            .get("from")
+            .is_some_and(|start| start.as_u64() != Some(self.offset))
+        {
             return Err(CursorError::InvalidMetadata);
         }
-        let cursor = metadata.get("next").and_then(Value::as_i64)
+        let cursor = metadata
+            .get("next")
+            .and_then(Value::as_i64)
             .ok_or(CursorError::InvalidMetadata)?;
         let progress = match cursor {
             -1 => PageProgress::Complete,
             -2 => return Err(CursorError::RetrievalLimit),
             value if value < 0 => return Err(CursorError::InvalidMetadata),
             value if value as u64 <= self.offset => return Err(CursorError::NonAdvancing),
-            value => PageProgress::More { next_offset: value as u64 },
+            value => PageProgress::More {
+                next_offset: value as u64,
+            },
         };
         match progress {
             PageProgress::Complete => self.complete = true,
@@ -178,19 +190,30 @@ impl StatementPages {
     }
 
     /// Current exact provider byte offset, never derived from output encoding.
-    pub const fn offset(&self) -> u64 { self.offset }
+    pub const fn offset(&self) -> u64 {
+        self.offset
+    }
     /// Number of requests built against the finite page budget.
-    pub const fn requested_pages(&self) -> usize { self.requested }
+    pub const fn requested_pages(&self) -> usize {
+        self.requested
+    }
     /// Bytes in successfully observed raw responses.
-    pub const fn received_bytes(&self) -> usize { self.received_bytes }
+    pub const fn received_bytes(&self) -> usize {
+        self.received_bytes
+    }
     /// Remaining cumulative raw-response budget to pass to the existing executor.
-    pub fn remaining_bytes(&self) -> usize { self.max_total_bytes - self.received_bytes }
+    pub fn remaining_bytes(&self) -> usize {
+        self.max_total_bytes - self.received_bytes
+    }
 }
 
 impl fmt::Debug for StatementPages {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("StatementPages").field("offset", &self.offset)
-            .field("requested", &self.requested).field("complete", &self.complete)
-            .field("owner", &"<scoped>").finish()
+        f.debug_struct("StatementPages")
+            .field("offset", &self.offset)
+            .field("requested", &self.requested)
+            .field("complete", &self.complete)
+            .field("owner", &"<scoped>")
+            .finish()
     }
 }

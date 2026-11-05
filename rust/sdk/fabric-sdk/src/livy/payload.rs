@@ -44,14 +44,38 @@ macro_rules! body {
     };
 }
 
-body!(Configuration, "Extensible object for session, batch, REPL or HC creation.");
-body!(StatementInput, "Code and interpreter kind; the JSON default is `sql`.");
-body!(CompletionInput, "Completion code, Unicode-scalar cursor, kind and optional source ID.");
-body!(InspectionInput, "Variable selectors, kind and optional explicit source ID.");
-body!(DebugInput, "Opaque Jupyter debug request in the native Livy debug envelope.");
-body!(TimeoutInput, "Positive millisecond timeout changes, not activity reset.");
-body!(SerializedJob, "Opaque already-serialized job bytes encoded as base64, never deserialized.");
-body!(ResourceUri, "Server-localized resource URI; the SDK never fetches this URI.");
+body!(
+    Configuration,
+    "Extensible object for session, batch, REPL or HC creation."
+);
+body!(
+    StatementInput,
+    "Code and interpreter kind; the JSON default is `sql`."
+);
+body!(
+    CompletionInput,
+    "Completion code, Unicode-scalar cursor, kind and optional source ID."
+);
+body!(
+    InspectionInput,
+    "Variable selectors, kind and optional explicit source ID."
+);
+body!(
+    DebugInput,
+    "Opaque Jupyter debug request in the native Livy debug envelope."
+);
+body!(
+    TimeoutInput,
+    "Positive millisecond timeout changes, not activity reset."
+);
+body!(
+    SerializedJob,
+    "Opaque already-serialized job bytes encoded as base64, never deserialized."
+);
+body!(
+    ResourceUri,
+    "Server-localized resource URI; the SDK never fetches this URI."
+);
 
 impl Configuration {
     /// Preserve an object, including unknown deployment fields, without imposing a Spark schema.
@@ -139,7 +163,9 @@ impl CompletionInput {
         if cursor > code.chars().count() as u64 {
             return Err(NativeError::InvalidInput);
         }
-        Ok(Self(json!({"kind": "spark", "code": code, "cursor": cursor})))
+        Ok(Self(
+            json!({"kind": "spark", "code": code, "cursor": cursor}),
+        ))
     }
 
     /// Set an explicit interpreter.
@@ -217,7 +243,9 @@ impl DebugInput {
             }
             _ => return Err(NativeError::InvalidInput),
         };
-        Ok(Self(json!({"msg_type": "debug_request", "content": content})))
+        Ok(Self(
+            json!({"msg_type": "debug_request", "content": content}),
+        ))
     }
 }
 
@@ -262,7 +290,9 @@ impl SerializedJob {
         if bytes.is_empty() {
             return Err(NativeError::InvalidInput);
         }
-        Ok(Self(json!({"job": STANDARD.encode(bytes), "jobType": job_type})))
+        Ok(Self(
+            json!({"job": STANDARD.encode(bytes), "jobType": job_type}),
+        ))
     }
 }
 
@@ -426,8 +456,7 @@ pub(super) fn activity_query(
         (ActivityPage::Default, _) => Ok(Vec::new()),
         (ActivityPage::Native { offset, size }, true) => Ok(BytePage::new(offset, size)?.query()),
         (ActivityPage::Fabric { top, skip, count }, false) => {
-            if top.is_some_and(|n| n > i32::MAX as u32)
-                || skip.is_some_and(|n| n > i32::MAX as u32)
+            if top.is_some_and(|n| n > i32::MAX as u32) || skip.is_some_and(|n| n > i32::MAX as u32)
             {
                 return Err(NativeError::InvalidInput);
             }

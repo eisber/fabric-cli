@@ -75,7 +75,9 @@ impl Scope {
             segment(part)?;
         }
         let mut scope = self.clone();
-        scope.segments.extend(parts.iter().map(|part| (*part).into()));
+        scope
+            .segments
+            .extend(parts.iter().map(|part| (*part).into()));
         scope.template = template;
         Ok(scope)
     }
@@ -169,8 +171,14 @@ impl LivyService {
         let base = endpoint.request(
             NativeMethod::Get,
             &[
-                fabric_version, "workspaces", workspace_id, "lakehouses", lakehouse_id,
-                "livyApi", "versions", api_version,
+                fabric_version,
+                "workspaces",
+                workspace_id,
+                "lakehouses",
+                lakehouse_id,
+                "livyApi",
+                "versions",
+                api_version,
             ],
             &[],
             None,
@@ -203,24 +211,44 @@ impl LivyService {
     /// # Errors
     /// Returns `UnsupportedCapability` for Fabric.
     pub fn version(&self) -> Result<LivyRequest<ServiceMetadata>, NativeError> {
-        self.scope.request(NativeMethod::Get, "/version", &[], None, NativeEffect::Read)
+        self.scope
+            .request(NativeMethod::Get, "/version", &[], None, NativeEffect::Read)
     }
 
     /// Build a session-list request using only the selected profile's parameters.
     ///
     /// # Errors
     /// Rejects cross-profile or out-of-range pagination.
-    pub fn list_sessions(&self, page: ActivityPage) -> Result<LivyRequest<ActivityList>, NativeError> {
-        let query = payload::activity_query(page, self.profile() == ServiceProfile::NativeWildfire)?;
-        self.scope.request(NativeMethod::Get, "/sessions", &query, None, NativeEffect::Read)
+    pub fn list_sessions(
+        &self,
+        page: ActivityPage,
+    ) -> Result<LivyRequest<ActivityList>, NativeError> {
+        let query =
+            payload::activity_query(page, self.profile() == ServiceProfile::NativeWildfire)?;
+        self.scope.request(
+            NativeMethod::Get,
+            "/sessions",
+            &query,
+            None,
+            NativeEffect::Read,
+        )
     }
 
     /// Request classic session creation, retaining every configuration field.
     ///
     /// # Errors
     /// Returns shared request-validation errors without dispatch.
-    pub fn create_session(&self, input: &Configuration) -> Result<LivyRequest<SessionSnapshot>, NativeError> {
-        self.scope.request(NativeMethod::Post, "/sessions", &[], Some(input.as_json().clone()), NativeEffect::Create)
+    pub fn create_session(
+        &self,
+        input: &Configuration,
+    ) -> Result<LivyRequest<SessionSnapshot>, NativeError> {
+        self.scope.request(
+            NativeMethod::Post,
+            "/sessions",
+            &[],
+            Some(input.as_json().clone()),
+            NativeEffect::Create,
+        )
     }
 
     /// Construct a classic session handle without reading or creating remote infrastructure.
@@ -228,16 +256,27 @@ impl LivyService {
     /// # Errors
     /// Rejects unsafe opaque IDs (numeric IDs can be supplied as decimal strings).
     pub fn session(&self, id: &str) -> Result<Session, NativeError> {
-        Ok(Session { scope: self.scope.child(&["sessions", id], "/sessions/{id}")? })
+        Ok(Session {
+            scope: self.scope.child(&["sessions", id], "/sessions/{id}")?,
+        })
     }
 
     /// Request HC acquisition, not creation of a privately owned backing Spark session.
     ///
     /// # Errors
     /// Rejects native profiles and wrong known HC schema field types.
-    pub fn acquire_high_concurrency(&self, input: &Configuration) -> Result<LivyRequest<SessionSnapshot>, NativeError> {
+    pub fn acquire_high_concurrency(
+        &self,
+        input: &Configuration,
+    ) -> Result<LivyRequest<SessionSnapshot>, NativeError> {
         input.validate_hc()?;
-        self.scope.request(NativeMethod::Post, "/highConcurrencySessions", &[], Some(input.as_json().clone()), NativeEffect::Create)
+        self.scope.request(
+            NativeMethod::Post,
+            "/highConcurrencySessions",
+            &[],
+            Some(input.as_json().clone()),
+            NativeEffect::Create,
+        )
     }
 
     /// Construct a Fabric HC management handle using the acquisition ID only.
@@ -248,7 +287,10 @@ impl LivyService {
         if self.profile() != ServiceProfile::FabricJson {
             return Err(NativeError::UnsupportedCapability);
         }
-        let mut scope = self.scope.child(&["highConcurrencySessions", acquisition_id], "/highConcurrencySessions/{id}")?;
+        let mut scope = self.scope.child(
+            &["highConcurrencySessions", acquisition_id],
+            "/highConcurrencySessions/{id}",
+        )?;
         scope.acquisition = Some(acquisition_id.into());
         Ok(HighConcurrency { scope })
     }
@@ -257,17 +299,36 @@ impl LivyService {
     ///
     /// # Errors
     /// Rejects cross-profile or out-of-range pagination.
-    pub fn list_batches(&self, page: ActivityPage) -> Result<LivyRequest<ActivityList>, NativeError> {
-        let query = payload::activity_query(page, self.profile() == ServiceProfile::NativeWildfire)?;
-        self.scope.request(NativeMethod::Get, "/batches", &query, None, NativeEffect::Read)
+    pub fn list_batches(
+        &self,
+        page: ActivityPage,
+    ) -> Result<LivyRequest<ActivityList>, NativeError> {
+        let query =
+            payload::activity_query(page, self.profile() == ServiceProfile::NativeWildfire)?;
+        self.scope.request(
+            NativeMethod::Get,
+            "/batches",
+            &query,
+            None,
+            NativeEffect::Read,
+        )
     }
 
     /// Submit a batch Spark application, not an idle resource shell.
     ///
     /// # Errors
     /// Returns shared request-validation errors.
-    pub fn create_batch(&self, input: &Configuration) -> Result<LivyRequest<BatchSnapshot>, NativeError> {
-        self.scope.request(NativeMethod::Post, "/batches", &[], Some(input.as_json().clone()), NativeEffect::Execute)
+    pub fn create_batch(
+        &self,
+        input: &Configuration,
+    ) -> Result<LivyRequest<BatchSnapshot>, NativeError> {
+        self.scope.request(
+            NativeMethod::Post,
+            "/batches",
+            &[],
+            Some(input.as_json().clone()),
+            NativeEffect::Execute,
+        )
     }
 
     /// Construct a batch handle without I/O.
@@ -275,7 +336,9 @@ impl LivyService {
     /// # Errors
     /// Rejects unsafe batch IDs.
     pub fn batch(&self, id: &str) -> Result<Batch, NativeError> {
-        Ok(Batch { scope: self.scope.child(&["batches", id], "/batches/{id}")? })
+        Ok(Batch {
+            scope: self.scope.child(&["batches", id], "/batches/{id}")?,
+        })
     }
 }
 
@@ -295,13 +358,31 @@ macro_rules! handle {
     };
 }
 
-handle!(Session, "An exact classic session owner; never an HC backing-session cleanup handle.");
-handle!(HighConcurrency, "A Fabric HC acquisition management owner, distinct from backing session/REPL IDs.");
-handle!(Repl, "An exact native session/REPL or Fabric acquisition/backing-session/REPL tuple.");
-handle!(Statements, "Statement collection bound to exactly one classic session or owned REPL.");
-handle!(Statement, "Statement handle retaining its full service, session, REPL and acquisition ownership.");
+handle!(
+    Session,
+    "An exact classic session owner; never an HC backing-session cleanup handle."
+);
+handle!(
+    HighConcurrency,
+    "A Fabric HC acquisition management owner, distinct from backing session/REPL IDs."
+);
+handle!(
+    Repl,
+    "An exact native session/REPL or Fabric acquisition/backing-session/REPL tuple."
+);
+handle!(
+    Statements,
+    "Statement collection bound to exactly one classic session or owned REPL."
+);
+handle!(
+    Statement,
+    "Statement handle retaining its full service, session, REPL and acquisition ownership."
+);
 handle!(Batch, "An exact batch application owner.");
-handle!(Job, "Serialized job handle bound to one native classic session.");
+handle!(
+    Job,
+    "Serialized job handle bound to one native classic session."
+);
 
 macro_rules! request_method {
     ($name:ident, $method:ident, $suffix:literal, $model:ty, $effect:ident, $doc:literal) => {
@@ -310,19 +391,74 @@ macro_rules! request_method {
         /// # Errors
         /// Returns `UnsupportedCapability` if absent from the selected profile.
         pub fn $name(&self) -> Result<LivyRequest<$model>, NativeError> {
-            self.scope.request(NativeMethod::$method, $suffix, &[], None, NativeEffect::$effect)
+            self.scope.request(
+                NativeMethod::$method,
+                $suffix,
+                &[],
+                None,
+                NativeEffect::$effect,
+            )
         }
     };
 }
 
 impl Session {
-    request_method!(get, Get, "", SessionSnapshot, Read, "Read this exact classic session.");
-    request_method!(delete, Delete, "", Acknowledgement, Delete, "Explicitly delete the classic session, not a local handle close.");
-    request_method!(get_state, Get, "/state", SessionSnapshot, Read, "Read the native state subresource.");
-    request_method!(stop, Post, "/stop", Acknowledgement, Lifecycle, "Native stop, distinct from DELETE and statement cancellation.");
-    request_method!(interrupt, Post, "/interrupt", CancellationResult, Lifecycle, "Native interrupt; qualified Wildfire stops the whole session, not one statement.");
-    request_method!(connect, Post, "/connect", SessionSnapshot, Lifecycle, "Native remote connect/attach, not a local resume.");
-    request_method!(get_timeout, Get, "/timeout", Timeout, Read, "Read native timeout settings and inherited values.");
+    request_method!(
+        get,
+        Get,
+        "",
+        SessionSnapshot,
+        Read,
+        "Read this exact classic session."
+    );
+    request_method!(
+        delete,
+        Delete,
+        "",
+        Acknowledgement,
+        Delete,
+        "Explicitly delete the classic session, not a local handle close."
+    );
+    request_method!(
+        get_state,
+        Get,
+        "/state",
+        SessionSnapshot,
+        Read,
+        "Read the native state subresource."
+    );
+    request_method!(
+        stop,
+        Post,
+        "/stop",
+        Acknowledgement,
+        Lifecycle,
+        "Native stop, distinct from DELETE and statement cancellation."
+    );
+    request_method!(
+        interrupt,
+        Post,
+        "/interrupt",
+        CancellationResult,
+        Lifecycle,
+        "Native interrupt; qualified Wildfire stops the whole session, not one statement."
+    );
+    request_method!(
+        connect,
+        Post,
+        "/connect",
+        SessionSnapshot,
+        Lifecycle,
+        "Native remote connect/attach, not a local resume."
+    );
+    request_method!(
+        get_timeout,
+        Get,
+        "/timeout",
+        Timeout,
+        Read,
+        "Read native timeout settings and inherited values."
+    );
 
     /// Reset activity using native PUT or modeled Fabric POST.
     ///
@@ -333,7 +469,8 @@ impl Session {
             ServiceProfile::NativeWildfire => NativeMethod::Put,
             ServiceProfile::FabricJson => NativeMethod::Post,
         };
-        self.scope.request(method, "/reset-timeout", &[], None, NativeEffect::Lifecycle)
+        self.scope
+            .request(method, "/reset-timeout", &[], None, NativeEffect::Lifecycle)
     }
 
     /// Read one native log page.
@@ -341,7 +478,13 @@ impl Session {
     /// # Errors
     /// Fabric does not advertise this route.
     pub fn logs(&self, page: BytePage) -> Result<LivyRequest<Logs>, NativeError> {
-        self.scope.request(NativeMethod::Get, "/log", &page.query(), None, NativeEffect::Read)
+        self.scope.request(
+            NativeMethod::Get,
+            "/log",
+            &page.query(),
+            None,
+            NativeEffect::Read,
+        )
     }
 
     /// Set a native classic session duration, not its REPL duration.
@@ -352,15 +495,30 @@ impl Session {
         if input.as_json().get("replTimeout").is_some() {
             return Err(NativeError::InvalidInput);
         }
-        self.scope.request(NativeMethod::Put, "/timeout", &[], Some(input.as_json().clone()), NativeEffect::Update)
+        self.scope.request(
+            NativeMethod::Put,
+            "/timeout",
+            &[],
+            Some(input.as_json().clone()),
+            NativeEffect::Update,
+        )
     }
 
     /// Native completion; sourceId, if supplied, is explicit in the payload.
     ///
     /// # Errors
     /// Fabric does not advertise this extension.
-    pub fn completion(&self, input: &CompletionInput) -> Result<LivyRequest<Completion>, NativeError> {
-        self.scope.request(NativeMethod::Post, "/completion", &[], Some(input.as_json().clone()), NativeEffect::Read)
+    pub fn completion(
+        &self,
+        input: &CompletionInput,
+    ) -> Result<LivyRequest<Completion>, NativeError> {
+        self.scope.request(
+            NativeMethod::Post,
+            "/completion",
+            &[],
+            Some(input.as_json().clone()),
+            NativeEffect::Read,
+        )
     }
 
     /// Native variable inspection.
@@ -368,7 +526,13 @@ impl Session {
     /// # Errors
     /// Fabric does not advertise this extension.
     pub fn inspect(&self, input: &InspectionInput) -> Result<LivyRequest<Inspection>, NativeError> {
-        self.scope.request(NativeMethod::Post, "/inspect", &[], Some(input.as_json().clone()), NativeEffect::Read)
+        self.scope.request(
+            NativeMethod::Post,
+            "/inspect",
+            &[],
+            Some(input.as_json().clone()),
+            NativeEffect::Read,
+        )
     }
 
     /// Native default-REPL debugging; no source-ID override is invented.
@@ -376,22 +540,43 @@ impl Session {
     /// # Errors
     /// Fabric does not advertise this extension.
     pub fn debug(&self, input: &DebugInput) -> Result<LivyRequest<OpaqueJson>, NativeError> {
-        self.scope.request(NativeMethod::Post, "/debug", &[], Some(input.as_json().clone()), NativeEffect::Execute)
+        self.scope.request(
+            NativeMethod::Post,
+            "/debug",
+            &[],
+            Some(input.as_json().clone()),
+            NativeEffect::Execute,
+        )
     }
 
     /// Localize a resource URI on the server without fetching it in the SDK.
     ///
     /// # Errors
     /// Fabric does not advertise native resource loading.
-    pub fn add_resource(&self, kind: ResourceKind, uri: &ResourceUri) -> Result<LivyRequest<Acknowledgement>, NativeError> {
-        self.scope.request(NativeMethod::Post, kind.add_suffix(), &[], Some(uri.as_json().clone()), NativeEffect::Update)
+    pub fn add_resource(
+        &self,
+        kind: ResourceKind,
+        uri: &ResourceUri,
+    ) -> Result<LivyRequest<Acknowledgement>, NativeError> {
+        self.scope.request(
+            NativeMethod::Post,
+            kind.add_suffix(),
+            &[],
+            Some(uri.as_json().clone()),
+            NativeEffect::Update,
+        )
     }
 
     /// Describe a binary upload without opening a file or consuming its content.
     ///
     /// # Errors
     /// Rejects Fabric, unsafe filenames and unsupported lengths.
-    pub fn upload_descriptor(&self, kind: ResourceKind, filename: &str, content_length: u64) -> Result<UploadDescriptor, NativeError> {
+    pub fn upload_descriptor(
+        &self,
+        kind: ResourceKind,
+        filename: &str,
+        content_length: u64,
+    ) -> Result<UploadDescriptor, NativeError> {
         if self.scope.binding.profile != ServiceProfile::NativeWildfire {
             return Err(NativeError::UnsupportedCapability);
         }
@@ -403,14 +588,22 @@ impl Session {
             return Err(NativeError::InvalidInput);
         }
         let template = format!("{}{}", self.scope.template, kind.upload_suffix());
-        let contract = NATIVE_ROUTES.iter().find(|route| route.path == template)
+        let contract = NATIVE_ROUTES
+            .iter()
+            .find(|route| route.path == template)
             .ok_or(NativeError::UnsupportedCapability)?;
         if content_length > i64::MAX as u64 {
             return Err(NativeError::InvalidInput);
         }
         let mut segments: Vec<&str> = self.scope.segments.iter().map(String::as_str).collect();
         segments.push(kind.upload_suffix().trim_start_matches('/'));
-        let native = self.scope.binding.endpoint.request(NativeMethod::Post, &segments, &[], None, NativeEffect::Update)?;
+        let native = self.scope.binding.endpoint.request(
+            NativeMethod::Post,
+            &segments,
+            &[],
+            None,
+            NativeEffect::Update,
+        )?;
         let native = protocol_headers(native, self.scope.binding.profile)?;
         Ok(UploadDescriptor {
             native,
@@ -430,28 +623,52 @@ impl Session {
         if self.scope.binding.profile != ServiceProfile::NativeWildfire {
             return Err(NativeError::UnsupportedCapability);
         }
-        Ok(Repl { scope: self.scope.child(&["repls", repl_id], "/sessions/{id}/repls/{replId}")? })
+        Ok(Repl {
+            scope: self
+                .scope
+                .child(&["repls", repl_id], "/sessions/{id}/repls/{replId}")?,
+        })
     }
 
     /// List native REPLs with paired offset/take and optional literal filter.
     ///
     /// # Errors
     /// Fabric does not advertise this route.
-    pub fn list_repls(&self, options: &ReplListOptions) -> Result<LivyRequest<ActivityList>, NativeError> {
-        self.scope.request(NativeMethod::Get, "/repls", &options.query(), None, NativeEffect::Read)
+    pub fn list_repls(
+        &self,
+        options: &ReplListOptions,
+    ) -> Result<LivyRequest<ActivityList>, NativeError> {
+        self.scope.request(
+            NativeMethod::Get,
+            "/repls",
+            &options.query(),
+            None,
+            NativeEffect::Read,
+        )
     }
 
     /// Construct this classic session's statement collection without I/O.
     pub fn statements(&self) -> Statements {
-        Statements { scope: self.scope.clone() }
+        Statements {
+            scope: self.scope.clone(),
+        }
     }
 
     /// Submit an already serialized native job through `submit-job`, without replay.
     ///
     /// # Errors
     /// Fabric does not advertise serialized native jobs.
-    pub fn submit_job(&self, input: &SerializedJob) -> Result<LivyRequest<JobSnapshot>, NativeError> {
-        self.scope.request(NativeMethod::Post, "/submit-job", &[], Some(input.as_json().clone()), NativeEffect::Execute)
+    pub fn submit_job(
+        &self,
+        input: &SerializedJob,
+    ) -> Result<LivyRequest<JobSnapshot>, NativeError> {
+        self.scope.request(
+            NativeMethod::Post,
+            "/submit-job",
+            &[],
+            Some(input.as_json().clone()),
+            NativeEffect::Execute,
+        )
     }
 
     /// Run an already serialized native job through the distinct `run-job` route.
@@ -459,7 +676,13 @@ impl Session {
     /// # Errors
     /// Fabric does not advertise serialized native jobs.
     pub fn run_job(&self, input: &SerializedJob) -> Result<LivyRequest<JobSnapshot>, NativeError> {
-        self.scope.request(NativeMethod::Post, "/run-job", &[], Some(input.as_json().clone()), NativeEffect::Execute)
+        self.scope.request(
+            NativeMethod::Post,
+            "/run-job",
+            &[],
+            Some(input.as_json().clone()),
+            NativeEffect::Execute,
+        )
     }
 
     /// Construct an exact native job handle, not a statement or scheduler job.
@@ -470,13 +693,32 @@ impl Session {
         if self.scope.binding.profile != ServiceProfile::NativeWildfire {
             return Err(NativeError::UnsupportedCapability);
         }
-        Ok(Job { scope: self.scope.child(&["jobs", &numeric_id(job_id)?], "/sessions/{id}/jobs/{jobId}")? })
+        Ok(Job {
+            scope: self.scope.child(
+                &["jobs", &numeric_id(job_id)?],
+                "/sessions/{id}/jobs/{jobId}",
+            )?,
+        })
     }
 }
 
 impl HighConcurrency {
-    request_method!(get, Get, "", SessionSnapshot, Read, "Read this acquisition management identity only.");
-    request_method!(release, Delete, "", Acknowledgement, Delete, "Release this owned acquisition, never delete shared backing Spark.");
+    request_method!(
+        get,
+        Get,
+        "",
+        SessionSnapshot,
+        Read,
+        "Read this acquisition management identity only."
+    );
+    request_method!(
+        release,
+        Delete,
+        "",
+        Acknowledgement,
+        Delete,
+        "Release this owned acquisition, never delete shared backing Spark."
+    );
 
     /// Construct a Fabric execution owner using an explicit backing session ID and REPL ID.
     ///
@@ -488,7 +730,12 @@ impl HighConcurrency {
         segment(backing_session_id)?;
         segment(repl_id)?;
         let mut scope = self.scope.clone();
-        scope.segments = vec!["highConcurrencySessions".into(), backing_session_id.into(), "repls".into(), repl_id.into()];
+        scope.segments = vec![
+            "highConcurrencySessions".into(),
+            backing_session_id.into(),
+            "repls".into(),
+            repl_id.into(),
+        ];
         scope.template = "/highConcurrencySessions/{id}/repls/{replId}";
         Ok(Repl { scope })
     }
@@ -500,18 +747,62 @@ impl HighConcurrency {
 }
 
 impl Repl {
-    request_method!(get, Get, "", SessionSnapshot, Read, "Read an owned native REPL; Fabric HC only models statement routes.");
-    request_method!(delete, Delete, "", Acknowledgement, Delete, "Delete exactly the native REPL, not its backing session.");
-    request_method!(stop, Post, "/stop", Acknowledgement, Lifecycle, "Stop exactly the native REPL.");
-    request_method!(reset_timeout, Put, "/reset-timeout", CancellationResult, Lifecycle, "Reset native REPL activity, not timeout duration.");
-    request_method!(get_timeout, Get, "/timeout", Timeout, Read, "Read native REPL/session timeout values.");
+    request_method!(
+        get,
+        Get,
+        "",
+        SessionSnapshot,
+        Read,
+        "Read an owned native REPL; Fabric HC only models statement routes."
+    );
+    request_method!(
+        delete,
+        Delete,
+        "",
+        Acknowledgement,
+        Delete,
+        "Delete exactly the native REPL, not its backing session."
+    );
+    request_method!(
+        stop,
+        Post,
+        "/stop",
+        Acknowledgement,
+        Lifecycle,
+        "Stop exactly the native REPL."
+    );
+    request_method!(
+        reset_timeout,
+        Put,
+        "/reset-timeout",
+        CancellationResult,
+        Lifecycle,
+        "Reset native REPL activity, not timeout duration."
+    );
+    request_method!(
+        get_timeout,
+        Get,
+        "/timeout",
+        Timeout,
+        Read,
+        "Read native REPL/session timeout values."
+    );
 
     /// Request native PUT REPL creation with unchanged deployment configuration.
     ///
     /// # Errors
     /// Fabric HC does not advertise native REPL management.
-    pub fn create(&self, input: &Configuration) -> Result<LivyRequest<SessionSnapshot>, NativeError> {
-        self.scope.request(NativeMethod::Put, "", &[], Some(input.as_json().clone()), NativeEffect::Create)
+    pub fn create(
+        &self,
+        input: &Configuration,
+    ) -> Result<LivyRequest<SessionSnapshot>, NativeError> {
+        self.scope.request(
+            NativeMethod::Put,
+            "",
+            &[],
+            Some(input.as_json().clone()),
+            NativeEffect::Create,
+        )
     }
 
     /// Set one or both positive native timeout durations.
@@ -519,12 +810,20 @@ impl Repl {
     /// # Errors
     /// Fabric HC does not advertise native REPL management.
     pub fn set_timeout(&self, input: &TimeoutInput) -> Result<LivyRequest<Timeout>, NativeError> {
-        self.scope.request(NativeMethod::Put, "/timeout", &[], Some(input.as_json().clone()), NativeEffect::Update)
+        self.scope.request(
+            NativeMethod::Put,
+            "/timeout",
+            &[],
+            Some(input.as_json().clone()),
+            NativeEffect::Update,
+        )
     }
 
     /// Construct a statement collection preserving the full owner tuple.
     pub fn statements(&self) -> Statements {
-        Statements { scope: self.scope.clone() }
+        Statements {
+            scope: self.scope.clone(),
+        }
     }
 
     /// Management acquisition ID, only for an HC execution owner.
@@ -548,20 +847,38 @@ impl Statements {
     ///
     /// # Errors
     /// Rejects nonempty native list options on Fabric before dispatch.
-    pub fn list(&self, options: StatementListOptions) -> Result<LivyRequest<ActivityList>, NativeError> {
+    pub fn list(
+        &self,
+        options: StatementListOptions,
+    ) -> Result<LivyRequest<ActivityList>, NativeError> {
         let query = options.query();
         if self.scope.binding.profile == ServiceProfile::FabricJson && !query.is_empty() {
             return Err(NativeError::UnsupportedCapability);
         }
-        self.scope.request(NativeMethod::Get, "/statements", &query, None, NativeEffect::Read)
+        self.scope.request(
+            NativeMethod::Get,
+            "/statements",
+            &query,
+            None,
+            NativeEffect::Read,
+        )
     }
 
     /// Execute explicit code in this owner. No implicit sourceId or new runtime.
     ///
     /// # Errors
     /// Returns shared request-validation errors.
-    pub fn submit(&self, input: &StatementInput) -> Result<LivyRequest<StatementSnapshot>, NativeError> {
-        self.scope.request(NativeMethod::Post, "/statements", &[], Some(input.as_json().clone()), NativeEffect::Execute)
+    pub fn submit(
+        &self,
+        input: &StatementInput,
+    ) -> Result<LivyRequest<StatementSnapshot>, NativeError> {
+        self.scope.request(
+            NativeMethod::Post,
+            "/statements",
+            &[],
+            Some(input.as_json().clone()),
+            NativeEffect::Execute,
+        )
     }
 
     /// Construct an exact statement handle without performing a read.
@@ -571,11 +888,19 @@ impl Statements {
     pub fn statement(&self, id: u64) -> Result<Statement, NativeError> {
         let template = match self.scope.template {
             "/sessions/{id}" => "/sessions/{id}/statements/{statementId}",
-            "/sessions/{id}/repls/{replId}" => "/sessions/{id}/repls/{replId}/statements/{statementId}",
-            "/highConcurrencySessions/{id}/repls/{replId}" => "/highConcurrencySessions/{id}/repls/{replId}/statements/{statementId}",
+            "/sessions/{id}/repls/{replId}" => {
+                "/sessions/{id}/repls/{replId}/statements/{statementId}"
+            }
+            "/highConcurrencySessions/{id}/repls/{replId}" => {
+                "/highConcurrencySessions/{id}/repls/{replId}/statements/{statementId}"
+            }
             _ => return Err(NativeError::InvalidInput),
         };
-        Ok(Statement { scope: self.scope.child(&["statements", &numeric_id(id)?], template)? })
+        Ok(Statement {
+            scope: self
+                .scope
+                .child(&["statements", &numeric_id(id)?], template)?,
+        })
     }
 }
 
@@ -585,7 +910,13 @@ impl Statement {
     /// # Errors
     /// Returns shared request-validation errors.
     pub fn get(&self, page: BytePage) -> Result<LivyRequest<StatementSnapshot>, NativeError> {
-        self.scope.request(NativeMethod::Get, "", &page.query(), None, NativeEffect::Read)
+        self.scope.request(
+            NativeMethod::Get,
+            "",
+            &page.query(),
+            None,
+            NativeEffect::Read,
+        )
     }
 
     /// Request cancellation once. The empty Fabric cancellation object is explicit.
@@ -593,29 +924,84 @@ impl Statement {
     /// # Errors
     /// Returns shared request-validation errors. Acknowledgement is never termination proof.
     pub fn cancel(&self) -> Result<LivyRequest<CancellationResult>, NativeError> {
-        let body = (self.scope.binding.profile == ServiceProfile::FabricJson).then(|| serde_json::json!({}));
-        self.scope.request(NativeMethod::Post, "/cancel", &[], body, NativeEffect::Cancel)
+        let body = (self.scope.binding.profile == ServiceProfile::FabricJson)
+            .then(|| serde_json::json!({}));
+        self.scope.request(
+            NativeMethod::Post,
+            "/cancel",
+            &[],
+            body,
+            NativeEffect::Cancel,
+        )
     }
 }
 
 impl Batch {
-    request_method!(get, Get, "", BatchSnapshot, Read, "Read exactly this batch application.");
-    request_method!(cancel, Delete, "", Acknowledgement, Cancel, "Terminate this batch with the source DELETE route.");
-    request_method!(get_state, Get, "/state", BatchSnapshot, Read, "Read native batch state.");
-    request_method!(reset_timeout, Put, "/reset-timeout", Acknowledgement, Lifecycle, "Reset native batch activity.");
+    request_method!(
+        get,
+        Get,
+        "",
+        BatchSnapshot,
+        Read,
+        "Read exactly this batch application."
+    );
+    request_method!(
+        cancel,
+        Delete,
+        "",
+        Acknowledgement,
+        Cancel,
+        "Terminate this batch with the source DELETE route."
+    );
+    request_method!(
+        get_state,
+        Get,
+        "/state",
+        BatchSnapshot,
+        Read,
+        "Read native batch state."
+    );
+    request_method!(
+        reset_timeout,
+        Put,
+        "/reset-timeout",
+        Acknowledgement,
+        Lifecycle,
+        "Reset native batch activity."
+    );
 
     /// Read one native batch log page.
     ///
     /// # Errors
     /// Fabric does not advertise this extension.
     pub fn logs(&self, page: BytePage) -> Result<LivyRequest<Logs>, NativeError> {
-        self.scope.request(NativeMethod::Get, "/log", &page.query(), None, NativeEffect::Read)
+        self.scope.request(
+            NativeMethod::Get,
+            "/log",
+            &page.query(),
+            None,
+            NativeEffect::Read,
+        )
     }
 }
 
 impl Job {
-    request_method!(get, Get, "", JobSnapshot, Read, "Read this exact serialized native job.");
-    request_method!(cancel, Post, "/cancel", Acknowledgement, Cancel, "Request cancellation; native cancellation can remove the job handle.");
+    request_method!(
+        get,
+        Get,
+        "",
+        JobSnapshot,
+        Read,
+        "Read this exact serialized native job."
+    );
+    request_method!(
+        cancel,
+        Post,
+        "/cancel",
+        Acknowledgement,
+        Cancel,
+        "Request cancellation; native cancellation can remove the job handle."
+    );
 }
 
 /// Runtime resource localization kind; no arbitrary route suffix is accepted.
@@ -708,9 +1094,9 @@ impl UploadDescriptor {
     ) -> Result<LivyRequest<Acknowledgement>, NativeError> {
         if boundary.is_empty()
             || boundary.len() > 70
-            || !boundary.bytes().all(|byte| {
-                byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')
-            })
+            || !boundary
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
             || u64::try_from(content.len()).map_err(|_| NativeError::Limit)? != self.content_length
             || max_request_bytes == 0
         {
@@ -720,7 +1106,10 @@ impl UploadDescriptor {
             return Err(NativeError::Limit);
         }
         let delimiter = format!("--{boundary}");
-        if content.windows(delimiter.len()).any(|window| window == delimiter.as_bytes()) {
+        if content
+            .windows(delimiter.len())
+            .any(|window| window == delimiter.as_bytes())
+        {
             return Err(NativeError::InvalidInput);
         }
         let prefix = format!(
@@ -729,14 +1118,24 @@ impl UploadDescriptor {
         );
         let header_end = b"\"\r\nContent-Type: application/octet-stream\r\n\r\n";
         let suffix = format!("\r\n{delimiter}--\r\n");
-        let escaped_name_len = self.filename.bytes().filter(|byte| *byte == b'"').count()
+        let escaped_name_len = self
+            .filename
+            .bytes()
+            .filter(|byte| *byte == b'"')
+            .count()
             .checked_mul(2)
             .and_then(|extra| extra.checked_add(self.filename.len()))
             .ok_or(NativeError::Limit)?;
         let length = [
-            prefix.len(), escaped_name_len, header_end.len(), content.len(), suffix.len(),
-        ].into_iter().try_fold(0usize, |total, length| total.checked_add(length))
-            .ok_or(NativeError::Limit)?;
+            prefix.len(),
+            escaped_name_len,
+            header_end.len(),
+            content.len(),
+            suffix.len(),
+        ]
+        .into_iter()
+        .try_fold(0usize, |total, length| total.checked_add(length))
+        .ok_or(NativeError::Limit)?;
         if length > max_request_bytes {
             return Err(NativeError::Limit);
         }
@@ -777,15 +1176,20 @@ impl UploadDescriptor {
 
 impl fmt::Debug for UploadDescriptor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("UploadDescriptor").field("kind", &self.kind)
-            .field("content_length", &self.content_length).field("owner", &"<scoped>").finish()
+        f.debug_struct("UploadDescriptor")
+            .field("kind", &self.kind)
+            .field("content_length", &self.content_length)
+            .field("owner", &"<scoped>")
+            .finish()
     }
 }
 
 impl fmt::Debug for LivyService {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LivyService").field("profile", &self.profile())
-            .field("endpoint", &"<caller-selected>").finish()
+        f.debug_struct("LivyService")
+            .field("profile", &self.profile())
+            .field("endpoint", &"<caller-selected>")
+            .finish()
     }
 }
 
@@ -844,22 +1248,36 @@ pub struct LivyError {
 
 impl LivyError {
     /// Shared native error, preserving an actual HTTP status when supplied.
-    pub const fn native_error(&self) -> NativeError { self.source }
+    pub const fn native_error(&self) -> NativeError {
+        self.source
+    }
     /// Failure stage, not a workload execution state.
-    pub const fn phase(&self) -> FailurePhase { self.phase }
+    pub const fn phase(&self) -> FailurePhase {
+        self.phase
+    }
     /// Actual HTTP status if a response was received.
-    pub const fn status(&self) -> Option<u16> { self.status }
+    pub const fn status(&self) -> Option<u16> {
+        self.status
+    }
     /// Bounded raw service evidence. Never automatically logged or displayed.
-    pub fn raw(&self) -> &[u8] { &self.raw }
+    pub fn raw(&self) -> &[u8] {
+        &self.raw
+    }
     /// A dispatched mutation may have applied; do not replay it.
-    pub const fn outcome_unknown(&self) -> bool { self.outcome_unknown }
+    pub const fn outcome_unknown(&self) -> bool {
+        self.outcome_unknown
+    }
 }
 
 impl fmt::Debug for LivyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LivyError").field("source", &self.source).field("phase", &self.phase)
-            .field("status", &self.status).field("outcome_unknown", &self.outcome_unknown)
-            .field("raw", &"<redacted>").finish()
+        f.debug_struct("LivyError")
+            .field("source", &self.source)
+            .field("phase", &self.phase)
+            .field("status", &self.status)
+            .field("outcome_unknown", &self.outcome_unknown)
+            .field("raw", &"<redacted>")
+            .finish()
     }
 }
 
@@ -873,13 +1291,21 @@ impl std::error::Error for LivyError {}
 
 impl<T: ResponseModel> LivyRequest<T> {
     /// Inspect the validated shared request, including exact payload/parameters.
-    pub fn native(&self) -> &NativeRequest { &self.native }
+    pub fn native(&self) -> &NativeRequest {
+        &self.native
+    }
     /// Pinned source operation and response schema.
-    pub const fn contract(&self) -> &'static RouteContract { self.contract }
+    pub const fn contract(&self) -> &'static RouteContract {
+        self.contract
+    }
     /// Explicit service profile.
-    pub fn profile(&self) -> ServiceProfile { self.binding.profile }
+    pub fn profile(&self) -> ServiceProfile {
+        self.binding.profile
+    }
     /// Retained HC management owner, never substituted into execution paths.
-    pub fn acquisition_id(&self) -> Option<&str> { self.acquisition.as_deref() }
+    pub fn acquisition_id(&self) -> Option<&str> {
+        self.acquisition.as_deref()
+    }
 
     /// Execute once through the caller's existing stack, with no retry, polling or LRO.
     ///
@@ -896,12 +1322,25 @@ impl<T: ResponseModel> LivyRequest<T> {
     ) -> Result<LivyResponse<T>, LivyError> {
         let mutation = self.native.method() != NativeMethod::Get;
         let error = |source, phase, status, raw, dispatched| LivyError {
-            source, phase, status, raw, outcome_unknown: dispatched && mutation,
+            source,
+            phase,
+            status,
+            raw,
+            outcome_unknown: dispatched && mutation,
         };
         if max_response_bytes == 0 {
-            return Err(error(NativeError::InvalidInput, FailurePhase::Validation, None, Vec::new(), false));
+            return Err(error(
+                NativeError::InvalidInput,
+                FailurePhase::Validation,
+                None,
+                Vec::new(),
+                false,
+            ));
         }
-        let response = self.native.execute(executor, max_response_bytes).await
+        let response = self
+            .native
+            .execute(executor, max_response_bytes)
+            .await
             .map_err(|source| {
                 let phase = if source == NativeError::Limit {
                     FailurePhase::ResponseLimit
@@ -911,18 +1350,28 @@ impl<T: ResponseModel> LivyRequest<T> {
                 error(source, phase, None, Vec::new(), true)
             })?;
         if !(200..300).contains(&response.status) {
-            return Err(error(NativeError::Http(response.status), FailurePhase::Http, Some(response.status), response.body, true));
+            return Err(error(
+                NativeError::Http(response.status),
+                FailurePhase::Http,
+                Some(response.status),
+                response.body,
+                true,
+            ));
         }
         let acknowledgement = self.contract.response_schema == "Acknowledgement";
         let is_json = response.content_type.as_deref().is_some_and(|media| {
-            media.split(';').next().is_some_and(|value| value.trim().eq_ignore_ascii_case("application/json"))
+            media
+                .split(';')
+                .next()
+                .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/json"))
         });
         let parsed = if acknowledgement {
             T::decode_acknowledgement(if is_json {
                 serde_json::from_slice(&response.body).unwrap_or(Value::Null)
             } else {
                 Value::Null
-            }).map(Some)
+            })
+            .map(Some)
         } else if response.status == 202 && response.body.is_empty() {
             Ok(None)
         } else if !is_json {
@@ -939,7 +1388,15 @@ impl<T: ResponseModel> LivyRequest<T> {
                 })
                 .map(Some)
         };
-        let model = parsed.map_err(|source| error(source, FailurePhase::Decode, Some(response.status), response.body.clone(), true))?;
+        let model = parsed.map_err(|source| {
+            error(
+                source,
+                FailurePhase::Decode,
+                Some(response.status),
+                response.body.clone(),
+                true,
+            )
+        })?;
         Ok(LivyResponse {
             request: self.native.clone(),
             binding: self.binding.clone(),
@@ -954,33 +1411,53 @@ impl<T: ResponseModel> LivyRequest<T> {
 
 impl<T: ResponseModel> LivyResponse<T> {
     /// Actual native HTTP status.
-    pub const fn status(&self) -> u16 { self.status }
+    pub const fn status(&self) -> u16 {
+        self.status
+    }
     /// HTTP acceptance is separate from any model's workload observation.
     pub const fn disposition(&self) -> ResponseDisposition {
-        if self.status == 202 { ResponseDisposition::Accepted } else { ResponseDisposition::Returned }
+        if self.status == 202 {
+            ResponseDisposition::Accepted
+        } else {
+            ResponseDisposition::Returned
+        }
     }
     /// Exact immutable response bytes, including text acknowledgements and opaque results.
-    pub fn raw(&self) -> &[u8] { &self.raw }
+    pub fn raw(&self) -> &[u8] {
+        &self.raw
+    }
     /// Original provider media type.
-    pub fn content_type(&self) -> Option<&str> { self.content_type.as_deref() }
+    pub fn content_type(&self) -> Option<&str> {
+        self.content_type.as_deref()
+    }
     /// Parsed model, absent for an empty HTTP 202 response.
-    pub fn model(&self) -> Option<&T> { self.model.as_ref() }
+    pub fn model(&self) -> Option<&T> {
+        self.model.as_ref()
+    }
     /// Exact original validated request for explicit owner-bound reconciliation.
-    pub fn request(&self) -> &NativeRequest { &self.request }
+    pub fn request(&self) -> &NativeRequest {
+        &self.request
+    }
     /// No offline/source-only response is proof of general deployed capability.
-    pub const fn maturity(&self) -> Maturity { Maturity::SourceModeledDeploymentUnverified }
+    pub const fn maturity(&self) -> Maturity {
+        Maturity::SourceModeledDeploymentUnverified
+    }
 }
 
 impl<T: ResponseModel> fmt::Debug for LivyRequest<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LivyRequest").field("source_id", &self.contract.source_id)
-            .field("request", &self.native).finish()
+        f.debug_struct("LivyRequest")
+            .field("source_id", &self.contract.source_id)
+            .field("request", &self.native)
+            .finish()
     }
 }
 
 impl<T: ResponseModel> fmt::Debug for LivyResponse<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LivyResponse").field("status", &self.status)
-            .field("body", &"<redacted>").finish()
+        f.debug_struct("LivyResponse")
+            .field("status", &self.status)
+            .field("body", &"<redacted>")
+            .finish()
     }
 }
