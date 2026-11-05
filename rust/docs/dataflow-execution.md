@@ -9,7 +9,7 @@ baseline is `5e1e368e6d977f50c082e3b2f9442d48bd0b2e5b`; Execute Query is an
 owner-approved addition, not a claim of existing Python command parity.
 
 ```powershell
-fab-rs execute "/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/Orders" --wait --format json
+fab-rs execute "/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/Orders" --wait --format json --output orders.json
 fab-rs execute "/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/Orders" --wait --format csv --input request.json --output orders.csv
 fab-rs execute "/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/Orders" --wait --format parquet --output orders.parquet --timeout 5m
 ```
@@ -112,6 +112,17 @@ CSV and JSON default to stdout; `--output FILE` selects a new local file.
 including terminals, is refused in this first slice. The `--format` result
 contract is separate from v1 `--output_format`; the latter is rejected for root
 execute. Excel output is deferred.
+
+Attached **Windows console** stdout is an explicit platform limit: root execute
+fails with `UnsupportedCapability` before approval, credentials or remote
+submission unless `--output FILE` is supplied. Alternatively, redirect stdout
+to a file or pipe. The bounded owned-handle writer preserves exact UTF-8 CSV/JSON
+bytes in redirected streams but does not implement Windows' Unicode console
+writing API; sending those bytes through the legacy console code page could
+corrupt characters such as `é` and `雪`. The host refuses that path instead of
+changing the global code page, escaping CSV cells or producing corrupted text.
+Non-Windows terminal output and redirected Windows streams retain their existing
+UTF-8 contract. This is not a universal console-support claim.
 
 Diagnostics and prompts go to stderr. Data stdout contains only the requested
 serialized result, without navigation notices, receipts or an outer CLI status

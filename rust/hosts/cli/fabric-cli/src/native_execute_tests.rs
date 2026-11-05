@@ -3,7 +3,7 @@
 #![deny(unnameable_test_items)]
 
 use super::*;
-use arrow_array::{Int64Array, RecordBatch};
+use arrow_array::{Int64Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
 use async_trait::async_trait;
 use azure_core::{
@@ -116,8 +116,13 @@ fn accepted_wire() -> Arc<Wire> {
 }
 
 async fn invoke(wire: Arc<Wire>, timeout: Duration) -> get::Delivery {
+    invoke_format(wire, timeout, "json").await
+}
+
+async fn invoke_format(wire: Arc<Wire>, timeout: Duration, format: &str) -> get::Delivery {
     let fabric_cli::parser::Invocation::Execute(command) =
-        fabric_cli::parser::parse_args(["fab-rs", "execute", TARGET, "--wait"]).unwrap()
+        fabric_cli::parser::parse_args(["fab-rs", "execute", TARGET, "--wait", "--format", format])
+            .unwrap()
     else {
         panic!("root execute")
     };
@@ -651,5 +656,108 @@ async fn bounded_stdout_requires_a_successful_flush_without_replaying_the_query(
         let json: serde_json::Value = serde_json::from_slice(&bytes.lock().unwrap()).unwrap();
         assert!(json.is_object());
         assert_eq!(wire.requests.lock().unwrap().len(), 3);
+    }
+}
+
+#[test]
+fn windows_console_policy_requires_a_file_or_redirect_before_host_effects() {
+    for format in ["json", "csv"] {
+        for output in [None, Some("-"), Some("unicode-result.data")] {
+            let mut args = vec!["fab-rs", "execute", TARGET, "--wait", "--format", format];
+            if let Some(output) = output {
+                args.extend(["--output", output]);
+            }
+            let fabric_cli::parser::Invocation::Execute(command) =
+                fabric_cli::parser::parse_args(args).unwrap()
+            else {
+                panic!("execution command");
+            };
+            if command.output.is_none() {
+                let error = preflight_native_output(&command, true).unwrap_err();
+                assert_eq!(error.0, "UnsupportedCapability");
+                assert_eq!(error.2, 1);
+                assert!(error.1.contains("--output FILE"));
+                assert!(error.1.contains("redirect stdout"));
+                assert!(error.1.contains("No query was submitted"));
+            } else {
+                preflight_native_output(&command, true).unwrap();
+            }
+            // A redirected Windows stream or a non-Windows UTF-8 terminal
+            // does not acquire the attached-console restriction.
+            preflight_native_output(&command, false).unwrap();
+        }
+    }
+}
+
+fn unicode_result() -> (StatusCode, Headers, Vec<u8>) {
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![Field::new("text", DataType::Utf8, false)])),
+        vec![Arc::new(StringArray::from(vec!["\u{e9}", "\u{96ea}"]))],
+    )
+    .unwrap();
+    let mut body = Vec::new();
+    {
+        let mut writer =
+            arrow_ipc::writer::StreamWriter::try_new(&mut body, batch.schema().as_ref()).unwrap();
+        writer.write(&batch).unwrap();
+        writer.finish().unwrap();
+    }
+    let mut headers = Headers::new();
+    headers.insert("content-type", "application/vnd.apache.arrow.stream");
+    (StatusCode::Ok, headers, body)
+}
+
+#[tokio::test]
+async fn redirected_stdout_and_files_preserve_exact_csv_json_unicode_bytes() {
+    for format in ["json", "csv"] {
+        let wire = Arc::new(Wire {
+            replies: Mutex::new(VecDeque::from([unicode_result()])),
+            requests: Mutex::new(Vec::new()),
+        });
+        let get::Delivery::Execution(delivery) =
+            invoke_format(Arc::clone(&wire), Duration::from_secs(30), format).await
+        else {
+            panic!("execution delivery");
+        };
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let flushed = Arc::new(AtomicU8::new(0));
+        let publication = delivery
+            .publish_stdout(
+                CapturedOutput {
+                    bytes: Arc::clone(&bytes),
+                    flushed: Arc::clone(&flushed),
+                    fail_flush: false,
+                },
+                Instant::now() + Duration::from_secs(30),
+                std::future::pending(),
+            )
+            .await;
+        assert!(matches!(
+            publication,
+            Publication::Complete(CommandOutcome::Returned(0))
+        ));
+        let data = bytes.lock().unwrap().clone();
+        assert!(data.windows(2).any(|bytes| bytes == [0xc3, 0xa9]));
+        assert!(data.windows(3).any(|bytes| bytes == [0xe9, 0x9b, 0xaa]));
+        if format == "csv" {
+            assert_eq!(
+                data,
+                "\"text\"\r\n\"\u{e9}\"\r\n\"\u{96ea}\"\r\n".as_bytes()
+            );
+        } else {
+            let json: serde_json::Value = serde_json::from_slice(&data).unwrap();
+            assert_eq!(json["rows"], serde_json::json!([["\u{e9}"], ["\u{96ea}"]]));
+        }
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!(
+            ".execute-native-unicode-{}-{format}",
+            std::process::id()
+        ));
+        let destination = FileDestination::preflight(&path).unwrap();
+        destination.publish(&data).unwrap();
+        let published = std::fs::read(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(published, data);
+        assert_eq!(flushed.load(Ordering::SeqCst), 1);
+        assert_eq!(wire.requests.lock().unwrap().len(), 1);
     }
 }

@@ -32,6 +32,19 @@ use std::{
 
 struct NativeApproval;
 
+const WINDOWS_CONSOLE_OUTPUT_MESSAGE: &str = "Native Windows console result output is not supported in this preview. Use --output FILE or redirect stdout to a file or pipe to preserve Unicode.";
+
+fn preflight_native_output(command: &ExecuteCommand, windows_console: bool) -> Result<(), Failure> {
+    if windows_console && command.output.is_none() {
+        return Err(failure(
+            "UnsupportedCapability",
+            format!("{WINDOWS_CONSOLE_OUTPUT_MESSAGE} No query was submitted."),
+            1,
+        ));
+    }
+    Ok(())
+}
+
 struct ApprovalPrompt<W>(Option<W>);
 
 impl<W: Write> Write for ApprovalPrompt<W> {
@@ -112,6 +125,7 @@ fn preparation_failure(error: PreparationError) -> Failure {
 
 pub(super) fn run(command: &ExecuteCommand, state: &mut BatchState) -> io::Result<CommandOutcome> {
     let result = (|| {
+        preflight_native_output(command, cfg!(windows) && io::stdout().is_terminal())?;
         let deadline = Instant::now()
             .checked_add(command.timeout)
             .ok_or_else(|| failure("invalid_arguments", "Invalid execution deadline.", 2))?;
@@ -215,10 +229,19 @@ fn owned_stdout() -> io::Result<std::fs::File> {
     #[cfg(windows)]
     {
         use std::os::windows::io::AsHandle;
-        io::stdout()
+        let output = io::stdout()
             .as_handle()
             .try_clone_to_owned()
-            .map(std::fs::File::from)
+            .map(std::fs::File::from)?;
+        // A duplicated console handle still needs WriteConsoleW for Unicode.
+        // Never feed UTF-8 bytes to WriteFile if the handle changed since preflight.
+        if output.is_terminal() {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                WINDOWS_CONSOLE_OUTPUT_MESSAGE,
+            ));
+        }
+        Ok(output)
     }
     #[cfg(unix)]
     {
@@ -421,6 +444,16 @@ impl Delivery {
         }
         let output = match owned_stdout() {
             Ok(output) => output,
+            Err(error) if cfg!(windows) && error.kind() == io::ErrorKind::Unsupported => {
+                return Publication::Diagnostic(Self::failed(
+                    "UnsupportedCapability",
+                    &format!(
+                        "{WINDOWS_CONSOLE_OUTPUT_MESSAGE} The query may have completed, but its result was not written. Do not replay automatically."
+                    ),
+                    self.evidence,
+                    1,
+                ));
+            }
             Err(_) => {
                 return Publication::Diagnostic(Self::failed(
                     "output_failed",
