@@ -372,13 +372,19 @@ enum ControlContent<'a> {
 impl SynapseControl {
     fn wire(&self) -> Result<(&'static str, ControlContent<'_>), NativeError> {
         match self {
-            Self::CancelExecution(id) => {
-                Ok(("cancel_cell_execution", ControlContent::Execution(id.as_str())))
-            }
-            Self::CancelAll => Ok(("cancel_all_cell_execution", ControlContent::Empty(EmptyObject {}))),
+            Self::CancelExecution(id) => Ok((
+                "cancel_cell_execution",
+                ControlContent::Execution(id.as_str()),
+            )),
+            Self::CancelAll => Ok((
+                "cancel_all_cell_execution",
+                ControlContent::Empty(EmptyObject {}),
+            )),
             Self::ReplayOutputs(id) => Ok((
                 "replay_outputs",
-                ControlContent::Replay { parent_msg_id: id.as_str() },
+                ControlContent::Replay {
+                    parent_msg_id: id.as_str(),
+                },
             )),
             Self::StartLivy(options) | Self::SetLivyOptions(options) => {
                 if !options.is_object() {
@@ -1125,10 +1131,17 @@ mod tests {
         let text = "\n".repeat(64 * 1024);
         let visits = std::cell::Cell::new(0);
         let tail_visits = std::cell::Cell::new(0);
-        let content = PayloadProbe { text: &text, visits: &visits, tail_visits: &tail_visits };
+        let content = PayloadProbe {
+            text: &text,
+            visits: &visits,
+            tail_visits: &tail_visits,
+        };
         let id = MessageId::new("request").unwrap();
         let session = SessionId::new("session").unwrap();
-        let limits = ProtocolLimits { frame_bytes: 512, ..ProtocolLimits::default() };
+        let limits = ProtocolLimits {
+            frame_bytes: 512,
+            ..ProtocolLimits::default()
+        };
         assert!(matches!(
             JupyterMessage::new(&id, &session, "execute_request", &content, limits),
             Err(NativeError::Limit)
@@ -1136,8 +1149,13 @@ mod tests {
         assert_eq!(visits.get(), 1);
         assert_eq!(tail_visits.get(), 0);
         let message = JupyterMessage::new(
-            &id, &session, "execute_request", &content, ProtocolLimits::default(),
-        ).unwrap();
+            &id,
+            &session,
+            "execute_request",
+            &content,
+            ProtocolLimits::default(),
+        )
+        .unwrap();
         assert_eq!(visits.get(), 3);
         assert_eq!(tail_visits.get(), 2);
         assert_eq!(message.content["text"].as_str(), Some(text.as_str()));

@@ -674,7 +674,10 @@ mod tests {
     fn borrowed_sizing_stops_serialization_at_the_limit_without_visiting_the_tail() {
         let source = "\"\\\n".repeat(64 * 1024);
         let tail_visits = std::cell::Cell::new(0);
-        let payload = BorrowedPayload { text: &source, tail_visits: &tail_visits };
+        let payload = BorrowedPayload {
+            text: &source,
+            tail_visits: &tail_visits,
+        };
         assert!(matches!(encoded_len(&payload, 64), Err(NativeError::Limit)));
         assert_eq!(tail_visits.get(), 0);
         let expected = serde_json::to_vec(&payload).unwrap().len();
@@ -689,6 +692,9 @@ mod tests {
         let text = "\"\\\n\0";
         let expected = serde_json::to_vec(text).unwrap().len();
         assert_eq!(encoded_len(text, expected), Ok(expected));
-        assert!(matches!(encoded_len(text, expected - 1), Err(NativeError::Limit)));
+        assert!(matches!(
+            encoded_len(text, expected - 1),
+            Err(NativeError::Limit)
+        ));
     }
 }

@@ -1407,8 +1407,7 @@ async fn workload_progress_rejects_non_object_collection_entries() {
                 } else {
                     entries.clone()
                 };
-                let executor =
-                    FakeExecutor::new(vec![Ok(response(200, jobs.as_bytes(), None))]);
+                let executor = FakeExecutor::new(vec![Ok(response(200, jobs.as_bytes(), None))]);
                 assert!(matches!(
                     plan.execute(&executor, 1024, 4096).await,
                     Err(NativeError::InvalidResponse)

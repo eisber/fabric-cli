@@ -245,7 +245,8 @@ fn response_with_headers(
     headers: &[(&str, &str)],
 ) -> Result<NativeResponse, NativeError> {
     let mut response = response(status, body)?;
-    response.headers = headers.iter()
+    response.headers = headers
+        .iter()
         .map(|(name, value)| ((*name).into(), (*value).into()))
         .collect();
     Ok(response)
@@ -1536,25 +1537,47 @@ async fn small_destination_content_limits_reject_donors_without_changes_or_dispa
     let selector = document.selector(2).unwrap();
     let executor = Scripted::new(vec![]);
     for limits in [
-        ContentLimits { document_bytes: 64, ..ContentLimits::default() },
-        ContentLimits { cells: 1, ..ContentLimits::default() },
-        ContentLimits { source_bytes: 1, ..ContentLimits::default() },
-        ContentLimits { outputs_per_cell: 1, ..ContentLimits::default() },
-        ContentLimits { document_bytes: original.len() - 1, ..ContentLimits::default() },
+        ContentLimits {
+            document_bytes: 64,
+            ..ContentLimits::default()
+        },
+        ContentLimits {
+            cells: 1,
+            ..ContentLimits::default()
+        },
+        ContentLimits {
+            source_bytes: 1,
+            ..ContentLimits::default()
+        },
+        ContentLimits {
+            outputs_per_cell: 1,
+            ..ContentLimits::default()
+        },
+        ContentLimits {
+            document_bytes: original.len() - 1,
+            ..ContentLimits::default()
+        },
     ] {
         let destination = runtime_with_limits(limits, 1024);
         assert!(matches!(
-            destination.put_content(&executor, &document, WritePolicy::AllowUnguarded).await,
+            destination
+                .put_content(&executor, &document, WritePolicy::AllowUnguarded)
+                .await,
             Err(NativeError::Limit)
         ));
         assert!(document.cell(&selector).is_ok());
         assert_eq!(serde_json::to_vec(document.as_value()).unwrap(), original);
     }
     let destination = runtime_with_limits(
-        ContentLimits { document_bytes: original.len(), ..ContentLimits::default() },
+        ContentLimits {
+            document_bytes: original.len(),
+            ..ContentLimits::default()
+        },
         1024,
     );
-    let request = destination.content_put_request(&document, WritePolicy::AllowUnguarded).unwrap();
+    let request = destination
+        .content_put_request(&document, WritePolicy::AllowUnguarded)
+        .unwrap();
     assert_eq!(request.body(), Some(document.as_value()));
     assert_eq!(executor.count(), 0);
 }
@@ -1566,7 +1589,8 @@ async fn session_payloads_obey_smaller_destination_budgets_and_preserve_inputs()
         "/explicit",
         "synapse_pyspark",
         Some(json!({"future": "\"\\\n".repeat(64 * 1024)})),
-    ).unwrap();
+    )
+    .unwrap();
     let original = serde_json::to_vec(input.as_value()).unwrap();
     let executor = Scripted::new(vec![]);
     for bytes in [64, original.len() - 1] {
@@ -1576,13 +1600,18 @@ async fn session_payloads_obey_smaller_destination_budgets_and_preserve_inputs()
             Err(NativeError::Limit)
         ));
         assert!(matches!(
-            destination.patch_session(&executor, &session(), input.as_value().clone()).await,
+            destination
+                .patch_session(&executor, &session(), input.as_value().clone())
+                .await,
             Err(NativeError::Limit)
         ));
         assert_eq!(serde_json::to_vec(input.as_value()).unwrap(), original);
     }
     let destination = runtime_with_limits(ContentLimits::default(), original.len());
-    assert_eq!(destination.session_create_request(&input).unwrap().body(), Some(input.as_value()));
+    assert_eq!(
+        destination.session_create_request(&input).unwrap().body(),
+        Some(input.as_value())
+    );
     assert_eq!(executor.count(), 0);
 }
 
@@ -1591,7 +1620,10 @@ fn borrowed_protocol_validation_rejects_small_destinations_without_changing_inpu
     let mut message = stream("oversized-stream");
     message.content["text"] = Value::String("\"\\\n".repeat(64 * 1024));
     let original = message.to_vec(ProtocolLimits::default()).unwrap();
-    let small = ProtocolLimits { frame_bytes: 1024, ..ProtocolLimits::default() };
+    let small = ProtocolLimits {
+        frame_bytes: 1024,
+        ..ProtocolLimits::default()
+    };
     assert!(matches!(message.to_vec(small), Err(NativeError::Limit)));
     let mut tracker = tracker_with_limits(small);
     tracker.observe(&stream("partial")).unwrap();
@@ -1600,29 +1632,50 @@ fn borrowed_protocol_validation_rejects_small_destinations_without_changing_inpu
     assert_eq!(tracker.outputs().len(), 1);
     assert_eq!(message.to_vec(ProtocolLimits::default()).unwrap(), original);
 
-    let exact = ProtocolLimits { frame_bytes: original.len(), ..ProtocolLimits::default() };
+    let exact = ProtocolLimits {
+        frame_bytes: original.len(),
+        ..ProtocolLimits::default()
+    };
     assert_eq!(message.to_vec(exact).unwrap(), original);
     assert!(matches!(
-        message.to_vec(ProtocolLimits { frame_bytes: original.len() - 1, ..exact }),
+        message.to_vec(ProtocolLimits {
+            frame_bytes: original.len() - 1,
+            ..exact
+        }),
         Err(NativeError::Limit)
     ));
     let mut reply = cancel_reply("ok");
-    reply.extra.insert("future".into(), message.content["text"].clone());
+    reply
+        .extra
+        .insert("future".into(), message.content["text"].clone());
     let original_reply = reply.to_vec(ProtocolLimits::default()).unwrap();
     assert!(matches!(
         ControlReply::from_message(&reply, &cancel_request(), small),
         Err(NativeError::Limit)
     ));
-    assert_eq!(reply.to_vec(ProtocolLimits::default()).unwrap(), original_reply);
+    assert_eq!(
+        reply.to_vec(ProtocolLimits::default()).unwrap(),
+        original_reply
+    );
 }
 
 #[test]
 fn outgoing_execute_and_controls_preflight_complete_escaped_wire_sizes() {
     let source = "\"\\\n".repeat(64 * 1024);
-    let small = ProtocolLimits { frame_bytes: 256, ..ProtocolLimits::default() };
+    let small = ProtocolLimits {
+        frame_bytes: 256,
+        ..ProtocolLimits::default()
+    };
     assert!(source.len() < small.code_bytes);
     assert!(matches!(
-        ExecuteRequest::new(MessageId::new("request").unwrap(), session(), &source, false, true, small),
+        ExecuteRequest::new(
+            MessageId::new("request").unwrap(),
+            session(),
+            &source,
+            false,
+            true,
+            small
+        ),
         Err(NativeError::Limit)
     ));
     let options = json!({"future": source});
@@ -1632,19 +1685,33 @@ fn outgoing_execute_and_controls_preflight_complete_escaped_wire_sizes() {
     ] {
         assert!(matches!(
             ControlRequest::new(
-                MessageId::new("control").unwrap(), session(), CommId::new("comm").unwrap(),
-                command, small,
+                MessageId::new("control").unwrap(),
+                session(),
+                CommId::new("comm").unwrap(),
+                command,
+                small,
             ),
             Err(NativeError::Limit)
         ));
     }
     assert_eq!(options["future"].as_str(), Some(source.as_str()));
     let request = execute_request();
-    let bytes = request.message().to_vec(ProtocolLimits::default()).unwrap().len();
+    let bytes = request
+        .message()
+        .to_vec(ProtocolLimits::default())
+        .unwrap()
+        .len();
     for (frame_bytes, accepted) in [(bytes, true), (bytes - 1, false)] {
         let result = ExecuteRequest::new(
-            request.id().clone(), session(), "print('live')", false, true,
-            ProtocolLimits { frame_bytes, ..ProtocolLimits::default() },
+            request.id().clone(),
+            session(),
+            "print('live')",
+            false,
+            true,
+            ProtocolLimits {
+                frame_bytes,
+                ..ProtocolLimits::default()
+            },
         );
         if accepted {
             assert!(result.is_ok());
@@ -1653,12 +1720,21 @@ fn outgoing_execute_and_controls_preflight_complete_escaped_wire_sizes() {
         }
     }
     let control = cancel_request();
-    let bytes = control.message().to_vec(ProtocolLimits::default()).unwrap().len();
+    let bytes = control
+        .message()
+        .to_vec(ProtocolLimits::default())
+        .unwrap()
+        .len();
     for (frame_bytes, accepted) in [(bytes, true), (bytes - 1, false)] {
         let result = ControlRequest::new(
-            control.id().clone(), session(), CommId::new("control-comm").unwrap(),
+            control.id().clone(),
+            session(),
+            CommId::new("control-comm").unwrap(),
             SynapseControl::CancelExecution(MessageId::new("execute-message").unwrap()),
-            ProtocolLimits { frame_bytes, ..ProtocolLimits::default() },
+            ProtocolLimits {
+                frame_bytes,
+                ..ProtocolLimits::default()
+            },
         );
         if accepted {
             assert!(result.is_ok());
@@ -1668,8 +1744,14 @@ fn outgoing_execute_and_controls_preflight_complete_escaped_wire_sizes() {
     }
     assert!(matches!(
         comm_open(
-            &MessageId::new("open").unwrap(), &session(), &CommId::new("comm").unwrap(),
-            CommTarget::Control, ProtocolLimits { frame_bytes: 16, ..small },
+            &MessageId::new("open").unwrap(),
+            &session(),
+            &CommId::new("comm").unwrap(),
+            CommTarget::Control,
+            ProtocolLimits {
+                frame_bytes: 16,
+                ..small
+            },
         ),
         Err(NativeError::Limit)
     ));
@@ -1677,9 +1759,10 @@ fn outgoing_execute_and_controls_preflight_complete_escaped_wire_sizes() {
 
 #[test]
 fn output_destination_limit_precedes_copy_and_preserves_partial_state() {
-    let mut tracker = tracker_with_limits(
-        ProtocolLimits { output_bytes: 128, ..ProtocolLimits::default() },
-    );
+    let mut tracker = tracker_with_limits(ProtocolLimits {
+        output_bytes: 128,
+        ..ProtocolLimits::default()
+    });
     tracker.observe(&stream("partial")).unwrap();
     let mut message = stream("oversized");
     message.content["text"] = Value::String("\"\\\n".repeat(64 * 1024));
@@ -1708,10 +1791,19 @@ async fn head_metadata_observes_case_insensitive_etags_and_absence_verbatim() {
         assert!(calls[0].0.body().is_none());
         assert!(calls[0].0.headers().is_empty());
     }
-    let executor = Scripted::new(vec![
-        response_with_headers(200, None, &[("Content-Type", "application/json")]),
-    ]);
-    assert!(runtime.head_content_metadata(&executor).await.unwrap().etag().is_none());
+    let executor = Scripted::new(vec![response_with_headers(
+        200,
+        None,
+        &[("Content-Type", "application/json")],
+    )]);
+    assert!(
+        runtime
+            .head_content_metadata(&executor)
+            .await
+            .unwrap()
+            .etag()
+            .is_none()
+    );
     assert_eq!(executor.count(), 1);
 }
 
@@ -1723,15 +1815,26 @@ async fn observed_etag_does_not_enable_guarded_writes_or_implicit_if_match() {
         response(204, None),
         response_with_headers(200, None, &[("ETag", "\"new-observation\"")]),
     ]);
-    assert_eq!(runtime.get_etag(&executor).await.unwrap().as_deref(), Some("\"observed-only\""));
+    assert_eq!(
+        runtime.get_etag(&executor).await.unwrap().as_deref(),
+        Some("\"observed-only\"")
+    );
     let document = document();
     assert!(matches!(
-        runtime.put_content(&executor, &document, WritePolicy::RequireGuarded).await,
+        runtime
+            .put_content(&executor, &document, WritePolicy::RequireGuarded)
+            .await,
         Err(NativeError::UnsupportedCapability)
     ));
     assert_eq!(executor.count(), 1);
-    runtime.put_content(&executor, &document, WritePolicy::AllowUnguarded).await.unwrap();
-    assert_eq!(runtime.get_etag(&executor).await.unwrap().as_deref(), Some("\"new-observation\""));
+    runtime
+        .put_content(&executor, &document, WritePolicy::AllowUnguarded)
+        .await
+        .unwrap();
+    assert_eq!(
+        runtime.get_etag(&executor).await.unwrap().as_deref(),
+        Some("\"new-observation\"")
+    );
     assert_eq!(executor.count(), 3);
     let calls = executor.calls.lock().unwrap();
     assert_eq!(calls[1].0.method(), NativeMethod::Put);
@@ -1755,15 +1858,24 @@ async fn head_metadata_rejects_ambiguous_malformed_and_over_budget_headers() {
         assert_eq!(executor.count(), 1);
     }
     let long_value = "x".repeat(16 * 1024);
-    let executor = Scripted::new(vec![response_with_headers(200, None, &[("ETag", &long_value)])]);
+    let executor = Scripted::new(vec![response_with_headers(
+        200,
+        None,
+        &[("ETag", &long_value)],
+    )]);
     assert!(matches!(
         runtime().head_content_metadata(&executor).await,
         Err(NativeError::Limit)
     ));
     let mut too_many = response(200, None).unwrap();
-    too_many.headers = (0..65).map(|index| (format!("header-{index}"), "value".into())).collect();
+    too_many.headers = (0..65)
+        .map(|index| (format!("header-{index}"), "value".into()))
+        .collect();
     let executor = Scripted::new(vec![Ok(too_many)]);
-    assert!(matches!(runtime().head_content(&executor).await, Err(NativeError::Limit)));
+    assert!(matches!(
+        runtime().head_content(&executor).await,
+        Err(NativeError::Limit)
+    ));
 }
 
 #[tokio::test]
@@ -1781,9 +1893,15 @@ async fn head_metadata_preserves_http_failures_and_rejects_non_head_success_shap
         assert_eq!(executor.count(), 1);
     }
     let executor = Scripted::new(vec![response(412, None)]);
-    assert!(matches!(runtime().get_etag(&executor).await, Err(NativeError::Http(412))));
+    assert!(matches!(
+        runtime().get_etag(&executor).await,
+        Err(NativeError::Http(412))
+    ));
     assert_eq!(executor.count(), 1);
     let executor = Scripted::new(vec![Err(NativeError::TimedOut)]);
-    assert!(matches!(runtime().get_etag(&executor).await, Err(NativeError::TimedOut)));
+    assert!(matches!(
+        runtime().get_etag(&executor).await,
+        Err(NativeError::TimedOut)
+    ));
     assert_eq!(executor.count(), 1);
 }
