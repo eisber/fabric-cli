@@ -28,27 +28,31 @@ checkpoint is installed.
   Common interface commit `5fe13bd171c3bccf76da519b556173570c786603` was
   cherry-picked first (`8e0e510` in this lane).
 
-The coordinator must export `pub mod livy_arrow;` in the SDK facade and add
-`ring.workspace = true` to **the SDK** manifest before compiling these tests.
-The workspace already pins ring 0.17.14. This lane does not change manifests,
-locks or facade exports. Reconcile the SDK's dependency edge in the workspace
-lock through the normal integration workflow before running `--locked` checks.
-SHA-256 uses `ring::digest`; there is no handwritten crypto, weak hash or
-substitute integrity algorithm.
+The coordinator owns the optional SDK feature `livy-arrow = ["dep:ring"]`,
+the dependency `ring = { workspace = true, optional = true }`, and the SDK
+facade export `#[cfg(feature = "livy-arrow")] pub mod livy_arrow;`.
+The integration test crate is gated by `#![cfg(feature = "livy-arrow")]`, so
+default SDK tests do not import the optional module. The workspace already pins
+ring 0.17.14. This lane does not change manifests, locks or facade exports.
+Reconcile the SDK's dependency edge in the workspace lock through the normal
+integration workflow before running `--locked` checks. SHA-256 uses
+`ring::digest`; there is no handwritten crypto, weak hash or substitute integrity
+algorithm.
 
 Run the public test after that integration, from `rust/` with an authorized
 build slot and the pinned toolchain:
 
 ```text
-cargo test -p fabric-sdk --test livy_arrow --locked --offline
+cargo test -p fabric-sdk --features livy-arrow --test livy_arrow --locked --offline
 ```
 
 Also run package all-target checks, formatting, Clippy and the affected
 downstream/architecture checks through the existing validation plan. No Cargo
-build/test was run in this lane: Rust tools are absent from PATH and no shared
-heavy-build slot was granted. Static checks do not prove Rust compilation or
-test execution. Independent review and combined-candidate validation remain
-coordinator gates.
+build/test was run in this lane: Rust tools were absent from the worker PATH
+during implementation. The coordinator subsequently restored pinned Rust 1.99.1
+tools in its own artifacts, but no worker compilation/build slot was granted.
+Static checks do not prove Rust compilation or test execution. Independent
+review and combined-candidate validation remain coordinator gates.
 
 Performed static checks: the source worktree HEAD equals the full pin; all 13
 embedded golden vector objects equal the pinned catalog; lexical delimiters

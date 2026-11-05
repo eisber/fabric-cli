@@ -5,6 +5,7 @@
 //! bded4919a647b3f5f24b723abada69d45f23449c, conformance/vectors/framing-v2.json.
 //! Native IPC decoding is not implemented or simulated by these tests.
 
+#![cfg(feature = "livy-arrow")]
 #![deny(unnameable_test_items)]
 
 use azure_core::http::Url;
