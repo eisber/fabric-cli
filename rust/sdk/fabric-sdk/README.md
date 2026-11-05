@@ -23,6 +23,7 @@ selected endpoint with the appropriate audience.
 | --- | --- |
 | `workspaces` | Workspace listing, ordered metadata and optional enrichment |
 | `items` | Item listing, generic lookup and finite collection-specific metadata |
+| `metadata` | Explicit primary workspace or generic item metadata, without enrichment |
 | `folders` | Folder listing and lookup with explicit query options |
 | `capacities` | Fabric capacity listing |
 | `notebooks` | Prepared Notebook definitions and publication |
@@ -30,6 +31,13 @@ selected endpoint with the appropriate audience.
 `get_item_metadata` preserves the insertion-ordered response object separately
 from the typed `Item` representation. Workspace enrichments retain typed optional
 omissions rather than fabricating empty fields.
+
+The additive `MetadataHost` composes only the explicitly addressed metadata read,
+with caller-selected response and compact-result limits. It does not select a
+definition from query text. `get_workspace_primary_metadata` skips all optional
+enrichments without changing the existing enriched API. See
+[explicit metadata retrieval](../../docs/explicit-get.md) for the shared read
+contract and the separate CLI local-file adapter.
 
 Related focused crates provide jobs, OneLake, access, catalog, raw API execution
 and tables. Use them directly for their service-specific contracts.

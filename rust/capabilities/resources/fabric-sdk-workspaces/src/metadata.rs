@@ -178,6 +178,46 @@ impl fmt::Display for WorkspaceMetadataError {
 impl std::error::Error for WorkspaceMetadataError {}
 
 impl WorkspaceClient {
+    /// Reads only the addressed workspace's primary metadata.
+    ///
+    /// Unlike [`Self::get_workspace_metadata`], this performs no managed endpoint,
+    /// Spark setting or role-assignment reads. The existing authenticated read,
+    /// response-bound and cancellation policies remain unchanged.
+    ///
+    /// # Errors
+    /// Returns primary identity, service, response or cancellation failures.
+    pub async fn get_workspace_primary_metadata(
+        &self,
+        executor: &dyn WorkspaceExecutor,
+        workspace_id: &str,
+        limits: WorkspaceListLimits,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<WorkspaceMetadata, WorkspaceMetadataError> {
+        let mut cancelled = pin!(cancelled);
+        async {
+            or_cancel(ready(()), cancelled.as_mut()).await?;
+            if self.selection().audience() != Audience::Fabric {
+                return Err(WorkspaceListErrorKind::InvalidAudience.into());
+            }
+            let url = metadata_url(
+                self.context().endpoint(),
+                workspace_id,
+                WorkspaceMetadataStep::Primary,
+            )?;
+            let value = self
+                .metadata_value(executor, url, limits, false, cancelled.as_mut())
+                .await?;
+            serde_json::from_value(value)
+                .map_err(|_| WorkspaceListErrorKind::InvalidResponse.into())
+        }
+        .await
+        .map_err(|kind| WorkspaceMetadataError {
+            step: WorkspaceMetadataStep::Primary,
+            kind,
+            enrichments: Vec::new(),
+        })
+    }
+
     /// Reads workspace metadata and independently attempts all three enrichments.
     ///
     /// Credentials, Fabric selection, HTTP/retry/deadline policy and cancellation
@@ -199,28 +239,9 @@ impl WorkspaceClient {
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<WorkspaceMetadataResult, WorkspaceMetadataError> {
         let mut cancelled = pin!(cancelled);
-        let primary = async {
-            or_cancel(ready(()), cancelled.as_mut()).await?;
-            if self.selection().audience() != Audience::Fabric {
-                return Err(WorkspaceListErrorKind::InvalidAudience.into());
-            }
-            let url = metadata_url(
-                self.context().endpoint(),
-                workspace_id,
-                WorkspaceMetadataStep::Primary,
-            )?;
-            let value = self
-                .metadata_value(executor, url, limits, false, cancelled.as_mut())
-                .await?;
-            serde_json::from_value(value)
-                .map_err(|_| WorkspaceListErrorKind::InvalidResponse.into())
-        }
-        .await
-        .map_err(|kind| WorkspaceMetadataError {
-            step: WorkspaceMetadataStep::Primary,
-            kind,
-            enrichments: Vec::new(),
-        })?;
+        let primary = self
+            .get_workspace_primary_metadata(executor, workspace_id, limits, cancelled.as_mut())
+            .await?;
         self.enrich_workspace_metadata(executor, workspace_id, primary, limits, cancelled)
             .await
     }

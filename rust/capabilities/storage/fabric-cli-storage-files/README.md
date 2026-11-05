@@ -47,6 +47,52 @@ filesystem authority unless their caller supplies it.
 
 There is no dependency on definition import/export or its file policy.
 
+## Exact local-file output
+
+`ExactOutputFile` is a separate, additive no-clobber API for an explicitly
+selected **file**, not a change to `LocalFileSystem::write` or download's
+existing create/truncate behavior:
+
+```rust,ignore
+// Run both local operations in the caller's blocking context.
+let output = ExactOutputFile::preflight(resolved_absolute_file, max_bytes)?;
+// The caller can now perform its independently bounded remote read.
+let receipt = output.commit(&bytes)?;
+```
+
+`preflight(&Path, usize) -> Result<ExactOutputFile, ExactOutputError>` performs
+read-only local inspection before the caller starts remote work.
+`commit(self, &[u8]) -> Result<ExactOutputReceipt, ExactOutputError>` checks the
+same byte cap **before** exclusively creating the exact path with `create_new`.
+`path()` retains its original spelling and `max_bytes()` exposes the selected
+bound. A zero-byte cap allows an empty file. Raw binary, empty bytes, filename
+case and extensions are not rewritten; there is no timestamp directory,
+directory-destination interpretation, encoding, parent creation or remote-output
+adapter.
+
+Existing entries, including directories and dangling symlinks, fail with
+`OutputExists`. A competing file created after preflight cannot be overwritten.
+Relative/unresolved paths, URIs, network shares, missing/non-directory parents
+and native inspection failures are explicit errors. Windows device paths,
+reserved names, alternate data streams and filename spellings that Win32 would
+rewrite are rejected before opening.
+
+Both operations block; hosts must use their own blocking context rather than an
+async worker. The API creates no runtime or worker pool and never reads remote
+data, settings, credentials or ambient cwd. The caller must bound the remote
+payload separately and supply an absolute native path with trusted, stable
+ancestors. This is not a hostile-process filesystem sandbox, and safe portable
+filesystem APIs do not detect network-backed native mounts/drives or pin parent
+directories against replacement.
+
+The final file is created directly: this is **not** atomic full-file commit,
+rollback or a durability guarantee. No automatic cleanup or deletion is
+performed. `ExactOutputError` retains the exact path, typed kind, failing
+`Preflight`/`Limit`/`Create`/`Write`/`Flush` stage, `path_created`,
+`bytes_written` and original `io_error`. A write/flush failure can leave an empty
+or partial final file; successful `flush` does not mean `sync_all` or a checked
+native close. Do not retry the transfer or report that output was removed.
+
 ## Download
 
 A directory destination uses the remote basename; a file destination is used as
@@ -109,3 +155,19 @@ The Rust tests exercise the resource adapter with injected HTTP and private OS
 files. Upload/download suites cover status, byte bounds, interruption and partial
 effects. Native host tests additionally exercise root argument dispatch, explicit
 local fallback, directory destinations, alias binding and stream delivery.
+
+Focused exact-output tests (no API/auth/settings):
+
+```text
+cargo test --locked -p fabric-cli-storage-files --test exact_output
+cargo test --locked -p fabric-cli-storage-files --lib exact_output
+```
+
+The integration fixtures create concurrency-isolated disposable directories under
+the test process's working directory and remove only those directories. They
+cover binary/empty bytes, unchanged filenames, N/N+1 bounds, preflight/create
+races, existing files/directories/symlinks, missing/invalid parents and invalid
+path shapes. Windows symlink cases explicitly report unavailable privilege;
+they do not require elevation. Injected writer unit tests retain partial-write
+and flush-failure evidence without relying on a full disk or live filesystem
+fault.

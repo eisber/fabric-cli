@@ -6,6 +6,11 @@
 command sessions and native host composition. Command behavior lives in focused
 libraries; this crate connects them to explicit runtime capabilities.
 
+The additive `get_metadata` library entry composes the SDK's explicit metadata
+operation with preflighted, no-clobber exact local output. It does not replace
+the existing executable GET or register v2 command syntax. See the
+[explicit retrieval contract](../../../docs/explicit-get.md).
+
 ## Run the application
 
 From `rust/`:

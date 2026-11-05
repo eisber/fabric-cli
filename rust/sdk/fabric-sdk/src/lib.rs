@@ -11,6 +11,7 @@
 pub mod capacities;
 pub mod folders;
 pub mod items;
+pub mod metadata;
 pub mod models;
 pub mod notebooks;
 pub mod workspaces;

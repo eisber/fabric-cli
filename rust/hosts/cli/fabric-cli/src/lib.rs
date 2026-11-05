@@ -15,6 +15,7 @@ mod errors;
 #[cfg(feature = "native-host")]
 pub mod families;
 mod folder_reads;
+pub mod get_metadata;
 pub mod jobs;
 pub mod local_commands;
 pub mod parser;
