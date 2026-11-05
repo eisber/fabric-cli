@@ -11,6 +11,11 @@ operation with preflighted, no-clobber exact local output. It does not replace
 the existing executable GET or register v2 command syntax. See the
 [explicit retrieval contract](../../../docs/explicit-get.md).
 
+The separate opt-in `fab-cli-v2` binary (existing `headless` feature) mounts
+the [experimental v2 get surface](../../../docs/v2-get.md). The default run target
+remains `fab-rs`. Service credentials and providers are explicitly selected;
+the v2 head does not activate private FabricAIHub APIs.
+
 ## Run the application
 
 From `rust/`:

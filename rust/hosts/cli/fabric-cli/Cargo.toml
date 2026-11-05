@@ -9,6 +9,7 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 description = "Bounded Fabric read-command composition with caller-owned dependencies"
+default-run = "fab-rs"
 
 [package.metadata.fabric]
 layer = "cli"
@@ -16,6 +17,11 @@ layer = "cli"
 [[bin]]
 name = "fab-rs"
 path = "src/main.rs"
+
+[[bin]]
+name = "fab-cli-v2"
+path = "src/v2_main.rs"
+required-features = ["headless"]
 
 [features]
 default = []
@@ -55,6 +61,7 @@ fabric-sdk-workspaces.workspace = true
 fabric-sdk-http = { workspace = true, optional = true }
 fabric-sdk-transport = { workspace = true, optional = true }
 azure_core.workspace = true
+base64.workspace = true
 futures-util.workspace = true
 serde.workspace = true
 serde_json.workspace = true

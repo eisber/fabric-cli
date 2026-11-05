@@ -9,11 +9,14 @@
 //! runtime is installed.
 
 pub mod capacities;
+pub mod documents;
 pub mod folders;
 pub mod items;
 pub mod metadata;
 pub mod models;
 pub mod notebooks;
+pub mod observe;
+pub mod representations;
 pub mod workspaces;
 
 pub use fabric_core::{

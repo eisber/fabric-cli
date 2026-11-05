@@ -4,8 +4,9 @@
 
 This additive library slice implements primary workspace and generic item
 metadata reads independently of the Python-compatible GET handler. It does not
-change `fab-rs get`, introduce a command spelling, install a native v2 host or
-claim the full selected v2 get surface is implemented.
+change `fab-rs get` or claim the full selected v2 get surface is implemented.
+The separate optional [v2 get head](v2-get.md) now composes these same primitives
+with explicit source/file/observer and provider-injected docs capabilities.
 
 ## Shared read operation
 
@@ -71,10 +72,11 @@ filesystem sandbox.
 ## Scope and next integration boundary
 
 The existing v1 parser, native GET host and independent oracles are unchanged.
-Central v2 registration/path resolution, result/error/exit envelopes, projection,
-stdout policy, native source/file providers, returned-handle observation and
-recursive docs remain separate slices. They must use accepted shared contracts
-rather than infer operations from v1 query text.
+The optional v2 head adds its own bounded typed-path resolution, result metadata,
+typed projection, stdout policy, native source/file bindings, handle observation
+and provider-injected recursive docs. These compose shared SDK contracts rather
+than infer operations from v1 query text. The existing entry points here retain
+their narrower metadata-only semantics.
 
 FabricAIHub docs integration is not activated here. A hosted provider may reuse
 its Markdown rendering, but a viewport cannot be called a complete file and a

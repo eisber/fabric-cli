@@ -22,6 +22,7 @@ fabric-sdk-items.workspace = true
 fabric-sdk-capacities.workspace = true
 fabric-sdk-folders.workspace = true
 fabric-sdk-operations.workspace = true
+fabric-sdk-onelake.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

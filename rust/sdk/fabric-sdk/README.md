@@ -24,6 +24,9 @@ selected endpoint with the appropriate audience.
 | `workspaces` | Workspace listing, ordered metadata and optional enrichment |
 | `items` | Item listing, generic lookup and finite collection-specific metadata |
 | `metadata` | Explicit primary workspace or generic item metadata, without enrichment |
+| `representations` | Native multipart definition/part and OneLake file reads |
+| `observe` | Bounded observation of existing operation and item-job handles |
+| `documents` | Injected served-docs provider and bounded, coverage-aware graph |
 | `folders` | Folder listing and lookup with explicit query options |
 | `capacities` | Fabric capacity listing |
 | `notebooks` | Prepared Notebook definitions and publication |

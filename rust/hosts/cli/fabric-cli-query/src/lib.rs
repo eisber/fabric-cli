@@ -121,6 +121,44 @@ pub fn project(data: &Value, expression: Option<&str>) -> Result<Value, QueryErr
     expression.map_or_else(|| Ok(data.clone()), |expression| search(data, expression))
 }
 
+/// Evaluate an explicit projection without Python scalar stringification.
+///
+/// Unlike the compatibility [`search`] entry, an empty expression is invalid,
+/// and null, boolean and numeric results retain their JSON types. This does not
+/// perform path discovery or select any remote operation.
+///
+/// # Errors
+/// Returns the existing typed JMESPath parse, domain or evaluation failure.
+pub fn project_value(data: &Value, expression: &str) -> Result<Value, QueryError> {
+    if expression.is_empty() {
+        return Err(QueryError {
+            kind: QueryErrorKind::Syntax,
+        });
+    }
+    if expression == "." {
+        return Ok(data.clone());
+    }
+    evaluate(data, expression)
+}
+
+/// Validate explicit projection syntax and supported AST operations without data.
+///
+/// # Errors
+/// Rejects empty/malformed/unsupported expressions without executing a query.
+pub fn validate_projection(expression: &str) -> Result<(), QueryError> {
+    if expression.is_empty() {
+        return Err(QueryError {
+            kind: QueryErrorKind::Syntax,
+        });
+    }
+    if expression == "." {
+        return Ok(());
+    }
+    validation::literals(expression)?;
+    let ast = jpx_core::parse(expression).map_err(QueryError::from)?;
+    validation::validate(&ast)?;
+    Ok(())
+}
 /// Join argparse-style query tokens using Python `process_nargs` list semantics.
 ///
 /// A caller with an already-normalized single string should pass it directly to
@@ -147,13 +185,7 @@ pub fn search_with_options(
     if expression == "." {
         return Ok(data.clone());
     }
-    validation::literals(expression)?;
-    let mut ast = jpx_core::parse(expression).map_err(QueryError::from)?;
-    let numeric_sensitive = validation::validate(&ast)?;
-    validation::adapt_comparisons(&mut ast);
-    let runtime = functions::runtime(numeric_sensitive);
-    let compiled = jpx_core::Expression::new(expression, ast, &runtime);
-    let result = compiled.search(data).map_err(QueryError::from)?;
+    let result = evaluate(data, expression)?;
     Ok(match result {
         Value::Array(_) | Value::Object(_) | Value::String(_) => result,
         Value::Null => Value::String("None".to_owned()),
@@ -161,6 +193,16 @@ pub fn search_with_options(
         Value::Bool(false) => Value::String("False".to_owned()),
         Value::Number(number) => Value::String(scalar::number(&number)),
     })
+}
+
+fn evaluate(data: &Value, expression: &str) -> Result<Value, QueryError> {
+    validation::literals(expression)?;
+    let mut ast = jpx_core::parse(expression).map_err(QueryError::from)?;
+    let numeric_sensitive = validation::validate(&ast)?;
+    validation::adapt_comparisons(&mut ast);
+    let runtime = functions::runtime(numeric_sensitive);
+    let compiled = jpx_core::Expression::new(expression, ast, &runtime);
+    compiled.search(data).map_err(QueryError::from)
 }
 
 fn paths(data: &Value, deep: bool) -> Value {
