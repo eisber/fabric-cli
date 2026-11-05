@@ -98,17 +98,29 @@ header names and rejects control characters and all observable case-insensitive
 duplicates. Public debug/error formats redact URLs, bodies, credential selectors,
 tokens, media and header values.
 
-**Unimplemented below this interface:** Azure `Headers` is a case-insensitive
-HashMap; insertion normalizes names and replaces duplicate fields before the
-executor receives them. A custom client can therefore erase duplicate/case
-evidence. The existing native transport also combines repeated wire values.
-This adapter cannot certify rejection of raw duplicate headers already erased
-or combined upstream, and does not guess by rejecting every comma-containing
-header. Raw duplicate rejection requires a separately reviewed transport/raw
-metadata contract; no such SDK, transport or manifest change is made here.
-The SDK agent registry exposes sibling task IDs but no coordinator/host
-recipient, so this gap is retained in this immutable handoff rather than sent
-through an unrelated identity or independent Tachikoma messaging.
+The native transport now rejects ambiguous singleton metadata **before** its
+Azure conversion for existing `/livyApi/versions/` routes or the existing Arrow
+media in Accept. The guarded names are Content-Type (the actual format/version
+carrier), Content-Encoding, Content-Length, Retry-After, Location, ETag,
+`statementId` (statement handle) and `id` (HC/REPL handle, not a statement ID).
+Any two physical values, including identical or case-varied ones still visible
+in Hyper's HeaderMap, fail with sanitized `DataConversion`. No guessed Livy
+format headers, outbound flags or new wire fields are introduced.
+
+The scope is intentional: global rejection would change generic behavior,
+including legitimate repeated Content-Encoding metadata. Outside the existing
+Livy/Arrow request selection, the raw-to-Azure conversion is unchanged.
+Repeated non-singleton headers retain the established comma joining and Latin-1
+conversion, including on Livy responses. A comma inside one field is not treated
+as evidence that there were duplicates. This changes neither generic public
+output APIs nor service/client configuration.
+
+**Remaining raw-wire limitation:** Azure `Headers` is a case-insensitive HashMap;
+custom clients can erase duplicates before the adapter. Hyper may normalize or
+reject raw syntax before its HeaderMap reaches this seam. The guard cannot
+recover information already erased by any upstream parser, does not cover every
+possible singleton name, and deliberately does not change generic non-Livy
+duplicate handling. Full raw duplicate rejection is not certified.
 
 ## Authored offline evidence, not executed tests
 
@@ -129,33 +141,42 @@ focused `native_stream` integration test, the `native_stream::tests` unit tests,
 the existing `native_runtime` regression tests and an all-target check before
 claiming integrated acceptance.
 
-## Proposed transport evidence ABI
+## Adopted transport evidence ABI and provenance
 
-An additive `NativeError::Transport` can be projected at exactly two adapter
-boundaries: `HttpClient::execute_request` errors and errors yielded by the actual
-body stream. Only distinguishable I/O evidence should receive that projection
-for GET/HEAD. Credential acquisition remains a separate pre-dispatch path;
+The ABI at `a360d5a35abad679745fdb6f22fceda83e5ae03f` was cherry-picked as
+`00f396cacc550d3420feea78ca82f0c1360e5952`, preserving the original streaming
+and preparatory commit ancestry. `NativeError::Transport` is now projected at
+exactly two streaming boundaries: `HttpClient::execute_request` errors and
+errors yielded by the actual body stream. Only Azure `ErrorKind::Io` receives
+that projection for GET/HEAD. Credential acquisition is a separate pre-dispatch path;
 metadata validation, empty chunks, limits, deadlines, status failures and
-protocol/format errors must retain their existing classifications. Mutations
-still report `OutcomeUnknown` where no outcome is provable. The proposed variant
+protocol/format errors retain their existing classifications. Mutations
+still report `OutcomeUnknown` where no outcome is provable. The variant
 is evidence for the owner-bound operation, not retry/replay authority, and must
 not broaden retry of `InvalidResponse`.
 
-The ABI alone is insufficient to certify that distinction for the current native
-backend. `fabric-sdk-transport/src/decode.rs` converts every upstream stream
-error into a generic `io::Error`, then maps every `ReaderStream` failure to
-Azure `ErrorKind::Io`. This conflates genuine I/O loss with malformed gzip/zlib
-and upstream `DataConversion` errors, including unrepresentable HTTP trailers,
-even on the identity encoding path. `native.rs` also flattens Hyper request and
-response errors without retaining their typed causes. The concrete adapter
-cannot recover information already erased there, and must not infer it from
-diagnostic text, a fabricated `Http(0)` or failure timing.
+The narrowly repaired native decoder carries an opaque, sanitized upstream kind
+through StreamReader and gzip/zlib decoding. Actual upstream Io, DataConversion
+and Other remain distinguishable; decoder-origin corruption and clean compressed
+truncation are DataConversion, not recoverable Io. Original diagnostics, bodies
+and tokens are not kept in the marker or returned error.
 
-The native transport owner must preserve real I/O versus protocol/decoding error
-classification before an adapter mapping of `ErrorKind::Io` can establish that
-distinction for that backend. No transport source, SDK ABI, exhaustive host
-mapping, manifest or retry policy is changed in this preparatory handoff.
-Dedicated fake-client regressions exercise direct `DataConversion` header/body
-failures for GET/HEAD and POST, protecting non-retryable protocol failures.
-Projection to the new public variant remains pending its exact committed ABI;
-the currently committed SDK contract still has no `Transport` variant.
+At the Hyper boundary, typed HTTP parse errors are DataConversion. Known socket
+I/O, premature message EOF and timeouts provide Io evidence. TLS errors, user
+errors without stronger upstream evidence, cancellation/closed channels without
+actual I/O evidence and unrecognized failures remain Other. Error-source walking
+is finite and never classifies from diagnostic text. There is no fabricated
+`Http(0)`, new dependency or retry engine.
+
+New decoder tests cover all three upstream kinds under identity/gzip/deflate,
+corrupt/truncated compression and genuine mid-header I/O. Raw HeaderMap and
+loopback native-client fixtures cover scoped duplicate rejection, legal repeated
+fields, Hyper parse failure versus EOF, trailer/chunk protocol errors, actual
+gzip corruption, real mid-body disconnects and mutation uncertainty. These
+fixtures are authored, not executed: builds and test execution remain reserved
+to the parent's serialized validator.
+
+The pinned SDK's older `ArrowError::from(NativeError)` still has a wildcard to
+InvalidInput; the parent-owned Arrow operation/resume composition must preserve
+the new Transport evidence rather than lose it there. No SDK runtime or Arrow
+module was manually edited after the exact ABI cherry-pick.

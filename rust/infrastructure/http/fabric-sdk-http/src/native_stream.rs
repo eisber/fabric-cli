@@ -12,6 +12,7 @@ use crate::{
 use azure_core::{
     Bytes,
     credentials::AccessToken,
+    error::ErrorKind,
     http::{AsyncRawResponse, AsyncResponseBody, Method, Url},
 };
 use fabric_core::{AuthenticatedExecution, RequestError};
@@ -176,8 +177,16 @@ impl AuthenticatedExecution for StreamDispatch<'_, '_> {
                 .client
                 .execute_request(&request)
                 .await
-                .map_err(|_| NativeError::InvalidResponse)
+                .map_err(stream_error)
         })
+    }
+}
+
+fn stream_error(error: azure_core::Error) -> NativeError {
+    if matches!(error.kind(), ErrorKind::Io) {
+        NativeError::Transport
+    } else {
+        NativeError::InvalidResponse
     }
 }
 
@@ -272,7 +281,7 @@ impl FabricBody {
                 self.stream = None;
                 return Ok(None);
             };
-            let chunk = chunk.map_err(|_| NativeError::InvalidResponse)?;
+            let chunk = chunk.map_err(stream_error)?;
             let bytes = u64::try_from(chunk.len()).map_err(|_| NativeError::Limit)?;
             if bytes > self.limits.max_body_bytes - self.received {
                 return Err(NativeError::Limit);
@@ -355,6 +364,26 @@ mod tests {
     #![deny(unnameable_test_items)]
 
     use super::*;
+
+    #[test]
+    fn only_explicit_io_evidence_maps_to_transport_not_auth_or_protocol() {
+        for (kind, expected) in [
+            (ErrorKind::Io, NativeError::Transport),
+            (ErrorKind::DataConversion, NativeError::InvalidResponse),
+            (ErrorKind::Other, NativeError::InvalidResponse),
+            (ErrorKind::Credential, NativeError::InvalidResponse),
+            (ErrorKind::Connection, NativeError::InvalidResponse),
+        ] {
+            assert_eq!(
+                stream_error(azure_core::Error::with_message(kind, "private")),
+                expected
+            );
+        }
+        assert_eq!(
+            authentication_error(RequestError::Credential),
+            NativeError::InvalidResponse
+        );
+    }
 
     #[test]
     fn metadata_rejects_all_observable_duplicate_case_variants_and_controls() {

@@ -799,16 +799,16 @@ async fn auth_failure_and_invalid_token_are_not_mislabeled_as_unknown_dispatch()
 
 #[tokio::test]
 async fn get_and_inline_post_transport_loss_dispatch_once_without_retry() {
-    for method in [NativeMethod::Get, NativeMethod::Post] {
+    for method in [NativeMethod::Get, NativeMethod::Head, NativeMethod::Post] {
         let credential = Arc::new(Credential::default());
         let wire = Wire::new([Reply::Failure]);
         let executor = executor(credential.clone(), wire.clone(), Arc::new(Timer::default()));
         assert_eq!(
             failure(executor.open(&request(method), limits(), &deadline()).await),
-            if method == NativeMethod::Get {
-                NativeError::InvalidResponse
-            } else {
+            if method == NativeMethod::Post {
                 NativeError::OutcomeUnknown
+            } else {
+                NativeError::Transport
             }
         );
         assert_eq!(wire.requests.lock().unwrap().len(), 1);
@@ -1182,7 +1182,7 @@ async fn exact_response_header_count_and_metadata_bytes_are_accepted() {
 async fn empty_fragments_stream_errors_and_zero_read_bounds_close_the_body() {
     for (chunk, max_bytes, expected) in [
         (bytes(b""), 3, NativeError::InvalidResponse),
-        (Chunk::Failure, 3, NativeError::InvalidResponse),
+        (Chunk::Failure, 3, NativeError::Transport),
         (bytes(b"abc"), 0, NativeError::InvalidInput),
     ] {
         let (reply, probe) = response(200, &[], [chunk]);
