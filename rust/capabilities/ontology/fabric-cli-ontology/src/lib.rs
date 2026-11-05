@@ -8,11 +8,16 @@
 //! facade argument entry points use the same schema and common verb identity.
 //! No credentials, filesystem, HTTP, runtime or operation submission are accessed.
 
+mod adapter;
 mod args;
 mod catalog;
 mod input;
 mod validation;
 
+pub use adapter::{
+    AdapterError, AdapterHost, AdapterLimits, ExecutionReport, HostError, bind_public_operations,
+    execute,
+};
 pub use args::{
     ArgumentError, InputSource, OntologyArguments, OutputDestination, UpdateMode, ontology_command,
     operation_command, parse_common_args, parse_facade_args,

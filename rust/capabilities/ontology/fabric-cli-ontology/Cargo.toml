@@ -17,6 +17,15 @@ layer = "cli"
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+fabric-sdk-ontology.workspace = true
+fabric-sdk-items.workspace = true
+fabric-sdk-operations.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+azure_core.workspace = true
+fabric-sdk.workspace = true
+tokio.workspace = true
 
 [lints]
 workspace = true
