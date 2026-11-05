@@ -133,8 +133,10 @@ function commandResult(command, context, execute = spawnSync) {
     windowsHide: true,
     shell: false,
   });
-  const prefix = `${String(context.results.length).padStart(3, '0')}-${command.id || 'contract'}`
+  const label = `${String(context.results.length).padStart(3, '0')}-${command.id || 'contract'}`
     .replace(/[^a-zA-Z0-9._-]/g, '_');
+  const prefix = label.length <= 100 ? label :
+    `${label.slice(0, 80)}-${crypto.createHash('sha256').update(label).digest('hex').slice(0, 16)}`;
   const stdout = result.stdout || '';
   const stderr = result.stderr || '';
   const stdoutFile = path.join(context.artifacts, `${prefix}.stdout.log`);

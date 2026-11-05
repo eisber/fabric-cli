@@ -118,6 +118,25 @@ test('recorded command execution retains failures, output hashes, counts and lit
   assert.equal(context.results[1].exit, null);
 });
 
+test('full-workspace command log names stay bounded without losing command identity', t => {
+  const root = temporary(t);
+  const context = {root, artifacts: root, commandTimeout: 1000, deadline: Date.now() + 10000, results: []};
+  const common = `default:test:${Array.from({length: 40}, (_, i) => `fabric-long-package-${i}`).join(',')}`;
+  for (const suffix of ['a', 'b']) {
+    const id = `${common}:${suffix}`;
+    commandResult({id, program: 'cargo', args: ['test', '--all-targets']}, context,
+      () => ({status: 0, stdout: 'test result: ok. 1 passed; 0 failed; 0 ignored;\n', stderr: ''}));
+    const record = context.results.at(-1);
+    assert.equal(record.id, id);
+    assert.ok(path.basename(record.stdout).length < 128);
+    assert.ok(path.basename(record.stderr).length < 128);
+    assert.equal(fs.readFileSync(record.stdout, 'utf8'),
+      'test result: ok. 1 passed; 0 failed; 0 ignored;\n');
+    assert.ok(fs.existsSync(record.stderr));
+  }
+  assert.notEqual(context.results[0].stdout, context.results[1].stdout);
+});
+
 test('missing full-gate marker profiles fail, rather than passing an empty contract', t => {
   const root = temporary(t);
   fs.mkdirSync(path.join(root, 'rust', 'validation'), {recursive: true});
