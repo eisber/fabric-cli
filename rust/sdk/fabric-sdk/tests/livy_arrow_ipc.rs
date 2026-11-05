@@ -362,14 +362,14 @@ fn typed_stream_compares_field_and_schema_metadata_before_chunk_delivery() {
             Ok(())
         };
         stream
-            .decode(&chunk(write(&[first.clone()], None)), &mut sink)
+            .decode(&chunk(write(std::slice::from_ref(&first), None)), &mut sink)
             .unwrap();
         assert_eq!(
             stream.decode(&chunk(write(&[second], None)), &mut sink),
             Err(ArrowError::SchemaConflict),
         );
         assert_eq!(
-            stream.decode(&chunk(write(&[first.clone()], None)), &mut sink),
+            stream.decode(&chunk(write(std::slice::from_ref(&first), None)), &mut sink),
             Err(ArrowError::InvalidState),
         );
         assert_eq!(emitted, 1);
@@ -649,7 +649,7 @@ fn compressed_declared_bombs_fail_before_decompressing_invalid_body() {
             Arc::new(Int32Array::from(vec![42; 8192])) as ArrayRef,
         )])
         .unwrap();
-        let dictionary: DictionaryArray<Int32Type> = vec!["a".repeat(8192), "b".repeat(8192)]
+        let dictionary: DictionaryArray<Int32Type> = ["a".repeat(8192), "b".repeat(8192)]
             .iter()
             .map(|value| Some(value.as_str()))
             .collect();
