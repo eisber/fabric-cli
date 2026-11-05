@@ -38,6 +38,28 @@ test('Cargo package arguments are sorted, deduplicated and not shell text', () =
   assert.deepEqual(packageArgs(['z', 'a', 'z']), ['--package', 'a', '--package', 'z']);
 });
 
+test('Windows formatting bounds each expanded rustfmt invocation without omitting packages', () => {
+  const p = plan();
+  p.packages = Array.from({length: 35}, (_, index) => `component-${String(index).padStart(2, '0')}`);
+  p.packages.push(p.packages[0]);
+  const commands = coreCommands(p, 'windows').filter(command => command.args[0] === 'fmt');
+  assert.equal(commands.length, 35);
+  assert.deepEqual(commands.map(command => command.args[2]), [...new Set(p.packages)].sort());
+  for (const command of commands) {
+    assert.deepEqual(command.args, ['fmt', '--package', command.args[2], '--', '--check']);
+    assert.equal(command.id, `default:fmt:${command.args[2]}`);
+  }
+});
+
+test('POSIX formatting retains the combined selected-package check', () => {
+  for (const platform of ['linux', 'macos']) {
+    const formatting = coreCommands(plan(), platform).filter(command => command.args[0] === 'fmt');
+    assert.equal(formatting.length, 1);
+    assert.equal(formatting[0].id, 'default:fmt');
+    assert.deepEqual(formatting[0].args, ['fmt', '--package', 'cli', '--package', 'deploy', '--', '--check']);
+  }
+});
+
 test('complete target selection keeps Notebook and downstream contracts, not unrelated suites', () => {
   const commands = coreCommands(plan(), 'windows');
   const tests = commands.filter(command => command.test && command.id !== 'default:doc');

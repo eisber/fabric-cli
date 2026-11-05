@@ -68,8 +68,15 @@ function coreCommands(plan, platform) {
   const cargo = (id, command, extra) => ({
     id, program: 'cargo', args: [command, '--offline', '--locked', ...args, ...extra],
   });
+  // cargo-fmt expands targets into rustfmt argv, exceeding Windows limits for a full workspace.
+  const formatting = platform === 'windows' ?
+    [...new Set(plan.packages)].sort().map(name => ({
+      id: `default:fmt:${name}`, program: 'cargo',
+      args: ['fmt', '--package', name, '--', '--check'],
+    })) :
+    [{id: 'default:fmt', program: 'cargo', args: ['fmt', ...args, '--', '--check']}];
   const commands = [
-    {id: 'default:fmt', program: 'cargo', args: ['fmt', ...args, '--', '--check']},
+    ...formatting,
     cargo('default:check', 'check', ['--all-targets']),
     cargo('default:clippy', 'clippy', ['--all-targets', '--', '-D', 'warnings']),
     ...testCommands(defaultTests(plan)),
