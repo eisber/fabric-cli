@@ -53,6 +53,10 @@ CLA, required checks, restricted-area review, and authority boundaries still app
 - The shared integration branch is `feature/rust`. Use the
   exact agreed checkpoint, not an assumed latest version. Lane sessions develop
   on their own branches and target that trunk directly with small changes.
+  Exception: CLI v2 lanes target
+  `dev/marcozo/fab-cli-v2-integration-20261104` in `eisber/fabric-cli` and follow
+  the [v2 central merge pipeline](docs/v2-delivery.md#central-merge-pipeline).
+  V1 work remains on its existing trunk.
   Do not add permanent family-merger chains. Only the assigned integration owner
   advances the shared branch until separately authorized automation takes over.
   Pushes, PRs, releases, and live operations require their own authorization.

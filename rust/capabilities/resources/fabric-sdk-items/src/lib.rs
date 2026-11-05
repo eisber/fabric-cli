@@ -9,6 +9,7 @@
 
 mod collections;
 mod items;
+pub mod ml_models;
 pub mod models;
 pub mod mutations;
 
