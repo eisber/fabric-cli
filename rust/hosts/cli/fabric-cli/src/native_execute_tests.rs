@@ -14,7 +14,11 @@ use azure_core::{
 use fabric_sdk::{Audience, CredentialSelection, EndpointBinding, RequestContext, ServiceOrigin};
 use fabric_sdk_http::ExecutionOptions;
 use fabric_sdk_transport::TokioTimer;
-use std::{collections::VecDeque, sync::Mutex, time::Duration};
+use std::{
+    collections::VecDeque,
+    sync::{Mutex, mpsc},
+    time::Duration,
+};
 
 const TARGET: &str = "/11111111-1111-1111-1111-111111111111.Workspace/22222222-2222-2222-2222-222222222222.Dataflow/queries/Orders";
 const OPERATION: &str = "33333333-3333-3333-3333-333333333333";
@@ -87,6 +91,28 @@ fn result() -> (StatusCode, Headers, Vec<u8>) {
     let mut headers = Headers::new();
     headers.insert("content-type", "application/vnd.apache.arrow.stream");
     (StatusCode::Ok, headers, body)
+}
+
+fn accepted_wire() -> Arc<Wire> {
+    let mut headers = Headers::new();
+    headers.insert("x-ms-operation-id", OPERATION);
+    headers.insert(
+        "location",
+        format!("https://msitapi.fabric.microsoft.com/v1/operations/{OPERATION}"),
+    );
+    headers.insert("retry-after", "0");
+    Arc::new(Wire {
+        replies: Mutex::new(VecDeque::from([
+            (StatusCode::Accepted, headers, Vec::new()),
+            (
+                StatusCode::Ok,
+                Headers::new(),
+                br#"{"status":"Succeeded"}"#.to_vec(),
+            ),
+            result(),
+        ])),
+        requests: Mutex::new(Vec::new()),
+    })
 }
 
 async fn invoke(wire: Arc<Wire>, timeout: Duration) -> get::Delivery {
@@ -178,25 +204,7 @@ impl Write for BrokenOutput {
 
 #[tokio::test]
 async fn output_failure_retains_evidence_and_never_resubmits_query() {
-    let mut accepted_headers = Headers::new();
-    accepted_headers.insert("x-ms-operation-id", OPERATION);
-    accepted_headers.insert(
-        "location",
-        format!("https://msitapi.fabric.microsoft.com/v1/operations/{OPERATION}"),
-    );
-    accepted_headers.insert("retry-after", "0");
-    let wire = Arc::new(Wire {
-        replies: Mutex::new(VecDeque::from([
-            (StatusCode::Accepted, accepted_headers, Vec::new()),
-            (
-                StatusCode::Ok,
-                Headers::new(),
-                br#"{"status":"Succeeded"}"#.to_vec(),
-            ),
-            result(),
-        ])),
-        requests: Mutex::new(Vec::new()),
-    });
+    let wire = accepted_wire();
     let delivery = invoke(wire.clone(), Duration::from_secs(30)).await;
     let error = delivery
         .write_to(&mut BrokenOutput, &mut Vec::new())
@@ -270,4 +278,378 @@ fn native_unknown_metadata_evidence_is_retained_on_stderr_not_data_stdout() {
         diagnostic["metadataEvidence"][0]["value"],
         "{\"message\":\"synthetic failure\"}"
     );
+}
+
+struct Release(Option<mpsc::Sender<()>>);
+
+impl Release {
+    fn release(mut self) {
+        if let Some(sender) = self.0.take() {
+            let _ = sender.send(());
+        }
+    }
+}
+
+impl Drop for Release {
+    fn drop(&mut self) {
+        if let Some(sender) = self.0.take() {
+            let _ = sender.send(());
+        }
+    }
+}
+
+struct SilentLockedPrompt<'a> {
+    _lock: io::StderrLock<'a>,
+}
+
+impl Write for SilentLockedPrompt<'_> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+struct BlockedInput {
+    entered: Option<mpsc::Sender<()>>,
+    release: Option<mpsc::Receiver<()>>,
+    bytes: io::Cursor<Vec<u8>>,
+}
+
+impl io::Read for BlockedInput {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        let count = {
+            let input = io::BufRead::fill_buf(self)?;
+            let count = input.len().min(bytes.len());
+            bytes[..count].copy_from_slice(&input[..count]);
+            count
+        };
+        io::BufRead::consume(self, count);
+        Ok(count)
+    }
+}
+
+impl io::BufRead for BlockedInput {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        if let Some(receiver) = self.release.take() {
+            if let Some(sender) = self.entered.take() {
+                let _ = sender.send(());
+            }
+            receiver
+                .recv_timeout(Duration::from_secs(30))
+                .map_err(io::Error::other)?;
+        }
+        io::BufRead::fill_buf(&mut self.bytes)
+    }
+
+    fn consume(&mut self, count: usize) {
+        io::BufRead::consume(&mut self.bytes, count);
+    }
+}
+
+#[test]
+fn abandoned_approval_releases_stderr_before_input_and_after_runtime_shutdown() {
+    let (entered, started) = mpsc::channel();
+    let (release, gate) = mpsc::channel();
+    let release = Release(Some(release));
+    let (finished, completion) = mpsc::channel();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    let worker = runtime.spawn_blocking(move || {
+        let mut input = BlockedInput {
+            entered: Some(entered),
+            release: Some(gate),
+            bytes: io::Cursor::new(b"no\n".to_vec()),
+        };
+        let stderr = io::stderr();
+        let answer = read_approval_confirmation(
+            &mut input,
+            SilentLockedPrompt {
+                _lock: stderr.lock(),
+            },
+            "offline approval",
+        );
+        let _ = finished.send(());
+        answer
+    });
+    let entered = started.recv_timeout(Duration::from_secs(5)).is_ok();
+    let result = runtime.block_on(before_submission(
+        async {
+            worker
+                .await
+                .map_err(|_| failure("input_failed", "Synthetic worker failed.", 1))?
+                .map_err(|_| failure("input_failed", "Synthetic input failed.", 1))
+        },
+        Instant::now() + Duration::from_millis(25),
+    ));
+    let result = super::super::finish_runtime(runtime, result);
+    let (observed, observer) = mpsc::channel();
+    let observer_thread = std::thread::spawn(move || {
+        let stderr = io::stderr();
+        let _lock = stderr.lock();
+        let _ = observed.send(());
+    });
+    let stderr_available = observer.recv_timeout(Duration::from_secs(2)).is_ok();
+    release.release();
+    let worker_finished = completion.recv_timeout(Duration::from_secs(5)).is_ok();
+    observer_thread.join().unwrap();
+    assert!(entered && worker_finished);
+    assert_eq!(result.unwrap_err().0, "timed_out");
+    assert!(
+        stderr_available,
+        "an abandoned approval must not block error reporting"
+    );
+}
+
+struct BlockedWriter {
+    entered: Option<tokio::sync::oneshot::Sender<()>>,
+    release: mpsc::Receiver<()>,
+    finished: Option<mpsc::Sender<()>>,
+    bytes: Arc<Mutex<Vec<u8>>>,
+}
+
+impl Write for BlockedWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        let prefix = bytes.len().min(3);
+        self.bytes
+            .lock()
+            .unwrap()
+            .extend_from_slice(&bytes[..prefix]);
+        if let Some(entered) = self.entered.take() {
+            let _ = entered.send(());
+            self.release
+                .recv_timeout(Duration::from_secs(30))
+                .map_err(io::Error::other)?;
+        }
+        self.bytes
+            .lock()
+            .unwrap()
+            .extend_from_slice(&bytes[prefix..]);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Drop for BlockedWriter {
+    fn drop(&mut self) {
+        if let Some(finished) = self.finished.take() {
+            let _ = finished.send(());
+        }
+    }
+}
+
+struct OutputGate {
+    writer: BlockedWriter,
+    started: tokio::sync::oneshot::Receiver<()>,
+    release: Release,
+    finished: mpsc::Receiver<()>,
+    bytes: Arc<Mutex<Vec<u8>>>,
+}
+
+impl OutputGate {
+    fn new() -> Self {
+        let (entered, started) = tokio::sync::oneshot::channel();
+        let (release, receiver) = mpsc::channel();
+        let (finished, completion) = mpsc::channel();
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        Self {
+            writer: BlockedWriter {
+                entered: Some(entered),
+                release: receiver,
+                finished: Some(finished),
+                bytes: Arc::clone(&bytes),
+            },
+            started,
+            release: Release(Some(release)),
+            finished: completion,
+            bytes,
+        }
+    }
+}
+
+fn assert_abandoned_output(publication: Publication, code: &str, exit: u8) {
+    let Publication::Diagnostic(delivery) = publication else {
+        panic!("blocked output must never be reported complete");
+    };
+    assert_eq!(delivery.outcome, CommandOutcome::Stop(exit));
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    assert_eq!(
+        delivery.write_to(&mut stdout, &mut stderr).unwrap(),
+        CommandOutcome::Stop(exit)
+    );
+    assert!(stdout.is_empty());
+    let diagnostic: serde_json::Value = serde_json::from_slice(&stderr).unwrap();
+    assert_eq!(diagnostic["error"]["code"], code);
+    assert_eq!(diagnostic["operation"]["id"], OPERATION);
+    assert_eq!(diagnostic["operation"]["mutationMayHaveOccurred"], true);
+    assert_eq!(
+        diagnostic["operation"]["remoteCancellationRequested"],
+        false
+    );
+    assert!(
+        diagnostic["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("may be partial")
+    );
+}
+
+#[tokio::test]
+async fn blocked_stdout_deadline_stops_host_with_original_operation_and_partial_evidence() {
+    let wire = accepted_wire();
+    let get::Delivery::Execution(delivery) =
+        invoke(Arc::clone(&wire), Duration::from_secs(30)).await
+    else {
+        panic!("execution delivery");
+    };
+    let OutputGate {
+        writer,
+        started,
+        release,
+        finished,
+        bytes,
+    } = OutputGate::new();
+    let (publication, entered) = tokio::join!(
+        delivery.publish_stdout(
+            writer,
+            Instant::now() + Duration::from_millis(500),
+            std::future::pending(),
+        ),
+        started,
+    );
+    let prefix = bytes.lock().unwrap().clone();
+    release.release();
+    let completed = finished.recv_timeout(Duration::from_secs(5)).is_ok();
+    assert!(entered.is_ok() && completed);
+    assert_eq!(prefix.len(), 3);
+    assert_abandoned_output(publication, "timed_out", 1);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn blocked_stdout_cancellation_stops_shell_instead_of_reusing_stdout() {
+    let wire = accepted_wire();
+    let get::Delivery::Execution(delivery) =
+        invoke(Arc::clone(&wire), Duration::from_secs(30)).await
+    else {
+        panic!("execution delivery");
+    };
+    let OutputGate {
+        writer,
+        started,
+        release,
+        finished,
+        bytes,
+    } = OutputGate::new();
+    let publication = delivery
+        .publish_stdout(
+            writer,
+            Instant::now() + Duration::from_secs(30),
+            async move {
+                started.await.unwrap();
+                failure("cancelled", "Synthetic local cancellation.", 2)
+            },
+        )
+        .await;
+    let prefix = bytes.lock().unwrap().clone();
+    release.release();
+    let completed = finished.recv_timeout(Duration::from_secs(5)).is_ok();
+    assert!(completed);
+    assert_eq!(prefix.len(), 3);
+    assert_abandoned_output(publication, "cancelled", 2);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn expired_output_deadline_never_starts_an_owned_writer() {
+    let wire = accepted_wire();
+    let get::Delivery::Execution(delivery) =
+        invoke(Arc::clone(&wire), Duration::from_secs(30)).await
+    else {
+        panic!("execution delivery");
+    };
+    let OutputGate {
+        writer,
+        mut started,
+        release,
+        finished,
+        bytes,
+    } = OutputGate::new();
+    let publication = delivery
+        .publish_stdout(writer, Instant::now(), std::future::pending())
+        .await;
+    release.release();
+    assert!(finished.recv_timeout(Duration::from_secs(5)).is_ok());
+    assert!(started.try_recv().is_err());
+    assert!(bytes.lock().unwrap().is_empty());
+    assert_abandoned_output(publication, "timed_out", 1);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
+}
+
+struct CapturedOutput {
+    bytes: Arc<Mutex<Vec<u8>>>,
+    flushed: Arc<AtomicU8>,
+    fail_flush: bool,
+}
+
+impl Write for CapturedOutput {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.bytes.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.flushed.store(1, Ordering::SeqCst);
+        if self.fail_flush {
+            Err(io::Error::from(io::ErrorKind::BrokenPipe))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[tokio::test]
+async fn bounded_stdout_requires_a_successful_flush_without_replaying_the_query() {
+    for fail_flush in [false, true] {
+        let wire = accepted_wire();
+        let get::Delivery::Execution(delivery) =
+            invoke(Arc::clone(&wire), Duration::from_secs(30)).await
+        else {
+            panic!("execution delivery");
+        };
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let flushed = Arc::new(AtomicU8::new(0));
+        let publication = delivery
+            .publish_stdout(
+                CapturedOutput {
+                    bytes: Arc::clone(&bytes),
+                    flushed: Arc::clone(&flushed),
+                    fail_flush,
+                },
+                Instant::now() + Duration::from_secs(30),
+                std::future::pending(),
+            )
+            .await;
+        if fail_flush {
+            assert_abandoned_output(publication, "output_failed", 1);
+        } else {
+            assert!(matches!(
+                publication,
+                Publication::Complete(CommandOutcome::Returned(0))
+            ));
+        }
+        assert_eq!(flushed.load(Ordering::SeqCst), 1);
+        let json: serde_json::Value = serde_json::from_slice(&bytes.lock().unwrap()).unwrap();
+        assert!(json.is_object());
+        assert_eq!(wire.requests.lock().unwrap().len(), 3);
+    }
 }

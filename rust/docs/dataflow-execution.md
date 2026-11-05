@@ -76,7 +76,11 @@ Local cancellation and deadline expiration stop observation; they do not issue
 remote cancellation, undo source effects, or replay a query. Diagnostics retain
 the actual operation ID when one was returned and indicate uncertain effects.
 An interrupted OS input/output worker can still finish after local waiting
-stops. Blocking OS writes cannot be rolled back.
+stops. Blocking OS writes cannot be rolled back. The approval prompt releases
+its output writer before waiting for input, so an abandoned input read cannot
+retain the global stderr lock needed to report cancellation or timeout.
+Interrupted preparation or approval stops the host as well, because its input
+worker may still be reading and cannot safely be reused by an interactive shell.
 
 ## Result formats and finite output
 
@@ -111,7 +115,15 @@ execute. Excel output is deferred.
 
 Diagnostics and prompts go to stderr. Data stdout contains only the requested
 serialized result, without navigation notices, receipts or an outer CLI status
-envelope. A successful file publication is quiet. Existing files, directories
+envelope. Stdout writes and flushes run on the existing runtime's blocking
+executor under the remaining total deadline and cancellation signal. The worker
+owns a duplicate OS stdout handle rather than Rust's global buffered stdout
+lock. If waiting stops while output may still be in flight, the result is
+unconfirmed and may be partial; diagnostics retain the actual operation evidence,
+and the batch or interactive host stops without a stdout summary, another command,
+or a query replay. Late bytes may still arrive until the process exits.
+
+A successful file publication is quiet. Existing files, directories
 and symlinks are refused before submission; `create_new` repeats the no-clobber
 check at publication to prevent destination races. Preflight creates, writes
 one byte to and removes a uniquely named `.fab-execute-preflight-*` probe in the

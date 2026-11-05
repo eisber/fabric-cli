@@ -32,6 +32,36 @@ use std::{
 
 struct NativeApproval;
 
+struct ApprovalPrompt<W>(Option<W>);
+
+impl<W: Write> Write for ApprovalPrompt<W> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0
+            .as_mut()
+            .ok_or_else(|| io::Error::other("The approval prompt was already closed"))?
+            .write(bytes)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let Some(mut output) = self.0.take() else {
+            return Ok(());
+        };
+        let result = output.flush();
+        // The shared console helper flushes the prompt before reading. Release
+        // even an injected locked writer before that read can be abandoned.
+        drop(output);
+        result
+    }
+}
+
+fn read_approval_confirmation(
+    input: &mut impl io::BufRead,
+    output: impl Write,
+    question: &str,
+) -> io::Result<bool> {
+    fabric_cli::console::read_confirmation(input, &mut ApprovalPrompt(Some(output)), question)
+}
+
 impl ExecutionApproval for NativeApproval {
     fn approve<'a>(
         &'a mut self,
@@ -46,9 +76,9 @@ impl ExecutionApproval for NativeApproval {
             let question = prepared.approval_question();
             tokio::task::spawn_blocking(move || {
                 if io::stdin().is_terminal() {
-                    return fabric_cli::console::read_confirmation(
+                    return read_approval_confirmation(
                         &mut io::stdin().lock(),
-                        &mut io::stderr().lock(),
+                        io::stderr(),
                         &question,
                     );
                 }
@@ -59,9 +89,9 @@ impl ExecutionApproval for NativeApproval {
                 let console = std::fs::File::open("CONIN$")?;
                 #[cfg(not(windows))]
                 let console = std::fs::File::open("/dev/tty")?;
-                fabric_cli::console::read_confirmation(
+                read_approval_confirmation(
                     &mut io::BufReader::new(console),
-                    &mut io::stderr().lock(),
+                    io::stderr(),
                     &question,
                 )
             })
@@ -138,7 +168,7 @@ pub(super) fn run(command: &ExecuteCommand, state: &mut BatchState) -> io::Resul
                     2,
                 )
             })?;
-            super::execute_delivery(
+            let delivery = super::execute_delivery(
                 NativeCommand::Execution(&approved, deadline),
                 credential,
                 "/",
@@ -148,13 +178,59 @@ pub(super) fn run(command: &ExecuteCommand, state: &mut BatchState) -> io::Resul
                 state,
                 None,
             )
-            .await
+            .await?;
+            let get::Delivery::Execution(delivery) = delivery else {
+                return Err(failure(
+                    "output_failed",
+                    "The native query did not retain its execution delivery.",
+                    1,
+                ));
+            };
+            Ok(delivery.publish_native(deadline).await)
         });
         super::finish_runtime(runtime, result)
     })();
     match result {
-        Ok(delivery) => delivery.write_to(&mut io::stdout().lock(), &mut io::stderr().lock()),
-        Err(error) => super::write_error(error),
+        Ok(Publication::Complete(outcome)) => Ok(outcome),
+        Ok(Publication::Diagnostic(delivery)) => {
+            delivery.write_to(&mut io::sink(), &mut io::stderr())
+        }
+        Err(error) => {
+            let stop = matches!(error.0, "cancelled" | "signal_failed" | "timed_out");
+            let exit = error.2;
+            let outcome = super::write_error(error)?;
+            // A dropped preparation/approval future can still own an input read.
+            Ok(if stop {
+                CommandOutcome::Stop(exit)
+            } else {
+                outcome
+            })
+        }
+    }
+}
+
+fn owned_stdout() -> io::Result<std::fs::File> {
+    // An abandoned write must not hold Rust's global stdout lock: process
+    // cleanup flushes that stream even after a terminal command outcome.
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsHandle;
+        io::stdout()
+            .as_handle()
+            .try_clone_to_owned()
+            .map(std::fs::File::from)
+    }
+    #[cfg(unix)]
+    {
+        use std::os::fd::AsFd;
+        io::stdout()
+            .as_fd()
+            .try_clone_to_owned()
+            .map(std::fs::File::from)
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        Err(io::Error::from(io::ErrorKind::Unsupported))
     }
 }
 
@@ -251,6 +327,11 @@ pub(super) struct Delivery {
     evidence: Option<ExecutionEvidence>,
 }
 
+enum Publication {
+    Complete(CommandOutcome),
+    Diagnostic(Delivery),
+}
+
 #[derive(Debug)]
 struct WriteFailure {
     error: io::Error,
@@ -307,6 +388,117 @@ impl Delivery {
             record.payload.push(b'\n');
         }
         self
+    }
+
+    fn abandoned_output(interruption: Failure, evidence: Option<ExecutionEvidence>) -> Publication {
+        let (code, message, exit) = interruption;
+        let mut delivery = Self::failed(
+            code,
+            &format!(
+                "{message} Result output is unconfirmed and may be partial; an in-flight write may still complete. The query will not be replayed or remotely cancelled. This host must stop rather than reuse stdout."
+            ),
+            evidence,
+            exit,
+        );
+        // Cancelled ordinarily lets the REPL continue, but an abandoned stdout
+        // worker may still be writing. Stop both the batch and the shell.
+        delivery.outcome = CommandOutcome::Stop(exit);
+        Publication::Diagnostic(delivery)
+    }
+
+    async fn publish_native(self, deadline: Instant) -> Publication {
+        if !self
+            .plan
+            .records
+            .iter()
+            .any(|record| record.stream == OutputStream::Stdout)
+        {
+            return if self.plan.records.is_empty() {
+                Publication::Complete(self.outcome)
+            } else {
+                Publication::Diagnostic(self)
+            };
+        }
+        let output = match owned_stdout() {
+            Ok(output) => output,
+            Err(_) => {
+                return Publication::Diagnostic(Self::failed(
+                    "output_failed",
+                    "The query result stdout handle could not be retained; no query was replayed.",
+                    self.evidence,
+                    1,
+                ));
+            }
+        };
+        self.publish_stdout(output, deadline, async {
+            match tokio::signal::ctrl_c().await {
+                Ok(()) => failure("cancelled", "Local result output waiting was cancelled.", 2),
+                Err(_) => failure(
+                    "signal_failed",
+                    "The result output cancellation handler failed.",
+                    1,
+                ),
+            }
+        })
+        .await
+    }
+
+    async fn publish_stdout(
+        self,
+        mut output: impl Write + Send + 'static,
+        deadline: Instant,
+        cancelled: impl Future<Output = Failure>,
+    ) -> Publication {
+        let evidence = self.evidence.clone();
+        if self
+            .plan
+            .records
+            .iter()
+            .any(|record| record.stream != OutputStream::Stdout)
+        {
+            return Publication::Diagnostic(Self::failed(
+                "output_failed",
+                "The query delivery mixed data and diagnostic records; no output was published.",
+                evidence,
+                1,
+            ));
+        }
+        if Instant::now() >= deadline {
+            return Self::abandoned_output(
+                failure(
+                    "timed_out",
+                    "The total deadline elapsed before result output.",
+                    1,
+                ),
+                evidence,
+            );
+        }
+        let worker =
+            tokio::task::spawn_blocking(move || self.write_to(&mut output, &mut io::sink()));
+        tokio::select! {
+            biased;
+            _ = tokio::time::sleep_until(deadline.into()) => Self::abandoned_output(
+                failure("timed_out", "The total deadline elapsed during result output.", 1),
+                evidence,
+            ),
+            interruption = cancelled => Self::abandoned_output(interruption, evidence),
+            result = worker => match result {
+                Ok(Ok(outcome)) => Publication::Complete(outcome),
+                Ok(Err(error)) => Publication::Diagnostic(Self::failed(
+                    "output_failed",
+                    &format!(
+                        "Writing or flushing query output failed ({:?}); data may be partial. The query will not be replayed.",
+                        error.kind()
+                    ),
+                    evidence,
+                    1,
+                )),
+                Err(_) => Self::abandoned_output(
+                    failure("output_failed", "The result output worker did not complete.", 1),
+                    evidence,
+                ),
+            },
+        }
     }
 
     pub(super) fn write_to(
