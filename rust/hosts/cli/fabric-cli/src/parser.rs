@@ -64,6 +64,8 @@ pub struct ReadCommand {
 pub enum Invocation {
     /// Help/version text, written to stdout without configuring a host.
     Display(String),
+    /// Explicit v2 named Dataflow query execution, separate from item jobs.
+    Execute(crate::execute::ExecuteCommand),
     /// Ordered source `-c` strings, parsed individually immediately before dispatch.
     Batch(batch::BatchInvocation),
     /// A command requiring explicitly supplied dependencies.
@@ -135,6 +137,7 @@ pub fn command() -> Command {
         .subcommands(fabric_cli_mutations::frontdoor::resource_subcommands())
         .subcommands(fabric_cli_transfer::transfer_subcommands());
     command
+        .subcommand(crate::execute::command())
         .subcommand(fabric_cli_tables::command())
         .subcommand(jobs::register())
         .subcommand(
@@ -294,6 +297,12 @@ where
             .take()
             .or_else(|| matches.get_one::<String>("output_format").cloned());
         return Ok(invocation);
+    }
+    if name == "execute" {
+        if matches.contains_id("output_format") {
+            return Err(invalid_arguments());
+        }
+        return crate::execute::from_matches(values).map(Invocation::Execute);
     }
     if !matches!(name, "ls" | "get") {
         return family_invocation(&matches);

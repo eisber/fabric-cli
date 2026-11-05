@@ -12,6 +12,7 @@ pub mod auth_commands;
 pub mod console;
 pub mod deploy;
 mod errors;
+pub mod execute;
 #[cfg(feature = "native-host")]
 pub mod families;
 mod folder_reads;

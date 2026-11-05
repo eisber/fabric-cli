@@ -18,6 +18,10 @@ pub(crate) type Failure = (&'static str, String, u8);
 #[path = "native_get.rs"]
 mod get;
 
+#[cfg(any(windows, feature = "headless"))]
+#[path = "native_execute.rs"]
+mod execute;
+
 #[cfg(all(test, feature = "headless"))]
 #[path = "headless_host_tests.rs"]
 mod headless_host_tests;
@@ -50,6 +54,11 @@ use terminal_ui::NativeMutationUi;
     )
 )]
 enum NativeCommand<'a> {
+    #[cfg(any(windows, feature = "headless"))]
+    Execution(
+        &'a fabric_cli::execute::host::ApprovedExecution,
+        std::time::Instant,
+    ),
     Read(&'a ReadCommand),
     Job(&'a JobReadCommand),
     JobExecution(&'a JobRunCommand),
@@ -382,6 +391,23 @@ pub(crate) fn run(command: &ReadCommand, state: &mut BatchState) -> io::Result<C
     run_command(NativeCommand::Read(command), state)
 }
 
+pub(crate) fn run_execute(
+    command: &fabric_cli::execute::ExecuteCommand,
+    state: &mut BatchState,
+) -> io::Result<CommandOutcome> {
+    #[cfg(any(windows, feature = "headless"))]
+    return execute::run(command, state);
+    #[cfg(not(any(windows, feature = "headless")))]
+    {
+        let _ = (command, state);
+        write_error(failure(
+            "unsupported",
+            "The native execution host is unavailable.",
+            1,
+        ))
+    }
+}
+
 pub(crate) fn run_job(
     command: &JobReadCommand,
     state: &mut BatchState,
@@ -703,6 +729,7 @@ fn run_selected(
         selected_read_options(command)?;
     }
     let skill = match command {
+        NativeCommand::Execution(..) => None,
         NativeCommand::Read(_) => None,
         NativeCommand::Job(command) => command.skill.as_deref(),
         NativeCommand::JobExecution(command) => command.skill.as_deref(),
@@ -828,7 +855,12 @@ async fn execute_delivery(
 
     let options = TransportOptions {
         connect_timeout: Duration::from_secs(10),
-        read_timeout: Duration::from_secs(30),
+        read_timeout: Duration::from_secs(if matches!(command, NativeCommand::Execution(..)) {
+            // Execute Query has a service-side 90-second evaluation window.
+            95
+        } else {
+            30
+        }),
         write_timeout: Duration::from_secs(30),
         pool_idle_timeout: Duration::from_secs(60),
         max_idle_per_host: NonZeroUsize::new(4).expect("nonzero constant"),
@@ -929,7 +961,12 @@ async fn execute_injected_delivery(
         CredentialSelection::new(credential.account(), credential.tenant(), Audience::Fabric)
             .map_err(|_| failure("invalid_configuration", "Invalid credential selection.", 2))?;
     let broker_identity = credential.is_broker();
-    let credential = credential.connect(identity_client).await?;
+    let credential = match command {
+        NativeCommand::Execution(_, deadline) => {
+            execute::before_submission(credential.connect(identity_client), deadline).await?
+        }
+        _ => credential.connect(identity_client).await?,
+    };
     let sdk = Client::with_context(RequestContext::with_endpoint(
         credential,
         selection,
@@ -968,6 +1005,9 @@ async fn execute_authenticated_injected(
     broker_identity: bool,
     get_inputs: Option<get::Inputs<'_>>,
 ) -> Result<get::Delivery, Failure> {
+    if let NativeCommand::Execution(approved, deadline) = command {
+        return execute::dispatch(approved, deadline, &sdk, executor).await;
+    }
     use fabric_cli::session::ReadSession;
     use std::sync::Arc;
     let now = azure_core::time::OffsetDateTime::now_utc();
@@ -1001,6 +1041,7 @@ async fn execute_authenticated_injected(
         config: settings.reads,
     };
     let result = match command {
+        NativeCommand::Execution(..) => unreachable!("execution uses its typed result host"),
         NativeCommand::Read(command) => {
             let command = settings
                 .read_command(command)

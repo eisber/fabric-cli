@@ -143,6 +143,10 @@ fn dispatch(
         #[cfg(feature = "native-host")]
         Ok(Invocation::Read(command)) => return native_read::run(&command, local_state),
         #[cfg(feature = "native-host")]
+        Ok(Invocation::Execute(command)) => {
+            return native_read::run_execute(&command, local_state);
+        }
+        #[cfg(feature = "native-host")]
         Ok(Invocation::JobRead(command)) => return native_read::run_job(&command, local_state),
         #[cfg(feature = "native-host")]
         Ok(Invocation::JobRun(command)) => {
@@ -155,6 +159,7 @@ fn dispatch(
         #[cfg(not(feature = "native-host"))]
         Ok(
             Invocation::Read(_)
+            | Invocation::Execute(_)
             | Invocation::JobRead(_)
             | Invocation::JobRun(_)
             | Invocation::JobMutation(_),

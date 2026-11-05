@@ -151,6 +151,8 @@ impl GetOutputClock for NativeClock {
 }
 
 pub(super) enum Delivery {
+    #[cfg(any(windows, feature = "headless"))]
+    Execution(super::execute::Delivery),
     Plan {
         plan: TextPlan,
         outcome: CommandOutcome,
@@ -163,6 +165,11 @@ pub(super) enum Delivery {
 }
 
 impl Delivery {
+    #[cfg(any(windows, feature = "headless"))]
+    pub(super) fn execution(delivery: super::execute::Delivery) -> Self {
+        Self::Execution(delivery)
+    }
+
     pub(super) fn plan(plan: TextPlan, outcome: CommandOutcome) -> Self {
         Self::Plan { plan, outcome }
     }
@@ -178,6 +185,10 @@ impl Delivery {
 
     pub(super) fn prepend(&mut self, mut notice: TextPlan) {
         match self {
+            #[cfg(any(windows, feature = "headless"))]
+            Self::Execution(_) => {
+                // Root execute has no navigation notices or product envelopes.
+            }
             Self::Plan { plan, .. } => {
                 notice.records.append(&mut plan.records);
                 plan.records = notice.records;
@@ -195,6 +206,8 @@ impl Delivery {
     #[cfg(test)]
     pub(super) fn into_plan_parts(self) -> (TextPlan, CommandOutcome) {
         match self {
+            #[cfg(any(windows, feature = "headless"))]
+            Self::Execution(_) => panic!("execution tests retain the owned delivery"),
             Self::Plan { plan, outcome } => (plan, outcome),
             Self::Get { .. } => panic!("GET tests must retain the owned native delivery"),
         }
@@ -206,6 +219,8 @@ impl Delivery {
         stderr: &mut impl Write,
     ) -> io::Result<CommandOutcome> {
         match self {
+            #[cfg(any(windows, feature = "headless"))]
+            Self::Execution(delivery) => delivery.write_to(stdout, stderr),
             Self::Plan { plan, outcome } => {
                 plan.write_to(stdout, stderr)?;
                 Ok(outcome)
