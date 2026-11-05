@@ -8,7 +8,52 @@
 
 use azure_core::http::Url;
 use serde_json::Value;
-use std::{collections::BTreeMap, fmt, future::Future, pin::Pin};
+use std::{
+    collections::BTreeMap,
+    fmt,
+    future::Future,
+    pin::Pin,
+    time::{Duration, Instant},
+};
+
+/// A caller-runtime future; dropping it stops local observation only.
+pub type NativeFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// One absolute local budget shared by opening, consuming and resuming a stream.
+///
+/// Clones retain the original start time. Caller pauses consume the same budget.
+#[derive(Clone, Debug)]
+pub struct NativeDeadline {
+    started: Instant,
+    timeout: Duration,
+}
+
+impl NativeDeadline {
+    /// Begin a finite positive observation budget, at most 24 hours.
+    ///
+    /// # Errors
+    /// Rejects zero or excessive durations without starting any operation.
+    pub fn new(timeout: Duration) -> Result<Self, NativeError> {
+        if timeout.is_zero() || timeout > Duration::from_secs(24 * 60 * 60) {
+            return Err(NativeError::InvalidInput);
+        }
+        Ok(Self {
+            started: Instant::now(),
+            timeout,
+        })
+    }
+
+    /// Return the remaining original budget, never a restarted watchdog.
+    ///
+    /// # Errors
+    /// Returns [`NativeError::TimedOut`] once the local budget expires.
+    pub fn remaining(&self) -> Result<Duration, NativeError> {
+        self.timeout
+            .checked_sub(self.started.elapsed())
+            .filter(|remaining| !remaining.is_zero())
+            .ok_or(NativeError::TimedOut)
+    }
+}
 
 /// A runtime HTTP method, independent of any CLI spelling.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -416,6 +461,163 @@ pub trait NativeExecutor: Send + Sync {
         request: &'a NativeRequest,
         max_response_bytes: usize,
     ) -> Pin<Box<dyn Future<Output = Result<NativeResponse, NativeError>> + Send + 'a>>;
+}
+
+/// Finite transport-side streaming bounds, independent of encoded Arrow frames.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeStreamLimits {
+    /// Largest fragment returned by a body read.
+    pub max_fragment_bytes: usize,
+    /// Total HTTP body bytes, including protocol framing, in this response.
+    pub max_body_bytes: u64,
+}
+
+impl NativeStreamLimits {
+    /// Validate bounds before credentials, networking or body allocation.
+    ///
+    /// # Errors
+    /// Rejects zero bounds or a fragment larger than the total budget.
+    pub fn validate(self) -> Result<Self, NativeError> {
+        if self.max_fragment_bytes == 0
+            || self.max_body_bytes == 0
+            || u64::try_from(self.max_fragment_bytes).map_err(|_| NativeError::InvalidInput)?
+                > self.max_body_bytes
+        {
+            return Err(NativeError::InvalidInput);
+        }
+        Ok(self)
+    }
+}
+
+/// Pull-based HTTP body owned by a streaming operation.
+///
+/// A concrete host must enforce the supplied absolute deadline while awaiting
+/// I/O, not merely check it after a stalled read. Dropping this body releases
+/// local response/socket resources and never cancels remote work.
+pub trait NativeStreamBody: Send {
+    /// Pull one bounded nonempty fragment, or `None` only at actual HTTP EOF.
+    ///
+    /// Implementations must not prebuffer the response or read ahead when the
+    /// consumer is paused. Empty fragments and budget violations are errors.
+    fn read<'a>(
+        &'a mut self,
+        max_bytes: usize,
+        deadline: &'a NativeDeadline,
+    ) -> NativeFuture<'a, Result<Option<Vec<u8>>, NativeError>>;
+}
+
+/// Actual streaming HTTP response; no payload or headers are printed by Debug.
+pub struct NativeStreamResponse {
+    /// Provider HTTP status, not workload completion.
+    pub status: u16,
+    /// Provider response media type, without inventing a default.
+    pub content_type: Option<String>,
+    /// Bounded actual metadata; values can be sensitive.
+    pub headers: BTreeMap<String, String>,
+    /// Caller-runtime response stream, disposed on drop.
+    pub body: Box<dyn NativeStreamBody>,
+}
+
+impl fmt::Debug for NativeStreamResponse {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("NativeStreamResponse")
+            .field("status", &self.status)
+            .field("headers", &"<redacted>")
+            .field("body", &"<stream>")
+            .finish()
+    }
+}
+
+/// Native streaming execution over the host's existing authenticated HTTP stack.
+///
+/// Opening is single-dispatch, including POST inline submission. Resume belongs
+/// to the owner-bound operation, not an automatic HTTP mutation retry. The host
+/// enforces response bounds, no redirects and the same absolute deadline across
+/// credential acquisition, response headers and subsequent body reads.
+pub trait NativeStreamExecutor: Send + Sync {
+    /// Open one response without collecting its body.
+    fn open<'a>(
+        &'a self,
+        request: &'a NativeRequest,
+        limits: NativeStreamLimits,
+        deadline: &'a NativeDeadline,
+    ) -> NativeFuture<'a, Result<NativeStreamResponse, NativeError>>;
+}
+
+#[cfg(test)]
+mod stream_contract_tests {
+    #![deny(unnameable_test_items)]
+
+    use super::*;
+
+    #[test]
+    fn absolute_deadlines_are_finite_shared_and_not_restarted() {
+        assert!(NativeDeadline::new(Duration::ZERO).is_err());
+        assert!(NativeDeadline::new(Duration::from_secs(86_401)).is_err());
+        let deadline = NativeDeadline::new(Duration::from_secs(30)).unwrap();
+        let before = deadline.remaining().unwrap();
+        assert!(deadline.clone().remaining().unwrap() <= before);
+        let expired = NativeDeadline {
+            started: Instant::now().checked_sub(Duration::from_secs(2)).unwrap(),
+            timeout: Duration::from_secs(1),
+        };
+        assert_eq!(expired.remaining(), Err(NativeError::TimedOut));
+    }
+
+    #[test]
+    fn fragment_and_total_limits_are_checked_before_opening() {
+        for limits in [
+            NativeStreamLimits {
+                max_fragment_bytes: 0,
+                max_body_bytes: 1,
+            },
+            NativeStreamLimits {
+                max_fragment_bytes: 1,
+                max_body_bytes: 0,
+            },
+            NativeStreamLimits {
+                max_fragment_bytes: 2,
+                max_body_bytes: 1,
+            },
+        ] {
+            assert_eq!(limits.validate(), Err(NativeError::InvalidInput));
+        }
+        assert!(
+            NativeStreamLimits {
+                max_fragment_bytes: 1024,
+                max_body_bytes: 2048
+            }
+            .validate()
+            .is_ok()
+        );
+    }
+
+    struct ClosedBody;
+
+    impl NativeStreamBody for ClosedBody {
+        fn read<'a>(
+            &'a mut self,
+            _: usize,
+            _: &'a NativeDeadline,
+        ) -> NativeFuture<'a, Result<Option<Vec<u8>>, NativeError>> {
+            Box::pin(async { Ok(None) })
+        }
+    }
+
+    #[test]
+    fn stream_debug_does_not_expose_provider_metadata() {
+        let response = NativeStreamResponse {
+            status: 200,
+            content_type: Some("private-media".into()),
+            headers: BTreeMap::from([("private-header".into(), "private-value".into())]),
+            body: Box::new(ClosedBody),
+        };
+        let diagnostic = format!("{response:?}");
+        for private in ["private-media", "private-header", "private-value"] {
+            assert!(!diagnostic.contains(private));
+        }
+    }
 }
 
 #[cfg(test)]

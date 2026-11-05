@@ -102,6 +102,18 @@ decompression, transcoding or a claim that the deployment supports them.
 
 ## Pull/drain and allocation boundaries
 
+The shared runtime also defines `NativeStreamExecutor`, `NativeStreamResponse`
+and pull-based `NativeStreamBody` contracts. `NativeStreamLimits` independently
+bounds transport fragments and total HTTP body bytes. `NativeDeadline` is one
+finite absolute observation budget: clones, consumer pauses and reconnects do
+not restart it. A host must enforce it during credential acquisition, header
+receipt and stalled body reads, not only after those futures return.
+
+These contracts alone do not install a streaming HTTP adapter or connect the
+Arrow decoder to a live response. Opening is single-dispatch, and dropping a
+body disposes local observation without cancelling remote work. HTTP EOF,
+framed-v2 completion, IPC validity and sink completion remain separate gates.
+
 `FramedDecoder::push(fragment)` accepts arbitrary HTTP fragmentation, returns
 the consumed prefix length and stops at **one complete chunk**. If that chunk
 is pending, another push consumes zero. Retain the unconsumed suffix; call
