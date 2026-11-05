@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Public facade contracts for SQL metadata and native definition consumers.
+
 #![deny(unnameable_test_items)]
 
 use fabric_sdk::{sql_databases, sql_definitions};
