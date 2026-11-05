@@ -19,7 +19,9 @@ fab-cli cli upgrade [--target-version SEMVER]
 ```
 
 `fab-cli --version` reports the installed build without configuration or provider
-access. There is no `cli rebind`, `open`, `version`, `completion`, or `serve`
+access; the same flag is accepted at subcommand levels before required inputs.
+Its spelling inside a value or after `--` remains data. There is no `cli rebind`,
+`open`, `version`, `completion`, or `serve`
 operation and no `client`, `local`, or `tool` group alias. Completion and MCP
 deployment are not commands in this head. Unsupported resource roots fail;
 this package does not emulate other v2 owners' pending resource operations.

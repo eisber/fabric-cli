@@ -154,6 +154,7 @@ fn authentication(name: &'static str, about: &'static str) -> Command {
 pub fn command() -> Command {
     Command::new("fab-cli")
         .version(env!("CARGO_PKG_VERSION"))
+        .propagate_version(true)
         .about("Additive Fabric CLI v2 local-host operations")
         .arg_required_else_help(true)
         .subcommand_required(true)
@@ -288,7 +289,13 @@ where
                 ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
             ) =>
         {
-            return Ok(Parsed::Display(error.to_string()));
+            return Ok(Parsed::Display(
+                if error.kind() == ErrorKind::DisplayVersion {
+                    format!("fab-cli {}\n", env!("CARGO_PKG_VERSION"))
+                } else {
+                    error.to_string()
+                },
+            ));
         }
         Err(error) => return Err(error),
     };

@@ -138,6 +138,44 @@ fn help_and_global_version_bypass_configuration_and_native_hosts() {
 }
 
 #[test]
+fn global_version_at_each_level_bypasses_missing_inputs_and_invalid_configuration() {
+    for args in [
+        vec!["cli", "--version"],
+        vec!["cli", "login", "--version"],
+        vec!["cli", "show", "--version"],
+        vec!["--config-root", "relative", "cli", "configure", "--version"],
+    ] {
+        let output = binary(&args);
+        assert!(output.status.success(), "{args:?}");
+        assert!(output.stderr.is_empty());
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            format!("fab-cli {}\n", env!("CARGO_PKG_VERSION"))
+        );
+    }
+}
+
+#[test]
+fn version_spelling_in_values_or_after_a_delimiter_is_not_a_global_flag() {
+    let report = binary(&[
+        "cli",
+        "report",
+        "/.support/feedback",
+        "--destination",
+        "ideas",
+        "--title",
+        "draft",
+        "--message=--version",
+    ]);
+    assert!(report.status.success());
+    assert_eq!(json(&report)["status"], "prepared");
+    let target = binary(&["cli", "show", "--uri-only", "--", "--version"]);
+    assert!(!target.status.success());
+    assert!(target.stdout.is_empty());
+    assert_eq!(json(&target)["effects"], serde_json::json!([]));
+}
+
+#[test]
 fn parser_rejects_credential_flags_without_echoing_supplied_values() {
     let secret = "do-not-echo-this-value";
     let output = binary(&["cli", "login", "/.auth", "--password", secret]);
