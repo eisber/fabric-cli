@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Public SQLDatabase metadata request and response contracts.
+
 #![deny(unnameable_test_items)]
 
 use fabric_sdk_sql_database::{

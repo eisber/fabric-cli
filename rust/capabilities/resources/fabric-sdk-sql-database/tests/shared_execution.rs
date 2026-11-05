@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! SQLDatabase metadata consumers using the shared operation engine.
+
 #![deny(unnameable_test_items)]
 
 use async_trait::async_trait;
