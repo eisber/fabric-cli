@@ -886,7 +886,7 @@ const OUTPUT_LIMITS: IpcOutputLimits = IpcOutputLimits {
 
 fn output_schema(batch: &RecordBatch) -> NativeIpcSchema {
     NativeIpcDecoder::new()
-        .inspect_schema(&chunk(write(&[batch.clone()], None)), LIMITS)
+        .inspect_schema(&chunk(write(std::slice::from_ref(batch), None)), LIMITS)
         .unwrap()
 }
 
@@ -1004,12 +1004,12 @@ fn framed_independent_chunks_become_one_standard_stream_with_dictionary_replacem
     let mut columns = first.columns().to_vec();
     columns[4] = Arc::new(dictionary);
     let second = RecordBatch::try_new(first.schema(), columns).unwrap();
-    let first_chunk = chunk(write(&[first.clone()], None));
+    let first_chunk = chunk(write(std::slice::from_ref(&first), None));
     let second_chunk = RawChunk::new(
         1,
         0,
         "part-00001-000".into(),
-        write(&[second.clone()], None),
+        write(std::slice::from_ref(&second), None),
         StreamLimits::default(),
     )
     .unwrap();
@@ -1064,7 +1064,7 @@ fn framed_independent_chunks_become_one_standard_stream_with_dictionary_replacem
 #[test]
 fn output_accepts_local_dictionary_id_remapping_and_keeps_ordering() {
     let expected = dictionary_ordering_fixture(&[false, true], false);
-    let first = write(&[expected.clone()], None);
+    let first = write(std::slice::from_ref(&expected), None);
     let second = remap_second_dictionary(&first);
     let schema = NativeIpcDecoder::new()
         .inspect_schema(&chunk(first.clone()), LIMITS)
@@ -1104,7 +1104,7 @@ fn output_empty_results_require_and_preserve_known_schema() {
     }
     let batch = primitive().slice(0, 0);
     let schema = output_schema(&batch);
-    let (bytes, completion) = encoded_output(&[batch.clone()]);
+    let (bytes, completion) = encoded_output(std::slice::from_ref(&batch));
     assert_eq!(completion.rows, 0);
     assert_eq!(completion.batches, 1);
     assert_single_output(&bytes, &schema, &[batch]);
@@ -1221,7 +1221,7 @@ fn output_requires_positive_limits_before_schema_write() {
 fn output_byte_limit_covers_schema_batch_and_eos_before_exceeding_cap() {
     let batch = primitive();
     let schema = output_schema(&batch);
-    let (expected, _) = encoded_output(&[batch.clone()]);
+    let (expected, _) = encoded_output(std::slice::from_ref(&batch));
     let mut exact = Vec::new();
     let mut output = NativeIpcOutput::new(
         &mut exact,
@@ -1265,7 +1265,7 @@ fn output_byte_limit_covers_schema_batch_and_eos_before_exceeding_cap() {
     output.write_batch(batch).unwrap();
     assert_eq!(output.finish(), Err(ArrowError::Limit));
     let failed_bytes = output.bytes_written();
-    assert!(failed_bytes <= expected.len() - 1);
+    assert!(failed_bytes < expected.len());
     assert_eq!(output.finish(), Err(ArrowError::InvalidState));
     assert_eq!(output.bytes_written(), failed_bytes);
     drop(output);
