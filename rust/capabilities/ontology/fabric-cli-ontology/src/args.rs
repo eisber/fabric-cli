@@ -103,10 +103,19 @@ pub fn operation_command(verb: OntologyVerb) -> Command {
         .disable_help_flag(true)
         .arg(Arg::new("path").required(true))
         .arg(Arg::new("format").long("format").value_parser(["json"]))
-        .arg(Arg::new("output").long("output").short('o').value_parser(value_parser!(PathBuf)))
+        .arg(
+            Arg::new("output")
+                .long("output")
+                .short('o')
+                .value_parser(value_parser!(PathBuf)),
+        )
         .arg(Arg::new("profile").long("profile"))
         .arg(Arg::new("project").long("project").short('q'))
-        .arg(Arg::new("timeout").long("timeout").value_parser(parse_duration));
+        .arg(
+            Arg::new("timeout")
+                .long("timeout")
+                .value_parser(parse_duration),
+        );
 
     if matches!(verb, OntologyVerb::Create | OntologyVerb::Update) {
         command = command.arg(
@@ -117,23 +126,47 @@ pub fn operation_command(verb: OntologyVerb) -> Command {
         );
     }
     if verb == OntologyVerb::Update {
-        command = command.arg(Arg::new("mode").long("mode").required(true).value_parser(["patch", "replace"]));
+        command = command.arg(
+            Arg::new("mode")
+                .long("mode")
+                .required(true)
+                .value_parser(["patch", "replace"]),
+        );
     }
-    if matches!(verb, OntologyVerb::Get | OntologyVerb::Create | OntologyVerb::Update | OntologyVerb::Delete) {
+    if matches!(
+        verb,
+        OntologyVerb::Get | OntologyVerb::Create | OntologyVerb::Update | OntologyVerb::Delete
+    ) {
         command = command.arg(Arg::new("wait").long("wait").action(ArgAction::SetTrue));
     }
     if matches!(verb, OntologyVerb::Get | OntologyVerb::List) {
-        command = command.arg(Arg::new("max-bytes").long("max-bytes").value_parser(value_parser!(NonZeroUsize)));
+        command = command.arg(
+            Arg::new("max-bytes")
+                .long("max-bytes")
+                .value_parser(value_parser!(NonZeroUsize)),
+        );
     }
     if verb == OntologyVerb::List {
         command = command
-            .arg(Arg::new("limit").long("limit").value_parser(value_parser!(NonZeroUsize)))
+            .arg(
+                Arg::new("limit")
+                    .long("limit")
+                    .value_parser(value_parser!(NonZeroUsize)),
+            )
             .arg(Arg::new("continuation").long("continuation"));
     }
     if verb == OntologyVerb::Delete {
         command = command
-            .arg(Arg::new("permanent").long("permanent").action(ArgAction::SetTrue))
-            .arg(Arg::new("recursive").long("recursive").action(ArgAction::SetTrue));
+            .arg(
+                Arg::new("permanent")
+                    .long("permanent")
+                    .action(ArgAction::SetTrue),
+            )
+            .arg(
+                Arg::new("recursive")
+                    .long("recursive")
+                    .action(ArgAction::SetTrue),
+            );
     }
     if matches!(verb, OntologyVerb::Update | OntologyVerb::Delete) {
         command = command.arg(Arg::new("if-match").long("if-match"));
@@ -144,7 +177,10 @@ pub fn operation_command(verb: OntologyVerb) -> Command {
 /// Builds only the Ontology group, sharing each common operation schema.
 pub fn ontology_command() -> Command {
     OntologyVerb::ALL.into_iter().fold(
-        Command::new("ontology").disable_help_flag(true).disable_help_subcommand(true).subcommand_required(true),
+        Command::new("ontology")
+            .disable_help_flag(true)
+            .disable_help_subcommand(true)
+            .subcommand_required(true),
         |command, verb| command.subcommand(operation_command(verb)),
     )
 }
@@ -191,19 +227,29 @@ fn from_matches(
     if matches!(verb, OntologyVerb::Link | OntologyVerb::Move) {
         return Err(ArgumentError::UnresolvedCommandContract);
     }
-    let path = matches.get_one::<String>("path").ok_or(ArgumentError::InvalidSyntax)?;
+    let path = matches
+        .get_one::<String>("path")
+        .ok_or(ArgumentError::InvalidSyntax)?;
     if path.trim().is_empty() {
         return Err(ArgumentError::EmptyPath);
     }
     let input_path = optional::<PathBuf>(matches, "input");
     let output_path = optional::<PathBuf>(matches, "output");
-    if input_path.as_ref().is_some_and(|path| path.as_os_str().is_empty())
-        || output_path.as_ref().is_some_and(|path| path.as_os_str().is_empty())
+    if input_path
+        .as_ref()
+        .is_some_and(|path| path.as_os_str().is_empty())
+        || output_path
+            .as_ref()
+            .is_some_and(|path| path.as_os_str().is_empty())
     {
         return Err(ArgumentError::InvalidSyntax);
     }
     let input = input_path.map(|path| {
-        if path.as_os_str() == "-" { InputSource::Stdin } else { InputSource::File(path) }
+        if path.as_os_str() == "-" {
+            InputSource::Stdin
+        } else {
+            InputSource::File(path)
+        }
     });
     let output = match output_path {
         Some(path) if path.as_os_str() != "-" => OutputDestination::File(path),

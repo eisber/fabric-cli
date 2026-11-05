@@ -13,8 +13,14 @@ use std::{path::PathBuf, time::Duration};
 #[test]
 fn selected_aliases_are_exact_and_use_common_names() {
     let command = ontology_command();
-    let names: Vec<_> = command.get_subcommands().map(|command| command.get_name()).collect();
-    assert_eq!(names, ["create", "delete", "get", "link", "list", "move", "update"]);
+    let names: Vec<_> = command
+        .get_subcommands()
+        .map(|command| command.get_name())
+        .collect();
+    assert_eq!(
+        names,
+        ["create", "delete", "get", "link", "list", "move", "update"]
+    );
     for verb in Verb::ALL {
         assert!(bindings().iter().any(|binding| binding.verb == verb));
         assert!(!verb.common_name().contains("ontology"));
@@ -31,7 +37,10 @@ fn common_and_facade_arguments_are_identical_for_each_selected_alias() {
         (Verb::Delete, vec!["--permanent", "--recursive"]),
         (Verb::Get, vec!["--max-bytes", "1048576", "--wait"]),
         (Verb::Link, vec![]),
-        (Verb::List, vec!["--limit", "100", "--continuation", "opaque"]),
+        (
+            Verb::List,
+            vec!["--limit", "100", "--continuation", "opaque"],
+        ),
         (Verb::Move, vec![]),
         (Verb::Update, vec!["--input", "-", "--mode", "patch"]),
     ] {
@@ -65,21 +74,51 @@ fn defaults_do_not_silently_adopt_draft_numeric_budgets() {
 #[test]
 fn input_output_and_patch_replace_are_explicit() {
     let args = parse_facade_args([
-        "ontology", "update", "/target/src/definition", "--input", "-",
-        "--mode", "replace", "--output", "receipt.json", "--if-match", "opaque",
-        "--profile", "chosen", "--project", "resource", "--timeout", "5m",
-    ]).unwrap();
+        "ontology",
+        "update",
+        "/target/src/definition",
+        "--input",
+        "-",
+        "--mode",
+        "replace",
+        "--output",
+        "receipt.json",
+        "--if-match",
+        "opaque",
+        "--profile",
+        "chosen",
+        "--project",
+        "resource",
+        "--timeout",
+        "5m",
+    ])
+    .unwrap();
     assert_eq!(args.input, Some(InputSource::Stdin));
     assert_eq!(args.mode, Some(UpdateMode::Replace));
-    assert_eq!(args.output, OutputDestination::File(PathBuf::from("receipt.json")));
+    assert_eq!(
+        args.output,
+        OutputDestination::File(PathBuf::from("receipt.json"))
+    );
     assert_eq!(args.if_match.as_deref(), Some("opaque"));
     assert_eq!(args.profile.as_deref(), Some("chosen"));
     assert_eq!(args.project.as_deref(), Some("resource"));
     assert_eq!(args.timeout, Some(Duration::from_secs(300)));
     let args = parse_common_args(
-        Verb::Update, ["update", "/target", "--input", "patch.json", "--mode", "patch"],
-    ).unwrap();
-    assert_eq!(args.input, Some(InputSource::File(PathBuf::from("patch.json"))));
+        Verb::Update,
+        [
+            "update",
+            "/target",
+            "--input",
+            "patch.json",
+            "--mode",
+            "patch",
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        args.input,
+        Some(InputSource::File(PathBuf::from("patch.json")))
+    );
     assert_eq!(args.mode, Some(UpdateMode::Patch));
 }
 
@@ -107,7 +146,10 @@ fn invalid_or_conflicting_arguments_fail_without_echoing_supplied_values() {
     ] {
         let mut args = vec!["update", "/target"];
         args.extend(options);
-        assert_eq!(parse_common_args(Verb::Update, args), Err(ArgumentError::InvalidSyntax));
+        assert_eq!(
+            parse_common_args(Verb::Update, args),
+            Err(ArgumentError::InvalidSyntax)
+        );
     }
     assert_eq!(
         parse_common_args(Verb::Get, ["get", " \t"]),
@@ -120,7 +162,16 @@ fn duration_and_collection_bounds_are_positive_and_bounded() {
     for value in ["1ms", "1s", "1m", "24h", "86400000ms"] {
         assert!(parse_common_args(Verb::Get, ["get", "/target", "--timeout", value]).is_ok());
     }
-    for value in ["0s", "-1s", "+1s", "1.5s", "1", "25h", "86400001ms", "999999999999999999999h"] {
+    for value in [
+        "0s",
+        "-1s",
+        "+1s",
+        "1.5s",
+        "1",
+        "25h",
+        "86400001ms",
+        "999999999999999999999h",
+    ] {
         assert!(parse_common_args(Verb::Get, ["get", "/target", "--timeout", value]).is_err());
     }
     for value in ["0", "-1", "1.5", "999999999999999999999999"] {
@@ -147,8 +198,15 @@ fn catalog_is_unique_and_keeps_representations_separate() {
     }
     let definition = select_binding(Verb::Update, Target::Definition, "Ontology", Some(2)).unwrap();
     let metadata = select_binding(Verb::Update, Target::Item, "Ontology", Some(2)).unwrap();
-    let public = select_binding(Verb::Update, Target::PublicModelMinimized, "Ontology", Some(2)).unwrap();
-    let internal = select_binding(Verb::Update, Target::NativeModelStored, "Ontology", Some(2)).unwrap();
+    let public = select_binding(
+        Verb::Update,
+        Target::PublicModelMinimized,
+        "Ontology",
+        Some(2),
+    )
+    .unwrap();
+    let internal =
+        select_binding(Verb::Update, Target::NativeModelStored, "Ontology", Some(2)).unwrap();
     assert_eq!(metadata.body, BodyContract::MetadataPatch);
     assert_eq!(definition.body, BodyContract::DefinitionReplace);
     assert_eq!(public.body, BodyContract::PublicModelReplace);
@@ -170,7 +228,12 @@ fn wrong_type_unknown_generation_and_unsupported_facets_are_explicit() {
         );
     }
 
-    for target in [Target::Owl, Target::InternalTmdl, Target::Docs, Target::Context] {
+    for target in [
+        Target::Owl,
+        Target::InternalTmdl,
+        Target::Docs,
+        Target::Context,
+    ] {
         for verb in Verb::ALL {
             assert_eq!(
                 select_binding(verb, target, "Ontology", Some(2)),
@@ -193,22 +256,53 @@ fn wrong_type_unknown_generation_and_unsupported_facets_are_explicit() {
 fn representation_validation_rejects_patch_replace_and_condition_fallbacks() {
     for (mode, target, expected) in [
         ("patch", Target::Item, Ok(BodyContract::MetadataPatch)),
-        ("replace", Target::Item, Err(ValidationError::UnsupportedUpdateMode)),
-        ("patch", Target::Definition, Err(ValidationError::UnsupportedUpdateMode)),
-        ("replace", Target::Definition, Ok(BodyContract::DefinitionReplace)),
-        ("replace", Target::PublicModelExpanded, Err(ValidationError::Selection(SelectionError::UnsupportedTarget))),
+        (
+            "replace",
+            Target::Item,
+            Err(ValidationError::UnsupportedUpdateMode),
+        ),
+        (
+            "patch",
+            Target::Definition,
+            Err(ValidationError::UnsupportedUpdateMode),
+        ),
+        (
+            "replace",
+            Target::Definition,
+            Ok(BodyContract::DefinitionReplace),
+        ),
+        (
+            "replace",
+            Target::PublicModelExpanded,
+            Err(ValidationError::Selection(
+                SelectionError::UnsupportedTarget,
+            )),
+        ),
     ] {
         let args = parse_common_args(
-            Verb::Update, ["update", "/target", "--input", "-", "--mode", mode],
-        ).unwrap();
+            Verb::Update,
+            ["update", "/target", "--input", "-", "--mode", mode],
+        )
+        .unwrap();
         assert_eq!(
             validate_arguments(&args, target, "Ontology", Some(2)).map(|binding| binding.body),
             expected,
         );
     }
     let args = parse_common_args(
-        Verb::Update, ["update", "/target", "--input", "-", "--mode", "patch", "--if-match", "opaque"],
-    ).unwrap();
+        Verb::Update,
+        [
+            "update",
+            "/target",
+            "--input",
+            "-",
+            "--mode",
+            "patch",
+            "--if-match",
+            "opaque",
+        ],
+    )
+    .unwrap();
     assert_eq!(
         validate_arguments(&args, Target::Item, "Ontology", Some(2)),
         Err(ValidationError::UnsupportedCondition),

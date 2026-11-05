@@ -4,8 +4,8 @@
 //! Pure argument/representation compatibility, not execution preflight.
 
 use crate::{
-    Backend, BodyContract, OntologyArguments, OntologyBinding, OntologyTarget,
-    OntologyVerb, SelectionError, UpdateMode, select_binding,
+    Backend, BodyContract, OntologyArguments, OntologyBinding, OntologyTarget, OntologyVerb,
+    SelectionError, UpdateMode, select_binding,
 };
 use std::fmt;
 
@@ -36,14 +36,28 @@ impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Selection(error) => fmt::Display::fmt(error, f),
-            Self::InputRequired => f.write_str("This representation requires explicit typed input."),
+            Self::InputRequired => {
+                f.write_str("This representation requires explicit typed input.")
+            }
             Self::UnexpectedInput => f.write_str("This operation does not accept an input body."),
-            Self::UnsupportedUpdateMode => f.write_str("The update mode is unsupported for this representation."),
-            Self::PermanentIntentRequired => f.write_str("This hard-only target requires explicit permanent intent."),
-            Self::UnsupportedCondition => f.write_str("This binding does not support a client revision condition."),
-            Self::UnsupportedWait => f.write_str("This binding does not support operation observation."),
-            Self::UnsupportedRecursion => f.write_str("This binding has no bounded recursive deletion contract."),
-            Self::UnresolvedCommandContract => f.write_str("The native binding/rename contract is not accepted."),
+            Self::UnsupportedUpdateMode => {
+                f.write_str("The update mode is unsupported for this representation.")
+            }
+            Self::PermanentIntentRequired => {
+                f.write_str("This hard-only target requires explicit permanent intent.")
+            }
+            Self::UnsupportedCondition => {
+                f.write_str("This binding does not support a client revision condition.")
+            }
+            Self::UnsupportedWait => {
+                f.write_str("This binding does not support operation observation.")
+            }
+            Self::UnsupportedRecursion => {
+                f.write_str("This binding has no bounded recursive deletion contract.")
+            }
+            Self::UnresolvedCommandContract => {
+                f.write_str("The native binding/rename contract is not accepted.")
+            }
         }
     }
 }

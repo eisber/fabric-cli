@@ -50,7 +50,9 @@ impl OntologyVerb {
     }
 
     pub(crate) fn from_name(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|verb| verb.common_name() == name)
+        Self::ALL
+            .into_iter()
+            .find(|verb| verb.common_name() == name)
     }
 }
 
@@ -193,23 +195,121 @@ macro_rules! binding {
 
 static BINDINGS: &[OntologyBinding] = &[
     binding!(Get, Item, Both, PublicItem, None, MetadataRead),
-    binding!(Get, Definition, Both, PublicDefinition, None, DefinitionRead),
-    binding!(Get, PublicModelMinimized, Generation2, PublicModel, None, NativeDiscovery),
-    binding!(Get, PublicModelExpanded, Generation2, PublicModel, None, NativeDiscovery),
-    binding!(Get, NativeModelStored, Generation2, NativeWorkload, None, NativeDiscovery),
-    binding!(Get, NativeModelExpanded, Generation2, NativeWorkload, None, NativeDiscovery),
-    binding!(Get, Entity, Generation2, NativeWorkload, None, NativeDiscovery),
-    binding!(List, Entities, Generation2, NativeWorkload, None, NativeDiscovery),
+    binding!(
+        Get,
+        Definition,
+        Both,
+        PublicDefinition,
+        None,
+        DefinitionRead
+    ),
+    binding!(
+        Get,
+        PublicModelMinimized,
+        Generation2,
+        PublicModel,
+        None,
+        NativeDiscovery
+    ),
+    binding!(
+        Get,
+        PublicModelExpanded,
+        Generation2,
+        PublicModel,
+        None,
+        NativeDiscovery
+    ),
+    binding!(
+        Get,
+        NativeModelStored,
+        Generation2,
+        NativeWorkload,
+        None,
+        NativeDiscovery
+    ),
+    binding!(
+        Get,
+        NativeModelExpanded,
+        Generation2,
+        NativeWorkload,
+        None,
+        NativeDiscovery
+    ),
+    binding!(
+        Get,
+        Entity,
+        Generation2,
+        NativeWorkload,
+        None,
+        NativeDiscovery
+    ),
+    binding!(
+        List,
+        Entities,
+        Generation2,
+        NativeWorkload,
+        None,
+        NativeDiscovery
+    ),
     binding!(Create, Item, Both, PublicItem, ItemCreate, Create),
-    binding!(Create, Entities, Generation2, NativeWorkload, EntityCreate, Create),
+    binding!(
+        Create,
+        Entities,
+        Generation2,
+        NativeWorkload,
+        EntityCreate,
+        Create
+    ),
     binding!(Delete, Item, Both, PublicItem, None, Delete),
-    binding!(Delete, Entity, Generation2, NativeWorkload, None, DeleteWithReferences),
+    binding!(
+        Delete,
+        Entity,
+        Generation2,
+        NativeWorkload,
+        None,
+        DeleteWithReferences
+    ),
     binding!(Update, Item, Both, PublicItem, MetadataPatch, Update),
-    binding!(Update, Definition, Both, PublicDefinition, DefinitionReplace, Update),
-    binding!(Update, PublicModelMinimized, Generation2, PublicModel, PublicModelReplace, Update),
-    binding!(Update, NativeModelStored, Generation2, NativeWorkload, NativeModelReplace, Update),
-    binding!(Link, EntitySourceBinding, Generation2, NativeWorkload, SourceBinding, BindSource),
-    binding!(Move, Entity, Generation2, NativeWorkload, EntityRename, RenameWithReferences),
+    binding!(
+        Update,
+        Definition,
+        Both,
+        PublicDefinition,
+        DefinitionReplace,
+        Update
+    ),
+    binding!(
+        Update,
+        PublicModelMinimized,
+        Generation2,
+        PublicModel,
+        PublicModelReplace,
+        Update
+    ),
+    binding!(
+        Update,
+        NativeModelStored,
+        Generation2,
+        NativeWorkload,
+        NativeModelReplace,
+        Update
+    ),
+    binding!(
+        Link,
+        EntitySourceBinding,
+        Generation2,
+        NativeWorkload,
+        SourceBinding,
+        BindSource
+    ),
+    binding!(
+        Move,
+        Entity,
+        Generation2,
+        NativeWorkload,
+        EntityRename,
+        RenameWithReferences
+    ),
 ];
 
 /// Returns source-backed proposals, never a list of enabled remote operations.
@@ -235,7 +335,9 @@ impl fmt::Display for SelectionError {
         f.write_str(match self {
             Self::WrongOwnerType => "The Ontology facade requires an Ontology owner.",
             Self::UnknownGeneration => "An explicit supported Ontology generation is required.",
-            Self::UnsupportedTarget => "This Ontology operation and representation are unsupported.",
+            Self::UnsupportedTarget => {
+                "This Ontology operation and representation are unsupported."
+            }
             Self::UnsupportedGeneration => "This representation requires Ontology generation 2.",
         })
     }

@@ -13,8 +13,8 @@ mod catalog;
 mod validation;
 
 pub use args::{
-    ArgumentError, InputSource, OntologyArguments, OutputDestination, UpdateMode,
-    ontology_command, operation_command, parse_common_args, parse_facade_args,
+    ArgumentError, InputSource, OntologyArguments, OutputDestination, UpdateMode, ontology_command,
+    operation_command, parse_common_args, parse_facade_args,
 };
 pub use catalog::{
     Backend, BodyContract, Effect, GenerationSupport, OntologyBinding, OntologyTarget,
