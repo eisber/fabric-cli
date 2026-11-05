@@ -798,6 +798,7 @@ dependencies = [
  "fabric-sdk-items",
  "fabric-sdk-operations",
  "fabric-sdk-workspaces",
+ "ring",
  "serde",
  "serde_json",
  "tokio",
