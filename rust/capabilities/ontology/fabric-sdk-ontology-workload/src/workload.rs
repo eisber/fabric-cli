@@ -13,6 +13,13 @@ pub type WorkloadFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub struct WorkloadIdentity(String);
 
 impl WorkloadIdentity {
+    /// Canonical SDK logical identity for the private Digital Operations workload.
+    ///
+    /// This is not a host, audience, token or deployment discovery mechanism.
+    pub fn digital_operations() -> Self {
+        Self("DigitalOperations".into())
+    }
+
     /// Validate an explicit logical identifier; the caller owns its routing binding.
     pub fn new(value: impl Into<String>) -> Result<Self, WorkloadError> {
         let value = value.into();

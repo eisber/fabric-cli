@@ -63,9 +63,7 @@ impl BaseIri {
                 !authority.is_empty() && !authority.ends_with(':')
             })
         } else if lower.starts_with("urn:") {
-            value[4..]
-                .split_once(':')
-                .is_some_and(|(nid, nss)| !nid.is_empty() && !nss.is_empty())
+            !value[4..].is_empty()
         } else {
             false
         };

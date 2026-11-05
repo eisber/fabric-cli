@@ -45,7 +45,10 @@ remote cancellation or absence of effects.
 
 `OntologyTarget` requires explicit item type `Ontology`, feature level **2**,
 workspace/item UUIDs, caller-provided logical workload identity and resolved TMSL
-applicability. No operation discovers rollout or authorization. The executor
+applicability. Use `WorkloadIdentity::digital_operations()` (canonical logical
+identifier `DigitalOperations`); another workload such as `ML` is rejected before
+dispatch. This is a symbolic SDK binding key, not a private host/audience guess.
+No operation discovers rollout or authorization. The executor
 must bind that identity to the caller-approved capacity, tenant, audience and
 owner identity; this package never converts a public Fabric endpoint override
 into a private workload binding.

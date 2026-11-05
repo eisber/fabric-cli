@@ -151,6 +151,17 @@ fn target_rejects_wrong_type_generation_ids_and_flight_before_executor() {
         .is_err()
     );
     assert!(executor.calls().is_empty());
+    assert!(
+        OntologyTarget::new(
+            WorkloadIdentity::new("ML").unwrap(),
+            WORKSPACE,
+            ITEM,
+            "Ontology",
+            2,
+            features()
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -1249,6 +1260,7 @@ fn rdf_only_advertises_actual_formats_and_safe_import_gap() {
         "https://example.invalid/ns#",
         "http://example.invalid/ns/",
         "urn:plant:machine",
+        "urn:plant",
     ] {
         assert!(BaseIri::new(good).is_ok());
     }

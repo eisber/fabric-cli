@@ -46,6 +46,11 @@ impl OntologyTarget {
     ) -> Result<Self, WorkloadError> {
         let workspace = workspace.into();
         let item = item.into();
+        if workload != WorkloadIdentity::digital_operations() {
+            return Err(WorkloadError::invalid(
+                "Ontology requires the DigitalOperations logical workload",
+            ));
+        }
         if item_type != "Ontology" || feature_level != 2 {
             return Err(WorkloadError::gap("requires Ontology feature level 2"));
         }
