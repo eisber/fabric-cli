@@ -62,7 +62,10 @@ impl<T: Projection> ResponseContract<T> {
 impl<T: DeserializeOwned> ResponseContract<T> {
     pub(crate) fn decode(&self, response: WorkloadResponse) -> Result<Outcome<T>, Error> {
         if response.status == 202 {
-            return Ok(Outcome::Accepted { response, effects: self.effects });
+            return Ok(Outcome::Accepted {
+                resource: self.resource.clone(), caller: self.caller.clone(),
+                response, effects: self.effects,
+            });
         }
         if !(200..300).contains(&response.status) {
             return Err(Error::observed(status_kind(response.status), response, self.effects));
@@ -96,7 +99,10 @@ impl<T: DeserializeOwned> ResponseContract<T> {
             Validator::new(self.caller.clone(), self.resource.clone(), value)
                 .map_err(|_| Error::observed(ErrorKind::InvalidResponse, response.clone(), self.effects))
         }).transpose()?;
-        Ok(Outcome::Completed(Completed { value, validator, response, effects: self.effects }))
+        Ok(Outcome::Completed(Completed {
+            resource: self.resource.clone(), caller: self.caller.clone(),
+            value, validator, response, effects: self.effects,
+        }))
     }
 }
 
@@ -353,7 +359,9 @@ impl PrivateClient {
         {
             return Err(Error::local(ValidationError::InputLimit));
         }
+        let resource = operation.contract.resource.clone();
         self.dispatch(executor, operation, cancelled).await
+            .map_err(|error| error.with_scope(self.caller.clone(), resource))
     }
 
     async fn dispatch<T: DeserializeOwned>(
@@ -369,6 +377,7 @@ impl PrivateClient {
             execute_once(executor, &request).await
         }, cancelled.as_mut()).await
             .map_err(|_| Error {
+                resource: None, caller: None,
                 kind: ErrorKind::Cancelled,
                 dispatch: if started { DispatchState::Unknown } else { DispatchState::NotSent },
                 response: None, response_truncated: false, workload_error: None,
@@ -406,6 +415,7 @@ fn workload_failure(mut error: WorkloadError, effects: Effects, bound: usize) ->
         }
     };
     Error {
+        resource: None, caller: None,
         kind, dispatch: error.dispatch, response: error.response.clone(),
         response_truncated: truncated, workload_error: Some(Box::new(error)),
         public_error: None, effects,
@@ -426,6 +436,7 @@ fn json(value: &impl Serialize) -> Result<Value, Error> {
 
 fn local_workload(error: WorkloadError) -> Error {
     Error {
+        resource: None, caller: None,
         kind: ErrorKind::Execution, dispatch: error.dispatch, response: error.response.clone(),
         response_truncated: false, workload_error: Some(Box::new(error)), public_error: None,
         effects: Effects::default(),

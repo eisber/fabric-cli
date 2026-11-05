@@ -3,7 +3,7 @@
 
 //! Explicit endpoint effects, acceptance and lossless bounded failure evidence.
 
-use crate::{ValidationError, scope::Validator};
+use crate::{ValidationError, scope::{CallerScope, Resource, Validator}};
 use fabric_sdk_ontology_workload::workload::{
     DispatchState, WorkloadError, WorkloadResponse,
 };
@@ -41,6 +41,10 @@ impl Effects {
 /// Endpoint completion with an exact response and resource-scoped validator.
 #[derive(Clone, Debug)]
 pub struct Completed<T> {
+    /// Exact agent/stage/ontology/source scope, present even without an ETag.
+    pub resource: Resource,
+    /// Caller cache partition; metadata is not proof of provider claims.
+    pub caller: CallerScope,
     /// Parsed source projection, not generated authoring input.
     pub value: T,
     /// Caller/resource-scoped returned ETag, absent when the source omits it.
@@ -58,6 +62,10 @@ pub enum Outcome<T> {
     Completed(Completed<T>),
     /// The original accepted response is retained for caller-owned reconciliation.
     Accepted {
+        /// Original agent/stage/resource for caller-owned reconciliation.
+        resource: Resource,
+        /// Original caller cache partition.
+        caller: CallerScope,
         /// Exact status, headers and bounded body, including Location/operation ID.
         response: WorkloadResponse,
         /// Effects that may follow acceptance.
@@ -101,6 +109,10 @@ pub enum ErrorKind {
 /// Failure evidence with explicit dispatch certainty and no automatic replay.
 #[derive(Clone)]
 pub struct Error {
+    /// Original resource when an operation was prepared; never inferred from response text.
+    pub resource: Option<Box<Resource>>,
+    /// Original caller partition when an operation was prepared.
+    pub caller: Option<Box<CallerScope>>,
     /// Sanitized classification.
     pub kind: ErrorKind,
     /// Whether submission/completion is known.
@@ -120,6 +132,7 @@ pub struct Error {
 impl Error {
     pub(crate) fn local(error: ValidationError) -> Self {
         Self {
+            resource: None, caller: None,
             kind: ErrorKind::Validation(error),
             dispatch: DispatchState::NotSent,
             response: None,
@@ -132,6 +145,7 @@ impl Error {
 
     pub(crate) fn observed(kind: ErrorKind, response: WorkloadResponse, effects: Effects) -> Self {
         Self {
+            resource: None, caller: None,
             kind,
             dispatch: if effects.edits_agent_configuration && response.status < 300 {
                 DispatchState::Unknown
@@ -145,12 +159,19 @@ impl Error {
             effects,
         }
     }
+
+    pub(crate) fn with_scope(mut self, caller: CallerScope, resource: Resource) -> Self {
+        self.caller = Some(Box::new(caller));
+        self.resource = Some(Box::new(resource));
+        self
+    }
 }
 
 impl fmt::Debug for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.debug_struct("Error")
             .field("kind", &self.kind)
+            .field("resource", &self.resource)
             .field("dispatch", &self.dispatch)
             .field("response", &self.response)
             .field("response_truncated", &self.response_truncated)

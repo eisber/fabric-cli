@@ -107,6 +107,7 @@ impl PublicClient {
                 _ => ErrorKind::Execution,
             };
             Error {
+                resource: Some(Box::new(read.contract.resource.clone())), caller: Some(Box::new(self.caller.clone())),
                 kind,
                 dispatch: match &error.kind {
                     OperationErrorKind::InvalidInput | OperationErrorKind::InvalidAudience
@@ -121,6 +122,6 @@ impl PublicClient {
         })?;
         read.contract.decode(WorkloadResponse {
             status: response.status, headers: response.headers, body: response.body,
-        })
+        }).map_err(|error| error.with_scope(self.caller.clone(), read.contract.resource.clone()))
     }
 }

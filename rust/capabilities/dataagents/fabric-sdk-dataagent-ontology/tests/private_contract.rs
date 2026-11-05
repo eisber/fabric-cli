@@ -152,6 +152,7 @@ async fn returned_attachment_and_generated_example_identity_are_checked() {
     let add = sdk.add(&AttachOntology::new(ItemReference::by_id(id(3), id(5)), "Ontology").unwrap(), None).unwrap();
     let Outcome::Completed(added) = sdk.execute(&mock, add, pending()).await.unwrap() else { panic!("not completed") };
     assert_eq!(added.value.id, id(3));
+    assert_eq!(added.resource, Resource::Attachment(source(Stage::Staging).attachment));
     let operation = sdk.create_few_shot(source(Stage::Staging), &FewShotCreate::new("authored question".into(), Some("authored query".into())).unwrap(), None).unwrap();
     let Outcome::Completed(created) = sdk.execute(&mock, operation, pending()).await.unwrap() else { panic!("not completed") };
     assert_eq!(created.value.id, id(6));
@@ -239,6 +240,7 @@ async fn duplicate_headers_invalid_media_and_empty_publish_shape_are_not_success
     let error = sdk.execute(&mock, sdk.publish(&Publish::new(None).unwrap()).unwrap(), pending()).await.unwrap_err();
     assert_eq!(error.kind, ErrorKind::InvalidResponse);
     assert_eq!(error.dispatch, DispatchState::Unknown);
+    assert_eq!(error.resource.as_deref(), Some(&Resource::Agent(agent(), Stage::Staging)));
     assert!(error.effects.publishes_whole_agent);
 }
 
@@ -319,9 +321,11 @@ async fn publish_acceptance_and_unknown_effects_never_become_completed_or_replay
     accepted.headers.insert("Location".into(), "https://caller-bound.invalid/operation/receipt".into());
     let mock = Mock::new(vec![accepted.clone()]);
     let outcome = sdk.execute(&mock, sdk.publish(&Publish::new(None).unwrap()).unwrap(), pending()).await.unwrap();
-    let Outcome::Accepted { response, effects } = outcome else { panic!("accepted is not completed") };
+    let Outcome::Accepted { response, effects, resource, caller: accepted_caller } = outcome else { panic!("accepted is not completed") };
     assert_eq!(response, accepted);
     assert!(effects.publishes_whole_agent);
+    assert_eq!(resource, Resource::Agent(agent(), Stage::Staging));
+    assert_eq!(accepted_caller, caller());
     assert_eq!(mock.seen.lock().unwrap().len(), 1);
     let mock = Mock { results: Mutex::new(VecDeque::from([Err(WorkloadError::execution(DispatchState::Unknown, "diagnostic".into()))])), seen: Mutex::new(Vec::new()) };
     let error = sdk.execute(&mock, sdk.publish(&Publish::new(None).unwrap()).unwrap(), pending()).await.unwrap_err();

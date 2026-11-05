@@ -7,7 +7,7 @@ use crate::{
     ValidationError, models::{Element, Page},
     private::{Operation, PrivateClient, ResponseContract},
     result::{Effects, Error, ErrorKind, Outcome},
-    scope::Resource,
+    scope::{CallerScope, Resource},
 };
 use azure_core::http::Url;
 use fabric_sdk_ontology_workload::workload::{
@@ -20,6 +20,10 @@ use std::{fmt, future::{Future, pending}, sync::{Arc, Mutex}};
 /// Complete bounded traversal; never silently returned for an incomplete collection.
 #[derive(Clone, Debug)]
 pub struct Elements {
+    /// Exact source/attachment stage traversed.
+    pub resource: Resource,
+    /// Caller partition whose source projection was traversed.
+    pub caller: CallerScope,
     /// Ordered elements, preserving duplicates.
     pub value: Vec<Element>,
     /// Fully committed pages.
@@ -31,8 +35,12 @@ pub struct Elements {
 /// Shared pager failure with committed raw rows and declared source effects.
 #[derive(Debug)]
 pub struct ElementsError {
+    /// Exact source/attachment stage whose traversal is incomplete.
+    pub resource: Box<Resource>,
+    /// Original caller partition.
+    pub caller: Box<CallerScope>,
     /// Exact shared paging classification and partial progress.
-    pub error: PagingError<Error>,
+    pub error: Box<PagingError<Error>>,
     /// Source effects, including caller-cache refresh/migration on GET.
     pub effects: Effects,
 }
@@ -58,8 +66,11 @@ impl PrivateClient {
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Elements, ElementsError> {
         let effects = operation.contract.effects;
+        let resource = operation.contract.resource.clone();
+        let caller = operation.contract.caller.clone();
         let failure = |kind| ElementsError {
-            error: PagingError { kind, partial: PagedValues::default() }, effects,
+            resource: Box::new(resource.clone()), caller: Box::new(caller.clone()),
+            error: Box::new(PagingError { kind, partial: PagedValues::default() }), effects,
         };
         if !matches!(operation.contract.resource, Resource::Attachment(_) | Resource::Source(_))
             || operation.request.method() != WorkloadMethod::Get
@@ -94,6 +105,7 @@ impl PrivateClient {
             });
             async move {
                 let request = request.map_err(|error| Error {
+                    resource: Some(Box::new(resource.clone())), caller: Some(Box::new(caller.clone())),
                     kind: ErrorKind::Execution, dispatch: error.dispatch, response: error.response.clone(),
                     response_truncated: false, workload_error: Some(Box::new(error)), public_error: None, effects,
                 })?;
@@ -125,14 +137,17 @@ impl PrivateClient {
                     headers: completed.response.headers,
                 })
             }
-        }, cancelled).await.map_err(|error| ElementsError { error, effects })?;
+        }, cancelled).await.map_err(|error| ElementsError {
+            resource: Box::new(resource.clone()), caller: Box::new(caller.clone()), error: Box::new(error), effects,
+        })?;
         let mut value = Vec::with_capacity(collected.value.len());
         for row in &collected.value {
             let element = serde_json::from_value(row.clone()).map_err(|_| ElementsError {
-                error: PagingError { kind: PagingErrorKind::InvalidResponse, partial: collected.clone() }, effects,
+                resource: Box::new(resource.clone()), caller: Box::new(caller.clone()),
+                error: Box::new(PagingError { kind: PagingErrorKind::InvalidResponse, partial: collected.clone() }), effects,
             })?;
             value.push(element);
         }
-        Ok(Elements { value, pages_received: collected.pages_received, effects })
+        Ok(Elements { resource, caller, value, pages_received: collected.pages_received, effects })
     }
 }

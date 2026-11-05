@@ -129,6 +129,9 @@ attachment/source/few-shot lists currently return terminal pages; several expose
 no effective cursor parameter. Public ontology elements support only `rootId`.
 This SDK does not invent a cursor argument for those APIs or silently claim
 all-page coverage from a single page.
+Completed and accepted outcomes always retain the original caller and
+stage-qualified resource, including responses with no ETag, so reconciliation
+does not infer an agent/stage from the current client or a physical item ID.
 
 ## Evidence and integration
 
