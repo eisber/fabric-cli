@@ -3,15 +3,15 @@
 
 //! Binary-private explicit environment selection, separate from credential APIs.
 
-use fabric_identity::headless::{
-    AssertionFile, HeadlessCredential, HeadlessInput, ManagedHost, PipelinesConfig, ServiceIdentity,
-};
-use std::{ffi::OsString, path::PathBuf, sync::Arc};
 #[cfg(all(windows, feature = "certificate-store-windows"))]
 use fabric_identity::headless::{
     AllowedCertificateProvider, CertificateConfig, CertificateSelector, CertificateStore,
     WindowsStoreSigner,
 };
+use fabric_identity::headless::{
+    AssertionFile, HeadlessCredential, HeadlessInput, ManagedHost, PipelinesConfig, ServiceIdentity,
+};
+use std::{ffi::OsString, path::PathBuf, sync::Arc};
 
 pub(crate) struct Selection {
     pub(crate) tenant: String,
@@ -57,8 +57,8 @@ impl Selection {
                 .filter(|value| !value.trim().is_empty())
                 .ok_or_else(invalid)
         };
-        let certificate_mode = cfg!(feature = "certificate-store-windows")
-            && mode == "certificate-store-windows";
+        let certificate_mode =
+            cfg!(feature = "certificate-store-windows") && mode == "certificate-store-windows";
         if !matches!(
             mode,
             "client-secret"
@@ -67,7 +67,8 @@ impl Selection {
                 | "azure-pipelines"
                 | "managed-identity-vm"
                 | "managed-identity-app-service"
-        ) && !certificate_mode {
+        ) && !certificate_mode
+        {
             return Err(invalid());
         }
         #[cfg(not(windows))]
@@ -390,7 +391,10 @@ mod tests {
         assert_eq!(selection.client, CLIENT);
         assert_eq!(
             selection.binding,
-            format!("windows-certificate-store:current-user-my:microsoft-software:{}", "ab".repeat(32))
+            format!(
+                "windows-certificate-store:current-user-my:microsoft-software:{}",
+                "ab".repeat(32)
+            )
         );
         assert!(selection.metadata_endpoint().is_none());
         let rotated = Selection::from_inputs("certificate-store-windows", |name| {
@@ -443,7 +447,10 @@ mod tests {
         for fingerprint in ["", "AA", &"g".repeat(64), &"ab".repeat(33)] {
             assert!(Selection::certificate_fingerprint(fingerprint).is_none());
         }
-        assert_eq!(Selection::certificate_fingerprint(&"AB".repeat(32)), Some([0xab; 32]));
+        assert_eq!(
+            Selection::certificate_fingerprint(&"AB".repeat(32)),
+            Some([0xab; 32])
+        );
     }
 
     #[cfg(all(not(windows), feature = "certificate-store-windows"))]
