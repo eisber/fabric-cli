@@ -360,6 +360,21 @@ where
     let resolution = registry
         .resolve(verb, selection, facade.then_some("ontology"))
         .map_err(AdapterError::Contract)?;
+    let expected_id = match (verb, representation) {
+        (Verb::Get, Representation::Item) => "item.metadata.get",
+        (Verb::Get, Representation::Definition) => "item.definition.get",
+        (Verb::Get, Representation::PublicModelMinimized | Representation::PublicModelExpanded) => {
+            "ontology.model.get"
+        }
+        (Verb::Update, Representation::Definition) => "item.definition.replace",
+        (Verb::Update, Representation::PublicModelMinimized) => "ontology.model.replace",
+        _ => return Err(AdapterError::Invalid("Unsupported operation descriptor.")),
+    };
+    if resolution.operation.id() != expected_id {
+        return Err(AdapterError::Invalid(
+            "The registered descriptor does not identify this SDK operation.",
+        ));
+    }
     let mut body = None;
     if let Some(source) = &args.input {
         let bytes = host
