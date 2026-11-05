@@ -112,6 +112,15 @@ establish integration correctness.
 
 ## Command dependency and ownership ledger
 
+The additive [`fabric-v2-contracts`](../infrastructure/core/fabric-v2-contracts/README.md)
+core library supplies deterministic operation descriptors, enumerated
+generation/facet/representation bindings and type-constrained facade discovery.
+It performs no execution or authorization. Conditional and unsupported
+capabilities remain explicit in discovery; an operation registration is not
+proof that its provider, CLI handler or MCP host is available. The library takes
+already-resolved targets and does not change the existing v1 path grammar,
+executable or independent oracle.
+
 The coordinator maintains a command-level ledger from the selected live
 specification. Keep private specification exports and coordination artifacts
 outside the public repository unless their publication is explicitly approved.
