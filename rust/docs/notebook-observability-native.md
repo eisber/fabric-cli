@@ -219,6 +219,12 @@ RUNNING/FAILED job. Provider-derived IDs are observations, not guessed aliases.
 Unknown response shapes, unsafe/duplicate IDs, indicated continuations,
 insufficient request budgets, stage failures and byte-bound failures return an
 error, never fabricated empty arrays or a successful prefix.
+Decoded workload jobs and required stage collections accept bare arrays or
+their native named envelopes, but every array entry must be an object. Null,
+scalar and nested-array entries produce `InvalidResponse`, including a malformed
+later stage component after earlier components succeeded. Unknown fields in
+record objects and envelopes remain intact in the returned response bytes;
+this structural check does not invent a closed provider schema.
 
 `WorkloadMonitor::progress_selected` is an additional explicit subset plan.
 Its `SelectedJobs` coverage remains partial even on full transport success.
@@ -251,13 +257,20 @@ Owned files are only this document, `src/notebook_observability/**` and
 `tests/notebook_observability.rs`. The coordinator owns the `lib.rs` export;
 this lane does not edit manifests, locks, identity, transport, CLI or peers.
 
-Authored offline Rust coverage: **18 top-level tests**, plus three compile-fail
+Authored offline Rust coverage: **20 top-level tests**, plus three compile-fail
 ID-kind examples. Tests cover all source-native route families, exact query
 order/values, methods, headers, raw binary/text uploads, content classification,
 active/completed attempts, metadata exceptions, the 68-callable/30-leaf catalog,
 wrong profiles, unsafe paths/IDs, unsupported attempt combinations, create-only
 admission, overflow/zero budgets, redaction, per-response/aggregate limits,
 cancellation, stage failures and honest partial coverage.
+
+Validation repair cycle 1 starts at coordinator checkpoint
+**`2772f204c60a0ec3786730ceb435d65611301edf`**. The repair adds semantic docs for
+51 public enum fields and two regression tests covering non-object jobs/stage
+entries in bare and enveloped arrays, mixed valid/invalid entries, failure in a
+later required stage component, and preservation of unknown fields. These new
+tests are authored, not locally executed; builds remain coordinator-serialized.
 
 Checks actually run in this lane, without building:
 
@@ -273,9 +286,9 @@ Checks actually run in this lane, without building:
    or logging implementation.
 5. Static binding/fixture checks: all 68 catalog bindings name declared members;
    all **58 typed view variants** (17 public, 27 workload application, 14 workload
-   top-level) appear in the offline tests; all 18 test attributes remain at crate
-   root and all three compile-fail examples are present. This is not a Rust type
-   check or execution result.
+   top-level) appear in the offline tests; the original 18 test attributes remain
+   at crate root and all three compile-fail examples are present. This is not a
+   Rust type check or execution result.
 6. Git whitespace and exclusive-path checks.
 
 These checks do **not** compile or execute Rust. No Cargo/toolchain build or

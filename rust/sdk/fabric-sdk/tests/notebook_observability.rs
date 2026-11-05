@@ -1369,3 +1369,97 @@ fn full_catalog_covers_all_source_callables_and_thirty_registered_leaves() {
     .collect::<BTreeSet<_>>();
     assert_eq!(leaves, expected);
 }
+
+#[tokio::test]
+async fn workload_progress_rejects_non_object_collection_entries() {
+    let client = workload();
+    let plan = client.progress(&workload_app(false), 100, 2).unwrap();
+    let jobs = br#"{"jobs":[{"jobId":0,"status":"RUNNING"}]}"#;
+    for malformed in ["null", "true", "0", "1.5", r#""stage""#, "[]", "[{}]"] {
+        for entries in [
+            format!("[{malformed}]"),
+            format!(r#"[{{"stageId":1}},{malformed}]"#),
+        ] {
+            for wrapped in [false, true] {
+                let stages = if wrapped {
+                    format!(r#"{{"stages":{entries}}}"#)
+                } else {
+                    entries.clone()
+                };
+                let executor = FakeExecutor::new(vec![
+                    Ok(response(200, jobs, None)),
+                    Ok(response(200, stages.as_bytes(), None)),
+                ]);
+                assert!(matches!(
+                    plan.execute(&executor, 1024, 4096).await,
+                    Err(NativeError::InvalidResponse)
+                ));
+                assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+            }
+        }
+        for entries in [
+            format!("[{malformed}]"),
+            format!(r#"[{{"jobId":0,"status":"RUNNING"}},{malformed}]"#),
+        ] {
+            for wrapped in [false, true] {
+                let jobs = if wrapped {
+                    format!(r#"{{"jobs":{entries}}}"#)
+                } else {
+                    entries.clone()
+                };
+                let executor =
+                    FakeExecutor::new(vec![Ok(response(200, jobs.as_bytes(), None))]);
+                assert!(matches!(
+                    plan.execute(&executor, 1024, 4096).await,
+                    Err(NativeError::InvalidResponse)
+                ));
+                assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+            }
+        }
+    }
+    let plan = client.progress(&workload_app(false), 100, 3).unwrap();
+    let jobs = br#"[{"jobId":0,"status":"RUNNING"},{"jobId":1,"status":"FAILED"}]"#;
+    let executor = FakeExecutor::new(vec![
+        Ok(response(200, jobs, None)),
+        Ok(response(200, br#"{"stages":[{"stageId":0}]}"#, None)),
+        Ok(response(200, br#"{"stages":[null]}"#, None)),
+    ]);
+    assert!(matches!(
+        plan.execute(&executor, 1024, 4096).await,
+        Err(NativeError::InvalidResponse)
+    ));
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
+async fn workload_progress_preserves_unknown_collection_fields() {
+    let client = workload();
+    let plan = client.progress(&workload_app(false), 100, 2).unwrap();
+    let job = r#"{"jobId":0,"status":"RUNNING","unknownJobField":{"nested":[null,42]}}"#;
+    let stage = r#"{"stageId":1,"unknownStageField":{"nested":[false,null]}}"#;
+    for wrapped_jobs in [false, true] {
+        for wrapped_stages in [false, true] {
+            let jobs = if wrapped_jobs {
+                format!(r#"{{"jobs":[{job}],"unknownJobsEnvelope":null}}"#)
+            } else {
+                format!("[{job}]")
+            };
+            let stages = if wrapped_stages {
+                format!(r#"{{"stages":[{stage},{{}}],"unknownStagesEnvelope":{{"version":2}}}}"#)
+            } else {
+                format!(r#"[{stage},{{}}]"#)
+            };
+            let executor = FakeExecutor::new(vec![
+                Ok(response(200, jobs.as_bytes(), None)),
+                Ok(response(200, stages.as_bytes(), None)),
+            ]);
+            let observed = plan.execute(&executor, 1024, 4096).await.unwrap();
+            assert_eq!(observed.coverage, PlanCoverage::ObservedJobsSnapshot);
+            assert_eq!(observed.jobs.body, jobs.as_bytes());
+            assert_eq!(observed.stages.len(), 1);
+            assert_eq!(observed.stages[0].0.as_str(), "0");
+            assert_eq!(observed.stages[0].1.body, stages.as_bytes());
+            assert_eq!(executor.calls.load(Ordering::SeqCst), 2);
+        }
+    }
+}

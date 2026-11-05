@@ -139,7 +139,8 @@ impl WorkloadProgressPlan {
     ///
     /// # Errors
     /// Fails on any HTTP/executor error, missing response shape/IDs/status,
-    /// duplicate job IDs, truncation indication, or exhausted request/byte bounds.
+    /// non-object collection entries, duplicate job IDs, truncation indication,
+    /// or exhausted request/byte bounds.
     /// Previously read components are never returned as partial success.
     pub async fn execute(
         &self,
@@ -225,10 +226,14 @@ fn collection<'a>(
             }
         }
     }
-    value
+    let records = value
         .as_array()
         .or_else(|| value.get(key).and_then(serde_json::Value::as_array))
-        .ok_or(NativeError::InvalidResponse)
+        .ok_or(NativeError::InvalidResponse)?;
+    if records.iter().any(|record| !record.is_object()) {
+        return Err(NativeError::InvalidResponse);
+    }
+    Ok(records)
 }
 
 async fn execute_bounded(
