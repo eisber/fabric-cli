@@ -603,10 +603,11 @@ fn validate_cell(cell: &Value, limits: ContentLimits) -> Result<(), NativeError>
     {
         return Err(NativeError::InvalidInput);
     }
-    if let Some(count) = cell.get("execution_count") {
-        if !count.is_null() && count.as_u64().is_none() {
-            return Err(NativeError::InvalidInput);
-        }
+    if let Some(count) = cell.get("execution_count")
+        && !count.is_null()
+        && count.as_u64().is_none()
+    {
+        return Err(NativeError::InvalidInput);
     }
     match cell.get("outputs") {
         None | Some(Value::Null) => {}

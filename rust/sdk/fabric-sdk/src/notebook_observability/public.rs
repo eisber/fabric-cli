@@ -32,10 +32,8 @@ impl PublicApplication {
             "applications",
             self.application.as_str(),
         ];
-        if include_attempt {
-            if let Some(attempt) = &self.attempt {
-                path.push(attempt.as_str());
-            }
+        if include_attempt && let Some(attempt) = &self.attempt {
+            path.push(attempt.as_str());
         }
         path
     }
