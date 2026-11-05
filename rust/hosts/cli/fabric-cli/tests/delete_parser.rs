@@ -189,6 +189,17 @@ fn only_one_exact_absolute_typed_guid_notebook_is_admitted() {
 }
 
 #[test]
+fn malformed_target_is_not_echoed_in_failure_metadata() {
+    let mut invalid = command(&["--permanent"]);
+    invalid.path = "untrusted-private-target-text".into();
+    let error = preflight(&invalid, None).unwrap_err();
+    let envelope = serde_json::to_value(error.envelope(Some(&invalid))).unwrap();
+    assert!(envelope["meta"]["target"]["path"].is_null());
+    assert!(envelope["meta"]["target"]["id"].is_null());
+    assert!(!envelope.to_string().contains(&invalid.path));
+}
+
+#[test]
 fn query_and_output_short_options_remain_data_only() {
     let command = command(&["--permanent", "-q", "resource.id", "-o", "receipt.json"]);
     assert_eq!(command.project.as_deref(), Some("resource.id"));

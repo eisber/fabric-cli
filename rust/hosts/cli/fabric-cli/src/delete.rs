@@ -86,6 +86,8 @@ impl DeleteCommandError {
             error: Some(DeleteDiagnostic {
                 code: self.code().into(),
                 message: self.message().into(),
+                retryable: false,
+                hints: Vec::new(),
             }),
         }
     }
@@ -312,6 +314,8 @@ pub fn host_failure(
         error: Some(DeleteDiagnostic {
             code: code.into(),
             message: message.into(),
+            retryable: false,
+            hints: Vec::new(),
         }),
     })
 }
@@ -505,6 +509,10 @@ pub struct DeleteDiagnostic {
     pub code: String,
     /// Safe public diagnostic.
     pub message: String,
+    /// False: diagnostics never authorize automatic mutation replay.
+    pub retryable: bool,
+    /// Informational guidance only, never automatic remediation.
+    pub hints: Vec<String>,
 }
 
 /// One versioned delete snapshot; projection can replace only [`Self::data`].
@@ -604,6 +612,8 @@ fn snapshot(
             envelope.error = Some(DeleteDiagnostic {
                 code: error.code().into(),
                 message: error.message().into(),
+                retryable: false,
+                hints: Vec::new(),
             });
         }
     }
@@ -617,8 +627,17 @@ fn snapshot(
 }
 
 fn base_metadata(path: Option<&str>) -> Value {
+    let path = path.filter(|path| target_ids(path).is_ok());
+    let target = path.and_then(|path| target_ids(path).ok());
     json!({
-        "target": path,
+        "target": {
+            "path": path,
+            "id": target.map(|(_, item)| item.to_ascii_lowercase()),
+            "type": target.map(|_| "Notebook"),
+            "scope": target.map(|(workspace, _)| json!({
+                "workspaceId": workspace.to_ascii_lowercase()
+            }))
+        },
         "context": null,
         "coverage": {"complete": null},
         "effects": {"declared": null, "observed": null},
@@ -666,6 +685,8 @@ fn bind_receipt(envelope: &mut DeleteEnvelope, meta: &mut Value, receipt: &Delet
             envelope.error = Some(DeleteDiagnostic {
                 code: error.code().into(),
                 message: error.message().into(),
+                retryable: false,
+                hints: Vec::new(),
             });
         }
     }
@@ -709,6 +730,8 @@ impl DeleteOutputFailure {
         envelope.error = Some(DeleteDiagnostic {
             code: self.error.code().into(),
             message: self.error.message().into(),
+            retryable: false,
+            hints: Vec::new(),
         });
         envelope
     }

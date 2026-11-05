@@ -305,7 +305,15 @@ fn snapshot(dispatch: &DeleteDispatch) -> Value {
 fn assert_metadata(snapshot: &Value, prepared: &PreparedDelete) {
     let metadata = serde_json::to_value(prepared.assessment().metadata()).unwrap();
     assert_eq!(snapshot["schemaVersion"], "0.1");
-    assert_eq!(snapshot["meta"]["target"], TARGET);
+    assert_eq!(
+        snapshot["meta"]["target"],
+        json!({
+            "path": TARGET,
+            "id": ITEM,
+            "type": "Notebook",
+            "scope": {"workspaceId": WORKSPACE}
+        })
+    );
     assert_eq!(snapshot["meta"]["operation"], metadata);
     assert_eq!(
         snapshot["meta"]["assessment"],
@@ -570,12 +578,10 @@ async fn forbidden_poll_after_acceptance_is_unknown_not_a_denied_delete_and_is_s
         assert_metadata(&envelope, &prepared);
         if after_acceptance {
             assert_uncertain(&envelope, "AccessDenied");
-            assert!(
-                !envelope["error"]["message"]
-                    .as_str()
-                    .unwrap()
-                    .contains("denied")
-            );
+            let message = envelope["error"]["message"].as_str().unwrap();
+            assert!(message.contains("observation"));
+            assert!(message.contains("deletion outcome is unknown"));
+            assert!(!message.contains("deletion was denied"));
         } else {
             assert_eq!(envelope["status"], "failed");
             assert_eq!(envelope["error"]["code"], "AccessDenied");

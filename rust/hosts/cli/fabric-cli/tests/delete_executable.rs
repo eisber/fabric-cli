@@ -103,7 +103,15 @@ fn failure(output: &Output) -> Value {
 }
 
 fn assert_assessment(envelope: &Value) {
-    assert_eq!(envelope["meta"]["target"], TARGET);
+    assert_eq!(
+        envelope["meta"]["target"],
+        json!({
+            "path": TARGET,
+            "id": "22222222-2222-2222-2222-222222222222",
+            "type": "Notebook",
+            "scope": {"workspaceId": "11111111-1111-1111-1111-111111111111"}
+        })
+    );
     let metadata = &envelope["meta"]["operation"];
     assert_eq!(envelope["meta"]["assessment"]["metadata"], *metadata);
     assert_eq!(
