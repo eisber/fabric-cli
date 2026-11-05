@@ -48,6 +48,15 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+arrow-array = { version = "=60.1.0", default-features = false }
+arrow-schema = { version = "=60.1.0", default-features = false }
+arrow-ipc = { version = "=60.1.0", default-features = false }
+arrow-cast = { version = "=60.1.0", default-features = false }
+arrow-csv = { version = "=60.1.0", default-features = false }
+arrow-json = { version = "=60.1.0", default-features = false }
+parquet = { version = "=60.1.0", default-features = false, features = ["arrow"] }
+fabric-sdk-tabular = { path = "capabilities/tables/fabric-sdk-tabular" }
+fabric-sdk-dataflow = { path = "capabilities/tables/fabric-sdk-dataflow" }
 fabric-cli-repl = { path = "hosts/repl/fabric-cli-repl", default-features = false }
 fabric-cli-update = { path = "hosts/update/fabric-cli-update", default-features = false }
 reedline = { version = "=0.52.1", default-features = false }
