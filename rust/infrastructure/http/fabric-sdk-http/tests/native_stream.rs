@@ -401,26 +401,27 @@ async fn real_open_preserves_public_daily_msit_wire_scope_metadata_without_readi
         );
         assert_eq!(result.headers["etag"], "\"version\"");
         assert_eq!(probe.polls.load(Ordering::SeqCst), 0);
-        let requests = wire.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].method(), Method::Get);
-        assert_eq!(requests[0].url(), request.url());
-        assert!(Bytes::from(requests[0].body()).is_empty());
-        for (name, value) in [
-            ("accept", "application/vnd.provider+arrow"),
-            ("content-type", "application/json"),
-            ("if-none-match", "\"previous\""),
-        ] {
-            assert_eq!(requests[0].headers().get_str(&name.into()).unwrap(), value);
+        {
+            let requests = wire.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0].method(), Method::Get);
+            assert_eq!(requests[0].url(), request.url());
+            assert!(Bytes::from(requests[0].body()).is_empty());
+            for (name, value) in [
+                ("accept", "application/vnd.provider+arrow"),
+                ("content-type", "application/json"),
+                ("if-none-match", "\"previous\""),
+            ] {
+                assert_eq!(requests[0].headers().get_str(&name.into()).unwrap(), value);
+            }
+            assert_eq!(
+                requests[0]
+                    .headers()
+                    .get_str(&"authorization".into())
+                    .unwrap(),
+                format!("Bearer {TOKEN}")
+            );
         }
-        assert_eq!(
-            requests[0]
-                .headers()
-                .get_str(&"authorization".into())
-                .unwrap(),
-            format!("Bearer {TOKEN}")
-        );
-        drop(requests);
         assert_eq!(
             *credential.scopes.lock().unwrap(),
             [vec![Audience::Fabric.scope().to_owned()]]
