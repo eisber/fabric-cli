@@ -1,15 +1,15 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use std::collections::HashMap;
-
-use arrow_array::{Decimal128Array, Float32Array, Float64Array, RecordBatch};
-use arrow_schema::{DataType, Schema, SchemaRef};
+use arrow_array::{
+    Date64Array, Decimal128Array, Float32Array, Float64Array, LargeStringArray, RecordBatch,
+    StringArray, Time32MillisecondArray, Time32SecondArray, Time64MicrosecondArray,
+    Time64NanosecondArray,
+};
+use arrow_schema::{DataType, Metadata, Schema, SchemaRef, TimeUnit};
 
 use crate::error::limit;
-use crate::{
-    LimitKind, MetadataClassification, MetadataEvidence, MetadataLocation, TabularError,
-};
+use crate::{LimitKind, MetadataClassification, MetadataEvidence, MetadataLocation, TabularError};
 
 /// Explicit finite budgets applied independently to input, retained arrays, and output.
 ///
@@ -103,7 +103,9 @@ impl TabularResult {
                     return Err(TabularError::UnsupportedValue {
                         column,
                         row: rows - batch.num_rows()
-                            + (0..array.len()).find(|&row| array.is_null(row)).unwrap_or(0),
+                            + (0..array.len())
+                                .find(|&row| array.is_null(row))
+                                .unwrap_or(0),
                         reason: "null in a non-nullable column",
                     });
                 }
@@ -127,6 +129,38 @@ impl TabularResult {
                             column,
                             row: rows - batch.num_rows() + row,
                             reason: "non-finite floating point",
+                        });
+                    }
+                    let valid_temporal = match array.data_type() {
+                        DataType::Date64 => array
+                            .as_any()
+                            .downcast_ref::<Date64Array>()
+                            .is_some_and(|values| values.value(row) % 86_400_000 == 0),
+                        DataType::Time32(TimeUnit::Second) => array
+                            .as_any()
+                            .downcast_ref::<Time32SecondArray>()
+                            .is_some_and(|values| (0..86_400).contains(&values.value(row))),
+                        DataType::Time32(TimeUnit::Millisecond) => array
+                            .as_any()
+                            .downcast_ref::<Time32MillisecondArray>()
+                            .is_some_and(|values| (0..86_400_000).contains(&values.value(row))),
+                        DataType::Time64(TimeUnit::Microsecond) => array
+                            .as_any()
+                            .downcast_ref::<Time64MicrosecondArray>()
+                            .is_some_and(|values| (0..86_400_000_000).contains(&values.value(row))),
+                        DataType::Time64(TimeUnit::Nanosecond) => array
+                            .as_any()
+                            .downcast_ref::<Time64NanosecondArray>()
+                            .is_some_and(|values| {
+                                (0..86_400_000_000_000).contains(&values.value(row))
+                            }),
+                        _ => true,
+                    };
+                    if !valid_temporal {
+                        return Err(TabularError::UnsupportedValue {
+                            column,
+                            row: rows - batch.num_rows() + row,
+                            reason: "invalid date alignment or time-of-day range",
                         });
                     }
                     if let DataType::Decimal128(precision, _) = array.data_type() {
@@ -169,17 +203,56 @@ impl TabularResult {
         self.rows
     }
 
+    /// Rejects non-null values in a caller-declared diagnostic column.
+    ///
+    /// Engines declare their own reserved column name: for example, Dataflow
+    /// Execute Query reports in-stream errors in `PQ Arrow Metadata`. Null
+    /// diagnostics do not imply an error. Non-null values retain unknown
+    /// evidence rather than guessing an undocumented success/error schema.
+    ///
+    /// # Errors
+    /// Returns the first non-null diagnostic value without writing any output.
+    pub fn check_diagnostic_column(&self, name: &str) -> Result<(), TabularError> {
+        for (column, field) in self.schema.fields().iter().enumerate() {
+            if field.name() != name {
+                continue;
+            }
+            for batch in &self.batches {
+                let array = batch.column(column);
+                for row in 0..array.len() {
+                    if array.is_null(row) {
+                        continue;
+                    }
+                    let value = if let Some(values) = array.as_any().downcast_ref::<StringArray>() {
+                        values.value(row).to_owned()
+                    } else if let Some(values) = array.as_any().downcast_ref::<LargeStringArray>() {
+                        values.value(row).to_owned()
+                    } else {
+                        "Non-null diagnostic value; native interpretation required".into()
+                    };
+                    return Err(TabularError::Metadata {
+                        evidence: vec![MetadataEvidence {
+                            location: MetadataLocation::Field(column),
+                            key: name.to_owned(),
+                            value,
+                            classification: MetadataClassification::Unknown,
+                        }],
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn validate(&self, limits: OutputLimits) -> Result<(), TabularError> {
         // Array storage is shared; revalidation does not clone cell buffers.
         Self::try_new(self.schema.clone(), self.batches.clone(), limits).map(|_| ())
     }
 }
 
-pub(crate) fn validate_schema(
-    schema: &Schema,
-    limits: OutputLimits,
-) -> Result<(), TabularError> {
+pub(crate) fn validate_schema(schema: &Schema, limits: OutputLimits) -> Result<(), TabularError> {
     let mut schema_size = metadata_size(schema.metadata(), 0, limits)?;
+    let mut unsupported = None;
     for (column, field) in schema.fields().iter().enumerate() {
         schema_size = schema_size
             .checked_add(field.name().len())
@@ -211,20 +284,19 @@ pub(crate) fn validate_schema(
                 | DataType::Binary
                 | DataType::LargeBinary
                 | DataType::Timestamp(_, _)
+                | DataType::Date32
+                | DataType::Date64
+                | DataType::Time32(TimeUnit::Second | TimeUnit::Millisecond)
+                | DataType::Time64(TimeUnit::Microsecond | TimeUnit::Nanosecond)
+                | DataType::Duration(_)
                 | DataType::Decimal128(_, _)
         ) {
-            return Err(TabularError::UnsupportedType {
-                column,
-                data_type: field.data_type().to_string(),
-            });
+            unsupported.get_or_insert_with(|| (column, field.data_type().to_string()));
         }
         if let DataType::Decimal128(precision, scale) = field.data_type()
             && (*precision == 0 || *precision > 38 || scale.unsigned_abs() > *precision)
         {
-            return Err(TabularError::UnsupportedType {
-                column,
-                data_type: field.data_type().to_string(),
-            });
+            unsupported.get_or_insert_with(|| (column, field.data_type().to_string()));
         }
     }
     let mut evidence = Vec::new();
@@ -239,11 +311,14 @@ pub(crate) fn validate_schema(
     if !evidence.is_empty() {
         return Err(TabularError::Metadata { evidence });
     }
+    if let Some((column, data_type)) = unsupported {
+        return Err(TabularError::UnsupportedType { column, data_type });
+    }
     Ok(())
 }
 
 fn metadata_size(
-    metadata: &HashMap<String, String>,
+    metadata: &Metadata,
     mut size: usize,
     limits: OutputLimits,
 ) -> Result<usize, TabularError> {
@@ -259,7 +334,7 @@ fn metadata_size(
 }
 
 fn collect_metadata(
-    metadata: &HashMap<String, String>,
+    metadata: &Metadata,
     location: MetadataLocation,
     evidence: &mut Vec<MetadataEvidence>,
 ) {

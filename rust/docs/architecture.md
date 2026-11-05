@@ -245,6 +245,28 @@ The SDK's normal dependency closure excludes the CLI and identity implementation
 SDK consumers supply an `Arc<dyn azure_core::credentials::TokenCredential>`.
 Neither `az`, `azd`, nor Python is required by the Rust workspace.
 
+### Shared tabular results and Dataflow execution
+
+`fabric-sdk-tabular` is an SDK-layer leaf for bounded Arrow result decoding and
+CSV, JSON, and Parquet serialization. It owns no service, credentials, runtime,
+filesystem, or CLI types. Query and execute adapters can reuse its ordered typed
+result contract without depending on the CLI output layer. Native Arrow media
+and requested output serialization remain separate.
+
+`fabric-sdk-dataflow` binds the native Dataflow Execute Query endpoint to the
+existing `OperationSession`. Its finite Arrow `Accept` negotiation is additive:
+the initial execution and result retrieval use the selected Arrow version,
+while operation-state polling retains JSON and existing consumers retain their
+defaults. There is no second HTTP, identity, retry, or polling engine. Accepted
+operations are not complete results, and output decoding must inspect Dataflow
+diagnostic metadata before reporting success.
+
+The CLI owns target/input validation, explicit execution approval, local output
+preflight, total deadlines, and the same native credential/transport composition
+as other commands. This binding does not establish missing SQL/KQL engines or
+turn Dataflow staging storage into a supported data-plane endpoint. See
+[shared tabular results](tabular-results.md) for output and diagnostic boundaries.
+
 ## REST client implementation
 
 The additive `fabric-sdk-folders` SDK-layer crate owns read-only folder LIST/GET.

@@ -6,11 +6,11 @@
 use std::sync::Arc;
 
 use arrow_array::{Int64Array, RecordBatch};
-use arrow_ipc::gen::Message::{
+use arrow_ipc::r#gen::Message::{
     BodyCompression, BodyCompressionArgs, Message, MessageArgs, RecordBatch as IpcBatch,
     RecordBatchArgs,
 };
-use arrow_ipc::gen::Schema::{KeyValue, KeyValueArgs};
+use arrow_ipc::r#gen::Schema::{KeyValue, KeyValueArgs};
 use arrow_ipc::writer::StreamWriter;
 use arrow_ipc::{Buffer, FieldNode, MessageHeader, MetadataVersion};
 use arrow_schema::{DataType, Field, Schema};
@@ -100,15 +100,25 @@ fn metadata_after_valid_data_is_unknown_evidence_not_application_success() {
     assert_eq!(evidence[0].location, MetadataLocation::Message(2));
     assert_eq!(evidence[0].classification, MetadataClassification::Unknown);
     assert_eq!(evidence[0].key, "Metadata");
-    assert_eq!(evidence[0].value, "{\"error\":{\"message\":\"synthetic failure\"}}");
+    assert_eq!(
+        evidence[0].value,
+        "{\"error\":{\"message\":\"synthetic failure\"}}"
+    );
 }
 
 #[test]
 fn benign_unrecognized_metadata_is_not_guessed_to_be_success() {
     let mut bytes = schema_only_prefix();
-    append_message(&mut bytes, &diagnostic_message(1, "{\"status\":\"ok\"}"), &[]);
+    append_message(
+        &mut bytes,
+        &diagnostic_message(1, "{\"status\":\"ok\"}"),
+        &[],
+    );
     terminate(&mut bytes);
-    assert!(matches!(decode_arrow_stream(&bytes, limits()), Err(TabularError::Metadata { .. })));
+    assert!(matches!(
+        decode_arrow_stream(&bytes, limits()),
+        Err(TabularError::Metadata { .. })
+    ));
 }
 
 #[test]
@@ -120,7 +130,10 @@ fn repeated_metadata_references_are_charged_before_copying() {
     let limit = OutputLimits::new(100, 16_384, 20).unwrap();
     assert!(matches!(
         decode_arrow_stream(&bytes, limit),
-        Err(TabularError::LimitExceeded { kind: LimitKind::Bytes, .. })
+        Err(TabularError::LimitExceeded {
+            kind: LimitKind::Bytes,
+            ..
+        })
     ));
 }
 
@@ -134,11 +147,10 @@ fn crafted_batch(
 ) -> Vec<u8> {
     let mut builder = FlatBufferBuilder::new();
     let nodes = builder.create_vector(&[FieldNode::new(node_rows, 0)]);
-    let buffers = builder.create_vector(&[
-        Buffer::new(0, 0),
-        Buffer::new(buffer_offset, buffer_length),
-    ]);
-    let compression = compressed.then(|| BodyCompression::create(&mut builder, &BodyCompressionArgs::default()));
+    let buffers =
+        builder.create_vector(&[Buffer::new(0, 0), Buffer::new(buffer_offset, buffer_length)]);
+    let compression =
+        compressed.then(|| BodyCompression::create(&mut builder, &BodyCompressionArgs::default()));
     let batch = IpcBatch::create(
         &mut builder,
         &RecordBatchArgs {
@@ -166,11 +178,18 @@ fn crafted_batch(
 #[test]
 fn declared_row_bomb_is_rejected_before_body_allocation() {
     let mut bytes = schema_only_prefix();
-    append_message(&mut bytes, &crafted_batch(i64::MAX, i64::MAX, 0, 0, 0, false), &[]);
+    append_message(
+        &mut bytes,
+        &crafted_batch(i64::MAX, i64::MAX, 0, 0, 0, false),
+        &[],
+    );
     terminate(&mut bytes);
     assert!(matches!(
         decode_arrow_stream(&bytes, limits()),
-        Err(TabularError::LimitExceeded { kind: LimitKind::Rows, .. })
+        Err(TabularError::LimitExceeded {
+            kind: LimitKind::Rows,
+            ..
+        })
     ));
 }
 
@@ -188,9 +207,16 @@ fn negative_overflowing_and_out_of_body_ranges_are_rejected_without_panics() {
         (1, 1, 0, 0, i64::MAX),
     ] {
         let mut bytes = schema_only_prefix();
-        append_message(&mut bytes, &crafted_batch(rows, node_rows, offset, length, body_length, false), &[]);
+        append_message(
+            &mut bytes,
+            &crafted_batch(rows, node_rows, offset, length, body_length, false),
+            &[],
+        );
         terminate(&mut bytes);
-        assert!(matches!(decode_arrow_stream(&bytes, limits()), Err(TabularError::InvalidIpc { .. })));
+        assert!(matches!(
+            decode_arrow_stream(&bytes, limits()),
+            Err(TabularError::InvalidIpc { .. })
+        ));
     }
 }
 
@@ -199,7 +225,12 @@ fn compression_is_rejected_even_for_a_tiny_body() {
     let mut bytes = schema_only_prefix();
     append_message(&mut bytes, &crafted_batch(1, 1, 0, 0, 0, true), &[]);
     terminate(&mut bytes);
-    assert!(matches!(decode_arrow_stream(&bytes, limits()), Err(TabularError::InvalidIpc { reason: "compressed IPC bodies are not supported" })));
+    assert!(matches!(
+        decode_arrow_stream(&bytes, limits()),
+        Err(TabularError::InvalidIpc {
+            reason: "compressed IPC bodies are not supported"
+        })
+    ));
 }
 
 #[test]
@@ -207,7 +238,10 @@ fn invalid_array_buffers_are_reported_as_errors() {
     let mut bytes = schema_only_prefix();
     append_message(&mut bytes, &crafted_batch(1, 1, 0, 0, 0, false), &[]);
     terminate(&mut bytes);
-    assert!(matches!(decode_arrow_stream(&bytes, limits()), Err(TabularError::InvalidIpc { .. })));
+    assert!(matches!(
+        decode_arrow_stream(&bytes, limits()),
+        Err(TabularError::InvalidIpc { .. })
+    ));
 }
 
 #[test]
@@ -224,7 +258,7 @@ fn legacy_length_prefixes_and_legacy_end_markers_are_supported() {
             break;
         }
         let metadata = &source[offset..offset + size];
-        let message = arrow_ipc::gen::Message::root_as_message(metadata).unwrap();
+        let message = arrow_ipc::r#gen::Message::root_as_message(metadata).unwrap();
         let body = message.bodyLength() as usize;
         legacy.extend_from_slice(&source[offset..offset + size + body]);
         offset += size + body;

@@ -5,10 +5,13 @@ use std::collections::HashSet;
 use std::io::{self, Write};
 
 use arrow_array::{
-    Array, BinaryArray, BooleanArray, Decimal128Array, Float32Array, Float64Array, Int8Array,
-    Int16Array, Int32Array, Int64Array, LargeBinaryArray, LargeStringArray, StringArray,
-    TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
-    TimestampSecondArray, UInt8Array, UInt16Array, UInt32Array, UInt64Array,
+    Array, BinaryArray, BooleanArray, Date32Array, Date64Array, Decimal128Array,
+    DurationMicrosecondArray, DurationMillisecondArray, DurationNanosecondArray,
+    DurationSecondArray, Float32Array, Float64Array, Int8Array, Int16Array, Int32Array, Int64Array,
+    LargeBinaryArray, LargeStringArray, StringArray, Time32MillisecondArray, Time32SecondArray,
+    Time64MicrosecondArray, Time64NanosecondArray, TimestampMicrosecondArray,
+    TimestampMillisecondArray, TimestampNanosecondArray, TimestampSecondArray, UInt8Array,
+    UInt16Array, UInt32Array, UInt64Array,
 };
 use arrow_schema::{DataType, TimeUnit};
 use base64::display::Base64Display;
@@ -95,7 +98,7 @@ fn validate_output_schema(
     }
     if format == ResultFormat::Parquet {
         let mut names = HashSet::new();
-        for field in result.schema().fields() {
+        for (column, field) in result.schema().fields().iter().enumerate() {
             if !names.insert(field.name()) {
                 return Err(TabularError::UnsupportedOutputSchema {
                     reason: "Parquet output requires unique column names",
@@ -106,10 +109,39 @@ fn validate_output_schema(
                     reason: "Parquet cannot preserve second-unit timestamps without conversion",
                 });
             }
+            if matches!(field.data_type(), DataType::Time32(TimeUnit::Second)) {
+                return Err(TabularError::UnsupportedOutputSchema {
+                    reason: "Parquet cannot preserve second-unit time values without conversion",
+                });
+            }
             if matches!(field.data_type(), DataType::Decimal128(_, scale) if *scale < 0) {
                 return Err(TabularError::UnsupportedOutputSchema {
                     reason: "Parquet requires a nonnegative decimal scale",
                 });
+            }
+            if field.data_type() == &DataType::Date64 {
+                let mut row_offset = 0;
+                for batch in result.batches() {
+                    let values = batch
+                        .column(column)
+                        .as_any()
+                        .downcast_ref::<Date64Array>()
+                        .ok_or(TabularError::UnsupportedOutputSchema {
+                            reason: "Date64 array does not match its schema",
+                        })?;
+                    for row in 0..values.len() {
+                        if !values.is_null(row)
+                            && i32::try_from(values.value(row) / 86_400_000).is_err()
+                        {
+                            return Err(TabularError::UnsupportedValue {
+                                column,
+                                row: row_offset + row,
+                                reason: "Date64 value exceeds the Parquet date range",
+                            });
+                        }
+                    }
+                    row_offset += batch.num_rows();
+                }
             }
         }
     }
@@ -230,24 +262,24 @@ fn json_encoding(data_type: &DataType) -> &'static str {
         DataType::Float32 | DataType::Float64 => "number",
         DataType::Binary | DataType::LargeBinary => "base64",
         DataType::Timestamp(_, _) => "signed-ticks-string",
+        DataType::Date32 => "days-since-epoch-string",
+        DataType::Date64 => "milliseconds-since-epoch-string",
+        DataType::Time32(_) | DataType::Time64(_) | DataType::Duration(_) => "signed-ticks-string",
         DataType::Decimal128(_, _) => "decimal-string",
         DataType::Utf8 | DataType::LargeUtf8 => "string",
         _ => "integer-string",
     }
 }
 
-fn write_parquet(
-    result: &TabularResult,
-    output: &mut BoundedBuffer,
-) -> Result<(), TabularError> {
+fn write_parquet(result: &TabularResult, output: &mut BoundedBuffer) -> Result<(), TabularError> {
     let properties = WriterProperties::builder()
         .set_compression(Compression::UNCOMPRESSED)
         .set_write_batch_size(1024)
         .set_max_row_group_row_count(Some(1024))
         .set_max_row_group_bytes(Some(output.maximum))
         .build();
-    let mut writer =
-        ArrowWriter::try_new(output, result.schema().clone(), Some(properties)).map_err(encoding)?;
+    let mut writer = ArrowWriter::try_new(output, result.schema().clone(), Some(properties))
+        .map_err(encoding)?;
     for batch in result.batches() {
         writer.write(batch).map_err(encoding)?;
         writer.flush().map_err(encoding)?;
@@ -304,9 +336,17 @@ fn cell(array: &dyn Array, column: usize, row: usize) -> Result<Cell<'_>, Tabula
         DataType::Timestamp(TimeUnit::Millisecond, _) => exact!(TimestampMillisecondArray),
         DataType::Timestamp(TimeUnit::Microsecond, _) => exact!(TimestampMicrosecondArray),
         DataType::Timestamp(TimeUnit::Nanosecond, _) => exact!(TimestampNanosecondArray),
-        DataType::Decimal128(_, scale) => {
-            Cell::Exact(decimal(typed!(Decimal128Array), *scale))
-        }
+        DataType::Date32 => exact!(Date32Array),
+        DataType::Date64 => exact!(Date64Array),
+        DataType::Time32(TimeUnit::Second) => exact!(Time32SecondArray),
+        DataType::Time32(TimeUnit::Millisecond) => exact!(Time32MillisecondArray),
+        DataType::Time64(TimeUnit::Microsecond) => exact!(Time64MicrosecondArray),
+        DataType::Time64(TimeUnit::Nanosecond) => exact!(Time64NanosecondArray),
+        DataType::Duration(TimeUnit::Second) => exact!(DurationSecondArray),
+        DataType::Duration(TimeUnit::Millisecond) => exact!(DurationMillisecondArray),
+        DataType::Duration(TimeUnit::Microsecond) => exact!(DurationMicrosecondArray),
+        DataType::Duration(TimeUnit::Nanosecond) => exact!(DurationNanosecondArray),
+        DataType::Decimal128(_, scale) => Cell::Exact(decimal(typed!(Decimal128Array), *scale)),
         data_type => {
             return Err(TabularError::UnsupportedType {
                 column,
@@ -320,7 +360,10 @@ fn decimal(value: i128, scale: i8) -> String {
     let digits = value.unsigned_abs().to_string();
     let sign = if value < 0 { "-" } else { "" };
     if scale <= 0 {
-        return format!("{sign}{digits}{}", "0".repeat(usize::from(scale.unsigned_abs())));
+        return format!(
+            "{sign}{digits}{}",
+            "0".repeat(usize::from(scale.unsigned_abs()))
+        );
     }
     let scale = scale as usize;
     if digits.len() <= scale {

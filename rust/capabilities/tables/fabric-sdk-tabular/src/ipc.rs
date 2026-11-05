@@ -4,8 +4,8 @@
 use std::io::Cursor;
 
 use arrow_ipc::MessageHeader;
-use arrow_ipc::gen::Message::root_as_message_with_opts;
-use arrow_ipc::gen::Schema::{Schema as IpcSchema, Type};
+use arrow_ipc::r#gen::Message::root_as_message_with_opts;
+use arrow_ipc::r#gen::Schema::{Schema as IpcSchema, Type};
 use arrow_ipc::reader::StreamReader;
 use flatbuffers::{InvalidFlatbuffer, VerifierOptions};
 
@@ -34,8 +34,8 @@ pub fn decode_arrow_stream(
         return Err(limit(LimitKind::Bytes, limits.max_bytes()));
     }
     preflight(bytes, limits)?;
-    let mut reader = StreamReader::try_new(Cursor::new(bytes), None)
-        .map_err(|_| invalid("invalid schema"))?;
+    let mut reader =
+        StreamReader::try_new(Cursor::new(bytes), None).map_err(|_| invalid("invalid schema"))?;
     let schema = reader.schema();
     validate_schema(&schema, limits)?;
     let mut batches = Vec::new();
@@ -103,12 +103,7 @@ fn preflight(bytes: &[u8], limits: OutputLimits) -> Result<(), TabularError> {
                 let key = entry.key().unwrap_or_default();
                 let value = entry.value().unwrap_or_default();
                 if !key.is_empty() || !value.is_empty() {
-                    evidence_size = bounded_size(
-                        evidence_size,
-                        key.len(),
-                        value.len(),
-                        limits,
-                    )?;
+                    evidence_size = bounded_size(evidence_size, key.len(), value.len(), limits)?;
                     evidence.push(MetadataEvidence {
                         location: MetadataLocation::Message(message_index),
                         key: key.to_owned(),
@@ -138,12 +133,7 @@ fn preflight(bytes: &[u8], limits: OutputLimits) -> Result<(), TabularError> {
                 let schema = message
                     .header_as_schema()
                     .ok_or_else(|| invalid("missing schema header"))?;
-                preflight_schema(
-                    schema,
-                    limits,
-                    &mut evidence,
-                    &mut evidence_size,
-                )?;
+                preflight_schema(schema, limits, &mut evidence, &mut evidence_size)?;
                 let schema = arrow_ipc::convert::try_fb_to_schema(schema)
                     .map_err(|_| invalid("invalid schema"))?;
                 validate_schema(&schema, limits)?;
@@ -169,7 +159,9 @@ fn preflight(bytes: &[u8], limits: OutputLimits) -> Result<(), TabularError> {
                     .checked_add(length)
                     .filter(|&value| value <= limits.max_rows())
                     .ok_or_else(|| limit(LimitKind::Rows, limits.max_rows()))?;
-                let nodes = batch.nodes().ok_or_else(|| invalid("missing field nodes"))?;
+                let nodes = batch
+                    .nodes()
+                    .ok_or_else(|| invalid("missing field nodes"))?;
                 for node in nodes {
                     let node_length = usize::try_from(node.length())
                         .map_err(|_| invalid("invalid field length"))?;
@@ -220,6 +212,7 @@ fn preflight_schema(
         }
     }
     let mut schema_size = 0usize;
+    let mut unsupported = None;
     if let Some(fields) = schema.fields() {
         for (column, field) in fields.iter().enumerate() {
             schema_size = bounded_size(
@@ -239,13 +232,23 @@ fn preflight_schema(
                         | Type::LargeBinary
                         | Type::Bool
                         | Type::Timestamp
+                        | Type::Date
+                        | Type::Time
+                        | Type::Duration
                         | Type::Decimal
                 )
-                || field.children().is_some_and(|children| !children.is_empty())
+                || field
+                    .children()
+                    .is_some_and(|children| !children.is_empty())
             {
-                return Err(TabularError::UnsupportedType {
-                    column,
-                    data_type: format!("{:?} (nested/dictionary types unsupported)", field.type_type()),
+                unsupported.get_or_insert_with(|| {
+                    (
+                        column,
+                        format!(
+                            "{:?} (nested/dictionary types unsupported)",
+                            field.type_type()
+                        ),
+                    )
                 });
             }
             if let Some(timestamp) = field.type_as_timestamp() {
@@ -277,6 +280,9 @@ fn preflight_schema(
         return Err(TabularError::Metadata {
             evidence: std::mem::take(evidence),
         });
+    }
+    if let Some((column, data_type)) = unsupported {
+        return Err(TabularError::UnsupportedType { column, data_type });
     }
     Ok(())
 }

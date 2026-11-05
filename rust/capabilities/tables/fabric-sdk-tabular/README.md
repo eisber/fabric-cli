@@ -68,6 +68,16 @@ The application adapter remains responsible for verified Dataflow status,
 documented diagnostic interpretation, operation IDs, and partial outcomes.
 An HTTP 200 response or a structurally valid stream alone proves neither.
 
+For engines that report diagnostics as a data column, adapters call
+`result.check_diagnostic_column("<reserved-name>")` before encoding. The
+Dataflow adapter uses `PQ Arrow Metadata`. Every occurrence is checked across
+all batches; a non-null value returns unknown diagnostic evidence, preserving
+UTF-8 content where available. Absent or all-null columns are allowed by an
+explicit integration policy, not by an undocumented payload-success parser.
+The generic serializer does not reserve this name for unrelated engines.
+Metadata evidence is retained even when the schema also contains an unsupported
+type; the unsupported-type error must not hide a reported diagnostic.
+
 ## Supported types
 
 | Arrow type | JSON cells | CSV non-null cells | Parquet |
@@ -78,6 +88,9 @@ An HTTP 200 response or a structurally valid stream alone proves neither.
 | Utf8 / LargeUtf8 | JSON strings | UTF-8 text | Original Arrow type |
 | Binary / LargeBinary | Standard padded base64 strings | Standard padded base64 | Original bytes/type |
 | Timestamp, all four units | Signed tick strings | Signed tick text | Millisecond/microsecond/nanosecond units only |
+| Date32 / Date64 | Exact days / milliseconds since Unix epoch strings | Exact epoch-value text | Original type; Date64 must be day-aligned and fit Parquet's signed 32-bit day range |
+| Time32 / Time64 | Exact tick strings with unit in schema | Exact tick text | Millisecond/microsecond/nanosecond units only |
+| Duration, all four units | Exact signed tick strings | Exact signed tick text | Original type via embedded Arrow schema |
 | Decimal128 | Exact fixed-point strings | Exact fixed-point text | Nonnegative scale only |
 
 JSON's ordered schema includes the Arrow type description (including timestamp
@@ -90,10 +103,10 @@ are exact decimal strings with appended zeros. Timestamp cells are ticks,
 **not** formatted or timezone-converted date strings.
 
 NaN/infinities, out-of-precision decimals, nulls in non-nullable columns, nested
-types, dictionaries, Decimal256, date/time/interval types, and every type not
+types, dictionaries, Decimal256, interval types, and every type not
 listed above are explicit errors. Decimal precision must be 1–38, with
 `abs(scale) <= precision`. Parquet additionally rejects second-unit
-timestamps (it cannot store that unit natively), negative decimal scales,
+timestamps/time values (it cannot store that unit natively), negative decimal scales,
 duplicate names, and zero-column schemas, rather than doing lossy conversion.
 No cast to strings is used to fake Parquet's typed data.
 

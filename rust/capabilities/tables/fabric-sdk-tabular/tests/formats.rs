@@ -8,8 +8,8 @@ use std::io::{self, Cursor, Write};
 use std::sync::Arc;
 
 use arrow_array::{
-    ArrayRef, BinaryArray, BooleanArray, Decimal128Array, Float32Array, Float64Array,
-    Int8Array, Int16Array, Int32Array, Int64Array, LargeBinaryArray, LargeStringArray, RecordBatch,
+    ArrayRef, BinaryArray, BooleanArray, Decimal128Array, Float32Array, Float64Array, Int8Array,
+    Int16Array, Int32Array, Int64Array, LargeBinaryArray, LargeStringArray, RecordBatch,
     StringArray, TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
     TimestampSecondArray, UInt8Array, UInt16Array, UInt32Array, UInt64Array,
 };
@@ -53,7 +53,11 @@ fn fixture() -> TabularResult {
         ),
         (
             "text,\"\n",
-            Arc::new(StringArray::from(vec![Some("hé,\"llo\n世界"), Some(""), None])),
+            Arc::new(StringArray::from(vec![
+                Some("hé,\"llo\n世界"),
+                Some(""),
+                None,
+            ])),
         ),
         (
             "flag",
@@ -148,9 +152,21 @@ fn json_preserves_exact_values_schema_nulls_and_order() {
     );
     assert_eq!(
         json["rows"][1],
-        json!([i64::MAX.to_string(), "0", "", false, 1.25, "-0.01", "-1", ""])
+        json!([
+            i64::MAX.to_string(),
+            "0",
+            "",
+            false,
+            1.25,
+            "-0.01",
+            "-1",
+            ""
+        ])
     );
-    assert_eq!(json["rows"][2], json!([null, null, null, null, null, null, null, null]));
+    assert_eq!(
+        json["rows"][2],
+        json!([null, null, null, null, null, null, null, null])
+    );
     assert!(json["rows"][0][4].as_f64().unwrap().is_sign_negative());
 }
 
@@ -178,10 +194,19 @@ fn csv_is_independently_readable_and_quotes_unicode_quotes_and_newlines() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     assert_eq!(read[0].num_rows(), 3);
-    let strings = read[0].column(2).as_any().downcast_ref::<StringArray>().unwrap();
+    let strings = read[0]
+        .column(2)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
     assert_eq!(strings.value(0), "hé,\"llo\n世界");
     assert_eq!(
-        read[0].column(0).as_any().downcast_ref::<StringArray>().unwrap().value(0),
+        read[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap()
+            .value(0),
         i64::MIN.to_string()
     );
 }
@@ -189,8 +214,18 @@ fn csv_is_independently_readable_and_quotes_unicode_quotes_and_newlines() {
 #[test]
 fn csv_null_is_bare_but_empty_text_and_binary_are_quoted() {
     let result = dataset(vec![
-        ("s", Arc::new(StringArray::from(vec![None, Some(""), Some("null")]))),
-        ("b", Arc::new(BinaryArray::from(vec![None, Some(&b""[..]), Some(&b"x"[..])]))),
+        (
+            "s",
+            Arc::new(StringArray::from(vec![None, Some(""), Some("null")])),
+        ),
+        (
+            "b",
+            Arc::new(BinaryArray::from(vec![
+                None,
+                Some(&b""[..]),
+                Some(&b"x"[..]),
+            ])),
+        ),
     ]);
     assert_eq!(
         encode(&result, ResultFormat::Csv, limits()).unwrap(),
@@ -211,23 +246,51 @@ fn real_parquet_readback_preserves_supported_types_nulls_and_order() {
 fn all_supported_primitive_widths_and_large_arrays_roundtrip() {
     let result = dataset(vec![
         ("i8", Arc::new(Int8Array::from(vec![Some(i8::MIN), None]))),
-        ("i16", Arc::new(Int16Array::from(vec![Some(i16::MIN), None]))),
-        ("i32", Arc::new(Int32Array::from(vec![Some(i32::MIN), None]))),
+        (
+            "i16",
+            Arc::new(Int16Array::from(vec![Some(i16::MIN), None])),
+        ),
+        (
+            "i32",
+            Arc::new(Int32Array::from(vec![Some(i32::MIN), None])),
+        ),
         ("u8", Arc::new(UInt8Array::from(vec![Some(u8::MAX), None]))),
-        ("u16", Arc::new(UInt16Array::from(vec![Some(u16::MAX), None]))),
-        ("u32", Arc::new(UInt32Array::from(vec![Some(u32::MAX), None]))),
+        (
+            "u16",
+            Arc::new(UInt16Array::from(vec![Some(u16::MAX), None])),
+        ),
+        (
+            "u32",
+            Arc::new(UInt32Array::from(vec![Some(u32::MAX), None])),
+        ),
         ("f32", Arc::new(Float32Array::from(vec![Some(0.1), None]))),
-        ("large-text", Arc::new(LargeStringArray::from(vec![Some("é"), None]))),
-        ("large-bytes", Arc::new(LargeBinaryArray::from(vec![Some(&b"\xff"[..]), None]))),
-        ("millis", Arc::new(TimestampMillisecondArray::from(vec![Some(-1), None]))),
-        ("micros", Arc::new(TimestampMicrosecondArray::from(vec![Some(i64::MAX), None]))),
+        (
+            "large-text",
+            Arc::new(LargeStringArray::from(vec![Some("é"), None])),
+        ),
+        (
+            "large-bytes",
+            Arc::new(LargeBinaryArray::from(vec![Some(&b"\xff"[..]), None])),
+        ),
+        (
+            "millis",
+            Arc::new(TimestampMillisecondArray::from(vec![Some(-1), None])),
+        ),
+        (
+            "micros",
+            Arc::new(TimestampMicrosecondArray::from(vec![Some(i64::MAX), None])),
+        ),
     ]);
     let json = parsed_json(&result);
     assert_eq!(json["rows"][0][6], json!(0.1));
     let (schema, batches) = read_parquet(encode(&result, ResultFormat::Parquet, limits()).unwrap());
     assert_eq!(schema, *result.schema());
     assert_eq!(batches, result.batches());
-    assert!(!encode(&result, ResultFormat::Csv, limits()).unwrap().is_empty());
+    assert!(
+        !encode(&result, ResultFormat::Csv, limits())
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -236,11 +299,20 @@ fn empty_results_keep_schema_in_json_csv_and_parquet() {
     let result = TabularResult::try_new(schema.clone(), vec![], limits()).unwrap();
     assert_eq!(parsed_json(&result)["rows"], json!([]));
     assert_eq!(parsed_json(&result)["schema"][0]["name"], "x");
-    assert_eq!(encode(&result, ResultFormat::Csv, limits()).unwrap(), b"\"x\"\r\n");
-    let (read_schema, batches) = read_parquet(encode(&result, ResultFormat::Parquet, limits()).unwrap());
+    assert_eq!(
+        encode(&result, ResultFormat::Csv, limits()).unwrap(),
+        b"\"x\"\r\n"
+    );
+    let (read_schema, batches) =
+        read_parquet(encode(&result, ResultFormat::Parquet, limits()).unwrap());
     assert_eq!(read_schema, schema);
     assert!(batches.is_empty());
-    assert_eq!(decode_arrow_stream(&stream(&result), limits()).unwrap().schema(), &schema);
+    assert_eq!(
+        decode_arrow_stream(&stream(&result), limits())
+            .unwrap()
+            .schema(),
+        &schema
+    );
 }
 
 #[test]
@@ -248,7 +320,10 @@ fn zero_column_schema_is_json_only() {
     let result = TabularResult::try_new(Arc::new(Schema::empty()), vec![], limits()).unwrap();
     assert_eq!(parsed_json(&result), json!({"schema":[],"rows":[]}));
     for format in [ResultFormat::Csv, ResultFormat::Parquet] {
-        assert!(matches!(encode(&result, format, limits()), Err(TabularError::UnsupportedOutputSchema { .. })));
+        assert!(matches!(
+            encode(&result, format, limits()),
+            Err(TabularError::UnsupportedOutputSchema { .. })
+        ));
     }
 }
 
@@ -260,21 +335,53 @@ fn duplicate_names_remain_positional_and_parquet_rejects_them() {
     ]);
     let json = parsed_json(&result);
     assert_eq!(json["schema"][0]["name"], json["schema"][1]["name"]);
-    assert_eq!(json["rows"], json!([["1","2"]]));
-    assert_eq!(encode(&result, ResultFormat::Csv, limits()).unwrap(), b"\"same\",\"same\"\r\n\"1\",\"2\"\r\n");
-    assert!(matches!(encode(&result, ResultFormat::Parquet, limits()), Err(TabularError::UnsupportedOutputSchema { .. })));
+    assert_eq!(json["rows"], json!([["1", "2"]]));
+    assert_eq!(
+        encode(&result, ResultFormat::Csv, limits()).unwrap(),
+        b"\"same\",\"same\"\r\n\"1\",\"2\"\r\n"
+    );
+    assert!(matches!(
+        encode(&result, ResultFormat::Parquet, limits()),
+        Err(TabularError::UnsupportedOutputSchema { .. })
+    ));
 }
 
 #[test]
 fn seconds_timestamps_and_negative_decimal_scale_are_exact_or_rejected() {
     let result = dataset(vec![
-        ("seconds", Arc::new(TimestampSecondArray::from(vec![i64::MAX]))),
-        ("decimal", Arc::new(Decimal128Array::from(vec![123]).with_precision_and_scale(5, -2).unwrap())),
+        (
+            "seconds",
+            Arc::new(TimestampSecondArray::from(vec![i64::MAX])),
+        ),
+        (
+            "decimal",
+            Arc::new(
+                Decimal128Array::from(vec![123])
+                    .with_precision_and_scale(5, -2)
+                    .unwrap(),
+            ),
+        ),
     ]);
-    assert_eq!(parsed_json(&result)["rows"], json!([[i64::MAX.to_string(),"12300"]]));
-    assert!(matches!(encode(&result, ResultFormat::Parquet, limits()), Err(TabularError::UnsupportedOutputSchema { .. })));
-    let decimal_only = dataset(vec![("d", Arc::new(Decimal128Array::from(vec![123]).with_precision_and_scale(5, -2).unwrap()))]);
-    assert!(matches!(encode(&decimal_only, ResultFormat::Parquet, limits()), Err(TabularError::UnsupportedOutputSchema { .. })));
+    assert_eq!(
+        parsed_json(&result)["rows"],
+        json!([[i64::MAX.to_string(), "12300"]])
+    );
+    assert!(matches!(
+        encode(&result, ResultFormat::Parquet, limits()),
+        Err(TabularError::UnsupportedOutputSchema { .. })
+    ));
+    let decimal_only = dataset(vec![(
+        "d",
+        Arc::new(
+            Decimal128Array::from(vec![123])
+                .with_precision_and_scale(5, -2)
+                .unwrap(),
+        ),
+    )]);
+    assert!(matches!(
+        encode(&decimal_only, ResultFormat::Parquet, limits()),
+        Err(TabularError::UnsupportedOutputSchema { .. })
+    ));
 }
 
 #[test]
@@ -284,7 +391,8 @@ fn ipc_roundtrip_keeps_all_batches_and_row_order() {
         one.schema().clone(),
         vec![one.batches()[0].clone(), one.batches()[0].clone()],
         limits(),
-    ).unwrap();
+    )
+    .unwrap();
     let decoded = decode_arrow_stream(&stream(&result), limits()).unwrap();
     assert_eq!(decoded.num_rows(), 6);
     assert_eq!(decoded.batches(), result.batches());
@@ -296,10 +404,28 @@ fn ipc_roundtrip_keeps_all_batches_and_row_order() {
 #[test]
 fn malformed_truncated_and_unterminated_ipc_never_succeed() {
     let bytes = stream(&fixture());
-    for cut in [0, 1, 4, 7, bytes.len() / 2, bytes.len() - 8, bytes.len() - 1] {
-        assert!(matches!(decode_arrow_stream(&bytes[..cut], limits()), Err(TabularError::InvalidIpc { .. })), "cut={cut}");
+    for cut in [
+        0,
+        1,
+        4,
+        7,
+        bytes.len() / 2,
+        bytes.len() - 8,
+        bytes.len() - 1,
+    ] {
+        assert!(
+            matches!(
+                decode_arrow_stream(&bytes[..cut], limits()),
+                Err(TabularError::InvalidIpc { .. })
+            ),
+            "cut={cut}"
+        );
     }
-    for bad in [&b"not arrow"[..], &b"\xff\xff\xff\xff\xff\xff\xff\x7f"[..], &b"\x04\0\0\0\0\0\0\0"[..]] {
+    for bad in [
+        &b"not arrow"[..],
+        &b"\xff\xff\xff\xff\xff\xff\xff\x7f"[..],
+        &b"\x04\0\0\0\0\0\0\0"[..],
+    ] {
         assert!(decode_arrow_stream(bad, limits()).is_err());
     }
 }
@@ -309,34 +435,55 @@ fn concatenated_datasets_and_trailing_garbage_are_not_silently_dropped() {
     let first = stream(&fixture());
     let mut combined = first.clone();
     combined.extend_from_slice(&first);
-    assert!(matches!(decode_arrow_stream(&combined, limits()), Err(TabularError::MultipleDatasets)));
+    assert!(matches!(
+        decode_arrow_stream(&combined, limits()),
+        Err(TabularError::MultipleDatasets)
+    ));
     let mut changed_schema = first[..first.len() - 8].to_vec();
     changed_schema.extend_from_slice(&first);
-    assert!(matches!(decode_arrow_stream(&changed_schema, limits()), Err(TabularError::MultipleDatasets)));
+    assert!(matches!(
+        decode_arrow_stream(&changed_schema, limits()),
+        Err(TabularError::MultipleDatasets)
+    ));
     let mut garbage = first;
     garbage.push(42);
-    assert!(matches!(decode_arrow_stream(&garbage, limits()), Err(TabularError::MultipleDatasets)));
+    assert!(matches!(
+        decode_arrow_stream(&garbage, limits()),
+        Err(TabularError::MultipleDatasets)
+    ));
 }
 
 #[test]
 fn schema_mismatch_and_unsupported_types_are_explicit() {
     let result = fixture();
-    let different = Arc::new(Schema::new(vec![Field::new("different", DataType::Int64, true)]));
-    assert!(matches!(TabularResult::try_new(different, result.batches().to_vec(), limits()), Err(TabularError::SchemaMismatch { .. })));
+    let different = Arc::new(Schema::new(vec![Field::new(
+        "different",
+        DataType::Int64,
+        true,
+    )]));
+    assert!(matches!(
+        TabularResult::try_new(different, result.batches().to_vec(), limits()),
+        Err(TabularError::SchemaMismatch { .. })
+    ));
     for data_type in [
         DataType::Null,
-        DataType::Date32,
         DataType::Decimal256(76, 2),
         DataType::List(Arc::new(Field::new("item", DataType::Int64, true))),
         DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
     ] {
         let schema = Arc::new(Schema::new(vec![Field::new("x", data_type, true)]));
-        assert!(matches!(TabularResult::try_new(schema.clone(), vec![], limits()), Err(TabularError::UnsupportedType { .. })));
+        assert!(matches!(
+            TabularResult::try_new(schema.clone(), vec![], limits()),
+            Err(TabularError::UnsupportedType { .. })
+        ));
         let mut bytes = Vec::new();
         let mut writer = StreamWriter::try_new(&mut bytes, &schema).unwrap();
         writer.finish().unwrap();
         drop(writer);
-        assert!(matches!(decode_arrow_stream(&bytes, limits()), Err(TabularError::UnsupportedType { .. })));
+        assert!(matches!(
+            decode_arrow_stream(&bytes, limits()),
+            Err(TabularError::UnsupportedType { .. })
+        ));
     }
 }
 
@@ -346,18 +493,33 @@ fn nonfinite_float_and_out_of_precision_decimal_are_rejected() {
         let array = Arc::new(Float64Array::from(vec![value]));
         let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Float64, true)]));
         let batch = RecordBatch::try_new(schema.clone(), vec![array]).unwrap();
-        assert!(matches!(TabularResult::try_new(schema, vec![batch], limits()), Err(TabularError::UnsupportedValue { .. })));
+        assert!(matches!(
+            TabularResult::try_new(schema, vec![batch], limits()),
+            Err(TabularError::UnsupportedValue { .. })
+        ));
     }
-    let schema = Arc::new(Schema::new(vec![Field::new("d", DataType::Decimal128(2, 0), true)]));
-    let array = Decimal128Array::from(vec![123]).with_precision_and_scale(2, 0).unwrap();
+    let schema = Arc::new(Schema::new(vec![Field::new(
+        "d",
+        DataType::Decimal128(2, 0),
+        true,
+    )]));
+    let array = Decimal128Array::from(vec![123])
+        .with_precision_and_scale(2, 0)
+        .unwrap();
     let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(array)]).unwrap();
-    assert!(matches!(TabularResult::try_new(schema, vec![batch], limits()), Err(TabularError::UnsupportedValue { .. })));
+    assert!(matches!(
+        TabularResult::try_new(schema, vec![batch], limits()),
+        Err(TabularError::UnsupportedValue { .. })
+    ));
 }
 
 #[test]
 fn schema_and_field_metadata_fail_with_unknown_typed_evidence() {
     for field_level in [false, true] {
-        let metadata = HashMap::from([("Metadata".to_owned(), "{\"error\":\"synthetic\"}".to_owned())]);
+        let metadata = HashMap::from([(
+            "Metadata".to_owned(),
+            "{\"error\":\"synthetic\"}".to_owned(),
+        )]);
         let field = Field::new("x", DataType::Int64, true);
         let schema = if field_level {
             Schema::new(vec![field.with_metadata(metadata)])
@@ -366,15 +528,27 @@ fn schema_and_field_metadata_fail_with_unknown_typed_evidence() {
         };
         let schema = Arc::new(schema);
         let error = TabularResult::try_new(schema.clone(), vec![], limits()).unwrap_err();
-        let TabularError::Metadata { evidence } = error else { panic!("expected metadata evidence") };
+        let TabularError::Metadata { evidence } = error else {
+            panic!("expected metadata evidence")
+        };
         assert_eq!(evidence[0].key, "Metadata");
         assert_eq!(evidence[0].classification, MetadataClassification::Unknown);
-        assert_eq!(evidence[0].location, if field_level { MetadataLocation::Field(0) } else { MetadataLocation::Schema });
+        assert_eq!(
+            evidence[0].location,
+            if field_level {
+                MetadataLocation::Field(0)
+            } else {
+                MetadataLocation::Schema
+            }
+        );
         let mut bytes = Vec::new();
         let mut writer = StreamWriter::try_new(&mut bytes, &schema).unwrap();
         writer.finish().unwrap();
         drop(writer);
-        assert!(matches!(decode_arrow_stream(&bytes, limits()), Err(TabularError::Metadata { .. })));
+        assert!(matches!(
+            decode_arrow_stream(&bytes, limits()),
+            Err(TabularError::Metadata { .. })
+        ));
     }
 }
 
@@ -386,32 +560,83 @@ fn row_byte_and_batch_limits_are_never_clipped() {
     let result = fixture();
     let bytes = stream(&result);
     for (limits, kind) in [
-        (OutputLimits::new(2, 4 * 1024 * 1024, 100).unwrap(), LimitKind::Rows),
-        (OutputLimits::new(100, bytes.len() - 1, 100).unwrap(), LimitKind::Bytes),
+        (
+            OutputLimits::new(2, 4 * 1024 * 1024, 100).unwrap(),
+            LimitKind::Rows,
+        ),
+        (
+            OutputLimits::new(100, bytes.len() - 1, 100).unwrap(),
+            LimitKind::Bytes,
+        ),
     ] {
-        assert!(matches!(decode_arrow_stream(&bytes, limits), Err(TabularError::LimitExceeded { kind: actual, .. }) if actual == kind));
+        assert!(
+            matches!(decode_arrow_stream(&bytes, limits), Err(TabularError::LimitExceeded { kind: actual, .. }) if actual == kind)
+        );
     }
-    let two = TabularResult::try_new(result.schema().clone(), vec![result.batches()[0].clone(); 2], limits()).unwrap();
+    let two = TabularResult::try_new(
+        result.schema().clone(),
+        vec![result.batches()[0].clone(); 2],
+        limits(),
+    )
+    .unwrap();
     let one_batch = OutputLimits::new(100, 4 * 1024 * 1024, 1).unwrap();
-    assert!(matches!(decode_arrow_stream(&stream(&two), one_batch), Err(TabularError::LimitExceeded { kind: LimitKind::Batches, .. })));
-    assert!(matches!(encode(&two, ResultFormat::Json, one_batch), Err(TabularError::LimitExceeded { kind: LimitKind::Batches, .. })));
-    assert!(matches!(TabularResult::try_new(result.schema().clone(), result.batches().to_vec(), OutputLimits::new(100, 256, 100).unwrap()), Err(TabularError::LimitExceeded { kind: LimitKind::Bytes, .. })));
+    assert!(matches!(
+        decode_arrow_stream(&stream(&two), one_batch),
+        Err(TabularError::LimitExceeded {
+            kind: LimitKind::Batches,
+            ..
+        })
+    ));
+    assert!(matches!(
+        encode(&two, ResultFormat::Json, one_batch),
+        Err(TabularError::LimitExceeded {
+            kind: LimitKind::Batches,
+            ..
+        })
+    ));
+    assert!(matches!(
+        TabularResult::try_new(
+            result.schema().clone(),
+            result.batches().to_vec(),
+            OutputLimits::new(100, 256, 100).unwrap()
+        ),
+        Err(TabularError::LimitExceeded {
+            kind: LimitKind::Bytes,
+            ..
+        })
+    ));
     let empty_batch = RecordBatch::new_empty(result.schema().clone());
     let empty_batches = TabularResult::try_new(
         result.schema().clone(),
         vec![empty_batch.clone(), empty_batch],
         limits(),
-    ).unwrap();
-    assert!(matches!(decode_arrow_stream(&stream(&empty_batches), one_batch), Err(TabularError::LimitExceeded { kind: LimitKind::Batches, .. })));
+    )
+    .unwrap();
+    assert!(matches!(
+        decode_arrow_stream(&stream(&empty_batches), one_batch),
+        Err(TabularError::LimitExceeded {
+            kind: LimitKind::Batches,
+            ..
+        })
+    ));
 }
 
 #[test]
 fn encoded_byte_limit_counts_escaping_and_does_not_touch_the_sink() {
-    let result = dataset(vec![("s", Arc::new(StringArray::from(vec!["\"".repeat(1024)])))]);
+    let result = dataset(vec![(
+        "s",
+        Arc::new(StringArray::from(vec!["\"".repeat(1024)])),
+    )]);
     let limits = OutputLimits::new(1, 1500, 1).unwrap();
     for format in [ResultFormat::Json, ResultFormat::Csv, ResultFormat::Parquet] {
         let mut sink = Vec::new();
-        assert!(matches!(encode_to_writer(&result, format, limits, &mut sink), Err(TabularError::LimitExceeded { kind: LimitKind::Bytes, .. })));
+        assert!(matches!(
+            encode_to_writer(&result, format, limits, &mut sink),
+            Err(TabularError::LimitExceeded {
+                kind: LimitKind::Bytes,
+                ..
+            })
+        ));
         assert!(sink.is_empty());
     }
 }
@@ -424,7 +649,10 @@ struct FailingWriter {
 impl Write for FailingWriter {
     fn write(&mut self, data: &[u8]) -> io::Result<usize> {
         if self.remaining == 0 {
-            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "synthetic output failure"));
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "synthetic output failure",
+            ));
         }
         let written = data.len().min(self.remaining);
         self.remaining -= written;
@@ -444,8 +672,14 @@ fn write_and_flush_failures_are_reported_for_every_format() {
     let result = fixture();
     for format in [ResultFormat::Csv, ResultFormat::Json, ResultFormat::Parquet] {
         for (remaining, fail_flush) in [(0, false), (3, false), (usize::MAX, true)] {
-            let mut writer = FailingWriter { remaining, fail_flush };
-            assert!(matches!(encode_to_writer(&result, format, limits(), &mut writer), Err(TabularError::Output(_))));
+            let mut writer = FailingWriter {
+                remaining,
+                fail_flush,
+            };
+            assert!(matches!(
+                encode_to_writer(&result, format, limits(), &mut writer),
+                Err(TabularError::Output(_))
+            ));
         }
     }
 }

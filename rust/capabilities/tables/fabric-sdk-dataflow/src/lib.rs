@@ -65,7 +65,9 @@ impl ExecuteQueryTarget {
     /// Rejects names, empty IDs, whitespace, path fragments and malformed UUIDs.
     pub fn new(workspace_id: &str, dataflow_id: &str) -> Result<Self, ExecuteQueryError> {
         if !valid_uuid(workspace_id) || !valid_uuid(dataflow_id) {
-            return Err(ExecuteQueryError::input(ExecuteQueryErrorKind::InvalidTarget));
+            return Err(ExecuteQueryError::input(
+                ExecuteQueryErrorKind::InvalidTarget,
+            ));
         }
         Ok(Self {
             workspace_id: workspace_id.to_owned(),
@@ -109,7 +111,10 @@ impl fmt::Debug for ExecuteQueryTarget {
 pub struct ExecuteQueryRequest {
     #[serde(rename = "queryName")]
     query_name: String,
-    #[serde(rename = "customMashupDocument", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "customMashupDocument",
+        skip_serializing_if = "Option::is_none"
+    )]
     custom_mashup_document: Option<String>,
     #[serde(skip)]
     arrow_version: ArrowVersion,
@@ -166,11 +171,14 @@ impl ExecuteQueryRequest {
     fn body(&self) -> Result<Vec<u8>, ExecuteQueryError> {
         if self.query_name.trim().is_empty()
             || self.query_name.chars().any(char::is_control)
-            || self.custom_mashup_document.as_deref().is_some_and(|document| {
-                document.trim().is_empty() || document.contains('\0')
-            })
+            || self
+                .custom_mashup_document
+                .as_deref()
+                .is_some_and(|document| document.trim().is_empty() || document.contains('\0'))
         {
-            return Err(ExecuteQueryError::input(ExecuteQueryErrorKind::InvalidRequest));
+            return Err(ExecuteQueryError::input(
+                ExecuteQueryErrorKind::InvalidRequest,
+            ));
         }
         if self.query_name.len() > MAX_QUERY_NAME_BYTES
             || self
@@ -178,12 +186,16 @@ impl ExecuteQueryRequest {
                 .as_ref()
                 .is_some_and(|document| document.len() > MAX_REQUEST_BYTES)
         {
-            return Err(ExecuteQueryError::input(ExecuteQueryErrorKind::RequestLimit));
+            return Err(ExecuteQueryError::input(
+                ExecuteQueryErrorKind::RequestLimit,
+            ));
         }
         let body = serde_json::to_vec(self)
             .map_err(|_| ExecuteQueryError::input(ExecuteQueryErrorKind::InvalidRequest))?;
         if body.len() > MAX_REQUEST_BYTES {
-            return Err(ExecuteQueryError::input(ExecuteQueryErrorKind::RequestLimit));
+            return Err(ExecuteQueryError::input(
+                ExecuteQueryErrorKind::RequestLimit,
+            ));
         }
         Ok(body)
     }
@@ -293,7 +305,10 @@ impl fmt::Debug for ExecuteQueryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ExecuteQueryError")
             .field("kind", &self.kind)
-            .field("operation_error", &self.operation_error.as_ref().map(|_| "<evidence>"))
+            .field(
+                "operation_error",
+                &self.operation_error.as_ref().map(|_| "<evidence>"),
+            )
             .field("response", &self.response.as_ref().map(|_| "<redacted>"))
             .finish()
     }
@@ -301,7 +316,11 @@ impl fmt::Debug for ExecuteQueryError {
 
 impl fmt::Display for ExecuteQueryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Dataflow Execute Query failed or is incomplete ({:?})", self.kind)
+        write!(
+            f,
+            "Dataflow Execute Query failed or is incomplete ({:?})",
+            self.kind
+        )
     }
 }
 
@@ -386,7 +405,9 @@ fn validate_response<E: OperationExecutor>(
     if let Some(kind) = failure {
         return Err(ExecuteQueryError {
             kind,
-            operation_error: Some(Box::new(session.evidence(OperationErrorKind::InvalidResponse))),
+            operation_error: Some(Box::new(
+                session.evidence(OperationErrorKind::InvalidResponse),
+            )),
             response: Some(response),
         });
     }
@@ -413,10 +434,11 @@ fn validate_media(
         return Err(ExecuteQueryErrorKind::InvalidContentType);
     }
     let mut parts = value.split(';');
-    if !parts
-        .next()
-        .is_some_and(|media| media.trim().eq_ignore_ascii_case("application/vnd.apache.arrow.stream"))
-    {
+    if !parts.next().is_some_and(|media| {
+        media
+            .trim()
+            .eq_ignore_ascii_case("application/vnd.apache.arrow.stream")
+    }) {
         return Err(ExecuteQueryErrorKind::InvalidContentType);
     }
     let mut seen_version = false;
@@ -435,16 +457,17 @@ fn validate_media(
                 return Err(ExecuteQueryErrorKind::InvalidContentType);
             }
             seen_version = true;
-            let value = value.strip_prefix('"').and_then(|v| v.strip_suffix('"')).unwrap_or(value);
+            let value = value
+                .strip_prefix('"')
+                .and_then(|v| v.strip_suffix('"'))
+                .unwrap_or(value);
             if !matches!(value, "1" | "2") {
                 return Err(ExecuteQueryErrorKind::InvalidContentType);
             }
             if value != version.parameter() {
                 return Err(ExecuteQueryErrorKind::ArrowVersionMismatch);
             }
-        } else if !name.bytes().all(media_token)
-            || !value.bytes().all(media_token)
-        {
+        } else if !name.bytes().all(media_token) || !value.bytes().all(media_token) {
             return Err(ExecuteQueryErrorKind::InvalidContentType);
         }
     }
@@ -455,8 +478,20 @@ fn media_token(byte: u8) -> bool {
     byte.is_ascii_alphanumeric()
         || matches!(
             byte,
-            b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-'
-                | b'.' | b'^' | b'_' | b'`' | b'|' | b'~'
+            b'!' | b'#'
+                | b'$'
+                | b'%'
+                | b'&'
+                | b'\''
+                | b'*'
+                | b'+'
+                | b'-'
+                | b'.'
+                | b'^'
+                | b'_'
+                | b'`'
+                | b'|'
+                | b'~'
         )
 }
 

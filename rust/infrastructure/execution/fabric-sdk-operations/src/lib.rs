@@ -488,7 +488,8 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         response: OperationResponse,
         completion: CompletionPolicy,
     ) -> Result<OperationResponse, OperationError> {
-        self.reconcile_accepted_inner(response, completion, None).await
+        self.reconcile_accepted_inner(response, completion, None)
+            .await
     }
 
     /// Reconcile an external 202 with explicit finite result negotiation.
@@ -505,7 +506,8 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         completion: CompletionPolicy,
         accept: OperationAccept,
     ) -> Result<OperationResponse, OperationError> {
-        self.reconcile_accepted_inner(response, completion, Some(accept)).await
+        self.reconcile_accepted_inner(response, completion, Some(accept))
+            .await
     }
 
     async fn reconcile_accepted_inner(
@@ -541,7 +543,8 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
             if response.body.len() > self.limits.max_response_bytes.get() {
                 return Err(OperationErrorKind::Limit);
             }
-            self.resolve_accepted(response, completion, false, accept).await
+            self.resolve_accepted(response, completion, false, accept)
+                .await
         }
         .await;
         result.map_err(|kind| self.evidence(kind))
@@ -555,7 +558,13 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
         let url = service_url(&self.endpoint, &operation.path)?;
         let response = if operation.method == ResourceMethod::Get && !python {
             let response = self
-                .request(operation.method, url, operation.body, false, operation.accept)
+                .request(
+                    operation.method,
+                    url,
+                    operation.body,
+                    false,
+                    operation.accept,
+                )
                 .await?;
             ensure_status(&response, &[200, 201, 204])?;
             return Ok(response);

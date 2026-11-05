@@ -37,6 +37,8 @@ default-members = [
     "capabilities/deployment/fabric-cli-transfer",
     "capabilities/tables/fabric-cli-tables",
     "capabilities/tables/fabric-sdk-tables",
+    "capabilities/tables/fabric-sdk-tabular",
+    "capabilities/tables/fabric-sdk-dataflow",
 ]
 resolver = "3"
 

@@ -18,8 +18,8 @@ use fabric_sdk_dataflow::{
     ExecuteQueryTarget, MAX_QUERY_NAME_BYTES, MAX_REQUEST_BYTES, execute_query, wait_for_query,
 };
 use fabric_sdk_operations::{
-    OperationAccept, OperationErrorKind, OperationExecutionError, OperationExecutor, OperationLimits,
-    OperationRequest, OperationResponse, OperationSession,
+    OperationAccept, OperationErrorKind, OperationExecutionError, OperationExecutor,
+    OperationLimits, OperationRequest, OperationResponse, OperationSession,
 };
 use fabric_sdk_workspaces::mutations::ResourceMethod;
 use serde_json::json;
@@ -89,7 +89,12 @@ struct Executor(Arc<Mutex<State>>);
 impl Executor {
     fn new(responses: impl IntoIterator<Item = OperationResponse>) -> Self {
         let result = Self::default();
-        result.0.lock().unwrap().responses.extend(responses.into_iter().map(Ok));
+        result
+            .0
+            .lock()
+            .unwrap()
+            .responses
+            .extend(responses.into_iter().map(Ok));
         result
     }
 }
@@ -113,7 +118,12 @@ impl OperationExecutor for Executor {
                 });
                 let cancelled = state.cancel_on_dispatch.take();
                 let response = if cancelled.is_none() {
-                    Some(state.responses.pop_front().expect("unexpected request/replay"))
+                    Some(
+                        state
+                            .responses
+                            .pop_front()
+                            .expect("unexpected request/replay"),
+                    )
                 } else {
                     None
                 };
@@ -170,7 +180,10 @@ fn response(status: u16, body: &[u8], headers: &[(&str, &str)]) -> OperationResp
     OperationResponse {
         status,
         body: body.to_vec(),
-        headers: headers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+        headers: headers
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect(),
     }
 }
 
@@ -194,7 +207,10 @@ fn succeeded() -> OperationResponse {
     response(
         200,
         br#"{"status":"Succeeded"}"#,
-        &[("Location", &format!("{ROOT}/v1/operations/{OPERATION}/result"))],
+        &[(
+            "Location",
+            &format!("{ROOT}/v1/operations/{OPERATION}/result"),
+        )],
     )
 }
 
@@ -205,13 +221,20 @@ async fn exact_post_route_json_accept_and_immediate_bytes_for_both_versions() {
         let selection = selection();
         let executor = Executor::new([arrow_response()]);
         let mut session = OperationSession::new(
-            &credential, &selection, executor.clone(), OperationLimits::default(), pending(),
+            &credential,
+            &selection,
+            executor.clone(),
+            OperationLimits::default(),
+            pending(),
         );
         let request = request(version)
             .with_custom_mashup_document("section Section1;\nshared Named = \"\u{65e5}\";")
             .unwrap();
         let result = execute_query(
-            &mut session, &target(), &request, ExecuteQueryCompletion::ReturnAccepted,
+            &mut session,
+            &target(),
+            &request,
+            ExecuteQueryCompletion::ReturnAccepted,
         )
         .await
         .unwrap();
@@ -222,7 +245,10 @@ async fn exact_post_route_json_accept_and_immediate_bytes_for_both_versions() {
         let state = executor.0.lock().unwrap();
         let sent = &state.requests[0];
         assert_eq!(sent.method, ResourceMethod::Post);
-        assert_eq!(sent.url, format!("{ROOT}/v1/workspaces/{WORKSPACE}/dataflows/{DATAFLOW}/executeQuery"));
+        assert_eq!(
+            sent.url,
+            format!("{ROOT}/v1/workspaces/{WORKSPACE}/dataflows/{DATAFLOW}/executeQuery")
+        );
         assert_eq!(sent.accept, Some(version.accept()));
         assert_eq!(
             serde_json::from_slice::<serde_json::Value>(&sent.body).unwrap(),
@@ -245,8 +271,14 @@ fn omitted_optional_field_and_version_are_not_sent_as_body_properties() {
     assert_eq!(request.custom_mashup_document(), None);
     assert_eq!(target().workspace_id(), WORKSPACE);
     assert_eq!(target().dataflow_id(), DATAFLOW);
-    assert_eq!(ArrowVersion::V1.accept().as_str(), "application/vnd.apache.arrow.stream;pq-arrow-version=1");
-    assert_eq!(ArrowVersion::V2.accept().as_str(), "application/vnd.apache.arrow.stream;pq-arrow-version=2");
+    assert_eq!(
+        ArrowVersion::V1.accept().as_str(),
+        "application/vnd.apache.arrow.stream;pq-arrow-version=1"
+    );
+    assert_eq!(
+        ArrowVersion::V2.accept().as_str(),
+        "application/vnd.apache.arrow.stream;pq-arrow-version=2"
+    );
 }
 
 #[tokio::test]
@@ -255,10 +287,16 @@ async fn invalid_target_request_and_options_do_not_acquire_credentials() {
     let selection = selection();
     let executor = Executor::default();
     let _session = OperationSession::new(
-        &credential, &selection, executor.clone(), OperationLimits::default(), pending(),
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits::default(),
+        pending(),
     );
     for invalid in [
-        "", "name", "11111111-1111-1111-1111-11111111111",
+        "",
+        "name",
+        "11111111-1111-1111-1111-11111111111",
         "111111111-111-1111-1111-111111111111",
         "gggggggg-1111-1111-1111-111111111111",
         "11111111-1111-1111-1111-111111111111/",
@@ -266,21 +304,53 @@ async fn invalid_target_request_and_options_do_not_acquire_credentials() {
         " 11111111-1111-1111-1111-111111111111",
         "11111111-1111-1111-1111-111111111111\n",
     ] {
-        assert_eq!(ExecuteQueryTarget::new(invalid, DATAFLOW).unwrap_err().kind(), ExecuteQueryErrorKind::InvalidTarget);
-        assert_eq!(ExecuteQueryTarget::new(WORKSPACE, invalid).unwrap_err().kind(), ExecuteQueryErrorKind::InvalidTarget);
+        assert_eq!(
+            ExecuteQueryTarget::new(invalid, DATAFLOW)
+                .unwrap_err()
+                .kind(),
+            ExecuteQueryErrorKind::InvalidTarget
+        );
+        assert_eq!(
+            ExecuteQueryTarget::new(WORKSPACE, invalid)
+                .unwrap_err()
+                .kind(),
+            ExecuteQueryErrorKind::InvalidTarget
+        );
     }
     for invalid in ["", " ", "\n", "a\0b", "a\tb", "a\nb"] {
-        assert_eq!(ExecuteQueryRequest::new(invalid, ArrowVersion::V1).unwrap_err().kind(), ExecuteQueryErrorKind::InvalidRequest);
+        assert_eq!(
+            ExecuteQueryRequest::new(invalid, ArrowVersion::V1)
+                .unwrap_err()
+                .kind(),
+            ExecuteQueryErrorKind::InvalidRequest
+        );
     }
     assert_eq!(
-        ExecuteQueryRequest::new("q".repeat(MAX_QUERY_NAME_BYTES + 1), ArrowVersion::V1).unwrap_err().kind(),
+        ExecuteQueryRequest::new("q".repeat(MAX_QUERY_NAME_BYTES + 1), ArrowVersion::V1)
+            .unwrap_err()
+            .kind(),
         ExecuteQueryErrorKind::RequestLimit
     );
     for invalid in ["".to_owned(), " \n".to_owned(), "secret\0".to_owned()] {
-        assert_eq!(request(ArrowVersion::V1).with_custom_mashup_document(invalid).unwrap_err().kind(), ExecuteQueryErrorKind::InvalidRequest);
+        assert_eq!(
+            request(ArrowVersion::V1)
+                .with_custom_mashup_document(invalid)
+                .unwrap_err()
+                .kind(),
+            ExecuteQueryErrorKind::InvalidRequest
+        );
     }
-    for invalid in ["x".repeat(MAX_REQUEST_BYTES + 1), "x\n".repeat(MAX_REQUEST_BYTES / 3)] {
-        assert_eq!(request(ArrowVersion::V1).with_custom_mashup_document(invalid).unwrap_err().kind(), ExecuteQueryErrorKind::RequestLimit);
+    for invalid in [
+        "x".repeat(MAX_REQUEST_BYTES + 1),
+        "x\n".repeat(MAX_REQUEST_BYTES / 3),
+    ] {
+        assert_eq!(
+            request(ArrowVersion::V1)
+                .with_custom_mashup_document(invalid)
+                .unwrap_err()
+                .kind(),
+            ExecuteQueryErrorKind::RequestLimit
+        );
     }
     for invalid in [r#""0""#, r#""3""#, "1", "null", r#""V1""#] {
         assert!(serde_json::from_str::<ArrowVersion>(invalid).is_err());
@@ -295,10 +365,17 @@ async fn accepted_does_not_poll_or_claim_result_and_wait_never_reposts() {
     let selection = selection();
     let first = Executor::new([accepted()]);
     let mut session = OperationSession::new(
-        &credential, &selection, first.clone(), OperationLimits::default(), pending(),
+        &credential,
+        &selection,
+        first.clone(),
+        OperationLimits::default(),
+        pending(),
     );
     let result = execute_query(
-        &mut session, &target(), &request(ArrowVersion::V2), ExecuteQueryCompletion::ReturnAccepted,
+        &mut session,
+        &target(),
+        &request(ArrowVersion::V2),
+        ExecuteQueryCompletion::ReturnAccepted,
     )
     .await
     .unwrap();
@@ -308,16 +385,30 @@ async fn accepted_does_not_poll_or_claim_result_and_wait_never_reposts() {
     assert!(first.0.lock().unwrap().waits.is_empty());
     let second = Executor::new([succeeded(), arrow_response()]);
     let mut wait_session = OperationSession::new(
-        &credential, &selection, second.clone(), OperationLimits::default(), pending(),
+        &credential,
+        &selection,
+        second.clone(),
+        OperationLimits::default(),
+        pending(),
     );
-    let result = wait_for_query(&mut wait_session, result, ArrowVersion::V2).await.unwrap();
+    let result = wait_for_query(&mut wait_session, result, ArrowVersion::V2)
+        .await
+        .unwrap();
     assert_eq!(result.body, BYTES);
     let state = second.0.lock().unwrap();
     assert_eq!(state.requests.len(), 2);
-    assert!(state.requests.iter().all(|request| request.method == ResourceMethod::Get));
+    assert!(
+        state
+            .requests
+            .iter()
+            .all(|request| request.method == ResourceMethod::Get)
+    );
     assert_eq!(state.requests[0].accept, None);
     assert_eq!(state.requests[1].accept, Some(OperationAccept::ArrowV2));
-    assert_eq!(state.requests[1].url, format!("{ROOT}/v1/operations/{OPERATION}/result"));
+    assert_eq!(
+        state.requests[1].url,
+        format!("{ROOT}/v1/operations/{OPERATION}/result")
+    );
 }
 
 #[tokio::test]
@@ -332,10 +423,17 @@ async fn lro_polls_state_and_fetches_arrow_result_with_original_negotiation() {
             arrow_response(),
         ]);
         let mut session = OperationSession::new(
-            &credential, &selection, executor.clone(), OperationLimits::default(), pending(),
+            &credential,
+            &selection,
+            executor.clone(),
+            OperationLimits::default(),
+            pending(),
         );
         let result = execute_query(
-            &mut session, &target(), &request(version), ExecuteQueryCompletion::WaitForResult,
+            &mut session,
+            &target(),
+            &request(version),
+            ExecuteQueryCompletion::WaitForResult,
         )
         .await
         .unwrap();
@@ -344,14 +442,31 @@ async fn lro_polls_state_and_fetches_arrow_result_with_original_negotiation() {
         let state = executor.0.lock().unwrap();
         assert_eq!(state.waits, [Duration::ZERO, Duration::from_secs(2)]);
         assert_eq!(
-            state.requests.iter().map(|request| request.accept).collect::<Vec<_>>(),
+            state
+                .requests
+                .iter()
+                .map(|request| request.accept)
+                .collect::<Vec<_>>(),
             [Some(version.accept()), None, None, Some(version.accept())]
         );
         assert_eq!(
-            state.requests.iter().map(|request| request.method).collect::<Vec<_>>(),
-            [ResourceMethod::Post, ResourceMethod::Get, ResourceMethod::Get, ResourceMethod::Get]
+            state
+                .requests
+                .iter()
+                .map(|request| request.method)
+                .collect::<Vec<_>>(),
+            [
+                ResourceMethod::Post,
+                ResourceMethod::Get,
+                ResourceMethod::Get,
+                ResourceMethod::Get
+            ]
         );
-        assert!(state.requests[1..].iter().all(|request| request.body.is_empty()));
+        assert!(
+            state.requests[1..]
+                .iter()
+                .all(|request| request.body.is_empty())
+        );
         assert_eq!(credential.0.load(Ordering::SeqCst), 4);
     }
 }
@@ -367,14 +482,28 @@ async fn service_errors_and_terminal_lro_errors_preserve_original_evidence() {
             &[("x-ms-request-id", "original-request")],
         )]);
         let mut session = OperationSession::new(
-            &credential, &selection, executor.clone(), OperationLimits::default(), pending(),
+            &credential,
+            &selection,
+            executor.clone(),
+            OperationLimits::default(),
+            pending(),
         );
         let error = execute_query(
-            &mut session, &target(), &request(ArrowVersion::V1), ExecuteQueryCompletion::WaitForResult,
-        ).await.unwrap_err();
+            &mut session,
+            &target(),
+            &request(ArrowVersion::V1),
+            ExecuteQueryCompletion::WaitForResult,
+        )
+        .await
+        .unwrap_err();
         let evidence = error.operation_error().unwrap();
-        assert!(matches!(&evidence.kind, OperationErrorKind::Http { status: actual, code: Some(code), .. } if *actual == status && code == "DataflowExecuteQueryError"));
-        assert_eq!(evidence.raw_service_error.as_ref().unwrap()["extra"], "original");
+        assert!(
+            matches!(&evidence.kind, OperationErrorKind::Http { status: actual, code: Some(code), .. } if *actual == status && code == "DataflowExecuteQueryError")
+        );
+        assert_eq!(
+            evidence.raw_service_error.as_ref().unwrap()["extra"],
+            "original"
+        );
         assert!(evidence.mutation_may_have_occurred);
         assert_eq!(executor.0.lock().unwrap().requests.len(), 1);
         assert!(!format!("{error:?} {error}").contains(SOURCE));
@@ -391,14 +520,25 @@ async fn service_errors_and_terminal_lro_errors_preserve_original_evidence() {
             ),
         ]);
         let mut session = OperationSession::new(
-            &credential, &selection, executor.clone(), OperationLimits::default(), pending(),
+            &credential,
+            &selection,
+            executor.clone(),
+            OperationLimits::default(),
+            pending(),
         );
         let error = execute_query(
-            &mut session, &target(), &request(ArrowVersion::V1), ExecuteQueryCompletion::WaitForResult,
-        ).await.unwrap_err();
+            &mut session,
+            &target(),
+            &request(ArrowVersion::V1),
+            ExecuteQueryCompletion::WaitForResult,
+        )
+        .await
+        .unwrap_err();
         let evidence = error.operation_error().unwrap();
         assert_eq!(evidence.operation_id.as_deref(), Some(OPERATION));
-        assert!(matches!(&evidence.kind, OperationErrorKind::OperationFailed { status, .. } if status == terminal));
+        assert!(
+            matches!(&evidence.kind, OperationErrorKind::OperationFailed { status, .. } if status == terminal)
+        );
         assert_eq!(evidence.raw_service_error.as_ref().unwrap()["extra"], 42);
         assert!(!format!("{error:?} {error}").contains(SOURCE));
         assert_eq!(executor.0.lock().unwrap().requests.len(), 2);
@@ -407,14 +547,48 @@ async fn service_errors_and_terminal_lro_errors_preserve_original_evidence() {
 
 #[tokio::test]
 async fn unsafe_missing_duplicate_and_malformed_handles_never_poll() {
-    for completion in [ExecuteQueryCompletion::ReturnAccepted, ExecuteQueryCompletion::WaitForResult] {
+    for completion in [
+        ExecuteQueryCompletion::ReturnAccepted,
+        ExecuteQueryCompletion::WaitForResult,
+    ] {
         let cases = [
             response(202, b"", &[]),
             response(202, b"", &[("x-ms-operation-id", "opaque-not-guid")]),
-            response(202, b"", &[("x-ms-operation-id", OPERATION), ("X-MS-OPERATION-ID", OPERATION)]),
-            response(202, b"", &[("x-ms-operation-id", OPERATION), ("Location", &format!("https://foreign.invalid/v1/operations/{OPERATION}"))]),
-            response(202, b"", &[("x-ms-operation-id", OPERATION), ("Location", &format!("{ROOT}/v1/operations/{DATAFLOW}"))]),
-            response(202, b"", &[("Location", &format!("{ROOT}/v1/operations/{OPERATION}?token=secret"))]),
+            response(
+                202,
+                b"",
+                &[
+                    ("x-ms-operation-id", OPERATION),
+                    ("X-MS-OPERATION-ID", OPERATION),
+                ],
+            ),
+            response(
+                202,
+                b"",
+                &[
+                    ("x-ms-operation-id", OPERATION),
+                    (
+                        "Location",
+                        &format!("https://foreign.invalid/v1/operations/{OPERATION}"),
+                    ),
+                ],
+            ),
+            response(
+                202,
+                b"",
+                &[
+                    ("x-ms-operation-id", OPERATION),
+                    ("Location", &format!("{ROOT}/v1/operations/{DATAFLOW}")),
+                ],
+            ),
+            response(
+                202,
+                b"",
+                &[(
+                    "Location",
+                    &format!("{ROOT}/v1/operations/{OPERATION}?token=secret"),
+                )],
+            ),
             response(202, b"", &[("Location", "/v1/operations/unsafe")]),
         ];
         for initial in cases {
@@ -422,11 +596,20 @@ async fn unsafe_missing_duplicate_and_malformed_handles_never_poll() {
             let selection = selection();
             let executor = Executor::new([initial]);
             let mut session = OperationSession::new(
-                &credential, &selection, executor.clone(), OperationLimits::default(), pending(),
+                &credential,
+                &selection,
+                executor.clone(),
+                OperationLimits::default(),
+                pending(),
             );
             let error = execute_query(
-                &mut session, &target(), &request(ArrowVersion::V1), completion,
-            ).await.unwrap_err();
+                &mut session,
+                &target(),
+                &request(ArrowVersion::V1),
+                completion,
+            )
+            .await
+            .unwrap_err();
             assert!(error.operation_error().unwrap().mutation_may_have_occurred);
             assert_eq!(executor.0.lock().unwrap().requests.len(), 1);
             assert!(executor.0.lock().unwrap().waits.is_empty());
@@ -438,15 +621,42 @@ async fn unsafe_missing_duplicate_and_malformed_handles_never_poll() {
 async fn media_validation_never_silently_decodes_missing_json_or_invalid_arrow() {
     let cases = [
         (None, ExecuteQueryErrorKind::MissingContentType),
-        (Some("application/json"), ExecuteQueryErrorKind::InvalidContentType),
-        (Some("application/octet-stream"), ExecuteQueryErrorKind::InvalidContentType),
-        (Some("application/vnd.apache.arrow.file"), ExecuteQueryErrorKind::InvalidContentType),
-        (Some("application/vnd.apache.arrow.stream;pq-arrow-version=2"), ExecuteQueryErrorKind::ArrowVersionMismatch),
-        (Some("application/vnd.apache.arrow.stream;pq-arrow-version=3"), ExecuteQueryErrorKind::InvalidContentType),
-        (Some("application/vnd.apache.arrow.stream;pq-arrow-version="), ExecuteQueryErrorKind::InvalidContentType),
-        (Some("application/vnd.apache.arrow.stream;pq-arrow-version=1;pq-arrow-version=1"), ExecuteQueryErrorKind::InvalidContentType),
-        (Some("application/vnd.apache.arrow.stream;"), ExecuteQueryErrorKind::InvalidContentType),
-        (Some("application/vnd.apache.arrow.stream,\napplication/json"), ExecuteQueryErrorKind::InvalidContentType),
+        (
+            Some("application/json"),
+            ExecuteQueryErrorKind::InvalidContentType,
+        ),
+        (
+            Some("application/octet-stream"),
+            ExecuteQueryErrorKind::InvalidContentType,
+        ),
+        (
+            Some("application/vnd.apache.arrow.file"),
+            ExecuteQueryErrorKind::InvalidContentType,
+        ),
+        (
+            Some("application/vnd.apache.arrow.stream;pq-arrow-version=2"),
+            ExecuteQueryErrorKind::ArrowVersionMismatch,
+        ),
+        (
+            Some("application/vnd.apache.arrow.stream;pq-arrow-version=3"),
+            ExecuteQueryErrorKind::InvalidContentType,
+        ),
+        (
+            Some("application/vnd.apache.arrow.stream;pq-arrow-version="),
+            ExecuteQueryErrorKind::InvalidContentType,
+        ),
+        (
+            Some("application/vnd.apache.arrow.stream;pq-arrow-version=1;pq-arrow-version=1"),
+            ExecuteQueryErrorKind::InvalidContentType,
+        ),
+        (
+            Some("application/vnd.apache.arrow.stream;"),
+            ExecuteQueryErrorKind::InvalidContentType,
+        ),
+        (
+            Some("application/vnd.apache.arrow.stream,\napplication/json"),
+            ExecuteQueryErrorKind::InvalidContentType,
+        ),
     ];
     for (media, expected) in cases {
         let credential = Credential::default();
@@ -457,11 +667,20 @@ async fn media_validation_never_silently_decodes_missing_json_or_invalid_arrow()
         }
         let executor = Executor::new([result]);
         let mut session = OperationSession::new(
-            &credential, &selection, executor.clone(), OperationLimits::default(), pending(),
+            &credential,
+            &selection,
+            executor.clone(),
+            OperationLimits::default(),
+            pending(),
         );
         let error = execute_query(
-            &mut session, &target(), &request(ArrowVersion::V1), ExecuteQueryCompletion::ReturnAccepted,
-        ).await.unwrap_err();
+            &mut session,
+            &target(),
+            &request(ArrowVersion::V1),
+            ExecuteQueryCompletion::ReturnAccepted,
+        )
+        .await
+        .unwrap_err();
         assert_eq!(error.kind(), expected, "{media:?}");
         assert_eq!(error.response().unwrap().body, SOURCE.as_bytes());
         assert!(error.operation_error().unwrap().mutation_may_have_occurred);
@@ -482,21 +701,51 @@ async fn valid_media_parameter_case_quoting_and_missing_version_policy() {
         let selection = selection();
         let executor = Executor::new([response(200, BYTES, &[("cOnTeNt-TyPe", media)])]);
         let mut session = OperationSession::new(
-            &credential, &selection, executor, OperationLimits::default(), pending(),
+            &credential,
+            &selection,
+            executor,
+            OperationLimits::default(),
+            pending(),
         );
-        assert_eq!(execute_query(
-            &mut session, &target(), &request(ArrowVersion::V1), ExecuteQueryCompletion::ReturnAccepted,
-        ).await.unwrap().body, BYTES);
+        assert_eq!(
+            execute_query(
+                &mut session,
+                &target(),
+                &request(ArrowVersion::V1),
+                ExecuteQueryCompletion::ReturnAccepted,
+            )
+            .await
+            .unwrap()
+            .body,
+            BYTES
+        );
     }
     let credential = Credential::default();
     let selection = selection();
-    let executor = Executor::new([response(200, BYTES, &[("content-type", ARROW), ("Content-Type", ARROW)])]);
+    let executor = Executor::new([response(
+        200,
+        BYTES,
+        &[("content-type", ARROW), ("Content-Type", ARROW)],
+    )]);
     let mut session = OperationSession::new(
-        &credential, &selection, executor, OperationLimits::default(), pending(),
+        &credential,
+        &selection,
+        executor,
+        OperationLimits::default(),
+        pending(),
     );
-    assert_eq!(execute_query(
-        &mut session, &target(), &request(ArrowVersion::V1), ExecuteQueryCompletion::ReturnAccepted,
-    ).await.unwrap_err().kind(), ExecuteQueryErrorKind::InvalidContentType);
+    assert_eq!(
+        execute_query(
+            &mut session,
+            &target(),
+            &request(ArrowVersion::V1),
+            ExecuteQueryCompletion::ReturnAccepted,
+        )
+        .await
+        .unwrap_err()
+        .kind(),
+        ExecuteQueryErrorKind::InvalidContentType
+    );
 }
 
 #[tokio::test]
@@ -506,23 +755,52 @@ async fn unexpected_success_status_and_result_media_retain_operation_id() {
         let selection = selection();
         let executor = Executor::new([response(status, b"", &[])]);
         let mut session = OperationSession::new(
-            &credential, &selection, executor, OperationLimits::default(), pending(),
+            &credential,
+            &selection,
+            executor,
+            OperationLimits::default(),
+            pending(),
         );
-        assert_eq!(execute_query(
-            &mut session, &target(), &request(ArrowVersion::V1), ExecuteQueryCompletion::ReturnAccepted,
-        ).await.unwrap_err().kind(), ExecuteQueryErrorKind::UnexpectedStatus);
+        assert_eq!(
+            execute_query(
+                &mut session,
+                &target(),
+                &request(ArrowVersion::V1),
+                ExecuteQueryCompletion::ReturnAccepted,
+            )
+            .await
+            .unwrap_err()
+            .kind(),
+            ExecuteQueryErrorKind::UnexpectedStatus
+        );
     }
     let credential = Credential::default();
     let selection = selection();
-    let executor = Executor::new([accepted(), succeeded(), response(200, b"{}", &[("Content-Type", "application/json")])]);
+    let executor = Executor::new([
+        accepted(),
+        succeeded(),
+        response(200, b"{}", &[("Content-Type", "application/json")]),
+    ]);
     let mut session = OperationSession::new(
-        &credential, &selection, executor, OperationLimits::default(), pending(),
+        &credential,
+        &selection,
+        executor,
+        OperationLimits::default(),
+        pending(),
     );
     let error = execute_query(
-        &mut session, &target(), &request(ArrowVersion::V1), ExecuteQueryCompletion::WaitForResult,
-    ).await.unwrap_err();
+        &mut session,
+        &target(),
+        &request(ArrowVersion::V1),
+        ExecuteQueryCompletion::WaitForResult,
+    )
+    .await
+    .unwrap_err();
     assert_eq!(error.kind(), ExecuteQueryErrorKind::InvalidContentType);
-    assert_eq!(error.operation_error().unwrap().operation_id.as_deref(), Some(OPERATION));
+    assert_eq!(
+        error.operation_error().unwrap().operation_id.as_deref(),
+        Some(OPERATION)
+    );
 }
 
 #[tokio::test]
@@ -537,16 +815,27 @@ async fn response_request_and_delay_bounds_are_not_clipped_success() {
             1 => limits.max_requests = NonZeroUsize::new(1).unwrap(),
             2 => limits.max_requests = NonZeroUsize::new(2).unwrap(),
             _ => {
-                executor.0.lock().unwrap().responses[0].as_mut().unwrap().headers.insert("Retry-After".into(), "61".into());
+                executor.0.lock().unwrap().responses[0]
+                    .as_mut()
+                    .unwrap()
+                    .headers
+                    .insert("Retry-After".into(), "61".into());
             }
         }
-        let mut session = OperationSession::new(
-            &credential, &selection, executor.clone(), limits, pending(),
-        );
+        let mut session =
+            OperationSession::new(&credential, &selection, executor.clone(), limits, pending());
         let error = execute_query(
-            &mut session, &target(), &request(ArrowVersion::V1), ExecuteQueryCompletion::WaitForResult,
-        ).await.unwrap_err();
-        assert_eq!(error.operation_error().unwrap().kind, OperationErrorKind::Limit);
+            &mut session,
+            &target(),
+            &request(ArrowVersion::V1),
+            ExecuteQueryCompletion::WaitForResult,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            error.operation_error().unwrap().kind,
+            OperationErrorKind::Limit
+        );
         assert!(error.operation_error().unwrap().mutation_may_have_occurred);
         assert!(executor.0.lock().unwrap().requests.len() <= 2);
     }
@@ -555,12 +844,19 @@ async fn response_request_and_delay_bounds_are_not_clipped_success() {
     let executor = Executor::new([arrow_response()]);
     let mut limits = OperationLimits::default();
     limits.max_response_bytes = NonZeroUsize::new(BYTES.len()).unwrap();
-    let mut session = OperationSession::new(
-        &credential, &selection, executor, limits, pending(),
+    let mut session = OperationSession::new(&credential, &selection, executor, limits, pending());
+    assert_eq!(
+        execute_query(
+            &mut session,
+            &target(),
+            &request(ArrowVersion::V1),
+            ExecuteQueryCompletion::ReturnAccepted,
+        )
+        .await
+        .unwrap()
+        .body,
+        BYTES
     );
-    assert_eq!(execute_query(
-        &mut session, &target(), &request(ArrowVersion::V1), ExecuteQueryCompletion::ReturnAccepted,
-    ).await.unwrap().body, BYTES);
 }
 
 #[tokio::test]
@@ -576,29 +872,60 @@ async fn dispatch_failure_deadline_and_wait_failure_never_replay_or_cancel_remot
         let executor = Executor::default();
         executor.0.lock().unwrap().responses.push_back(Err(failure));
         let mut session = OperationSession::new(
-            &credential, &selection, executor.clone(), OperationLimits::default(), pending(),
+            &credential,
+            &selection,
+            executor.clone(),
+            OperationLimits::default(),
+            pending(),
         );
         let error = execute_query(
-            &mut session, &target(), &request(ArrowVersion::V1), ExecuteQueryCompletion::WaitForResult,
-        ).await.unwrap_err();
+            &mut session,
+            &target(),
+            &request(ArrowVersion::V1),
+            ExecuteQueryCompletion::WaitForResult,
+        )
+        .await
+        .unwrap_err();
         let evidence = error.operation_error().unwrap();
         assert!(evidence.mutation_may_have_occurred);
         assert_eq!(evidence.operation_id, None);
-        assert_eq!(evidence.kind, if failure == OperationExecutionError::ResponseLimit { OperationErrorKind::Limit } else { OperationErrorKind::Execution(failure) });
+        assert_eq!(
+            evidence.kind,
+            if failure == OperationExecutionError::ResponseLimit {
+                OperationErrorKind::Limit
+            } else {
+                OperationErrorKind::Execution(failure)
+            }
+        );
         assert_eq!(executor.0.lock().unwrap().requests.len(), 1);
     }
-    for failure in [OperationExecutionError::TimedOut, OperationExecutionError::Cancelled] {
+    for failure in [
+        OperationExecutionError::TimedOut,
+        OperationExecutionError::Cancelled,
+    ] {
         let credential = Credential::default();
         let selection = selection();
         let executor = Executor::new([accepted()]);
         executor.0.lock().unwrap().wait_error = Some(failure);
         let mut session = OperationSession::new(
-            &credential, &selection, executor.clone(), OperationLimits::default(), pending(),
+            &credential,
+            &selection,
+            executor.clone(),
+            OperationLimits::default(),
+            pending(),
         );
         let error = execute_query(
-            &mut session, &target(), &request(ArrowVersion::V1), ExecuteQueryCompletion::WaitForResult,
-        ).await.unwrap_err();
-        assert_eq!(error.operation_error().unwrap().operation_id.as_deref(), Some(OPERATION));
+            &mut session,
+            &target(),
+            &request(ArrowVersion::V1),
+            ExecuteQueryCompletion::WaitForResult,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            error.operation_error().unwrap().operation_id.as_deref(),
+            Some(OPERATION)
+        );
         assert_eq!(executor.0.lock().unwrap().requests.len(), 1);
     }
 }
@@ -617,17 +944,37 @@ async fn local_cancellation_before_during_dispatch_and_during_wait_keeps_uncerta
             executor.0.lock().unwrap().cancel_on_wait = Some(cancelled);
         }
         let mut session = OperationSession::new(
-            &credential, &selection, executor.clone(), OperationLimits::default(),
-            poll_fn(move |_| if signal.load(Ordering::SeqCst) { Poll::Ready(()) } else { Poll::Pending }),
+            &credential,
+            &selection,
+            executor.clone(),
+            OperationLimits::default(),
+            poll_fn(move |_| {
+                if signal.load(Ordering::SeqCst) {
+                    Poll::Ready(())
+                } else {
+                    Poll::Pending
+                }
+            }),
         );
         let error = execute_query(
-            &mut session, &target(), &request(ArrowVersion::V1), ExecuteQueryCompletion::WaitForResult,
-        ).await.unwrap_err();
+            &mut session,
+            &target(),
+            &request(ArrowVersion::V1),
+            ExecuteQueryCompletion::WaitForResult,
+        )
+        .await
+        .unwrap_err();
         let evidence = error.operation_error().unwrap();
         assert_eq!(evidence.kind, OperationErrorKind::Cancelled);
         assert_eq!(evidence.mutation_may_have_occurred, stage != 0);
-        assert_eq!(evidence.operation_id.as_deref(), if stage == 2 { Some(OPERATION) } else { None });
-        assert_eq!(executor.0.lock().unwrap().requests.len(), usize::from(stage != 0));
+        assert_eq!(
+            evidence.operation_id.as_deref(),
+            if stage == 2 { Some(OPERATION) } else { None }
+        );
+        assert_eq!(
+            executor.0.lock().unwrap().requests.len(),
+            usize::from(stage != 0)
+        );
         assert_eq!(credential.0.load(Ordering::SeqCst), usize::from(stage != 0));
     }
 }
@@ -636,17 +983,41 @@ async fn local_cancellation_before_during_dispatch_and_during_wait_keeps_uncerta
 async fn debug_redacts_query_mashup_target_token_body_and_service_response() {
     let credential = Credential::default();
     let selection = selection();
-    let executor = Executor::new([response(200, SOURCE.as_bytes(), &[("Content-Type", "application/json")])]);
+    let executor = Executor::new([response(
+        200,
+        SOURCE.as_bytes(),
+        &[("Content-Type", "application/json")],
+    )]);
     let mut session = OperationSession::new(
-        &credential, &selection, executor.clone(), OperationLimits::default(), pending(),
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits::default(),
+        pending(),
     );
-    let query = ExecuteQueryRequest::new(SOURCE, ArrowVersion::V1).unwrap()
-        .with_custom_mashup_document(SOURCE).unwrap();
+    let query = ExecuteQueryRequest::new(SOURCE, ArrowVersion::V1)
+        .unwrap()
+        .with_custom_mashup_document(SOURCE)
+        .unwrap();
     let error = execute_query(
-        &mut session, &target(), &query, ExecuteQueryCompletion::ReturnAccepted,
-    ).await.unwrap_err();
-    let diagnostic = format!("{query:?} {:?} {error:?} {error} {}", target(), executor.0.lock().unwrap().requests[0].debug);
-    for secret in [SOURCE, WORKSPACE, DATAFLOW, "synthetic-token-never-used-live"] {
+        &mut session,
+        &target(),
+        &query,
+        ExecuteQueryCompletion::ReturnAccepted,
+    )
+    .await
+    .unwrap_err();
+    let diagnostic = format!(
+        "{query:?} {:?} {error:?} {error} {}",
+        target(),
+        executor.0.lock().unwrap().requests[0].debug
+    );
+    for secret in [
+        SOURCE,
+        WORKSPACE,
+        DATAFLOW,
+        "synthetic-token-never-used-live",
+    ] {
         assert!(!diagnostic.contains(secret), "{diagnostic}");
     }
 }
@@ -654,20 +1025,43 @@ async fn debug_redacts_query_mashup_target_token_body_and_service_response() {
 #[tokio::test]
 async fn explicit_selected_endpoint_is_used_for_initial_state_and_result_requests() {
     let credential = Arc::new(Credential::default());
-    let endpoint = EndpointBinding::with_host(ServiceOrigin::Fabric, "dailyapi.fabric.microsoft.com").unwrap();
+    let endpoint =
+        EndpointBinding::with_host(ServiceOrigin::Fabric, "dailyapi.fabric.microsoft.com").unwrap();
     let context = RequestContext::with_endpoint(credential.clone(), selection(), endpoint);
     let mut initial = accepted();
-    initial.headers.insert("Location".into(), format!("https://dailyapi.fabric.microsoft.com/v1/operations/{OPERATION}"));
+    initial.headers.insert(
+        "Location".into(),
+        format!("https://dailyapi.fabric.microsoft.com/v1/operations/{OPERATION}"),
+    );
     let mut state = succeeded();
-    state.headers.insert("Location".into(), format!("https://dailyapi.fabric.microsoft.com/v1/operations/{OPERATION}/result"));
+    state.headers.insert(
+        "Location".into(),
+        format!("https://dailyapi.fabric.microsoft.com/v1/operations/{OPERATION}/result"),
+    );
     let executor = Executor::new([initial, state, arrow_response()]);
     let mut session = OperationSession::with_context(
-        &context, executor.clone(), OperationLimits::default(), pending(),
+        &context,
+        executor.clone(),
+        OperationLimits::default(),
+        pending(),
     );
-    assert_eq!(execute_query(
-        &mut session, &target(), &request(ArrowVersion::V2), ExecuteQueryCompletion::WaitForResult,
-    ).await.unwrap().body, BYTES);
-    assert!(executor.0.lock().unwrap().requests.iter().all(|request| request.url.starts_with("https://dailyapi.fabric.microsoft.com/v1/")));
+    assert_eq!(
+        execute_query(
+            &mut session,
+            &target(),
+            &request(ArrowVersion::V2),
+            ExecuteQueryCompletion::WaitForResult,
+        )
+        .await
+        .unwrap()
+        .body,
+        BYTES
+    );
+    assert!(executor.0.lock().unwrap().requests.iter().all(|request| {
+        request
+            .url
+            .starts_with("https://dailyapi.fabric.microsoft.com/v1/")
+    }));
 }
 
 #[tokio::test]
@@ -679,12 +1073,18 @@ async fn malformed_state_and_foreign_result_links_retain_handle_without_fetching
         response(
             200,
             br#"{"status":"Succeeded"}"#,
-            &[("Location", &format!("https://foreign.invalid/v1/operations/{OPERATION}/result"))],
+            &[(
+                "Location",
+                &format!("https://foreign.invalid/v1/operations/{OPERATION}/result"),
+            )],
         ),
         response(
             200,
             br#"{"status":"Succeeded"}"#,
-            &[("Location", &format!("{ROOT}/v1/operations/{DATAFLOW}/result"))],
+            &[(
+                "Location",
+                &format!("{ROOT}/v1/operations/{DATAFLOW}/result"),
+            )],
         ),
     ];
     for state in states {
@@ -692,14 +1092,26 @@ async fn malformed_state_and_foreign_result_links_retain_handle_without_fetching
         let selection = selection();
         let executor = Executor::new([accepted(), state]);
         let mut session = OperationSession::new(
-            &credential, &selection, executor.clone(), OperationLimits::default(), pending(),
+            &credential,
+            &selection,
+            executor.clone(),
+            OperationLimits::default(),
+            pending(),
         );
         let error = execute_query(
-            &mut session, &target(), &request(ArrowVersion::V1), ExecuteQueryCompletion::WaitForResult,
-        ).await.unwrap_err();
+            &mut session,
+            &target(),
+            &request(ArrowVersion::V1),
+            ExecuteQueryCompletion::WaitForResult,
+        )
+        .await
+        .unwrap_err();
         let evidence = error.operation_error().unwrap();
         assert_eq!(evidence.operation_id.as_deref(), Some(OPERATION));
-        assert!(matches!(evidence.kind, OperationErrorKind::InvalidResponse | OperationErrorKind::InvalidLink));
+        assert!(matches!(
+            evidence.kind,
+            OperationErrorKind::InvalidResponse | OperationErrorKind::InvalidLink
+        ));
         assert!(evidence.mutation_may_have_occurred);
         assert_eq!(executor.0.lock().unwrap().requests.len(), 2);
     }
@@ -712,14 +1124,25 @@ async fn valid_location_only_acceptance_and_empty_result_are_preserved() {
     let mut initial = accepted();
     initial.headers.remove("x-ms-operation-id");
     let executor = Executor::new([
-        initial, succeeded(), response(200, b"", &[("Content-Type", ARROW)]),
+        initial,
+        succeeded(),
+        response(200, b"", &[("Content-Type", ARROW)]),
     ]);
     let mut session = OperationSession::new(
-        &credential, &selection, executor.clone(), OperationLimits::default(), pending(),
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits::default(),
+        pending(),
     );
     let result = execute_query(
-        &mut session, &target(), &request(ArrowVersion::V1), ExecuteQueryCompletion::WaitForResult,
-    ).await.unwrap();
+        &mut session,
+        &target(),
+        &request(ArrowVersion::V1),
+        ExecuteQueryCompletion::WaitForResult,
+    )
+    .await
+    .unwrap();
     assert!(result.body.is_empty());
     assert_eq!(session.operation_id(), Some(OPERATION));
     assert_eq!(executor.0.lock().unwrap().requests.len(), 3);
@@ -731,12 +1154,24 @@ async fn wrong_audience_is_rejected_before_credentials_or_dispatch() {
     let selection = CredentialSelection::new("offline", "tenant", Audience::Arm).unwrap();
     let executor = Executor::default();
     let mut session = OperationSession::new(
-        &credential, &selection, executor.clone(), OperationLimits::default(), pending(),
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits::default(),
+        pending(),
     );
     let error = execute_query(
-        &mut session, &target(), &request(ArrowVersion::V1), ExecuteQueryCompletion::ReturnAccepted,
-    ).await.unwrap_err();
-    assert_eq!(error.operation_error().unwrap().kind, OperationErrorKind::InvalidAudience);
+        &mut session,
+        &target(),
+        &request(ArrowVersion::V1),
+        ExecuteQueryCompletion::ReturnAccepted,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        error.operation_error().unwrap().kind,
+        OperationErrorKind::InvalidAudience
+    );
     assert!(!error.operation_error().unwrap().mutation_may_have_occurred);
     assert_eq!(credential.0.load(Ordering::SeqCst), 0);
     assert!(executor.0.lock().unwrap().requests.is_empty());
@@ -748,14 +1183,34 @@ async fn malformed_external_acceptance_and_reused_wait_session_are_not_replayed(
     let selection = selection();
     let executor = Executor::new([succeeded(), arrow_response()]);
     let mut session = OperationSession::new(
-        &credential, &selection, executor.clone(), OperationLimits::default(), pending(),
+        &credential,
+        &selection,
+        executor.clone(),
+        OperationLimits::default(),
+        pending(),
     );
-    let error = wait_for_query(&mut session, arrow_response(), ArrowVersion::V1).await.unwrap_err();
-    assert_eq!(error.operation_error().unwrap().kind, OperationErrorKind::InvalidInput);
+    let error = wait_for_query(&mut session, arrow_response(), ArrowVersion::V1)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.operation_error().unwrap().kind,
+        OperationErrorKind::InvalidInput
+    );
     assert_eq!(credential.0.load(Ordering::SeqCst), 0);
     assert!(executor.0.lock().unwrap().requests.is_empty());
-    assert_eq!(wait_for_query(&mut session, accepted(), ArrowVersion::V1).await.unwrap().body, BYTES);
-    let error = wait_for_query(&mut session, accepted(), ArrowVersion::V1).await.unwrap_err();
-    assert_eq!(error.operation_error().unwrap().kind, OperationErrorKind::InvalidInput);
+    assert_eq!(
+        wait_for_query(&mut session, accepted(), ArrowVersion::V1)
+            .await
+            .unwrap()
+            .body,
+        BYTES
+    );
+    let error = wait_for_query(&mut session, accepted(), ArrowVersion::V1)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.operation_error().unwrap().kind,
+        OperationErrorKind::InvalidInput
+    );
     assert_eq!(executor.0.lock().unwrap().requests.len(), 2);
 }

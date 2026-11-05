@@ -15,6 +15,9 @@ impl OperationExecutor for HttpExecutor {
         request: OperationRequest<'a>,
     ) -> ExecutionFuture<'a, Result<OperationResponse, OperationExecutionError>> {
         Box::pin(async move {
+            if self.endpoint().origin() != ServiceOrigin::Fabric {
+                return Err(operation_error(ExecutionError::InvalidInput));
+            }
             let method = match request.method() {
                 ResourceMethod::Get => Method::Get,
                 ResourceMethod::Post => Method::Post,
@@ -98,22 +101,46 @@ mod tests {
             _: &[&str],
             _: Option<TokenRequestOptions<'_>>,
         ) -> azure_core::Result<AccessToken> {
-            Ok(AccessToken::new("offline-operations", OffsetDateTime::UNIX_EPOCH))
+            Ok(AccessToken::new(
+                "offline-operations",
+                OffsetDateTime::UNIX_EPOCH,
+            ))
         }
     }
 
     #[tokio::test]
     async fn finite_accept_reaches_initial_and_result_http_but_not_state_polling() {
-        for accept in [None, Some(OperationAccept::ArrowV1), Some(OperationAccept::ArrowV2)] {
+        for accept in [
+            None,
+            Some(OperationAccept::ArrowV1),
+            Some(OperationAccept::ArrowV2),
+        ] {
             let initial_url = format!("https://api.fabric.microsoft.com/v1/operations/{ID}");
             let result_url = format!("{initial_url}/result");
             let client = ScriptedClient::new([
-                response(202, "", &[("x-ms-operation-id", ID), ("Location", &initial_url), ("Retry-After", "0")]),
-                response(200, r#"{"status":"Succeeded"}"#, &[("Location", &result_url)]),
-                response(200, "exact-result", &[("Content-Type", "application/vnd.apache.arrow.stream")]),
+                response(
+                    202,
+                    "",
+                    &[
+                        ("x-ms-operation-id", ID),
+                        ("Location", &initial_url),
+                        ("Retry-After", "0"),
+                    ],
+                ),
+                response(
+                    200,
+                    r#"{"status":"Succeeded"}"#,
+                    &[("Location", &result_url)],
+                ),
+                response(
+                    200,
+                    "exact-result",
+                    &[("Content-Type", "application/vnd.apache.arrow.stream")],
+                ),
             ]);
             let credential = Credential;
-            let selection = CredentialSelection::new("offline", "tenant", Audience::Fabric).unwrap();
+            let selection =
+                CredentialSelection::new("offline", "tenant", Audience::Fabric).unwrap();
             let mut session = OperationSession::new(
                 &credential,
                 &selection,
@@ -122,21 +149,76 @@ mod tests {
                 pending(),
             );
             let operation = FabricOperation::new(
-                ResourceMethod::Post, "/v1/workspaces/ws/dataflows/item/executeQuery",
-                br#"{"queryName":"exact"}"#.to_vec(), CompletionPolicy::WaitForResult,
-            ).unwrap();
+                ResourceMethod::Post,
+                "/v1/workspaces/ws/dataflows/item/executeQuery",
+                br#"{"queryName":"exact"}"#.to_vec(),
+                CompletionPolicy::WaitForResult,
+            )
+            .unwrap();
             let operation = match accept {
                 Some(accept) => operation.with_accept(accept),
                 None => operation,
             };
-            assert_eq!(session.execute(operation).await.unwrap().body, b"exact-result");
+            assert_eq!(
+                session.execute(operation).await.unwrap().body,
+                b"exact-result"
+            );
             let requests = client.requests.lock().unwrap();
             assert_eq!(requests.len(), 3);
             for (index, request) in requests.iter().enumerate() {
-                let expected = if index == 1 { None } else { accept.map(OperationAccept::as_str) };
+                let expected = if index == 1 {
+                    None
+                } else {
+                    accept.map(OperationAccept::as_str)
+                };
                 assert_eq!(request.headers().get_str(&"accept".into()).ok(), expected);
-                assert_eq!(request.headers().get_str(&"content-type".into()).unwrap(), "application/json");
+                assert_eq!(
+                    request.headers().get_str(&"content-type".into()).unwrap(),
+                    "application/json"
+                );
                 assert!(request.headers().get_str(&"authorization".into()).is_ok());
+            }
+        }
+
+        #[tokio::test]
+        async fn arrow_negotiation_never_weakens_the_fabric_executor_binding() {
+            for origin in [
+                ServiceOrigin::Arm,
+                ServiceOrigin::PowerBi,
+                ServiceOrigin::OneLake,
+            ] {
+                for accept in [
+                    None,
+                    Some(OperationAccept::ArrowV1),
+                    Some(OperationAccept::ArrowV2),
+                ] {
+                    let client = ScriptedClient::new([]);
+                    let http = executor(client.clone(), Arc::new(TestTimer::default()))
+                        .with_endpoint(fabric_core::EndpointBinding::public(origin));
+                    let credential = Credential;
+                    let selection =
+                        CredentialSelection::new("offline", "tenant", Audience::Fabric).unwrap();
+                    let mut session = OperationSession::new(
+                        &credential,
+                        &selection,
+                        http,
+                        OperationLimits::default(),
+                        pending(),
+                    );
+                    let operation = FabricOperation::new(
+                        ResourceMethod::Post,
+                        "/v1/workspaces/ws/dataflows/item/executeQuery",
+                        br#"{"queryName":"exact"}"#.to_vec(),
+                        CompletionPolicy::WaitForResult,
+                    )
+                    .unwrap();
+                    let operation = match accept {
+                        Some(accept) => operation.with_accept(accept),
+                        None => operation,
+                    };
+                    assert!(session.execute(operation).await.is_err());
+                    assert!(client.requests.lock().unwrap().is_empty());
+                }
             }
         }
     }
