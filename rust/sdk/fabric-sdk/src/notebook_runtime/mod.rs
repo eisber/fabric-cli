@@ -22,7 +22,7 @@ use crate::runtime::{
     NativeEffect, NativeEndpoint, NativeError, NativeExecutor, NativeMethod, NativeRequest,
     NativeResponse, validate_segment,
 };
-use content::{ContentLimits, NotebookDocument, WritePolicy, encoded_len};
+use content::{ContentLimits, NotebookDocument, WritePolicy, encoded_len, validate_document};
 use serde_json::{Value, json};
 use std::fmt;
 
@@ -302,13 +302,12 @@ impl NotebookRuntime {
         if policy != WritePolicy::AllowUnguarded {
             return Err(NativeError::UnsupportedCapability);
         }
-        let validated =
-            NotebookDocument::from_value(document.as_value().clone(), self.content_limits)?;
+        validate_document(document.as_value(), self.content_limits)?;
         self.request(
             NativeMethod::Put,
             &["content"],
             &[],
-            Some(validated.as_value().clone()),
+            Some(document.as_value().clone()),
             NativeEffect::Update,
         )
     }
@@ -350,6 +349,7 @@ impl NotebookRuntime {
         &self,
         input: &CreateSession,
     ) -> Result<NativeRequest, NativeError> {
+        encoded_len(input.as_value(), self.response_bytes)?;
         self.request(
             NativeMethod::Post,
             &["jupyterApi", "versions", "1", "api", "sessions"],

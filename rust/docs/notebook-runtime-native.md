@@ -100,9 +100,18 @@ are retained. Invalid typed data is rejected, not silently defaulted.
 
 Default budgets are 16 MiB encoded content, 10,000 cells, 1 MiB source per cell,
 and 10,000 saved output records per cell. Callers may supply other nonzero finite
-budgets. Import and every transformation enforce them. Output counting uses a
-bounded serialization sink rather than allocating an unbounded encoded buffer.
+budgets. Import and every transformation enforce them. Size preflight serializes
+borrowed `Serialize` values directly into a bounded counting writer, stopping at
+the first write that exceeds the budget. It does not construct an intermediate
+`serde_json::Value` or an unbounded encoded buffer.
 JSON parsing retains serde_json's recursion limit.
+
+Destination budgets are independent of the source object's original limits.
+A full content PUT validates the borrowed source document against all destination
+content limits before cloning it once into the request. Session creation checks
+the borrowed prepared payload against the destination byte limit before copying;
+session PATCH checks its already-owned payload before dispatch. Rejected requests
+leave the source revision/payload unchanged and do not call the executor.
 
 A selector requires `document.selector(explicit_index)`. An insertion boundary
 requires `document.position(explicit_index)` (including the end position).
@@ -189,6 +198,14 @@ and errors separately from code outcomes; unknown states remain unknown.
 Default protocol limits are 4 MiB/frame, 1 MiB/code, 20,000 correlated messages,
 10,000 live outputs and 16 MiB total retained output content. Invalid payloads or
 limits preserve prior tracking data rather than fabricating a terminal result.
+Inbound validation sizes the borrowed envelope directly. Outbound execute, comm
+open and control construction sizes a borrowed wire envelope, including headers,
+wrappers and JSON string escaping, before materializing any payload `Value`.
+Livy control options are borrowed during preflight, not cloned first. Retained
+output count/byte limits are checked against borrowed incoming content before
+copying it into execution state. Existing caller-owned input allocation is not
+counted as a new SDK allocation, and an encoded-byte limit is not a total-process
+heap cap.
 Errors/tracebacks/source/MIME data are caller-visible data and must not be logged
 without an explicit redaction policy.
 
@@ -219,7 +236,11 @@ Offline tests in `sdk/fabric-sdk/tests/notebook_runtime.rs` exercise exact
 routes/payloads/effects, lossless transforms, selectors and invalid types/bounds,
 Lakehouse precedence/siblings, injected HTTP failures/once-only dispatch,
 saved-vs-live outputs, protocol correlation, cancellation races/partial outputs
-and timeout/resume without remote cancel or replay. The initial lane environment
+and timeout/resume without remote cancel or replay. Adversarial donor/destination
+tests cover smaller content/session/frame/output limits, exact escaped-wire byte
+boundaries, source preservation and no dispatch on rejection. Serializer probes
+also verify that bounded preflight stops before visiting later payload fields
+or materializing a rejected outgoing message. The initial lane environment
 had no Rust toolchain. The coordinator subsequently restored a session-local
 Cargo/rustfmt/clippy 1.99.1 toolchain and reported MSVC 18 availability, and queued
 focused validation under the shared heavy-validation mutex. Workers still have

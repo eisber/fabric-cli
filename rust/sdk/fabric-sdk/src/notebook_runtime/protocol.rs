@@ -10,9 +10,9 @@
 //! idle, saved cell outputs and the end of local observation.
 
 use super::{CommId, ExecutionId, MessageId, ResumeBinding, SessionId, content::encoded_len};
-use crate::runtime::{NativeEffect, NativeError};
+use crate::runtime::{NativeEffect, NativeError, validate_segment};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 use std::collections::HashSet;
 
 /// Finite message and retained-execution budgets.
@@ -97,6 +97,27 @@ pub struct JupyterMessage {
     pub extra: Map<String, Value>,
 }
 
+#[derive(Serialize)]
+struct EmptyObject {}
+
+#[derive(Serialize)]
+struct HeaderDraft<'a> {
+    msg_id: &'a str,
+    msg_type: &'a str,
+    username: &'static str,
+    session: &'a str,
+    version: &'static str,
+}
+
+#[derive(Serialize)]
+struct MessageDraft<'a, T: ?Sized> {
+    header: HeaderDraft<'a>,
+    parent_header: EmptyObject,
+    metadata: EmptyObject,
+    content: &'a T,
+    channel: &'static str,
+}
+
 impl JupyterMessage {
     /// Decode one bounded JSON frame without interpreting it as execution success.
     ///
@@ -127,12 +148,35 @@ impl JupyterMessage {
         self.parent_header.get("msg_id").and_then(Value::as_str)
     }
 
-    fn new(
+    fn new<T: Serialize + ?Sized>(
         msg_id: &MessageId,
         session: &SessionId,
         msg_type: &str,
-        content: Value,
+        content: &T,
+        limits: ProtocolLimits,
     ) -> Result<Self, NativeError> {
+        limits.validate()?;
+        encoded_len(
+            &MessageDraft {
+                header: HeaderDraft {
+                    msg_id: msg_id.as_str(),
+                    msg_type,
+                    username: "notebook-cli",
+                    session: session.as_str(),
+                    version: "5.3",
+                },
+                parent_header: EmptyObject {},
+                metadata: EmptyObject {},
+                content,
+                channel: "shell",
+            },
+            limits.frame_bytes,
+        )?;
+        let Value::Object(content) =
+            serde_json::to_value(content).map_err(|_| NativeError::InvalidInput)?
+        else {
+            return Err(NativeError::InvalidInput);
+        };
         Ok(Self {
             header: MessageHeader {
                 msg_id: msg_id.as_str().into(),
@@ -144,10 +188,7 @@ impl JupyterMessage {
             },
             parent_header: Map::new(),
             metadata: Map::new(),
-            content: content
-                .as_object()
-                .cloned()
-                .ok_or(NativeError::InvalidInput)?,
+            content,
             channel: "shell".into(),
             extra: Map::new(),
         })
@@ -155,7 +196,11 @@ impl JupyterMessage {
 
     fn validate(&self, limits: ProtocolLimits) -> Result<(), NativeError> {
         limits.validate()?;
-        MessageId::new(self.header.msg_id.clone()).map_err(|_| NativeError::InvalidResponse)?;
+        encoded_len(self, limits.frame_bytes)?;
+        validate_segment(&self.header.msg_id).map_err(|_| NativeError::InvalidResponse)?;
+        if self.header.msg_id.len() > 1024 {
+            return Err(NativeError::InvalidResponse);
+        }
         if self.header.msg_type.is_empty()
             || self.header.msg_type.chars().any(char::is_control)
             || self.channel.is_empty()
@@ -167,10 +212,18 @@ impl JupyterMessage {
         {
             return Err(NativeError::InvalidResponse);
         }
-        let value = serde_json::to_value(self).map_err(|_| NativeError::InvalidResponse)?;
-        encoded_len(&value, limits.frame_bytes)?;
         Ok(())
     }
+}
+
+#[derive(Serialize)]
+struct ExecuteContent<'a> {
+    code: &'a str,
+    silent: bool,
+    store_history: bool,
+    user_expressions: EmptyObject,
+    allow_stdin: bool,
+    stop_on_error: bool,
 }
 
 /// Prepared ephemeral code execution, never a saved-cell execution or network send.
@@ -205,16 +258,16 @@ impl ExecuteRequest {
             &id,
             &session,
             "execute_request",
-            json!({
-                "code": code,
-                "silent": silent,
-                "store_history": store_history,
-                "user_expressions": {},
-                "allow_stdin": false,
-                "stop_on_error": true
-            }),
+            &ExecuteContent {
+                code,
+                silent,
+                store_history,
+                user_expressions: EmptyObject {},
+                allow_stdin: false,
+                stop_on_error: true,
+            },
+            limits,
         )?;
-        message.validate(limits)?;
         Ok(Self {
             id,
             session,
@@ -259,6 +312,13 @@ impl CommTarget {
     }
 }
 
+#[derive(Serialize)]
+struct CommOpenContent<'a> {
+    comm_id: &'a str,
+    target_name: &'static str,
+    data: EmptyObject,
+}
+
 /// Prepare `comm_open` for a caller-owned channel; this is not an established comm.
 ///
 /// # Errors
@@ -270,14 +330,17 @@ pub fn comm_open(
     target: CommTarget,
     limits: ProtocolLimits,
 ) -> Result<JupyterMessage, NativeError> {
-    let message = JupyterMessage::new(
+    JupyterMessage::new(
         id,
         session,
         "comm_open",
-        json!({"comm_id": comm.as_str(), "target_name": target.as_str(), "data": {}}),
-    )?;
-    message.validate(limits)?;
-    Ok(message)
+        &CommOpenContent {
+            comm_id: comm.as_str(),
+            target_name: target.as_str(),
+            data: EmptyObject {},
+        },
+        limits,
+    )
 }
 
 /// Native deterministic controls; cancellation, lifecycle and replay stay distinct.
@@ -297,14 +360,26 @@ pub enum SynapseControl {
     Ping,
 }
 
+#[derive(Serialize)]
+#[serde(untagged)]
+enum ControlContent<'a> {
+    Execution(&'a str),
+    Empty(EmptyObject),
+    Replay { parent_msg_id: &'a str },
+    Options(&'a Value),
+}
+
 impl SynapseControl {
-    fn wire(&self) -> Result<(&'static str, Value), NativeError> {
+    fn wire(&self) -> Result<(&'static str, ControlContent<'_>), NativeError> {
         match self {
-            Self::CancelExecution(id) => Ok(("cancel_cell_execution", id.as_str().into())),
-            Self::CancelAll => Ok(("cancel_all_cell_execution", json!({}))),
-            Self::ReplayOutputs(id) => {
-                Ok(("replay_outputs", json!({"parent_msg_id": id.as_str()})))
+            Self::CancelExecution(id) => {
+                Ok(("cancel_cell_execution", ControlContent::Execution(id.as_str())))
             }
+            Self::CancelAll => Ok(("cancel_all_cell_execution", ControlContent::Empty(EmptyObject {}))),
+            Self::ReplayOutputs(id) => Ok((
+                "replay_outputs",
+                ControlContent::Replay { parent_msg_id: id.as_str() },
+            )),
             Self::StartLivy(options) | Self::SetLivyOptions(options) => {
                 if !options.is_object() {
                     return Err(NativeError::InvalidInput);
@@ -314,11 +389,25 @@ impl SynapseControl {
                 } else {
                     "set_livy_session_options"
                 };
-                Ok((command, options.clone()))
+                Ok((command, ControlContent::Options(options)))
             }
-            Self::Ping => Ok(("ping", json!({}))),
+            Self::Ping => Ok(("ping", ControlContent::Empty(EmptyObject {}))),
         }
     }
+}
+
+#[derive(Serialize)]
+struct ControlData<'a> {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    content: ControlContent<'a>,
+    parent_msg_id: &'a str,
+}
+
+#[derive(Serialize)]
+struct CommContent<'a> {
+    comm_id: &'a str,
+    data: ControlData<'a>,
 }
 
 /// Prepared Synapse `comm_msg`, using distinct outer/control and target message IDs.
@@ -346,17 +435,23 @@ impl ControlRequest {
         if matches!(&command, SynapseControl::CancelExecution(target) if target == &id) {
             return Err(NativeError::InvalidInput);
         }
-        let (kind, content) = command.wire()?;
-        let message = JupyterMessage::new(
-            &id,
-            &session,
-            "comm_msg",
-            json!({
-                "comm_id": comm.as_str(),
-                "data": {"type": kind, "content": content, "parent_msg_id": id.as_str()}
-            }),
-        )?;
-        message.validate(limits)?;
+        let message = {
+            let (kind, content) = command.wire()?;
+            JupyterMessage::new(
+                &id,
+                &session,
+                "comm_msg",
+                &CommContent {
+                    comm_id: comm.as_str(),
+                    data: ControlData {
+                        kind,
+                        content,
+                        parent_msg_id: id.as_str(),
+                    },
+                },
+                limits,
+            )?
+        };
         Ok(Self {
             id,
             session,
@@ -866,14 +961,14 @@ impl ExecutionTracker {
                 if message.channel != "iopub" {
                     return Err(NativeError::InvalidResponse);
                 }
-                let output = parse_output(message)?;
                 if self.outputs.len() >= self.limits.outputs {
                     return Err(NativeError::Limit);
                 }
                 let bytes = encoded_len(
-                    &Value::Object(output.content.clone()),
+                    &message.content,
                     self.limits.output_bytes.saturating_sub(self.output_bytes),
                 )?;
+                let output = parse_output(message)?;
                 self.output_bytes += bytes;
                 self.outputs.push(output);
                 Observation::Output
@@ -999,4 +1094,52 @@ fn parse_error(content: &Map<String, Value>) -> Result<ExecutionError, NativeErr
         value: value.into(),
         traceback,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #![deny(unnameable_test_items)]
+
+    use super::*;
+    use serde::ser::SerializeStruct;
+
+    struct PayloadProbe<'a> {
+        text: &'a str,
+        visits: &'a std::cell::Cell<usize>,
+        tail_visits: &'a std::cell::Cell<usize>,
+    }
+
+    impl Serialize for PayloadProbe<'_> {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            self.visits.set(self.visits.get() + 1);
+            let mut fields = serializer.serialize_struct("PayloadProbe", 2)?;
+            fields.serialize_field("text", self.text)?;
+            self.tail_visits.set(self.tail_visits.get() + 1);
+            fields.serialize_field("tail", &true)?;
+            fields.end()
+        }
+    }
+
+    #[test]
+    fn outgoing_frame_preflight_aborts_before_materializing_the_payload() {
+        let text = "\n".repeat(64 * 1024);
+        let visits = std::cell::Cell::new(0);
+        let tail_visits = std::cell::Cell::new(0);
+        let content = PayloadProbe { text: &text, visits: &visits, tail_visits: &tail_visits };
+        let id = MessageId::new("request").unwrap();
+        let session = SessionId::new("session").unwrap();
+        let limits = ProtocolLimits { frame_bytes: 512, ..ProtocolLimits::default() };
+        assert!(matches!(
+            JupyterMessage::new(&id, &session, "execute_request", &content, limits),
+            Err(NativeError::Limit)
+        ));
+        assert_eq!(visits.get(), 1);
+        assert_eq!(tail_visits.get(), 0);
+        let message = JupyterMessage::new(
+            &id, &session, "execute_request", &content, ProtocolLimits::default(),
+        ).unwrap();
+        assert_eq!(visits.get(), 3);
+        assert_eq!(tail_visits.get(), 2);
+        assert_eq!(message.content["text"].as_str(), Some(text.as_str()));
+    }
 }

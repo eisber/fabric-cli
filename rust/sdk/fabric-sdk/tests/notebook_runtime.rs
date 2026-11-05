@@ -30,13 +30,17 @@ use std::{collections::VecDeque, future::Future, pin::Pin, sync::Mutex};
 const BASE: &str = "https://workload.example.invalid/webapi/capacities/cap/workloads/Notebook/Data/Automatic/api/workspaces/ws/artifacts/nb";
 
 fn runtime() -> NotebookRuntime {
+    runtime_with_limits(ContentLimits::default(), 1024 * 1024)
+}
+
+fn runtime_with_limits(content_limits: ContentLimits, response_bytes: usize) -> NotebookRuntime {
     NotebookRuntime::new(
         NativeEndpoint::new(Url::parse("https://workload.example.invalid").unwrap()).unwrap(),
         "cap",
         "ws",
         "nb",
-        ContentLimits::default(),
-        1024 * 1024,
+        content_limits,
+        response_bytes,
         100,
     )
     .unwrap()
@@ -1509,4 +1513,170 @@ fn livy_status_and_kernel_lifecycle_are_not_execution_replies() {
             .unwrap()
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn small_destination_content_limits_reject_donors_without_changes_or_dispatch() {
+    let mut value = document_value();
+    value["future_notebook"]["large"] = Value::String("\"\\\n".repeat(64 * 1024));
+    let document = NotebookDocument::from_value(value, ContentLimits::default()).unwrap();
+    let original = serde_json::to_vec(document.as_value()).unwrap();
+    let selector = document.selector(2).unwrap();
+    let executor = Scripted::new(vec![]);
+    for limits in [
+        ContentLimits { document_bytes: 64, ..ContentLimits::default() },
+        ContentLimits { cells: 1, ..ContentLimits::default() },
+        ContentLimits { source_bytes: 1, ..ContentLimits::default() },
+        ContentLimits { outputs_per_cell: 1, ..ContentLimits::default() },
+        ContentLimits { document_bytes: original.len() - 1, ..ContentLimits::default() },
+    ] {
+        let destination = runtime_with_limits(limits, 1024);
+        assert!(matches!(
+            destination.put_content(&executor, &document, WritePolicy::AllowUnguarded).await,
+            Err(NativeError::Limit)
+        ));
+        assert!(document.cell(&selector).is_ok());
+        assert_eq!(serde_json::to_vec(document.as_value()).unwrap(), original);
+    }
+    let destination = runtime_with_limits(
+        ContentLimits { document_bytes: original.len(), ..ContentLimits::default() },
+        1024,
+    );
+    let request = destination.content_put_request(&document, WritePolicy::AllowUnguarded).unwrap();
+    assert_eq!(request.body(), Some(document.as_value()));
+    assert_eq!(executor.count(), 0);
+}
+
+#[tokio::test]
+async fn session_payloads_obey_smaller_destination_budgets_and_preserve_inputs() {
+    let input = CreateSession::new(
+        "named",
+        "/explicit",
+        "synapse_pyspark",
+        Some(json!({"future": "\"\\\n".repeat(64 * 1024)})),
+    ).unwrap();
+    let original = serde_json::to_vec(input.as_value()).unwrap();
+    let executor = Scripted::new(vec![]);
+    for bytes in [64, original.len() - 1] {
+        let destination = runtime_with_limits(ContentLimits::default(), bytes);
+        assert!(matches!(
+            destination.create_session(&executor, &input).await,
+            Err(NativeError::Limit)
+        ));
+        assert!(matches!(
+            destination.patch_session(&executor, &session(), input.as_value().clone()).await,
+            Err(NativeError::Limit)
+        ));
+        assert_eq!(serde_json::to_vec(input.as_value()).unwrap(), original);
+    }
+    let destination = runtime_with_limits(ContentLimits::default(), original.len());
+    assert_eq!(destination.session_create_request(&input).unwrap().body(), Some(input.as_value()));
+    assert_eq!(executor.count(), 0);
+}
+
+#[test]
+fn borrowed_protocol_validation_rejects_small_destinations_without_changing_inputs() {
+    let mut message = stream("oversized-stream");
+    message.content["text"] = Value::String("\"\\\n".repeat(64 * 1024));
+    let original = message.to_vec(ProtocolLimits::default()).unwrap();
+    let small = ProtocolLimits { frame_bytes: 1024, ..ProtocolLimits::default() };
+    assert!(matches!(message.to_vec(small), Err(NativeError::Limit)));
+    let mut tracker = tracker_with_limits(small);
+    tracker.observe(&stream("partial")).unwrap();
+    assert!(matches!(tracker.observe(&message), Err(NativeError::Limit)));
+    assert_eq!(tracker.state(), ExecutionState::AwaitingReply);
+    assert_eq!(tracker.outputs().len(), 1);
+    assert_eq!(message.to_vec(ProtocolLimits::default()).unwrap(), original);
+
+    let exact = ProtocolLimits { frame_bytes: original.len(), ..ProtocolLimits::default() };
+    assert_eq!(message.to_vec(exact).unwrap(), original);
+    assert!(matches!(
+        message.to_vec(ProtocolLimits { frame_bytes: original.len() - 1, ..exact }),
+        Err(NativeError::Limit)
+    ));
+    let mut reply = cancel_reply("ok");
+    reply.extra.insert("future".into(), message.content["text"].clone());
+    let original_reply = reply.to_vec(ProtocolLimits::default()).unwrap();
+    assert!(matches!(
+        ControlReply::from_message(&reply, &cancel_request(), small),
+        Err(NativeError::Limit)
+    ));
+    assert_eq!(reply.to_vec(ProtocolLimits::default()).unwrap(), original_reply);
+}
+
+#[test]
+fn outgoing_execute_and_controls_preflight_complete_escaped_wire_sizes() {
+    let source = "\"\\\n".repeat(64 * 1024);
+    let small = ProtocolLimits { frame_bytes: 256, ..ProtocolLimits::default() };
+    assert!(source.len() < small.code_bytes);
+    assert!(matches!(
+        ExecuteRequest::new(MessageId::new("request").unwrap(), session(), &source, false, true, small),
+        Err(NativeError::Limit)
+    ));
+    let options = json!({"future": source});
+    for command in [
+        SynapseControl::StartLivy(options.clone()),
+        SynapseControl::SetLivyOptions(options.clone()),
+    ] {
+        assert!(matches!(
+            ControlRequest::new(
+                MessageId::new("control").unwrap(), session(), CommId::new("comm").unwrap(),
+                command, small,
+            ),
+            Err(NativeError::Limit)
+        ));
+    }
+    assert_eq!(options["future"].as_str(), Some(source.as_str()));
+    let request = execute_request();
+    let bytes = request.message().to_vec(ProtocolLimits::default()).unwrap().len();
+    for (frame_bytes, accepted) in [(bytes, true), (bytes - 1, false)] {
+        let result = ExecuteRequest::new(
+            request.id().clone(), session(), "print('live')", false, true,
+            ProtocolLimits { frame_bytes, ..ProtocolLimits::default() },
+        );
+        if accepted {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(result, Err(NativeError::Limit)));
+        }
+    }
+    let control = cancel_request();
+    let bytes = control.message().to_vec(ProtocolLimits::default()).unwrap().len();
+    for (frame_bytes, accepted) in [(bytes, true), (bytes - 1, false)] {
+        let result = ControlRequest::new(
+            control.id().clone(), session(), CommId::new("control-comm").unwrap(),
+            SynapseControl::CancelExecution(MessageId::new("execute-message").unwrap()),
+            ProtocolLimits { frame_bytes, ..ProtocolLimits::default() },
+        );
+        if accepted {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(result, Err(NativeError::Limit)));
+        }
+    }
+    assert!(matches!(
+        comm_open(
+            &MessageId::new("open").unwrap(), &session(), &CommId::new("comm").unwrap(),
+            CommTarget::Control, ProtocolLimits { frame_bytes: 16, ..small },
+        ),
+        Err(NativeError::Limit)
+    ));
+}
+
+#[test]
+fn output_destination_limit_precedes_copy_and_preserves_partial_state() {
+    let mut tracker = tracker_with_limits(
+        ProtocolLimits { output_bytes: 128, ..ProtocolLimits::default() },
+    );
+    tracker.observe(&stream("partial")).unwrap();
+    let mut message = stream("oversized");
+    message.content["text"] = Value::String("\"\\\n".repeat(64 * 1024));
+    let original = message.to_vec(ProtocolLimits::default()).unwrap();
+    assert!(matches!(tracker.observe(&message), Err(NativeError::Limit)));
+    assert_eq!(tracker.outputs().len(), 1);
+    assert_eq!(tracker.outputs()[0].content["text"], json!(["partial\n"]));
+    assert_eq!(message.to_vec(ProtocolLimits::default()).unwrap(), original);
+    assert_eq!(tracker.state(), ExecutionState::AwaitingReply);
+    tracker.observe(&stream("oversized")).unwrap();
+    assert_eq!(tracker.outputs().len(), 2);
 }

@@ -4,6 +4,7 @@
 //! Bounded, lossless JSON notebook snapshots and whole-document transformations.
 
 use crate::runtime::NativeError;
+use serde::Serialize;
 use serde_json::{Map, Value, json};
 use std::{io, sync::Arc};
 
@@ -547,7 +548,8 @@ fn source_lines(source: &str) -> Value {
     Value::Array(source.split_inclusive('\n').map(Value::from).collect())
 }
 
-fn validate_document(value: &Value, limits: ContentLimits) -> Result<(), NativeError> {
+pub(super) fn validate_document(value: &Value, limits: ContentLimits) -> Result<(), NativeError> {
+    limits.validate()?;
     encoded_len(value, limits.document_bytes)?;
     if !value.is_object()
         || value.get("nbformat").and_then(Value::as_u64) != Some(4)
@@ -621,7 +623,10 @@ fn validate_cell(cell: &Value, limits: ContentLimits) -> Result<(), NativeError>
     Ok(())
 }
 
-pub(super) fn encoded_len(value: &Value, limit: usize) -> Result<usize, NativeError> {
+pub(super) fn encoded_len<T: Serialize + ?Sized>(
+    value: &T,
+    limit: usize,
+) -> Result<usize, NativeError> {
     struct Counter {
         count: usize,
         limit: usize,
@@ -641,4 +646,49 @@ pub(super) fn encoded_len(value: &Value, limit: usize) -> Result<usize, NativeEr
     let mut counter = Counter { count: 0, limit };
     serde_json::to_writer(&mut counter, value).map_err(|_| NativeError::Limit)?;
     Ok(counter.count)
+}
+
+#[cfg(test)]
+mod tests {
+    #![deny(unnameable_test_items)]
+
+    use super::*;
+    use serde::ser::SerializeStruct;
+
+    struct BorrowedPayload<'a> {
+        text: &'a str,
+        tail_visits: &'a std::cell::Cell<usize>,
+    }
+
+    impl Serialize for BorrowedPayload<'_> {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            let mut fields = serializer.serialize_struct("BorrowedPayload", 2)?;
+            fields.serialize_field("text", self.text)?;
+            self.tail_visits.set(self.tail_visits.get() + 1);
+            fields.serialize_field("tail", &true)?;
+            fields.end()
+        }
+    }
+
+    #[test]
+    fn borrowed_sizing_stops_serialization_at_the_limit_without_visiting_the_tail() {
+        let source = "\"\\\n".repeat(64 * 1024);
+        let tail_visits = std::cell::Cell::new(0);
+        let payload = BorrowedPayload { text: &source, tail_visits: &tail_visits };
+        assert!(matches!(encoded_len(&payload, 64), Err(NativeError::Limit)));
+        assert_eq!(tail_visits.get(), 0);
+        let expected = serde_json::to_vec(&payload).unwrap().len();
+        assert_eq!(tail_visits.get(), 1);
+        assert_eq!(encoded_len(&payload, expected), Ok(expected));
+        assert_eq!(tail_visits.get(), 2);
+        assert_eq!(source.len(), 3 * 64 * 1024);
+    }
+
+    #[test]
+    fn borrowed_unsized_text_counts_escaped_json_bytes_exactly() {
+        let text = "\"\\\n\0";
+        let expected = serde_json::to_vec(text).unwrap().len();
+        assert_eq!(encoded_len(text, expected), Ok(expected));
+        assert!(matches!(encoded_len(text, expected - 1), Err(NativeError::Limit)));
+    }
 }
