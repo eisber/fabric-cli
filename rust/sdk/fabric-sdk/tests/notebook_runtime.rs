@@ -226,6 +226,9 @@ fn source_and_exact_content_routes_and_whole_write_effect() {
         assert_eq!(request.method(), method);
         assert_eq!(request.effect(), effect);
         assert_eq!(request.accept(), "application/json");
+        assert_eq!(request.content_type(), "application/json");
+        assert!(request.bytes().is_none());
+        assert!(request.headers().is_empty());
         if method == NativeMethod::Put {
             assert_eq!(request.body(), Some(document.as_value()));
         } else {

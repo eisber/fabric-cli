@@ -648,10 +648,7 @@ impl NotebookRuntime {
         request: &NativeRequest,
         max_bytes: usize,
     ) -> Result<NativeResponse, NativeError> {
-        let response = executor.execute(request, max_bytes).await?;
-        if response.body.len() > max_bytes {
-            return Err(NativeError::Limit);
-        }
+        let response = request.execute(executor, max_bytes).await?;
         if !(200..300).contains(&response.status) {
             return Err(NativeError::Http(response.status));
         }

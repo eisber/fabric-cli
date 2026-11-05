@@ -72,7 +72,10 @@ other provider fields remain in the returned JSON; names are not rewritten.
 PATCH takes an explicit nonempty native JSON object, not guessed settings.
 Session ID `active` is rejected for an individual-session route.
 
-The client dispatches each operation exactly once. It does not install retries,
+The client uses the shared `NativeRequest::execute(executor, max_bytes)` bound
+and dispatches each operation exactly once. JSON content retains explicit
+`application/json` media; no raw bytes or protocol headers are added by these
+routes, including no synthetic `If-Match`. It does not install retries,
 pollers, a runtime, cancellation, rollback or automatic cleanup. An executor's
 `TimedOut`, `Cancelled` or `OutcomeUnknown` remains that error. HTTP failures keep
 their actual status. Response bytes and session counts are checked even if the
@@ -216,8 +219,12 @@ Offline tests in `sdk/fabric-sdk/tests/notebook_runtime.rs` exercise exact
 routes/payloads/effects, lossless transforms, selectors and invalid types/bounds,
 Lakehouse precedence/siblings, injected HTTP failures/once-only dispatch,
 saved-vs-live outputs, protocol correlation, cancellation races/partial outputs
-and timeout/resume without remote cancel or replay. The assigned environment has
-no Cargo/rustc/rustfmt and no granted build slot. Rust tests, formatting and
-`missing_docs` compilation therefore remain **unexecuted**, not passed.
+and timeout/resume without remote cancel or replay. The initial lane environment
+had no Rust toolchain. The coordinator subsequently restored a session-local
+Cargo/rustfmt/clippy 1.99.1 toolchain and reported MSVC 18 availability, and queued
+focused validation under the shared heavy-validation mutex. Workers still have
+no granted compilation slot. Rust tests, formatting and `missing_docs` compilation
+remain **unexecuted in this lane**, not passed; queued parent validation is not a
+test result.
 Static source checks and `git diff --check` are separate evidence, not replacements
 for an authorized all-target check.
