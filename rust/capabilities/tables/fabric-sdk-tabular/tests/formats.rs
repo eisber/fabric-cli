@@ -398,7 +398,15 @@ fn ipc_roundtrip_keeps_all_batches_and_row_order() {
     assert_eq!(decoded.num_rows(), 6);
     assert_eq!(decoded.batches(), result.batches());
     assert_eq!(parsed_json(&decoded)["rows"].as_array().unwrap().len(), 6);
-    let (_, read) = read_parquet(encode(&result, ResultFormat::Parquet, limits()).unwrap());
+    let bytes = encode(&result, ResultFormat::Parquet, limits()).unwrap();
+    let reader = ParquetRecordBatchReaderBuilder::try_new(Bytes::from(bytes)).unwrap();
+    assert_eq!(reader.metadata().num_row_groups(), 2);
+    let read = reader
+        .with_batch_size(one.num_rows())
+        .build()
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(read, result.batches());
 }
 
