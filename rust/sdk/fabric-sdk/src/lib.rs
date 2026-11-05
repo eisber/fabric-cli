@@ -13,6 +13,7 @@ pub mod folders;
 pub mod items;
 pub mod models;
 pub mod notebooks;
+pub mod runtime;
 pub mod workspaces;
 
 pub use fabric_core::{
