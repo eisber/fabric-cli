@@ -21,6 +21,7 @@ default-members = [
     "infrastructure/http/fabric-sdk-transport",
     "capabilities/deployment/fabric-deploy",
     "hosts/cli/fabric-cli",
+    "hosts/cli/fabric-cli-v2",
     "hosts/cli/fabric-cli-output",
     "hosts/cli/fabric-cli-context",
     "hosts/cli/fabric-cli-query",
@@ -48,6 +49,7 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+fabric-cli = { path = "hosts/cli/fabric-cli", default-features = false }
 fabric-cli-repl = { path = "hosts/repl/fabric-cli-repl", default-features = false }
 fabric-cli-update = { path = "hosts/update/fabric-cli-update", default-features = false }
 reedline = { version = "=0.52.1", default-features = false }
