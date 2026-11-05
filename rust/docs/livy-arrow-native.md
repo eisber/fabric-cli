@@ -27,6 +27,10 @@ checkpoint is installed.
 - Lane base: `5e1e368e6d977f50c082e3b2f9442d48bd0b2e5b`.
   Common interface commit `5fe13bd171c3bccf76da519b556173570c786603` was
   cherry-picked first (`8e0e510` in this lane).
+- Additive runtime enhancement
+  `2cca2b509c2e0b7c0f7bf0968f9fbe8e427bfb1f` was subsequently cherry-picked
+  (`9cbbb94` in this lane). Arrow request metadata now uses its native
+  Content-Type and protocol-header fields directly.
 
 The coordinator owns the optional SDK feature `livy-arrow = ["dep:ring"]`,
 the dependency `ring = { workspace = true, optional = true }`, and the SDK
@@ -181,10 +185,14 @@ No live codec/kind/wait support is inferred and no probe, changed POST or
 retry-without-wait occurs.
 
 The host supplies a validated canonical-shaped UUID correlation header
-`x-ms-livy-resource-id`. `ArrowRequest::headers()` exposes exact Accept,
-POST Content-Type `application/json`, and correlation headers. Apply **all**
-of them: `NativeRequest` itself currently has no arbitrary-header field. This
-UUID is not durable idempotency, and no mutation is replayable.
+`x-ms-livy-resource-id`. It is stored using `NativeRequest::with_header`;
+`native().headers()` retains it for callers using the common request contract.
+Native Accept and Content-Type retain the response representation and JSON body
+media type. `ArrowRequest::headers()` exposes the same metadata as one convenience
+iterator: exact Accept, POST Content-Type `application/json`, and protocol headers.
+Apply **all** of them. Authorization, Host and transport-security headers remain
+host-controlled; Arrow never attempts to override them. This UUID is not durable
+idempotency, and no mutation is replayable.
 
 `ArrowRequest::validate_response` validates actual status, expected media/version,
 identity HTTP encoding, and optional declared body length. Enforce actual byte

@@ -503,6 +503,10 @@ fn exact_owner_scoped_routes_and_selector_queries_preserve_execution_identity() 
         assert_eq!(request.native().effect(), NativeEffect::Read);
         assert_eq!(request.native().url().path(), expected);
         assert_eq!(request.native().accept(), ARROW_CHUNKS_MEDIA_TYPE);
+        assert!(request.native().body().is_none());
+        assert!(request.native().bytes().is_none());
+        assert!(request.native().headers().is_empty());
+        assert_eq!(request.headers().collect::<Vec<_>>(), [("accept", ARROW_CHUNKS_MEDIA_TYPE)]);
         let query: Vec<_> = request.native().url().query_pairs().map(|(key, value)| (key.into_owned(), value.into_owned())).collect();
         assert_eq!(query, [
             ("after_chunk".to_string(), "part-2-9".to_string()),
@@ -535,6 +539,10 @@ fn submission_body_required_headers_wait_boundaries_and_inline_accept_are_exact(
         assert_eq!(request.native().method(), NativeMethod::Post);
         assert_eq!(request.native().effect(), NativeEffect::Execute);
         assert_eq!(request.native().accept(), "application/json");
+        assert_eq!(request.native().content_type(), "application/json");
+        assert!(request.native().bytes().is_none());
+        assert_eq!(request.native().headers().get("x-ms-livy-resource-id").map(String::as_str), Some(RESOURCE_ID));
+        assert_eq!(request.native().headers().len(), 1);
         assert_eq!(request.native().body(), Some(&json!({"code":"select 1","kind":"sql","format":"arrow","codec":"none"})));
         assert_eq!(request.native().url().query(), wait.map(|wait| format!("sync_wait_ms={wait}")).as_deref());
         assert_eq!(request.headers().collect::<Vec<_>>(), [("accept", "application/json"), ("content-type", "application/json"), ("x-ms-livy-resource-id", RESOURCE_ID)]);
@@ -543,6 +551,8 @@ fn submission_body_required_headers_wait_boundaries_and_inline_accept_are_exact(
         for wait in [1, 10_000] {
             let request = SubmitOptions { code: "select 1", kind: "sql", codec: "none", mode: SubmitMode::Inline { sync_wait_ms: wait, allow_json_fallback: fallback } }.request(&owner(), RESOURCE_ID, 100).unwrap();
             assert_eq!(request.native().accept(), accept);
+            assert_eq!(request.native().content_type(), "application/json");
+            assert_eq!(request.native().headers().get("x-ms-livy-resource-id").map(String::as_str), Some(RESOURCE_ID));
             assert_eq!(request.validate_response(headers(Some("application/json")), 100).is_ok(), fallback);
             assert_eq!(request.inline_fallback(100).is_ok(), fallback);
             assert_eq!(request.validate_response(headers(Some(ARROW_STREAM_MEDIA_TYPE)), 100), Ok(ResponseRepresentation::InlineIpc));

@@ -139,7 +139,6 @@ impl StatementHandle {
             native,
             owner: self.owner.clone(),
             mode: RequestMode::Framed,
-            resource_id: None,
         })
     }
 }
@@ -285,7 +284,8 @@ impl SubmitOptions<'_> {
             &query,
             Some(json!({"code":self.code,"kind":self.kind,"format":"arrow","codec":self.codec})),
             NativeEffect::Execute,
-        )?.with_accept(accept)?;
+        )?.with_accept(accept)?
+            .with_header("x-ms-livy-resource-id", resource_id)?;
         Ok(ArrowRequest {
             native,
             owner: owner.clone(),
@@ -293,7 +293,6 @@ impl SubmitOptions<'_> {
                 SubmitMode::Handle { .. } => RequestMode::Handle,
                 SubmitMode::Inline { allow_json_fallback, .. } => RequestMode::Inline { allow_json_fallback },
             },
-            resource_id: Some(resource_id.into()),
         })
     }
 }
@@ -311,16 +310,17 @@ enum RequestMode {
     Inline { allow_json_fallback: bool },
 }
 
-/// Native request plus headers not yet representable on `NativeRequest`.
+/// Native request plus owner-bound Arrow response-selection policy.
 ///
-/// Hosts must apply [`Self::headers`], use a caller-owned streaming transport,
-/// reject redirects/HTTP decompression and dispatch POST exactly once. The
-/// whole-body `NativeExecutor` seam is not suitable for streaming Arrow bodies.
+/// All request metadata is carried by `NativeRequest`; [`Self::headers`] is a
+/// convenience iterator over its media and protocol headers. Hosts must use a
+/// caller-owned streaming transport, reject redirects/HTTP decompression and
+/// dispatch POST exactly once. The whole-body `NativeExecutor` seam is not
+/// suitable for streaming Arrow bodies.
 pub struct ArrowRequest {
     native: NativeRequest,
     owner: StatementOwner,
     mode: RequestMode,
-    resource_id: Option<String>,
 }
 
 impl std::fmt::Debug for ArrowRequest {
@@ -341,9 +341,11 @@ impl ArrowRequest {
     pub fn headers(&self) -> impl Iterator<Item = (&str, &str)> {
         [
             Some(("accept", self.native.accept())),
-            self.resource_id.as_ref().map(|_| ("content-type", "application/json")),
-            self.resource_id.as_deref().map(|id| ("x-ms-livy-resource-id", id)),
-        ].into_iter().flatten()
+            (self.native.body().is_some() || self.native.bytes().is_some())
+                .then(|| ("content-type", self.native.content_type())),
+        ].into_iter().flatten().chain(
+            self.native.headers().iter().map(|(name, value)| (name.as_str(), value.as_str()))
+        )
     }
 
     /// Validate the actual HTTP status, representation and body-level headers.
