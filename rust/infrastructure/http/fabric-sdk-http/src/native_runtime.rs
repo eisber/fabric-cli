@@ -17,7 +17,9 @@ use fabric_sdk::{
     workspaces::WorkspaceResponse,
 };
 use serde_json::Value;
-use std::{borrow::Cow, fmt, future::pending, io, num::NonZeroUsize, pin::pin};
+use std::{
+    borrow::Cow, collections::BTreeMap, fmt, future::pending, io, num::NonZeroUsize, pin::pin,
+};
 
 const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_URL_BYTES: usize = 16 * 1024;
@@ -78,24 +80,13 @@ impl NativeExecutor for NativeFabricExecutor {
     ) -> ExecutionFuture<'a, Result<NativeResponse, NativeError>> {
         Box::pin(async move {
             let limit = NonZeroUsize::new(max_response_bytes).ok_or(NativeError::InvalidInput)?;
-            validate_binding(&self.context, &self.http)?;
-            validate_url(self.context.endpoint(), request.url())?;
-            let method = method(request.method());
-            if matches!(method, Method::Get | Method::Head)
-                && request.effect() != NativeEffect::Read
-            {
-                // GET is replayable in the shared engine, never for a declared mutation.
-                return Err(NativeError::InvalidInput);
-            }
-            let headers = request_headers(request)?;
-            bound::validate_request(method, request.url(), &[], &headers)
-                .map_err(|_| NativeError::InvalidInput)?;
-            let body = request_body(request)?;
+            let prepared = prepare_request(&self.context, &self.http, request)?;
+            let method = prepared.method;
             let mut dispatch = Dispatch {
                 http: &self.http,
                 method,
-                body: body.as_ref(),
-                headers: &headers,
+                body: prepared.body.as_ref(),
+                headers: &prepared.headers,
                 limit,
             };
             let response = self
@@ -115,22 +106,54 @@ impl NativeExecutor for NativeFabricExecutor {
                     RequestError::Cancelled => NativeError::Cancelled,
                     RequestError::Execution(error) => execution_error(error, method),
                 })?;
-            let mut response = NativeResponse {
+            let (headers, content_type) = response_metadata(
+                response
+                    .headers
+                    .iter()
+                    .map(|(name, value)| (name.as_str(), value.as_str())),
+            )
+            .map_err(|error| uncertain_response(error, method))?;
+            Ok(NativeResponse {
                 status: response.status,
                 body: response.body,
-                content_type: None,
-                headers: response.headers,
-            };
-            response.content_type = response
-                .header("content-type")
-                .map_err(|error| uncertain_response(error, method))?
-                .map(str::to_owned);
-            Ok(response)
+                content_type,
+                headers,
+            })
         })
     }
 }
 
-fn validate_binding(context: &RequestContext, http: &HttpExecutor) -> Result<(), NativeError> {
+pub(super) struct PreparedRequest<'a> {
+    pub(super) method: Method,
+    pub(super) body: Cow<'a, [u8]>,
+    pub(super) headers: Vec<(String, String)>,
+}
+
+pub(super) fn prepare_request<'a>(
+    context: &RequestContext,
+    http: &HttpExecutor,
+    request: &'a NativeRequest,
+) -> Result<PreparedRequest<'a>, NativeError> {
+    validate_binding(context, http)?;
+    validate_url(context.endpoint(), request.url())?;
+    let method = method(request.method());
+    if matches!(method, Method::Get | Method::Head) && request.effect() != NativeEffect::Read {
+        return Err(NativeError::InvalidInput);
+    }
+    let headers = request_headers(request)?;
+    bound::validate_request(method, request.url(), &[], &headers)
+        .map_err(|_| NativeError::InvalidInput)?;
+    Ok(PreparedRequest {
+        method,
+        body: request_body(request)?,
+        headers,
+    })
+}
+
+pub(super) fn validate_binding(
+    context: &RequestContext,
+    http: &HttpExecutor,
+) -> Result<(), NativeError> {
     if context.endpoint().origin() != ServiceOrigin::Fabric
         || http.endpoint().origin() != ServiceOrigin::Fabric
     {
@@ -140,6 +163,37 @@ fn validate_binding(context: &RequestContext, http: &HttpExecutor) -> Result<(),
         return Err(NativeError::InvalidInput);
     }
     Ok(())
+}
+
+pub(super) fn response_metadata<'a>(
+    fields: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Result<(BTreeMap<String, String>, Option<String>), NativeError> {
+    let mut headers = BTreeMap::new();
+    let mut bytes = 0_usize;
+    for (name, value) in fields {
+        bytes = bytes
+            .checked_add(name.len())
+            .and_then(|bytes| bytes.checked_add(value.len()))
+            .ok_or(NativeError::Limit)?;
+        if headers.len() == MAX_HEADERS || bytes > MAX_HEADER_BYTES {
+            return Err(NativeError::Limit);
+        }
+        if name.is_empty()
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte))
+            || value.chars().any(char::is_control)
+        {
+            return Err(NativeError::InvalidResponse);
+        }
+        let name = name.to_ascii_lowercase();
+        if headers.contains_key(&name) {
+            return Err(NativeError::InvalidResponse);
+        }
+        headers.insert(name, value.to_owned());
+    }
+    let content_type = headers.get("content-type").cloned();
+    Ok((headers, content_type))
 }
 
 fn validate_url(endpoint: &EndpointBinding, url: &Url) -> Result<(), NativeError> {
@@ -337,7 +391,7 @@ fn execution_error(error: ExecutionError, method: Method) -> NativeError {
     }
 }
 
-fn uncertain_response(error: NativeError, method: Method) -> NativeError {
+pub(super) fn uncertain_response(error: NativeError, method: Method) -> NativeError {
     if matches!(method, Method::Get | Method::Head) {
         error
     } else {
