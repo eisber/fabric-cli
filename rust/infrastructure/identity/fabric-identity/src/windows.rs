@@ -911,6 +911,7 @@ impl TokenCredential for WindowsCredential {
             ["https://api.fabric.microsoft.com/.default"] => TokenAudience::Fabric,
             ["https://storage.azure.com/.default"] => TokenAudience::OneLake,
             ["https://management.azure.com/.default"] => TokenAudience::Arm,
+            ["https://database.windows.net/.default"] => TokenAudience::Sql,
             _ => {
                 return Err(Error::with_message(
                     ErrorKind::Credential,
@@ -953,6 +954,7 @@ mod tests {
     const OTHER: &str = "22222222-2222-3333-4444-555555555555";
     const FABRIC_SCOPES: &[&str] = &["https://api.fabric.microsoft.com/.default"];
     const ARM_SCOPES: &[&str] = &["https://management.azure.com/.default"];
+    const SQL_SCOPES: &[&str] = &["https://database.windows.net/.default"];
 
     #[derive(Default)]
     struct FakeControl {
@@ -1206,6 +1208,27 @@ mod tests {
         assert_eq!(call.interaction, Interaction::Silent);
         assert_eq!(call.binding.as_deref(), Some("native-id"));
         assert_eq!(call.audiences, vec![TokenAudience::Arm]);
+        call.succeed("native-id", true);
+        assert!(token.await.is_ok());
+        broker.idle();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn explicit_sql_refresh_uses_only_sql_scope_and_the_same_silent_account() {
+        let (owner, broker) = setup();
+        let credential = connect(&owner, &broker, selected(), "native-id").await;
+        assert_eq!(credential.metadata().len(), 1);
+        assert_eq!(
+            credential.metadata()[0].scope,
+            TokenAudience::Fabric.scope()
+        );
+        let token = credential.get_token(SQL_SCOPES, None);
+        tokio::pin!(token);
+        pending(token.as_mut());
+        let call = broker.acquisition();
+        assert_eq!(call.audiences, vec![TokenAudience::Sql]);
+        assert_eq!(call.binding.as_deref(), Some("native-id"));
+        assert_eq!(call.interaction, Interaction::Silent);
         call.succeed("native-id", true);
         assert!(token.await.is_ok());
         broker.idle();
