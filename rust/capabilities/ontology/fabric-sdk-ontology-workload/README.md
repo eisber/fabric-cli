@@ -134,6 +134,10 @@ continuation URLs, errors, acceptance and limits are explicit partial outcomes
 with prior decoded items and observed responses retained. A valid `value: []`
 with no continuation is complete, not an error. Rule entity filters are repeated
 exact names with OR semantics, not CSV.
+If appending a valid continuation token would exceed the 32 KiB route bound,
+traversal returns the collected items, responses and unconsumed token with an
+explicit not-sent failure. It does not discard earlier pages or dispatch an
+oversized request.
 
 Server RDF export supports **Turtle** and **RDF/XML** only. `.owl` means RDF/XML,
 not arbitrary OWL syntax. JSON-LD is rejected despite its backend enum/MIME entry.

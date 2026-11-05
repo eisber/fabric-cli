@@ -589,6 +589,109 @@ async fn partial_paging_keeps_evidence_and_never_follows_continuation_urls() {
 }
 
 #[tokio::test]
+async fn continuation_route_overflow_preserves_collected_rules_and_response_evidence() {
+    let rule = json!({"name":"Safety","statement":"Keep temperature bounded"});
+    let token = "t".repeat(4096);
+    let first_response = response(
+        200,
+        json!({"value":[rule.clone()],"continuationToken":token}),
+    );
+    let executor = Fixture::new(vec![first_response.clone()]);
+    let client = client(&executor);
+    let mut options = ListOptions::new(2, 10, 65536).unwrap();
+    options.rule_entities = (0..60)
+        .map(|index| name(&format!("{index:02}{}", "a".repeat(498))))
+        .collect();
+
+    let first_request = client
+        .page_request::<Rule>(None, false, &options.rule_entities)
+        .unwrap();
+    assert_eq!(first_request.route().as_str().len(), 30585);
+    assert_eq!(
+        first_request.route().as_str().len() + "&continuationToken=".len() + token.len(),
+        34700
+    );
+    assert_eq!(
+        client
+            .page_request::<Rule>(Some(&token), false, &options.rule_entities)
+            .unwrap_err()
+            .kind,
+        WorkloadErrorKind::InvalidInput("route byte bound")
+    );
+
+    let result = client.list::<Rule>(&options).await.unwrap();
+    assert_eq!(result.items.len(), 1);
+    assert_eq!(result.items[0].raw, rule);
+    assert_eq!(result.responses, vec![first_response]);
+    assert_eq!(result.continuation_token.as_deref(), Some(token.as_str()));
+    let ListStop::Failed(error) = result.stop else {
+        panic!("continuation construction must return an explicit partial list");
+    };
+    assert_eq!(
+        error.kind,
+        WorkloadErrorKind::InvalidInput("route byte bound")
+    );
+    assert_eq!(error.dispatch, DispatchState::NotSent);
+    assert!(error.response.is_none());
+    let calls = executor.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].route(), first_request.route());
+}
+
+#[tokio::test]
+async fn continuation_route_accepts_exact_byte_bound_and_preserves_partial_at_one_over() {
+    for (token_length, expected_route_length) in [(2164, 32768), (2165, 32769)] {
+        let token = "t".repeat(token_length);
+        let first = response(
+            200,
+            json!({"value":[{"name":"First","statement":"First rule"}],"continuationToken":token}),
+        );
+        let second = response(
+            200,
+            json!({"value":[{"name":"Second","statement":"Second rule"}]}),
+        );
+        let executor = Fixture::new(vec![first.clone(), second.clone()]);
+        let client = client(&executor);
+        let mut options = ListOptions::new(2, 10, 65536).unwrap();
+        options.rule_entities = (0..60)
+            .map(|index| name(&format!("{index:02}{}", "a".repeat(498))))
+            .collect();
+        let first_request = client
+            .page_request::<Rule>(None, false, &options.rule_entities)
+            .unwrap();
+        assert_eq!(
+            first_request.route().as_str().len() + "&continuationToken=".len() + token_length,
+            expected_route_length
+        );
+
+        let result = client.list::<Rule>(&options).await.unwrap();
+        if expected_route_length == 32768 {
+            assert!(matches!(result.stop, ListStop::Complete));
+            assert_eq!(result.items.len(), 2);
+            assert_eq!(result.responses, vec![first, second]);
+            assert!(result.continuation_token.is_none());
+            let calls = executor.calls();
+            assert_eq!(calls.len(), 2);
+            assert_eq!(calls[1].route().as_str().len(), 32768);
+            assert!(calls[1].route().as_str().ends_with(&token));
+        } else {
+            assert!(matches!(
+                result.stop,
+                ListStop::Failed(WorkloadError {
+                    kind: WorkloadErrorKind::InvalidInput("route byte bound"),
+                    dispatch: DispatchState::NotSent,
+                    ..
+                })
+            ));
+            assert_eq!(result.items.len(), 1);
+            assert_eq!(result.responses, vec![first]);
+            assert_eq!(result.continuation_token.as_deref(), Some(token.as_str()));
+            assert_eq!(executor.calls().len(), 1);
+        }
+    }
+}
+
+#[tokio::test]
 async fn repeated_token_stops_before_retaining_duplicate_page_items() {
     let page = response(
         200,

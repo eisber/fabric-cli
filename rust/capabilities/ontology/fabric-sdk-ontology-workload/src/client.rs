@@ -629,12 +629,21 @@ impl<'a> OntologyClient<'a> {
         let mut tokens = BTreeSet::new();
         let mut total_bytes = 0usize;
         for index in 0..options.max_pages {
-            let mut request = first.clone();
-            if let Some(token) = &result.continuation_token {
-                request = request.with_continuation_token(token)?;
-            }
-            request = request
-                .with_response_bound(self.limits.response.min(options.max_bytes - total_bytes))?;
+            let request = (|| {
+                let mut request = first.clone();
+                if let Some(token) = &result.continuation_token {
+                    request = request.with_continuation_token(token)?;
+                }
+                request
+                    .with_response_bound(self.limits.response.min(options.max_bytes - total_bytes))
+            })();
+            let request = match request {
+                Ok(request) => request,
+                Err(error) => {
+                    result.stop = ListStop::Failed(error);
+                    return Ok(result);
+                }
+            };
             match self.page_result::<T>(&request).await {
                 Ok(Outcome::Accepted { response }) => {
                     result.responses.push(response);
