@@ -95,7 +95,10 @@ Parquet types, unsupported/lossy types and multiple-result-set policy. Native
 `PQ Arrow Metadata` failure evidence is inspected before output can succeed.
 An HTTP 200 response containing native failure evidence is not a successful
 table. Non-null values in that reserved diagnostic column fail closed without
-guessing an undocumented payload schema. Structured metadata evidence is retained
+guessing an undocumented payload schema. An absent or all-null diagnostic column
+is allowed by the explicit integration policy; the REST documentation does not
+define null payload semantics, so this allowance alone is not service proof of
+application success. Structured metadata evidence is retained
 in the stderr error diagnostic, with unknown classification where appropriate;
 it can contain source-sensitive service information and should be handled
 accordingly. No output format may silently drop additional datasets.
