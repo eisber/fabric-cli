@@ -27,7 +27,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll, Wake, Waker};
+use std::task::{Context, Poll, Waker};
 use std::time::{Duration, Instant};
 
 const GOLDENS: &str = r#"{
@@ -2207,12 +2207,6 @@ async fn async_driver_expiry_between_pulls_prevents_reads_and_acknowledgement() 
     assert_eq!(executor.trace.lock().unwrap().drops, 1);
 }
 
-struct StreamNoopWake;
-
-impl Wake for StreamNoopWake {
-    fn wake(self: Arc<Self>) {}
-}
-
 #[tokio::test]
 async fn async_driver_cancelled_pull_drops_body_and_fails_closed_without_reopening() {
     for during_open in [false, true] {
@@ -2230,8 +2224,7 @@ async fn async_driver_cancelled_pull_drops_body_and_fails_closed_without_reopeni
             stream_deadline(),
         )
         .unwrap();
-        let waker = Waker::from(Arc::new(StreamNoopWake));
-        let mut context = Context::from_waker(&waker);
+        let mut context = Context::from_waker(Waker::noop());
         let mut pull = Box::pin(stream.next_chunk());
         assert!(matches!(pull.as_mut().poll(&mut context), Poll::Pending));
         drop(pull);
