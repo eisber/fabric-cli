@@ -5,6 +5,13 @@
 
 #![deny(unnameable_test_items)]
 
+#[test]
+fn missing_metadata_defaults_without_a_default_bound_on_its_value() {
+    struct NotDefault;
+    let value: fabric_sdk_sql_database::Observed<NotDefault> = Default::default();
+    assert!(matches!(value, fabric_sdk_sql_database::Observed::Missing));
+}
+
 use fabric_sdk_sql_database::{
     ContinuationToken, DelegatedScopeAlternatives, FolderId, FolderScope, Guid, ListSqlDatabases,
     ManagementEffect, MetadataPermission, Observed, PageCoverage, SqlDatabaseId,

@@ -37,7 +37,7 @@ impl FromStr for Guid {
             }
         }
         let mut bytes = [0_u8; 16];
-        for (index, pair) in digits.chunks_exact(2).enumerate() {
+        for (index, pair) in digits.as_chunks::<2>().0.iter().enumerate() {
             bytes[index] = (pair[0] << 4) | pair[1];
         }
         Ok(Self(bytes))

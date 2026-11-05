@@ -10,20 +10,15 @@ use serde_json::{Map, Value};
 use std::fmt;
 
 /// Preserves absence, explicit null and a typed value in service metadata.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub enum Observed<T> {
     /// The service omitted the field.
+    #[default]
     Missing,
     /// The service explicitly returned null.
     Null,
     /// The service returned a correctly typed value.
     Value(T),
-}
-
-impl<T> Default for Observed<T> {
-    fn default() -> Self {
-        Self::Missing
-    }
 }
 
 impl<T> fmt::Debug for Observed<T> {
@@ -233,7 +228,7 @@ impl fmt::Debug for SqlDatabasePage {
     }
 }
 
-fn object_fields<'de, D: Deserializer<'de>>(
+pub(crate) fn object_fields<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Map<String, Value>, D::Error> {
     match Value::deserialize(deserializer)? {
@@ -242,7 +237,7 @@ fn object_fields<'de, D: Deserializer<'de>>(
     }
 }
 
-fn required_field<T: DeserializeOwned, E: Error>(
+pub(crate) fn required_field<T: DeserializeOwned, E: Error>(
     fields: &mut Map<String, Value>,
     name: &'static str,
 ) -> Result<T, E> {
@@ -252,7 +247,7 @@ fn required_field<T: DeserializeOwned, E: Error>(
     serde_json::from_value(value).map_err(|_| E::custom("invalid SQLDatabase metadata field type"))
 }
 
-fn optional_field<T: DeserializeOwned, E: Error>(
+pub(crate) fn optional_field<T: DeserializeOwned, E: Error>(
     fields: &mut Map<String, Value>,
     name: &'static str,
 ) -> Result<Observed<T>, E> {
