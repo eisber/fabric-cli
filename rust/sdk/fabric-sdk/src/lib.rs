@@ -15,6 +15,11 @@ pub mod models;
 pub mod notebooks;
 pub mod workspaces;
 
+/// Typed SQLDatabase metadata requests using caller-owned shared execution.
+pub use fabric_sdk_sql_database as sql_databases;
+/// Transport-independent native SQLDatabase definition validation and encoding.
+pub use fabric_sdk_sql_definition as sql_definitions;
+
 pub use fabric_core::{
     Audience, CredentialSelection, EndpointBinding, EndpointError, RequestContext, ServiceOrigin,
     TokenCredential,

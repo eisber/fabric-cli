@@ -1,0 +1,29 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-sdk-sql-database"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Typed Fabric SQLDatabase metadata GET and single-page LIST descriptors"
+
+[package.metadata.fabric]
+layer = "sdk"
+
+[dependencies]
+fabric-sdk-workspaces.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+azure_core.workspace = true
+fabric-core.workspace = true
+fabric-sdk-operations.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

@@ -26,6 +26,8 @@ selected endpoint with the appropriate audience.
 | `folders` | Folder listing and lookup with explicit query options |
 | `capacities` | Fabric capacity listing |
 | `notebooks` | Prepared Notebook definitions and publication |
+| `sql_databases` | Typed SQLDatabase metadata GET and single-page LIST requests |
+| `sql_definitions` | Bounded native DACPAC/SQL project definition validation and encoding |
 
 `get_item_metadata` preserves the insertion-ordered response object separately
 from the typed `Item` representation. Workspace enrichments retain typed optional
@@ -33,6 +35,12 @@ omissions rather than fabricating empty fields.
 
 Related focused crates provide jobs, OneLake, access, catalog, raw API execution
 and tables. Use them directly for their service-specific contracts.
+
+The SQL modules reexport the focused SDK leaves. Metadata requests use the
+caller's shared executor; they do not connect to SQL, retrieve definitions
+implicitly, or register a CLI command. Definition validation preserves native
+parts and bytes without granting filesystem or deployment authority. These
+modules do not implement database mutations, TDS queries, or a full backup.
 
 ## Execution and safety
 

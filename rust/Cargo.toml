@@ -14,6 +14,8 @@ default-members = [
     "capabilities/resources/fabric-sdk-items",
     "capabilities/resources/fabric-sdk-capacities",
     "capabilities/resources/fabric-sdk-folders",
+    "capabilities/resources/fabric-sdk-sql-database",
+    "capabilities/resources/fabric-sdk-sql-definition",
     "capabilities/storage/fabric-sdk-onelake",
     "capabilities/storage/fabric-sdk-onelake-http",
     "infrastructure/execution/fabric-sdk-operations",
@@ -76,6 +78,8 @@ fabric-sdk-workspaces = { path = "capabilities/resources/fabric-sdk-workspaces" 
 fabric-sdk-items = { path = "capabilities/resources/fabric-sdk-items" }
 fabric-sdk-capacities = { path = "capabilities/resources/fabric-sdk-capacities" }
 fabric-sdk-folders = { path = "capabilities/resources/fabric-sdk-folders" }
+fabric-sdk-sql-database = { path = "capabilities/resources/fabric-sdk-sql-database" }
+fabric-sdk-sql-definition = { path = "capabilities/resources/fabric-sdk-sql-definition" }
 fabric-sdk-onelake = { path = "capabilities/storage/fabric-sdk-onelake" }
 fabric-sdk-onelake-http = { path = "capabilities/storage/fabric-sdk-onelake-http" }
 fabric-sdk-operations = { path = "infrastructure/execution/fabric-sdk-operations" }
