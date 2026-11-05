@@ -758,109 +758,6 @@ async fn serialized_source_and_decoded_native_bounds_are_measured_exactly_withou
             let receipt: Value = serde_json::from_slice(&host.stderr).unwrap();
             assert_eq!(receipt["error"]["code"], "BudgetExceeded");
         }
-
-        #[tokio::test]
-        async fn accepted_mutation_poll_http_failure_is_unknown_not_rejection_or_permission_to_replay()
-         {
-            for (status, code) in [
-                (403, "AccessDenied"),
-                (404, "NotFound"),
-                (503, "OperationFailed"),
-            ] {
-                let args = parse_facade_args([
-                    "ontology", "update", PATH, "--input", "-", "--mode", "replace", "--wait",
-                ])
-                .unwrap();
-                let mut host = Host::new("definition", "native");
-                host.input = serde_json::to_vec(&definition()).unwrap();
-                let executor = Executor::new(vec![
-                    accepted(),
-                    response(status, json!({"error":{"code":"ObservationUnavailable"}})),
-                ]);
-                let report = execute(
-                    &args,
-                    true,
-                    &registry(),
-                    &mut host,
-                    &client(Arc::new(Credential::default())),
-                    executor.clone(),
-                    limits(),
-                    pending(),
-                )
-                .await
-                .unwrap();
-                assert!(matches!(report.receipt.outcome(), Outcome::Unknown { .. }));
-                assert!(!report.command_succeeded());
-                assert!(report.sdk_error.is_some());
-                assert_eq!(report.receipt.evidence().http_status, Some(status));
-                assert!(report.receipt.evidence().mutation_may_have_occurred);
-                assert!(host.output.lock().unwrap().is_empty());
-                let receipt: Value = serde_json::from_slice(&host.stderr).unwrap();
-                assert_eq!(receipt["status"], "unknown");
-                assert_eq!(receipt["error"]["code"], code);
-                assert_eq!(receipt["meta"]["evidence"]["handles"][0]["id"], OPERATION);
-                let seen = executor.seen.lock().unwrap();
-                assert_eq!(seen.len(), 2);
-                assert_eq!(seen[0].0, "Post");
-                assert_eq!(seen[1].0, "Get");
-                assert!(seen[1].1.ends_with(&format!("/operations/{OPERATION}")));
-            }
-        }
-
-        #[tokio::test]
-        async fn initial_mutation_http_rejection_and_provider_terminal_failure_remain_failed() {
-            for accepted_first in [false, true] {
-                let args = parse_facade_args([
-                    "ontology", "update", PATH, "--input", "-", "--mode", "replace", "--wait",
-                ])
-                .unwrap();
-                let mut host = Host::new("definition", "native");
-                host.input = serde_json::to_vec(&definition()).unwrap();
-                let responses = if accepted_first {
-                    vec![
-                        accepted(),
-                        response(
-                            200,
-                            json!({"status":"Failed","error":{"errorCode":"NativeValidation"}}),
-                        ),
-                    ]
-                } else {
-                    vec![response(403, json!({"error":{"code":"Forbidden"}}))]
-                };
-                let executor = Executor::new(responses);
-                let report = execute(
-                    &args,
-                    true,
-                    &registry(),
-                    &mut host,
-                    &client(Arc::new(Credential::default())),
-                    executor.clone(),
-                    limits(),
-                    pending(),
-                )
-                .await
-                .unwrap();
-                assert!(matches!(report.receipt.outcome(), Outcome::Failed { .. }));
-                assert!(!report.command_succeeded());
-                assert!(report.sdk_error.is_some());
-                let receipt: Value = serde_json::from_slice(&host.stderr).unwrap();
-                assert_eq!(receipt["status"], "failed");
-                assert_eq!(
-                    report.receipt.evidence().handles.len(),
-                    usize::from(accepted_first)
-                );
-                if accepted_first {
-                    assert_eq!(receipt["meta"]["evidence"]["handles"][0]["id"], OPERATION);
-                } else {
-                    assert_eq!(receipt["error"]["code"], "AccessDenied");
-                    assert_eq!(report.receipt.evidence().http_status, Some(403));
-                }
-                assert_eq!(
-                    executor.seen.lock().unwrap().len(),
-                    if accepted_first { 2 } else { 1 }
-                );
-            }
-        }
     }
     let mut source = source;
     source["definition"]["parts"][0]["payload"] = json!("YWI=");
@@ -885,4 +782,106 @@ async fn serialized_source_and_decoded_native_bounds_are_measured_exactly_withou
     assert!(host.output.lock().unwrap().is_empty());
     let receipt: Value = serde_json::from_slice(&host.stderr).unwrap();
     assert_eq!(receipt["error"]["code"], "BudgetExceeded");
+}
+
+#[tokio::test]
+async fn accepted_mutation_poll_http_failure_is_unknown_not_rejection_or_permission_to_replay() {
+    for (status, code) in [
+        (403, "AccessDenied"),
+        (404, "NotFound"),
+        (503, "OperationFailed"),
+    ] {
+        let args = parse_facade_args([
+            "ontology", "update", PATH, "--input", "-", "--mode", "replace", "--wait",
+        ])
+        .unwrap();
+        let mut host = Host::new("definition", "native");
+        host.input = serde_json::to_vec(&definition()).unwrap();
+        let executor = Executor::new(vec![
+            accepted(),
+            response(status, json!({"error":{"code":"ObservationUnavailable"}})),
+        ]);
+        let report = execute(
+            &args,
+            true,
+            &registry(),
+            &mut host,
+            &client(Arc::new(Credential::default())),
+            executor.clone(),
+            limits(),
+            pending(),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(report.receipt.outcome(), Outcome::Unknown { .. }));
+        assert!(!report.command_succeeded());
+        assert!(report.sdk_error.is_some());
+        assert_eq!(report.receipt.evidence().http_status, Some(status));
+        assert!(report.receipt.evidence().mutation_may_have_occurred);
+        assert!(host.output.lock().unwrap().is_empty());
+        let receipt: Value = serde_json::from_slice(&host.stderr).unwrap();
+        assert_eq!(receipt["status"], "unknown");
+        assert_eq!(receipt["error"]["code"], code);
+        assert_eq!(receipt["meta"]["evidence"]["handles"][0]["id"], OPERATION);
+        let seen = executor.seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0].0, "Post");
+        assert_eq!(seen[1].0, "Get");
+        assert!(seen[1].1.ends_with(&format!("/operations/{OPERATION}")));
+    }
+}
+
+#[tokio::test]
+async fn initial_mutation_http_rejection_and_provider_terminal_failure_remain_failed() {
+    for accepted_first in [false, true] {
+        let args = parse_facade_args([
+            "ontology", "update", PATH, "--input", "-", "--mode", "replace", "--wait",
+        ])
+        .unwrap();
+        let mut host = Host::new("definition", "native");
+        host.input = serde_json::to_vec(&definition()).unwrap();
+        let responses = if accepted_first {
+            vec![
+                accepted(),
+                response(
+                    200,
+                    json!({"status":"Failed","error":{"errorCode":"NativeValidation"}}),
+                ),
+            ]
+        } else {
+            vec![response(403, json!({"error":{"code":"Forbidden"}}))]
+        };
+        let executor = Executor::new(responses);
+        let report = execute(
+            &args,
+            true,
+            &registry(),
+            &mut host,
+            &client(Arc::new(Credential::default())),
+            executor.clone(),
+            limits(),
+            pending(),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(report.receipt.outcome(), Outcome::Failed { .. }));
+        assert!(!report.command_succeeded());
+        assert!(report.sdk_error.is_some());
+        let receipt: Value = serde_json::from_slice(&host.stderr).unwrap();
+        assert_eq!(receipt["status"], "failed");
+        assert_eq!(
+            report.receipt.evidence().handles.len(),
+            usize::from(accepted_first)
+        );
+        if accepted_first {
+            assert_eq!(receipt["meta"]["evidence"]["handles"][0]["id"], OPERATION);
+        } else {
+            assert_eq!(receipt["error"]["code"], "AccessDenied");
+            assert_eq!(report.receipt.evidence().http_status, Some(403));
+        }
+        assert_eq!(
+            executor.seen.lock().unwrap().len(),
+            if accepted_first { 2 } else { 1 }
+        );
+    }
 }
