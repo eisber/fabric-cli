@@ -27,7 +27,7 @@ use futures_util::{Stream, stream};
 use serde_json::{Value, json};
 use std::{
     collections::VecDeque,
-    future::{Future, pending, poll_fn},
+    future::{pending, poll_fn},
     pin::Pin,
     sync::{
         Arc, Mutex,
