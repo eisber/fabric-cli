@@ -203,6 +203,23 @@ facade/shared-manifest changes through exact commit handoffs, not shared writers
 
 Skills describe workflows using the CLI. They do not contain service logic.
 
+### Reusable name suggestions
+
+`fabric-name-search` is a dependency-free SDK-layer leaf under
+`infrastructure/search/`. It ranks only caller-supplied names, with finite input
+and result limits. SDK, CLI and future MCP consumers can reuse it without a
+service client, credential provider, runtime, CLI dependency or external index.
+The physical infrastructure directory does not make it a core-layer dependency;
+`fabric-cli-context -> fabric-name-search` uses the existing CLI-to-SDK rule,
+not a new CLI-to-core exception.
+
+Name matching and name suggestions are separate contracts. Only exact lookup
+can authorize a target; similarity never changes an identifier, retries a
+command, or performs an effect. Context hints are explicitly opt-in and use
+already-resolved, scope-filtered metadata. Default source-compatible resolver
+behavior is unchanged. No remote variable-delete API or universal variable
+value search is implied by the offline deletion-guard example.
+
 ### Explicit endpoint and authenticated request foundation
 
 Core `EndpointBinding` separates the caller-selected validated hostname from

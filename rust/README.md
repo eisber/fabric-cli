@@ -48,6 +48,7 @@ infrastructure\
   identity\        Credential selection and optional Windows broker
   http\            Shared executor and native transport
   execution\       Paging and operation reconciliation
+  search\          Pure, bounded name-similarity suggestions
 sdk\               Public SDK facade
 ```
 
@@ -68,6 +69,7 @@ front-ends are not implemented by this layout.
 | [Interactive shell](hosts/repl/fabric-cli-repl/README.md) | Optional terminal editor and shell loop, independent of SDK and command implementations |
 | [Release updates](hosts/update/fabric-cli-update/README.md) | Explicit release trust, bounded downloads and installation-custody checks |
 | [Path context](hosts/cli/fabric-cli-context/README.md) | Immutable hierarchy, path resolution and command context |
+| [Name search](infrastructure/search/fabric-name-search/README.md) | Reusable, deterministic typo suggestions over caller-authorized names; never automatic correction |
 | [Output](hosts/cli/fabric-cli-output/README.md) | Structured envelopes, text presentation and stream handling |
 | [Workflow skills](skills/README.md) | Boundaries for workflows that compose CLI commands |
 

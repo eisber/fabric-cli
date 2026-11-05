@@ -3,7 +3,7 @@
 
 use super::node::invalid_context;
 use super::{HierarchyLookup, OneLakeProperties, PathElement, PathKind, VirtualLookupRequest};
-use crate::{Catalog, ContextError, Lookup, LookupRequest, NodeKind};
+use crate::{CandidateNames, Catalog, ContextError, Lookup, LookupRequest, NodeKind};
 use std::sync::Arc;
 
 /// Ordered caller-owned extended metadata, not a service cache or HTTP store.
@@ -36,6 +36,13 @@ impl HierarchyCatalog {
 impl Lookup for HierarchyCatalog {
     fn lookup(&self, request: LookupRequest<'_>) -> Result<Option<String>, ContextError> {
         self.fabric.lookup(request)
+    }
+
+    fn candidate_names(
+        &self,
+        request: LookupRequest<'_>,
+    ) -> Result<Option<CandidateNames<'_>>, ContextError> {
+        self.fabric.candidate_names(request)
     }
 }
 

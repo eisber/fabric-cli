@@ -1,0 +1,17 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-name-search"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Pure bounded identifier-name similarity for caller-supplied candidates"
+
+[package.metadata.fabric]
+layer = "sdk"
+
+[lints]
+workspace = true

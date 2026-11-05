@@ -13,6 +13,9 @@ description = "Pure bounded Fabric virtual path resolution over caller-owned met
 [package.metadata.fabric]
 layer = "cli"
 
+[dependencies]
+fabric-name-search.workspace = true
+
 [dev-dependencies]
 serde_json.workspace = true
 
