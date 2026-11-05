@@ -634,7 +634,7 @@ fn payload_defaults_and_exact_native_envelopes() {
         .unwrap()
         .cancel()
         .unwrap();
-    assert!(n.native().body().is_none());
+    assert_eq!(n.native().body(), Some(&json!({})));
     assert_eq!(f.native().body(), Some(&json!({})));
 }
 
@@ -1116,6 +1116,101 @@ async fn raw_payload_is_immutable_and_state_errors_are_not_http_errors() {
         waiting.model().unwrap().observe().unwrap(),
         Observation::Pending
     );
+}
+
+#[tokio::test]
+async fn statement_cancel_always_sends_empty_json_for_each_profile_and_owner() {
+    let native_service = native();
+    let fabric_service = fabric();
+    let native_classic = native_service
+        .session("native-session")
+        .unwrap()
+        .statements()
+        .statement(7)
+        .unwrap();
+    let native_repl = native_service
+        .session("native-session")
+        .unwrap()
+        .repl("native-repl")
+        .unwrap()
+        .statements()
+        .statement(8)
+        .unwrap();
+    let fabric_classic = fabric_service
+        .session("fabric-session")
+        .unwrap()
+        .statements()
+        .statement(9)
+        .unwrap();
+    let fabric_repl = fabric_service
+        .high_concurrency("acquisition")
+        .unwrap()
+        .repl("backing-session", "fabric-repl")
+        .unwrap()
+        .statements()
+        .statement(10)
+        .unwrap();
+    let cases = [
+        (
+            native_classic,
+            ServiceProfile::NativeWildfire,
+            "/sessions/native-session/statements/7/cancel",
+            None,
+        ),
+        (
+            native_repl,
+            ServiceProfile::NativeWildfire,
+            "/sessions/native-session/repls/native-repl/statements/8/cancel",
+            None,
+        ),
+        (
+            fabric_classic,
+            ServiceProfile::FabricJson,
+            "/sessions/fabric-session/statements/9/cancel",
+            None,
+        ),
+        (
+            fabric_repl,
+            ServiceProfile::FabricJson,
+            "/highConcurrencySessions/backing-session/repls/fabric-repl/statements/10/cancel",
+            Some("acquisition"),
+        ),
+    ];
+    for (statement, profile, suffix, acquisition) in cases {
+        let request = statement.cancel().unwrap();
+        let prefix = match profile {
+            ServiceProfile::NativeWildfire => "/proxy",
+            ServiceProfile::FabricJson => {
+                "/proxy/v1/workspaces/workspace/lakehouses/lakehouse/livyApi/versions/2024-04-01"
+            }
+        };
+        assert_eq!(request.profile(), profile);
+        assert_eq!(request.acquisition_id(), acquisition);
+        assert_eq!(request.native().method(), NativeMethod::Post);
+        assert_eq!(request.native().effect(), NativeEffect::Cancel);
+        assert_eq!(request.native().url().path(), format!("{prefix}{suffix}"));
+        assert!(request.native().url().query().is_none());
+        assert_eq!(request.native().content_type(), "application/json");
+        assert!(request.native().bytes().is_none());
+        assert_eq!(request.native().body(), Some(&json!({})));
+        assert_eq!(
+            serde_json::to_vec(request.native().body().unwrap())
+                .unwrap()
+                .as_slice(),
+            b"{}".as_slice()
+        );
+        let executor = Synthetic::json(json!({
+            "msg": "cancel requested",
+            "state": "cancelled"
+        }));
+        let reply = request.execute(&executor, 512).await.unwrap();
+        assert_eq!(executor.count(), 1);
+        assert_eq!(&executor.calls.lock().unwrap()[0].0, request.native());
+        assert_eq!(reply.status(), 200);
+        assert_eq!(reply.disposition(), ResponseDisposition::Returned);
+        assert_eq!(reply.model().unwrap().message(), Some("cancel requested"));
+        assert!(!reply.model().unwrap().proves_terminal());
+    }
 }
 
 #[tokio::test]

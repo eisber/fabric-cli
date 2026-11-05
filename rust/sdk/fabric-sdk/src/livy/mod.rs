@@ -919,18 +919,16 @@ impl Statement {
         )
     }
 
-    /// Request cancellation once. The empty Fabric cancellation object is explicit.
+    /// Request cancellation once with an explicit empty JSON object on both profiles.
     ///
     /// # Errors
     /// Returns shared request-validation errors. Acknowledgement is never termination proof.
     pub fn cancel(&self) -> Result<LivyRequest<CancellationResult>, NativeError> {
-        let body = (self.scope.binding.profile == ServiceProfile::FabricJson)
-            .then(|| serde_json::json!({}));
         self.scope.request(
             NativeMethod::Post,
             "/cancel",
             &[],
-            body,
+            Some(serde_json::json!({})),
             NativeEffect::Cancel,
         )
     }

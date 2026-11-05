@@ -139,7 +139,7 @@ an explicit `as_json()` accessor, not automatic logging.
 | `TimeoutInput` | Positive millisecond `sessionTimeout` and/or `replTimeout`, at least one; classic setters reject REPL duration. Inherited `-1` is a read value, never a setter. |
 | `SerializedJob` | `{"job":"<standard base64>","jobType":"<explicit type>"}` from nonempty opaque bytes. No deserialization or synthesized type. |
 | `ResourceUri` | `{"uri":"..."}`; nonblank and control-free, forwarded to server localization without SDK fetching. |
-| Statement cancellation | Fabric sends required `{}`; native retains source's absent body. |
+| Statement cancellation | Both native and Fabric send an explicit `{}` for classic and owned REPL statements, matching pinned sync/async `StatementClient.cancel`; acknowledgement is not terminal-state evidence. |
 
 Queries are not generic paging/LRO abstractions:
 
