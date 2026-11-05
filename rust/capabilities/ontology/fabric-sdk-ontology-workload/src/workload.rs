@@ -44,6 +44,17 @@ pub struct WorkloadRoute {
 impl WorkloadRoute {
     /// Encode each segment and query value once. No URL, authority or continuation URL is accepted.
     pub fn new(segments: &[&str], query: &[(&str, &str)]) -> Result<Self, WorkloadError> {
+        let raw_len = segments
+            .iter()
+            .fold(0usize, |n, s| n.saturating_add(s.len()).saturating_add(1));
+        let raw_len = query.iter().fold(raw_len, |n, (key, value)| {
+            n.saturating_add(key.len())
+                .saturating_add(value.len())
+                .saturating_add(2)
+        });
+        if raw_len > 32 * 1024 {
+            return Err(WorkloadError::invalid("route byte bound"));
+        }
         if segments.is_empty()
             || segments.iter().any(|s| {
                 s.trim().is_empty() || *s == "." || *s == ".." || s.chars().any(char::is_control)
@@ -454,7 +465,18 @@ pub async fn execute_once(
     executor: &dyn WorkloadExecutor,
     request: &WorkloadRequest,
 ) -> Result<WorkloadResponse, WorkloadError> {
-    let mut response = executor.execute(request).await?;
+    let mut response = match executor.execute(request).await {
+        Ok(response) => response,
+        Err(mut error) => {
+            if let Some(response) = &mut error.response {
+                if response.body.len() > request.max_response_bytes {
+                    response.body.truncate(request.max_response_bytes);
+                    error.kind = WorkloadErrorKind::Limit;
+                }
+            }
+            return Err(error);
+        }
+    };
     let dispatch = if response.status == 202 {
         DispatchState::Accepted
     } else if request.method == WorkloadMethod::Get {
@@ -479,7 +501,7 @@ pub async fn execute_once(
             || value.chars().any(|c| c == '\r' || c == '\n' || c == '\0')
             || !names.insert(key.to_ascii_lowercase())
     });
-    if !(100..600).contains(&response.status) || invalid_headers {
+    if !(200..600).contains(&response.status) || invalid_headers {
         return Err(WorkloadError::with_response(
             WorkloadErrorKind::Protocol("invalid status or response headers"),
             response,

@@ -435,7 +435,9 @@ impl<'a> OntologyClient<'a> {
         body: &T,
     ) -> Result<WorkloadRequest, WorkloadError> {
         self.gate::<T>()?;
-        let value = to_value(body)?;
+        let bytes = to_bytes(body, self.limits.request)?;
+        let value = serde_json::from_slice(&bytes)
+            .map_err(|_| WorkloadError::invalid("serialized native object"))?;
         T::check(&value, false)?;
         self.gate_body(&value)?;
         self.request(
@@ -443,7 +445,7 @@ impl<'a> OntologyClient<'a> {
             &[],
             WorkloadMethod::Post,
             Some("application/json"),
-            to_bytes(&value, self.limits.request)?,
+            bytes,
             self.limits.response,
         )
     }

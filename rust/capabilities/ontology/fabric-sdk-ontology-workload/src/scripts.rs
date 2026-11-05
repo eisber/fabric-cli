@@ -346,7 +346,8 @@ pub enum ScriptVerb {
     Delete,
 }
 impl ScriptVerb {
-    fn key(self) -> &'static str {
+    /// Exact native leaf verb key.
+    pub fn key(self) -> &'static str {
         match self {
             Self::Create => "create",
             Self::CreateOrReplace => "createOrReplace",
@@ -612,8 +613,13 @@ pub struct OperationResult {
     pub verb: ScriptVerb,
     /// Closed by-name returned target.
     pub target: ObjectReference,
-    /// Post-operation read object. Never usable as unchecked write input.
+    /// Original read object. Some(Null) and None preserve null versus omission.
+    ///
+    /// A target minimized out of storage or removed by a later sequence operation
+    /// may have no result object despite the successful transaction.
     pub object: Option<Value>,
+    /// Typed known read object, when the native result contains an object.
+    pub typed_object: Option<ScriptResultObject>,
     /// True only for delete; omitted for other verbs.
     pub deleted: Option<bool>,
     /// Exact original result including unknown metadata.
@@ -627,6 +633,74 @@ pub struct ScriptResult {
     pub results: Vec<OperationResult>,
     /// Exact response envelope.
     pub raw: Value,
+}
+
+/// Native script result projected to its source-defined kind; raw fields remain on each resource.
+#[derive(Clone, Debug)]
+pub enum ScriptResultObject {
+    /// Named expression.
+    Expression(NativeResource<Expression>),
+    /// TOM table.
+    Table(NativeResource<DataSource>),
+    /// Entity type.
+    Entity(NativeResource<EntityType>),
+    /// Semantic relationship.
+    EntityRelationship(NativeResource<EntityRelationship>),
+    /// TOM relationship.
+    Relationship(NativeResource<Relationship>),
+    /// Rule.
+    Rule(NativeResource<Rule>),
+    /// Namespace.
+    Namespace(NativeResource<Namespace>),
+    /// Root metric, distinct from a table measure.
+    Metric(NativeResource<Metric>),
+    /// Reusable property.
+    ReusableProperty(NativeResource<ReusableProperty>),
+    /// Table column.
+    Column(NativeResource<Column>),
+    /// Table partition.
+    Partition(NativeResource<Partition>),
+    /// Table measure.
+    Measure(NativeResource<Measure>),
+    /// Entity property.
+    Property(NativeResource<EntityProperty>),
+    /// Additional backing table.
+    AdditionalBackingTable(NativeResource<AdditionalBackingTable>),
+    /// Rule entity reference.
+    ReferencedEntity(NativeResource<ReferencedEntity>),
+    /// Rule relationship reference.
+    ReferencedRelationship(NativeResource<ReferencedRelationship>),
+}
+
+fn decode_object(kind: ScriptKind, raw: Value) -> Result<ScriptResultObject, WorkloadError> {
+    Ok(match kind {
+        ScriptKind::Expression => ScriptResultObject::Expression(NativeResource::decode(raw)?),
+        ScriptKind::Table => ScriptResultObject::Table(NativeResource::decode(raw)?),
+        ScriptKind::Entity => ScriptResultObject::Entity(NativeResource::decode(raw)?),
+        ScriptKind::EntityRelationship => {
+            ScriptResultObject::EntityRelationship(NativeResource::decode(raw)?)
+        }
+        ScriptKind::Relationship => ScriptResultObject::Relationship(NativeResource::decode(raw)?),
+        ScriptKind::Rule => ScriptResultObject::Rule(NativeResource::decode(raw)?),
+        ScriptKind::Namespace => ScriptResultObject::Namespace(NativeResource::decode(raw)?),
+        ScriptKind::Metric => ScriptResultObject::Metric(NativeResource::decode(raw)?),
+        ScriptKind::ReusableProperty => {
+            ScriptResultObject::ReusableProperty(NativeResource::decode(raw)?)
+        }
+        ScriptKind::Column => ScriptResultObject::Column(NativeResource::decode(raw)?),
+        ScriptKind::Partition => ScriptResultObject::Partition(NativeResource::decode(raw)?),
+        ScriptKind::Measure => ScriptResultObject::Measure(NativeResource::decode(raw)?),
+        ScriptKind::Property => ScriptResultObject::Property(NativeResource::decode(raw)?),
+        ScriptKind::AdditionalBackingTable => {
+            ScriptResultObject::AdditionalBackingTable(NativeResource::decode(raw)?)
+        }
+        ScriptKind::ReferencedEntity => {
+            ScriptResultObject::ReferencedEntity(NativeResource::decode(raw)?)
+        }
+        ScriptKind::ReferencedRelationship => {
+            ScriptResultObject::ReferencedRelationship(NativeResource::decode(raw)?)
+        }
+    })
 }
 
 impl OntologyClient<'_> {
@@ -713,19 +787,29 @@ fn decode_result(value: Value, script: &ScriptRequest) -> Result<ScriptResult, W
             return Err(WorkloadError::invalid("script result operation mismatch"));
         }
         let object = row.get("object").cloned();
-        let deleted = row
-            .get("deleted")
-            .map(|v| {
-                v.as_bool()
-                    .ok_or_else(|| WorkloadError::invalid("script deleted flag"))
-            })
-            .transpose()?;
+        let deleted = match row.get("deleted") {
+            None | Some(Value::Null) => None,
+            Some(value) => Some(
+                value
+                    .as_bool()
+                    .ok_or_else(|| WorkloadError::invalid("script deleted flag"))?,
+            ),
+        };
+        let typed_object;
         if verb == ScriptVerb::Delete {
-            if target != operation.target || deleted != Some(true) || object.is_some() {
+            if target != operation.target
+                || deleted != Some(true)
+                || object.as_ref().is_some_and(|v| !v.is_null())
+            {
                 return Err(WorkloadError::invalid("delete result contract"));
             }
+            typed_object = None;
         } else {
-            if deleted.is_some() || !object.as_ref().is_some_and(Value::is_object) {
+            if deleted.is_some()
+                || object
+                    .as_ref()
+                    .is_some_and(|v| !v.is_object() && !v.is_null())
+            {
                 return Err(WorkloadError::invalid("write result contract"));
             }
             // The source mapper echoes the original ref for alter/createOrReplace,
@@ -733,12 +817,18 @@ fn decode_result(value: Value, script: &ScriptRequest) -> Result<ScriptResult, W
             if target.name != operation.target.name {
                 return Err(WorkloadError::invalid("script result target name"));
             }
+            typed_object = object
+                .as_ref()
+                .filter(|v| !v.is_null())
+                .map(|raw| decode_object(operation.target.kind, raw.clone()))
+                .transpose()?;
         }
         results.push(OperationResult {
             op_index,
             verb,
             target,
             object,
+            typed_object,
             deleted,
             raw: row.clone(),
         });

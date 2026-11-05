@@ -1185,6 +1185,36 @@ async fn script_result_count_order_delete_and_rename_targets_follow_source_mappe
         .unwrap();
 }
 
+#[tokio::test]
+async fn committed_script_can_return_null_or_omitted_final_state_object() {
+    let script = ScriptRequest::from_value(json!({"sequence":{"operations":[
+        {"create":{"entity":{"name":"E"}}},{"delete":{"object":{"entity":"E"}}}
+    ]}}))
+    .unwrap();
+    for object in [Some(Value::Null), None] {
+        let mut first = json!({"opIndex":0,"verb":"create","target":{"entity":"E"},"deleted":null});
+        if let Some(object) = object.clone() {
+            first["object"] = object;
+        }
+        let fixture = Fixture::new(vec![response(
+            200,
+            json!({"results":[first,
+                {"opIndex":1,"verb":"delete","target":{"entity":"E"},"object":null,"deleted":true}
+            ]}),
+        )]);
+        let Outcome::Completed { value, .. } = client(&fixture)
+            .execute_script(&script, false)
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(value.results[0].object, object);
+        assert!(value.results[0].typed_object.is_none());
+        assert_eq!(fixture.calls().len(), 1);
+    }
+}
+
 #[test]
 fn table_measure_rename_effect_is_explicit_and_not_a_root_metric_operation() {
     let script = ScriptRequest::from_value(

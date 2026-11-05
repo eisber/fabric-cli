@@ -106,6 +106,14 @@ echoes the **original** target for alter/replace even on rename. Table-measure
 renames explicitly report that authored metric metadata may be removed; the
 SDK never invents a metric-binding update.
 
+The manager reads per-operation objects from the **final committed projected
+state**. A minimized-away target, or one removed later in the sequence, can
+legitimately return null/omitted object; it is not a failed transaction.
+Results retain that distinction, plus a typed object when present. The manager
+also invokes its ALM artifact-update helper after commit so the mutation appears
+in workspace Source Control. An error after that commit is not rollback proof;
+the SDK preserves the response and Unknown effect state without replay.
+
 Entity backing data sources support bounded list/get and referenced-expression
 reads by table name, with optional explicit binding-resolution cache refresh.
 Unbind-one and clear-all reset affected references but leave ontology tables,
