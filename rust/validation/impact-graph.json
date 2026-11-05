@@ -537,6 +537,7 @@
       "tests": [
         {"package": "fabric-deploy", "target": "lib"},
         {"package": "fabric-deploy", "target": "test:definitions"},
+        {"package": "fabric-deploy", "target": "test:definition_copy_v2"},
         {"package": "fabric-deploy", "target": "test:export_parity"},
         {"package": "fabric-deploy", "target": "test:get_definition_value"},
         {"package": "fabric-deploy", "target": "test:get_projected_output"}
@@ -635,6 +636,16 @@
         {"package": "fabric-cli", "target": "test:batch_shared_local"}
       ],
       "checks": ["resource-oracle", "import-oracle", "export-oracle", "native-read"]
+    },
+    {
+      "id": "cli-copy-v2",
+      "package": "fabric-cli",
+      "inputs": ["rust/hosts/cli/fabric-cli/src/families/copy_v2.rs"],
+      "depends_on": ["definitions", "context", "output", "http", "operations"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:definition_copy_v2"}
+      ],
+      "checks": ["resource-oracle", "definitions-oracle"]
     },
     {
       "id": "cli-jobs",
@@ -878,6 +889,13 @@
       "features": ["fabric-cli/native-read", "fabric-identity/windows-broker", "fabric-cli/repl", "fabric-cli-repl/reedline-editor"],
       "platforms": ["windows", "linux", "macos"],
       "checks": ["native-read"]
+    },
+    {
+      "id": "v2-copy",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/native-host", "fabric-cli/v2-copy"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": []
     },
     {
       "id": "headless",
