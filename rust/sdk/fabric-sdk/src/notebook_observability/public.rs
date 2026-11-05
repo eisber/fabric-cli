@@ -52,12 +52,17 @@ impl PublicApplication {
 #[derive(Clone, Copy)]
 pub enum PublicView<'a> {
     /// Notebook Livy history, not an application collection.
-    LivySessions { continuation: Option<&'a str> },
+    LivySessions {
+        /// Opaque token from a prior history page; `None` selects the initial page.
+        continuation: Option<&'a str>,
+    },
     /// Spark jobs in this public application.
     Jobs(&'a PublicApplication),
     /// All stages or one exact stage; no public job-filter route is evidenced.
     Stages {
+        /// Public Livy/application owner without an attempt segment.
         app: &'a PublicApplication,
+        /// Exact stage ID to retrieve, or `None` to list application-wide stages.
         stage: Option<&'a StageId>,
     },
     /// All Spark executors (`allexecutors`, not container log metadata).
@@ -66,8 +71,11 @@ pub enum PublicView<'a> {
     Environment(&'a PublicApplication),
     /// SQL history, optionally one execution with details.
     Sql {
+        /// Public Livy/application owner without an attempt segment.
         app: &'a PublicApplication,
+        /// Exact SQL execution-history ID, or `None` to list executions.
         execution: Option<&'a SqlExecutionId>,
+        /// Request execution details; requires an explicit execution ID.
         details: bool,
     },
     /// Spark persisted RDDs.
@@ -76,29 +84,41 @@ pub enum PublicView<'a> {
     Streaming(&'a PublicApplication),
     /// Resource usage; native query fields are explicitly supplied.
     ResourceUsage {
+        /// Public Livy/application owner and optional caller-selected attempt.
         app: &'a PublicApplication,
+        /// Native provider query pairs; entries with empty values are omitted.
         query: &'a [(&'a str, String)],
     },
     /// One resource snapshot, timestamp preserved as an opaque segment.
     ResourceSnapshot {
+        /// Public Livy/application owner and optional caller-selected attempt.
         app: &'a PublicApplication,
+        /// Provider snapshot timestamp, preserved as one validated route segment.
         timestamp: &'a str,
+        /// Native provider query pairs; entries with empty values are omitted.
         query: &'a [(&'a str, String)],
     },
     /// Driver log download response, never a local file.
     DriverLog {
+        /// Public Livy/application owner and optional caller-selected attempt.
         app: &'a PublicApplication,
+        /// Driver standard-output or standard-error file to retrieve.
         file: LogFile,
     },
     /// Driver log metadata.
     DriverLogMetadata {
+        /// Public Livy/application owner and optional caller-selected attempt.
         app: &'a PublicApplication,
+        /// Driver standard-output or standard-error file whose metadata is read.
         file: LogFile,
     },
     /// Container log; specifying an attempt is unsupported, not silently ignored.
     ExecutorLog {
+        /// Public Livy/application owner; an attempt must not be specified.
         app: &'a PublicApplication,
+        /// Exact YARN container ID, never a Spark executor ordinal.
         container: &'a ContainerId,
+        /// Container standard-output or standard-error file to retrieve.
         file: LogFile,
     },
     /// Container list metadata, not Spark executors.

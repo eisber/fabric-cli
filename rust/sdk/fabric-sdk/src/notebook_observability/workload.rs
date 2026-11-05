@@ -68,9 +68,17 @@ pub enum ApplicationView<'a> {
     /// Application detail.
     Application,
     /// Fabric filtered jobs.
-    Jobs { limit: u32 },
+    Jobs {
+        /// Positive maximum number of Spark jobs requested from the provider.
+        limit: u32,
+    },
     /// Stages filtered by an exact Spark job, not an app-wide approximation.
-    Stages { job: &'a SparkJobId, limit: u32 },
+    Stages {
+        /// Exact Spark job whose stages are requested, not a job-group ID.
+        job: &'a SparkJobId,
+        /// Positive maximum number of stages requested from the provider.
+        limit: u32,
+    },
     /// Existing provider performance diagnosis, never an LLM call.
     Diagnostic,
     /// Input/output dataset metadata.
@@ -94,29 +102,51 @@ pub enum ApplicationView<'a> {
     /// Event-log bytes, no filesystem download.
     EventLog,
     /// Rolling log metadata; source always uses the unattempted non-HS path.
-    RollingDriverMetadata { file: LogFile, page: u64 },
+    RollingDriverMetadata {
+        /// Driver standard-output or standard-error log category.
+        file: LogFile,
+        /// Zero-based metadata page, encoded as a checked `page * 3000` offset.
+        page: u64,
+    },
     /// Container metadata; source always uses the unattempted non-HS path.
     ContainerMetadata {
+        /// Exact YARN container whose rolling log metadata is requested.
         container: &'a ContainerId,
+        /// Standard-output or standard-error prefix sent as `filenamePrefix`.
         file: LogFile,
+        /// Zero-based metadata page, encoded as a checked `page * 3000` offset.
         page: u64,
     },
     /// Exact driver log byte window.
-    DriverLog { file: LogFile, window: LogWindow },
+    DriverLog {
+        /// Driver standard-output or standard-error file to retrieve.
+        file: LogFile,
+        /// Exact byte offset and positive requested byte count.
+        window: LogWindow,
+    },
     /// Driver log metadata.
-    DriverLogMetadata { file: LogFile },
+    DriverLogMetadata {
+        /// Driver standard-output or standard-error file whose metadata is read.
+        file: LogFile,
+    },
     /// Exact YARN container log byte window.
     ExecutorLog {
+        /// Exact YARN container ID, never a Spark executor ordinal.
         container: &'a ContainerId,
+        /// Container standard-output or standard-error file to retrieve.
         file: LogFile,
+        /// Exact byte offset and positive requested byte count.
         window: LogWindow,
     },
     /// YARN container collection metadata.
     ExecutorLogMetadata,
     /// Per-job-group driver log, not authored cell index.
     CellLog {
+        /// Runtime job-group ID, not an authored cell ID or cell index.
         group: &'a JobGroupId,
+        /// Job-group driver standard-output or standard-error file to retrieve.
         file: LogFile,
+        /// Exact byte offset and positive requested byte count.
         window: LogWindow,
     },
     /// Runtime cell-to-job-group mapping.
@@ -130,7 +160,10 @@ pub enum ApplicationView<'a> {
     /// Completed history-server diagnostic metrics.
     DiagnosticMetrics,
     /// Millisecond point-in-time resource snapshot.
-    ResourceSnapshot { timestamp: u64 },
+    ResourceSnapshot {
+        /// Point-in-time resource snapshot timestamp in Unix milliseconds.
+        timestamp: u64,
+    },
 }
 
 /// Explicit caller-owned time window; no ambient clock or default range.
@@ -162,25 +195,34 @@ impl MetricsWindow<'_> {
 pub enum WorkloadView<'a> {
     /// Explicit active or completed collection, with no automatic fallback.
     Applications {
+        /// Exact workload activity owner, never a public Livy-session ID.
         activity: &'a ActivityId,
+        /// Select the active HS route if true, otherwise the completed collection.
         active: bool,
     },
     /// One application-native view.
     Application {
+        /// Explicit workload activity/application owner and active/completed route.
         app: &'a WorkloadApplication,
+        /// Native observation requested within that exact application scope.
         view: ApplicationView<'a>,
     },
     /// SparkCore jobs, preserving native OData query fields.
     Jobs {
+        /// Number of SparkCore results to skip; zero omits `$skip`.
         skip: u64,
+        /// Requested maximum result count; zero omits `$top`.
         top: u32,
+        /// Nonempty native OData filter expression, or `None` to omit `$filter`.
         filter: Option<&'a str>,
     },
     /// SparkCore job detail.
     Job(&'a SparkJobId),
     /// Workload Livy log window.
     LivyLog {
+        /// Exact workload activity whose Livy log is read, not a public Livy ID.
         activity: &'a ActivityId,
+        /// Exact byte offset and positive requested byte count.
         window: LogWindow,
     },
     /// Workload Livy log metadata.
@@ -193,14 +235,20 @@ pub enum WorkloadView<'a> {
     ActivitySummary(&'a ActivityId),
     /// Spark metrics info list with all source query options.
     Metrics {
+        /// Explicit provider time range and positive result bound; no clock defaults.
         window: MetricsWindow<'a>,
+        /// Optional exact activity filter; no Livy/activity ID substitution occurs.
         activity: Option<&'a ActivityId>,
+        /// Emit `isRunning=true` for running-job metrics; false omits the field.
         running: bool,
+        /// Optional nonempty provider trigger type, such as `manual` or `pipeline`.
         trigger_type: Option<&'a str>,
     },
     /// Anomaly info list.
     Anomalies {
+        /// Explicit provider time range and positive anomaly result bound.
         window: MetricsWindow<'a>,
+        /// Native anomaly result offset, not a byte offset or metadata page number.
         offset: u64,
     },
     /// One activity's metrics.
