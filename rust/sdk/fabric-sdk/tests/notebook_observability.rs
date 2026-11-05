@@ -118,7 +118,8 @@ fn all_public_callable_routes_queries_and_media_are_exact() {
         ("startTime", "2026-11-05T00:00:00Z".into()),
         ("ignoredEmptyValue", String::new()),
     ];
-    let cases: Vec<(PublicView<'_>, &str, Vec<(&str, &str)>, &str)> = vec![
+    type Case<'a> = (PublicView<'a>, &'a str, Vec<(&'a str, &'a str)>, &'a str);
+    let cases: Vec<Case<'_>> = vec![
         (
             PublicView::Jobs(&app),
             "/livySessions/livy/applications/app/jobs",
@@ -308,7 +309,8 @@ fn all_workload_application_callable_routes_preserve_state_and_attempt() {
         offset: 7,
         size: 31,
     };
-    let cases: Vec<(ApplicationView<'_>, &str, Vec<(&str, &str)>)> = vec![
+    type Case<'a> = (ApplicationView<'a>, &'a str, Vec<(&'a str, &'a str)>);
+    let cases: Vec<Case<'_>> = vec![
         (ApplicationView::Application, "", vec![]),
         (
             ApplicationView::Jobs { limit: 17 },
