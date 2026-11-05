@@ -56,8 +56,33 @@ fn attach_body_uses_referenced_workspace_and_native_discriminator() {
             "displayName": "Ontology"
         })
     );
-    for name in ["", "..", "a/b", "a\\b", "bad\nname"] {
-        assert!(AttachOntology::new(ItemReference::by_id(guid(3), guid(4)), name).is_err());
+    for name in [
+        "",
+        "..",
+        "a/b",
+        "a\\b",
+        " leading",
+        "trailing ",
+        "trailing.",
+    ] {
+        assert!(
+            AttachOntology::new(ItemReference::by_id(guid(3), guid(4)), name).is_err(),
+            "accepted a source-rejected display name"
+        );
+    }
+}
+
+#[test]
+fn attachment_display_name_preserves_source_accepted_internal_whitespace() {
+    for name in ["Internal space", "internal\nnewline", "internal\ttab"] {
+        let input = AttachOntology::new(ItemReference::by_id(guid(3), guid(4)), name).unwrap();
+        let wire = serde_json::to_vec(&input).unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&wire).unwrap();
+        assert_eq!(body["displayName"], name);
+        assert!(
+            wire.iter().all(|byte| !byte.is_ascii_control()),
+            "JSON must escape control characters rather than emit raw controls"
+        );
     }
 }
 

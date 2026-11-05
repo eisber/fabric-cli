@@ -47,6 +47,14 @@ display-name key or a global ontology cache. Existing attachment identity is
 returned and validated, not manufactured from the input. Re-adding is not a
 request to replace its name, source workspace, selection, instructions or examples.
 
+Display-name validation follows the inspected
+`DataAgentStoragePathSegmentValidator`: blank names, separators, leading/trailing
+whitespace and trailing dots are rejected. That source accepts internal
+whitespace, including newline/tab; this SDK preserves it in the JSON string
+rather than adding an undocumented filename restriction. Serialization escapes
+control characters. Returned/authored names remain untrusted data and are not
+terminal commands or paths to execute.
+
 `SourceScope` contains its agent, ontology and stage. Its `source_id` is the
 returned virtual source key; it must not be reconstructed from a physical
 container ID. In particular, an Eventhouse binding can use the child KQL
