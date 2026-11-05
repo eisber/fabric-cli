@@ -155,15 +155,13 @@ fn decimal_digit(character: char) -> Option<i32> {
     // Unicode 16.0 decimal blocks (Rust char::to_digit only recognizes ASCII).
     // Consecutive mathematical digits cover five separate ten-digit sets.
     const ZEROES: &[u32] = &[
-        0x30, 0x660, 0x6f0, 0x7c0, 0x966, 0x9e6, 0xa66, 0xae6, 0xb66, 0xbe6, 0xc66,
-        0xce6, 0xd66, 0xde6, 0xe50, 0xed0, 0xf20, 0x1040, 0x1090, 0x17e0, 0x1810,
-        0x1946, 0x19d0, 0x1a80, 0x1a90, 0x1b50, 0x1bb0, 0x1c40, 0x1c50, 0xa620,
-        0xa8d0, 0xa900, 0xa9d0, 0xa9f0, 0xaa50, 0xabf0, 0xff10, 0x104a0, 0x10d30,
-        0x10d40, 0x11066, 0x110f0, 0x11136, 0x111d0, 0x112f0, 0x11450, 0x114d0,
-        0x11650, 0x116c0, 0x116d0, 0x116da, 0x11730, 0x118e0, 0x11950, 0x11bf0,
-        0x11c50, 0x11d50, 0x11da0, 0x11f50, 0x16130, 0x16a60, 0x16ac0, 0x16b50,
-        0x1d7ce, 0x1d7d8, 0x1d7e2, 0x1d7ec, 0x1d7f6, 0x1e140, 0x1e2f0, 0x1e4f0,
-        0x1e5f1, 0x1e950, 0x1fbf0,
+        0x30, 0x660, 0x6f0, 0x7c0, 0x966, 0x9e6, 0xa66, 0xae6, 0xb66, 0xbe6, 0xc66, 0xce6, 0xd66,
+        0xde6, 0xe50, 0xed0, 0xf20, 0x1040, 0x1090, 0x17e0, 0x1810, 0x1946, 0x19d0, 0x1a80, 0x1a90,
+        0x1b50, 0x1bb0, 0x1c40, 0x1c50, 0xa620, 0xa8d0, 0xa900, 0xa9d0, 0xa9f0, 0xaa50, 0xabf0,
+        0xff10, 0x104a0, 0x10d30, 0x10d40, 0x11066, 0x110f0, 0x11136, 0x111d0, 0x112f0, 0x11450,
+        0x114d0, 0x11650, 0x116c0, 0x116d0, 0x116da, 0x11730, 0x118e0, 0x11950, 0x11bf0, 0x11c50,
+        0x11d50, 0x11da0, 0x11f50, 0x16130, 0x16a60, 0x16ac0, 0x16b50, 0x1d7ce, 0x1d7d8, 0x1d7e2,
+        0x1d7ec, 0x1d7f6, 0x1e140, 0x1e2f0, 0x1e4f0, 0x1e5f1, 0x1e950, 0x1fbf0,
     ];
     let code = u32::from(character);
     ZEROES.iter().find_map(|zero| {
@@ -318,7 +316,11 @@ impl FramedDecoder {
     }
 
     fn read_length(&mut self) -> Result<(), ArrowError> {
-        let length = i64::from_be_bytes(self.header[..8].try_into().map_err(|_| ArrowError::Protocol)?);
+        let length = i64::from_be_bytes(
+            self.header[..8]
+                .try_into()
+                .map_err(|_| ArrowError::Protocol)?,
+        );
         match length {
             0 => self.phase = Phase::Terminal,
             -1 => return Err(ArrowError::ServiceFailure),
@@ -342,9 +344,21 @@ impl FramedDecoder {
     }
 
     fn read_metadata(&mut self) -> Result<(), ArrowError> {
-        self.partition = i32::from_be_bytes(self.header[8..12].try_into().map_err(|_| ArrowError::Protocol)?);
-        self.ordinal = i32::from_be_bytes(self.header[12..16].try_into().map_err(|_| ArrowError::Protocol)?);
-        let length = i32::from_be_bytes(self.header[16..20].try_into().map_err(|_| ArrowError::Protocol)?);
+        self.partition = i32::from_be_bytes(
+            self.header[8..12]
+                .try_into()
+                .map_err(|_| ArrowError::Protocol)?,
+        );
+        self.ordinal = i32::from_be_bytes(
+            self.header[12..16]
+                .try_into()
+                .map_err(|_| ArrowError::Protocol)?,
+        );
+        let length = i32::from_be_bytes(
+            self.header[16..20]
+                .try_into()
+                .map_err(|_| ArrowError::Protocol)?,
+        );
         if self.partition < 0 || self.ordinal < 0 || length <= 0 {
             return Err(ArrowError::Protocol);
         }
@@ -367,7 +381,9 @@ impl FramedDecoder {
         if needed > self.limits.max_wire_bytes - self.wire_total {
             return Err(ArrowError::Limit);
         }
-        self.id.try_reserve_exact(self.id_length).map_err(|_| ArrowError::Allocation)?;
+        self.id
+            .try_reserve_exact(self.id_length)
+            .map_err(|_| ArrowError::Allocation)?;
         self.phase = Phase::Id;
         Ok(())
     }
@@ -381,14 +397,22 @@ impl FramedDecoder {
         if self.orders.contains(&(self.partition, self.ordinal)) {
             return Err(ArrowError::OrdinalConflict);
         }
-        self.seen.try_reserve(1).map_err(|_| ArrowError::Allocation)?;
-        self.orders.try_reserve(1).map_err(|_| ArrowError::Allocation)?;
+        self.seen
+            .try_reserve(1)
+            .map_err(|_| ArrowError::Allocation)?;
+        self.orders
+            .try_reserve(1)
+            .map_err(|_| ArrowError::Allocation)?;
         let mut stored = String::new();
-        stored.try_reserve_exact(text.len()).map_err(|_| ArrowError::Allocation)?;
+        stored
+            .try_reserve_exact(text.len())
+            .map_err(|_| ArrowError::Allocation)?;
         stored.push_str(text);
         self.seen.insert(stored);
         self.orders.insert((self.partition, self.ordinal));
-        self.payload.try_reserve_exact(self.payload_length).map_err(|_| ArrowError::Allocation)?;
+        self.payload
+            .try_reserve_exact(self.payload_length)
+            .map_err(|_| ArrowError::Allocation)?;
         self.phase = Phase::Payload;
         Ok(())
     }
@@ -442,7 +466,12 @@ impl RawInline {
         if max_bytes == 0 {
             return Err(ArrowError::InvalidInput);
         }
-        Ok(Self { max_bytes, total: 0, finished: false, failed: false })
+        Ok(Self {
+            max_bytes,
+            total: 0,
+            finished: false,
+            failed: false,
+        })
     }
 
     /// Check a borrowed fragment before handing it to the caller's sink.
@@ -450,7 +479,11 @@ impl RawInline {
         if self.finished || self.failed {
             return Err(ArrowError::InvalidState);
         }
-        let Some(total) = self.total.checked_add(bytes.len() as u64).filter(|total| *total <= self.max_bytes) else {
+        let Some(total) = self
+            .total
+            .checked_add(bytes.len() as u64)
+            .filter(|total| *total <= self.max_bytes)
+        else {
             self.failed = true;
             return Err(ArrowError::Limit);
         };
@@ -492,5 +525,7 @@ pub fn write_frame(writer: &mut impl Write, chunk: &RawChunk) -> Result<(), Arro
 
 /// End an explicitly labeled raw framed-v2 output after confirmed successful EOF.
 pub fn write_terminal(writer: &mut impl Write) -> Result<(), ArrowError> {
-    writer.write_all(&0_i64.to_be_bytes()).map_err(|_| ArrowError::Output)
+    writer
+        .write_all(&0_i64.to_be_bytes())
+        .map_err(|_| ArrowError::Output)
 }

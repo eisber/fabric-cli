@@ -11,7 +11,10 @@
 pub mod capacities;
 pub mod folders;
 pub mod items;
+#[cfg(feature = "livy-arrow")]
+pub mod livy_arrow;
 pub mod models;
+pub mod notebook_runtime;
 pub mod notebooks;
 pub mod runtime;
 pub mod workspaces;

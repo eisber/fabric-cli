@@ -21,9 +21,13 @@ impl std::fmt::Debug for ResumeCursor {
 
 impl ResumeCursor {
     /// Exact statement scope required for every resumed GET.
-    pub const fn handle(&self) -> &StatementHandle { &self.handle }
+    pub const fn handle(&self) -> &StatementHandle {
+        &self.handle
+    }
     /// Last delivered ID/partition with original `parts` preserved.
-    pub const fn selectors(&self) -> &ResultSelectors { &self.selectors }
+    pub const fn selectors(&self) -> &ResultSelectors {
+        &self.selectors
+    }
 }
 
 /// Result of an in-memory sink delivery, not a transaction/durability receipt.
@@ -94,10 +98,16 @@ impl DeliveryState {
         chunk: &RawChunk,
         emit: impl FnOnce(&RawChunk) -> Result<(), ArrowError>,
     ) -> Result<Delivery, ArrowError> {
-        if self.failed { return Err(ArrowError::InvalidState); }
-        if handle != &self.handle { return Err(ArrowError::OwnerMismatch); }
+        if self.failed {
+            return Err(ArrowError::InvalidState);
+        }
+        if handle != &self.handle {
+            return Err(ArrowError::OwnerMismatch);
+        }
         let result = self.deliver_inner(chunk, emit);
-        if result.is_err() { self.failed = true; }
+        if result.is_err() {
+            self.failed = true;
+        }
         result
     }
 
@@ -108,26 +118,50 @@ impl DeliveryState {
     ) -> Result<Delivery, ArrowError> {
         if chunk.payload().len() > self.limits.max_frame_bytes
             || chunk.id().len() > self.limits.max_id_bytes
-        { return Err(ArrowError::Limit); }
+        {
+            return Err(ArrowError::Limit);
+        }
         let identity = Identity {
             partition: chunk.partition(),
             ordinal: chunk.ordinal(),
-            digest: digest(&SHA256, chunk.payload()).as_ref().try_into().map_err(|_| ArrowError::InvalidState)?,
+            digest: digest(&SHA256, chunk.payload())
+                .as_ref()
+                .try_into()
+                .map_err(|_| ArrowError::InvalidState)?,
         };
         if let Some(previous) = self.ids.get(chunk.id()) {
-            return if previous == &identity { Ok(Delivery::Replayed) } else { Err(ArrowError::ReplayConflict) };
+            return if previous == &identity {
+                Ok(Delivery::Replayed)
+            } else {
+                Err(ArrowError::ReplayConflict)
+            };
         }
         let position = (chunk.partition(), chunk.ordinal());
-        if self.orders.contains(&position) { return Err(ArrowError::OrdinalConflict); }
-        if self.ids.len() >= self.limits.max_chunks { return Err(ArrowError::Limit); }
-        let total = self.total_bytes.checked_add(chunk.payload().len() as u64)
-            .filter(|total| *total <= self.limits.max_total_bytes).ok_or(ArrowError::Limit)?;
-        let identity_bytes = self.identity_bytes.checked_add(chunk.id().len())
-            .filter(|total| *total <= self.limits.max_identity_bytes).ok_or(ArrowError::Limit)?;
-        self.ids.try_reserve(1).map_err(|_| ArrowError::Allocation)?;
-        self.orders.try_reserve(1).map_err(|_| ArrowError::Allocation)?;
+        if self.orders.contains(&position) {
+            return Err(ArrowError::OrdinalConflict);
+        }
+        if self.ids.len() >= self.limits.max_chunks {
+            return Err(ArrowError::Limit);
+        }
+        let total = self
+            .total_bytes
+            .checked_add(chunk.payload().len() as u64)
+            .filter(|total| *total <= self.limits.max_total_bytes)
+            .ok_or(ArrowError::Limit)?;
+        let identity_bytes = self
+            .identity_bytes
+            .checked_add(chunk.id().len())
+            .filter(|total| *total <= self.limits.max_identity_bytes)
+            .ok_or(ArrowError::Limit)?;
+        self.ids
+            .try_reserve(1)
+            .map_err(|_| ArrowError::Allocation)?;
+        self.orders
+            .try_reserve(1)
+            .map_err(|_| ArrowError::Allocation)?;
         let mut id = String::new();
-        id.try_reserve_exact(chunk.id().len()).map_err(|_| ArrowError::Allocation)?;
+        id.try_reserve_exact(chunk.id().len())
+            .map_err(|_| ArrowError::Allocation)?;
         id.push_str(chunk.id());
         let cursor = ResumeCursor {
             handle: self.handle.clone(),
@@ -143,11 +177,17 @@ impl DeliveryState {
     }
 
     /// Local cursor after the last callback completed; unavailable before then.
-    pub const fn cursor(&self) -> Option<&ResumeCursor> { self.cursor.as_ref() }
+    pub const fn cursor(&self) -> Option<&ResumeCursor> {
+        self.cursor.as_ref()
+    }
     /// Unique chunk count; identical replay does not consume logical budget.
-    pub fn delivered_chunks(&self) -> usize { self.ids.len() }
+    pub fn delivered_chunks(&self) -> usize {
+        self.ids.len()
+    }
     /// Unique payload bytes; each response separately counts replay/wire bytes.
-    pub const fn delivered_bytes(&self) -> u64 { self.total_bytes }
+    pub const fn delivered_bytes(&self) -> u64 {
+        self.total_bytes
+    }
 }
 
 /// Host-observed failure classification; this policy does no network I/O.
@@ -233,7 +273,9 @@ pub struct RetryPolicy {
 impl RetryPolicy {
     /// Start one positive absolute timeout using a host-supplied monotonic clock.
     pub fn new(now: Instant, timeout: Duration, max_reconnects: u32) -> Result<Self, ArrowError> {
-        if timeout.is_zero() { return Err(ArrowError::InvalidInput); }
+        if timeout.is_zero() {
+            return Err(ArrowError::InvalidInput);
+        }
         Ok(Self {
             deadline: now.checked_add(timeout).ok_or(ArrowError::InvalidInput)?,
             max_reconnects,
@@ -244,32 +286,51 @@ impl RetryPolicy {
 
     /// Remaining local time; never resets after bytes, caller pauses or retries.
     pub fn remaining(&self, now: Instant) -> Result<Duration, ArrowError> {
-        if self.stopped { return Err(ArrowError::InvalidState); }
-        self.deadline.checked_duration_since(now).filter(|time| !time.is_zero()).ok_or(ArrowError::TimedOut)
+        if self.stopped {
+            return Err(ArrowError::InvalidState);
+        }
+        self.deadline
+            .checked_duration_since(now)
+            .filter(|time| !time.is_zero())
+            .ok_or(ArrowError::TimedOut)
     }
 
     /// Classify and consume at most one reconnect allowance.
     ///
     /// The actual validated request, not the command spelling, determines replay
     /// safety. No POST retry can be authorized by this policy.
-    pub fn on_failure(&mut self, now: Instant, failure: Failure, request: &ArrowRequest) -> RetryDecision {
+    pub fn on_failure(
+        &mut self,
+        now: Instant,
+        failure: Failure,
+        request: &ArrowRequest,
+    ) -> RetryDecision {
         let stop = if self.stopped {
             Some(StopReason::AlreadyStopped)
         } else if !request.is_result_get() {
             Some(StopReason::Mutation)
         } else if self.remaining(now).is_err() {
             Some(StopReason::Deadline)
-        } else if !matches!(failure, Failure::Transport | Failure::Truncated | Failure::Http(408 | 429 | 500 | 502 | 503 | 504)) {
+        } else if !matches!(
+            failure,
+            Failure::Transport
+                | Failure::Truncated
+                | Failure::Http(408 | 429 | 500 | 502 | 503 | 504)
+        ) {
             Some(StopReason::Permanent(failure))
         } else if self.attempts >= self.max_reconnects {
             Some(StopReason::Exhausted)
-        } else { None };
+        } else {
+            None
+        };
         if let Some(reason) = stop {
             self.stopped = true;
             RetryDecision::Stop(reason)
         } else {
             self.attempts += 1;
-            RetryDecision::Reconnect { attempt: self.attempts }
+            RetryDecision::Reconnect {
+                attempt: self.attempts,
+            }
         }
     }
 }

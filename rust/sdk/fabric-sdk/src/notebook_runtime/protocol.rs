@@ -9,10 +9,7 @@
 //! installed. A terminal `execute_reply` is distinct from a control ACK, kernel
 //! idle, saved cell outputs and the end of local observation.
 
-use super::{
-    CommId, ExecutionId, MessageId, ResumeBinding, SessionId,
-    content::encoded_len,
-};
+use super::{CommId, ExecutionId, MessageId, ResumeBinding, SessionId, content::encoded_len};
 use crate::runtime::{NativeEffect, NativeError};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -163,7 +160,10 @@ impl JupyterMessage {
             || self.header.msg_type.chars().any(char::is_control)
             || self.channel.is_empty()
             || self.channel.chars().any(char::is_control)
-            || self.parent_header.get("msg_id").is_some_and(|id| !id.is_string())
+            || self
+                .parent_header
+                .get("msg_id")
+                .is_some_and(|id| !id.is_string())
         {
             return Err(NativeError::InvalidResponse);
         }
@@ -215,7 +215,11 @@ impl ExecuteRequest {
             }),
         )?;
         message.validate(limits)?;
-        Ok(Self { id, session, message })
+        Ok(Self {
+            id,
+            session,
+            message,
+        })
     }
 
     /// Remote execute-request message ID; not the caller-local execution handle.
@@ -298,7 +302,9 @@ impl SynapseControl {
         match self {
             Self::CancelExecution(id) => Ok(("cancel_cell_execution", id.as_str().into())),
             Self::CancelAll => Ok(("cancel_all_cell_execution", json!({}))),
-            Self::ReplayOutputs(id) => Ok(("replay_outputs", json!({"parent_msg_id": id.as_str()}))),
+            Self::ReplayOutputs(id) => {
+                Ok(("replay_outputs", json!({"parent_msg_id": id.as_str()})))
+            }
             Self::StartLivy(options) | Self::SetLivyOptions(options) => {
                 if !options.is_object() {
                     return Err(NativeError::InvalidInput);
@@ -351,7 +357,13 @@ impl ControlRequest {
             }),
         )?;
         message.validate(limits)?;
-        Ok(Self { id, session, comm, command, message })
+        Ok(Self {
+            id,
+            session,
+            comm,
+            command,
+            message,
+        })
     }
 
     /// Native control request ID, distinct from any target execution ID.
@@ -369,7 +381,9 @@ impl ControlRequest {
         match &self.command {
             SynapseControl::CancelExecution(_) | SynapseControl::CancelAll => NativeEffect::Cancel,
             SynapseControl::ReplayOutputs(_) | SynapseControl::Ping => NativeEffect::Read,
-            SynapseControl::StartLivy(_) | SynapseControl::SetLivyOptions(_) => NativeEffect::Lifecycle,
+            SynapseControl::StartLivy(_) | SynapseControl::SetLivyOptions(_) => {
+                NativeEffect::Lifecycle
+            }
         }
     }
 }
@@ -487,7 +501,10 @@ impl ControlReply {
         if !matches!(message.channel.as_str(), "shell" | "iopub")
             || message.header.msg_type != "comm_msg"
             || message.parent_message_id() != Some(request.id.as_str())
-            || message.content.get("comm_id").is_some_and(|id| id.as_str() != Some(request.comm.as_str()))
+            || message
+                .content
+                .get("comm_id")
+                .is_some_and(|id| id.as_str() != Some(request.comm.as_str()))
         {
             return Err(NativeError::InvalidResponse);
         }
@@ -504,7 +521,11 @@ impl ControlReply {
             .and_then(Value::as_str)
             .filter(|status| !status.is_empty())
             .ok_or(NativeError::InvalidResponse)?;
-        Ok(Self { request: request.id.clone(), status: status.into(), data: data.clone() })
+        Ok(Self {
+            request: request.id.clone(),
+            status: status.into(),
+            data: data.clone(),
+        })
     }
 }
 
@@ -642,7 +663,11 @@ impl ExecutionTracker {
     ) -> Result<Self, NativeError> {
         limits.validate()?;
         request.message.validate(limits)?;
-        if request.message.content.get("code").and_then(Value::as_str)
+        if request
+            .message
+            .content
+            .get("code")
+            .and_then(Value::as_str)
             .is_some_and(|code| code.len() > limits.code_bytes)
         {
             return Err(NativeError::Limit);
@@ -730,7 +755,10 @@ impl ExecutionTracker {
     /// # Errors
     /// Rejects wrong target/session, non-cancel controls, repeated cancellation
     /// and controls recorded before execution was actually submitted.
-    pub fn record_cancellation_sent(&mut self, control: &ControlRequest) -> Result<(), NativeError> {
+    pub fn record_cancellation_sent(
+        &mut self,
+        control: &ControlRequest,
+    ) -> Result<(), NativeError> {
         if self.state != ExecutionState::AwaitingReply
             || self.cancellation != CancellationState::NotRequested
             || control.session != self.binding.session
@@ -852,7 +880,11 @@ impl ExecutionTracker {
             }
             "status" => {
                 if message.channel != "iopub"
-                    || message.content.get("execution_state").and_then(Value::as_str).is_none()
+                    || message
+                        .content
+                        .get("execution_state")
+                        .and_then(Value::as_str)
+                        .is_none()
                 {
                     return Err(NativeError::InvalidResponse);
                 }
@@ -878,14 +910,22 @@ fn parse_execute_reply(content: &Map<String, Value>) -> Result<ExecuteReply, Nat
     } else {
         None
     };
-    Ok(ExecuteReply { status, execution_count, error, content: content.clone() })
+    Ok(ExecuteReply {
+        status,
+        execution_count,
+        error,
+        content: content.clone(),
+    })
 }
 
 fn parse_output(message: &JupyterMessage) -> Result<LiveOutput, NativeError> {
     let content = &message.content;
     let kind = match message.header.msg_type.as_str() {
         "stream" => {
-            if !matches!(content.get("name").and_then(Value::as_str), Some("stdout" | "stderr")) {
+            if !matches!(
+                content.get("name").and_then(Value::as_str),
+                Some("stdout" | "stderr")
+            ) {
                 return Err(NativeError::InvalidResponse);
             }
             validate_text(content.get("text"))?;
@@ -893,7 +933,9 @@ fn parse_output(message: &JupyterMessage) -> Result<LiveOutput, NativeError> {
         }
         "display_data" | "execute_result" => {
             if !content.get("data").is_some_and(Value::is_object)
-                || content.get("metadata").is_some_and(|value| !value.is_null() && !value.is_object())
+                || content
+                    .get("metadata")
+                    .is_some_and(|value| !value.is_null() && !value.is_object())
             {
                 return Err(NativeError::InvalidResponse);
             }
@@ -910,7 +952,10 @@ fn parse_output(message: &JupyterMessage) -> Result<LiveOutput, NativeError> {
         }
         _ => return Err(NativeError::InvalidResponse),
     };
-    Ok(LiveOutput { kind, content: content.clone() })
+    Ok(LiveOutput {
+        kind,
+        content: content.clone(),
+    })
 }
 
 fn count(value: Option<&Value>) -> Result<Option<u64>, NativeError> {
@@ -943,7 +988,15 @@ fn parse_error(content: &Map<String, Value>) -> Result<ExecutionError, NativeErr
     };
     let traceback = lines
         .iter()
-        .map(|line| line.as_str().map(String::from).ok_or(NativeError::InvalidResponse))
+        .map(|line| {
+            line.as_str()
+                .map(String::from)
+                .ok_or(NativeError::InvalidResponse)
+        })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(ExecutionError { name: name.into(), value: value.into(), traceback })
+    Ok(ExecutionError {
+        name: name.into(),
+        value: value.into(),
+        traceback,
+    })
 }

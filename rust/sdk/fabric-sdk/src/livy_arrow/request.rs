@@ -14,8 +14,14 @@ const MAX_SELECTOR_BYTES: usize = 65_536;
 
 #[derive(Clone, Eq, PartialEq)]
 enum Route {
-    Session { session: String, repl: Option<String> },
-    HighConcurrency { execution_session: String, repl: String },
+    Session {
+        session: String,
+        repl: Option<String>,
+    },
+    HighConcurrency {
+        execution_session: String,
+        repl: String,
+    },
 }
 
 /// Complete caller-selected endpoint and execution-owner route.
@@ -82,8 +88,15 @@ impl StatementOwner {
                 segments.push("statements");
                 segments
             }
-            Route::HighConcurrency { execution_session, repl } => vec![
-                "highConcurrencySessions", execution_session, "repls", repl, "statements",
+            Route::HighConcurrency {
+                execution_session,
+                repl,
+            } => vec![
+                "highConcurrencySessions",
+                execution_session,
+                "repls",
+                repl,
+                "statements",
             ],
         }
     }
@@ -112,7 +125,10 @@ impl std::fmt::Debug for StatementHandle {
 impl StatementHandle {
     /// Bind an authoritative nonnegative statement ID to its execution owner.
     pub const fn new(owner: StatementOwner, statement_id: u64) -> Self {
-        Self { owner, id: statement_id }
+        Self {
+            owner,
+            id: statement_id,
+        }
     }
     /// The full execution owner, including the endpoint.
     pub const fn owner(&self) -> &StatementOwner {
@@ -128,13 +144,17 @@ impl StatementHandle {
         let id = self.id.to_string();
         let mut segments = self.owner.segments();
         segments.extend([id.as_str(), "result"]);
-        let native = self.owner.endpoint.request(
-            NativeMethod::Get,
-            &segments,
-            &selectors.query(),
-            None,
-            NativeEffect::Read,
-        )?.with_accept(ARROW_CHUNKS_MEDIA_TYPE)?;
+        let native = self
+            .owner
+            .endpoint
+            .request(
+                NativeMethod::Get,
+                &segments,
+                &selectors.query(),
+                None,
+                NativeEffect::Read,
+            )?
+            .with_accept(ARROW_CHUNKS_MEDIA_TYPE)?;
         Ok(ArrowRequest {
             native,
             owner: self.owner.clone(),
@@ -168,16 +188,21 @@ impl ResultSelectors {
         from_part: Option<i32>,
     ) -> Result<Self, ArrowError> {
         if from_part.is_some_and(|part| part < 0)
-            || [after_chunk.as_ref(), parts.as_ref()].into_iter().flatten().any(|text| {
-                text.len() > MAX_SELECTOR_BYTES || text.chars().any(char::is_control)
-            })
+            || [after_chunk.as_ref(), parts.as_ref()]
+                .into_iter()
+                .flatten()
+                .any(|text| text.len() > MAX_SELECTOR_BYTES || text.chars().any(char::is_control))
         {
             return Err(ArrowError::InvalidInput);
         }
         if let (Some(id), Some(partition)) = (&after_chunk, from_part) {
             validate_id(id.as_bytes(), partition).map_err(|_| ArrowError::InvalidInput)?;
         }
-        Ok(Self { after_chunk, parts, from_part })
+        Ok(Self {
+            after_chunk,
+            parts,
+            from_part,
+        })
     }
 
     /// Last completely delivered chunk, if explicitly selected.
@@ -203,9 +228,15 @@ impl ResultSelectors {
 
     fn query(&self) -> Vec<(&str, String)> {
         let mut result = Vec::new();
-        if let Some(id) = &self.after_chunk { result.push(("after_chunk", id.clone())); }
-        if let Some(parts) = &self.parts { result.push(("parts", parts.clone())); }
-        if let Some(partition) = self.from_part { result.push(("from_part", partition.to_string())); }
+        if let Some(id) = &self.after_chunk {
+            result.push(("after_chunk", id.clone()));
+        }
+        if let Some(parts) = &self.parts {
+            result.push(("parts", parts.clone()));
+        }
+        if let Some(partition) = self.from_part {
+            result.push(("from_part", partition.to_string()));
+        }
         result
     }
 }
@@ -262,7 +293,9 @@ impl SubmitOptions<'_> {
         {
             return Err(ArrowError::InvalidInput);
         }
-        if self.code.len() > max_code_bytes { return Err(ArrowError::Limit); }
+        if self.code.len() > max_code_bytes {
+            return Err(ArrowError::Limit);
+        }
         let (wait, accept) = match self.mode {
             SubmitMode::Handle { sync_wait_ms } => {
                 if sync_wait_ms.is_some_and(|wait| wait > 10_000) {
@@ -270,37 +303,64 @@ impl SubmitOptions<'_> {
                 }
                 (sync_wait_ms, "application/json")
             }
-            SubmitMode::Inline { sync_wait_ms, allow_json_fallback } => {
+            SubmitMode::Inline {
+                sync_wait_ms,
+                allow_json_fallback,
+            } => {
                 if !(1..=10_000).contains(&sync_wait_ms) {
                     return Err(ArrowError::InvalidInput);
                 }
-                (Some(sync_wait_ms), if allow_json_fallback { INLINE_OR_JSON } else { ARROW_STREAM_MEDIA_TYPE })
+                (
+                    Some(sync_wait_ms),
+                    if allow_json_fallback {
+                        INLINE_OR_JSON
+                    } else {
+                        ARROW_STREAM_MEDIA_TYPE
+                    },
+                )
             }
         };
-        let query = wait.map(|wait| vec![("sync_wait_ms", wait.to_string())]).unwrap_or_default();
-        let native = owner.endpoint.request(
-            NativeMethod::Post,
-            &owner.segments(),
-            &query,
-            Some(json!({"code":self.code,"kind":self.kind,"format":"arrow","codec":self.codec})),
-            NativeEffect::Execute,
-        )?.with_accept(accept)?
+        let query = wait
+            .map(|wait| vec![("sync_wait_ms", wait.to_string())])
+            .unwrap_or_default();
+        let native = owner
+            .endpoint
+            .request(
+                NativeMethod::Post,
+                &owner.segments(),
+                &query,
+                Some(
+                    json!({"code":self.code,"kind":self.kind,"format":"arrow","codec":self.codec}),
+                ),
+                NativeEffect::Execute,
+            )?
+            .with_accept(accept)?
             .with_header("x-ms-livy-resource-id", resource_id)?;
         Ok(ArrowRequest {
             native,
             owner: owner.clone(),
             mode: match self.mode {
                 SubmitMode::Handle { .. } => RequestMode::Handle,
-                SubmitMode::Inline { allow_json_fallback, .. } => RequestMode::Inline { allow_json_fallback },
+                SubmitMode::Inline {
+                    allow_json_fallback,
+                    ..
+                } => RequestMode::Inline {
+                    allow_json_fallback,
+                },
             },
         })
     }
 }
 
 fn valid_uuid(value: &str) -> bool {
-    value.len() == 36 && value.bytes().enumerate().all(|(index, byte)| {
-        if [8, 13, 18, 23].contains(&index) { byte == b'-' } else { byte.is_ascii_hexdigit() }
-    })
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| {
+            if [8, 13, 18, 23].contains(&index) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        })
 }
 
 #[derive(Clone, Copy)]
@@ -325,13 +385,18 @@ pub struct ArrowRequest {
 
 impl std::fmt::Debug for ArrowRequest {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.debug_struct("ArrowRequest").field("native", &self.native).finish_non_exhaustive()
+        formatter
+            .debug_struct("ArrowRequest")
+            .field("native", &self.native)
+            .finish_non_exhaustive()
     }
 }
 
 impl ArrowRequest {
     /// Validated method, route, query, body and effect.
-    pub const fn native(&self) -> &NativeRequest { &self.native }
+    pub const fn native(&self) -> &NativeRequest {
+        &self.native
+    }
 
     pub(super) fn is_result_get(&self) -> bool {
         matches!(self.mode, RequestMode::Framed) && self.native.method() == NativeMethod::Get
@@ -343,8 +408,14 @@ impl ArrowRequest {
             Some(("accept", self.native.accept())),
             (self.native.body().is_some() || self.native.bytes().is_some())
                 .then(|| ("content-type", self.native.content_type())),
-        ].into_iter().flatten().chain(
-            self.native.headers().iter().map(|(name, value)| (name.as_str(), value.as_str()))
+        ]
+        .into_iter()
+        .flatten()
+        .chain(
+            self.native
+                .headers()
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_str())),
         )
     }
 
@@ -359,7 +430,12 @@ impl ArrowRequest {
             RequestMode::Handle => ResponseRepresentation::JsonHandle,
             RequestMode::Inline { .. } => ResponseRepresentation::InlineIpc,
         };
-        let allow_fallback = matches!(self.mode, RequestMode::Inline { allow_json_fallback: true });
+        let allow_fallback = matches!(
+            self.mode,
+            RequestMode::Inline {
+                allow_json_fallback: true
+            }
+        );
         validate_response_headers(headers, expected, allow_fallback, max_body_bytes)
     }
 
@@ -367,10 +443,17 @@ impl ArrowRequest {
     ///
     /// Call `validate_response` first and only use this for `JsonHandle`.
     pub fn inline_fallback(&self, max_json_bytes: usize) -> Result<InlineFallback, ArrowError> {
-        if !matches!(self.mode, RequestMode::Inline { allow_json_fallback: true }) {
+        if !matches!(
+            self.mode,
+            RequestMode::Inline {
+                allow_json_fallback: true
+            }
+        ) {
             return Err(ArrowError::Protocol);
         }
-        if max_json_bytes == 0 { return Err(ArrowError::InvalidInput); }
+        if max_json_bytes == 0 {
+            return Err(ArrowError::InvalidInput);
+        }
         Ok(InlineFallback {
             owner: self.owner.clone(),
             body: Vec::new(),
@@ -413,13 +496,23 @@ pub fn validate_response_headers(
     allow_inline_json_fallback: bool,
     max_body_bytes: u64,
 ) -> Result<ResponseRepresentation, ArrowError> {
-    if !(200..300).contains(&headers.status) { return Err(ArrowError::Http(headers.status)); }
-    if max_body_bytes == 0 { return Err(ArrowError::InvalidInput); }
-    if headers.content_encoding.is_some_and(|value| !value.eq_ignore_ascii_case("identity")) {
+    if !(200..300).contains(&headers.status) {
+        return Err(ArrowError::Http(headers.status));
+    }
+    if max_body_bytes == 0 {
+        return Err(ArrowError::InvalidInput);
+    }
+    if headers
+        .content_encoding
+        .is_some_and(|value| !value.eq_ignore_ascii_case("identity"))
+    {
         return Err(ArrowError::Protocol);
     }
     if let Some(length) = headers.content_length {
-        if length.is_empty() || length.len() > 128 || !length.bytes().all(|byte| byte.is_ascii_digit()) {
+        if length.is_empty()
+            || length.len() > 128
+            || !length.bytes().all(|byte| byte.is_ascii_digit())
+        {
             return Err(ArrowError::Protocol);
         }
         if length.parse::<u64>().map_err(|_| ArrowError::Limit)? > max_body_bytes {
@@ -438,20 +531,45 @@ pub fn validate_response_headers(
         let (name, value) = piece.split_once('=').ok_or(ArrowError::Protocol)?;
         let name = name.trim();
         let value = value.trim();
-        if name.is_empty() || value.is_empty()
-            || parameters.iter().any(|previous: &&str| previous.eq_ignore_ascii_case(name))
-        { return Err(ArrowError::Protocol); }
+        if name.is_empty()
+            || value.is_empty()
+            || parameters
+                .iter()
+                .any(|previous: &&str| previous.eq_ignore_ascii_case(name))
+        {
+            return Err(ArrowError::Protocol);
+        }
         parameters.push(name);
         let value = if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
-            &value[1..value.len()-1]
-        } else if value.contains('"') { return Err(ArrowError::Protocol); } else { value };
-        if name.eq_ignore_ascii_case("v") { version = Some(value); }
+            &value[1..value.len() - 1]
+        } else if value.contains('"') {
+            return Err(ArrowError::Protocol);
+        } else {
+            value
+        };
+        if name.eq_ignore_ascii_case("v") {
+            version = Some(value);
+        }
     }
     match expected {
-        ResponseRepresentation::FramedV2 if media.eq_ignore_ascii_case(ARROW_CHUNKS_MEDIA_TYPE) && version == Some("2") => Ok(expected),
-        ResponseRepresentation::InlineIpc if media.eq_ignore_ascii_case(ARROW_STREAM_MEDIA_TYPE) => Ok(expected),
-        ResponseRepresentation::JsonHandle if media.eq_ignore_ascii_case("application/json") => Ok(expected),
-        ResponseRepresentation::InlineIpc if allow_inline_json_fallback && media.eq_ignore_ascii_case("application/json") => Ok(ResponseRepresentation::JsonHandle),
+        ResponseRepresentation::FramedV2
+            if media.eq_ignore_ascii_case(ARROW_CHUNKS_MEDIA_TYPE) && version == Some("2") =>
+        {
+            Ok(expected)
+        }
+        ResponseRepresentation::InlineIpc
+            if media.eq_ignore_ascii_case(ARROW_STREAM_MEDIA_TYPE) =>
+        {
+            Ok(expected)
+        }
+        ResponseRepresentation::JsonHandle if media.eq_ignore_ascii_case("application/json") => {
+            Ok(expected)
+        }
+        ResponseRepresentation::InlineIpc
+            if allow_inline_json_fallback && media.eq_ignore_ascii_case("application/json") =>
+        {
+            Ok(ResponseRepresentation::JsonHandle)
+        }
         _ => Err(ArrowError::Protocol),
     }
 }
@@ -469,19 +587,31 @@ pub struct InlineFallback {
 impl InlineFallback {
     /// Append bounded JSON bytes; failure poisons this response.
     pub fn push(&mut self, bytes: &[u8]) -> Result<(), ArrowError> {
-        if self.failed { return Err(ArrowError::InvalidState); }
-        let Some(length) = self.body.len().checked_add(bytes.len())
-            .filter(|length| *length <= self.max_bytes) else {
+        if self.failed {
+            return Err(ArrowError::InvalidState);
+        }
+        let Some(length) = self
+            .body
+            .len()
+            .checked_add(bytes.len())
+            .filter(|length| *length <= self.max_bytes)
+        else {
             self.failed = true;
             return Err(ArrowError::Limit);
         };
         if length > self.body.capacity() {
-            let capacity = self.body.capacity().saturating_mul(2)
-                .max(length).min(self.max_bytes);
-            self.body.try_reserve_exact(capacity - self.body.len()).map_err(|_| {
-                self.failed = true;
-                ArrowError::Allocation
-            })?;
+            let capacity = self
+                .body
+                .capacity()
+                .saturating_mul(2)
+                .max(length)
+                .min(self.max_bytes);
+            self.body
+                .try_reserve_exact(capacity - self.body.len())
+                .map_err(|_| {
+                    self.failed = true;
+                    ArrowError::Allocation
+                })?;
         }
         self.body.extend_from_slice(bytes);
         Ok(())
@@ -493,20 +623,33 @@ impl InlineFallback {
     /// IDs mean an unknown dispatched submission outcome, not safe retry.
     /// The native handle supports IDs through `u64::MAX`.
     pub fn finish(self, statement_id_header: Option<&str>) -> Result<StatementHandle, ArrowError> {
-        if self.failed { return Err(ArrowError::InvalidState); }
-        let value: Value = serde_json::from_slice(&self.body).map_err(|_| ArrowError::OutcomeUnknown)?;
+        if self.failed {
+            return Err(ArrowError::InvalidState);
+        }
+        let value: Value =
+            serde_json::from_slice(&self.body).map_err(|_| ArrowError::OutcomeUnknown)?;
         let object = value.as_object().ok_or(ArrowError::OutcomeUnknown)?;
         let body_id = match object.get("id") {
             None | Some(Value::Null) => None,
             Some(id) => Some(id.as_u64().ok_or(ArrowError::OutcomeUnknown)?),
         };
-        let header_id = statement_id_header.map(|header| {
-            if header.is_empty() || header.len() > 128 || !header.bytes().all(|byte| byte.is_ascii_digit()) {
-                return Err(ArrowError::OutcomeUnknown);
-            }
-            header.parse::<u64>().map_err(|_| ArrowError::OutcomeUnknown)
-        }).transpose()?;
-        if body_id.zip(header_id).is_some_and(|(body, header)| body != header) {
+        let header_id = statement_id_header
+            .map(|header| {
+                if header.is_empty()
+                    || header.len() > 128
+                    || !header.bytes().all(|byte| byte.is_ascii_digit())
+                {
+                    return Err(ArrowError::OutcomeUnknown);
+                }
+                header
+                    .parse::<u64>()
+                    .map_err(|_| ArrowError::OutcomeUnknown)
+            })
+            .transpose()?;
+        if body_id
+            .zip(header_id)
+            .is_some_and(|(body, header)| body != header)
+        {
             return Err(ArrowError::OutcomeUnknown);
         }
         let id = body_id.or(header_id).ok_or(ArrowError::OutcomeUnknown)?;

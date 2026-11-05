@@ -63,9 +63,18 @@ macro_rules! opaque_id {
     };
 }
 
-opaque_id!(SessionId, "A Jupyter session ID, never a kernel, Livy or execution ID.");
-opaque_id!(KernelId, "A kernel ID, never a Jupyter session or execution ID.");
-opaque_id!(MessageId, "A Jupyter message ID used for protocol correlation.");
+opaque_id!(
+    SessionId,
+    "A Jupyter session ID, never a kernel, Livy or execution ID."
+);
+opaque_id!(
+    KernelId,
+    "A kernel ID, never a Jupyter session or execution ID."
+);
+opaque_id!(
+    MessageId,
+    "A Jupyter message ID used for protocol correlation."
+);
 opaque_id!(CommId, "An explicitly opened Synapse comm channel ID.");
 opaque_id!(
     ExecutionId,
@@ -96,7 +105,9 @@ impl CreateSession {
             || [name, path, kernel_name]
                 .iter()
                 .any(|value| value.chars().any(char::is_control))
-            || session_options.as_ref().is_some_and(|value| !value.is_object())
+            || session_options
+                .as_ref()
+                .is_some_and(|value| !value.is_object())
         {
             return Err(NativeError::InvalidInput);
         }
@@ -111,9 +122,9 @@ impl CreateSession {
             "type": "notebook",
             "kernel": {"name": kernel_name}
         });
-        if let Some(options) = session_options.filter(|options| {
-            options.as_object().is_some_and(|object| !object.is_empty())
-        }) {
+        if let Some(options) = session_options
+            .filter(|options| options.as_object().is_some_and(|object| !object.is_empty()))
+        {
             body["kernel"]["synapseExtension"] = options;
         }
         Ok(Self { body })
@@ -254,7 +265,13 @@ impl NotebookRuntime {
     /// # Errors
     /// Returns shared request-validation errors before any host access.
     pub fn content_get_request(&self) -> Result<NativeRequest, NativeError> {
-        self.request(NativeMethod::Get, &["content"], &[], None, NativeEffect::Read)
+        self.request(
+            NativeMethod::Get,
+            &["content"],
+            &[],
+            None,
+            NativeEffect::Read,
+        )
     }
 
     /// Build native NBS `HEAD /content`.
@@ -264,7 +281,13 @@ impl NotebookRuntime {
     /// # Errors
     /// Returns shared request-validation errors.
     pub fn content_head_request(&self) -> Result<NativeRequest, NativeError> {
-        self.request(NativeMethod::Head, &["content"], &[], None, NativeEffect::Read)
+        self.request(
+            NativeMethod::Head,
+            &["content"],
+            &[],
+            None,
+            NativeEffect::Read,
+        )
     }
 
     /// Build a whole-notebook PUT, including for a one-cell or Lakehouse edit.
@@ -365,7 +388,13 @@ impl NotebookRuntime {
         &self,
         session: &SessionId,
     ) -> Result<NativeRequest, NativeError> {
-        self.session_request(NativeMethod::Delete, session, &[], None, NativeEffect::Delete)
+        self.session_request(
+            NativeMethod::Delete,
+            session,
+            &[],
+            None,
+            NativeEffect::Delete,
+        )
     }
 
     /// Build a kernel-wide restart POST, never an exact execution cancellation.
@@ -380,7 +409,10 @@ impl NotebookRuntime {
     ///
     /// # Errors
     /// Returns shared request-validation errors.
-    pub fn kernel_interrupt_request(&self, kernel: &KernelId) -> Result<NativeRequest, NativeError> {
+    pub fn kernel_interrupt_request(
+        &self,
+        kernel: &KernelId,
+    ) -> Result<NativeRequest, NativeError> {
         self.kernel_request(kernel, "interrupt", NativeEffect::Cancel)
     }
 
@@ -393,7 +425,11 @@ impl NotebookRuntime {
         executor: &dyn NativeExecutor,
     ) -> Result<NotebookDocument, NativeError> {
         let response = self
-            .send(executor, &self.content_get_request()?, self.content_limits.document_bytes)
+            .send(
+                executor,
+                &self.content_get_request()?,
+                self.content_limits.document_bytes,
+            )
             .await?;
         if response.status != 200 {
             return Err(NativeError::InvalidResponse);
@@ -439,14 +475,21 @@ impl NotebookRuntime {
         active_only: bool,
     ) -> Result<Vec<JupyterSession>, NativeError> {
         let response = self
-            .send(executor, &self.sessions_request(active_only)?, self.response_bytes)
+            .send(
+                executor,
+                &self.sessions_request(active_only)?,
+                self.response_bytes,
+            )
             .await?;
         let value = required_json(response)?;
         let rows = match value {
             Value::Array(rows) => rows,
             Value::Object(mut object) => {
                 for field in ["continuationToken", "continuationUri", "nextLink"] {
-                    if object.get(field).is_some_and(|value| !value.is_null() && value != "") {
+                    if object
+                        .get(field)
+                        .is_some_and(|value| !value.is_null() && value != "")
+                    {
                         return Err(NativeError::UnsupportedCapability);
                     }
                 }
@@ -497,7 +540,11 @@ impl NotebookRuntime {
         input: &CreateSession,
     ) -> Result<JupyterSession, NativeError> {
         let response = self
-            .send(executor, &self.session_create_request(input)?, self.response_bytes)
+            .send(
+                executor,
+                &self.session_create_request(input)?,
+                self.response_bytes,
+            )
             .await?;
         JupyterSession::parse(required_json(response)?)
     }
@@ -600,11 +647,22 @@ impl NotebookRuntime {
             encoded_len(body, limit)?;
         }
         let mut segments = vec![
-            "webapi", "capacities", &self.capacity, "workloads", "Notebook", "Data",
-            "Automatic", "api", "workspaces", &self.workspace, "artifacts", &self.notebook,
+            "webapi",
+            "capacities",
+            &self.capacity,
+            "workloads",
+            "Notebook",
+            "Data",
+            "Automatic",
+            "api",
+            "workspaces",
+            &self.workspace,
+            "artifacts",
+            &self.notebook,
         ];
         segments.extend_from_slice(suffix);
-        self.endpoint.request(method, &segments, query, body, effect)
+        self.endpoint
+            .request(method, &segments, query, body, effect)
     }
 
     fn session_request(
@@ -620,7 +678,14 @@ impl NotebookRuntime {
         }
         self.request(
             method,
-            &["jupyterApi", "versions", "1", "api", "sessions", session.as_str()],
+            &[
+                "jupyterApi",
+                "versions",
+                "1",
+                "api",
+                "sessions",
+                session.as_str(),
+            ],
             query,
             body,
             effect,
@@ -635,7 +700,15 @@ impl NotebookRuntime {
     ) -> Result<NativeRequest, NativeError> {
         self.request(
             NativeMethod::Post,
-            &["jupyterApi", "versions", "1", "api", "kernels", kernel.as_str(), action],
+            &[
+                "jupyterApi",
+                "versions",
+                "1",
+                "api",
+                "kernels",
+                kernel.as_str(),
+                action,
+            ],
             &[],
             None,
             effect,

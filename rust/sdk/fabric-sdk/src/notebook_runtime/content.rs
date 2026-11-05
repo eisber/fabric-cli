@@ -434,7 +434,9 @@ impl NotebookDocument {
         crate::runtime::validate_segment(&binding.workspace_id)?;
         self.edit(|value| {
             let metadata = object_field(value, "metadata")?;
-            let mut dependencies = effective_dependencies(metadata)?.cloned().unwrap_or_default();
+            let mut dependencies = effective_dependencies(metadata)?
+                .cloned()
+                .unwrap_or_default();
             let mut lakehouse = optional_object(dependencies.get("lakehouse"))?
                 .cloned()
                 .unwrap_or_default();
@@ -478,7 +480,9 @@ impl NotebookDocument {
     }
 
     fn cells(&self) -> &[Value] {
-        self.value["cells"].as_array().map_or(&[][..], Vec::as_slice)
+        self.value["cells"]
+            .as_array()
+            .map_or(&[][..], Vec::as_slice)
     }
 
     fn check_selector(&self, selector: &CellSelector) -> Result<(), NativeError> {
@@ -547,7 +551,10 @@ fn validate_document(value: &Value, limits: ContentLimits) -> Result<(), NativeE
     encoded_len(value, limits.document_bytes)?;
     if !value.is_object()
         || value.get("nbformat").and_then(Value::as_u64) != Some(4)
-        || value.get("nbformat_minor").and_then(Value::as_u64).is_none()
+        || value
+            .get("nbformat_minor")
+            .and_then(Value::as_u64)
+            .is_none()
     {
         return Err(NativeError::InvalidInput);
     }
@@ -588,7 +595,10 @@ fn validate_cell(cell: &Value, limits: ContentLimits) -> Result<(), NativeError>
     }
     optional_object(cell.get("metadata"))?;
     optional_object(cell.get("attachments"))?;
-    if cell.get("id").is_some_and(|id| !id.is_null() && !id.is_string()) {
+    if cell
+        .get("id")
+        .is_some_and(|id| !id.is_null() && !id.is_string())
+    {
         return Err(NativeError::InvalidInput);
     }
     if let Some(count) = cell.get("execution_count") {

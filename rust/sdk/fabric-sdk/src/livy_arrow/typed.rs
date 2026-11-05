@@ -37,7 +37,11 @@ pub trait TypedDecoder {
     type Schema: Clone + Eq;
 
     /// Inspect and validate schema within budgets without emitting data.
-    fn inspect_schema(&mut self, chunk: &RawChunk, limits: DecodeLimits) -> Result<Self::Schema, ArrowError>;
+    fn inspect_schema(
+        &mut self,
+        chunk: &RawChunk,
+        limits: DecodeLimits,
+    ) -> Result<Self::Schema, ArrowError>;
 
     /// Decode this single chunk within budgets, handing off one batch at a time.
     fn decode(
@@ -62,7 +66,12 @@ pub struct TypedStream<D: TypedDecoder> {
 impl<D: TypedDecoder> TypedStream<D> {
     /// Explicitly opt into the caller's native decoder implementation.
     pub fn new(decoder: D, limits: DecodeLimits) -> Result<Self, ArrowError> {
-        Ok(Self { decoder, schema: None, limits: limits.validate()?, failed: false })
+        Ok(Self {
+            decoder,
+            schema: None,
+            limits: limits.validate()?,
+            failed: false,
+        })
     }
 
     /// Decode one already replay-filtered chunk with cross-chunk schema equality.
@@ -71,9 +80,13 @@ impl<D: TypedDecoder> TypedStream<D> {
         chunk: &RawChunk,
         emit: &mut dyn FnMut(D::Batch) -> Result<(), ArrowError>,
     ) -> Result<(), ArrowError> {
-        if self.failed { return Err(ArrowError::InvalidState); }
+        if self.failed {
+            return Err(ArrowError::InvalidState);
+        }
         let result = self.decode_inner(chunk, emit);
-        if result.is_err() { self.failed = true; }
+        if result.is_err() {
+            self.failed = true;
+        }
         result
     }
 
@@ -83,7 +96,11 @@ impl<D: TypedDecoder> TypedStream<D> {
         emit: &mut dyn FnMut(D::Batch) -> Result<(), ArrowError>,
     ) -> Result<(), ArrowError> {
         let schema = self.decoder.inspect_schema(chunk, self.limits)?;
-        if self.schema.as_ref().is_some_and(|previous| previous != &schema) {
+        if self
+            .schema
+            .as_ref()
+            .is_some_and(|previous| previous != &schema)
+        {
             return Err(ArrowError::SchemaConflict);
         }
         self.schema = Some(schema);
@@ -98,7 +115,11 @@ impl TypedDecoder for UnsupportedDecoder {
     type Batch = ();
     type Schema = ();
 
-    fn inspect_schema(&mut self, _chunk: &RawChunk, _limits: DecodeLimits) -> Result<(), ArrowError> {
+    fn inspect_schema(
+        &mut self,
+        _chunk: &RawChunk,
+        _limits: DecodeLimits,
+    ) -> Result<(), ArrowError> {
         Err(ArrowError::UnsupportedCapability)
     }
 

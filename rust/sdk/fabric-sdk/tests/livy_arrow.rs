@@ -56,7 +56,14 @@ fn handle() -> StatementHandle {
 }
 
 fn chunk(partition: i32, ordinal: i32, id: &str, payload: &[u8]) -> RawChunk {
-    RawChunk::new(partition, ordinal, id.into(), payload.to_vec(), StreamLimits::default()).unwrap()
+    RawChunk::new(
+        partition,
+        ordinal,
+        id.into(),
+        payload.to_vec(),
+        StreamLimits::default(),
+    )
+    .unwrap()
 }
 
 fn frame(partition: i32, ordinal: i32, id: &[u8], payload: &[u8]) -> Vec<u8> {
@@ -84,7 +91,9 @@ fn parse_pieces(pieces: &[&[u8]], limits: StreamLimits) -> Result<Vec<RawChunk>,
             bytes = &bytes[consumed..];
             let ready = decoder.drain();
             assert!(consumed != 0 || ready.is_some(), "parser made no progress");
-            if let Some(chunk) = ready { result.push(chunk); }
+            if let Some(chunk) = ready {
+                result.push(chunk);
+            }
         }
     }
     decoder.finish()?;
@@ -101,9 +110,13 @@ fn assert_golden(vector: &Value, result: Result<Vec<RawChunk>, ArrowError>) {
         match expected_error.as_str().unwrap() {
             "LivyStreamError" => assert_eq!(error, ArrowError::ServiceFailure),
             "LivyTruncatedStreamError" => assert_eq!(error, ArrowError::Truncated),
-            "LivyProtocolError" => assert!(matches!(error,
-                ArrowError::Protocol | ArrowError::DuplicateId | ArrowError::OrdinalConflict
-            ), "{error:?}"),
+            "LivyProtocolError" => assert!(
+                matches!(
+                    error,
+                    ArrowError::Protocol | ArrowError::DuplicateId | ArrowError::OrdinalConflict
+                ),
+                "{error:?}"
+            ),
             _ => panic!("unknown source error class"),
         }
     } else {
@@ -111,10 +124,21 @@ fn assert_golden(vector: &Value, result: Result<Vec<RawChunk>, ArrowError>) {
         let expected = vector["expectedChunks"].as_array().unwrap();
         assert_eq!(chunks.len(), expected.len());
         for (actual, expected) in chunks.iter().zip(expected) {
-            assert_eq!(i64::from(actual.partition()), expected["partition"].as_i64().unwrap());
-            assert_eq!(i64::from(actual.ordinal()), expected["ordinal"].as_i64().unwrap());
+            assert_eq!(
+                i64::from(actual.partition()),
+                expected["partition"].as_i64().unwrap()
+            );
+            assert_eq!(
+                i64::from(actual.ordinal()),
+                expected["ordinal"].as_i64().unwrap()
+            );
             assert_eq!(actual.id(), expected["chunkId"].as_str().unwrap());
-            assert_eq!(actual.payload(), STANDARD.decode(expected["payloadBase64"].as_str().unwrap()).unwrap());
+            assert_eq!(
+                actual.payload(),
+                STANDARD
+                    .decode(expected["payloadBase64"].as_str().unwrap())
+                    .unwrap()
+            );
         }
     }
 }
@@ -123,9 +147,14 @@ fn assert_golden(vector: &Value, result: Result<Vec<RawChunk>, ArrowError>) {
 fn all_source_goldens_at_every_fragment_boundary() {
     let catalog: Value = serde_json::from_str(GOLDENS).unwrap();
     for vector in catalog["vectors"].as_array().unwrap() {
-        let bytes = STANDARD.decode(vector["bodyBase64"].as_str().unwrap()).unwrap();
+        let bytes = STANDARD
+            .decode(vector["bodyBase64"].as_str().unwrap())
+            .unwrap();
         for split in 0..=bytes.len() {
-            assert_golden(vector, parse_pieces(&[&bytes[..split], &bytes[split..]], StreamLimits::default()));
+            assert_golden(
+                vector,
+                parse_pieces(&[&bytes[..split], &bytes[split..]], StreamLimits::default()),
+            );
         }
         for width in 1..=bytes.len() {
             let pieces: Vec<_> = bytes.chunks(width).collect();
@@ -138,7 +167,11 @@ fn all_source_goldens_at_every_fragment_boundary() {
 fn every_truncated_prefix_including_missing_terminal_fails() {
     let bytes = terminated(frame(0, 0, b"part-0-0", b"payload"));
     for end in 0..bytes.len() {
-        assert_eq!(parse(&bytes[..end]), Err(ArrowError::Truncated), "prefix {end}");
+        assert_eq!(
+            parse(&bytes[..end]),
+            Err(ArrowError::Truncated),
+            "prefix {end}"
+        );
     }
     assert_eq!(parse(&bytes).unwrap().len(), 1);
 }
@@ -151,7 +184,10 @@ fn terminal_is_eight_bytes_and_requires_eof_without_trailing_data() {
         bytes.extend(trailer);
         assert_eq!(parse(&bytes), Err(ArrowError::TrailingBytes));
     }
-    assert_eq!(parse(&(-1_i64).to_be_bytes()), Err(ArrowError::ServiceFailure));
+    assert_eq!(
+        parse(&(-1_i64).to_be_bytes()),
+        Err(ArrowError::ServiceFailure)
+    );
     for length in [-2_i64, i64::MIN] {
         assert_eq!(parse(&length.to_be_bytes()), Err(ArrowError::Protocol));
     }
@@ -159,11 +195,25 @@ fn terminal_is_eight_bytes_and_requires_eof_without_trailing_data() {
 
 #[test]
 fn invalid_utf8_shape_partition_and_signed_metadata_reject_before_payload() {
-    for id in [&b"part-0-\xff"[..], b"bad", b"part-1-0", b"part--0", b"part-0-", b"part-0-1-extra", b"part-0-0\n"] {
+    for id in [
+        &b"part-0-\xff"[..],
+        b"bad",
+        b"part-1-0",
+        b"part--0",
+        b"part-0-",
+        b"part-0-1-extra",
+        b"part-0-0\n",
+    ] {
         assert_eq!(parse(&frame(0, 0, id, b"x")), Err(ArrowError::Protocol));
     }
-    assert_eq!(parse(&frame(-1, 0, b"part-0-0", b"x")), Err(ArrowError::Protocol));
-    assert_eq!(parse(&frame(0, -1, b"part-0-0", b"x")), Err(ArrowError::Protocol));
+    assert_eq!(
+        parse(&frame(-1, 0, b"part-0-0", b"x")),
+        Err(ArrowError::Protocol)
+    );
+    assert_eq!(
+        parse(&frame(0, -1, b"part-0-0", b"x")),
+        Err(ArrowError::Protocol)
+    );
     for length in [0_i32, -1, 65_537, i32::MAX] {
         let mut bytes = frame(0, 0, b"part-0-0", b"x");
         bytes[16..20].copy_from_slice(&length.to_be_bytes());
@@ -176,7 +226,10 @@ fn variable_width_and_unicode_decimal_ids_do_not_imply_ordinal_contiguity() {
     let mut bytes = frame(2, 9, "part-００２-٧".as_bytes(), b"x");
     bytes.extend(frame(2, 1, b"part-0002-123", b"y"));
     let chunks = parse(&terminated(bytes)).unwrap();
-    assert_eq!(chunks.iter().map(RawChunk::ordinal).collect::<Vec<_>>(), [9, 1]);
+    assert_eq!(
+        chunks.iter().map(RawChunk::ordinal).collect::<Vec<_>>(),
+        [9, 1]
+    );
 }
 
 #[test]
@@ -188,8 +241,16 @@ fn protocol_maximum_id_and_partition_boundaries_are_checked_without_integer_wrap
     let decoded = parse_pieces(&pieces, StreamLimits::default()).unwrap();
     assert_eq!(decoded[0].id().len(), 65_536);
     assert_eq!(decoded[0].ordinal(), i32::MAX);
-    assert_eq!(parse(&terminated(frame(i32::MAX, 0, b"part-2147483647-0", b"x"))).unwrap().len(), 1);
-    assert_eq!(parse(&frame(0, 0, b"part-2147483648-0", b"x")), Err(ArrowError::Protocol));
+    assert_eq!(
+        parse(&terminated(frame(i32::MAX, 0, b"part-2147483647-0", b"x")))
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        parse(&frame(0, 0, b"part-2147483648-0", b"x")),
+        Err(ArrowError::Protocol)
+    );
 }
 
 #[test]
@@ -228,16 +289,37 @@ fn one_pending_frame_applies_backpressure_without_reading_next_frame() {
 fn finite_limits_reject_declared_lengths_before_body_allocation() {
     let bytes = terminated(frame(0, 0, b"part-0-0", b"abc"));
     for limits in [
-        StreamLimits { max_frame_bytes: 2, ..StreamLimits::default() },
-        StreamLimits { max_total_bytes: 2, ..StreamLimits::default() },
-        StreamLimits { max_id_bytes: 7, ..StreamLimits::default() },
-        StreamLimits { max_identity_bytes: 7, ..StreamLimits::default() },
-        StreamLimits { max_wire_bytes: 22, ..StreamLimits::default() },
+        StreamLimits {
+            max_frame_bytes: 2,
+            ..StreamLimits::default()
+        },
+        StreamLimits {
+            max_total_bytes: 2,
+            ..StreamLimits::default()
+        },
+        StreamLimits {
+            max_id_bytes: 7,
+            ..StreamLimits::default()
+        },
+        StreamLimits {
+            max_identity_bytes: 7,
+            ..StreamLimits::default()
+        },
+        StreamLimits {
+            max_wire_bytes: 22,
+            ..StreamLimits::default()
+        },
     ] {
-        assert_eq!(parse_pieces(&[&bytes[..20]], limits), Err(ArrowError::Limit));
+        assert_eq!(
+            parse_pieces(&[&bytes[..20]], limits),
+            Err(ArrowError::Limit)
+        );
     }
     let mut decoder = FramedDecoder::new(StreamLimits::default()).unwrap();
-    assert_eq!(decoder.push(&i64::MAX.to_be_bytes()), Err(ArrowError::Limit));
+    assert_eq!(
+        decoder.push(&i64::MAX.to_be_bytes()),
+        Err(ArrowError::Limit)
+    );
     assert_eq!(decoder.push(b""), Err(ArrowError::Limit));
     assert_eq!(decoder.finish(), Err(ArrowError::Limit));
 }
@@ -249,10 +331,22 @@ fn total_chunk_and_identity_budgets_span_frames_and_accept_exact_bounds() {
     bytes.extend(frame(0, 1, b"part-0-1", b"y"));
     bytes = terminated(bytes);
     for limits in [
-        StreamLimits { max_chunks: 1, ..StreamLimits::default() },
-        StreamLimits { max_total_bytes: 1, ..StreamLimits::default() },
-        StreamLimits { max_identity_bytes: 15, ..StreamLimits::default() },
-        StreamLimits { max_wire_bytes: bytes.len() as u64 - 1, ..StreamLimits::default() },
+        StreamLimits {
+            max_chunks: 1,
+            ..StreamLimits::default()
+        },
+        StreamLimits {
+            max_total_bytes: 1,
+            ..StreamLimits::default()
+        },
+        StreamLimits {
+            max_identity_bytes: 15,
+            ..StreamLimits::default()
+        },
+        StreamLimits {
+            max_wire_bytes: bytes.len() as u64 - 1,
+            ..StreamLimits::default()
+        },
     ] {
         assert_eq!(parse_pieces(&[&bytes], limits), Err(ArrowError::Limit));
     }
@@ -270,13 +364,34 @@ fn total_chunk_and_identity_budgets_span_frames_and_accept_exact_bounds() {
 #[test]
 fn zero_and_protocol_exceeding_limit_options_are_invalid() {
     for limits in [
-        StreamLimits { max_frame_bytes: 0, ..StreamLimits::default() },
-        StreamLimits { max_total_bytes: 0, ..StreamLimits::default() },
-        StreamLimits { max_chunks: 0, ..StreamLimits::default() },
-        StreamLimits { max_id_bytes: 0, ..StreamLimits::default() },
-        StreamLimits { max_id_bytes: 65_537, ..StreamLimits::default() },
-        StreamLimits { max_identity_bytes: 0, ..StreamLimits::default() },
-        StreamLimits { max_wire_bytes: 7, ..StreamLimits::default() },
+        StreamLimits {
+            max_frame_bytes: 0,
+            ..StreamLimits::default()
+        },
+        StreamLimits {
+            max_total_bytes: 0,
+            ..StreamLimits::default()
+        },
+        StreamLimits {
+            max_chunks: 0,
+            ..StreamLimits::default()
+        },
+        StreamLimits {
+            max_id_bytes: 0,
+            ..StreamLimits::default()
+        },
+        StreamLimits {
+            max_id_bytes: 65_537,
+            ..StreamLimits::default()
+        },
+        StreamLimits {
+            max_identity_bytes: 0,
+            ..StreamLimits::default()
+        },
+        StreamLimits {
+            max_wire_bytes: 7,
+            ..StreamLimits::default()
+        },
     ] {
         assert_eq!(limits.validate(), Err(ArrowError::InvalidInput));
     }
@@ -299,13 +414,24 @@ fn raw_inline_makes_no_binary_terminal_or_typed_ipc_assumptions() {
 #[test]
 fn explicitly_labeled_raw_framed_output_round_trips_not_one_ipc_file() {
     let mut framed_v2_not_ipc = Vec::new();
-    write_frame(&mut framed_v2_not_ipc, &chunk(0, 4, "part-0-0", b"first independent IPC")).unwrap();
-    write_frame(&mut framed_v2_not_ipc, &chunk(1, 2, "part-1-0", b"second independent IPC")).unwrap();
+    write_frame(
+        &mut framed_v2_not_ipc,
+        &chunk(0, 4, "part-0-0", b"first independent IPC"),
+    )
+    .unwrap();
+    write_frame(
+        &mut framed_v2_not_ipc,
+        &chunk(1, 2, "part-1-0", b"second independent IPC"),
+    )
+    .unwrap();
     assert_eq!(parse(&framed_v2_not_ipc), Err(ArrowError::Truncated));
     write_terminal(&mut framed_v2_not_ipc).unwrap();
     assert_eq!(parse(&framed_v2_not_ipc).unwrap().len(), 2);
     let mut bounded_output = [0_u8; 1];
-    assert_eq!(write_frame(&mut &mut bounded_output[..], &chunk(0, 0, "part-0-0", b"x")), Err(ArrowError::Output));
+    assert_eq!(
+        write_frame(&mut &mut bounded_output[..], &chunk(0, 0, "part-0-0", b"x")),
+        Err(ArrowError::Output)
+    );
 }
 
 #[test]
@@ -316,8 +442,17 @@ fn in_memory_delivery_suppresses_identical_replay_and_preserves_owner_selectors(
     assert!(state.cursor().is_none());
     let first = chunk(2, 7, "part-2-000", b"a");
     let mut emitted = 0;
-    assert_eq!(state.deliver(&handle, &first, |_| { emitted += 1; Ok(()) }), Ok(Delivery::Delivered));
-    assert_eq!(state.deliver(&handle, &first, |_| panic!("replay reached sink")), Ok(Delivery::Replayed));
+    assert_eq!(
+        state.deliver(&handle, &first, |_| {
+            emitted += 1;
+            Ok(())
+        }),
+        Ok(Delivery::Delivered)
+    );
+    assert_eq!(
+        state.deliver(&handle, &first, |_| panic!("replay reached sink")),
+        Ok(Delivery::Replayed)
+    );
     assert_eq!(emitted, 1);
     assert_eq!(state.delivered_chunks(), 1);
     assert_eq!(state.delivered_bytes(), 1);
@@ -326,23 +461,44 @@ fn in_memory_delivery_suppresses_identical_replay_and_preserves_owner_selectors(
     assert_eq!(cursor.selectors().after_chunk(), Some("part-2-000"));
     assert_eq!(cursor.selectors().parts(), Some("0,2"));
     assert_eq!(cursor.selectors().from_part(), Some(2));
-    assert_eq!(cursor.handle().result_request(cursor.selectors()).unwrap().native().url().path(), "/livy/sessions/3/statements/7/result");
+    assert_eq!(
+        cursor
+            .handle()
+            .result_request(cursor.selectors())
+            .unwrap()
+            .native()
+            .url()
+            .path(),
+        "/livy/sessions/3/statements/7/result"
+    );
 }
 
 #[test]
 fn disconnected_partial_chunk_never_advances_cursor_then_redownload_is_delivered() {
     let handle = handle();
-    let mut state = DeliveryState::new(handle.clone(), ResultSelectors::default(), StreamLimits::default()).unwrap();
+    let mut state = DeliveryState::new(
+        handle.clone(),
+        ResultSelectors::default(),
+        StreamLimits::default(),
+    )
+    .unwrap();
     let bytes = frame(0, 0, b"part-0-0", b"abcdef");
     let mut response = FramedDecoder::new(StreamLimits::default()).unwrap();
-    response.push(&bytes[..bytes.len()-1]).unwrap();
+    response.push(&bytes[..bytes.len() - 1]).unwrap();
     assert!(response.drain().is_none());
     assert_eq!(response.finish(), Err(ArrowError::Truncated));
     assert!(state.cursor().is_none());
     for next_response in 0..2 {
         for chunk in parse(&terminated(bytes.clone())).unwrap() {
             let delivery = state.deliver(&handle, &chunk, |_| Ok(())).unwrap();
-            assert_eq!(delivery, if next_response == 0 { Delivery::Delivered } else { Delivery::Replayed });
+            assert_eq!(
+                delivery,
+                if next_response == 0 {
+                    Delivery::Delivered
+                } else {
+                    Delivery::Replayed
+                }
+            );
         }
     }
 }
@@ -355,31 +511,76 @@ fn changed_replay_payload_partition_or_ordinal_and_new_id_position_conflict_fail
         chunk(0, 8, "part-0-0", b"same length"),
     ] {
         let handle = handle();
-        let mut state = DeliveryState::new(handle.clone(), ResultSelectors::default(), StreamLimits::default()).unwrap();
+        let mut state = DeliveryState::new(
+            handle.clone(),
+            ResultSelectors::default(),
+            StreamLimits::default(),
+        )
+        .unwrap();
         state.deliver(&handle, &first, |_| Ok(())).unwrap();
-        assert_eq!(state.deliver(&handle, &conflict, |_| panic!("conflict delivered")), Err(ArrowError::ReplayConflict));
-        assert_eq!(state.deliver(&handle, &first, |_| Ok(())), Err(ArrowError::InvalidState));
+        assert_eq!(
+            state.deliver(&handle, &conflict, |_| panic!("conflict delivered")),
+            Err(ArrowError::ReplayConflict)
+        );
+        assert_eq!(
+            state.deliver(&handle, &first, |_| Ok(())),
+            Err(ArrowError::InvalidState)
+        );
     }
     // A changed partition with the same ID cannot even form a valid RawChunk.
-    assert_eq!(RawChunk::new(1, 7, "part-0-0".into(), b"x".to_vec(), StreamLimits::default()), Err(ArrowError::Protocol));
+    assert_eq!(
+        RawChunk::new(
+            1,
+            7,
+            "part-0-0".into(),
+            b"x".to_vec(),
+            StreamLimits::default()
+        ),
+        Err(ArrowError::Protocol)
+    );
     let handle = handle();
-    let mut state = DeliveryState::new(handle.clone(), ResultSelectors::default(), StreamLimits::default()).unwrap();
+    let mut state = DeliveryState::new(
+        handle.clone(),
+        ResultSelectors::default(),
+        StreamLimits::default(),
+    )
+    .unwrap();
     state.deliver(&handle, &first, |_| Ok(())).unwrap();
-    assert_eq!(state.deliver(&handle, &chunk(0, 7, "part-0-1", b"x"), |_| Ok(())), Err(ArrowError::OrdinalConflict));
+    assert_eq!(
+        state.deliver(&handle, &chunk(0, 7, "part-0-1", b"x"), |_| Ok(())),
+        Err(ArrowError::OrdinalConflict)
+    );
 }
 
 #[test]
 fn owner_mismatch_and_sink_failure_do_not_advance_cursor_or_claim_durability() {
     let handle = handle();
-    let mut state = DeliveryState::new(handle.clone(), ResultSelectors::default(), StreamLimits::default()).unwrap();
+    let mut state = DeliveryState::new(
+        handle.clone(),
+        ResultSelectors::default(),
+        StreamLimits::default(),
+    )
+    .unwrap();
     let first = chunk(0, 0, "part-0-0", b"x");
     let other_owner = StatementOwner::session(endpoint("https://other.test/"), "3", None).unwrap();
-    assert_eq!(state.deliver(&StatementHandle::new(other_owner, 7), &first, |_| Ok(())), Err(ArrowError::OwnerMismatch));
-    assert_eq!(state.deliver(&StatementHandle::new(owner(), 8), &first, |_| Ok(())), Err(ArrowError::OwnerMismatch));
+    assert_eq!(
+        state.deliver(&StatementHandle::new(other_owner, 7), &first, |_| Ok(())),
+        Err(ArrowError::OwnerMismatch)
+    );
+    assert_eq!(
+        state.deliver(&StatementHandle::new(owner(), 8), &first, |_| Ok(())),
+        Err(ArrowError::OwnerMismatch)
+    );
     assert!(state.cursor().is_none());
-    assert_eq!(state.deliver(&handle, &first, |_| Err(ArrowError::Output)), Err(ArrowError::SinkFailed));
+    assert_eq!(
+        state.deliver(&handle, &first, |_| Err(ArrowError::Output)),
+        Err(ArrowError::SinkFailed)
+    );
     assert!(state.cursor().is_none());
-    assert_eq!(state.deliver(&handle, &first, |_| Ok(())), Err(ArrowError::InvalidState));
+    assert_eq!(
+        state.deliver(&handle, &first, |_| Ok(())),
+        Err(ArrowError::InvalidState)
+    );
 }
 
 #[test]
@@ -387,14 +588,30 @@ fn logical_unique_budgets_span_responses_but_replays_do_not_consume_them() {
     let handle = handle();
     let first = chunk(0, 4, "part-0-0", b"x");
     for limits in [
-        StreamLimits { max_chunks: 1, ..StreamLimits::default() },
-        StreamLimits { max_total_bytes: 1, ..StreamLimits::default() },
-        StreamLimits { max_identity_bytes: 8, ..StreamLimits::default() },
+        StreamLimits {
+            max_chunks: 1,
+            ..StreamLimits::default()
+        },
+        StreamLimits {
+            max_total_bytes: 1,
+            ..StreamLimits::default()
+        },
+        StreamLimits {
+            max_identity_bytes: 8,
+            ..StreamLimits::default()
+        },
     ] {
-        let mut state = DeliveryState::new(handle.clone(), ResultSelectors::default(), limits).unwrap();
+        let mut state =
+            DeliveryState::new(handle.clone(), ResultSelectors::default(), limits).unwrap();
         state.deliver(&handle, &first, |_| Ok(())).unwrap();
-        assert_eq!(state.deliver(&handle, &first, |_| Ok(())), Ok(Delivery::Replayed));
-        assert_eq!(state.deliver(&handle, &chunk(1, 0, "part-1-0", b"x"), |_| Ok(())), Err(ArrowError::Limit));
+        assert_eq!(
+            state.deliver(&handle, &first, |_| Ok(())),
+            Ok(Delivery::Replayed)
+        );
+        assert_eq!(
+            state.deliver(&handle, &chunk(1, 0, "part-1-0", b"x"), |_| Ok(())),
+            Err(ArrowError::Limit)
+        );
     }
 }
 
@@ -403,31 +620,87 @@ fn cross_process_resume_is_not_inferred_from_an_external_cursor() {
     let handle = handle();
     let first = chunk(0, 0, "part-0-0", b"x");
     let external = ResultSelectors::new(Some(first.id().into()), None, Some(0)).unwrap();
-    let mut new_iteration = DeliveryState::new(handle.clone(), external, StreamLimits::default()).unwrap();
+    let mut new_iteration =
+        DeliveryState::new(handle.clone(), external, StreamLimits::default()).unwrap();
     // No serialized identity history exists: this is new delivery, not deduped
     // output from a previous process or a transactional-sink acknowledgment.
-    assert_eq!(new_iteration.deliver(&handle, &first, |_| Ok(())), Ok(Delivery::Delivered));
+    assert_eq!(
+        new_iteration.deliver(&handle, &first, |_| Ok(())),
+        Ok(Delivery::Delivered)
+    );
 }
 
 #[test]
 fn retry_plan_is_finite_and_404_protocol_failure_and_all_posts_are_nonretryable() {
     let now = Instant::now();
-    let get = handle().result_request(&ResultSelectors::default()).unwrap();
-    for failure in [Failure::Transport, Failure::Truncated, Failure::Http(408), Failure::Http(429), Failure::Http(500), Failure::Http(502), Failure::Http(503), Failure::Http(504)] {
+    let get = handle()
+        .result_request(&ResultSelectors::default())
+        .unwrap();
+    for failure in [
+        Failure::Transport,
+        Failure::Truncated,
+        Failure::Http(408),
+        Failure::Http(429),
+        Failure::Http(500),
+        Failure::Http(502),
+        Failure::Http(503),
+        Failure::Http(504),
+    ] {
         let mut policy = RetryPolicy::new(now, Duration::from_secs(60), 1).unwrap();
-        assert_eq!(policy.on_failure(now, failure, &get), RetryDecision::Reconnect { attempt: 1 });
-        assert_eq!(policy.on_failure(now, failure, &get), RetryDecision::Stop(StopReason::Exhausted));
-        assert_eq!(policy.on_failure(now, failure, &get), RetryDecision::Stop(StopReason::AlreadyStopped));
+        assert_eq!(
+            policy.on_failure(now, failure, &get),
+            RetryDecision::Reconnect { attempt: 1 }
+        );
+        assert_eq!(
+            policy.on_failure(now, failure, &get),
+            RetryDecision::Stop(StopReason::Exhausted)
+        );
+        assert_eq!(
+            policy.on_failure(now, failure, &get),
+            RetryDecision::Stop(StopReason::AlreadyStopped)
+        );
     }
-    for failure in [Failure::Http(400), Failure::Http(401), Failure::Http(403), Failure::Http(404), Failure::Http(501), Failure::Protocol, Failure::ServiceFailure, Failure::Decode, Failure::Cancelled, Failure::TimedOut, Failure::OutcomeUnknown, Failure::Sink] {
+    for failure in [
+        Failure::Http(400),
+        Failure::Http(401),
+        Failure::Http(403),
+        Failure::Http(404),
+        Failure::Http(501),
+        Failure::Protocol,
+        Failure::ServiceFailure,
+        Failure::Decode,
+        Failure::Cancelled,
+        Failure::TimedOut,
+        Failure::OutcomeUnknown,
+        Failure::Sink,
+    ] {
         let mut policy = RetryPolicy::new(now, Duration::from_secs(60), 2).unwrap();
-        assert_eq!(policy.on_failure(now, failure, &get), RetryDecision::Stop(StopReason::Permanent(failure)));
+        assert_eq!(
+            policy.on_failure(now, failure, &get),
+            RetryDecision::Stop(StopReason::Permanent(failure))
+        );
     }
-    for mode in [SubmitMode::Handle { sync_wait_ms: None }, SubmitMode::Inline { sync_wait_ms: 1, allow_json_fallback: true }] {
-        let post = SubmitOptions { code: "select 1", kind: "sql", codec: "none", mode }.request(&owner(), RESOURCE_ID, 100).unwrap();
+    for mode in [
+        SubmitMode::Handle { sync_wait_ms: None },
+        SubmitMode::Inline {
+            sync_wait_ms: 1,
+            allow_json_fallback: true,
+        },
+    ] {
+        let post = SubmitOptions {
+            code: "select 1",
+            kind: "sql",
+            codec: "none",
+            mode,
+        }
+        .request(&owner(), RESOURCE_ID, 100)
+        .unwrap();
         for failure in [Failure::Transport, Failure::Http(503), Failure::Truncated] {
             let mut policy = RetryPolicy::new(now, Duration::from_secs(60), 10).unwrap();
-            assert_eq!(policy.on_failure(now, failure, &post), RetryDecision::Stop(StopReason::Mutation));
+            assert_eq!(
+                policy.on_failure(now, failure, &post),
+                RetryDecision::Stop(StopReason::Mutation)
+            );
         }
     }
 }
@@ -435,70 +708,195 @@ fn retry_plan_is_finite_and_404_protocol_failure_and_all_posts_are_nonretryable(
 #[test]
 fn absolute_deadline_survives_reconnects_and_caller_pauses() {
     let now = Instant::now();
-    let get = handle().result_request(&ResultSelectors::default()).unwrap();
+    let get = handle()
+        .result_request(&ResultSelectors::default())
+        .unwrap();
     let mut policy = RetryPolicy::new(now, Duration::from_secs(10), 2).unwrap();
-    assert_eq!(policy.on_failure(now + Duration::from_secs(2), Failure::Truncated, &get), RetryDecision::Reconnect { attempt: 1 });
-    assert_eq!(policy.remaining(now + Duration::from_secs(9)), Ok(Duration::from_secs(1)));
-    assert_eq!(policy.remaining(now + Duration::from_secs(10)), Err(ArrowError::TimedOut));
-    assert_eq!(policy.on_failure(now + Duration::from_secs(11), Failure::Transport, &get), RetryDecision::Stop(StopReason::Deadline));
+    assert_eq!(
+        policy.on_failure(now + Duration::from_secs(2), Failure::Truncated, &get),
+        RetryDecision::Reconnect { attempt: 1 }
+    );
+    assert_eq!(
+        policy.remaining(now + Duration::from_secs(9)),
+        Ok(Duration::from_secs(1))
+    );
+    assert_eq!(
+        policy.remaining(now + Duration::from_secs(10)),
+        Err(ArrowError::TimedOut)
+    );
+    assert_eq!(
+        policy.on_failure(now + Duration::from_secs(11), Failure::Transport, &get),
+        RetryDecision::Stop(StopReason::Deadline)
+    );
     let mut no_retries = RetryPolicy::new(now, Duration::from_secs(10), 0).unwrap();
-    assert_eq!(no_retries.on_failure(now, Failure::Transport, &get), RetryDecision::Stop(StopReason::Exhausted));
+    assert_eq!(
+        no_retries.on_failure(now, Failure::Transport, &get),
+        RetryDecision::Stop(StopReason::Exhausted)
+    );
 }
 
 #[test]
 fn codec_error_classification_never_retries_protocol_limit_schema_or_sink_failures() {
     assert_eq!(Failure::from(ArrowError::Truncated), Failure::Truncated);
     assert_eq!(Failure::from(ArrowError::Http(404)), Failure::Http(404));
-    assert_eq!(Failure::from(ArrowError::ServiceFailure), Failure::ServiceFailure);
+    assert_eq!(
+        Failure::from(ArrowError::ServiceFailure),
+        Failure::ServiceFailure
+    );
     assert_eq!(Failure::from(ArrowError::SchemaConflict), Failure::Decode);
     assert_eq!(Failure::from(ArrowError::SinkFailed), Failure::Sink);
     let now = Instant::now();
-    let get = handle().result_request(&ResultSelectors::default()).unwrap();
+    let get = handle()
+        .result_request(&ResultSelectors::default())
+        .unwrap();
     for error in [
-        ArrowError::Limit, ArrowError::Allocation, ArrowError::Protocol,
-        ArrowError::TrailingBytes, ArrowError::DuplicateId, ArrowError::OrdinalConflict,
-        ArrowError::ReplayConflict, ArrowError::OwnerMismatch, ArrowError::InvalidState,
-        ArrowError::SchemaConflict, ArrowError::UnsupportedCapability,
-        ArrowError::OutcomeUnknown, ArrowError::Output,
+        ArrowError::Limit,
+        ArrowError::Allocation,
+        ArrowError::Protocol,
+        ArrowError::TrailingBytes,
+        ArrowError::DuplicateId,
+        ArrowError::OrdinalConflict,
+        ArrowError::ReplayConflict,
+        ArrowError::OwnerMismatch,
+        ArrowError::InvalidState,
+        ArrowError::SchemaConflict,
+        ArrowError::UnsupportedCapability,
+        ArrowError::OutcomeUnknown,
+        ArrowError::Output,
     ] {
         let mut policy = RetryPolicy::new(now, Duration::from_secs(60), 2).unwrap();
-        assert!(matches!(policy.on_failure(now, error.into(), &get), RetryDecision::Stop(_)));
+        assert!(matches!(
+            policy.on_failure(now, error.into(), &get),
+            RetryDecision::Stop(_)
+        ));
     }
 }
 
 fn headers<'a>(content_type: Option<&'a str>) -> ResponseHeaders<'a> {
-    ResponseHeaders { status: 200, content_type, content_encoding: None, content_length: None }
+    ResponseHeaders {
+        status: 200,
+        content_type,
+        content_encoding: None,
+        content_length: None,
+    }
 }
 
 #[test]
 fn media_version_duplicate_parameters_compression_and_status_validation() {
-    for content_type in [None, Some(ARROW_CHUNKS_MEDIA_TYPE), Some("application/vnd.livy.arrow-chunks;v=1"), Some("application/vnd.livy.arrow-chunks;v=2;V=2"), Some("application/vnd.livy.arrow-chunks;v=2;bad"), Some("application/vnd.livy.arrow-chunks;v=\"2"), Some("application/vnd.livy.arrow-chunks;v=2\n"), Some(ARROW_STREAM_MEDIA_TYPE), Some("application/vnd.livy.arrow-page;v=1")] {
-        assert_eq!(validate_response_headers(headers(content_type), ResponseRepresentation::FramedV2, false, 100), Err(ArrowError::Protocol));
+    for content_type in [
+        None,
+        Some(ARROW_CHUNKS_MEDIA_TYPE),
+        Some("application/vnd.livy.arrow-chunks;v=1"),
+        Some("application/vnd.livy.arrow-chunks;v=2;V=2"),
+        Some("application/vnd.livy.arrow-chunks;v=2;bad"),
+        Some("application/vnd.livy.arrow-chunks;v=\"2"),
+        Some("application/vnd.livy.arrow-chunks;v=2\n"),
+        Some(ARROW_STREAM_MEDIA_TYPE),
+        Some("application/vnd.livy.arrow-page;v=1"),
+    ] {
+        assert_eq!(
+            validate_response_headers(
+                headers(content_type),
+                ResponseRepresentation::FramedV2,
+                false,
+                100
+            ),
+            Err(ArrowError::Protocol)
+        );
     }
-    for content_type in ["application/vnd.livy.arrow-chunks;v=2", "Application/Vnd.Livy.Arrow-Chunks ; V=\"2\""] {
-        assert_eq!(validate_response_headers(headers(Some(content_type)), ResponseRepresentation::FramedV2, false, 100), Ok(ResponseRepresentation::FramedV2));
+    for content_type in [
+        "application/vnd.livy.arrow-chunks;v=2",
+        "Application/Vnd.Livy.Arrow-Chunks ; V=\"2\"",
+    ] {
+        assert_eq!(
+            validate_response_headers(
+                headers(Some(content_type)),
+                ResponseRepresentation::FramedV2,
+                false,
+                100
+            ),
+            Ok(ResponseRepresentation::FramedV2)
+        );
     }
-    assert_eq!(validate_response_headers(ResponseHeaders { status: 404, ..headers(None) }, ResponseRepresentation::FramedV2, false, 100), Err(ArrowError::Http(404)));
+    assert_eq!(
+        validate_response_headers(
+            ResponseHeaders {
+                status: 404,
+                ..headers(None)
+            },
+            ResponseRepresentation::FramedV2,
+            false,
+            100
+        ),
+        Err(ArrowError::Http(404))
+    );
     for encoding in ["gzip", "br", "identity,gzip"] {
-        assert_eq!(validate_response_headers(ResponseHeaders { content_encoding: Some(encoding), ..headers(Some(ARROW_STREAM_MEDIA_TYPE)) }, ResponseRepresentation::InlineIpc, false, 100), Err(ArrowError::Protocol));
+        assert_eq!(
+            validate_response_headers(
+                ResponseHeaders {
+                    content_encoding: Some(encoding),
+                    ..headers(Some(ARROW_STREAM_MEDIA_TYPE))
+                },
+                ResponseRepresentation::InlineIpc,
+                false,
+                100
+            ),
+            Err(ArrowError::Protocol)
+        );
     }
     for length in ["-1", "abc", "+1", "1.0", ""] {
-        assert_eq!(validate_response_headers(ResponseHeaders { content_length: Some(length), ..headers(Some(ARROW_STREAM_MEDIA_TYPE)) }, ResponseRepresentation::InlineIpc, false, 100), Err(ArrowError::Protocol));
+        assert_eq!(
+            validate_response_headers(
+                ResponseHeaders {
+                    content_length: Some(length),
+                    ..headers(Some(ARROW_STREAM_MEDIA_TYPE))
+                },
+                ResponseRepresentation::InlineIpc,
+                false,
+                100
+            ),
+            Err(ArrowError::Protocol)
+        );
     }
-    assert_eq!(validate_response_headers(ResponseHeaders { content_length: Some("101"), ..headers(Some(ARROW_STREAM_MEDIA_TYPE)) }, ResponseRepresentation::InlineIpc, false, 100), Err(ArrowError::Limit));
+    assert_eq!(
+        validate_response_headers(
+            ResponseHeaders {
+                content_length: Some("101"),
+                ..headers(Some(ARROW_STREAM_MEDIA_TYPE))
+            },
+            ResponseRepresentation::InlineIpc,
+            false,
+            100
+        ),
+        Err(ArrowError::Limit)
+    );
 }
 
 #[test]
 fn exact_owner_scoped_routes_and_selector_queries_preserve_execution_identity() {
-    let fabric_base = "https://example.test/v1/workspaces/w/lakehouses/l/livyApi/versions/2024-04-01";
+    let fabric_base =
+        "https://example.test/v1/workspaces/w/lakehouses/l/livyApi/versions/2024-04-01";
     for (owner, expected) in [
         (owner(), "/livy/sessions/3/statements/7/result"),
-        (StatementOwner::session(endpoint("https://example.test"), "s", Some("r")).unwrap(), "/sessions/s/repls/r/statements/7/result"),
-        (StatementOwner::session(endpoint(fabric_base), "s", None).unwrap(), "/v1/workspaces/w/lakehouses/l/livyApi/versions/2024-04-01/sessions/s/statements/7/result"),
-        (StatementOwner::high_concurrency(endpoint(fabric_base), "execution", "owned-repl").unwrap(), "/v1/workspaces/w/lakehouses/l/livyApi/versions/2024-04-01/highConcurrencySessions/execution/repls/owned-repl/statements/7/result"),
+        (
+            StatementOwner::session(endpoint("https://example.test"), "s", Some("r")).unwrap(),
+            "/sessions/s/repls/r/statements/7/result",
+        ),
+        (
+            StatementOwner::session(endpoint(fabric_base), "s", None).unwrap(),
+            "/v1/workspaces/w/lakehouses/l/livyApi/versions/2024-04-01/sessions/s/statements/7/result",
+        ),
+        (
+            StatementOwner::high_concurrency(endpoint(fabric_base), "execution", "owned-repl")
+                .unwrap(),
+            "/v1/workspaces/w/lakehouses/l/livyApi/versions/2024-04-01/highConcurrencySessions/execution/repls/owned-repl/statements/7/result",
+        ),
     ] {
-        let selectors = ResultSelectors::new(Some("part-2-9".into()), Some("2,3".into()), Some(2)).unwrap();
-        let request = StatementHandle::new(owner.clone(), 7).result_request(&selectors).unwrap();
+        let selectors =
+            ResultSelectors::new(Some("part-2-9".into()), Some("2,3".into()), Some(2)).unwrap();
+        let request = StatementHandle::new(owner.clone(), 7)
+            .result_request(&selectors)
+            .unwrap();
         assert_eq!(request.native().method(), NativeMethod::Get);
         assert_eq!(request.native().effect(), NativeEffect::Read);
         assert_eq!(request.native().url().path(), expected);
@@ -506,15 +904,36 @@ fn exact_owner_scoped_routes_and_selector_queries_preserve_execution_identity() 
         assert!(request.native().body().is_none());
         assert!(request.native().bytes().is_none());
         assert!(request.native().headers().is_empty());
-        assert_eq!(request.headers().collect::<Vec<_>>(), [("accept", ARROW_CHUNKS_MEDIA_TYPE)]);
-        let query: Vec<_> = request.native().url().query_pairs().map(|(key, value)| (key.into_owned(), value.into_owned())).collect();
-        assert_eq!(query, [
-            ("after_chunk".to_string(), "part-2-9".to_string()),
-            ("parts".to_string(), "2,3".to_string()),
-            ("from_part".to_string(), "2".to_string()),
-        ]);
-        let post = SubmitOptions { code: "select 1", kind: "sql", codec: "zstd", mode: SubmitMode::Handle { sync_wait_ms: None } }.request(&owner, RESOURCE_ID, 100).unwrap();
-        assert_eq!(post.native().url().path(), expected.strip_suffix("/7/result").unwrap());
+        assert_eq!(
+            request.headers().collect::<Vec<_>>(),
+            [("accept", ARROW_CHUNKS_MEDIA_TYPE)]
+        );
+        let query: Vec<_> = request
+            .native()
+            .url()
+            .query_pairs()
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect();
+        assert_eq!(
+            query,
+            [
+                ("after_chunk".to_string(), "part-2-9".to_string()),
+                ("parts".to_string(), "2,3".to_string()),
+                ("from_part".to_string(), "2".to_string()),
+            ]
+        );
+        let post = SubmitOptions {
+            code: "select 1",
+            kind: "sql",
+            codec: "zstd",
+            mode: SubmitMode::Handle { sync_wait_ms: None },
+        }
+        .request(&owner, RESOURCE_ID, 100)
+        .unwrap();
+        assert_eq!(
+            post.native().url().path(),
+            expected.strip_suffix("/7/result").unwrap()
+        );
     }
 }
 
@@ -522,54 +941,153 @@ fn exact_owner_scoped_routes_and_selector_queries_preserve_execution_identity() 
 fn route_injection_and_invalid_selectors_fail_before_any_dispatch() {
     for id in ["", "..", "a/b", "a\\b", "a%2fb", "a?b", "a#b", "x\n"] {
         assert!(StatementOwner::session(endpoint("https://example.test"), id, None).is_err());
-        assert!(StatementOwner::high_concurrency(endpoint("https://example.test"), "s", id).is_err());
+        assert!(
+            StatementOwner::high_concurrency(endpoint("https://example.test"), "s", id).is_err()
+        );
     }
     assert!(ResultSelectors::new(None, None, Some(-1)).is_err());
     assert!(ResultSelectors::new(Some("part-1-0".into()), None, Some(0)).is_err());
     assert!(ResultSelectors::new(None, Some("x\n".into()), None).is_err());
     assert!(ResultSelectors::new(None, Some("x".repeat(65_537)), None).is_err());
-    let selectors = ResultSelectors::new(None, Some("provider-specific-expression".into()), None).unwrap();
+    let selectors =
+        ResultSelectors::new(None, Some("provider-specific-expression".into()), None).unwrap();
     assert_eq!(selectors.parts(), Some("provider-specific-expression"));
 }
 
 #[test]
 fn submission_body_required_headers_wait_boundaries_and_inline_accept_are_exact() {
     for wait in [None, Some(0), Some(1), Some(10_000)] {
-        let request = SubmitOptions { code: "select 1", kind: "sql", codec: "none", mode: SubmitMode::Handle { sync_wait_ms: wait } }.request(&owner(), RESOURCE_ID, 100).unwrap();
+        let request = SubmitOptions {
+            code: "select 1",
+            kind: "sql",
+            codec: "none",
+            mode: SubmitMode::Handle { sync_wait_ms: wait },
+        }
+        .request(&owner(), RESOURCE_ID, 100)
+        .unwrap();
         assert_eq!(request.native().method(), NativeMethod::Post);
         assert_eq!(request.native().effect(), NativeEffect::Execute);
         assert_eq!(request.native().accept(), "application/json");
         assert_eq!(request.native().content_type(), "application/json");
         assert!(request.native().bytes().is_none());
-        assert_eq!(request.native().headers().get("x-ms-livy-resource-id").map(String::as_str), Some(RESOURCE_ID));
+        assert_eq!(
+            request
+                .native()
+                .headers()
+                .get("x-ms-livy-resource-id")
+                .map(String::as_str),
+            Some(RESOURCE_ID)
+        );
         assert_eq!(request.native().headers().len(), 1);
-        assert_eq!(request.native().body(), Some(&json!({"code":"select 1","kind":"sql","format":"arrow","codec":"none"})));
-        assert_eq!(request.native().url().query(), wait.map(|wait| format!("sync_wait_ms={wait}")).as_deref());
-        assert_eq!(request.headers().collect::<Vec<_>>(), [("accept", "application/json"), ("content-type", "application/json"), ("x-ms-livy-resource-id", RESOURCE_ID)]);
+        assert_eq!(
+            request.native().body(),
+            Some(&json!({"code":"select 1","kind":"sql","format":"arrow","codec":"none"}))
+        );
+        assert_eq!(
+            request.native().url().query(),
+            wait.map(|wait| format!("sync_wait_ms={wait}")).as_deref()
+        );
+        assert_eq!(
+            request.headers().collect::<Vec<_>>(),
+            [
+                ("accept", "application/json"),
+                ("content-type", "application/json"),
+                ("x-ms-livy-resource-id", RESOURCE_ID)
+            ]
+        );
     }
-    for (fallback, accept) in [(false, ARROW_STREAM_MEDIA_TYPE), (true, "application/vnd.apache.arrow.stream, application/json;q=0.9")] {
+    for (fallback, accept) in [
+        (false, ARROW_STREAM_MEDIA_TYPE),
+        (
+            true,
+            "application/vnd.apache.arrow.stream, application/json;q=0.9",
+        ),
+    ] {
         for wait in [1, 10_000] {
-            let request = SubmitOptions { code: "select 1", kind: "sql", codec: "none", mode: SubmitMode::Inline { sync_wait_ms: wait, allow_json_fallback: fallback } }.request(&owner(), RESOURCE_ID, 100).unwrap();
+            let request = SubmitOptions {
+                code: "select 1",
+                kind: "sql",
+                codec: "none",
+                mode: SubmitMode::Inline {
+                    sync_wait_ms: wait,
+                    allow_json_fallback: fallback,
+                },
+            }
+            .request(&owner(), RESOURCE_ID, 100)
+            .unwrap();
             assert_eq!(request.native().accept(), accept);
             assert_eq!(request.native().content_type(), "application/json");
-            assert_eq!(request.native().headers().get("x-ms-livy-resource-id").map(String::as_str), Some(RESOURCE_ID));
-            assert_eq!(request.validate_response(headers(Some("application/json")), 100).is_ok(), fallback);
+            assert_eq!(
+                request
+                    .native()
+                    .headers()
+                    .get("x-ms-livy-resource-id")
+                    .map(String::as_str),
+                Some(RESOURCE_ID)
+            );
+            assert_eq!(
+                request
+                    .validate_response(headers(Some("application/json")), 100)
+                    .is_ok(),
+                fallback
+            );
             assert_eq!(request.inline_fallback(100).is_ok(), fallback);
-            assert_eq!(request.validate_response(headers(Some(ARROW_STREAM_MEDIA_TYPE)), 100), Ok(ResponseRepresentation::InlineIpc));
+            assert_eq!(
+                request.validate_response(headers(Some(ARROW_STREAM_MEDIA_TYPE)), 100),
+                Ok(ResponseRepresentation::InlineIpc)
+            );
         }
     }
-    for mode in [SubmitMode::Handle { sync_wait_ms: Some(10_001) }, SubmitMode::Inline { sync_wait_ms: 0, allow_json_fallback: true }, SubmitMode::Inline { sync_wait_ms: 10_001, allow_json_fallback: false }] {
-        assert!(SubmitOptions { code: "x", kind: "sql", codec: "none", mode }.request(&owner(), RESOURCE_ID, 100).is_err());
+    for mode in [
+        SubmitMode::Handle {
+            sync_wait_ms: Some(10_001),
+        },
+        SubmitMode::Inline {
+            sync_wait_ms: 0,
+            allow_json_fallback: true,
+        },
+        SubmitMode::Inline {
+            sync_wait_ms: 10_001,
+            allow_json_fallback: false,
+        },
+    ] {
+        assert!(
+            SubmitOptions {
+                code: "x",
+                kind: "sql",
+                codec: "none",
+                mode
+            }
+            .request(&owner(), RESOURCE_ID, 100)
+            .is_err()
+        );
     }
-    let options = SubmitOptions { code: "long", kind: "sql", codec: "none", mode: SubmitMode::Handle { sync_wait_ms: None } };
+    let options = SubmitOptions {
+        code: "long",
+        kind: "sql",
+        codec: "none",
+        mode: SubmitMode::Handle { sync_wait_ms: None },
+    };
     assert!(options.request(&owner(), "not-a-uuid", 100).is_err());
     assert!(options.request(&owner(), RESOURCE_ID, 2).is_err());
 }
 
 #[test]
 fn bounded_opt_in_inline_fallback_preserves_hc_owner_and_matches_only_statement_ids() {
-    let owner = StatementOwner::high_concurrency(endpoint("https://example.test"), "execution", "repl").unwrap();
-    let request = SubmitOptions { code: "select 1", kind: "sql", codec: "none", mode: SubmitMode::Inline { sync_wait_ms: 1, allow_json_fallback: true } }.request(&owner, RESOURCE_ID, 100).unwrap();
+    let owner =
+        StatementOwner::high_concurrency(endpoint("https://example.test"), "execution", "repl")
+            .unwrap();
+    let request = SubmitOptions {
+        code: "select 1",
+        kind: "sql",
+        codec: "none",
+        mode: SubmitMode::Inline {
+            sync_wait_ms: 1,
+            allow_json_fallback: true,
+        },
+    }
+    .request(&owner, RESOURCE_ID, 100)
+    .unwrap();
     for (body, header, expected) in [
         (r#"{"id":7}"#, None, Some(7)),
         (r#"{"id":7}"#, Some("007"), Some(7)),
@@ -590,12 +1108,22 @@ fn bounded_opt_in_inline_fallback_preserves_hc_owner_and_matches_only_statement_
         ("not json", Some("7"), None),
     ] {
         let mut fallback = request.inline_fallback(100).unwrap();
-        for byte in body.as_bytes() { fallback.push(&[*byte]).unwrap(); }
+        for byte in body.as_bytes() {
+            fallback.push(&[*byte]).unwrap();
+        }
         match expected {
             Some(id) => {
                 let handle = fallback.finish(header).unwrap();
                 assert_eq!(handle, StatementHandle::new(owner.clone(), id));
-                assert!(handle.result_request(&ResultSelectors::default()).unwrap().native().url().path().contains("/highConcurrencySessions/execution/repls/repl/"));
+                assert!(
+                    handle
+                        .result_request(&ResultSelectors::default())
+                        .unwrap()
+                        .native()
+                        .url()
+                        .path()
+                        .contains("/highConcurrencySessions/execution/repls/repl/")
+                );
             }
             None => assert_eq!(fallback.finish(header), Err(ArrowError::OutcomeUnknown)),
         }
@@ -613,7 +1141,11 @@ impl TypedDecoder for SchemaProbe {
     type Batch = u8;
     type Schema = Vec<u8>;
 
-    fn inspect_schema(&mut self, chunk: &RawChunk, _limits: DecodeLimits) -> Result<Vec<u8>, ArrowError> {
+    fn inspect_schema(
+        &mut self,
+        chunk: &RawChunk,
+        _limits: DecodeLimits,
+    ) -> Result<Vec<u8>, ArrowError> {
         Ok(chunk.payload().to_vec())
     }
 
@@ -629,19 +1161,47 @@ impl TypedDecoder for SchemaProbe {
 
 #[test]
 fn external_decoder_seam_checks_schema_before_delivery_and_default_is_unsupported() {
-    let limits = DecodeLimits { max_message_bytes: 100, max_decoded_bytes: 100 };
+    let limits = DecodeLimits {
+        max_message_bytes: 100,
+        max_decoded_bytes: 100,
+    };
     let first = chunk(0, 0, "part-0-0", b"schema including metadata");
     let changed = chunk(1, 0, "part-1-0", b"changed metadata");
     let mut typed = TypedStream::new(SchemaProbe, limits).unwrap();
     let mut emitted = 0;
-    typed.decode(&first, &mut |_| { emitted += 1; Ok(()) }).unwrap();
-    typed.decode(&first, &mut |_| { emitted += 1; Ok(()) }).unwrap();
-    assert_eq!(typed.decode(&changed, &mut |_| panic!("schema conflict emitted")), Err(ArrowError::SchemaConflict));
+    typed
+        .decode(&first, &mut |_| {
+            emitted += 1;
+            Ok(())
+        })
+        .unwrap();
+    typed
+        .decode(&first, &mut |_| {
+            emitted += 1;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(
+        typed.decode(&changed, &mut |_| panic!("schema conflict emitted")),
+        Err(ArrowError::SchemaConflict)
+    );
     assert_eq!(emitted, 2);
-    assert_eq!(typed.decode(&first, &mut |_| Ok(())), Err(ArrowError::InvalidState));
+    assert_eq!(
+        typed.decode(&first, &mut |_| Ok(())),
+        Err(ArrowError::InvalidState)
+    );
     let mut unsupported = TypedStream::new(UnsupportedDecoder, limits).unwrap();
-    assert_eq!(unsupported.decode(&first, &mut |_| panic!("unsupported decoder emitted")), Err(ArrowError::UnsupportedCapability));
+    assert_eq!(
+        unsupported.decode(&first, &mut |_| panic!("unsupported decoder emitted")),
+        Err(ArrowError::UnsupportedCapability)
+    );
     let mut typed = TypedStream::new(SchemaProbe, limits).unwrap();
-    assert_eq!(typed.decode(&first, &mut |_| Err(ArrowError::Output)), Err(ArrowError::Output));
-    assert_eq!(typed.decode(&first, &mut |_| Ok(())), Err(ArrowError::InvalidState));
+    assert_eq!(
+        typed.decode(&first, &mut |_| Err(ArrowError::Output)),
+        Err(ArrowError::Output)
+    );
+    assert_eq!(
+        typed.decode(&first, &mut |_| Ok(())),
+        Err(ArrowError::InvalidState)
+    );
 }

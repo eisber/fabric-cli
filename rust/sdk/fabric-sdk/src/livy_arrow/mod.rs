@@ -12,9 +12,7 @@ mod delivery;
 mod request;
 mod typed;
 
-pub use codec::{
-    FramedDecoder, RawChunk, RawInline, StreamLimits, write_frame, write_terminal,
-};
+pub use codec::{FramedDecoder, RawChunk, RawInline, StreamLimits, write_frame, write_terminal};
 pub use delivery::{
     Delivery, DeliveryState, Failure, ResumeCursor, RetryDecision, RetryPolicy, StopReason,
 };
