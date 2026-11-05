@@ -2464,3 +2464,258 @@ async fn async_driver_sink_unwinding_disposes_body_and_prevents_reuse() {
     assert!(error.cursor().is_none());
     assert_eq!(executor.trace.lock().unwrap().requests.len(), 1);
 }
+
+#[tokio::test]
+async fn async_driver_transport_open_requires_explicit_get_recovery_opt_in() {
+    for enabled in [false, true] {
+        let mut opens = vec![StreamOpen::Error(NativeError::Transport)];
+        if enabled {
+            opens.push(StreamOpen::Reply(stream_reply(vec![BodyStep::Data(vec![
+                0;
+                8
+            ])])));
+        }
+        let executor = TestStreamExecutor::new(opens);
+        let options = if enabled {
+            resumable_options()
+        } else {
+            FramedStreamOptions::default()
+        };
+        let mut stream = FramedResultStream::new(
+            &executor,
+            handle(),
+            ResultSelectors::default(),
+            options,
+            stream_deadline(),
+        )
+        .unwrap();
+        if enabled {
+            assert!(stream.next_chunk().await.unwrap().is_none());
+            assert_eq!(stream.progress().state, FramedStreamState::Complete);
+            assert_eq!(stream.progress().reconnects, 1);
+            assert_eq!(executor.trace.lock().unwrap().requests.len(), 2);
+            assert_eq!(executor.trace.lock().unwrap().drops, 1);
+        } else {
+            let error = stream.next_chunk().await.unwrap_err();
+            assert_eq!(
+                error.cause(),
+                FramedStreamCause::Native(NativeError::Transport)
+            );
+            assert_eq!(error.stop(), FramedStreamStop::Fatal);
+            assert_eq!(error.progress().reconnects, 0);
+            assert_eq!(executor.trace.lock().unwrap().requests.len(), 1);
+        }
+    }
+}
+
+#[tokio::test]
+async fn async_driver_transport_reset_discards_partial_frame_and_resumes_acknowledged_owner() {
+    let first = frame(0, 0, b"part-0-0", b"a");
+    let next = frame(0, 1, b"part-0-1", b"bc");
+    let mut partial = first.clone();
+    partial.extend_from_slice(&next[..next.len() - 1]);
+    let mut replay = first;
+    replay.extend(next);
+    let executor = TestStreamExecutor::new(vec![
+        StreamOpen::Reply(stream_reply(vec![
+            BodyStep::Data(partial),
+            BodyStep::Error(NativeError::Transport),
+        ])),
+        StreamOpen::Reply(stream_reply(vec![BodyStep::Data(terminated(replay))])),
+    ]);
+    let original = handle();
+    let selectors = ResultSelectors::new(None, Some("0".into()), None).unwrap();
+    let mut stream = FramedResultStream::new(
+        &executor,
+        original.clone(),
+        selectors,
+        resumable_options(),
+        stream_deadline(),
+    )
+    .unwrap();
+    stream.next_chunk().await.unwrap().unwrap();
+    let mut emitted = 0;
+    stream
+        .acknowledge(&original, |_| {
+            emitted += 1;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(stream.next_chunk().await.unwrap().unwrap().id(), "part-0-0");
+    assert_eq!(
+        stream
+            .acknowledge(&original, |_| panic!("transport replay reached sink"))
+            .unwrap(),
+        Delivery::Replayed
+    );
+    assert_eq!(
+        stream.cursor().unwrap().selectors().after_chunk(),
+        Some("part-0-0")
+    );
+    assert_eq!(stream.next_chunk().await.unwrap().unwrap().id(), "part-0-1");
+    stream
+        .acknowledge(&original, |_| {
+            emitted += 1;
+            Ok(())
+        })
+        .unwrap();
+    assert!(stream.next_chunk().await.unwrap().is_none());
+    assert_eq!(emitted, 2);
+    assert_eq!(stream.handle(), &original);
+    assert_eq!(stream.progress().delivered_chunks, 2);
+    assert_eq!(stream.progress().delivered_bytes, 3);
+    assert_eq!(stream.progress().replayed_chunks, 1);
+    assert_eq!(stream.progress().discarded_responses, 1);
+    let trace = executor.trace.lock().unwrap();
+    assert_eq!(trace.drops, 2);
+    assert_eq!(trace.requests.len(), 2);
+    assert_eq!(
+        trace.requests[0].url().path(),
+        trace.requests[1].url().path()
+    );
+    assert_eq!(
+        trace.requests[0].url().host_str(),
+        trace.requests[1].url().host_str()
+    );
+    assert_eq!(
+        trace.requests[1]
+            .url()
+            .query_pairs()
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect::<Vec<_>>(),
+        [
+            ("after_chunk".to_string(), "part-0-0".to_string()),
+            ("parts".to_string(), "0".to_string()),
+            ("from_part".to_string(), "0".to_string()),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn async_driver_transport_replay_payload_or_ordinal_conflict_is_terminal() {
+    for ordinal_change in [false, true] {
+        let payload: &[u8] = if ordinal_change { b"first" } else { b"changed" };
+        let conflicting = frame(0, if ordinal_change { 1 } else { 0 }, b"part-0-0", payload);
+        let executor = TestStreamExecutor::new(vec![
+            StreamOpen::Reply(stream_reply(vec![
+                BodyStep::Data(frame(0, 0, b"part-0-0", b"first")),
+                BodyStep::Error(NativeError::Transport),
+            ])),
+            StreamOpen::Reply(stream_reply(vec![BodyStep::Data(terminated(conflicting))])),
+        ]);
+        let original = handle();
+        let mut stream = FramedResultStream::new(
+            &executor,
+            original.clone(),
+            ResultSelectors::default(),
+            resumable_options(),
+            stream_deadline(),
+        )
+        .unwrap();
+        stream.next_chunk().await.unwrap().unwrap();
+        stream.acknowledge(&original, |_| Ok(())).unwrap();
+        stream.next_chunk().await.unwrap().unwrap();
+        let error = stream
+            .acknowledge(&original, |_| panic!("conflicting replay delivered"))
+            .unwrap_err();
+        assert_eq!(
+            error.cause(),
+            FramedStreamCause::Arrow(ArrowError::ReplayConflict)
+        );
+        assert_eq!(error.stop(), FramedStreamStop::Fatal);
+        assert_eq!(error.progress().delivered_chunks, 1);
+        assert_eq!(
+            error.cursor().unwrap().selectors().after_chunk(),
+            Some("part-0-0")
+        );
+        assert_eq!(
+            stream.next_chunk().await.unwrap_err().cause(),
+            error.cause()
+        );
+        assert_eq!(executor.trace.lock().unwrap().requests.len(), 2);
+        assert_eq!(executor.trace.lock().unwrap().drops, 2);
+    }
+}
+
+#[tokio::test]
+async fn async_driver_transport_open_exhaustion_preserves_actual_evidence() {
+    for response_cap in [false, true] {
+        let executor = TestStreamExecutor::new(vec![
+            StreamOpen::Error(NativeError::Transport),
+            StreamOpen::Error(NativeError::Transport),
+        ]);
+        let options = FramedStreamOptions {
+            max_responses: if response_cap { 1 } else { 3 },
+            resume: FramedResume::Recoverable {
+                max_reconnects: if response_cap { 2 } else { 1 },
+                retry_truncated_eof: false,
+            },
+            ..FramedStreamOptions::default()
+        };
+        let mut stream = FramedResultStream::new(
+            &executor,
+            handle(),
+            ResultSelectors::default(),
+            options,
+            stream_deadline(),
+        )
+        .unwrap();
+        let error = stream.next_chunk().await.unwrap_err();
+        assert_eq!(
+            error.cause(),
+            FramedStreamCause::Native(NativeError::Transport)
+        );
+        assert_eq!(
+            error.stop(),
+            if response_cap {
+                FramedStreamStop::ResponseLimit
+            } else {
+                FramedStreamStop::RetryLimit
+            }
+        );
+        assert_eq!(
+            executor.trace.lock().unwrap().requests.len(),
+            if response_cap { 1 } else { 2 }
+        );
+        assert_eq!(executor.trace.lock().unwrap().drops, 0);
+    }
+}
+
+#[tokio::test]
+async fn async_driver_transport_opt_in_never_relabels_codec_or_metadata_corruption() {
+    let invalid_id = stream_reply(vec![
+        BodyStep::Data(frame(0, 0, b"part-0-\xff", b"x")),
+        BodyStep::Error(NativeError::Transport),
+    ]);
+    let mut invalid_encoding = stream_reply(vec![BodyStep::Error(NativeError::Transport)]);
+    invalid_encoding
+        .headers
+        .insert("content-encoding".into(), "gzip".into());
+    let invalid_response = stream_reply(vec![BodyStep::Error(NativeError::InvalidResponse)]);
+    for (reply, cause) in [
+        (invalid_id, FramedStreamCause::Arrow(ArrowError::Protocol)),
+        (
+            invalid_encoding,
+            FramedStreamCause::Arrow(ArrowError::Protocol),
+        ),
+        (
+            invalid_response,
+            FramedStreamCause::Native(NativeError::InvalidResponse),
+        ),
+    ] {
+        let executor = TestStreamExecutor::new(vec![StreamOpen::Reply(reply)]);
+        let mut stream = FramedResultStream::new(
+            &executor,
+            handle(),
+            ResultSelectors::default(),
+            resumable_options(),
+            stream_deadline(),
+        )
+        .unwrap();
+        let error = stream.next_chunk().await.unwrap_err();
+        assert_eq!(error.cause(), cause);
+        assert_eq!(error.stop(), FramedStreamStop::Fatal);
+        assert_eq!(executor.trace.lock().unwrap().requests.len(), 1);
+        assert_eq!(executor.trace.lock().unwrap().drops, 1);
+    }
+}

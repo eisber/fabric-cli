@@ -20,7 +20,8 @@ pub enum FramedResume {
     /// One dispatch, with every failure returned immediately.
     #[default]
     Never,
-    /// Recover only from enumerated HTTP statuses and optionally truncated EOF.
+    /// Recover from explicit transport evidence, enumerated HTTP statuses, and
+    /// optionally truncated EOF. Evidence alone does not grant replay authority.
     Recoverable {
         /// Maximum reconnects, additionally capped by the response budget.
         max_reconnects: u32,
@@ -281,6 +282,13 @@ impl fmt::Display for FramedStreamError {
 
 impl std::error::Error for FramedStreamError {}
 
+#[derive(Clone, Copy)]
+enum RecoverySource {
+    Io,
+    ResponseStatus,
+    Eof,
+}
+
 /// Async pull/ack driver for an existing statement's framed result GET only.
 ///
 /// Construction does not open a response. `next_chunk` stages one borrowed
@@ -437,7 +445,11 @@ impl<'a> FramedResultStream<'a> {
             .map_err(|error| self.fail(FramedStreamCause::Native(error), FramedStreamStop::Fatal))
     }
 
-    fn recover(&mut self, cause: FramedStreamCause) -> Result<(), FramedStreamError> {
+    fn recover(
+        &mut self,
+        cause: FramedStreamCause,
+        source: RecoverySource,
+    ) -> Result<(), FramedStreamError> {
         self.release_response(false);
         self.check_deadline()?;
         let FramedResume::Recoverable {
@@ -447,10 +459,19 @@ impl<'a> FramedResultStream<'a> {
         else {
             return Err(self.fail(cause, FramedStreamStop::Fatal));
         };
-        let recoverable = match cause {
-            FramedStreamCause::Native(NativeError::Http(408 | 429 | 500 | 502 | 503 | 504))
-            | FramedStreamCause::Arrow(ArrowError::Http(408 | 429 | 500 | 502 | 503 | 504)) => true,
-            FramedStreamCause::Arrow(ArrowError::Truncated) => retry_truncated_eof,
+        let recoverable = match (source, cause) {
+            (RecoverySource::Io, FramedStreamCause::Native(NativeError::Transport))
+            | (
+                RecoverySource::Io,
+                FramedStreamCause::Native(NativeError::Http(408 | 429 | 500 | 502 | 503 | 504)),
+            )
+            | (
+                RecoverySource::ResponseStatus,
+                FramedStreamCause::Arrow(ArrowError::Http(408 | 429 | 500 | 502 | 503 | 504)),
+            ) => true,
+            (RecoverySource::Eof, FramedStreamCause::Arrow(ArrowError::Truncated)) => {
+                retry_truncated_eof
+            }
             _ => false,
         };
         if !recoverable {
@@ -516,7 +537,7 @@ impl<'a> FramedResultStream<'a> {
             Ok(response) => response,
             Err(error) => {
                 self.check_deadline()?;
-                return self.recover(FramedStreamCause::Native(error));
+                return self.recover(FramedStreamCause::Native(error), RecoverySource::Io);
             }
         };
         self.progress.responses += 1;
@@ -546,7 +567,7 @@ impl<'a> FramedResultStream<'a> {
                 })?);
                 Ok(())
             }
-            Err(cause) => self.recover(cause),
+            Err(cause) => self.recover(cause, RecoverySource::ResponseStatus),
         }
     }
 
@@ -659,7 +680,7 @@ impl<'a> FramedResultStream<'a> {
             match read {
                 Err(error) => {
                     drop(body);
-                    self.recover(FramedStreamCause::Native(error))?;
+                    self.recover(FramedStreamCause::Native(error), RecoverySource::Io)?;
                 }
                 Ok(None) => {
                     drop(body);
@@ -693,7 +714,7 @@ impl<'a> FramedResultStream<'a> {
                                     FramedStreamStop::Fatal,
                                 ));
                             }
-                            self.recover(FramedStreamCause::Arrow(error))?;
+                            self.recover(FramedStreamCause::Arrow(error), RecoverySource::Eof)?;
                         }
                     }
                 }

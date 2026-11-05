@@ -406,15 +406,28 @@ caller pauses and retries never restart the budget. The driver cannot preempt
 an injected executor/body which ignores the deadline while awaiting I/O.
 
 Recovery requires explicit `FramedResume::Recoverable` and stays within both
-the reconnect and response budgets. Only actual HTTP
-408/429/500/502/503/504 errors are classified as transient. Actual EOF
+the reconnect and response budgets. Opaque `NativeError::Transport` evidence
+and actual HTTP 408/429/500/502/503/504 errors are eligible. Transport evidence
+is the additive shared ABI from coordinator commit
+`a360d5a35abad679745fdb6f22fceda83e5ae03f`; the driver preserves it directly as
+`FramedStreamCause::Native`, without converting it through `ArrowError`.
+It grants no automatic replay authority and no mutation replay. Actual EOF
 truncation can additionally be opted into with `retry_truncated_eof`. There is
 no truncation retry when Content-Length proves the entire declared HTTP body
-arrived: an absent Livy terminal in that case is a format failure. There is
-no generic transport variant in `NativeError`: `InvalidResponse`, unknown
-outcomes, cancellation, local timeout and other ambiguous errors are **not**
+arrived: an absent Livy terminal in that case is a format failure.
+`InvalidResponse`, unknown outcomes, cancellation, local timeout and other ambiguous errors are **not**
 converted into retryable transport failures. No backoff/Retry-After engine is
 installed.
+
+The streaming host must preserve error provenance: framing, metadata and
+decompression corruption must never be flattened into transport I/O evidence.
+Inside the driver, `Transport` is eligible only when returned by an injected
+open/read call; metadata and EOF validation use separate recovery origins.
+Until the concrete adapter's `transport/decode.rs` provenance repair and its
+host tests are established, this policy does not certify real-adapter reset
+recovery. Injected `Transport` fixtures exercise the declared ABI/policy, not
+that adapter's classification. Possibly dispatched mutations must still report
+`OutcomeUnknown`, not use this GET-only driver's recovery path.
 
 The old body is dropped before reconnecting. Request scope and original
 `parts` are preserved, with `after_chunk`/`from_part` taken only from the last
@@ -449,11 +462,14 @@ rejection before reads, frame/wire/read limits, deadline expiry, interrupted
 pulls and local close/drop. Every injected open asserts GET/Read with no
 mutation body and no old live response.
 
-There are 24 new test cases (23 async and one synchronous constructor/budget
-case), for 52 total test declarations. The original 28 test functions remain
+There are 29 stream test cases (28 async and one synchronous constructor/budget
+case), for 57 total test declarations. Five additional opaque-transport cases
+cover default refusal, explicit open recovery, mid-body reset with partial-frame
+discard and replay, payload/ordinal conflict, finite exhaustion, and refusal to
+relabel codec/metadata corruption. The original 28 test functions remain
 token-identical and all 13 pinned golden vectors are unchanged. Pinned
 Rust 1.99.1 rustfmt checks pass for the owned Rust files. A lexical scope check
-confirmed that all 52 declarations are top-level; this does not establish
+confirmed that all 57 declarations are top-level; this does not establish
 compiler test registration.
 
 No build, test execution, dependency change, live backend or credential
