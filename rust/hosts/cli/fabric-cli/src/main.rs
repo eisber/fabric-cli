@@ -57,6 +57,21 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
         return repl_host::run();
     }
     let invocation = parse_args(arguments);
+    #[cfg(feature = "v2-cancel")]
+    if let Ok(Invocation::Cancel(command)) = &invocation {
+        // ID-only cancellation never restores navigation or runs startup updates.
+        return dispatch_cancel(command, None).map(exit_status);
+    }
+    #[cfg(feature = "v2-cancel")]
+    if let Err(error) = &invocation {
+        return write_error(
+            CommandError {
+                code: "invalid_arguments",
+                message: invalid_arguments_message(error),
+            },
+            2,
+        );
+    }
     #[cfg(feature = "self-update")]
     if let Ok(invocation) = &invocation {
         if let Invocation::Update(command) = invocation {
@@ -90,6 +105,10 @@ fn dispatch(
         Ok(Invocation::Display(text)) => {
             write!(io::stdout().lock(), "{text}")?;
             return Ok(CommandOutcome::Returned(0));
+        }
+        #[cfg(feature = "v2-cancel")]
+        Ok(Invocation::Cancel(command)) => {
+            return dispatch_cancel(&command, Some(local_state));
         }
         #[cfg(feature = "self-update")]
         Ok(Invocation::Update(_)) => {
@@ -181,6 +200,43 @@ fn dispatch(
     } else {
         CommandOutcome::Returned(exit)
     })
+}
+
+#[cfg(feature = "v2-cancel")]
+fn dispatch_cancel(
+    command: &fabric_cli::parser::CancelCommand,
+    state: Option<&mut BatchState>,
+) -> io::Result<CommandOutcome> {
+    #[cfg(feature = "native-host")]
+    {
+        native_read::run_cancel(command, state)
+    }
+    #[cfg(not(feature = "native-host"))]
+    {
+        let _ = state;
+        let delivery = match fabric_cli::cancel::preflight(command) {
+            Ok(target) => fabric_cli::cancel::Dispatch::unavailable(
+                Some(&target),
+                None,
+                "NotConfigured",
+                "Cancellation requires an explicitly configured credential and HTTP host.",
+                1,
+            ),
+            Err(error) => fabric_cli::cancel::Dispatch::unavailable(
+                None,
+                None,
+                error.code(),
+                &error.to_string(),
+                2,
+            ),
+        };
+        let exit = delivery.write_to(&mut io::stdout().lock(), &mut io::stderr().lock());
+        Ok(if exit != delivery.exit_code() || exit == 2 {
+            CommandOutcome::Stop(exit)
+        } else {
+            CommandOutcome::Returned(exit)
+        })
+    }
 }
 
 fn write_error(error: CommandError, exit: u8) -> io::Result<ExitCode> {

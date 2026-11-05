@@ -11,6 +11,11 @@ pub use diagnostics::invalid_arguments_message;
 
 pub mod batch;
 
+#[cfg(feature = "v2-cancel")]
+mod cancel;
+#[cfg(feature = "v2-cancel")]
+pub use cancel::CancelCommand;
+
 #[cfg(feature = "self-update")]
 mod update;
 #[cfg(feature = "self-update")]
@@ -64,6 +69,9 @@ pub struct ReadCommand {
 pub enum Invocation {
     /// Help/version text, written to stdout without configuring a host.
     Display(String),
+    /// Opt-in, ID-only Notebook run cancellation; never a terminal-state claim.
+    #[cfg(feature = "v2-cancel")]
+    Cancel(CancelCommand),
     /// Ordered source `-c` strings, parsed individually immediately before dispatch.
     Batch(batch::BatchInvocation),
     /// A command requiring explicitly supplied dependencies.
@@ -126,6 +134,8 @@ pub fn command() -> Command {
     let command = auth::register(command);
     #[cfg(feature = "self-update")]
     let command = update::register(command);
+    #[cfg(feature = "v2-cancel")]
+    let command = command.subcommand(cancel::command());
     #[cfg(all(feature = "native-read", not(feature = "headless")))]
     let command = command.after_help("Native remote commands reuse the Windows account selected by auth login; FAB_RUST_TENANT, FAB_RUST_ACCOUNT and FAB_RUST_CLIENT_ID provide explicit overrides. Windows broker authentication is opt-in; remote credentials are silent and never show sign-in UI. FAB_RUST_CONTEXT defaults to / or the explicitly selected persisted session; FAB_RUST_HOME is optional. Local/config and family commands share the platform user configuration directory; FAB_RUST_CONFIG_ROOT overrides it. Mutations change remote state; job run may cancel on timeout. Native confirmations require explicit --force or an injected UI host. No token input or credential fallback is available. Config-driven deploy supports bounded root-level Notebooks with explicit unpublish.skip; other branches fail before writes.");
     #[cfg(feature = "headless")]
@@ -281,6 +291,13 @@ where
         })
     {
         return Ok(Invocation::Display(group.render_help().to_string()));
+    }
+    #[cfg(feature = "v2-cancel")]
+    if name == "cancel" {
+        if matches.contains_id("batch_commands") {
+            return Err(invalid_arguments());
+        }
+        return cancel::parse(&matches, values).map(Invocation::Cancel);
     }
     if name == "job" {
         let mut invocation = jobs::parse(values)?;

@@ -7,6 +7,7 @@
 //! `client/fab_api_jobs.py` and `utils/fab_cmd_job_utils.py`. Credentials,
 //! transport, asynchronous time and cancellation belong to the caller.
 
+pub mod cancellation;
 mod command;
 mod headers;
 mod numeric;

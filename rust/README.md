@@ -27,6 +27,10 @@ For the separate CLI v2 effort, follow the
 implementation starts only after the selected specification and first wave
 are confirmed; this process does not change the existing CLI contract.
 
+The opt-in [`v2-cancel` slice](docs/v2-cancel.md) requests cancellation of one
+existing Notebook scheduler run using an explicit ID-based path. Its acceptance
+receipt does not claim terminal cancellation or rollback.
+
 ## Workspace components
 
 The workspace groups service clients and command adapters by capability:
