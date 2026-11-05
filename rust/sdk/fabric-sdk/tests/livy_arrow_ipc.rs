@@ -17,6 +17,7 @@ use arrow_ipc::{
 use arrow_schema::{DataType, Field, Schema};
 use fabric_sdk::livy_arrow::{
     ArrowError, DecodeLimits, NativeIpcDecoder, RawChunk, StreamLimits, TypedDecoder, TypedStream,
+    ipc::NativeIpcSchema,
 };
 use std::collections::HashMap;
 use std::ops::Range;
@@ -111,6 +112,67 @@ fn fixture() -> RecordBatch {
         HashMap::from([("schema-key".into(), "offline-native-writer".into())]),
     );
     RecordBatch::try_new(Arc::new(schema), arrays).unwrap()
+}
+
+fn dictionary_ordering_fixture(ordering: &[bool], nested: bool) -> RecordBatch {
+    let mut columns = ordering
+        .iter()
+        .enumerate()
+        .map(|(index, ordered)| {
+            let dictionary: DictionaryArray<Int32Type> =
+                ["alpha", "beta", "alpha"].into_iter().map(Some).collect();
+            let array = Arc::new(dictionary) as ArrayRef;
+            let field = Field::new(format!("dictionary-{index}"), array.data_type().clone(), false)
+                .with_dict_is_ordered(*ordered);
+            (Arc::new(field), array)
+        })
+        .collect::<Vec<_>>();
+    if nested {
+        for name in ["inner", "outer"] {
+            let array = Arc::new(StructArray::from(columns)) as ArrayRef;
+            let field = Field::new(name, array.data_type().clone(), false);
+            columns = vec![(Arc::new(field), array)];
+        }
+    }
+    let (fields, arrays): (Vec<_>, Vec<_>) = columns.into_iter().unzip();
+    RecordBatch::try_new(Arc::new(Schema::new(fields)), arrays).unwrap()
+}
+
+fn assert_dictionary_ordering_conflict(first: &[bool], second: &[bool], nested: bool) {
+    let first = chunk(write(&[dictionary_ordering_fixture(first, nested)], None));
+    let second = chunk(write(&[dictionary_ordering_fixture(second, nested)], None));
+    let first_schema: NativeIpcSchema = NativeIpcDecoder::new()
+        .inspect_schema(&first, LIMITS)
+        .unwrap();
+    let second_schema = NativeIpcDecoder::new()
+        .inspect_schema(&second, LIMITS)
+        .unwrap();
+    assert_eq!(first_schema.native_schema(), second_schema.native_schema());
+    assert_eq!(first_schema, first_schema.clone());
+    assert_ne!(first_schema, second_schema);
+    for raw in [&first, &second] {
+        let mut emitted = 0;
+        NativeIpcDecoder::new()
+            .decode(raw, LIMITS, &mut |batch| {
+                assert_eq!(batch.num_rows(), 3);
+                emitted += 1;
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(emitted, 1);
+    }
+    let mut stream = TypedStream::new(NativeIpcDecoder::new(), LIMITS).unwrap();
+    let mut emitted = 0;
+    let mut sink = |_| {
+        emitted += 1;
+        Ok(())
+    };
+    stream.decode(&first, &mut sink).unwrap();
+    assert_eq!(
+        stream.decode(&second, &mut sink),
+        Err(ArrowError::SchemaConflict),
+    );
+    assert_eq!(emitted, 1);
 }
 
 #[derive(Clone)]
@@ -223,7 +285,7 @@ fn native_writer_round_trips_types_nulls_nested_dictionary_and_metadata() {
         let schema = NativeIpcDecoder::new()
             .inspect_schema(&raw, LIMITS)
             .unwrap();
-        assert_eq!(&schema, expected.schema().as_ref());
+        assert_eq!(schema.native_schema(), expected.schema().as_ref());
         let mut count = 0;
         NativeIpcDecoder::new()
             .decode(&raw, LIMITS, &mut |actual| {
@@ -252,8 +314,9 @@ fn schema_only_and_zero_row_batches_are_real_streams() {
     assert_eq!(
         NativeIpcDecoder::new()
             .inspect_schema(&raw, LIMITS)
-            .unwrap(),
-        batch.schema().as_ref().clone(),
+            .unwrap()
+            .native_schema(),
+        batch.schema().as_ref(),
     );
     let mut count = 0;
     NativeIpcDecoder::new()
@@ -307,6 +370,74 @@ fn typed_stream_compares_field_and_schema_metadata_before_chunk_delivery() {
         );
         assert_eq!(emitted, 1);
     }
+}
+
+#[test]
+fn typed_stream_rejects_dictionary_ordering_changes_before_second_emission() {
+    assert_dictionary_ordering_conflict(&[false], &[true], false);
+    assert_dictionary_ordering_conflict(&[true], &[false], false);
+}
+
+#[test]
+fn typed_stream_preserves_nested_dictionary_ordering_by_field_position() {
+    assert_dictionary_ordering_conflict(&[false, false], &[true, false], true);
+    assert_dictionary_ordering_conflict(&[false, false], &[false, true], true);
+    assert_dictionary_ordering_conflict(&[false, true], &[true, false], true);
+}
+
+#[test]
+fn dictionary_ids_are_stream_local_even_for_ordered_dictionaries() {
+    let first = write(&[dictionary_ordering_fixture(&[false, true], false)], None);
+    let mut second = first.clone();
+    let mut locations = Vec::new();
+    for span in spans(&second) {
+        let message = arrow_ipc::root_as_message(&second[span.metadata.clone()]).unwrap();
+        if let Some(schema) = message.header_as_schema() {
+            let dictionary = schema.fields().unwrap().get(1).dictionary().unwrap();
+            assert_eq!(dictionary.id(), 1);
+            let offset = dictionary._tab.vtable().get(arrow_ipc::DictionaryEncoding::VT_ID);
+            assert_ne!(offset, 0);
+            locations.push(span.metadata.start + dictionary._tab.loc() + usize::from(offset));
+        }
+        if let Some(dictionary) = message.header_as_dictionary_batch()
+            && dictionary.id() == 1
+        {
+            let offset = dictionary._tab.vtable().get(arrow_ipc::DictionaryBatch::VT_ID);
+            assert_ne!(offset, 0);
+            locations.push(span.metadata.start + dictionary._tab.loc() + usize::from(offset));
+        }
+    }
+    assert_eq!(locations.len(), 2);
+    for position in locations {
+        second[position..position + 8].copy_from_slice(&7_i64.to_le_bytes());
+    }
+    let first = chunk(first);
+    let second = chunk(second);
+    let first_schema = NativeIpcDecoder::new()
+        .inspect_schema(&first, LIMITS)
+        .unwrap();
+    let second_schema = NativeIpcDecoder::new()
+        .inspect_schema(&second, LIMITS)
+        .unwrap();
+    #[expect(deprecated)]
+    let first_id = first_schema.native_schema().field(1).dict_id();
+    #[expect(deprecated)]
+    let second_id = second_schema.native_schema().field(1).dict_id();
+    assert_eq!(first_id, Some(1));
+    assert_eq!(second_id, Some(7));
+    assert_eq!(first_schema, second_schema);
+    let mut stream = TypedStream::new(NativeIpcDecoder::new(), LIMITS).unwrap();
+    let mut emitted = 0;
+    for raw in [&first, &second] {
+        stream
+            .decode(raw, &mut |batch| {
+                assert_eq!(batch.num_rows(), 3);
+                emitted += 1;
+                Ok(())
+            })
+            .unwrap();
+    }
+    assert_eq!(emitted, 2);
 }
 
 #[test]

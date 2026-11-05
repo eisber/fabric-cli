@@ -15,6 +15,73 @@ const MAX_FIELDS: usize = 1024;
 const MAX_DEPTH: usize = 32;
 const MAX_ENTRIES: usize = 4096;
 
+/// Exact logical IPC schema, including recursive dictionary ordering.
+///
+/// Apache's native field equality ignores both dictionary IDs and ordering.
+/// This wrapper additionally compares ordering at deterministic preorder field
+/// positions. IDs remain stream-local and do not participate in equality.
+/// Instances are created only after the decoder's bounded schema preflight.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeIpcSchema {
+    native: Schema,
+    dictionary_ordering: Vec<(usize, bool)>,
+}
+
+impl NativeIpcSchema {
+    /// Borrow the native schema without weakening this wrapper's equality.
+    ///
+    /// Comparing the returned native schemas directly ignores dictionary
+    /// ordering; use this wrapper for logical stream schema identity.
+    pub const fn native_schema(&self) -> &Schema {
+        &self.native
+    }
+
+    fn from_native(native: Schema) -> Self {
+        let dictionary_ordering = dictionary_ordering(&native);
+        Self {
+            native,
+            dictionary_ordering,
+        }
+    }
+
+    fn matches_native(&self, native: &Schema) -> bool {
+        self.native_schema() == native && self.dictionary_ordering == dictionary_ordering(native)
+    }
+}
+
+fn dictionary_ordering(schema: &Schema) -> Vec<(usize, bool)> {
+    let mut ordering = Vec::new();
+    let mut position = 0;
+    for field in schema.fields() {
+        collect_dictionary_ordering(field, &mut position, &mut ordering);
+    }
+    ordering
+}
+
+fn collect_dictionary_ordering(
+    field: &Field,
+    position: &mut usize,
+    ordering: &mut Vec<(usize, bool)>,
+) {
+    let current = *position;
+    *position += 1;
+    if let Some(ordered) = field.dict_is_ordered() {
+        ordering.push((current, ordered));
+    }
+    match field.data_type() {
+        DataType::List(child)
+        | DataType::LargeList(child)
+        | DataType::FixedSizeList(child, _)
+        | DataType::Map(child, _) => collect_dictionary_ordering(child, position, ordering),
+        DataType::Struct(fields) => {
+            for child in fields {
+                collect_dictionary_ordering(child, position, ordering);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Opt-in, safe-API wrapper around Apache Arrow IPC 60.1.0.
 ///
 /// The `livy-arrow-ipc` feature must enable `arrow-ipc`'s `lz4` and `zstd`
@@ -23,8 +90,9 @@ const MAX_ENTRIES: usize = 4096;
 ///
 /// Each call creates a new reader and dictionary scope. No batches are retained
 /// by this decoder. [`TypedStream`](super::TypedStream) owns cross-chunk schema
-/// equality and failure poisoning. Inspection validates all batches by decoding
-/// and dropping them; consequently `TypedStream` decodes a chunk twice.
+/// equality through [`NativeIpcSchema`] and failure poisoning. Inspection
+/// validates all batches by decoding and dropping them; consequently
+/// `TypedStream` decodes a chunk twice.
 ///
 /// Budgets conservatively include encoded bodies, decoded buffers (rounded for
 /// alignment), logical validity extents, and cumulative dictionary replacements.
@@ -42,13 +110,13 @@ impl NativeIpcDecoder {
 
 impl TypedDecoder for NativeIpcDecoder {
     type Batch = RecordBatch;
-    type Schema = Schema;
+    type Schema = NativeIpcSchema;
 
     fn inspect_schema(
         &mut self,
         chunk: &RawChunk,
         limits: DecodeLimits,
-    ) -> Result<Schema, ArrowError> {
+    ) -> Result<NativeIpcSchema, ArrowError> {
         let schema = preflight(chunk.payload(), limits)?;
         read_batches(chunk.payload(), &schema, &mut |_| Ok(()))?;
         Ok(schema)
@@ -75,17 +143,17 @@ fn native_error(error: arrow_schema::ArrowError) -> ArrowError {
 
 fn read_batches(
     payload: &[u8],
-    schema: &Schema,
+    schema: &NativeIpcSchema,
     emit: &mut dyn FnMut(RecordBatch) -> Result<(), ArrowError>,
 ) -> Result<(), ArrowError> {
     // Nothing reaches Apache's allocating reader before the *entire* preflight.
     let mut reader = StreamReader::try_new(Cursor::new(payload), None).map_err(native_error)?;
-    if reader.schema().as_ref() != schema {
+    if !schema.matches_native(reader.schema().as_ref()) {
         return Err(ArrowError::SchemaConflict);
     }
     for batch in reader.by_ref() {
         let batch = batch.map_err(native_error)?;
-        if batch.schema().as_ref() != schema {
+        if !schema.matches_native(batch.schema().as_ref()) {
             return Err(ArrowError::SchemaConflict);
         }
         emit(batch)?;
@@ -190,6 +258,7 @@ fn schema_field(
         _ => return Err(ArrowError::UnsupportedCapability),
     }
     if let Some(dictionary) = field.dictionary() {
+        budget.charge(64)?;
         // Nested dictionary values and concat-based deltas need a different
         // retained-size model. Scalar dictionaries inside lists/structs are OK.
         if child_count != 0 || dictionary.dictionaryKind() != arrow_ipc::DictionaryKind::DenseArray
@@ -406,7 +475,7 @@ fn dictionary_fields<'a>(
     Ok(())
 }
 
-fn preflight(payload: &[u8], limits: DecodeLimits) -> Result<Schema, ArrowError> {
+fn preflight(payload: &[u8], limits: DecodeLimits) -> Result<NativeIpcSchema, ArrowError> {
     if limits.max_message_bytes == 0 || limits.max_decoded_bytes == 0 {
         return Err(ArrowError::InvalidInput);
     }
@@ -484,7 +553,7 @@ fn preflight(payload: &[u8], limits: DecodeLimits) -> Result<Schema, ArrowError>
             _ => return Err(ArrowError::UnsupportedCapability),
         }
     }
-    Ok(schema)
+    Ok(NativeIpcSchema::from_native(schema))
 }
 
 #[derive(Clone, Copy)]

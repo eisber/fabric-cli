@@ -3,9 +3,10 @@
 # Optional native Livy Arrow IPC decoder
 
 `NativeIpcDecoder` implements the existing raw Arrow `TypedDecoder` seam with
-Apache Arrow's native `RecordBatch` and `Schema`. This is an opt-in SDK data-plane
-decoder, not a schema wrapper, HTTP engine, Python bridge, CLI output adapter,
-deployment qualification, or complete streaming transport.
+Apache Arrow's native `RecordBatch` and a `NativeIpcSchema` logical identity
+wrapper around the native `Schema`. This is an opt-in SDK data-plane decoder,
+not a schema-only implementation, HTTP engine, Python bridge, CLI output
+adapter, deployment qualification, or complete streaming transport.
 
 The behavioral source is Fabric Livy SDK Arrow commit
 `bded4919a647b3f5f24b723abada69d45f23449c`, assessed in the source-contract
@@ -15,8 +16,9 @@ Apache's safe Rust APIs; it does not copy the Python IPC implementation.
 ## Integration owned by the coordinator
 
 The implementation branch owns only `src/livy_arrow/ipc.rs`, its integration
-test, and this document. The coordinator must wire these exact dependencies in
-the workspace and SDK manifests, update the lockfile, and export the type:
+test, and this document. Coordinator commit
+`2b6ed3cb2380e9a86ef040aeb3a04316b293d5dd` wires the optional manifests, lockfile,
+public IPC module and decoder export. The dependency configuration is:
 
 ```toml
 # Workspace dependencies. All three are Apache-2.0, minimum Rust 1.88.
@@ -33,11 +35,11 @@ arrow-schema = { workspace = true, optional = true }
 arrow-ipc = { workspace = true, optional = true }
 ```
 
-In `livy_arrow/mod.rs`, add:
+The coordinator-owned module wiring is:
 
 ```rust,ignore
 #[cfg(feature = "livy-arrow-ipc")]
-mod ipc;
+pub mod ipc;
 #[cfg(feature = "livy-arrow-ipc")]
 pub use ipc::NativeIpcDecoder;
 ```
@@ -72,19 +74,33 @@ typed.decode(&raw_chunk, &mut |batch: arrow_array::RecordBatch| {
 })?;
 ```
 
-`Batch = arrow_array::RecordBatch`; `Schema = arrow_schema::Schema`, whose
-equality includes fields and all field/schema metadata. `TypedStream` rejects a
-different chunk schema before emitting that chunk and poisons failures.
-Dictionary IDs are stream-local decoding identifiers, not cross-chunk schema
-identity. A native reader is created afresh for every call.
+`Batch = arrow_array::RecordBatch`;
+`Schema = fabric_sdk::livy_arrow::ipc::NativeIpcSchema`. The wrapper implements
+`Clone + Eq` using native schema equality for fields and all field/schema
+metadata, plus a deterministic sequence of `(preorder field position,
+dictionary ordering)` pairs. Positions include all fields, recursively visiting
+Struct, List, LargeList, FixedSizeList and Map children in schema order. Thus an
+ordering change at any supported nesting depth, or an exchange of flags between
+two dictionary fields, changes logical schema identity.
+
+Apache Arrow 60.1.0 `Field::eq` intentionally ignores both `dict_id` and
+`dict_is_ordered`, including inside nested data types. The wrapper restores only
+ordering identity: dictionary IDs remain stream-local decoding identifiers, not
+cross-chunk schema identity. `NativeIpcSchema::native_schema()` exposes a borrowed
+native `arrow_schema::Schema`; comparing those native schemas directly is not a
+substitute for comparing the wrappers.
+
+`TypedStream` rejects a different logical chunk schema before emitting that
+chunk and poisons failures. A native reader is created afresh for every call.
 
 `inspect_schema` performs complete preflight, then decodes and drops every batch
 without calling a sink. Thus it validates values, UTF-8, nested offsets, nulls,
 and dictionary keys as well as schema and framing. `decode` independently
 preflights the entire chunk and then pulls one native batch at a time. It checks
-the reader schema and every batch schema against the inspected native schema.
-It does not collect output batches. A sink error is returned unchanged and
-stops iteration before the next batch is decoded.
+the reader schema and every batch schema against the inspected logical schema,
+including recursive dictionary ordering. It does not collect output batches.
+A sink error is returned unchanged and stops iteration before the next batch
+is decoded.
 
 The current `TypedStream` seam calls both methods, so native data is decoded
 twice. This trades CPU for complete inspection and a stateless, bounded
@@ -107,8 +123,10 @@ payload with the verified FlatBuffer root accessor:
    body, by `max_message_bytes`. The complete raw payload was bounded by the raw
    framing layer; this wrapper does not clone it or retain a message list.
 3. Before `try_fb_to_schema`, bound schema expansion, recursion, fields, names,
-   timezones, and all field/schema metadata. Reject duplicate or incomplete
-   metadata entries rather than silently collapsing them into a native map.
+   timezones, dictionary-ordering identity storage and all field/schema
+   metadata. Dictionary fields add a 64-byte allowance for retained/comparison
+   ordering pairs before those vectors are allocated. Reject duplicate or
+   incomplete metadata entries rather than silently collapsing them into a native map.
    The safe FlatBuffer verifier also has its upstream finite depth/table/
    apparent-size caps; no unchecked root accessor is used.
 4. Require valid nonnegative node lengths/null counts, exact node/buffer
@@ -178,6 +196,8 @@ columns, rather than Apache's optional empty-dictionary synthesis.
 `unnameable_test_items`. It writes real IPC with Apache `StreamWriter`, exercising
 uncompressed/LZ4/ZSTD row counts, nulls, nested arrays, dictionaries, schema and
 field metadata, schema-only/empty batches, cross-chunk schema mismatch,
+root and recursively nested dictionary-ordering mismatch before second-chunk
+emission, and logically equal schemas whose stream-local dictionary IDs differ,
 truncation/EOS/trailing streams, corrupt FlatBuffers, duplicate schemas, buffer
 bounds, nested offsets, integer overflow, per-message encoded budgets, decoded
 budgets, cumulative dictionary replacements, dictionary scope, explicit
@@ -200,11 +220,24 @@ PATH; formatting also remains for the coordinator. An independent source review
 covered allocation/failure behavior and public APIs/fixtures. It found an
 underreported-size fixture that failed too early in preflight; the fixture was
 repaired to keep the raw offsets consistent with the forged decoded length.
-The repair still requires execution and independent validation. Source
-inspection, fixture presence and lexical
-checks are not a test pass. The coordinator must first wire manifests/exports,
-then run the serialized pinned-toolchain all-target check and actual tests, for
-example from `rust/`:
+The repair still requires execution and independent validation.
+
+Repair cycle 1 addresses independent reviewer `d6fa4dfe`'s P2 finding against
+`95c36d30d8d6c7b8fbc591eb6a5b87d1489cf408`: native schema equality alone silently
+accepted dictionary-ordering changes. The repair is based on coordinator commit
+`2b6ed3cb2380e9a86ef040aeb3a04316b293d5dd`. Its writer-generated two-chunk fixtures
+require both ordered and unordered dictionaries to decode successfully alone,
+then require `SchemaConflict` before second-chunk emission when ordering differs.
+Nested fixtures change either sibling and exchange opposite flags; a separate
+valid IPC fixture remaps a dictionary ID in both schema and dictionary messages
+and requires equality and successful delivery of both chunks.
+
+No repair build or test execution is claimed. The coordinator reported its IPC
+build blocked on ZSTD C-path header handling before IPC tests executed; unrelated
+HTTP/runtime test results are not IPC evidence. Source inspection, fixture
+presence and lexical checks are not a test pass. The coordinator must run the
+serialized pinned-toolchain all-target check and actual tests after repairing
+that build environment, for example from `rust/`:
 
 ```text
 cargo +1.99.1 check -p fabric-sdk --all-targets --features livy-arrow-ipc --locked
