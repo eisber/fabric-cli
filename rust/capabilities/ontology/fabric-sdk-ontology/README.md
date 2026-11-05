@@ -33,6 +33,14 @@ and decoded-byte bounds. It neither flattens files nor rewrites JSON/TMDL,
 generates OWL, reads rows, restores sensitivity labels, or claims byte-identical
 service round-trip. Local extraction/path/no-clobber policy remains host-owned.
 
+`replace_definition` uses a separate `DefinitionReplacement` write contract,
+preserving each supplied native part and its encoded payload. Future opaque
+read payloads are not automatically writable. Metadata updates require an
+explicit `.platform` part and are never enabled by default. The native empty
+200 acknowledgement is handled separately from representation reads. No
+sensitivity-label restore, item creation, revision guard or automatic retry is
+invented.
+
 Public operations default explicitly to returning real 202 acceptance, retaining
 the original owner and operation handle. Opt-in observation uses the existing
 bounded GET reconciliation policy without resubmitting a mutation. SDK failures

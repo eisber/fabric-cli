@@ -13,13 +13,19 @@ use fabric_sdk_items::{
 };
 use fabric_sdk_operations::{
     FabricOperation, OperationError, OperationErrorKind, OperationExecutor, OperationResponse,
-    OperationSession,
+    OperationSession, OperationWarning,
 };
 use fabric_sdk_workspaces::mutations::{CompletionPolicy, ResourceMethod, ResourceOperation};
 use fabric_v2_contracts::ItemIdentity;
 use serde::Serialize;
 use serde_json::Value;
 use std::{collections::BTreeSet, fmt, future::Future, io, num::NonZeroUsize};
+
+/// Original neutral operation types through an allowed SDK-layer dependency.
+///
+/// This convenience reexport does not make the SDK a CLI/MCP host or install
+/// another registry. The general SDK facade exposes the same original types.
+pub use fabric_v2_contracts as v2;
 
 /// Exact public Ontology owner identity; construction performs no resolution.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -154,7 +160,8 @@ pub enum Observation {
     /// Return actual service acceptance without claiming completion.
     #[default]
     ReturnAccepted,
-    /// Observe the original operation and fetch its advertised result.
+    /// Observe the original operation. Representation reads require a result;
+    /// result-less definition updates observe completion without a result GET.
     WaitForResult,
 }
 
@@ -240,6 +247,109 @@ impl fmt::Debug for ModelReplacement {
         formatter
             .debug_struct("ModelReplacement")
             .field("bytes", &self.0.len())
+            .finish()
+    }
+}
+
+/// Explicit replacement of multipart public source, not a local extraction.
+#[derive(Clone)]
+pub struct DefinitionReplacement {
+    body: Vec<u8>,
+    update_metadata: bool,
+}
+
+impl DefinitionReplacement {
+    /// Validates native InlineBase64 parts and serializes a bounded request once.
+    ///
+    /// A returned source envelope is not automatically writable: future payload
+    /// types/unknown request fields require a separately advertised writer.
+    ///
+    /// # Errors
+    /// Rejects malformed/duplicate parts, unsupported payload types, missing
+    /// `.platform` with metadata updates and caller request/decoded-byte limits.
+    pub fn new(
+        definition: Value,
+        limits: DefinitionLimits,
+        update_metadata: bool,
+        max_request_bytes: NonZeroUsize,
+    ) -> Result<Self, InputError> {
+        let object = definition
+            .as_object()
+            .ok_or(InputError::InvalidDefinition)?;
+        if object
+            .keys()
+            .any(|key| !matches!(key.as_str(), "format" | "parts"))
+            || object.get("format").is_some_and(|format| {
+                !format.as_str().is_some_and(|format| {
+                    format.eq_ignore_ascii_case("JSON") || format.eq_ignore_ascii_case("TMDL")
+                })
+            })
+        {
+            return Err(InputError::InvalidDefinition);
+        }
+        let parts = object
+            .get("parts")
+            .and_then(Value::as_array)
+            .ok_or(InputError::InvalidDefinition)?;
+        for part in parts {
+            let part = part.as_object().ok_or(InputError::InvalidDefinition)?;
+            if part
+                .keys()
+                .any(|key| !matches!(key.as_str(), "path" | "payload" | "payloadType"))
+                || part.get("payloadType").and_then(Value::as_str) != Some("InlineBase64")
+            {
+                return Err(InputError::InvalidDefinition);
+            }
+        }
+        if update_metadata
+            && !parts
+                .iter()
+                .any(|part| part["path"].as_str() == Some(".platform"))
+        {
+            return Err(InputError::MissingPlatform);
+        }
+        let mut envelope = serde_json::Map::new();
+        envelope.insert("definition".into(), definition);
+        let envelope = Value::Object(envelope);
+        validate_definition(&envelope, limits).map_err(|issue| match issue {
+            DecodeIssue::Limit(_) => InputError::RequestLimit,
+            DecodeIssue::Invalid(_) => InputError::InvalidDefinition,
+        })?;
+        let mut writer = BoundedJson {
+            bytes: Vec::new(),
+            limit: max_request_bytes.get(),
+            exceeded: false,
+        };
+        if serde_json::to_writer(&mut writer, &envelope).is_err() {
+            return Err(if writer.exceeded {
+                InputError::RequestLimit
+            } else {
+                InputError::InvalidDefinition
+            });
+        }
+        Ok(Self {
+            body: writer.bytes,
+            update_metadata,
+        })
+    }
+
+    /// Returns exact bounded request bytes; no reformatting of decoded parts occurs.
+    pub fn body(&self) -> &[u8] {
+        &self.body
+    }
+
+    /// Whether this explicit request also updates metadata from `.platform`.
+    pub const fn update_metadata(&self) -> bool {
+        self.update_metadata
+    }
+}
+
+impl fmt::Debug for DefinitionReplacement {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DefinitionReplacement")
+            .field("bytes", &self.body.len())
+            .field("update_metadata", &self.update_metadata)
             .finish()
     }
 }
@@ -345,6 +455,12 @@ pub enum PublicOutcome<T> {
         data: T,
         /// Original status/headers/body for evidence, not implicit logging.
         response: OperationResponse,
+        /// Original service operation handle, retained after LRO completion.
+        operation_id: Option<String>,
+        /// Shared engine's exact uncertain-effect flag.
+        mutation_may_have_occurred: bool,
+        /// Existing bounded observation-policy warnings, never silently dropped.
+        warnings: Vec<OperationWarning>,
     },
     /// The service accepted work; no completion/result is invented.
     Accepted {
@@ -354,6 +470,10 @@ pub enum PublicOutcome<T> {
         operation_id: String,
         /// Original accepted response.
         response: OperationResponse,
+        /// Shared engine's exact uncertain-effect flag.
+        mutation_may_have_occurred: bool,
+        /// Existing observation-policy warnings.
+        warnings: Vec<OperationWarning>,
     },
 }
 
@@ -386,7 +506,10 @@ pub async fn get_model<E: OperationExecutor>(
             .with_query(&[("form", "Expanded")])
             .map_err(|_| PublicError::input(target))?,
     };
-    execute(session, target, operation, decode_public_model).await
+    execute(session, target, operation, |value| {
+        decode_public_model(value).map_err(DecodeIssue::Invalid)
+    })
+    .await
 }
 
 /// Replace the public whole model using explicit source JSON, never implicit upsert.
@@ -411,7 +534,10 @@ pub async fn replace_model<E: OperationExecutor>(
         Some(body),
         observation,
     )?;
-    execute(session, target, operation, decode_public_model).await
+    execute(session, target, operation, |value| {
+        decode_public_model(value).map_err(DecodeIssue::Invalid)
+    })
+    .await
 }
 
 fn decode_public_model(value: Value) -> Result<PublicModel, &'static str> {
@@ -459,14 +585,61 @@ pub async fn get_definition<E: OperationExecutor>(
     .await
 }
 
-fn validate_definition(value: &Value, limits: DefinitionLimits) -> Result<(), &'static str> {
+/// Replace an addressed item's complete public definition, preserving native parts.
+///
+/// The service does not change sensitivity labels through this API. No item
+/// creation, optimistic condition, implicit metadata update or rollback is added.
+///
+/// # Errors
+/// Preserves native rejection/acceptance/uncertainty. A completed empty 200 body
+/// is valid for this endpoint and never fabricated for representation reads.
+pub async fn replace_definition<E: OperationExecutor>(
+    session: &mut OperationSession<'_, E>,
+    target: &OntologyTarget,
+    replacement: &DefinitionReplacement,
+    observation: Observation,
+) -> Result<PublicOutcome<()>, PublicError> {
+    let body =
+        serde_json::from_slice(replacement.body()).map_err(|_| PublicError::input(target))?;
+    let completion = match observation {
+        Observation::ReturnAccepted => CompletionPolicy::ReturnAccepted,
+        Observation::WaitForResult => CompletionPolicy::WaitForCompletion,
+    };
+    let mut operation = public_operation_with_completion(
+        target,
+        "updateDefinition",
+        ResourceMethod::Post,
+        Some(body),
+        completion,
+    )?;
+    if replacement.update_metadata {
+        operation = operation
+            .with_query(&[("updateMetadata", "true")])
+            .map_err(|_| PublicError::input(target))?;
+    }
+    execute_response(session, target, operation, |_| Ok(())).await
+}
+
+#[derive(Clone, Copy)]
+enum DecodeIssue {
+    Invalid(&'static str),
+    Limit(&'static str),
+}
+
+impl From<&'static str> for DecodeIssue {
+    fn from(reason: &'static str) -> Self {
+        Self::Invalid(reason)
+    }
+}
+
+fn validate_definition(value: &Value, limits: DefinitionLimits) -> Result<(), DecodeIssue> {
     let parts = value
         .get("definition")
         .and_then(|v| v.get("parts"))
         .and_then(Value::as_array)
         .ok_or("native definition parts are missing")?;
     if parts.len() > limits.max_parts.get() {
-        return Err("native definition part limit exceeded");
+        return Err(DecodeIssue::Limit("native definition part limit exceeded"));
     }
     let mut paths = BTreeSet::new();
     let mut remaining = limits.max_decoded_bytes.get();
@@ -488,7 +661,9 @@ fn validate_definition(value: &Value, limits: DefinitionLimits) -> Result<(), &'
             || path.chars().any(char::is_control)
             || !paths.insert(path)
         {
-            return Err("native definition part paths are invalid or duplicate");
+            return Err(DecodeIssue::Invalid(
+                "native definition part paths are invalid or duplicate",
+            ));
         }
         if kind == "InlineBase64" {
             let padding = payload
@@ -499,17 +674,21 @@ fn validate_definition(value: &Value, limits: DefinitionLimits) -> Result<(), &'
                 .min(2);
             let estimate = base64::decoded_len_estimate(payload.len()).saturating_sub(padding);
             if estimate > remaining {
-                return Err("native definition decoded byte limit exceeded");
+                return Err(DecodeIssue::Limit(
+                    "native definition decoded byte limit exceeded",
+                ));
             }
             let decoded = STANDARD
                 .decode(payload)
                 .map_err(|_| "native part base64 is invalid")?;
             if decoded.len() > remaining {
-                return Err("native definition decoded byte limit exceeded");
+                return Err(DecodeIssue::Limit(
+                    "native definition decoded byte limit exceeded",
+                ));
             }
             remaining -= decoded.len();
         } else if kind.is_empty() {
-            return Err("native part payload type is empty");
+            return Err(DecodeIssue::Invalid("native part payload type is empty"));
         }
     }
     Ok(())
@@ -522,6 +701,16 @@ fn public_operation(
     body: Option<Value>,
     observation: Observation,
 ) -> Result<ResourceOperation, PublicError> {
+    public_operation_with_completion(target, action, method, body, observation.policy())
+}
+
+fn public_operation_with_completion(
+    target: &OntologyTarget,
+    action: &str,
+    method: ResourceMethod,
+    body: Option<Value>,
+    completion: CompletionPolicy,
+) -> Result<ResourceOperation, PublicError> {
     ResourceOperation::new(
         method,
         &[
@@ -532,7 +721,7 @@ fn public_operation(
             action,
         ],
         body,
-        observation.policy(),
+        completion,
     )
     .map_err(|_| PublicError::input(target))
 }
@@ -541,7 +730,21 @@ async fn execute<E: OperationExecutor, T>(
     session: &mut OperationSession<'_, E>,
     target: &OntologyTarget,
     operation: ResourceOperation,
-    decode: impl FnOnce(Value) -> Result<T, &'static str>,
+    decode: impl FnOnce(Value) -> Result<T, DecodeIssue>,
+) -> Result<PublicOutcome<T>, PublicError> {
+    execute_response(session, target, operation, |response| {
+        let value = serde_json::from_slice(&response.body)
+            .map_err(|_| DecodeIssue::Invalid("response is not JSON"))?;
+        decode(value)
+    })
+    .await
+}
+
+async fn execute_response<E: OperationExecutor, T>(
+    session: &mut OperationSession<'_, E>,
+    target: &OntologyTarget,
+    operation: ResourceOperation,
+    decode: impl FnOnce(&OperationResponse) -> Result<T, DecodeIssue>,
 ) -> Result<PublicOutcome<T>, PublicError> {
     let operation =
         FabricOperation::from_resource(&operation).map_err(|_| PublicError::input(target))?;
@@ -554,7 +757,7 @@ async fn execute<E: OperationExecutor, T>(
             return Err(PublicError::response(
                 target,
                 response,
-                "acceptance has no operation ID",
+                DecodeIssue::Invalid("acceptance has no operation ID"),
                 session.evidence(OperationErrorKind::InvalidResponse),
             ));
         };
@@ -562,36 +765,35 @@ async fn execute<E: OperationExecutor, T>(
             target: target.clone(),
             operation_id,
             response,
+            mutation_may_have_occurred: session
+                .evidence(OperationErrorKind::InvalidResponse)
+                .mutation_may_have_occurred,
+            warnings: session.warnings().into(),
         });
     }
     if response.status != 200 {
         return Err(PublicError::response(
             target,
             response,
-            "unexpected completed response status",
+            DecodeIssue::Invalid("unexpected completed response status"),
             session.evidence(OperationErrorKind::InvalidResponse),
         ));
     }
-    let data = serde_json::from_slice(&response.body).map_err(|_| {
-        PublicError::response(
-            target,
-            response.clone(),
-            "response is not JSON",
-            session.evidence(OperationErrorKind::InvalidResponse),
-        )
+    let data = decode(&response).map_err(|issue| {
+        let kind = match issue {
+            DecodeIssue::Invalid(_) => OperationErrorKind::InvalidResponse,
+            DecodeIssue::Limit(_) => OperationErrorKind::Limit,
+        };
+        PublicError::response(target, response.clone(), issue, session.evidence(kind))
     })?;
-    let data = decode(data).map_err(|reason| {
-        PublicError::response(
-            target,
-            response.clone(),
-            reason,
-            session.evidence(OperationErrorKind::InvalidResponse),
-        )
-    })?;
+    let evidence = session.evidence(OperationErrorKind::InvalidResponse);
     Ok(PublicOutcome::Completed {
         target: target.clone(),
         data,
         response,
+        operation_id: evidence.operation_id,
+        mutation_may_have_occurred: evidence.mutation_may_have_occurred,
+        warnings: session.warnings().into(),
     })
 }
 
@@ -602,6 +804,10 @@ pub enum InputError {
     InvalidIdentity,
     /// The body is not the native public model envelope/collection shape.
     InvalidModel,
+    /// The native definition envelope/parts are malformed or unsupported for writing.
+    InvalidDefinition,
+    /// Updating metadata requires an explicit native `.platform` part.
+    MissingPlatform,
     /// The serialized model request exceeds the service ceiling.
     RequestLimit,
 }
@@ -630,6 +836,15 @@ pub enum PublicErrorKind {
         /// Original bounded response; no metadata substitution.
         response: Box<OperationResponse>,
         /// Shared engine's exact accepted-operation and uncertain-effect evidence.
+        evidence: Box<OperationError>,
+    },
+    /// Valid source exceeded an explicit local inspection budget; no clipped success.
+    BudgetExceeded {
+        /// Stable explanation of the exceeded bound.
+        reason: &'static str,
+        /// Original bounded response for reconciliation or explicit inspection.
+        response: Box<OperationResponse>,
+        /// Shared-engine scope, operation and uncertain-effect evidence.
         evidence: Box<OperationError>,
     },
 }
@@ -670,16 +885,24 @@ impl PublicError {
     fn response(
         target: &OntologyTarget,
         response: OperationResponse,
-        reason: &'static str,
+        issue: DecodeIssue,
         evidence: OperationError,
     ) -> Self {
-        Self {
-            target: target.clone(),
-            kind: PublicErrorKind::InvalidResponse {
+        let kind = match issue {
+            DecodeIssue::Invalid(reason) => PublicErrorKind::InvalidResponse {
                 reason,
                 response: Box::new(response),
                 evidence: Box::new(evidence),
             },
+            DecodeIssue::Limit(reason) => PublicErrorKind::BudgetExceeded {
+                reason,
+                response: Box::new(response),
+                evidence: Box::new(evidence),
+            },
+        };
+        Self {
+            target: target.clone(),
+            kind,
         }
     }
 }

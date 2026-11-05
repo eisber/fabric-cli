@@ -16,6 +16,11 @@ generation's schema; generation-independent support must be declared explicitly.
 Overlapping bindings for the same action are rejected instead of using first
 match or fallback routing.
 
+Existing items and workspace-owned item collections have distinct identity
+kinds. An item-create target retains its actual parent workspace without
+inventing an item UUID before creation. Scope is part of capability selection;
+an item-only binding cannot silently authorize a collection or vice versa.
+
 `resolve` is discovery, **not execution approval**. Its result retains conditional
 prerequisites and explicit unsupported reasons. An execution adapter must check
 the binding and caller/host policy before dispatch. Registered effects describe
@@ -28,6 +33,12 @@ exact value, including conditional prerequisites. `ApprovedOperation` borrows
 it for immediate use: it cannot be deserialized, persisted as a reusable grant,
 or rebound to a different request. Typed operation adapters still own input
 validation and native authorization. There is no default allow policy.
+
+Descriptors distinguish required effects from explicitly selectable effects.
+An output-file request can select declared `LocalWrite` before approval without
+inventing a second operation ID; preparation cannot remove required effects or
+add an undeclared remote effect. Output reservation and the exact local path
+remain the host adapter's responsibility.
 
 `ExecutionReceipt` retains target/effects/evidence outside projected result data
 and distinguishes succeeded, accepted, partial, failed and unknown outcomes.

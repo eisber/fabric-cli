@@ -17,7 +17,18 @@ pub use receipt::{
     ApprovalPolicy, ApprovedOperation, ChildIdentity, Coverage, ExecutionEvidence,
     ExecutionReceipt, FailureInfo, ItemIdentity, OperationHandle, Outcome, Precondition,
     PreparedOperation, ReceiptBuildError, ReceiptError, ReceiptMetadata, ResolvedTarget,
+    TargetIdentity, WorkspaceIdentity,
 };
+
+/// Identity cardinality required by an explicitly registered target binding.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TargetKind {
+    /// An existing owner item, its subresource or representation.
+    Item,
+    /// A workspace-owned item collection or not-yet-created destination.
+    WorkspaceCollection,
+}
 
 /// Selected common actions in the initial Ontology authoring slice.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -119,6 +130,7 @@ pub struct OperationDescriptor {
     input_schema: Value,
     output_schema: Value,
     effects: Vec<Effect>,
+    optional_effects: Vec<Effect>,
 }
 
 impl OperationDescriptor {
@@ -149,7 +161,26 @@ impl OperationDescriptor {
             input_schema,
             output_schema,
             effects,
+            optional_effects: Vec::new(),
         })
+    }
+
+    /// Declares effects an adapter may select only for explicit request options.
+    ///
+    /// Required effects cannot be removed by invocation preparation.
+    ///
+    /// # Errors
+    /// Rejects repeats or overlap with required effects.
+    pub fn with_optional_effects(mut self, effects: Vec<Effect>) -> Result<Self, ContractError> {
+        let mut unique = Vec::new();
+        for effect in &effects {
+            if self.effects.contains(effect) || unique.contains(effect) {
+                return Err(ContractError::DuplicateEffect);
+            }
+            unique.push(*effect);
+        }
+        self.optional_effects = effects;
+        Ok(self)
     }
 
     /// Returns the single operation identity, independent of the selected head.
@@ -176,12 +207,19 @@ impl OperationDescriptor {
     pub fn effects(&self) -> &[Effect] {
         &self.effects
     }
+
+    /// Returns explicitly selectable effects, not automatically enabled effects.
+    pub fn optional_effects(&self) -> &[Effect] {
+        &self.optional_effects
+    }
 }
 
 /// A provider-qualified target selection after path and identity resolution.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Target {
+    /// Whether an existing item or its real parent collection is addressed.
+    pub kind: TargetKind,
     /// Exact provider item type, not a display name or permission grant.
     pub owner_type: String,
     /// Stable registered facet, not an arbitrary provider URL.
@@ -196,6 +234,7 @@ pub struct Target {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Binding {
+    target_kind: TargetKind,
     owner_type: String,
     facet: String,
     representation: String,
@@ -242,6 +281,7 @@ impl Binding {
             Availability::Available | Availability::Unsupported(_) => {}
         }
         Ok(Self {
+            target_kind: TargetKind::Item,
             owner_type: owner_type.into(),
             facet: facet.into(),
             representation: representation.into(),
@@ -266,15 +306,23 @@ impl Binding {
         &self.availability
     }
 
+    /// Explicitly binds a workspace collection instead of the default item scope.
+    pub fn with_target_kind(mut self, kind: TargetKind) -> Self {
+        self.target_kind = kind;
+        self
+    }
+
     fn same_scope(&self, other: &Self) -> bool {
-        self.owner_type == other.owner_type
+        self.target_kind == other.target_kind
+            && self.owner_type == other.owner_type
             && self.facet == other.facet
             && self.representation == other.representation
             && self.generation.overlaps(other.generation)
     }
 
     fn matches(&self, target: &Target) -> bool {
-        self.owner_type == target.owner_type
+        self.target_kind == target.kind
+            && self.owner_type == target.owner_type
             && self.facet == target.facet
             && self.representation == target.representation
             && self.generation.accepts(target.generation)
@@ -344,6 +392,7 @@ impl Registry {
         self.bindings.push(binding);
         self.bindings.sort_by(|left, right| {
             (
+                left.target_kind,
                 &left.owner_type,
                 &left.facet,
                 &left.representation,
@@ -351,6 +400,7 @@ impl Registry {
                 generation_order(left.generation),
             )
                 .cmp(&(
+                    right.target_kind,
                     &right.owner_type,
                     &right.facet,
                     &right.representation,

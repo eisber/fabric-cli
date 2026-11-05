@@ -18,6 +18,7 @@ const ITEM: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 
 fn selection(generation: u32) -> Target {
     Target {
+        kind: fabric_v2_contracts::TargetKind::Item,
         owner_type: "Ontology".into(),
         facet: "model".into(),
         representation: "minimized".into(),
@@ -76,7 +77,7 @@ impl ApprovalPolicy for Policy {
     fn authorize(&mut self, operation: &PreparedOperation) -> Result<(), Self::Error> {
         self.calls += 1;
         assert_eq!(operation.operation_id(), "model.get");
-        assert_eq!(operation.target().identity().item_id(), ITEM);
+        assert_eq!(operation.target().identity().item_id(), Some(ITEM));
         assert_eq!(operation.effects(), &[Effect::RemoteRead]);
         if self.allow {
             Ok(())
@@ -367,4 +368,179 @@ fn native_revision_conditions_are_preserved_and_contradictions_rejected() {
         encoded["meta"]["preconditions"][0]["value"],
         "W/\"exact-native-revision\""
     );
+}
+
+#[test]
+fn create_collection_keeps_real_parent_identity_without_fabricating_an_item() {
+    use fabric_v2_contracts::{TargetKind, WorkspaceIdentity};
+
+    struct CollectionPolicy;
+    impl ApprovalPolicy for CollectionPolicy {
+        type Error = &'static str;
+        fn authorize(&mut self, operation: &PreparedOperation) -> Result<(), Self::Error> {
+            assert_eq!(operation.target().identity().workspace_id(), WORKSPACE);
+            assert_eq!(operation.target().identity().item_id(), None);
+            assert_eq!(operation.preconditions(), &[Precondition::CreateOnly]);
+            Ok(())
+        }
+    }
+
+    let mut registry = Registry::default();
+    registry
+        .register(
+            OperationDescriptor::new(
+                "item.create",
+                Verb::Create,
+                json!({"type":"object"}),
+                json!({"type":"object"}),
+                vec![Effect::RemoteWrite],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    registry.alias("ontology", "Ontology").unwrap();
+    registry
+        .bind(
+            Binding::new(
+                "Ontology",
+                "items",
+                "json",
+                Generation::Any,
+                "item.create",
+                Availability::Available,
+            )
+            .unwrap()
+            .with_target_kind(TargetKind::WorkspaceCollection),
+        )
+        .unwrap();
+    let collection = Target {
+        kind: TargetKind::WorkspaceCollection,
+        owner_type: "Ontology".into(),
+        facet: "items".into(),
+        representation: "json".into(),
+        generation: None,
+    };
+    let resolved = ResolvedTarget::workspace_collection(
+        "/workspace.Workspace/new.Ontology",
+        WorkspaceIdentity::new(WORKSPACE).unwrap(),
+        collection.clone(),
+    )
+    .unwrap();
+    let prepared = PreparedOperation::new(
+        registry
+            .resolve(Verb::Create, &collection, Some("ontology"))
+            .unwrap(),
+        resolved,
+        json!({"displayName":"new"}),
+    )
+    .unwrap()
+    .with_preconditions(vec![Precondition::CreateOnly])
+    .unwrap();
+    let approved = prepared.authorize(&mut CollectionPolicy).unwrap();
+    let mut evidence = evidence(202);
+    evidence.handles.push(OperationHandle::FabricOperation {
+        id: "original-operation".into(),
+    });
+    let receipt =
+        ExecutionReceipt::<serde_json::Value>::new(&approved, Outcome::Accepted, evidence).unwrap();
+    let encoded = serde_json::to_value(receipt).unwrap();
+    assert_eq!(
+        encoded["meta"]["target"]["identity"]["kind"],
+        "workspaceCollection"
+    );
+    assert!(
+        encoded["meta"]["target"]["identity"]
+            .get("itemId")
+            .is_none()
+    );
+    let mut item_selector = collection.clone();
+    item_selector.kind = TargetKind::Item;
+    assert!(
+        registry
+            .resolve(Verb::Create, &item_selector, None)
+            .is_err()
+    );
+    assert_eq!(
+        ResolvedTarget::new(
+            "/workspace.Workspace/item.Ontology",
+            ItemIdentity::new(WORKSPACE, ITEM).unwrap(),
+            collection,
+            None,
+        )
+        .unwrap_err(),
+        ReceiptError::TargetMismatch
+    );
+}
+
+#[test]
+fn explicit_file_effect_is_approved_without_removing_required_remote_effects() {
+    struct FilePolicy;
+    impl ApprovalPolicy for FilePolicy {
+        type Error = &'static str;
+        fn authorize(&mut self, operation: &PreparedOperation) -> Result<(), Self::Error> {
+            assert_eq!(
+                operation.effects(),
+                &[Effect::RemoteRead, Effect::LocalWrite]
+            );
+            assert_eq!(operation.input()["output"]["path"], "explicit-output.json");
+            Ok(())
+        }
+    }
+
+    let mut registry = Registry::default();
+    registry
+        .register(
+            OperationDescriptor::new(
+                "model.get",
+                Verb::Get,
+                json!({"type":"object"}),
+                json!({"type":"object"}),
+                vec![Effect::RemoteRead],
+            )
+            .unwrap()
+            .with_optional_effects(vec![Effect::LocalWrite])
+            .unwrap(),
+        )
+        .unwrap();
+    registry
+        .bind(
+            Binding::new(
+                "Ontology",
+                "model",
+                "minimized",
+                Generation::Exact(2),
+                "model.get",
+                Availability::Available,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    let request = PreparedOperation::new(
+        registry.resolve(Verb::Get, &selection(2), None).unwrap(),
+        target(2),
+        json!({"output":{"kind":"file","path":"explicit-output.json"}}),
+    )
+    .unwrap();
+    assert_eq!(request.effects(), &[Effect::RemoteRead]);
+    assert_eq!(
+        request
+            .clone()
+            .with_optional_effects(vec![Effect::RemoteWrite])
+            .unwrap_err(),
+        ReceiptError::InvalidEffects
+    );
+    assert_eq!(
+        request
+            .clone()
+            .with_optional_effects(vec![Effect::LocalWrite, Effect::LocalWrite])
+            .unwrap_err(),
+        ReceiptError::InvalidEffects
+    );
+    let file = request
+        .with_optional_effects(vec![Effect::LocalWrite])
+        .unwrap();
+    let approved = file.authorize(&mut FilePolicy).unwrap();
+    assert!(std::ptr::eq(approved.prepared(), &file));
+    let stdout = file.with_optional_effects(vec![]).unwrap();
+    assert_eq!(stdout.effects(), &[Effect::RemoteRead]);
 }

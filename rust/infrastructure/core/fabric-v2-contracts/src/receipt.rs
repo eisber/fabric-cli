@@ -3,7 +3,7 @@
 
 //! Host-neutral preparation, immediate approval and execution evidence.
 
-use crate::{Availability, ContractError, Effect, Resolution, Target};
+use crate::{Availability, ContractError, Effect, Resolution, Target, TargetKind};
 use serde::Serialize;
 use serde_json::Value;
 use std::fmt;
@@ -23,15 +23,7 @@ impl ItemIdentity {
     /// Rejects missing or malformed UUIDs before operation preparation.
     pub fn new(workspace_id: &str, item_id: &str) -> Result<Self, ReceiptError> {
         for id in [workspace_id, item_id] {
-            if id.len() != 36
-                || !id.bytes().enumerate().all(|(index, byte)| {
-                    if matches!(index, 8 | 13 | 18 | 23) {
-                        byte == b'-'
-                    } else {
-                        byte.is_ascii_hexdigit()
-                    }
-                })
-            {
+            if !valid_uuid(id) {
                 return Err(ReceiptError::InvalidIdentity);
             }
         }
@@ -52,6 +44,77 @@ impl ItemIdentity {
     }
 }
 
+/// A real workspace identity for operations before any item exists.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceIdentity {
+    workspace_id: String,
+}
+
+impl WorkspaceIdentity {
+    /// Validates a workspace UUID without fabricating a created-item ID.
+    ///
+    /// # Errors
+    /// Rejects malformed or route-changing workspace identifiers.
+    pub fn new(workspace_id: &str) -> Result<Self, ReceiptError> {
+        if !valid_uuid(workspace_id) {
+            return Err(ReceiptError::InvalidIdentity);
+        }
+        Ok(Self {
+            workspace_id: workspace_id.into(),
+        })
+    }
+
+    /// Returns the original parent workspace UUID.
+    pub fn workspace_id(&self) -> &str {
+        &self.workspace_id
+    }
+}
+
+/// Existing item or parent collection identity, with no synthetic item IDs.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum TargetIdentity {
+    /// Provider-established existing owner coordinates.
+    Item {
+        /// Explicit workspace and item identity.
+        #[serde(flatten)]
+        identity: ItemIdentity,
+    },
+    /// Real parent coordinates for a collection or intended new destination.
+    WorkspaceCollection {
+        /// Parent workspace identity; no created item is claimed.
+        #[serde(flatten)]
+        identity: WorkspaceIdentity,
+    },
+}
+
+impl TargetIdentity {
+    /// Returns the parent workspace for either target kind.
+    pub fn workspace_id(&self) -> &str {
+        match self {
+            Self::Item { identity } => identity.workspace_id(),
+            Self::WorkspaceCollection { identity } => identity.workspace_id(),
+        }
+    }
+
+    /// Returns an item ID only when one actually exists in this target identity.
+    pub fn item_id(&self) -> Option<&str> {
+        match self {
+            Self::Item { identity } => Some(identity.item_id()),
+            Self::WorkspaceCollection { .. } => None,
+        }
+    }
+
+    /// Returns concrete identity cardinality for capability selection.
+    pub const fn kind(&self) -> TargetKind {
+        match self {
+            Self::Item { .. } => TargetKind::Item,
+            Self::WorkspaceCollection { .. } => TargetKind::WorkspaceCollection,
+        }
+    }
+}
+
 /// Exact resolved native child selector, not a provider URL or executable code.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,7 +130,7 @@ pub struct ChildIdentity {
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedTarget {
     canonical_path: String,
-    identity: ItemIdentity,
+    identity: TargetIdentity,
     selection: Target,
     child: Option<ChildIdentity>,
 }
@@ -86,6 +149,40 @@ impl ResolvedTarget {
         selection: Target,
         child: Option<ChildIdentity>,
     ) -> Result<Self, ReceiptError> {
+        Self::from_identity(
+            canonical_path,
+            TargetIdentity::Item { identity },
+            selection,
+            child,
+        )
+    }
+
+    /// Creates a parent collection target without asserting a new item exists.
+    ///
+    /// # Errors
+    /// Rejects a mismatched scope, malformed canonical path or invalid selectors.
+    pub fn workspace_collection(
+        canonical_path: &str,
+        identity: WorkspaceIdentity,
+        selection: Target,
+    ) -> Result<Self, ReceiptError> {
+        Self::from_identity(
+            canonical_path,
+            TargetIdentity::WorkspaceCollection { identity },
+            selection,
+            None,
+        )
+    }
+
+    fn from_identity(
+        canonical_path: &str,
+        identity: TargetIdentity,
+        selection: Target,
+        child: Option<ChildIdentity>,
+    ) -> Result<Self, ReceiptError> {
+        if selection.kind != identity.kind() {
+            return Err(ReceiptError::TargetMismatch);
+        }
         if !canonical_path.starts_with('/')
             || canonical_path.starts_with("//")
             || !bounded_text(canonical_path, 32 * 1024)
@@ -119,7 +216,7 @@ impl ResolvedTarget {
     }
 
     /// Returns the owning item identity.
-    pub fn identity(&self) -> &ItemIdentity {
+    pub fn identity(&self) -> &TargetIdentity {
         &self.identity
     }
 
@@ -144,6 +241,8 @@ pub struct PreparedOperation {
     effects: Vec<Effect>,
     availability: Availability,
     preconditions: Vec<Precondition>,
+    #[serde(skip_serializing)]
+    allowed_optional_effects: Vec<Effect>,
 }
 
 impl PreparedOperation {
@@ -175,7 +274,26 @@ impl PreparedOperation {
             effects: resolution.operation.effects().into(),
             availability: binding.availability().clone(),
             preconditions: Vec::new(),
+            allowed_optional_effects: resolution.operation.optional_effects().into(),
         })
+    }
+
+    /// Selects declared optional effects, for example an explicit local file output.
+    ///
+    /// # Errors
+    /// Rejects undeclared or repeated effects. Required effects remain intact.
+    pub fn with_optional_effects(mut self, effects: Vec<Effect>) -> Result<Self, ReceiptError> {
+        let mut unique = Vec::new();
+        for effect in &effects {
+            if !self.allowed_optional_effects.contains(effect) || unique.contains(effect) {
+                return Err(ReceiptError::InvalidEffects);
+            }
+            unique.push(*effect);
+        }
+        self.effects
+            .retain(|effect| !self.allowed_optional_effects.contains(effect));
+        self.effects.extend(effects);
+        Ok(self)
     }
 
     /// Declares exact native conditions before the request can be approved.
@@ -563,6 +681,17 @@ fn bounded_text(value: &str, maximum: usize) -> bool {
     !value.trim().is_empty() && value.len() <= maximum && !value.chars().any(char::is_control)
 }
 
+fn valid_uuid(id: &str) -> bool {
+    id.len() == 36
+        && id.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        })
+}
+
 /// Invalid preparation or contradictory execution evidence, never a provider retry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReceiptError {
@@ -570,6 +699,8 @@ pub enum ReceiptError {
     InvalidIdentity,
     /// Native preconditions are malformed, repeated or contradictory.
     InvalidPrecondition,
+    /// Invocation effects were repeated or not declared by the registered contract.
+    InvalidEffects,
     /// The discovered binding does not match the approved target.
     TargetMismatch,
     /// This capability is explicitly unsupported.

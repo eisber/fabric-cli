@@ -24,6 +24,7 @@ fn descriptor(id: &str, verb: Verb) -> OperationDescriptor {
 
 fn target(generation: Option<u32>) -> Target {
     Target {
+        kind: fabric_v2_contracts::TargetKind::Item,
         owner_type: "Ontology".into(),
         facet: "definition".into(),
         representation: "native".into(),

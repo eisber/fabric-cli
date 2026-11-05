@@ -17,9 +17,9 @@ use fabric_sdk_items::{
     ItemClient, ItemExecutionError, ItemExecutor, ItemGetOptions, ItemRequest, ItemResponse,
 };
 use fabric_sdk_ontology::{
-    DefinitionLimits, InputError, ModelForm, ModelReplacement, Observation, ObservedGeneration,
-    OntologyTarget, PublicErrorKind, PublicOutcome, get_definition, get_metadata, get_model,
-    replace_model,
+    DefinitionLimits, DefinitionReplacement, InputError, ModelForm, ModelReplacement, Observation,
+    ObservedGeneration, OntologyTarget, PublicErrorKind, PublicOutcome, get_definition,
+    get_metadata, get_model, replace_definition, replace_model,
 };
 use fabric_sdk_operations::{
     OperationExecutionError, OperationExecutor, OperationLimits, OperationRequest,
@@ -369,8 +369,10 @@ async fn malformed_duplicate_and_oversize_parts_fail_with_original_response_evid
         )
         .await
         .unwrap_err();
-        let PublicErrorKind::InvalidResponse { response, .. } = error.kind else {
-            panic!("expected retained response")
+        let response = match error.kind {
+            PublicErrorKind::InvalidResponse { response, .. } if budget > 1 => response,
+            PublicErrorKind::BudgetExceeded { response, .. } if budget == 1 => response,
+            _ => panic!("expected typed validation/limit with retained response"),
         };
         assert_eq!(
             serde_json::from_slice::<Value>(&response.body).unwrap(),
@@ -457,6 +459,8 @@ async fn acceptance_retains_original_scope_and_handle_without_polling_or_resubmi
         target: original,
         operation_id,
         response,
+        mutation_may_have_occurred,
+        warnings,
     } = get_definition(
         &mut session,
         &target(),
@@ -471,6 +475,8 @@ async fn acceptance_retains_original_scope_and_handle_without_polling_or_resubmi
     assert_eq!(original, target());
     assert_eq!(operation_id, OPERATION);
     assert_eq!(response.status, 202);
+    assert!(mutation_may_have_occurred);
+    assert!(warnings.is_empty());
     assert_eq!(executor.seen.lock().unwrap().len(), 1);
     assert_eq!(executor.waits.load(Ordering::SeqCst), 0);
 }
@@ -625,4 +631,148 @@ fn invalid_identifiers_internal_model_envelopes_and_over_budget_input_fail_local
         .unwrap_err(),
         InputError::RequestLimit
     );
+}
+
+#[test]
+fn serialized_public_model_limit_is_inclusive_not_a_description_length_proxy() {
+    let overhead = ModelReplacement::new(json!({}), Some(String::new()))
+        .unwrap()
+        .body()
+        .len();
+    let limit = fabric_sdk_ontology::MAX_MODEL_REQUEST_BYTES;
+    let exact = ModelReplacement::new(json!({}), Some("x".repeat(limit - overhead))).unwrap();
+    assert_eq!(exact.body().len(), limit);
+    assert_eq!(
+        ModelReplacement::new(json!({}), Some("x".repeat(limit - overhead + 1))).unwrap_err(),
+        InputError::RequestLimit
+    );
+}
+
+#[tokio::test]
+async fn definition_replacement_preserves_native_parts_and_accepts_real_empty_completion() {
+    let definition = json!({"parts":[
+        {"path":"definition.json","payload":"e30=","payloadType":"InlineBase64"},
+        {"path":".platform","payload":"e30=","payloadType":"InlineBase64"}
+    ]});
+    let replacement = DefinitionReplacement::new(
+        definition.clone(),
+        definition_limits(4),
+        true,
+        NonZeroUsize::new(1024).unwrap(),
+    )
+    .unwrap();
+    let context = context(Arc::new(Credential::default()), Audience::Fabric);
+    let executor = Executor::new(vec![OperationResponse {
+        status: 200,
+        body: vec![],
+        headers: BTreeMap::new(),
+    }]);
+    let mut session = OperationSession::with_context(
+        &context,
+        executor.clone(),
+        OperationLimits::default(),
+        pending(),
+    );
+    let PublicOutcome::Completed {
+        data: (), response, ..
+    } = replace_definition(
+        &mut session,
+        &target(),
+        &replacement,
+        Observation::ReturnAccepted,
+    )
+    .await
+    .unwrap()
+    else {
+        panic!("expected native completed acknowledgement")
+    };
+    assert_eq!(response.status, 200);
+    let seen = executor.seen.lock().unwrap();
+    assert_eq!(seen.len(), 1);
+    assert!(
+        seen[0]
+            .url
+            .ends_with("/updateDefinition?updateMetadata=true")
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&seen[0].body).unwrap(),
+        json!({"definition":definition})
+    );
+}
+
+#[test]
+fn metadata_updates_and_future_definition_writers_are_not_inferred_from_read_support() {
+    let limit = NonZeroUsize::new(1024).unwrap();
+    let definition =
+        json!({"parts":[{"path":"definition.json","payload":"e30=","payloadType":"InlineBase64"}]});
+    assert_eq!(
+        DefinitionReplacement::new(definition.clone(), definition_limits(32), true, limit)
+            .unwrap_err(),
+        InputError::MissingPlatform
+    );
+    assert_eq!(
+        DefinitionReplacement::new(
+            definition,
+            definition_limits(32),
+            false,
+            NonZeroUsize::new(8).unwrap()
+        )
+        .unwrap_err(),
+        InputError::RequestLimit
+    );
+    assert_eq!(
+            DefinitionReplacement::new(
+                json!({"parts":[{"path":"future.part","payload":"opaque","payloadType":"FutureNativeType"}]}),
+                definition_limits(32),false,limit,
+            ).unwrap_err(),InputError::InvalidDefinition
+        );
+}
+
+#[tokio::test]
+async fn resultless_definition_update_observes_completion_without_requesting_a_result() {
+    let replacement = DefinitionReplacement::new(
+        json!({"parts":[{"path":"definition.json","payload":"e30=","payloadType":"InlineBase64"}]}),
+        definition_limits(32),
+        false,
+        NonZeroUsize::new(1024).unwrap(),
+    )
+    .unwrap();
+    let context = context(Arc::new(Credential::default()), Audience::Fabric);
+    let terminal = response(200, json!({"status":"Succeeded"}));
+    let executor = Executor::new(vec![accepted(), terminal]);
+    let mut session = OperationSession::with_context(
+        &context,
+        executor.clone(),
+        OperationLimits::default(),
+        pending(),
+    );
+    let PublicOutcome::Completed {
+        data: (),
+        response,
+        operation_id,
+        mutation_may_have_occurred,
+        ..
+    } = replace_definition(
+        &mut session,
+        &target(),
+        &replacement,
+        Observation::WaitForResult,
+    )
+    .await
+    .unwrap()
+    else {
+        panic!("expected confirmed completion")
+    };
+    assert_eq!(operation_id.as_deref(), Some(OPERATION));
+    assert!(mutation_may_have_occurred);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&response.body).unwrap()["status"],
+        "Succeeded"
+    );
+    let seen = executor.seen.lock().unwrap();
+    assert_eq!(seen.len(), 2);
+    assert_eq!(seen[0].method, ResourceMethod::Post);
+    assert_eq!(seen[1].method, ResourceMethod::Get);
+    assert!(seen[1].url.ends_with(OPERATION));
+    assert!(seen.iter().all(|request| !request.url.ends_with("/result")));
 }
