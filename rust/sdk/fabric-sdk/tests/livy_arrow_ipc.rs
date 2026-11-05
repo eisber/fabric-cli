@@ -122,8 +122,12 @@ fn dictionary_ordering_fixture(ordering: &[bool], nested: bool) -> RecordBatch {
             let dictionary: DictionaryArray<Int32Type> =
                 ["alpha", "beta", "alpha"].into_iter().map(Some).collect();
             let array = Arc::new(dictionary) as ArrayRef;
-            let field = Field::new(format!("dictionary-{index}"), array.data_type().clone(), false)
-                .with_dict_is_ordered(*ordered);
+            let field = Field::new(
+                format!("dictionary-{index}"),
+                array.data_type().clone(),
+                false,
+            )
+            .with_dict_is_ordered(*ordered);
             (Arc::new(field), array)
         })
         .collect::<Vec<_>>();
@@ -395,14 +399,20 @@ fn dictionary_ids_are_stream_local_even_for_ordered_dictionaries() {
         if let Some(schema) = message.header_as_schema() {
             let dictionary = schema.fields().unwrap().get(1).dictionary().unwrap();
             assert_eq!(dictionary.id(), 1);
-            let offset = dictionary._tab.vtable().get(arrow_ipc::DictionaryEncoding::VT_ID);
+            let offset = dictionary
+                ._tab
+                .vtable()
+                .get(arrow_ipc::DictionaryEncoding::VT_ID);
             assert_ne!(offset, 0);
             locations.push(span.metadata.start + dictionary._tab.loc() + usize::from(offset));
         }
         if let Some(dictionary) = message.header_as_dictionary_batch()
             && dictionary.id() == 1
         {
-            let offset = dictionary._tab.vtable().get(arrow_ipc::DictionaryBatch::VT_ID);
+            let offset = dictionary
+                ._tab
+                .vtable()
+                .get(arrow_ipc::DictionaryBatch::VT_ID);
             assert_ne!(offset, 0);
             locations.push(span.metadata.start + dictionary._tab.loc() + usize::from(offset));
         }
