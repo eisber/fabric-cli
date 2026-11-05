@@ -42,5 +42,15 @@ tokio.workspace = true
 name = "injected_credentials"
 test = true
 
+[[test]]
+name = "livy_arrow"
+path = "tests/livy_arrow.rs"
+required-features = ["livy-arrow"]
+
+[[test]]
+name = "livy_arrow_ipc"
+path = "tests/livy_arrow_ipc.rs"
+required-features = ["livy-arrow-ipc"]
+
 [lints]
 workspace = true

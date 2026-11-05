@@ -72,5 +72,10 @@ azure_core.workspace = true
 fabric-sdk-http.workspace = true
 tokio.workspace = true
 
+[[test]]
+name = "runtime_v2"
+path = "tests/runtime_v2.rs"
+required-features = ["runtime-v2"]
+
 [lints]
 workspace = true
