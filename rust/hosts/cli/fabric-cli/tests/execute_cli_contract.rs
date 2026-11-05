@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+//! Offline executable contracts for the additive root execute command.
 #![deny(unnameable_test_items)]
 
 use std::process::{Command, Output};

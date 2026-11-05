@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+//! Offline typed CSV, JSON, and Parquet output contracts.
 
 #![deny(unnameable_test_items)]
 

@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+//! Offline malformed and resource-amplifying IPC input regressions.
 
 #![deny(unnameable_test_items)]
 

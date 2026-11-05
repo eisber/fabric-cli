@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+//! Root execute parsing and no-host validation contracts.
 #![deny(unnameable_test_items)]
 
 use fabric_cli::{

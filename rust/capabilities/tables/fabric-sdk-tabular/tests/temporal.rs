@@ -127,16 +127,16 @@ fn malformed_date_and_time_values_fail_before_serialization() {
             Err(TabularError::UnsupportedValue { .. })
         ));
     }
+}
 
-    #[test]
-    fn parquet_date_range_does_not_silently_truncate_date64() {
-        for days in [i64::from(i32::MAX) + 1, i64::from(i32::MIN) - 1] {
-            let result = result(vec![Arc::new(Date64Array::from(vec![days * 86_400_000]))]);
-            assert!(encode(&result, ResultFormat::Json, limits()).is_ok());
-            assert!(matches!(
-                encode(&result, ResultFormat::Parquet, limits()),
-                Err(TabularError::UnsupportedValue { .. })
-            ));
-        }
+#[test]
+fn parquet_date_range_does_not_silently_truncate_date64() {
+    for days in [i64::from(i32::MAX) + 1, i64::from(i32::MIN) - 1] {
+        let result = result(vec![Arc::new(Date64Array::from(vec![days * 86_400_000]))]);
+        assert!(encode(&result, ResultFormat::Json, limits()).is_ok());
+        assert!(matches!(
+            encode(&result, ResultFormat::Parquet, limits()),
+            Err(TabularError::UnsupportedValue { .. })
+        ));
     }
 }

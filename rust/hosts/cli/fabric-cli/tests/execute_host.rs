@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+//! Offline execution approval, native operation, and result publication contracts.
 #![deny(unnameable_test_items)]
 
 use arrow_array::{Array, Int64Array, RecordBatch, StringArray};
