@@ -61,7 +61,7 @@ impl PrivateClient {
     /// Public published elements have no source-supported cursor argument and
     /// deliberately do not expose this traversal method.
     pub async fn collect_elements(
-        &self, executor: &impl WorkloadExecutor, operation: Operation<Page<Element>>,
+        &self, executor: &dyn WorkloadExecutor, operation: Operation<Page<Element>>,
         continuation_origin: Url, limits: PagingLimits,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Elements, ElementsError> {

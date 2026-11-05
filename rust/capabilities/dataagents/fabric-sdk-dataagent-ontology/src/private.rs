@@ -347,7 +347,7 @@ impl PrivateClient {
     /// Cancellation before dispatch is NotSent. Cancellation after starting dispatch
     /// is Unknown, never rollback or permission to replay. Accepted responses remain accepted.
     pub async fn execute<T: DeserializeOwned>(
-        &self, executor: &impl WorkloadExecutor, operation: Operation<T>,
+        &self, executor: &dyn WorkloadExecutor, operation: Operation<T>,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Outcome<T>, Error> {
         if operation.contract.caller != self.caller || operation.request.workload() != &self.workload
@@ -365,7 +365,7 @@ impl PrivateClient {
     }
 
     async fn dispatch<T: DeserializeOwned>(
-        &self, executor: &impl WorkloadExecutor, operation: Operation<T>,
+        &self, executor: &dyn WorkloadExecutor, operation: Operation<T>,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Outcome<T>, Error> {
         let mut started = false;
