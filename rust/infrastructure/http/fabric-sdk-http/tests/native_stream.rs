@@ -118,6 +118,7 @@ impl ExecutionTimer for Timer {
 enum Reply {
     Response(AsyncRawResponse),
     Failure,
+    ProtocolFailure,
     Pending,
     Late(AsyncRawResponse, Arc<AtomicBool>),
 }
@@ -152,6 +153,7 @@ impl HttpClient for Wire {
         match reply {
             Reply::Response(response) => Ok(response),
             Reply::Failure => Err(private_error()),
+            Reply::ProtocolFailure => Err(protocol_error()),
             Reply::Pending => {
                 let _guard = Dropped(&self.dropped);
                 pending().await
@@ -181,6 +183,7 @@ struct Probe {
 enum Chunk {
     Bytes(Bytes),
     Failure,
+    ProtocolFailure,
     Pending,
     Late(Bytes, Arc<AtomicBool>),
 }
@@ -198,6 +201,7 @@ impl Stream for Body {
         match self.chunks.pop_front() {
             Some(Chunk::Bytes(bytes)) => Poll::Ready(Some(Ok(bytes))),
             Some(Chunk::Failure) => Poll::Ready(Some(Err(private_error()))),
+            Some(Chunk::ProtocolFailure) => Poll::Ready(Some(Err(protocol_error()))),
             Some(Chunk::Pending) => {
                 self.chunks.push_front(Chunk::Pending);
                 Poll::Pending
@@ -219,6 +223,10 @@ impl Drop for Body {
 
 fn private_error() -> azure_core::Error {
     azure_core::Error::with_message(ErrorKind::Io, "private-token-body-url-provider-error")
+}
+
+fn protocol_error() -> azure_core::Error {
+    azure_core::Error::with_message(ErrorKind::DataConversion, "private-protocol-decoding-error")
 }
 
 fn response(
@@ -805,6 +813,50 @@ async fn get_and_inline_post_transport_loss_dispatch_once_without_retry() {
         );
         assert_eq!(wire.requests.lock().unwrap().len(), 1);
         assert_eq!(credential.scopes.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn protocol_failures_at_header_or_body_boundaries_are_not_retryable_io_evidence() {
+    for method in [NativeMethod::Get, NativeMethod::Head, NativeMethod::Post] {
+        let expected = if method == NativeMethod::Post {
+            NativeError::OutcomeUnknown
+        } else {
+            NativeError::InvalidResponse
+        };
+        let wire = Wire::new([Reply::ProtocolFailure]);
+        let header_executor = executor(
+            Arc::new(Credential::default()),
+            wire.clone(),
+            Arc::new(Timer::default()),
+        );
+        assert_eq!(
+            failure(
+                header_executor
+                    .open(&request(method), limits(), &deadline())
+                    .await
+            ),
+            expected
+        );
+        assert_eq!(wire.requests.lock().unwrap().len(), 1);
+
+        let (reply, probe) = response(200, &[], [Chunk::ProtocolFailure]);
+        let wire = Wire::new([reply]);
+        let body_executor = executor(
+            Arc::new(Credential::default()),
+            wire.clone(),
+            Arc::new(Timer::default()),
+        );
+        let deadline = deadline();
+        let mut response = body_executor
+            .open(&request(method), limits(), &deadline)
+            .await
+            .unwrap();
+        let error = failure(response.body.read(3, &deadline).await);
+        assert_eq!(error, expected);
+        assert!(!format!("{error:?}: {error}").contains("private"));
+        assert_eq!(probe.drops.load(Ordering::SeqCst), 1);
+        assert_eq!(wire.requests.lock().unwrap().len(), 1);
     }
 }
 

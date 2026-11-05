@@ -128,3 +128,34 @@ establish compilation or a passing runtime suite. The coordinator must run the
 focused `native_stream` integration test, the `native_stream::tests` unit tests,
 the existing `native_runtime` regression tests and an all-target check before
 claiming integrated acceptance.
+
+## Proposed transport evidence ABI
+
+An additive `NativeError::Transport` can be projected at exactly two adapter
+boundaries: `HttpClient::execute_request` errors and errors yielded by the actual
+body stream. Only distinguishable I/O evidence should receive that projection
+for GET/HEAD. Credential acquisition remains a separate pre-dispatch path;
+metadata validation, empty chunks, limits, deadlines, status failures and
+protocol/format errors must retain their existing classifications. Mutations
+still report `OutcomeUnknown` where no outcome is provable. The proposed variant
+is evidence for the owner-bound operation, not retry/replay authority, and must
+not broaden retry of `InvalidResponse`.
+
+The ABI alone is insufficient to certify that distinction for the current native
+backend. `fabric-sdk-transport/src/decode.rs` converts every upstream stream
+error into a generic `io::Error`, then maps every `ReaderStream` failure to
+Azure `ErrorKind::Io`. This conflates genuine I/O loss with malformed gzip/zlib
+and upstream `DataConversion` errors, including unrepresentable HTTP trailers,
+even on the identity encoding path. `native.rs` also flattens Hyper request and
+response errors without retaining their typed causes. The concrete adapter
+cannot recover information already erased there, and must not infer it from
+diagnostic text, a fabricated `Http(0)` or failure timing.
+
+The native transport owner must preserve real I/O versus protocol/decoding error
+classification before an adapter mapping of `ErrorKind::Io` can establish that
+distinction for that backend. No transport source, SDK ABI, exhaustive host
+mapping, manifest or retry policy is changed in this preparatory handoff.
+Dedicated fake-client regressions exercise direct `DataConversion` header/body
+failures for GET/HEAD and POST, protecting non-retryable protocol failures.
+Projection to the new public variant remains pending its exact committed ABI;
+the currently committed SDK contract still has no `Transport` variant.
