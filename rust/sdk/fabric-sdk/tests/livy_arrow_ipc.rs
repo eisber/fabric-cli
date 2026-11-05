@@ -7,19 +7,25 @@
 #![deny(unnameable_test_items)]
 
 use arrow_array::{
-    ArrayRef, BooleanArray, DictionaryArray, Int32Array, ListArray, RecordBatch, StringArray,
-    StringViewArray, StructArray, types::Int32Type,
+    ArrayRef, BooleanArray, DictionaryArray, Int32Array, ListArray, RecordBatch, RecordBatchOptions,
+    StringArray, StringViewArray, StructArray, types::Int32Type,
 };
 use arrow_ipc::{
     CompressionType, MessageHeader,
+    reader::StreamReader,
     writer::{DictionaryHandling, IpcWriteOptions, StreamWriter},
 };
 use arrow_schema::{DataType, Field, Schema};
 use fabric_sdk::livy_arrow::{
-    ArrowError, DecodeLimits, NativeIpcDecoder, RawChunk, StreamLimits, TypedDecoder, TypedStream,
-    ipc::NativeIpcSchema,
+    ArrowError, DecodeLimits, FramedDecoder, NativeIpcDecoder, RawChunk, StreamLimits, TypedDecoder,
+    TypedStream, write_frame, write_terminal,
+    ipc::{
+        NativeIpcSchema,
+        output::{IpcOutputLimits, LocalIpcCompletion, NativeIpcOutput},
+    },
 };
 use std::collections::HashMap;
+use std::io::{self, Cursor, Write};
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -212,6 +218,39 @@ fn spans(bytes: &[u8]) -> Vec<Span> {
     spans
 }
 
+fn remap_second_dictionary(first: &[u8]) -> Vec<u8> {
+    let mut second = first.to_vec();
+    let mut locations = Vec::new();
+    for span in spans(&second) {
+        let message = arrow_ipc::root_as_message(&second[span.metadata.clone()]).unwrap();
+        if let Some(schema) = message.header_as_schema() {
+            let dictionary = schema.fields().unwrap().get(1).dictionary().unwrap();
+            assert_eq!(dictionary.id(), 1);
+            let offset = dictionary
+                ._tab
+                .vtable()
+                .get(arrow_ipc::DictionaryEncoding::VT_ID);
+            assert_ne!(offset, 0);
+            locations.push(span.metadata.start + dictionary._tab.loc() + usize::from(offset));
+        }
+        if let Some(dictionary) = message.header_as_dictionary_batch()
+            && dictionary.id() == 1
+        {
+            let offset = dictionary
+                ._tab
+                .vtable()
+                .get(arrow_ipc::DictionaryBatch::VT_ID);
+            assert_ne!(offset, 0);
+            locations.push(span.metadata.start + dictionary._tab.loc() + usize::from(offset));
+        }
+    }
+    assert_eq!(locations.len(), 2);
+    for position in locations {
+        second[position..position + 8].copy_from_slice(&7_i64.to_le_bytes());
+    }
+    second
+}
+
 fn buffer_location(bytes: &[u8], index: usize) -> (usize, Range<usize>) {
     for span in spans(bytes) {
         let message = arrow_ipc::root_as_message(&bytes[span.metadata.clone()]).unwrap();
@@ -392,35 +431,7 @@ fn typed_stream_preserves_nested_dictionary_ordering_by_field_position() {
 #[test]
 fn dictionary_ids_are_stream_local_even_for_ordered_dictionaries() {
     let first = write(&[dictionary_ordering_fixture(&[false, true], false)], None);
-    let mut second = first.clone();
-    let mut locations = Vec::new();
-    for span in spans(&second) {
-        let message = arrow_ipc::root_as_message(&second[span.metadata.clone()]).unwrap();
-        if let Some(schema) = message.header_as_schema() {
-            let dictionary = schema.fields().unwrap().get(1).dictionary().unwrap();
-            assert_eq!(dictionary.id(), 1);
-            let offset = dictionary
-                ._tab
-                .vtable()
-                .get(arrow_ipc::DictionaryEncoding::VT_ID);
-            assert_ne!(offset, 0);
-            locations.push(span.metadata.start + dictionary._tab.loc() + usize::from(offset));
-        }
-        if let Some(dictionary) = message.header_as_dictionary_batch()
-            && dictionary.id() == 1
-        {
-            let offset = dictionary
-                ._tab
-                .vtable()
-                .get(arrow_ipc::DictionaryBatch::VT_ID);
-            assert_ne!(offset, 0);
-            locations.push(span.metadata.start + dictionary._tab.loc() + usize::from(offset));
-        }
-    }
-    assert_eq!(locations.len(), 2);
-    for position in locations {
-        second[position..position + 8].copy_from_slice(&7_i64.to_le_bytes());
-    }
+    let second = remap_second_dictionary(&first);
     let first = chunk(first);
     let second = chunk(second);
     let first_schema = NativeIpcDecoder::new()
@@ -864,4 +875,524 @@ fn sink_error_stops_before_emitting_the_next_batch() {
         Err(ArrowError::Protocol),
     );
     assert_eq!(count, 1);
+}
+
+const OUTPUT_LIMITS: IpcOutputLimits = IpcOutputLimits {
+    max_output_bytes: 8 * 1024 * 1024,
+    max_rows: 1000,
+    max_batches: 100,
+};
+
+fn output_schema(batch: &RecordBatch) -> NativeIpcSchema {
+    NativeIpcDecoder::new()
+        .inspect_schema(&chunk(write(&[batch.clone()], None)), LIMITS)
+        .unwrap()
+}
+
+fn encoded_output(batches: &[RecordBatch]) -> (Vec<u8>, LocalIpcCompletion) {
+    let mut bytes = Vec::new();
+    let mut output =
+        NativeIpcOutput::new(&mut bytes, output_schema(&batches[0]), OUTPUT_LIMITS).unwrap();
+    for batch in batches {
+        output.write_batch(batch.clone()).unwrap();
+    }
+    let completion = output.finish().unwrap();
+    drop(output);
+    assert_eq!(completion.output_bytes, bytes.len());
+    (bytes, completion)
+}
+
+fn output_schema_bytes(schema: &NativeIpcSchema) -> usize {
+    let mut bytes = Vec::new();
+    let output = NativeIpcOutput::new(&mut bytes, schema.clone(), OUTPUT_LIMITS).unwrap();
+    let size = output.bytes_written();
+    drop(output);
+    assert_eq!(size, bytes.len());
+    size
+}
+
+fn assert_single_output(
+    bytes: &[u8],
+    schema: &NativeIpcSchema,
+    expected: &[RecordBatch],
+) {
+    assert_eq!(&bytes[bytes.len() - 8..], &[255, 255, 255, 255, 0, 0, 0, 0]);
+    assert_eq!(
+        spans(bytes)
+            .iter()
+            .filter(|span| {
+                arrow_ipc::root_as_message(&bytes[span.metadata.clone()])
+                    .unwrap()
+                    .header_type()
+                    == MessageHeader::Schema
+            })
+            .count(),
+        1,
+    );
+    let mut reader = StreamReader::try_new(Cursor::new(bytes), None).unwrap();
+    assert_eq!(reader.schema().as_ref(), schema.native_schema());
+    for batch in expected {
+        assert_eq!(&reader.next().unwrap().unwrap(), batch);
+    }
+    assert!(reader.next().is_none());
+    assert_eq!(reader.get_ref().position(), bytes.len() as u64);
+    assert_eq!(
+        &NativeIpcDecoder::new()
+            .inspect_schema(&chunk(bytes.to_vec()), LIMITS)
+            .unwrap(),
+        schema,
+    );
+}
+
+struct OutputTestSink {
+    bytes: Vec<u8>,
+    max_write: usize,
+    fail_after: Option<usize>,
+    failure_kind: io::ErrorKind,
+    fail_flush: bool,
+    writes: usize,
+    flushes: usize,
+}
+
+impl Default for OutputTestSink {
+    fn default() -> Self {
+        Self {
+            bytes: Vec::new(),
+            max_write: usize::MAX,
+            fail_after: None,
+            failure_kind: io::ErrorKind::Other,
+            fail_flush: false,
+            writes: 0,
+            flushes: 0,
+        }
+    }
+}
+
+impl Write for OutputTestSink {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.writes += 1;
+        if self.fail_after.is_some_and(|limit| self.bytes.len() >= limit) {
+            return Err(io::Error::new(
+                self.failure_kind,
+                "top-secret path: Q:/private/data.arrow",
+            ));
+        }
+        let remaining = self.fail_after.map_or(usize::MAX, |limit| limit - self.bytes.len());
+        let count = bytes.len().min(self.max_write).min(remaining);
+        self.bytes.extend_from_slice(&bytes[..count]);
+        Ok(count)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.flushes += 1;
+        if self.fail_flush {
+            return Err(io::Error::other("top-secret flush path: Q:/private/data.arrow"));
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn framed_independent_chunks_become_one_standard_stream_with_dictionary_replacement() {
+    let first = fixture();
+    let dictionary: DictionaryArray<Int32Type> =
+        [Some("green"), None, Some("gold")].into_iter().collect();
+    let mut columns = first.columns().to_vec();
+    columns[4] = Arc::new(dictionary);
+    let second = RecordBatch::try_new(first.schema(), columns).unwrap();
+    let first_chunk = chunk(write(&[first.clone()], None));
+    let second_chunk = RawChunk::new(
+        1,
+        0,
+        "part-00001-000".into(),
+        write(&[second.clone()], None),
+        StreamLimits::default(),
+    )
+    .unwrap();
+    let schema = NativeIpcDecoder::new().inspect_schema(&first_chunk, LIMITS).unwrap();
+    let mut wire = Vec::new();
+    write_frame(&mut wire, &first_chunk).unwrap();
+    write_frame(&mut wire, &second_chunk).unwrap();
+    write_terminal(&mut wire).unwrap();
+    let mut bytes = Vec::new();
+    let mut output = NativeIpcOutput::new(&mut bytes, schema.clone(), OUTPUT_LIMITS).unwrap();
+    let mut framed = FramedDecoder::new(StreamLimits::default()).unwrap();
+    let mut typed = TypedStream::new(NativeIpcDecoder::new(), LIMITS).unwrap();
+    let mut remaining = wire.as_slice();
+    let mut chunks = 0;
+    while !remaining.is_empty() {
+        let consumed = framed.push(remaining).unwrap();
+        remaining = &remaining[consumed..];
+        let ready = framed.drain();
+        assert!(consumed != 0 || ready.is_some());
+        if let Some(raw) = ready {
+            chunks += 1;
+            typed.decode(&raw, &mut |batch| output.write_batch(batch)).unwrap();
+        }
+    }
+    framed.finish().unwrap();
+    let completion = output.finish().unwrap();
+    drop(output);
+    assert_eq!(chunks, 2);
+    assert_eq!(completion.rows, 6);
+    assert_eq!(completion.batches, 2);
+    assert_eq!(completion.output_bytes, bytes.len());
+    assert_single_output(&bytes, &schema, &[first, second]);
+    let dictionaries = spans(&bytes).into_iter().filter(|span| {
+        let message = arrow_ipc::root_as_message(&bytes[span.metadata.clone()]).unwrap();
+        if let Some(dictionary) = message.header_as_dictionary_batch() {
+            assert!(!dictionary.isDelta());
+            true
+        } else {
+            false
+        }
+    }).count();
+    assert_eq!(dictionaries, 2);
+}
+
+#[test]
+fn output_accepts_local_dictionary_id_remapping_and_keeps_ordering() {
+    let expected = dictionary_ordering_fixture(&[false, true], false);
+    let first = write(&[expected.clone()], None);
+    let second = remap_second_dictionary(&first);
+    let schema = NativeIpcDecoder::new()
+        .inspect_schema(&chunk(first.clone()), LIMITS)
+        .unwrap();
+    let mut bytes = Vec::new();
+    let mut output = NativeIpcOutput::new(&mut bytes, schema.clone(), OUTPUT_LIMITS).unwrap();
+    for payload in [first, second] {
+        NativeIpcDecoder::new()
+            .decode(&chunk(payload), LIMITS, &mut |batch| output.write_batch(batch))
+            .unwrap();
+    }
+    assert_eq!(output.finish().unwrap().batches, 2);
+    drop(output);
+    assert_single_output(&bytes, &schema, &[expected.clone(), expected]);
+}
+
+#[test]
+fn output_empty_results_require_and_preserve_known_schema() {
+    for native in [fixture().schema().as_ref().clone(), Schema::empty()] {
+        let schema = NativeIpcDecoder::new()
+            .inspect_schema(&chunk(schema_only(&native)), LIMITS)
+            .unwrap();
+        let mut bytes = Vec::new();
+        let mut output = NativeIpcOutput::new(&mut bytes, schema.clone(), OUTPUT_LIMITS).unwrap();
+        let completion = output.finish().unwrap();
+        assert_eq!(completion.rows, 0);
+        assert_eq!(completion.batches, 0);
+        let finished_bytes = output.bytes_written();
+        assert_eq!(output.finish(), Err(ArrowError::InvalidState));
+        assert_eq!(output.abort(), Err(ArrowError::InvalidState));
+        assert_eq!(output.bytes_written(), finished_bytes);
+        drop(output);
+        assert_eq!(completion.output_bytes, bytes.len());
+        assert_single_output(&bytes, &schema, &[]);
+    }
+    let batch = primitive().slice(0, 0);
+    let schema = output_schema(&batch);
+    let (bytes, completion) = encoded_output(&[batch.clone()]);
+    assert_eq!(completion.rows, 0);
+    assert_eq!(completion.batches, 1);
+    assert_single_output(&bytes, &schema, &[batch]);
+}
+
+#[test]
+fn output_rejects_metadata_nullability_and_nested_dictionary_ordering_changes_before_writes() {
+    let first = primitive();
+    let mut conflicts = vec![
+        (
+            first.clone(),
+            RecordBatch::try_new(
+                Arc::new(Schema::new_with_metadata(
+                    first.schema().fields().clone(),
+                    HashMap::from([("changed".into(), "metadata".into())]),
+                )),
+                first.columns().to_vec(),
+            ).unwrap(),
+        ),
+        (
+            first.clone(),
+            RecordBatch::try_new(
+                Arc::new(Schema::new(vec![Field::new("value", DataType::Int32, true)])),
+                first.columns().to_vec(),
+            ).unwrap(),
+        ),
+        (
+            first.clone(),
+            RecordBatch::try_new(
+                Arc::new(Schema::new(vec![first.schema().field(0).clone().with_metadata(
+                    HashMap::from([("changed".into(), "field-metadata".into())]),
+                )])),
+                first.columns().to_vec(),
+            ).unwrap(),
+        ),
+    ];
+    for nested in [false, true] {
+        conflicts.push((
+            dictionary_ordering_fixture(&[false, true], nested),
+            dictionary_ordering_fixture(&[true, false], nested),
+        ));
+    }
+    for (first, second) in conflicts {
+        let mut bytes = Vec::new();
+        let mut output = NativeIpcOutput::new(&mut bytes, output_schema(&first), OUTPUT_LIMITS).unwrap();
+        output.write_batch(first.clone()).unwrap();
+        let before = output.bytes_written();
+        assert_eq!(output.write_batch(second), Err(ArrowError::SchemaConflict));
+        assert_eq!(output.bytes_written(), before);
+        assert_eq!(output.write_batch(first), Err(ArrowError::InvalidState));
+        assert_eq!(output.finish(), Err(ArrowError::InvalidState));
+        assert_eq!(output.bytes_written(), before);
+    }
+}
+
+#[test]
+fn output_requires_positive_limits_before_schema_write() {
+    let schema = output_schema(&primitive());
+    for limits in [
+        IpcOutputLimits { max_output_bytes: 0, ..OUTPUT_LIMITS },
+        IpcOutputLimits { max_rows: 0, ..OUTPUT_LIMITS },
+        IpcOutputLimits { max_batches: 0, ..OUTPUT_LIMITS },
+    ] {
+        let mut sink = OutputTestSink::default();
+        assert_eq!(
+            NativeIpcOutput::new(&mut sink, schema.clone(), limits).unwrap_err(),
+            ArrowError::InvalidInput,
+        );
+        assert_eq!(sink.writes, 0);
+        assert!(sink.bytes.is_empty());
+    }
+    let mut sink = OutputTestSink::default();
+    assert_eq!(
+        NativeIpcOutput::new(
+            &mut sink,
+            schema,
+            IpcOutputLimits { max_output_bytes: 1, ..OUTPUT_LIMITS },
+        ).unwrap_err(),
+        ArrowError::Limit,
+    );
+    assert_eq!(sink.writes, 0);
+    assert!(sink.bytes.is_empty());
+}
+
+#[test]
+fn output_byte_limit_covers_schema_batch_and_eos_before_exceeding_cap() {
+    let batch = primitive();
+    let schema = output_schema(&batch);
+    let (expected, _) = encoded_output(&[batch.clone()]);
+    let mut exact = Vec::new();
+    let mut output = NativeIpcOutput::new(
+        &mut exact,
+        schema.clone(),
+        IpcOutputLimits { max_output_bytes: expected.len(), ..OUTPUT_LIMITS },
+    ).unwrap();
+    output.write_batch(batch.clone()).unwrap();
+    output.finish().unwrap();
+    drop(output);
+    assert_eq!(exact, expected);
+    let prefix = output_schema_bytes(&schema);
+    let mut limited = Vec::new();
+    let mut output = NativeIpcOutput::new(
+        &mut limited,
+        schema.clone(),
+        IpcOutputLimits { max_output_bytes: prefix + 1, ..OUTPUT_LIMITS },
+    ).unwrap();
+    assert_eq!(output.write_batch(batch.clone()), Err(ArrowError::Limit));
+    assert_eq!(output.bytes_written(), prefix);
+    assert_eq!(output.finish(), Err(ArrowError::InvalidState));
+    drop(output);
+    assert_eq!(limited.len(), prefix);
+    let mut limited = Vec::new();
+    let mut output = NativeIpcOutput::new(
+        &mut limited,
+        schema,
+        IpcOutputLimits { max_output_bytes: expected.len() - 1, ..OUTPUT_LIMITS },
+    ).unwrap();
+    output.write_batch(batch).unwrap();
+    assert_eq!(output.finish(), Err(ArrowError::Limit));
+    let failed_bytes = output.bytes_written();
+    assert!(failed_bytes <= expected.len() - 1);
+    assert_eq!(output.finish(), Err(ArrowError::InvalidState));
+    assert_eq!(output.bytes_written(), failed_bytes);
+    drop(output);
+    assert_eq!(limited.len(), failed_bytes);
+}
+
+#[test]
+fn output_row_and_batch_limits_are_cumulative_and_count_zero_row_batches() {
+    let batch = primitive();
+    for limits in [
+        IpcOutputLimits { max_rows: 3, ..OUTPUT_LIMITS },
+        IpcOutputLimits { max_batches: 1, ..OUTPUT_LIMITS },
+    ] {
+        let mut bytes = Vec::new();
+        let mut output = NativeIpcOutput::new(&mut bytes, output_schema(&batch), limits).unwrap();
+        output.write_batch(batch.clone()).unwrap();
+        let before = output.bytes_written();
+        assert_eq!(output.write_batch(batch.clone()), Err(ArrowError::Limit));
+        assert_eq!(output.bytes_written(), before);
+        assert_eq!(output.finish(), Err(ArrowError::InvalidState));
+    }
+    let mut bytes = Vec::new();
+    let mut output = NativeIpcOutput::new(
+        &mut bytes,
+        output_schema(&batch),
+        IpcOutputLimits { max_rows: 1, max_batches: 1, ..OUTPUT_LIMITS },
+    ).unwrap();
+    output.write_batch(batch.slice(0, 0)).unwrap();
+    let before = output.bytes_written();
+    assert_eq!(output.write_batch(batch.slice(0, 0)), Err(ArrowError::Limit));
+    assert_eq!(output.bytes_written(), before);
+}
+
+#[test]
+fn output_checks_row_wire_representation_and_cumulative_integer_overflow() {
+    let native = Arc::new(Schema::empty());
+    let schema = NativeIpcDecoder::new()
+        .inspect_schema(&chunk(schema_only(&native)), LIMITS)
+        .unwrap();
+    let batch = |rows| RecordBatch::try_new_with_options(
+        native.clone(),
+        vec![],
+        &RecordBatchOptions::new().with_row_count(Some(rows)),
+    ).unwrap();
+    let limits = IpcOutputLimits { max_rows: usize::MAX, ..OUTPUT_LIMITS };
+    if i64::try_from(usize::MAX).is_err() {
+        let mut bytes = Vec::new();
+        let mut output = NativeIpcOutput::new(&mut bytes, schema.clone(), limits).unwrap();
+        let before = output.bytes_written();
+        assert_eq!(output.write_batch(batch(usize::MAX)), Err(ArrowError::Limit));
+        assert_eq!(output.bytes_written(), before);
+    }
+    let large = usize::MAX / 2;
+    let mut bytes = Vec::new();
+    let mut output = NativeIpcOutput::new(&mut bytes, schema, limits).unwrap();
+    output.write_batch(batch(large)).unwrap();
+    output.write_batch(batch(large)).unwrap();
+    let before = output.bytes_written();
+    assert_eq!(output.write_batch(batch(2)), Err(ArrowError::Limit));
+    assert_eq!(output.bytes_written(), before);
+    assert_eq!(output.finish(), Err(ArrowError::InvalidState));
+}
+
+#[test]
+fn output_retries_legal_short_writes_and_finishes_only_once() {
+    let batch = fixture();
+    let schema = output_schema(&batch);
+    let mut sink = OutputTestSink { max_write: 3, ..OutputTestSink::default() };
+    let mut output = NativeIpcOutput::new(&mut sink as &mut dyn Write, schema.clone(), OUTPUT_LIMITS).unwrap();
+    output.write_batch(batch.clone()).unwrap();
+    let completion = output.finish().unwrap();
+    assert_eq!(output.write_batch(batch.clone()), Err(ArrowError::InvalidState));
+    assert_eq!(output.finish(), Err(ArrowError::InvalidState));
+    assert_eq!(output.bytes_written(), completion.output_bytes);
+    drop(output);
+    assert!(sink.writes > 10);
+    assert_eq!(sink.flushes, 1);
+    assert_single_output(&sink.bytes, &schema, &[batch]);
+}
+
+#[test]
+fn output_real_sink_errors_and_zero_writes_are_redacted_not_retried_as_success() {
+    let schema = output_schema(&primitive());
+    for kind in [io::ErrorKind::Other, io::ErrorKind::Interrupted, io::ErrorKind::FileTooLarge] {
+        let mut sink = OutputTestSink {
+            fail_after: Some(0),
+            failure_kind: kind,
+            ..OutputTestSink::default()
+        };
+        let error = NativeIpcOutput::new(&mut sink, schema.clone(), OUTPUT_LIMITS).unwrap_err();
+        assert_eq!(error, ArrowError::SinkFailed);
+        assert!(!format!("{error:?} {error}").contains("top-secret"));
+        assert_eq!(sink.writes, 1);
+        assert!(sink.bytes.is_empty());
+    }
+    let mut sink = OutputTestSink { max_write: 0, ..OutputTestSink::default() };
+    assert_eq!(
+        NativeIpcOutput::new(&mut sink, schema.clone(), OUTPUT_LIMITS).unwrap_err(),
+        ArrowError::SinkFailed,
+    );
+    assert_eq!(sink.writes, 1);
+    let mut sink = OutputTestSink {
+        max_write: 2,
+        fail_after: Some(5),
+        ..OutputTestSink::default()
+    };
+    assert_eq!(
+        NativeIpcOutput::new(&mut sink, schema, OUTPUT_LIMITS).unwrap_err(),
+        ArrowError::SinkFailed,
+    );
+    assert_eq!(sink.bytes.len(), 5);
+    assert_eq!(sink.flushes, 0);
+}
+
+#[test]
+fn output_partial_sink_failure_permanently_poisoned_without_finalization() {
+    let batch = primitive();
+    let schema = output_schema(&batch);
+    let prefix = output_schema_bytes(&schema);
+    let mut sink = OutputTestSink {
+        max_write: 2,
+        fail_after: Some(prefix + 5),
+        ..OutputTestSink::default()
+    };
+    let mut output = NativeIpcOutput::new(&mut sink, schema, OUTPUT_LIMITS).unwrap();
+    assert_eq!(output.write_batch(batch.clone()), Err(ArrowError::SinkFailed));
+    assert_eq!(output.bytes_written(), prefix + 5);
+    assert_eq!(output.write_batch(batch), Err(ArrowError::InvalidState));
+    assert_eq!(output.finish(), Err(ArrowError::InvalidState));
+    assert_eq!(output.abort(), Err(ArrowError::InvalidState));
+    assert_eq!(output.bytes_written(), prefix + 5);
+    drop(output);
+    assert_eq!(sink.bytes.len(), prefix + 5);
+    assert_eq!(sink.flushes, 0);
+    assert_eq!(
+        NativeIpcDecoder::new().inspect_schema(&chunk(sink.bytes), LIMITS),
+        Err(ArrowError::Truncated),
+    );
+}
+
+#[test]
+fn output_flush_failure_is_not_local_completion_even_after_valid_eos() {
+    let batch = primitive();
+    let schema = output_schema(&batch);
+    let mut sink = OutputTestSink { fail_flush: true, ..OutputTestSink::default() };
+    let mut output = NativeIpcOutput::new(&mut sink, schema.clone(), OUTPUT_LIMITS).unwrap();
+    output.write_batch(batch.clone()).unwrap();
+    assert_eq!(output.finish(), Err(ArrowError::SinkFailed));
+    let before = output.bytes_written();
+    assert_eq!(output.finish(), Err(ArrowError::InvalidState));
+    assert_eq!(output.bytes_written(), before);
+    drop(output);
+    assert_eq!(sink.flushes, 1);
+    assert_single_output(&sink.bytes, &schema, &[batch]);
+}
+
+#[test]
+fn output_abort_or_drop_without_finish_leaves_partial_bytes_and_redacted_debug() {
+    for abort in [false, true] {
+        let batch = fixture();
+        let mut sink = OutputTestSink::default();
+        let mut output = NativeIpcOutput::new(&mut sink, output_schema(&batch), OUTPUT_LIMITS).unwrap();
+        output.write_batch(batch.clone()).unwrap();
+        let debug = format!("{output:?}");
+        for secret in ["offline-native-writer", "dictionary", "top-secret", "data.arrow"] {
+            assert!(!debug.contains(secret));
+        }
+        let before = output.bytes_written();
+        if abort {
+            output.abort().unwrap();
+            assert_eq!(output.write_batch(batch), Err(ArrowError::InvalidState));
+            assert_eq!(output.finish(), Err(ArrowError::InvalidState));
+        }
+        assert_eq!(output.bytes_written(), before);
+        drop(output);
+        assert_eq!(sink.bytes.len(), before);
+        assert_eq!(sink.flushes, 0);
+        assert_eq!(
+            NativeIpcDecoder::new().inspect_schema(&chunk(sink.bytes), LIMITS),
+            Err(ArrowError::Truncated),
+        );
+    }
 }

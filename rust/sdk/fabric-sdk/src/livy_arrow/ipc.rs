@@ -3,6 +3,10 @@
 
 //! Optional native Apache Arrow IPC decoding of one already-bounded raw chunk.
 
+/// Compose native batches into one bounded standard IPC output stream.
+#[path = "ipc_output.rs"]
+pub mod output;
+
 use super::{ArrowError, DecodeLimits, RawChunk, TypedDecoder};
 use arrow_array::RecordBatch;
 use arrow_ipc::reader::StreamReader;
