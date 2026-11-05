@@ -552,7 +552,7 @@ fn validate_evidence<T>(
         && (matches!(&evidence.coverage, Coverage::Incomplete { .. })
             || evidence
                 .http_status
-                .is_some_and(|status| status >= 400 || status == 202))
+                .is_some_and(|status| !(200..300).contains(&status) || status == 202))
     {
         return Err(ReceiptError::InvalidEvidence);
     }

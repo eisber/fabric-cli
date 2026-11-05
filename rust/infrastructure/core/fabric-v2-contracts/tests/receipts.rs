@@ -187,7 +187,7 @@ fn incomplete_denied_and_acceptance_only_evidence_cannot_be_healthy_success() {
             calls: 0,
         })
         .unwrap();
-    for status in [202, 401, 403, 429, 500] {
+    for status in [100, 103, 199, 202, 300, 302, 307, 399, 401, 403, 429, 500] {
         assert_eq!(
             ExecutionReceipt::new(
                 &approved,
