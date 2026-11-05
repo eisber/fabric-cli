@@ -1071,6 +1071,7 @@ fn response(status: u16, body: &[u8], media: Option<&str>) -> NativeResponse {
         status,
         body: body.to_vec(),
         content_type: media.map(str::to_owned),
+        headers: Default::default(),
     }
 }
 

@@ -65,6 +65,7 @@ fn response(status: u16, bytes: &[u8], content_type: Option<&str>) -> NativeResp
         status,
         body: bytes.to_vec(),
         content_type: content_type.map(str::to_owned),
+        headers: Default::default(),
     }
 }
 

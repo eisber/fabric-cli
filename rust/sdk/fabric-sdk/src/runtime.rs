@@ -294,7 +294,7 @@ impl NativeRequest {
         if name.is_empty()
             || !name
                 .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+                .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte))
             || value.chars().any(char::is_control)
             || matches!(
                 name.as_str(),
@@ -360,6 +360,48 @@ pub struct NativeResponse {
     pub body: Vec<u8>,
     /// Provider response media type.
     pub content_type: Option<String>,
+    /// Actual bounded response headers; values can be sensitive and must not be logged.
+    pub headers: BTreeMap<String, String>,
+}
+
+impl NativeResponse {
+    /// Read one case-insensitive header without accepting ambiguous duplicates.
+    ///
+    /// This exposes observed metadata, not a concurrent-write guarantee.
+    ///
+    /// # Errors
+    /// Rejects duplicate case variants, control bytes or excess header metadata.
+    pub fn header(&self, name: &str) -> Result<Option<&str>, NativeError> {
+        if self.headers.len() > 64 {
+            return Err(NativeError::Limit);
+        }
+        let mut bytes = 0_usize;
+        let mut result = None;
+        for (key, value) in &self.headers {
+            bytes = bytes
+                .checked_add(key.len())
+                .and_then(|bytes| bytes.checked_add(value.len()))
+                .ok_or(NativeError::Limit)?;
+            if bytes > 16 * 1024 {
+                return Err(NativeError::Limit);
+            }
+            if key.is_empty()
+                || !key
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte))
+                || value.chars().any(char::is_control)
+            {
+                return Err(NativeError::InvalidResponse);
+            }
+            if key.eq_ignore_ascii_case(name) {
+                if result.is_some() {
+                    return Err(NativeError::InvalidResponse);
+                }
+                result = Some(value.as_str());
+            }
+        }
+        Ok(result)
+    }
 }
 
 /// Execution seam for the host's existing authenticated HTTP stack.
@@ -378,6 +420,8 @@ pub trait NativeExecutor: Send + Sync {
 
 #[cfg(test)]
 mod tests {
+    #![deny(unnameable_test_items)]
+
     use super::*;
     use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -558,9 +602,31 @@ mod tests {
                     status: 202,
                     body: vec![0; self.size],
                     content_type: Some("application/json".into()),
+                    headers: BTreeMap::new(),
                 })
             })
         }
+    }
+
+    #[test]
+    fn observed_response_metadata_is_bounded_and_case_insensitive() {
+        let mut response = NativeResponse {
+            status: 200,
+            body: Vec::new(),
+            content_type: None,
+            headers: BTreeMap::from([("ETag".into(), "\"opaque\"".into())]),
+        };
+        assert_eq!(response.header("etag").unwrap(), Some("\"opaque\""));
+        assert_eq!(response.header("retry-after").unwrap(), None);
+        response.headers.insert("etag".into(), "\"other\"".into());
+        assert_eq!(response.header("etag"), Err(NativeError::InvalidResponse));
+        response.headers.clear();
+        response.headers.insert("ETag".into(), "\r\nunsafe".into());
+        assert_eq!(response.header("etag"), Err(NativeError::InvalidResponse));
+        response
+            .headers
+            .insert("ETag".into(), "x".repeat(16 * 1024));
+        assert_eq!(response.header("etag"), Err(NativeError::Limit));
     }
 
     #[tokio::test]

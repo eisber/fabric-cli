@@ -231,6 +231,7 @@ fn response(status: u16, body: Option<Value>) -> Result<NativeResponse, NativeEr
             .map(|body| serde_json::to_vec(&body).unwrap())
             .unwrap_or_default(),
         content_type: Some("application/json".into()),
+        headers: Default::default(),
     })
 }
 
@@ -949,6 +950,7 @@ async fn executor_cannot_bypass_byte_or_session_count_limits() {
         status: 200,
         body: vec![b' '; 129],
         content_type: Some("application/json".into()),
+        headers: Default::default(),
     })]);
     assert!(matches!(
         runtime.list_sessions(&executor, false).await,
