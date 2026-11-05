@@ -27,6 +27,12 @@ The assigned integration owner remains its only writer until a separately
 authorized controller takes that role. Lane agents publish only where their
 assignment permits. Upstream `microsoft/fabric-cli` is not a push destination.
 
+For the separately authorized CLI v2 effort, the integration destination is
+`dev/marcozo/fab-cli-v2-integration-20261104` in the same fork. The
+[v2 central merge pipeline](v2-delivery.md#central-merge-pipeline) governs its
+single-writer queue and exact-head validation; `feature/rust` remains its
+reviewed upstream source, not a v2 push target. Existing v1 lanes are unchanged.
+
 ## Ownership and integration
 
 Divide implementation and review by crate family, not by layers of merger
