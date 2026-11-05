@@ -395,15 +395,61 @@ fn duplicate_json_keys_are_rejected_before_value_conversion() {
 }
 
 #[test]
-fn malformed_unknown_and_metadata_only_shapes_never_become_definitions() {
-    for body in [
-        &b""[..],
-        &b"{"[..],
-        &b"{}\n{}"[..],
-        &b"{\"parts\":[]}\xff"[..],
-        &b"{\"parts\":[{\"path\":\"\xff\"}]}"[..],
+fn malformed_json_is_not_masked_by_an_earlier_shape_error() {
+    for (case, bare, wrapped) in [
+        (
+            "trailing root after a missing-parts object",
+            &b"{}\n{}"[..],
+            &br#"{"definition":{}} {}"#[..],
+        ),
+        (
+            "malformed value after an unknown field",
+            &br#"{"unknown":}"#[..],
+            &br#"{"definition":{"unknown":}}"#[..],
+        ),
+        (
+            "invalid UTF-8 after an unknown field",
+            &b"{\"unknown\":\"\xff\"}"[..],
+            &b"{\"definition\":{\"unknown\":\"\xff\"}}"[..],
+        ),
+        (
+            "trailing comma after a non-object part",
+            &br#"{"parts":[null,]}"#[..],
+            &br#"{"definition":{"parts":[null,]}}"#[..],
+        ),
     ] {
-        assert_kind(parse(body, limits()), Kind::InvalidJson);
+        assert_eq!(
+            parse(bare, limits()).unwrap_err().kind,
+            Kind::InvalidJson,
+            "bare definition: {case}"
+        );
+        assert_eq!(
+            response(wrapped, Format::Dacpac, limits())
+                .unwrap_err()
+                .kind,
+            Kind::InvalidJson,
+            "definition response: {case}"
+        );
+    }
+}
+
+#[test]
+fn malformed_unknown_and_metadata_only_shapes_never_become_definitions() {
+    for (case, body) in [
+        ("empty input", &b""[..]),
+        ("unterminated object", &b"{"[..]),
+        ("multiple roots", &b"{}\n{}"[..]),
+        ("invalid UTF-8 suffix", &b"{\"parts\":[]}\xff"[..]),
+        (
+            "invalid UTF-8 in a path",
+            &b"{\"parts\":[{\"path\":\"\xff\"}]}"[..],
+        ),
+    ] {
+        assert_eq!(
+            parse(body, limits()).unwrap_err().kind,
+            Kind::InvalidJson,
+            "{case}"
+        );
     }
     for body in [
         json!({}),

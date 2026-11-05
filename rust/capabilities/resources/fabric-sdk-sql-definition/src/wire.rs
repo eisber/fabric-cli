@@ -36,13 +36,20 @@ pub(crate) fn parse(
     limits: DefinitionLimits,
     response: bool,
 ) -> Result<ParsedDefinition, DefinitionError> {
+    let text =
+        std::str::from_utf8(json).map_err(|_| DefinitionError::new(Kind::InvalidJson, None))?;
+    // Early schema rejection must not hide malformed values or trailing input.
+    let mut syntax = serde_json::Deserializer::from_str(text);
+    de::IgnoredAny::deserialize(&mut syntax)
+        .and_then(|_| syntax.end())
+        .map_err(|_| DefinitionError::new(Kind::InvalidJson, None))?;
     let mut state = State {
         admission: Admission::new(limits),
         limits,
         failure: None,
         part_index: None,
     };
-    let mut deserializer = serde_json::Deserializer::from_slice(json);
+    let mut deserializer = serde_json::Deserializer::from_str(text);
     let result = if response {
         ResponseSeed(&mut state).deserialize(&mut deserializer)
     } else {

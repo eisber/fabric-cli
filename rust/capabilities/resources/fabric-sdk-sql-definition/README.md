@@ -38,9 +38,13 @@ Every entry point requires explicit nonzero `DefinitionLimits`; there are no
 numeric budgets or limit defaults. Limits are inclusive and independently cover
 input JSON/compact bare-definition bytes, aggregate decoded bytes, per-part
 decoded bytes, part count, UTF-8 native path bytes and path component depth.
-Input wire size is checked before JSON deserialization; part count is checked
-before an excess part is deserialized or decoded. Decoded sizes are checked
-before Base64 decoding. Checked arithmetic rejects overflow.
+Input wire size is checked before JSON deserialization. Complete UTF-8 and JSON
+syntax are checked before content admission, so an early shape error cannot mask
+invalid trailing content. This syntax-only pass builds no `Value`; admission
+still reads the original input and rejects duplicate keys and unknown fields.
+Part count is checked before allocating or decoding an excess native part.
+Decoded sizes are checked before Base64 decoding. Checked arithmetic rejects
+overflow.
 
 Construction also counts compact serialized definition bytes without allocating
 a second complete JSON body. Callers must bound larger enclosing requests,
