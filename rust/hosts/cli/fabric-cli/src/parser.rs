@@ -207,6 +207,10 @@ where
         }
     }
     let mut parser = command();
+    if root.and_then(|index| args[index].to_str()) == Some("execute") {
+        // V1's inherited last-value-wins policy must not discard v2 selectors.
+        parser = parser.args_override_self(false);
+    }
     if batch::has_root_option(&args) {
         // Python stores the root version flag but executes a supplied command
         // list first. Keep the existing non-batch Clap version precedence.

@@ -50,6 +50,15 @@ fn unsupported_target_and_submission_combinations_fail_before_host_setup() {
         vec!["fab-rs", "execute", TARGET, "--wait", "--limit", "0"],
         vec!["fab-rs", "execute", TARGET, "--wait", "--max-bytes", "0"],
         vec![
+            "fab-rs", "execute", TARGET, "--wait", "--input", "-", "--input", "-",
+        ],
+        vec![
+            "fab-rs", "execute", TARGET, "--wait", "--format", "csv", "--format", "json",
+        ],
+        vec![
+            "fab-rs", "execute", TARGET, "--wait", "--output", "one", "--output", "two",
+        ],
+        vec![
             "fab-rs",
             "execute",
             TARGET,
