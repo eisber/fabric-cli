@@ -113,6 +113,9 @@ These contracts alone do not install a streaming HTTP adapter or connect the
 Arrow decoder to a live response. Opening is single-dispatch, and dropping a
 body disposes local observation without cancelling remote work. HTTP EOF,
 framed-v2 completion, IPC validity and sink completion remain separate gates.
+`NativeError::Transport` distinguishes actual I/O evidence from invalid provider
+data. It does not authorize retries: only an explicit owner-bound GET resume
+policy may consume it, and possibly dispatched mutations retain unknown outcome.
 
 `FramedDecoder::push(fragment)` accepts arbitrary HTTP fragmentation, returns
 the consumed prefix length and stops at **one complete chunk**. If that chunk

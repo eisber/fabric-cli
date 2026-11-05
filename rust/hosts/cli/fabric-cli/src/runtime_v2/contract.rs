@@ -313,7 +313,7 @@ impl From<NativeError> for ReadError {
             NativeError::TimedOut => ReadErrorKind::Timeout,
             NativeError::Http(_) => ReadErrorKind::Http,
             NativeError::InvalidResponse => ReadErrorKind::InvalidResponse,
-            NativeError::OutcomeUnknown => ReadErrorKind::Execution,
+            NativeError::OutcomeUnknown | NativeError::Transport => ReadErrorKind::Execution,
         });
         if let NativeError::Http(status) = error {
             result.http_status = Some(status);

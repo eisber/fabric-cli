@@ -104,6 +104,10 @@ pub enum NativeError {
     Cancelled,
     /// The local deadline expired; no cancellation or replay is implied.
     TimedOut,
+    /// Actual transport I/O failed; this evidence alone never authorizes replay.
+    ///
+    /// A possibly dispatched mutation must instead retain [`Self::OutcomeUnknown`].
+    Transport,
     /// The service returned an unexpected response.
     InvalidResponse,
     /// A dispatched mutation has no authoritative outcome.
@@ -120,6 +124,7 @@ impl fmt::Display for NativeError {
             Self::Limit => "runtime bound exceeded",
             Self::Cancelled => "local runtime observation cancelled",
             Self::TimedOut => "runtime deadline expired",
+            Self::Transport => "runtime transport failed",
             Self::InvalidResponse => "invalid runtime response",
             Self::OutcomeUnknown => "remote mutation outcome is unknown",
             Self::Http(_) => "runtime HTTP request failed",
@@ -550,6 +555,16 @@ mod stream_contract_tests {
     #![deny(unnameable_test_items)]
 
     use super::*;
+
+    #[test]
+    fn transport_evidence_is_not_provider_data_or_mutation_outcome() {
+        assert_ne!(NativeError::Transport, NativeError::InvalidResponse);
+        assert_ne!(NativeError::Transport, NativeError::OutcomeUnknown);
+        assert_eq!(
+            NativeError::Transport.to_string(),
+            "runtime transport failed"
+        );
+    }
 
     #[test]
     fn absolute_deadlines_are_finite_shared_and_not_restarted() {
