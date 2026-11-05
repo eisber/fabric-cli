@@ -48,3 +48,26 @@ return a complete-looking list.
 Malformed input, credential failure, service errors, unsafe links, cancellation
 and execution limits remain distinct. Definition retrieval and enriched command
 metadata composition are separate operations.
+
+## MLModel native parameter and serving contracts
+
+The additive `ml_models` module describes MLModel item and endpoint operations
+over the existing caller-owned `ResourceOperations` boundary. The SDK facade
+reexports the same module as `fabric_sdk::items::ml_models`; it does not add
+another executor, credential provider, runtime, or polling engine.
+
+Native scoring accepts the documented `inputs` array and optional
+`formatType`/`orientation`, not stringified `name=value` arguments, notebook
+parameters, or function-invocation wrappers. Predictions retain their native
+JSON values. Input files/stdin, schema-directed table adaptation and
+CSV/JSON/Parquet delivery belong to the shared hosts, not this SDK.
+
+The module distinguishes documented user-only item APIs from endpoint APIs
+supporting users, service principals and managed identities. Caller-supplied
+identity metadata is a capability check, not token-claim verification.
+Known-ID serving operations do not perform a user-only item lookup.
+
+See [MLModel binding and output boundaries](../../../docs/ml-model-native.md)
+for native API provenance, acceptance/completion semantics, and integration
+gates. These SDK primitives do not establish an executable v2 artifact facade
+or a working shared tabular-export host.
