@@ -394,6 +394,19 @@ where
             "maxDataBytes":args.max_bytes.unwrap_or(limits.data_bytes).get(),
             "maxInputBytes":limits.input_bytes.get(),
             "profile":args.profile,
+            "context":{
+                "account":client.selection().account(),
+                "tenant":client.selection().tenant(),
+                "audience":client.selection().audience().scope(),
+                "endpoint":client.context().endpoint().host(),
+            },
+            "bounds":{
+                "maxRequests":limits.operation.max_requests.get(),
+                "maxResponseBytes":limits.operation.max_response_bytes.get(),
+                "maxPollDelayNanos":limits.operation.max_poll_delay.as_nanos().to_string(),
+                "maxDefinitionParts":limits.definition.max_parts.get(),
+                "maxDecodedDefinitionBytes":limits.definition.max_decoded_bytes.get(),
+            },
         }),
     )
     .map_err(AdapterError::Preparation)?;

@@ -343,6 +343,13 @@ async fn actual_generic_and_facade_metadata_share_descriptor_sdk_call_receipt_an
         assert!(report.command_succeeded());
         assert_eq!(host.approved.len(), 1);
         assert_eq!(host.approved[0].operation_id(), "item.metadata.get");
+        assert_eq!(host.approved[0].input()["context"]["account"], "offline");
+        assert_eq!(host.approved[0].input()["context"]["tenant"], "tenant");
+        assert_eq!(
+            host.approved[0].input()["context"]["audience"],
+            Audience::Fabric.scope()
+        );
+        assert_eq!(host.approved[0].input()["bounds"]["maxRequests"], 10);
         assert_eq!(credential.0.load(Ordering::SeqCst), 1);
         let seen = executor.seen.lock().unwrap();
         assert_eq!(seen.len(), 1);
