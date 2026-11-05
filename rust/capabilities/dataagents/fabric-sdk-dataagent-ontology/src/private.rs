@@ -63,7 +63,7 @@ impl<T: DeserializeOwned> ResponseContract<T> {
     pub(crate) fn decode(&self, response: WorkloadResponse) -> Result<Outcome<T>, Error> {
         if response.status == 202 {
             return Ok(Outcome::Accepted {
-                resource: self.resource.clone(), caller: self.caller.clone(),
+                resource: Box::new(self.resource.clone()), caller: Box::new(self.caller.clone()),
                 response, effects: self.effects,
             });
         }
@@ -99,10 +99,10 @@ impl<T: DeserializeOwned> ResponseContract<T> {
             Validator::new(self.caller.clone(), self.resource.clone(), value)
                 .map_err(|_| Error::observed(ErrorKind::InvalidResponse, response.clone(), self.effects))
         }).transpose()?;
-        Ok(Outcome::Completed(Completed {
+        Ok(Outcome::Completed(Box::new(Completed {
             resource: self.resource.clone(), caller: self.caller.clone(),
             value, validator, response, effects: self.effects,
-        }))
+        })))
     }
 }
 

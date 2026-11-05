@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Offline public published-read and authenticated executor contracts.
+
 #![deny(unnameable_test_items)]
 
 use async_trait::async_trait;

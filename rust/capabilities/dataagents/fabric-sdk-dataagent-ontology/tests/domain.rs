@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Offline domain, identity, authoring and source-shape contracts.
+
 #![deny(unnameable_test_items)]
 
 use fabric_sdk_dataagent_ontology::{

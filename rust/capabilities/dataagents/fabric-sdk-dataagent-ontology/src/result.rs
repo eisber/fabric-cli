@@ -59,13 +59,13 @@ pub struct Completed<T> {
 #[derive(Clone, Debug)]
 pub enum Outcome<T> {
     /// The expected endpoint status and response shape were verified.
-    Completed(Completed<T>),
+    Completed(Box<Completed<T>>),
     /// The original accepted response is retained for caller-owned reconciliation.
     Accepted {
         /// Original agent/stage/resource for caller-owned reconciliation.
-        resource: Resource,
+        resource: Box<Resource>,
         /// Original caller cache partition.
-        caller: CallerScope,
+        caller: Box<CallerScope>,
         /// Exact status, headers and bounded body, including Location/operation ID.
         response: WorkloadResponse,
         /// Effects that may follow acceptance.

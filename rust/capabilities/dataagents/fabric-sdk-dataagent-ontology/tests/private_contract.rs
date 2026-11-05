@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Offline private MWC request, effect, failure and paging contracts.
+
 #![deny(unnameable_test_items)]
 
 use fabric_sdk_dataagent_ontology::{
@@ -324,8 +326,8 @@ async fn publish_acceptance_and_unknown_effects_never_become_completed_or_replay
     let Outcome::Accepted { response, effects, resource, caller: accepted_caller } = outcome else { panic!("accepted is not completed") };
     assert_eq!(response, accepted);
     assert!(effects.publishes_whole_agent);
-    assert_eq!(resource, Resource::Agent(agent(), Stage::Staging));
-    assert_eq!(accepted_caller, caller());
+    assert_eq!(*resource, Resource::Agent(agent(), Stage::Staging));
+    assert_eq!(*accepted_caller, caller());
     assert_eq!(mock.seen.lock().unwrap().len(), 1);
     let mock = Mock { results: Mutex::new(VecDeque::from([Err(WorkloadError::execution(DispatchState::Unknown, "diagnostic".into()))])), seen: Mutex::new(Vec::new()) };
     let error = sdk.execute(&mock, sdk.publish(&Publish::new(None).unwrap()).unwrap(), pending()).await.unwrap_err();
