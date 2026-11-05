@@ -56,6 +56,7 @@ struct Backend {
     fail_resolve: bool,
     fail_retrieve: bool,
     stall_retrieve: bool,
+    render_available: bool,
     retrieve_dropped: AtomicBool,
 }
 
@@ -73,6 +74,7 @@ impl Backend {
             fail_resolve: false,
             fail_retrieve: false,
             stall_retrieve: false,
+            render_available: true,
             retrieve_dropped: AtomicBool::new(false),
         }
     }
@@ -157,7 +159,14 @@ impl GetBackend for Backend {
         })
     }
 
-    fn render_markdown(&self, data: &Value) -> Result<String, GetCommandError> {
+    fn render_markdown(
+        &self,
+        data: &Value,
+        _: std::num::NonZeroUsize,
+    ) -> Result<String, GetCommandError> {
+        if !self.render_available {
+            return Err(GetCommandError::MissingRepresentation(GetFormat::Markdown));
+        }
         Ok(format!("# Native projection\n\n{data}"))
     }
 }
@@ -351,9 +360,10 @@ fn duration_requires_finite_positive_decimal_with_exact_suffix() {
         ("1.5m", Duration::from_secs(90)),
     ] {
         assert_eq!(
-            parse(&["get", "p", "--timeout", spelling])            .options
-            .limits
-            .timeout,
+            parse(&["get", "p", "--timeout", spelling])
+                .options
+                .limits
+                .timeout,
             expected
         );
     }
@@ -914,7 +924,8 @@ async fn metadata_cannot_infer_raw_and_implicit_raw_cannot_be_projected() {
 #[tokio::test]
 async fn missing_native_representation_is_an_error_not_an_inferred_export() {
     for format in ["raw", "markdown"] {
-        let backend = Backend::new(payload(json!({}))).representation();
+        let mut backend = Backend::new(payload(json!({}))).representation();
+        backend.render_available = false;
         assert!(matches!(
             stdout_delivery(&backend, parse(&["get", "native", "--format", format])).await,
             Err(GetCommandError::MissingRepresentation(_))

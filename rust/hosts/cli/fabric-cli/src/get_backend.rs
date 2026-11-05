@@ -16,7 +16,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use fabric_sdk::{
     Client,
     documents::{
-        Coverage, CoverageReasonKind, DocsError, DocsErrorKind, DocsKey, DocsOptions, DocsOwner,
+        Coverage, CoverageReasonKind, DocsErrorKind, DocsKey, DocsOptions, DocsOwner,
         DocumentsProvider, NodeStatus,
     },
     items::ItemExecutor,
@@ -402,7 +402,7 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                             pending(),
                         )
                         .await;
-                        let (graph, descendant_partial) = match materialized {
+                        let (graph, mut descendant_partial) = match materialized {
                             Ok(graph) => (graph, false),
                             Err(error)
                                 if matches!(error.kind, DocsErrorKind::Provider(_))
@@ -415,6 +415,18 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                             }
                             Err(error) => return Err(backend_error("DocsReadFailed", error)),
                         };
+                        if let Coverage::Incomplete { reasons } = &graph.coverage {
+                            descendant_partial |= reasons.iter().any(|reason| {
+                                reason.key.as_ref().is_some_and(|key| key != &graph.root)
+                                    && matches!(
+                                        reason.kind,
+                                        CoverageReasonKind::Denied
+                                            | CoverageReasonKind::NotFound
+                                            | CoverageReasonKind::Unsupported
+                                            | CoverageReasonKind::Unavailable
+                                    )
+                            });
+                        }
                         let complete = match &graph.coverage {
                             Coverage::Complete => true,
                             Coverage::Incomplete { reasons } => reasons.iter().all(|reason| {
@@ -437,16 +449,6 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                                     ))
                             }),
                         };
-                        let markdown = graph.to_markdown(cap).map_err(|kind| {
-                            backend_error(
-                                "DocsRenderingFailed",
-                                DocsError {
-                                    kind,
-                                    key: None,
-                                    partial: Box::new(graph.clone()),
-                                },
-                            )
-                        })?;
                         let graph_data =
                             serde_json::to_value(&graph).map_err(GetCommandError::Json)?;
                         let data = json!({
@@ -460,7 +462,7 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                         Ok(GetPayload {
                             data,
                             raw: None,
-                            markdown: Some(markdown),
+                            markdown: None,
                             media_type: "text/markdown".into(),
                             complete,
                         })
@@ -481,7 +483,11 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
         Ok(json!({"data":projected,"meta":data["meta"]}))
     }
 
-    fn render_markdown(&self, data: &Value) -> Result<String, GetCommandError> {
+    fn render_markdown(
+        &self,
+        data: &Value,
+        max_bytes: NonZeroUsize,
+    ) -> Result<String, GetCommandError> {
         if data
             .get("meta")
             .and_then(|meta| meta.get("representation"))
@@ -490,11 +496,27 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
         {
             return Err(GetCommandError::MissingRepresentation(GetFormat::Markdown));
         }
-        let value = serde_json::to_string_pretty(data).map_err(GetCommandError::Json)?;
-        Ok(format!(
-            "# Projected documentation\n\nCoverage and canonical root are retained in `meta`.\n\n    {}\n",
-            value.replace('\n', "\n    ")
-        ))
+        if let Ok(graph) =
+            serde_json::from_value::<fabric_sdk::documents::GraphResult>(data["data"].clone())
+        {
+            return graph
+                .to_markdown(max_bytes)
+                .map_err(|error| backend_error("DocsRenderingFailed", error));
+        }
+        let header = "# Projected documentation\n\nCoverage and canonical root are retained in `meta`.\n\n    ";
+        let remaining =
+            max_bytes
+                .get()
+                .checked_sub(header.len())
+                .ok_or(GetCommandError::ByteLimit {
+                    limit: max_bytes.get(),
+                    observed: header.len(),
+                })?;
+        let bytes = crate::get_command::bounded_json(data, remaining)?;
+        let mut output = String::with_capacity(header.len() + bytes.len());
+        output.push_str(header);
+        output.push_str(std::str::from_utf8(&bytes).expect("JSON encoding is UTF-8"));
+        Ok(output)
     }
 }
 

@@ -400,7 +400,11 @@ pub trait GetBackend: Send + Sync {
     ///
     /// Unprojected Markdown uses `GetPayload::markdown` unchanged. Adapters only
     /// implement this if that same path advertises a typed Markdown renderer.
-    fn render_markdown(&self, _data: &Value) -> Result<String, GetCommandError> {
+    fn render_markdown(
+        &self,
+        _data: &Value,
+        _max_bytes: NonZeroUsize,
+    ) -> Result<String, GetCommandError> {
         Err(GetCommandError::MissingRepresentation(GetFormat::Markdown))
     }
 }
@@ -588,10 +592,12 @@ impl PreparedGet {
         } else {
             bounded_json(&payload.data, limit)?
         };
-        if let Some(raw) = &payload.raw {
+        if format == GetFormat::Raw
+            && let Some(raw) = &payload.raw
+        {
             check_bytes(raw.len(), limit)?;
         }
-        if format != GetFormat::Raw
+        if format == GetFormat::Markdown
             && let Some(markdown) = &payload.markdown
         {
             check_bytes(markdown.len(), limit)?;
@@ -611,11 +617,14 @@ impl PreparedGet {
             ),
             GetFormat::Markdown => {
                 let markdown = match &projected {
-                    Some(data) => backend.render_markdown(data)?,
-                    None => payload
-                        .markdown
-                        .take()
-                        .ok_or(GetCommandError::MissingRepresentation(format))?,
+                    Some(data) => {
+                        backend.render_markdown(data, command.options.limits.max_bytes)?
+                    }
+                    None => match payload.markdown.take() {
+                        Some(markdown) => markdown,
+                        None => backend
+                            .render_markdown(&payload.data, command.options.limits.max_bytes)?,
+                    },
                 };
                 check_bytes(markdown.len(), limit)?;
                 (markdown.into_bytes(), "text/markdown".to_owned())
@@ -668,7 +677,7 @@ fn check_bytes(observed: usize, limit: usize) -> Result<(), GetCommandError> {
     Ok(())
 }
 
-fn bounded_json(data: &Value, limit: usize) -> Result<Vec<u8>, GetCommandError> {
+pub(crate) fn bounded_json(data: &Value, limit: usize) -> Result<Vec<u8>, GetCommandError> {
     struct BoundedJson {
         bytes: Vec<u8>,
         limit: usize,

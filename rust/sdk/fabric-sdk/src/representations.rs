@@ -338,6 +338,9 @@ pub async fn read_file(
         )
         .await
         .map_err(RepresentationError::OneLake)?;
+    if response.status != 200 {
+        return Err(RepresentationError::InvalidResponse);
+    }
     if response.body.len() > limits.max_result_bytes.get() {
         return Err(RepresentationError::BudgetExceeded);
     }

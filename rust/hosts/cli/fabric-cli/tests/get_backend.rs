@@ -458,6 +458,21 @@ async fn exact_file_bytes_and_storage_audience_survive_without_json_overhead() {
 }
 
 #[tokio::test]
+async fn file_read_requires_completed_http_200_not_compatibility_created_status() {
+    let f = Fixture::new();
+    f.executor.response(
+        "GET",
+        format!("/{WS}/{ITEM}/Files/test.bin"),
+        201,
+        b"not-a-read",
+        &[],
+    );
+    let result = stdout(&f, &["get".into(), path("/Files/test.bin")]).await;
+    assert!(matches!(result, Err(GetCommandError::Backend { .. })));
+    assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn no_docs_provider_and_unadvertised_facets_fail_without_credentials() {
     let f = Fixture::new();
     for suffix in [
@@ -606,6 +621,111 @@ async fn bounded_docs_depth_zero_delivers_and_projection_retains_coverage() {
         "depth_limit"
     );
     assert_eq!(docs.calls.lock().unwrap().as_slice(), ["docs"]);
+}
+
+struct DeniedEdgeDocs(Docs);
+
+impl DocumentsProvider for DeniedEdgeDocs {
+    fn check_scope(&self, key: &DocsKey) -> Result<(), ProviderError> {
+        self.0.check_scope(key)
+    }
+
+    fn get<'a>(&'a self, request: DocRequest<'a>) -> DocumentsFuture<'a> {
+        Box::pin(async move {
+            let mut page = self.0.get(request).await?;
+            for edge in &mut page.edges {
+                edge.disposition = Some(EdgeDisposition::Denied);
+            }
+            Ok(page)
+        })
+    }
+}
+
+struct LargeMarkdown;
+
+impl DocumentsProvider for LargeMarkdown {
+    fn check_scope(&self, _: &DocsKey) -> Result<(), ProviderError> {
+        Ok(())
+    }
+
+    fn get<'a>(&'a self, _: DocRequest<'a>) -> DocumentsFuture<'a> {
+        Box::pin(async {
+            Ok(DocPage {
+                content: "#".repeat(600_000),
+                media_type: "text/markdown".into(),
+                revision: Some("r1".into()),
+                snapshot: None,
+                edges: Vec::new(),
+                continuation: None,
+                coverage: Coverage::Complete,
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn json_docs_do_not_render_or_charge_unselected_markdown_escaping() {
+    let f = Fixture::new();
+    let provider = LargeMarkdown;
+    let mut backend = f.backend();
+    backend.documents = Some(&provider);
+    let json_args = [
+        "get".into(),
+        path("/docs/schema"),
+        "--format".into(),
+        "json".into(),
+    ];
+    let delivery = f
+        .prepared(&json_args)
+        .acquire(&backend, pending())
+        .await
+        .unwrap();
+    assert!(delivery.bytes().len() < 1_048_576);
+    let markdown_args = [
+        "get".into(),
+        path("/docs/schema"),
+        "--format".into(),
+        "markdown".into(),
+    ];
+    assert!(
+        f.prepared(&markdown_args)
+            .acquire(&backend, pending())
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn advertised_denied_descendant_is_partial_without_attempting_its_read() {
+    let f = Fixture::new();
+    let docs = DeniedEdgeDocs(Docs {
+        calls: Mutex::new(Vec::new()),
+        deny_child: false,
+        oversized: false,
+        deny_root: false,
+    });
+    let mut backend = f.backend();
+    backend.documents = Some(&docs);
+    let args = [
+        "get".into(),
+        path("/docs"),
+        "--recursive".into(),
+        "--depth".into(),
+        "1".into(),
+        "--format".into(),
+        "json".into(),
+    ];
+    let delivery = f
+        .prepared(&args)
+        .acquire(&backend, pending())
+        .await
+        .unwrap();
+    let mut bytes = Vec::new();
+    delivery.write_to(&mut bytes).unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["meta"]["outcome"], "partial");
+    assert_eq!(value["meta"]["coverage"]["status"], "incomplete");
+    assert_eq!(docs.0.calls.lock().unwrap().as_slice(), ["docs"]);
 }
 
 #[tokio::test]
