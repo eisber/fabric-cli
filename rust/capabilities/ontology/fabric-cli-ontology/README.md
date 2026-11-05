@@ -34,6 +34,13 @@ hard-only child deletion intent, unsupported recursion and actual LRO observatio
 applicability. Its success is local compatibility only; it does not read or
 approve a body, reserve output, prove source permissions or enable dispatch.
 
+`decode_json_input` applies an explicit raw-byte bound before decoding, rejects
+non-UTF-8 input, unsupported media, duplicate keys at every depth, trailing
+documents and non-object roots. It distinguishes missing, empty, malformed and
+oversized input without echoing source text. Decoded values preserve null,
+omission and numeric types; this decoder intentionally does not claim that
+unknown/read-only fields have passed the producer's representation schema.
+
 Only JSON receipt format is admitted in this local slice. No raw bytes,
 recursive get, directory extraction, implicit OWL conversion, docs/context
 authoring, item-collection list expansion, model-backed execution, import,

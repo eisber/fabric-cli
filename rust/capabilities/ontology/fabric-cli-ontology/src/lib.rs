@@ -10,6 +10,7 @@
 
 mod args;
 mod catalog;
+mod input;
 mod validation;
 
 pub use args::{
@@ -20,4 +21,5 @@ pub use catalog::{
     Backend, BodyContract, Effect, GenerationSupport, OntologyBinding, OntologyTarget,
     OntologyVerb, SelectionError, bindings, select_binding,
 };
+pub use input::{InputError, decode_json_input};
 pub use validation::{ValidationError, validate_arguments};
