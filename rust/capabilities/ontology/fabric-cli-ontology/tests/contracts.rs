@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Offline Ontology alias, argument and representation contracts.
+
 #![deny(unnameable_test_items)]
 
 use fabric_cli_ontology::{
