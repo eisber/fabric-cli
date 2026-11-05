@@ -3,12 +3,14 @@
 
 //! Experimental, bounded Livy Arrow framed-v2/raw contracts.
 //!
-//! No network engine, credentials, durable checkpoints or native IPC decoder are
-//! installed. Hosts supply streaming HTTP reads and explicitly opt into a typed
-//! decoder. Raw framed output is not one standard Arrow IPC stream.
+//! No network engine, credentials or durable checkpoints are installed. Hosts
+//! supply streaming HTTP reads and explicitly opt into a typed decoder through
+//! `livy-arrow-ipc`. Raw framed output is not one standard Arrow IPC stream.
 
 mod codec;
 mod delivery;
+#[cfg(feature = "livy-arrow-ipc")]
+pub mod ipc;
 mod request;
 mod typed;
 
@@ -16,6 +18,8 @@ pub use codec::{FramedDecoder, RawChunk, RawInline, StreamLimits, write_frame, w
 pub use delivery::{
     Delivery, DeliveryState, Failure, ResumeCursor, RetryDecision, RetryPolicy, StopReason,
 };
+#[cfg(feature = "livy-arrow-ipc")]
+pub use ipc::NativeIpcDecoder;
 pub use request::{
     ARROW_CHUNKS_MEDIA_TYPE, ARROW_STREAM_MEDIA_TYPE, ArrowRequest, InlineFallback,
     ResponseHeaders, ResponseRepresentation, ResultSelectors, StatementHandle, StatementOwner,

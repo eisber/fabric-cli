@@ -192,7 +192,8 @@ fn schema_field(
     if let Some(dictionary) = field.dictionary() {
         // Nested dictionary values and concat-based deltas need a different
         // retained-size model. Scalar dictionaries inside lists/structs are OK.
-        if child_count != 0 || dictionary.dictionaryKind() != arrow_ipc::DictionaryKind::DenseArray {
+        if child_count != 0 || dictionary.dictionaryKind() != arrow_ipc::DictionaryKind::DenseArray
+        {
             return Err(ArrowError::UnsupportedCapability);
         }
         let index = dictionary.indexType().ok_or(ArrowError::Protocol)?;
@@ -345,7 +346,8 @@ impl<'a> Messages<'a> {
         let encoded_metadata = self.take(length)?;
         // The safe root verifier has finite depth/table/apparent-size limits;
         // schema expansion is separately bounded before native conversion.
-        let message = arrow_ipc::root_as_message(encoded_metadata).map_err(|_| ArrowError::Protocol)?;
+        let message =
+            arrow_ipc::root_as_message(encoded_metadata).map_err(|_| ArrowError::Protocol)?;
         if message.version() != arrow_ipc::MetadataVersion::V4
             && message.version() != arrow_ipc::MetadataVersion::V5
         {
@@ -420,7 +422,10 @@ fn preflight(payload: &[u8], limits: DecodeLimits) -> Result<Schema, ArrowError>
     }
     let version = first.message.version();
     let (schema, schema_bytes) = schema_preflight(
-        first.message.header_as_schema().ok_or(ArrowError::Protocol)?,
+        first
+            .message
+            .header_as_schema()
+            .ok_or(ArrowError::Protocol)?,
         limits,
     )?;
     let mut dictionaries = BTreeMap::new();
@@ -442,7 +447,9 @@ fn preflight(payload: &[u8], limits: DecodeLimits) -> Result<Schema, ArrowError>
         match message.header_type() {
             arrow_ipc::MessageHeader::Schema => return Err(ArrowError::Protocol),
             arrow_ipc::MessageHeader::RecordBatch => {
-                let batch = message.header_as_record_batch().ok_or(ArrowError::Protocol)?;
+                let batch = message
+                    .header_as_record_batch()
+                    .ok_or(ArrowError::Protocol)?;
                 let mut layout = Layout::new(batch, envelope.body, version, &mut budget)?;
                 let rows = size(batch.length())?;
                 for field in schema.fields() {
@@ -545,7 +552,10 @@ impl<'a, 'b> Layout<'a, 'b> {
         if nodes.len() > MAX_FIELDS || buffers.len() > MAX_FIELDS * 3 {
             return Err(ArrowError::Limit);
         }
-        if batch.variadicBufferCounts().is_some_and(|counts| !counts.is_empty()) {
+        if batch
+            .variadicBufferCounts()
+            .is_some_and(|counts| !counts.is_empty())
+        {
             return Err(ArrowError::UnsupportedCapability);
         }
         let compressed = if let Some(compression) = batch.compression() {
@@ -608,7 +618,10 @@ impl<'a, 'b> Layout<'a, 'b> {
         if let DataType::Dictionary(index, _) = field.data_type() {
             #[expect(deprecated)]
             let id = field.dict_id().ok_or(ArrowError::Protocol)?;
-            if !dictionaries.get(&id).is_some_and(|dictionary| dictionary.seen) {
+            if !dictionaries
+                .get(&id)
+                .is_some_and(|dictionary| dictionary.seen)
+            {
                 return Err(ArrowError::Protocol);
             }
             self.data_type(index, expected, dictionaries)
@@ -653,13 +666,21 @@ impl<'a, 'b> Layout<'a, 'b> {
             Utf8 | Binary | LargeUtf8 | LargeBinary => {
                 let offsets = self.next_buffer()?;
                 let values = self.next_buffer()?;
-                let width = if matches!(data_type, LargeUtf8 | LargeBinary) { 8 } else { 4 };
+                let width = if matches!(data_type, LargeUtf8 | LargeBinary) {
+                    8
+                } else {
+                    4
+                };
                 check_offsets(offsets, rows, width, values.decoded)?;
             }
             List(child) | LargeList(child) | Map(child, _) => {
                 let offsets = self.next_buffer()?;
                 let child_rows = self.field(child, None, dictionaries)?;
-                let width = if matches!(data_type, LargeList(_)) { 8 } else { 4 };
+                let width = if matches!(data_type, LargeList(_)) {
+                    8
+                } else {
+                    4
+                };
                 check_offsets(offsets, rows, width, child_rows)?;
             }
             FixedSizeList(child, length) => {
@@ -695,7 +716,13 @@ fn fixed_width(data_type: &DataType) -> Option<usize> {
         Int8 | UInt8 => 1,
         Int16 | UInt16 | Float16 => 2,
         Int32 | UInt32 | Float32 | Date32 | Time32(_) | Decimal32(_, _) => 4,
-        Int64 | UInt64 | Float64 | Date64 | Time64(_) | Timestamp(_, _) | Duration(_)
+        Int64
+        | UInt64
+        | Float64
+        | Date64
+        | Time64(_)
+        | Timestamp(_, _)
+        | Duration(_)
         | Decimal64(_, _) => 8,
         Interval(IntervalUnit::YearMonth) => 4,
         Interval(IntervalUnit::DayTime) => 8,
@@ -724,9 +751,15 @@ fn check_offsets(
     require(buffer, minimum)?;
     if let Some(raw) = buffer.raw {
         let mut previous = 0;
-        for bytes in raw.get(..minimum).ok_or(ArrowError::Protocol)?.chunks_exact(width) {
+        for bytes in raw
+            .get(..minimum)
+            .ok_or(ArrowError::Protocol)?
+            .chunks_exact(width)
+        {
             let offset = if width == 4 {
-                i64::from(i32::from_le_bytes(bytes.try_into().map_err(|_| ArrowError::Protocol)?))
+                i64::from(i32::from_le_bytes(
+                    bytes.try_into().map_err(|_| ArrowError::Protocol)?,
+                ))
             } else {
                 i64::from_le_bytes(bytes.try_into().map_err(|_| ArrowError::Protocol)?)
             };

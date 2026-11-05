@@ -16,6 +16,7 @@ layer = "sdk"
 [features]
 default = []
 livy-arrow = ["dep:ring"]
+livy-arrow-ipc = ["livy-arrow", "dep:arrow-array", "dep:arrow-schema", "dep:arrow-ipc"]
 
 [dependencies]
 azure_core.workspace = true
@@ -29,6 +30,9 @@ fabric-sdk-operations.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ring = { workspace = true, optional = true }
+arrow-array = { workspace = true, optional = true }
+arrow-schema = { workspace = true, optional = true }
+arrow-ipc = { workspace = true, optional = true }
 
 [dev-dependencies]
 async-trait.workspace = true

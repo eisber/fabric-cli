@@ -28,13 +28,22 @@ const LIMITS: DecodeLimits = DecodeLimits {
 };
 
 fn chunk(payload: Vec<u8>) -> RawChunk {
-    RawChunk::new(0, 0, "part-00000-000".into(), payload, StreamLimits::default()).unwrap()
+    RawChunk::new(
+        0,
+        0,
+        "part-00000-000".into(),
+        payload,
+        StreamLimits::default(),
+    )
+    .unwrap()
 }
 
 fn write(batches: &[RecordBatch], codec: Option<CompressionType>) -> Vec<u8> {
     write_options(
         batches,
-        IpcWriteOptions::default().try_with_compression(codec).unwrap(),
+        IpcWriteOptions::default()
+            .try_with_compression(codec)
+            .unwrap(),
     )
 }
 
@@ -59,8 +68,11 @@ fn schema_only(schema: &Schema) -> Vec<u8> {
 }
 
 fn primitive() -> RecordBatch {
-    RecordBatch::try_from_iter([("value", Arc::new(Int32Array::from(vec![1, 2, 3])) as ArrayRef)])
-        .unwrap()
+    RecordBatch::try_from_iter([(
+        "value",
+        Arc::new(Int32Array::from(vec![1, 2, 3])) as ArrayRef,
+    )])
+    .unwrap()
 }
 
 fn fixture() -> RecordBatch {
@@ -77,13 +89,21 @@ fn fixture() -> RecordBatch {
     )])) as ArrayRef;
     let dictionary: DictionaryArray<Int32Type> =
         vec![Some("red"), None, Some("blue")].into_iter().collect();
-    let arrays = vec![numbers, strings, lists, structs, Arc::new(dictionary) as ArrayRef];
+    let arrays = vec![
+        numbers,
+        strings,
+        lists,
+        structs,
+        Arc::new(dictionary) as ArrayRef,
+    ];
     let fields = ["number", "text", "list", "struct", "dictionary"]
         .into_iter()
         .zip(&arrays)
         .map(|(name, array)| {
-            Field::new(name, array.data_type().clone(), true)
-                .with_metadata(HashMap::from([("field-key".into(), format!("field-{name}"))]))
+            Field::new(name, array.data_type().clone(), true).with_metadata(HashMap::from([(
+                "field-key".into(),
+                format!("field-{name}"),
+            )]))
         })
         .collect::<Vec<_>>();
     let schema = Schema::new_with_metadata(
@@ -117,7 +137,11 @@ fn spans(bytes: &[u8]) -> Vec<Span> {
         position = metadata.end;
         let body = position..position + usize::try_from(message.bodyLength()).unwrap();
         position = body.end;
-        spans.push(Span { complete: start..position, metadata, body });
+        spans.push(Span {
+            complete: start..position,
+            metadata,
+            body,
+        });
     }
     spans
 }
@@ -129,7 +153,10 @@ fn buffer_location(bytes: &[u8], index: usize) -> (usize, Range<usize>) {
             let descriptor = batch.buffers().unwrap().get(index);
             let location = descriptor.0.as_ptr() as usize - bytes.as_ptr() as usize;
             let start = span.body.start + usize::try_from(descriptor.offset()).unwrap();
-            return (location, start..start + usize::try_from(descriptor.length()).unwrap());
+            return (
+                location,
+                start..start + usize::try_from(descriptor.length()).unwrap(),
+            );
         }
     }
     panic!("writer did not produce a record batch");
@@ -141,9 +168,14 @@ fn compressed_buffer(bytes: &[u8], kind: MessageHeader) -> Range<usize> {
         if message.header_type() != kind {
             continue;
         }
-        let batch = message.header_as_record_batch().or_else(|| {
-            message.header_as_dictionary_batch().and_then(|dictionary| dictionary.data())
-        }).unwrap();
+        let batch = message
+            .header_as_record_batch()
+            .or_else(|| {
+                message
+                    .header_as_dictionary_batch()
+                    .and_then(|dictionary| dictionary.data())
+            })
+            .unwrap();
         assert!(batch.compression().is_some());
         for descriptor in batch.buffers().unwrap() {
             let start = span.body.start + usize::try_from(descriptor.offset()).unwrap();
@@ -165,7 +197,10 @@ fn minimum_decoded_limit(bytes: &[u8]) -> usize {
         let middle = low + (high - low) / 2;
         let result = NativeIpcDecoder::new().inspect_schema(
             &chunk(bytes.to_vec()),
-            DecodeLimits { max_decoded_bytes: middle, ..LIMITS },
+            DecodeLimits {
+                max_decoded_bytes: middle,
+                ..LIMITS
+            },
         );
         match result {
             Ok(_) => high = middle,
@@ -178,23 +213,34 @@ fn minimum_decoded_limit(bytes: &[u8]) -> usize {
 
 #[test]
 fn native_writer_round_trips_types_nulls_nested_dictionary_and_metadata() {
-    for codec in [None, Some(CompressionType::LZ4_FRAME), Some(CompressionType::ZSTD)] {
+    for codec in [
+        None,
+        Some(CompressionType::LZ4_FRAME),
+        Some(CompressionType::ZSTD),
+    ] {
         let expected = fixture();
         let raw = chunk(write(&[expected.clone(), expected.clone()], codec));
-        let schema = NativeIpcDecoder::new().inspect_schema(&raw, LIMITS).unwrap();
+        let schema = NativeIpcDecoder::new()
+            .inspect_schema(&raw, LIMITS)
+            .unwrap();
         assert_eq!(&schema, expected.schema().as_ref());
         let mut count = 0;
-        NativeIpcDecoder::new().decode(&raw, LIMITS, &mut |actual| {
-            assert_eq!(actual, expected);
-            assert_eq!(actual.num_rows(), 3);
-            assert_eq!(actual.column(0).null_count(), 1);
-            assert_eq!(actual.column(1).null_count(), 1);
-            assert_eq!(actual.column(2).null_count(), 1);
-            assert_eq!(actual.column(4).null_count(), 1);
-            assert_eq!(actual.schema().metadata().get("schema-key").unwrap(), "offline-native-writer");
-            count += 1;
-            Ok(())
-        }).unwrap();
+        NativeIpcDecoder::new()
+            .decode(&raw, LIMITS, &mut |actual| {
+                assert_eq!(actual, expected);
+                assert_eq!(actual.num_rows(), 3);
+                assert_eq!(actual.column(0).null_count(), 1);
+                assert_eq!(actual.column(1).null_count(), 1);
+                assert_eq!(actual.column(2).null_count(), 1);
+                assert_eq!(actual.column(4).null_count(), 1);
+                assert_eq!(
+                    actual.schema().metadata().get("schema-key").unwrap(),
+                    "offline-native-writer"
+                );
+                count += 1;
+                Ok(())
+            })
+            .unwrap();
         assert_eq!(count, 2);
     }
 }
@@ -204,20 +250,26 @@ fn schema_only_and_zero_row_batches_are_real_streams() {
     let batch = primitive().slice(0, 0);
     let raw = chunk(schema_only(batch.schema().as_ref()));
     assert_eq!(
-        NativeIpcDecoder::new().inspect_schema(&raw, LIMITS).unwrap(),
+        NativeIpcDecoder::new()
+            .inspect_schema(&raw, LIMITS)
+            .unwrap(),
         batch.schema().as_ref().clone(),
     );
     let mut count = 0;
-    NativeIpcDecoder::new().decode(&raw, LIMITS, &mut |_| {
-        count += 1;
-        Ok(())
-    }).unwrap();
+    NativeIpcDecoder::new()
+        .decode(&raw, LIMITS, &mut |_| {
+            count += 1;
+            Ok(())
+        })
+        .unwrap();
     assert_eq!(count, 0);
-    NativeIpcDecoder::new().decode(&chunk(write(&[batch], None)), LIMITS, &mut |batch| {
-        assert_eq!(batch.num_rows(), 0);
-        count += 1;
-        Ok(())
-    }).unwrap();
+    NativeIpcDecoder::new()
+        .decode(&chunk(write(&[batch], None)), LIMITS, &mut |batch| {
+            assert_eq!(batch.num_rows(), 0);
+            count += 1;
+            Ok(())
+        })
+        .unwrap();
     assert_eq!(count, 1);
 }
 
@@ -229,11 +281,9 @@ fn typed_stream_compares_field_and_schema_metadata_before_chunk_delivery() {
             first.schema().fields().clone(),
             HashMap::from([("different".into(), "schema".into())]),
         ),
-        Schema::new(vec![
-            first.schema().field(0).clone().with_metadata(
-                HashMap::from([("different".into(), "field".into())]),
-            ),
-        ]),
+        Schema::new(vec![first.schema().field(0).clone().with_metadata(
+            HashMap::from([("different".into(), "field".into())]),
+        )]),
         Schema::new(vec![Field::new("renamed", DataType::Int32, false)]),
         Schema::new(vec![Field::new("value", DataType::Int32, true)]),
     ] {
@@ -244,7 +294,9 @@ fn typed_stream_compares_field_and_schema_metadata_before_chunk_delivery() {
             emitted += 1;
             Ok(())
         };
-        stream.decode(&chunk(write(&[first.clone()], None)), &mut sink).unwrap();
+        stream
+            .decode(&chunk(write(&[first.clone()], None)), &mut sink)
+            .unwrap();
         assert_eq!(
             stream.decode(&chunk(write(&[second], None)), &mut sink),
             Err(ArrowError::SchemaConflict),
@@ -284,7 +336,8 @@ fn complete_stream_requires_eos_and_rejects_all_truncations_and_trailing_bytes()
         Err(ArrowError::Protocol),
     );
     assert_eq!(
-        NativeIpcDecoder::new().inspect_schema(&chunk(vec![255, 255, 255, 255, 0, 0, 0, 0]), LIMITS),
+        NativeIpcDecoder::new()
+            .inspect_schema(&chunk(vec![255, 255, 255, 255, 0, 0, 0, 0]), LIMITS),
         Err(ArrowError::Protocol),
     );
 }
@@ -325,13 +378,22 @@ fn bad_buffer_extents_nodes_and_nested_offsets_fail_preflight() {
         let mut bytes = original.clone();
         bytes[descriptor..descriptor + 8].copy_from_slice(&offset.to_le_bytes());
         bytes[descriptor + 8..descriptor + 16].copy_from_slice(&length.to_le_bytes());
-        assert!(NativeIpcDecoder::new().inspect_schema(&chunk(bytes), LIMITS).is_err());
+        assert!(
+            NativeIpcDecoder::new()
+                .inspect_schema(&chunk(bytes), LIMITS)
+                .is_err()
+        );
     }
     let mut overflow = original.clone();
     let node_position = {
         let span = &spans(&overflow)[1];
         let message = arrow_ipc::root_as_message(&overflow[span.metadata.clone()]).unwrap();
-        let node = message.header_as_record_batch().unwrap().nodes().unwrap().get(0);
+        let node = message
+            .header_as_record_batch()
+            .unwrap()
+            .nodes()
+            .unwrap()
+            .get(0);
         node.0.as_ptr() as usize - overflow.as_ptr() as usize
     };
     overflow[node_position..node_position + 8].copy_from_slice(&i64::MAX.to_le_bytes());
@@ -356,8 +418,14 @@ fn bad_buffer_extents_nodes_and_nested_offsets_fail_preflight() {
 fn encoded_and_decoded_limits_are_checked_before_native_reader() {
     let raw = chunk(write(&[primitive()], None));
     for limits in [
-        DecodeLimits { max_message_bytes: 1, ..LIMITS },
-        DecodeLimits { max_decoded_bytes: 1, ..LIMITS },
+        DecodeLimits {
+            max_message_bytes: 1,
+            ..LIMITS
+        },
+        DecodeLimits {
+            max_decoded_bytes: 1,
+            ..LIMITS
+        },
     ] {
         assert_eq!(
             NativeIpcDecoder::new().inspect_schema(&raw, limits),
@@ -365,21 +433,32 @@ fn encoded_and_decoded_limits_are_checked_before_native_reader() {
         );
     }
     for limits in [
-        DecodeLimits { max_message_bytes: 0, ..LIMITS },
-        DecodeLimits { max_decoded_bytes: 0, ..LIMITS },
+        DecodeLimits {
+            max_message_bytes: 0,
+            ..LIMITS
+        },
+        DecodeLimits {
+            max_decoded_bytes: 0,
+            ..LIMITS
+        },
     ] {
         assert_eq!(
             NativeIpcDecoder::new().inspect_schema(&raw, limits),
             Err(ArrowError::InvalidInput),
         );
     }
-    let batch = RecordBatch::try_from_iter([
-        ("large", Arc::new(Int32Array::from(vec![42; 8192])) as ArrayRef),
-    ]).unwrap();
+    let batch = RecordBatch::try_from_iter([(
+        "large",
+        Arc::new(Int32Array::from(vec![42; 8192])) as ArrayRef,
+    )])
+    .unwrap();
     assert_eq!(
         NativeIpcDecoder::new().inspect_schema(
             &chunk(write(&[batch], None)),
-            DecodeLimits { max_decoded_bytes: 1024, ..LIMITS },
+            DecodeLimits {
+                max_decoded_bytes: 1024,
+                ..LIMITS
+            },
         ),
         Err(ArrowError::Limit),
     );
@@ -387,21 +466,35 @@ fn encoded_and_decoded_limits_are_checked_before_native_reader() {
 
 #[test]
 fn encoded_limit_is_per_complete_message_not_per_stream() {
-    let batch = RecordBatch::try_from_iter([
-        ("large", Arc::new(Int32Array::from(vec![42; 1024])) as ArrayRef),
-    ]).unwrap();
+    let batch = RecordBatch::try_from_iter([(
+        "large",
+        Arc::new(Int32Array::from(vec![42; 1024])) as ArrayRef,
+    )])
+    .unwrap();
     let bytes = write(&[batch.clone(), batch.clone(), batch], None);
-    let largest_message = spans(&bytes).iter().map(|span| span.complete.len()).max().unwrap();
+    let largest_message = spans(&bytes)
+        .iter()
+        .map(|span| span.complete.len())
+        .max()
+        .unwrap();
     assert!(bytes.len() > largest_message * 2);
     let raw = chunk(bytes);
-    NativeIpcDecoder::new().inspect_schema(
-        &raw,
-        DecodeLimits { max_message_bytes: largest_message, ..LIMITS },
-    ).unwrap();
+    NativeIpcDecoder::new()
+        .inspect_schema(
+            &raw,
+            DecodeLimits {
+                max_message_bytes: largest_message,
+                ..LIMITS
+            },
+        )
+        .unwrap();
     assert_eq!(
         NativeIpcDecoder::new().inspect_schema(
             &raw,
-            DecodeLimits { max_message_bytes: largest_message - 1, ..LIMITS },
+            DecodeLimits {
+                max_message_bytes: largest_message - 1,
+                ..LIMITS
+            },
         ),
         Err(ArrowError::Limit),
     );
@@ -410,14 +503,17 @@ fn encoded_limit_is_per_complete_message_not_per_stream() {
 #[test]
 fn compressed_declared_bombs_fail_before_decompressing_invalid_body() {
     for codec in [CompressionType::LZ4_FRAME, CompressionType::ZSTD] {
-        let batch = RecordBatch::try_from_iter([
-            ("large", Arc::new(Int32Array::from(vec![42; 8192])) as ArrayRef),
-        ]).unwrap();
-        let dictionary: DictionaryArray<Int32Type> =
-            vec!["a".repeat(8192), "b".repeat(8192)].iter().map(|value| Some(value.as_str())).collect();
-        let dict_batch = RecordBatch::try_from_iter([
-            ("dictionary", Arc::new(dictionary) as ArrayRef),
-        ]).unwrap();
+        let batch = RecordBatch::try_from_iter([(
+            "large",
+            Arc::new(Int32Array::from(vec![42; 8192])) as ArrayRef,
+        )])
+        .unwrap();
+        let dictionary: DictionaryArray<Int32Type> = vec!["a".repeat(8192), "b".repeat(8192)]
+            .iter()
+            .map(|value| Some(value.as_str()))
+            .collect();
+        let dict_batch =
+            RecordBatch::try_from_iter([("dictionary", Arc::new(dictionary) as ArrayRef)]).unwrap();
         for (batch, kind) in [
             (batch, MessageHeader::RecordBatch),
             (dict_batch, MessageHeader::DictionaryBatch),
@@ -427,7 +523,10 @@ fn compressed_declared_bombs_fail_before_decompressing_invalid_body() {
             bytes[range.start..range.start + 8].copy_from_slice(&(1024_i64 * 1024).to_le_bytes());
             bytes[range.start + 8..range.end].fill(0xff);
             let raw = chunk(bytes);
-            let limits = DecodeLimits { max_decoded_bytes: 64 * 1024, ..LIMITS };
+            let limits = DecodeLimits {
+                max_decoded_bytes: 64 * 1024,
+                ..LIMITS
+            };
             // Apache would report malformed compression, not our Limit. The
             // limit must win without ever handing this body to its decoder.
             assert_eq!(
@@ -450,9 +549,11 @@ fn compressed_declared_bombs_fail_before_decompressing_invalid_body() {
 #[test]
 fn compressed_output_cannot_exceed_a_forged_smaller_decoded_header() {
     for codec in [CompressionType::LZ4_FRAME, CompressionType::ZSTD] {
-        let batch = RecordBatch::try_from_iter([
-            ("text", Arc::new(StringArray::from(vec!["x".repeat(32768)])) as ArrayRef),
-        ]).unwrap();
+        let batch = RecordBatch::try_from_iter([(
+            "text",
+            Arc::new(StringArray::from(vec!["x".repeat(32768)])) as ArrayRef,
+        )])
+        .unwrap();
         let mut bytes = write(&[batch], Some(codec));
         let range = compressed_buffer(&bytes, MessageHeader::RecordBatch);
         let (_, offsets) = buffer_location(&bytes, 1);
@@ -474,12 +575,14 @@ fn compressed_output_cannot_exceed_a_forged_smaller_decoded_header() {
 
 #[test]
 fn dictionary_replacements_are_cumulative_and_never_escape_the_chunk() {
-    let batches = (0..8).map(|index| {
-        let values = [format!("{index}{}", "a".repeat(4096)), "b".repeat(4096)];
-        let dictionary: DictionaryArray<Int32Type> =
-            values.iter().map(|value| Some(value.as_str())).collect();
-        RecordBatch::try_from_iter([("dictionary", Arc::new(dictionary) as ArrayRef)]).unwrap()
-    }).collect::<Vec<_>>();
+    let batches = (0..8)
+        .map(|index| {
+            let values = [format!("{index}{}", "a".repeat(4096)), "b".repeat(4096)];
+            let dictionary: DictionaryArray<Int32Type> =
+                values.iter().map(|value| Some(value.as_str())).collect();
+            RecordBatch::try_from_iter([("dictionary", Arc::new(dictionary) as ArrayRef)]).unwrap()
+        })
+        .collect::<Vec<_>>();
     let single = write(&batches[..1], None);
     let minimum = minimum_decoded_limit(&single);
     let many = write(&batches, None);
@@ -487,11 +590,16 @@ fn dictionary_replacements_are_cumulative_and_never_escape_the_chunk() {
     assert_eq!(
         decoder.inspect_schema(
             &chunk(many),
-            DecodeLimits { max_decoded_bytes: minimum * 2, ..LIMITS },
+            DecodeLimits {
+                max_decoded_bytes: minimum * 2,
+                ..LIMITS
+            },
         ),
         Err(ArrowError::Limit),
     );
-    decoder.inspect_schema(&chunk(single.clone()), LIMITS).unwrap();
+    decoder
+        .inspect_schema(&chunk(single.clone()), LIMITS)
+        .unwrap();
     let mut missing_dictionary = Vec::new();
     for span in spans(&single) {
         let message = arrow_ipc::root_as_message(&single[span.metadata.clone()]).unwrap();
@@ -508,25 +616,32 @@ fn dictionary_replacements_are_cumulative_and_never_escape_the_chunk() {
 
 #[test]
 fn unsupported_delta_and_view_layouts_fail_explicitly() {
-    let batches = [vec!["a", "a"], vec!["a", "b"]].into_iter().map(|values| {
-        let dictionary: DictionaryArray<Int32Type> = values.into_iter().map(Some).collect();
-        RecordBatch::try_from_iter([("dictionary", Arc::new(dictionary) as ArrayRef)]).unwrap()
-    }).collect::<Vec<_>>();
+    let batches = [vec!["a", "a"], vec!["a", "b"]]
+        .into_iter()
+        .map(|values| {
+            let dictionary: DictionaryArray<Int32Type> = values.into_iter().map(Some).collect();
+            RecordBatch::try_from_iter([("dictionary", Arc::new(dictionary) as ArrayRef)]).unwrap()
+        })
+        .collect::<Vec<_>>();
     let bytes = write_options(
         &batches,
         IpcWriteOptions::default().with_dictionary_handling(DictionaryHandling::Delta),
     );
     assert!(spans(&bytes).into_iter().any(|span| {
-        arrow_ipc::root_as_message(&bytes[span.metadata]).unwrap()
-            .header_as_dictionary_batch().is_some_and(|dictionary| dictionary.isDelta())
+        arrow_ipc::root_as_message(&bytes[span.metadata])
+            .unwrap()
+            .header_as_dictionary_batch()
+            .is_some_and(|dictionary| dictionary.isDelta())
     }));
     assert_eq!(
         NativeIpcDecoder::new().inspect_schema(&chunk(bytes), LIMITS),
         Err(ArrowError::UnsupportedCapability),
     );
-    let batch = RecordBatch::try_from_iter([
-        ("view", Arc::new(StringViewArray::from(vec!["one", "two"])) as ArrayRef),
-    ]).unwrap();
+    let batch = RecordBatch::try_from_iter([(
+        "view",
+        Arc::new(StringViewArray::from(vec!["one", "two"])) as ArrayRef,
+    )])
+    .unwrap();
     assert_eq!(
         NativeIpcDecoder::new().inspect_schema(&chunk(write(&[batch], None)), LIMITS),
         Err(ArrowError::UnsupportedCapability),
@@ -542,7 +657,10 @@ fn schema_expansion_and_depth_are_bounded_before_conversion() {
     assert_eq!(
         NativeIpcDecoder::new().inspect_schema(
             &chunk(schema_only(&huge_metadata)),
-            DecodeLimits { max_decoded_bytes: 4096, ..LIMITS },
+            DecodeLimits {
+                max_decoded_bytes: 4096,
+                ..LIMITS
+            },
         ),
         Err(ArrowError::Limit),
     );
@@ -552,7 +670,9 @@ fn schema_expansion_and_depth_are_bounded_before_conversion() {
     }
     assert_eq!(
         NativeIpcDecoder::new().inspect_schema(
-            &chunk(schema_only(&Schema::new(vec![Field::new("deep", data_type, true)]))),
+            &chunk(schema_only(&Schema::new(vec![Field::new(
+                "deep", data_type, true
+            )]))),
             LIMITS,
         ),
         Err(ArrowError::Limit),
@@ -561,15 +681,22 @@ fn schema_expansion_and_depth_are_bounded_before_conversion() {
 
 #[test]
 fn sink_error_stops_before_emitting_the_next_batch() {
-    let batch = RecordBatch::try_from_iter([
-        ("text", Arc::new(StringArray::from(vec!["valid"])) as ArrayRef),
-    ]).unwrap();
+    let batch = RecordBatch::try_from_iter([(
+        "text",
+        Arc::new(StringArray::from(vec!["valid"])) as ArrayRef,
+    )])
+    .unwrap();
     let mut bytes = write(&[batch.clone(), batch], None);
     let value_position = {
         let parts = spans(&bytes);
         let span = parts.last().unwrap();
         let message = arrow_ipc::root_as_message(&bytes[span.metadata.clone()]).unwrap();
-        let values = message.header_as_record_batch().unwrap().buffers().unwrap().get(2);
+        let values = message
+            .header_as_record_batch()
+            .unwrap()
+            .buffers()
+            .unwrap()
+            .get(2);
         span.body.start + usize::try_from(values.offset()).unwrap()
     };
     bytes[value_position] = 0xff;

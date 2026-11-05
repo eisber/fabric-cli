@@ -21,11 +21,11 @@ fabric-sdk-folders.workspace = true
 fabric-sdk-operations.workspace = true
 fabric-sdk-workspaces.workspace = true
 futures-util.workspace = true
+fabric-core.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true
-fabric-core.workspace = true
-serde_json.workspace = true
 tokio.workspace = true
 
 [lints]

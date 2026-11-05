@@ -192,8 +192,7 @@ fn request_headers(request: &NativeRequest) -> Result<Vec<(String, String)>, Nat
             .headers()
             .iter()
             .map(|(name, value)| (name.as_str(), value.as_str())),
-    )
-    {
+    ) {
         bytes = bytes
             .checked_add(name.len())
             .and_then(|bytes| bytes.checked_add(value.len()))

@@ -29,7 +29,8 @@ impl DecodeLimits {
 /// batches. The schema must compare exact fields and field/schema metadata.
 /// `inspect_schema` must not deliver batches. `decode` must enforce that every
 /// batch uses that inspected schema. These are implementation prerequisites, not
-/// guarantees provided by a trait declaration. No implementation ships here.
+/// guarantees provided by a trait declaration. The optional `livy-arrow-ipc`
+/// feature supplies a native implementation; none is installed by default.
 pub trait TypedDecoder {
     /// Native decoded record-batch type.
     type Batch;

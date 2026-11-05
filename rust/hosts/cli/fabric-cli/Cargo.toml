@@ -19,6 +19,7 @@ path = "src/main.rs"
 
 [features]
 default = []
+runtime-v2 = []
 repl = ["dep:fabric-cli-repl", "fabric-cli-repl/reedline-editor"]
 windows-broker = ["dep:fabric-identity", "dep:tokio", "fabric-identity/windows-broker"]
 native-host = ["dep:fabric-identity", "dep:tokio", "dep:fabric-sdk-http", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls", "dep:rustix", "dep:chrono"]

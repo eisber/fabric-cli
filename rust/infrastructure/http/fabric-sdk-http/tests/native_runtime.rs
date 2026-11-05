@@ -266,7 +266,10 @@ async fn explicit_public_daily_and_msit_bindings_preserve_get_wire_and_scope() {
             200,
             b"native\x00\xffbody",
             &[
-                ("content-type", "application/vnd.provider+json; charset=utf-8"),
+                (
+                    "content-type",
+                    "application/vnd.provider+json; charset=utf-8",
+                ),
                 ("ETag", "\"observed-version\""),
                 ("x-native-result", "retained"),
             ],
@@ -359,7 +362,10 @@ async fn post_json_202_is_acceptance_not_completion_and_preserves_receipt_header
     assert_eq!(result.status, 202);
     assert_eq!(result.body, br#"{"id":7,"state":"starting"}"#);
     assert_eq!(result.content_type.as_deref(), Some("application/json"));
-    assert_eq!(result.header("location").unwrap(), Some("/native/session/7"));
+    assert_eq!(
+        result.header("location").unwrap(),
+        Some("/native/session/7")
+    );
     assert_eq!(result.header("retry-after").unwrap(), Some("3"));
     let requests = wire.requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
@@ -393,7 +399,11 @@ async fn finite_methods_preserve_raw_bytes_and_explicit_media_without_reencoding
         let mut request = request(native);
         if native != NativeMethod::Head {
             request = request
-                .with_bytes(b"\x00\xffnot-json".to_vec(), "application/octet-stream", 1024)
+                .with_bytes(
+                    b"\x00\xffnot-json".to_vec(),
+                    "application/octet-stream",
+                    1024,
+                )
                 .unwrap();
         }
         let result = request.execute(&executor, 1).await.unwrap();
@@ -406,9 +416,15 @@ async fn finite_methods_preserve_raw_bytes_and_explicit_media_without_reencoding
         assert_eq!(requests[0].method(), azure);
         assert_eq!(requests[0].url(), request.url());
         if native != NativeMethod::Head {
-            assert_eq!(Bytes::from(requests[0].body()).as_ref(), b"\x00\xffnot-json");
             assert_eq!(
-                requests[0].headers().get_str(&"content-type".into()).unwrap(),
+                Bytes::from(requests[0].body()).as_ref(),
+                b"\x00\xffnot-json"
+            );
+            assert_eq!(
+                requests[0]
+                    .headers()
+                    .get_str(&"content-type".into())
+                    .unwrap(),
                 "application/octet-stream"
             );
         }
@@ -451,7 +467,10 @@ async fn get_retries_share_one_token_and_one_deadline_but_head_and_writes_never_
             let wire = Wire::new([response(
                 status,
                 b"actual-service-body",
-                &[("retry-after", "1"), ("location", "https://foreign.invalid/")],
+                &[
+                    ("retry-after", "1"),
+                    ("location", "https://foreign.invalid/"),
+                ],
             )]);
             let timer = Arc::new(Timer::default());
             let executor = adapter(Arc::new(Credential::default()), wire.clone(), timer.clone());
@@ -807,12 +826,18 @@ async fn foreign_origin_port_scheme_and_wrong_prefix_fail_before_credentials() {
             "https://api.fabric.microsoft.com:444/v1",
             NativeError::InvalidInput,
         ),
-        ("https://api.fabric.microsoft.com/v10", NativeError::InvalidInput),
+        (
+            "https://api.fabric.microsoft.com/v10",
+            NativeError::InvalidInput,
+        ),
         (
             "https://api.fabric.microsoft.com/v1-other",
             NativeError::InvalidInput,
         ),
-        ("https://api.fabric.microsoft.com/", NativeError::InvalidInput),
+        (
+            "https://api.fabric.microsoft.com/",
+            NativeError::InvalidInput,
+        ),
         (
             "https://api.fabric.microsoft.com.example.test/v1",
             NativeError::UnsupportedCapability,
@@ -825,7 +850,10 @@ async fn foreign_origin_port_scheme_and_wrong_prefix_fail_before_credentials() {
             "https://cluster.pbidedicated.windows.net/v1",
             NativeError::UnsupportedCapability,
         ),
-        ("http://127.0.0.1:9000/v1", NativeError::UnsupportedCapability),
+        (
+            "http://127.0.0.1:9000/v1",
+            NativeError::UnsupportedCapability,
+        ),
     ] {
         let request = request_at(base, NativeMethod::Get, None, NativeEffect::Read);
         assert_eq!(error(executor.execute(&request, 1).await), expected);
@@ -917,7 +945,9 @@ async fn url_header_and_raw_body_budgets_are_preflighted_before_credentials() {
     let executor = adapter(credential.clone(), wire.clone(), timer.clone());
     let mut many_headers = request(NativeMethod::Post);
     for index in 0..63 {
-        many_headers = many_headers.with_header(&format!("x-{index}"), "v").unwrap();
+        many_headers = many_headers
+            .with_header(&format!("x-{index}"), "v")
+            .unwrap();
     }
     let prefix = "https://api.fabric.microsoft.com/v1/";
     let oversized_url = request_at(
@@ -943,13 +973,20 @@ async fn url_header_and_raw_body_budgets_are_preflighted_before_credentials() {
             .with_accept(&"x".repeat(16 * 1024))
             .unwrap(),
         request(NativeMethod::Post)
-            .with_bytes(vec![0; BODY_CAP + 1], "application/octet-stream", BODY_CAP + 1)
+            .with_bytes(
+                vec![0; BODY_CAP + 1],
+                "application/octet-stream",
+                BODY_CAP + 1,
+            )
             .unwrap(),
         request(NativeMethod::Post)
             .with_bytes(vec![], &"x".repeat(16 * 1024), 1)
             .unwrap(),
     ] {
-        assert_eq!(error(executor.execute(&request, 1).await), NativeError::Limit);
+        assert_eq!(
+            error(executor.execute(&request, 1).await),
+            NativeError::Limit
+        );
     }
     assert_no_io(&credential, &wire, &timer);
 }
@@ -972,7 +1009,10 @@ async fn json_wire_size_escaping_depth_and_node_budgets_are_checked_before_alloc
         json!({("x".repeat(BODY_CAP + 1)): 0}),
     ] {
         let request = request_at(BASE, NativeMethod::Post, Some(body), NativeEffect::Execute);
-        assert_eq!(error(executor.execute(&request, 1).await), NativeError::Limit);
+        assert_eq!(
+            error(executor.execute(&request, 1).await),
+            NativeError::Limit
+        );
     }
     assert_no_io(&credential, &wire, &timer);
 }
@@ -1009,7 +1049,12 @@ async fn exact_request_body_url_header_count_and_metadata_byte_budgets_are_accep
     }
     for request in [
         request_at(BASE, NativeMethod::Post, Some(json), NativeEffect::Execute),
-        request_at(BASE, NativeMethod::Post, Some(escaped), NativeEffect::Execute),
+        request_at(
+            BASE,
+            NativeMethod::Post,
+            Some(escaped),
+            NativeEffect::Execute,
+        ),
         request(NativeMethod::Put)
             .with_bytes(vec![0xff; BODY_CAP], "application/octet-stream", BODY_CAP)
             .unwrap(),
