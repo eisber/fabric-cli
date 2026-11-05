@@ -239,6 +239,18 @@ fn response(status: u16, body: Option<Value>) -> Result<NativeResponse, NativeEr
     })
 }
 
+fn response_with_headers(
+    status: u16,
+    body: Option<Value>,
+    headers: &[(&str, &str)],
+) -> Result<NativeResponse, NativeError> {
+    let mut response = response(status, body)?;
+    response.headers = headers.iter()
+        .map(|(name, value)| ((*name).into(), (*value).into()))
+        .collect();
+    Ok(response)
+}
+
 #[test]
 fn source_and_exact_content_routes_and_whole_write_effect() {
     assert_eq!(SOURCE_REVISION, "e250d5d32b04efcc5623a414a361727a93c271ce");
@@ -1679,4 +1691,99 @@ fn output_destination_limit_precedes_copy_and_preserves_partial_state() {
     assert_eq!(tracker.state(), ExecutionState::AwaitingReply);
     tracker.observe(&stream("oversized")).unwrap();
     assert_eq!(tracker.outputs().len(), 2);
+}
+
+#[tokio::test]
+async fn head_metadata_observes_case_insensitive_etags_and_absence_verbatim() {
+    let runtime = runtime();
+    for (name, value) in [("ETag", "\"revision\""), ("eTaG", "W/\"weak-revision\"")] {
+        let executor = Scripted::new(vec![response_with_headers(200, None, &[(name, value)])]);
+        let metadata = runtime.head_content_metadata(&executor).await.unwrap();
+        assert_eq!(metadata.etag(), Some(value));
+        assert_eq!(executor.count(), 1);
+        let calls = executor.calls.lock().unwrap();
+        assert_eq!(calls[0].0.method(), NativeMethod::Head);
+        assert_eq!(calls[0].0.url().as_str(), format!("{BASE}/content"));
+        assert_eq!(calls[0].0.effect(), NativeEffect::Read);
+        assert!(calls[0].0.body().is_none());
+        assert!(calls[0].0.headers().is_empty());
+    }
+    let executor = Scripted::new(vec![
+        response_with_headers(200, None, &[("Content-Type", "application/json")]),
+    ]);
+    assert!(runtime.head_content_metadata(&executor).await.unwrap().etag().is_none());
+    assert_eq!(executor.count(), 1);
+}
+
+#[tokio::test]
+async fn observed_etag_does_not_enable_guarded_writes_or_implicit_if_match() {
+    let runtime = runtime();
+    let executor = Scripted::new(vec![
+        response_with_headers(200, None, &[("ETag", "\"observed-only\"")]),
+        response(204, None),
+        response_with_headers(200, None, &[("ETag", "\"new-observation\"")]),
+    ]);
+    assert_eq!(runtime.get_etag(&executor).await.unwrap().as_deref(), Some("\"observed-only\""));
+    let document = document();
+    assert!(matches!(
+        runtime.put_content(&executor, &document, WritePolicy::RequireGuarded).await,
+        Err(NativeError::UnsupportedCapability)
+    ));
+    assert_eq!(executor.count(), 1);
+    runtime.put_content(&executor, &document, WritePolicy::AllowUnguarded).await.unwrap();
+    assert_eq!(runtime.get_etag(&executor).await.unwrap().as_deref(), Some("\"new-observation\""));
+    assert_eq!(executor.count(), 3);
+    let calls = executor.calls.lock().unwrap();
+    assert_eq!(calls[1].0.method(), NativeMethod::Put);
+    assert_eq!(calls[1].0.body(), Some(document.as_value()));
+    assert!(calls[1].0.headers().is_empty());
+}
+
+#[tokio::test]
+async fn head_metadata_rejects_ambiguous_malformed_and_over_budget_headers() {
+    for headers in [
+        vec![("ETag", "\"same\""), ("etag", "\"same\"")],
+        vec![("ETag", "\"one\""), ("etag", "\"two\"")],
+        vec![("ETag", "\"safe\""), ("Other", "bad\r\nheader")],
+        vec![("bad header", "value")],
+    ] {
+        let executor = Scripted::new(vec![response_with_headers(200, None, &headers)]);
+        assert!(matches!(
+            runtime().head_content_metadata(&executor).await,
+            Err(NativeError::InvalidResponse)
+        ));
+        assert_eq!(executor.count(), 1);
+    }
+    let long_value = "x".repeat(16 * 1024);
+    let executor = Scripted::new(vec![response_with_headers(200, None, &[("ETag", &long_value)])]);
+    assert!(matches!(
+        runtime().head_content_metadata(&executor).await,
+        Err(NativeError::Limit)
+    ));
+    let mut too_many = response(200, None).unwrap();
+    too_many.headers = (0..65).map(|index| (format!("header-{index}"), "value".into())).collect();
+    let executor = Scripted::new(vec![Ok(too_many)]);
+    assert!(matches!(runtime().head_content(&executor).await, Err(NativeError::Limit)));
+}
+
+#[tokio::test]
+async fn head_metadata_preserves_http_failures_and_rejects_non_head_success_shapes() {
+    for reply in [
+        response(202, None),
+        response(204, None),
+        response(200, Some(json!({"not": "a HEAD body"}))),
+    ] {
+        let executor = Scripted::new(vec![reply]);
+        assert!(matches!(
+            runtime().head_content_metadata(&executor).await,
+            Err(NativeError::InvalidResponse)
+        ));
+        assert_eq!(executor.count(), 1);
+    }
+    let executor = Scripted::new(vec![response(412, None)]);
+    assert!(matches!(runtime().get_etag(&executor).await, Err(NativeError::Http(412))));
+    assert_eq!(executor.count(), 1);
+    let executor = Scripted::new(vec![Err(NativeError::TimedOut)]);
+    assert!(matches!(runtime().get_etag(&executor).await, Err(NativeError::TimedOut)));
+    assert_eq!(executor.count(), 1);
 }

@@ -30,7 +30,7 @@ Public entry points:
   CellPosition, WritePolicy, SaveEffect, DefaultLakehouse}`.
 - `SessionId`, `KernelId`, `MessageId`, `CommId`, `ExecutionId`: independent
   types, never aliases with automatic conversions or ambient lookup.
-- `CreateSession`, `JupyterSession`, `HttpOutcome`, `ResumeBinding`.
+- `CreateSession`, `JupyterSession`, `HttpOutcome`, `ContentMetadata`, `ResumeBinding`.
 - `protocol::{ExecuteRequest, ControlRequest, SynapseControl, JupyterMessage,
   ExecutionTracker, ExecuteReply, LiveOutput, ControlReply, LivyStatus}` and
   distinct execution, local observation and cancellation state enums.
@@ -83,10 +83,20 @@ executor violates its budget. Unsupported collection continuations fail instead
 of being reported as a complete empty/list success. Unknown session state is raw
 metadata, not ready compute. HTTP 202 mutation results retain 202, not completion.
 
-HEAD executes and checks a bodyless HTTP 200. The shared `NativeResponse`
-currently has **no headers**. Consequently this slice cannot expose HEAD/GET/PUT
-ETags. No header, ETag, revision or concurrent-write protection is synthesized.
-An additive shared-header contract and host wiring are coordinator-owned gaps.
+HEAD executes and checks a bodyless HTTP 200. `head_content_metadata` returns
+`ContentMetadata` with the actual observed ETag, read through the shared
+`NativeResponse::header` contract. Lookup is case-insensitive, bounded and rejects
+ambiguous case-variant duplicates (even equal values), malformed headers and
+over-budget metadata before copying a value. An absent ETag remains `None`;
+strong/weak values are retained verbatim without synthesis or caching.
+`get_etag` provides the source-equivalent single-HEAD convenience API, while
+`head_content` validates the same response and discards its metadata.
+
+An observed ETag is **not** an `If-Match` guarantee: no protocol header is added
+to a subsequent save and `WritePolicy::RequireGuarded` remains unsupported.
+GET/PUT wrappers do not attach their response ETags to a content revision;
+a separate HEAD describes only that observation, not an earlier read/save.
+The host must supply actual response headers; absence is never filled from a cache.
 
 ## Bounded, lossless persisted content
 
@@ -224,8 +234,7 @@ WS network client is claimed. Remaining prerequisites:
    REST session creation alone is insufficient.
 4. Reconnect reconciliation by original binding, with explicit policy for replay
    and late output. No automatic source re-execution.
-5. Shared response-header support for observational ETags, if required.
-6. Facade exports, native/shared-HTTP host composition and independent combined
+5. Facade exports, native/shared-HTTP host composition and independent combined
    Cargo checks before integration. No live service or cross-platform proof yet.
 
 Monitoring, resources/files, public session history, daemon management, telemetry
@@ -240,7 +249,9 @@ and timeout/resume without remote cancel or replay. Adversarial donor/destinatio
 tests cover smaller content/session/frame/output limits, exact escaped-wire byte
 boundaries, source preservation and no dispatch on rejection. Serializer probes
 also verify that bounded preflight stops before visiting later payload fields
-or materializing a rejected outgoing message. The initial lane environment
+or materializing a rejected outgoing message. Header tests cover actual ETags,
+absent metadata, duplicate/malformed/oversized rejection, once-only HEAD dispatch
+and unchanged unguarded write policy. The initial lane environment
 had no Rust toolchain. The coordinator subsequently restored a session-local
 Cargo/rustfmt/clippy 1.99.1 toolchain and reported MSVC 18 availability, and queued
 focused validation under the shared heavy-validation mutex. Workers still have

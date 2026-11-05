@@ -193,6 +193,24 @@ pub struct HttpOutcome {
     pub body: Option<Value>,
 }
 
+/// Metadata actually observed from a successful bodyless NBS content HEAD.
+///
+/// An ETag is opaque response data, not a local revision or a write guard.
+/// This type intentionally omits `Debug` to avoid logging response metadata.
+#[derive(Clone, Eq, PartialEq)]
+pub struct ContentMetadata {
+    etag: Option<String>,
+}
+
+impl ContentMetadata {
+    /// Borrow the observed ETag verbatim, or `None` when no ETag was returned.
+    ///
+    /// Weak tags remain weak; no value is inferred from content or a prior response.
+    pub fn etag(&self) -> Option<&str> {
+        self.etag.as_deref()
+    }
+}
+
 /// Exact existing Jupyter/kernel binding for reconnecting a caller-owned host.
 ///
 /// Resume does not create a session, replay outputs or re-execute source.
@@ -276,7 +294,7 @@ impl NotebookRuntime {
 
     /// Build native NBS `HEAD /content`.
     ///
-    /// The shared response currently carries no headers; no ETag/CAS is claimed.
+    /// Response metadata is observational only; no ETag/CAS write guard is installed.
     ///
     /// # Errors
     /// Returns shared request-validation errors.
@@ -437,18 +455,47 @@ impl NotebookRuntime {
         NotebookDocument::from_slice(&response.body, self.content_limits).map_err(response_error)
     }
 
-    /// Execute the native HEAD; headers/ETag are not exposed by the shared contract.
+    /// Execute the native HEAD, validating and discarding observed metadata.
     ///
     /// # Errors
-    /// Preserves executor/HTTP failures; a successful HEAD must have no body.
+    /// Preserves executor/HTTP/header failures; a successful HEAD must have no body.
     pub async fn head_content(&self, executor: &dyn NativeExecutor) -> Result<(), NativeError> {
+        self.head_content_metadata(executor).await.map(|_| ())
+    }
+
+    /// Read actual content HEAD metadata exactly once through the caller's executor.
+    ///
+    /// Header lookup uses the shared bounded, case-insensitive response contract.
+    /// Absent ETag remains `None`; no value is cached, synthesized or sent as `If-Match`.
+    ///
+    /// # Errors
+    /// Preserves executor/HTTP failures and rejects non-200/body-bearing HEAD
+    /// responses, malformed/ambiguous headers and exceeded header budgets.
+    pub async fn head_content_metadata(
+        &self,
+        executor: &dyn NativeExecutor,
+    ) -> Result<ContentMetadata, NativeError> {
         let response = self
             .send(executor, &self.content_head_request()?, self.response_bytes)
             .await?;
         if response.status != 200 || !response.body.is_empty() {
             return Err(NativeError::InvalidResponse);
         }
-        Ok(())
+        let etag = response.header("etag")?.map(String::from);
+        Ok(ContentMetadata { etag })
+    }
+
+    /// Observe the current content ETag via one native HEAD, without a write guard.
+    ///
+    /// This does not describe an earlier GET/PUT response or prevent lost updates.
+    ///
+    /// # Errors
+    /// Preserves all failures from [`Self::head_content_metadata`].
+    pub async fn get_etag(
+        &self,
+        executor: &dyn NativeExecutor,
+    ) -> Result<Option<String>, NativeError> {
+        Ok(self.head_content_metadata(executor).await?.etag)
     }
 
     /// Save a full notebook exactly once; no retry, merge or remote guard is installed.
