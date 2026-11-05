@@ -213,8 +213,10 @@ impl PrivateClient {
         self.make(Resource::Source(scope), WorkloadMethod::Get, &["elements"], &element_query(options), None, None)
     }
 
-    /// Reads the actual authored staging source, with persisted DTO field names.
-    pub fn instructions(&self, scope: SourceScope) -> Result<Operation<SourceInstructions>, Error> {
+    /// Reads authored staging source; native JSON null means no retained user metadata.
+    ///
+    /// A malformed object or transient provider failure is not treated as absence.
+    pub fn instructions(&self, scope: SourceScope) -> Result<Operation<Option<SourceInstructions>>, Error> {
         require_staging(&scope)?;
         self.make(Resource::Instructions(scope), WorkloadMethod::Get, &[], &[], None, None)
     }

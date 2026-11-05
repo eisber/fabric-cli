@@ -208,6 +208,23 @@ async fn selected_source_authority_survives_partial_instruction_and_example_upda
 }
 
 #[tokio::test]
+async fn native_absent_authored_metadata_is_distinct_from_malformed_or_failed_reads() {
+    let sdk = client();
+    let mock = Mock::new(vec![
+        json_response(200, Value::Null),
+        json_response(200, json!({})),
+        json_response(500, json!({"error": {"code": "transient-read-failure"}})),
+    ]);
+    let Outcome::Completed(absent) = sdk.execute(&mock, sdk.instructions(source(Stage::Staging)).unwrap(), pending()).await.unwrap() else { panic!("not completed") };
+    assert!(absent.value.is_none());
+    let malformed = sdk.execute(&mock, sdk.instructions(source(Stage::Staging)).unwrap(), pending()).await.unwrap_err();
+    assert_eq!(malformed.kind, ErrorKind::InvalidResponse);
+    let failed = sdk.execute(&mock, sdk.instructions(source(Stage::Staging)).unwrap(), pending()).await.unwrap_err();
+    assert_eq!(failed.kind, ErrorKind::Provider);
+    assert_eq!(mock.seen.lock().unwrap().len(), 3);
+}
+
+#[tokio::test]
 async fn duplicate_headers_invalid_media_and_empty_publish_shape_are_not_success() {
     let sdk = client();
     let mut duplicate = json_response(200, attachment());

@@ -34,6 +34,12 @@ impl<T: Projection> Projection for Page<T> {
     fn matches(&self, resource: &Resource, selected: Option<&[String]>) -> bool {
         self.value.iter().all(|value| value.matches(resource, selected))
     }
+
+    impl<T: Projection> Projection for Option<T> {
+        fn matches(&self, resource: &Resource, selected: Option<&[String]>) -> bool {
+            self.as_ref().is_none_or(|value| value.matches(resource, selected))
+        }
+    }
 }
 
 impl Projection for SourceInstructions {

@@ -78,6 +78,10 @@ Deleting instructions delegates to the source operation that preserves
 description/intact examples. Blank few-shot questions are valid source drafts:
 their validation state is preserved and is not a certification for runtime use.
 Lengths use source .NET UTF-16 counts, not UTF-8 bytes/scalar counts.
+The native authored-instructions GET returns JSON `null` when no retained
+metadata exists; its typed result is `Option<SourceInstructions>`. Empty bytes,
+malformed objects and transient HTTP failures are not interpreted as that
+source-defined absence.
 
 `ContextMarkdown` is a generated selected-entity, per-user-cache served
 projection. It is not stored authored guidance, an answer, a write DTO or a
