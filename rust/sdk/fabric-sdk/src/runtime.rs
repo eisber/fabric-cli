@@ -8,7 +8,7 @@
 
 use azure_core::http::Url;
 use serde_json::Value;
-use std::{fmt, future::Future, pin::Pin};
+use std::{collections::BTreeMap, fmt, future::Future, pin::Pin};
 
 /// A runtime HTTP method, independent of any CLI spelling.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -111,7 +111,10 @@ impl NativeEndpoint {
             || base.fragment().is_some()
             || !(base.scheme() == "https" || (base.scheme() == "http" && loopback))
             || base.path().contains(['\\', '%'])
-            || base.path().split('/').any(|part| matches!(part, "." | ".."))
+            || base
+                .path()
+                .split('/')
+                .any(|part| matches!(part, "." | ".."))
         {
             return Err(NativeError::InvalidInput);
         }
@@ -168,6 +171,9 @@ impl NativeEndpoint {
             body,
             effect,
             accept: "application/json".into(),
+            content_type: "application/json".into(),
+            bytes: None,
+            headers: BTreeMap::new(),
         })
     }
 }
@@ -201,6 +207,9 @@ pub struct NativeRequest {
     body: Option<Value>,
     effect: NativeEffect,
     accept: String,
+    content_type: String,
+    bytes: Option<Vec<u8>>,
+    headers: BTreeMap<String, String>,
 }
 
 impl NativeRequest {
@@ -224,6 +233,18 @@ impl NativeRequest {
     pub fn accept(&self) -> &str {
         &self.accept
     }
+    /// Media type of the request body.
+    pub fn content_type(&self) -> &str {
+        &self.content_type
+    }
+    /// Explicit non-JSON bytes; never reserialize these as a JSON string.
+    pub fn bytes(&self) -> Option<&[u8]> {
+        self.bytes.as_deref()
+    }
+    /// Provider-specific headers, excluding host-controlled authorization.
+    pub fn headers(&self) -> &BTreeMap<String, String> {
+        &self.headers
+    }
     /// Select a declared response representation without changing the route.
     ///
     /// # Errors
@@ -234,6 +255,88 @@ impl NativeRequest {
         }
         self.accept = accept.into();
         Ok(self)
+    }
+
+    /// Attach bounded explicit media bytes to a bodyless write request.
+    ///
+    /// # Errors
+    /// Rejects GET/HEAD, an existing JSON body, invalid media and excess bytes.
+    pub fn with_bytes(
+        mut self,
+        bytes: Vec<u8>,
+        content_type: &str,
+        max_request_bytes: usize,
+    ) -> Result<Self, NativeError> {
+        if matches!(self.method, NativeMethod::Get | NativeMethod::Head)
+            || self.body.is_some()
+            || max_request_bytes == 0
+            || content_type.is_empty()
+            || content_type.chars().any(char::is_control)
+        {
+            return Err(NativeError::InvalidInput);
+        }
+        if bytes.len() > max_request_bytes {
+            return Err(NativeError::Limit);
+        }
+        self.bytes = Some(bytes);
+        self.content_type = content_type.into();
+        Ok(self)
+    }
+
+    /// Add a native protocol header without overriding host security controls.
+    ///
+    /// Header names are stored case-insensitively; duplicate fields fail.
+    ///
+    /// # Errors
+    /// Rejects invalid/duplicate names, control bytes and transport-owned fields.
+    pub fn with_header(mut self, name: &str, value: &str) -> Result<Self, NativeError> {
+        let name = name.to_ascii_lowercase();
+        if name.is_empty()
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            || value.chars().any(char::is_control)
+            || matches!(
+                name.as_str(),
+                "authorization"
+                    | "proxy-authorization"
+                    | "cookie"
+                    | "host"
+                    | "connection"
+                    | "transfer-encoding"
+                    | "content-length"
+                    | "content-type"
+                    | "accept"
+            )
+            || self.headers.contains_key(&name)
+        {
+            return Err(NativeError::InvalidInput);
+        }
+        self.headers.insert(name, value.into());
+        Ok(self)
+    }
+
+    /// Execute once through the caller's authenticated and bounded HTTP stack.
+    ///
+    /// The actual status/body remain available for capability-specific receipt
+    /// decoding. A successful request can still report accepted or failed work.
+    ///
+    /// # Errors
+    /// Rejects a zero response bound without dispatch. Preserves caller failures
+    /// and rejects an executor response that exceeded the promised byte limit.
+    pub async fn execute(
+        &self,
+        executor: &dyn NativeExecutor,
+        max_response_bytes: usize,
+    ) -> Result<NativeResponse, NativeError> {
+        if max_response_bytes == 0 {
+            return Err(NativeError::InvalidInput);
+        }
+        let response = executor.execute(self, max_response_bytes).await?;
+        if response.body.len() > max_response_bytes {
+            return Err(NativeError::Limit);
+        }
+        Ok(response)
     }
 }
 
@@ -271,4 +374,228 @@ pub trait NativeExecutor: Send + Sync {
         request: &'a NativeRequest,
         max_response_bytes: usize,
     ) -> Pin<Box<dyn Future<Output = Result<NativeResponse, NativeError>> + Send + 'a>>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn endpoint() -> NativeEndpoint {
+        NativeEndpoint::new(
+            Url::parse("https://example.test/v1/workspaces/workspace/lakehouses/lake/livyApi/versions/2024-04-01")
+                .unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn exact_owner_segments_and_query_values_cannot_change_route() {
+        let request = endpoint()
+            .request(
+                NativeMethod::Get,
+                &["sessions", "owner id", "statements", "1"],
+                &[("parts", "1&other=wrong".into())],
+                None,
+                NativeEffect::Read,
+            )
+            .unwrap();
+        assert!(
+            request
+                .url()
+                .path()
+                .ends_with("/sessions/owner%20id/statements/1")
+        );
+        assert_eq!(
+            request.url().query_pairs().collect::<Vec<_>>(),
+            vec![("parts".into(), "1&other=wrong".into())]
+        );
+    }
+
+    #[test]
+    fn invalid_inputs_fail_before_execution() {
+        for id in ["", ".", "..", "a/b", "a\\b", "a%2fb", "a?b", "a#b", "a\0b"] {
+            assert!(
+                endpoint()
+                    .request(
+                        NativeMethod::Get,
+                        &["sessions", id],
+                        &[],
+                        None,
+                        NativeEffect::Read
+                    )
+                    .is_err()
+            );
+        }
+        for body in [json!([]), json!(null), json!("not-object"), json!({})] {
+            assert!(
+                endpoint()
+                    .request(
+                        NativeMethod::Get,
+                        &["sessions"],
+                        &[],
+                        Some(body),
+                        NativeEffect::Read
+                    )
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn endpoints_reject_credentials_and_non_loopback_plain_http() {
+        for value in [
+            "http://example.test",
+            "https://user:password@example.test",
+            "https://example.test?account=wrong",
+            "https://example.test#fragment",
+            "file:///sessions",
+            "https://example.test/a%2fb",
+        ] {
+            assert!(NativeEndpoint::new(Url::parse(value).unwrap()).is_err());
+        }
+        for value in [
+            "http://localhost:9000",
+            "http://127.0.0.1:9000",
+            "http://[::1]:9000",
+        ] {
+            assert!(NativeEndpoint::new(Url::parse(value).unwrap()).is_ok());
+        }
+    }
+
+    #[test]
+    fn diagnostics_never_print_code_or_scoped_identifiers() {
+        let request = endpoint()
+            .request(
+                NativeMethod::Post,
+                &["sessions", "private-owner", "statements"],
+                &[],
+                Some(json!({"code": "private-code"})),
+                NativeEffect::Execute,
+            )
+            .unwrap();
+        let diagnostic = format!("{request:?}");
+        for private in ["private-owner", "private-code", "example.test", "workspace"] {
+            assert!(!diagnostic.contains(private));
+        }
+        assert!(
+            request
+                .clone()
+                .with_accept("application/json\r\nunsafe: yes")
+                .is_err()
+        );
+        assert_eq!(
+            request
+                .with_accept("application/vnd.livy.arrow-chunks")
+                .unwrap()
+                .accept(),
+            "application/vnd.livy.arrow-chunks"
+        );
+    }
+
+    #[test]
+    fn binary_media_and_native_headers_remain_explicit_and_bounded() {
+        let request = endpoint()
+            .request(
+                NativeMethod::Put,
+                &["filesystem", "workdir", "image.png"],
+                &[],
+                None,
+                NativeEffect::Update,
+            )
+            .unwrap()
+            .with_bytes(vec![0, 255, 0], "image/png", 3)
+            .unwrap()
+            .with_header("Ms-FileSystem-Entry-Type", "file")
+            .unwrap();
+        assert_eq!(request.bytes(), Some([0, 255, 0].as_slice()));
+        assert_eq!(request.content_type(), "image/png");
+        assert!(request.body().is_none());
+        assert!(
+            request
+                .clone()
+                .with_bytes(vec![0; 4], "image/png", 3)
+                .is_err()
+        );
+        assert!(
+            request
+                .clone()
+                .with_header("ms-filesystem-entry-type", "folder")
+                .is_err()
+        );
+        for header in [
+            "Host",
+            "Authorization",
+            "content-Length",
+            "bad header",
+            "Accept",
+        ] {
+            assert!(request.clone().with_header(header, "value").is_err());
+        }
+        assert!(request.with_header("safe-name", "bad\r\nheader").is_err());
+    }
+
+    struct Executor {
+        calls: AtomicUsize,
+        fail: bool,
+        size: usize,
+    }
+
+    impl NativeExecutor for Executor {
+        fn execute<'a>(
+            &'a self,
+            _: &'a NativeRequest,
+            _: usize,
+        ) -> Pin<Box<dyn Future<Output = Result<NativeResponse, NativeError>> + Send + 'a>>
+        {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async {
+                if self.fail {
+                    return Err(NativeError::OutcomeUnknown);
+                }
+                Ok(NativeResponse {
+                    status: 202,
+                    body: vec![0; self.size],
+                    content_type: Some("application/json".into()),
+                })
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn dispatch_once_preserves_acceptance_and_unknown_outcomes() {
+        let request = endpoint()
+            .request(
+                NativeMethod::Post,
+                &["sessions"],
+                &[],
+                Some(json!({})),
+                NativeEffect::Create,
+            )
+            .unwrap();
+        let executor = Executor {
+            calls: AtomicUsize::new(0),
+            fail: false,
+            size: 2,
+        };
+        assert!(request.execute(&executor, 0).await.is_err());
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(request.execute(&executor, 2).await.unwrap().status, 202);
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+        assert!(matches!(
+            request.execute(&executor, 1).await,
+            Err(NativeError::Limit)
+        ));
+        let failed = Executor {
+            calls: AtomicUsize::new(0),
+            fail: true,
+            size: 0,
+        };
+        assert!(matches!(
+            request.execute(&failed, 2).await,
+            Err(NativeError::OutcomeUnknown)
+        ));
+        assert_eq!(failed.calls.load(Ordering::SeqCst), 1);
+    }
 }
