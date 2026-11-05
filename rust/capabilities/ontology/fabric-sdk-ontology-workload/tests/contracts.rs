@@ -1021,6 +1021,81 @@ fn scripts_generate_exact_native_verbs_and_all_root_child_reference_shapes() {
     assert!(fixture.calls().is_empty());
 }
 
+#[tokio::test]
+async fn every_native_script_kind_decodes_real_typed_read_results() {
+    for (kind, body, parent) in script_cases() {
+        let script =
+            ScriptRequest::from_value(json!({"create":{"parentObject":parent,(kind):body}}))
+                .unwrap();
+        let identity_key = match kind {
+            "additionalBackingTable" => "table",
+            "referencedEntity" => "entity",
+            "referencedRelationship" => "entityRelationship",
+            _ => "name",
+        };
+        let mut reference = parent;
+        reference[kind] = body[identity_key].clone();
+        let mut object = body;
+        object["futureResultMetadata"] = json!({"retained":null});
+        if matches!(
+            kind,
+            "entity"
+                | "table"
+                | "expression"
+                | "entityRelationship"
+                | "rule"
+                | "namespace"
+                | "metric"
+        ) {
+            object["lineageTag"] = json!("minted-identity");
+        }
+        let fixture = Fixture::new(vec![response(
+            200,
+            json!({"results":[{
+                "opIndex":0,"verb":"create","target":reference,"object":object
+            }]}),
+        )]);
+        let Outcome::Completed { value, .. } = client(&fixture)
+            .execute_script(&script, false)
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert!(value.results[0].typed_object.is_some(), "{kind}");
+        assert_eq!(value.results[0].object, Some(object), "{kind}");
+        assert_eq!(fixture.calls().len(), 1);
+        assert_eq!(wire(&fixture.calls()[0]), script.value().clone());
+    }
+}
+
+#[test]
+fn tom_join_shape_partial_patch_and_replacement_arrays_remain_distinct() {
+    let fixture = Fixture::default();
+    let client = client(&fixture);
+    let relationship: Relationship = serde_json::from_value(json!({
+        "type":"multiColumn","name":"Join","fromTable":"A","toTable":"B",
+        "fromColumns":["Id","Version"],"toColumns":["Id","Version"]
+    }))
+    .unwrap();
+    assert!(client.create_request(&relationship).is_ok());
+    let patch = MergePatch::<Relationship>::new(json!({"isActive":false})).unwrap();
+    let id = MemberId::named(name("Join")).unwrap();
+    assert_eq!(
+        wire(&client.patch_request(&id, &patch).unwrap()),
+        json!({"isActive":false})
+    );
+    assert!(
+        MergePatch::<Relationship>::new(json!({"fromColumn":"Id","fromColumns":["Id"]})).is_err()
+    );
+    let invalid: Relationship = serde_json::from_value(json!({
+        "type":"multiColumn","name":"Join","fromTable":"A","toTable":"B",
+        "fromColumns":["Id"],"toColumns":[]
+    }))
+    .unwrap();
+    assert!(client.create_request(&invalid).is_err());
+}
+
 #[test]
 fn typed_script_builders_pair_parent_and_reference_types() {
     let entity = entity(json!({"name":"E"}));
@@ -1333,6 +1408,21 @@ async fn rdf_bounds_exact_boundary_media_type_and_accepted_results_are_not_faked
             assert_eq!(error.response.unwrap().body.len(), MAX_EXPORT_BYTES);
         }
         assert_eq!(fixture.calls().len(), 1);
+        let fixture = Fixture::new(vec![WorkloadResponse {
+            status: 200,
+            headers: BTreeMap::from([("Content-Type".into(), "text/turtle".into())]),
+            body: vec![0; 4],
+        }]);
+        let client = OntologyClient::new(
+            target(features()),
+            &fixture,
+            ByteLimits::new(1000, 3).unwrap(),
+        )
+        .unwrap();
+        let error = client.export_rdf(&export).await.unwrap_err();
+        assert_eq!(error.kind, WorkloadErrorKind::Limit);
+        assert_eq!(error.response.unwrap().body.len(), 3);
+        assert_eq!(fixture.calls()[0].max_response_bytes(), 3);
     }
     let fixture = Fixture::new(vec![response(200, json!({"not":"turtle"}))]);
     assert!(client(&fixture).export_rdf(&export).await.is_err());
