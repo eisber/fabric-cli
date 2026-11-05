@@ -480,7 +480,9 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
     fn project(&self, data: &Value, expression: &str) -> Result<Value, GetCommandError> {
         let projected = fabric_cli_query::project_value(&data["data"], expression)
             .map_err(|error| backend_error("InvalidProjection", error))?;
-        Ok(json!({"data":projected,"meta":data["meta"]}))
+        let mut meta = data["meta"].clone();
+        meta["projectionApplied"] = json!(true);
+        Ok(json!({"data":projected,"meta":meta}))
     }
 
     fn render_markdown(
@@ -496,8 +498,9 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
         {
             return Err(GetCommandError::MissingRepresentation(GetFormat::Markdown));
         }
-        if let Ok(graph) =
-            serde_json::from_value::<fabric_sdk::documents::GraphResult>(data["data"].clone())
+        if data["meta"]["projectionApplied"] != true
+            && let Ok(graph) =
+                serde_json::from_value::<fabric_sdk::documents::GraphResult>(data["data"].clone())
         {
             return graph
                 .to_markdown(max_bytes)

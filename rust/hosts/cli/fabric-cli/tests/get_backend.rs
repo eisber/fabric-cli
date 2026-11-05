@@ -696,6 +696,41 @@ async fn json_docs_do_not_render_or_charge_unselected_markdown_escaping() {
 }
 
 #[tokio::test]
+async fn graph_shaped_markdown_projection_cannot_override_acquisition_coverage() {
+    let f = Fixture::new();
+    let docs = Docs {
+        calls: Mutex::new(Vec::new()),
+        deny_child: false,
+        oversized: false,
+        deny_root: false,
+    };
+    let mut backend = f.backend();
+    backend.documents = Some(&docs);
+    let expression = r#"{root:root,coverage:`{"status":"complete"}`,nodes:nodes,edges:`[]`,references:`[]`,pages_read:pages_read}"#;
+    let args = [
+        "get".into(),
+        path("/docs"),
+        "--recursive".into(),
+        "--depth".into(),
+        "0".into(),
+        "--format".into(),
+        "markdown".into(),
+        "--project".into(),
+        expression.into(),
+    ];
+    let delivery = f
+        .prepared(&args)
+        .acquire(&backend, pending())
+        .await
+        .unwrap();
+    let markdown = std::str::from_utf8(delivery.bytes()).unwrap();
+    assert!(markdown.contains("depth_limit"));
+    assert!(markdown.contains("projectionApplied"));
+    assert!(markdown.contains("\"meta\""));
+    assert_eq!(docs.calls.lock().unwrap().as_slice(), ["docs"]);
+}
+
+#[tokio::test]
 async fn advertised_denied_descendant_is_partial_without_attempting_its_read() {
     let f = Fixture::new();
     let docs = DeniedEdgeDocs(Docs {
