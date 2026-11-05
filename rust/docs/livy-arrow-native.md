@@ -308,3 +308,157 @@ server prerequisites, not client-discoverable capabilities. Native Apache Livy,
 HC isolation/retention, arbitrary codecs, tenant permissions, server rollout and
 remote cancellation remain unqualified. Expose this as experimental and
 deployment-gated; never mask a 404 with automatic JSON execution or fallback.
+
+## Async framed GET pull/ack driver
+
+This additional slice is based on coordinator commit
+`8fcd0859eacc7a4fea4a29485bd0f46ee6476115`, using its shared
+`NativeStreamExecutor`, `NativeStreamResponse`, `NativeStreamBody`,
+`NativeStreamLimits` and `NativeDeadline`. It implements real response
+consumption and owner-bound resumption through an injected host, not a concrete
+authenticated HTTP adapter, inline submission driver, or deployed capability.
+It preserves the protocol source pin above.
+
+`FramedResultStream::new` takes an existing authoritative `StatementHandle`,
+validated initial `ResultSelectors`, finite `FramedStreamOptions`, one
+`NativeDeadline`, and a borrowed executor. Construction opens nothing. It
+accepts no arbitrary request or POST. Every open is constructed from that exact
+handle using `result_request`, so neither mutation replay nor conversion of an
+unknown inline outcome into a guessed GET is possible.
+
+### Pull, acknowledgement and backpressure
+
+```rust,ignore
+let original = handle.clone();
+let mut stream = FramedResultStream::new(
+    executor,
+    handle,
+    selectors,
+    FramedStreamOptions::default(),
+    NativeDeadline::new(std::time::Duration::from_secs(60))?,
+)?;
+while stream.next_chunk().await?.is_some() {
+    stream.acknowledge(&original, |chunk| {
+        consume_one_raw_chunk(chunk)
+    })?;
+}
+assert_eq!(stream.progress().state, FramedStreamState::Complete);
+```
+
+`next_chunk` stages one borrowed complete raw chunk and does **not** advance
+delivery or its cursor. Repeated pulls while pending return the same candidate
+without another read/open. The driver retains at most one bounded host fragment
+(including its unconsumed suffix), one encoded chunk and bounded codec/ledger
+identity state; it never collects a response.
+
+The candidate can be a replay. The synchronous `acknowledge` callback is the
+only supported output path: it calls the existing `DeliveryState::deliver`,
+which suppresses identical replay **before invoking the sink**. The callback
+must finish successfully before the ledger advances. A changed replay,
+occupied ordinal, owner mismatch, logical budget error, or callback failure
+stops observation and disposes the body. Do not output the borrowed candidate
+before acknowledging it: that bypasses replay suppression.
+
+This callback-based acknowledgement is deliberately narrower than an async
+transactional sink API. It does not certify durability or exactly-once
+delivery, serialize a checkpoint, or make externally supplied initial cursors
+carry historical digest/sink state. Typed IPC and async/atomic output
+composition remain separate slices. Independent IPC chunk streams are still
+not one standard `.arrow` IPC stream.
+
+### Response validation and finite bounds
+
+Before creating a framed parser or reading a body, the driver checks the actual
+status and strict framed-v2 representation using the existing request
+validator. It reuses shared header validation for controls, bounded metadata
+and case-insensitive duplicates, including unrelated headers. A conflicting
+Content-Type field/header is rejected. HTTP Content-Encoding must be absent or
+identity for successful framed bodies. JSON or bare IPC is not fallback.
+Non-success HTTP bodies are disposed without decoding them.
+
+`frames` retains the raw codec's per-frame/payload/chunk/ID bounds. The
+transport bounds each returned fragment and response wire bytes. In addition,
+the operation caps **open attempts** (`max_responses`, including failed opens),
+body reads (`max_reads`, including EOF probes), and wire bytes across all
+responses (`max_wire_bytes`, including replay). Defaults disable recovery and
+allow one open. Actual returned fragment lengths are checked before parsing;
+empty or over-request fragments violate the host contract and stop observation.
+An injected host remains responsible for bounding its own allocations and I/O.
+
+Declared Content-Length is checked against the effective remaining response
+budget before reading and against actual bytes at EOF. At an exact byte
+boundary one final read requests at most **one byte** to distinguish actual EOF
+from excess data. A conforming host returns EOF or a limit error without
+exceeding its supplied body budget. Unexpected extra bytes are terminal; they
+cannot turn a provisional terminal marker into success.
+
+Each reconnect gets a fresh bounded parser. Replay counts against per-response
+payload/wire bounds, while unique payload/chunk/identity budgets span the
+logical delivery ledger. A bounded candidate must be assembled to identify its
+payload digest; logical unique-delivery limits are enforced before invoking
+its sink, not falsely claimed to classify replay before assembly.
+
+### Deadline, recovery and local disposal
+
+Exactly one caller-supplied `NativeDeadline` is passed to every open and read.
+Checks occur before and after injected calls and around acknowledgement;
+caller pauses and retries never restart the budget. The driver cannot preempt
+an injected executor/body which ignores the deadline while awaiting I/O.
+
+Recovery requires explicit `FramedResume::Recoverable` and stays within both
+the reconnect and response budgets. Only actual HTTP
+408/429/500/502/503/504 errors are classified as transient. Actual EOF
+truncation can additionally be opted into with `retry_truncated_eof`. There is
+no truncation retry when Content-Length proves the entire declared HTTP body
+arrived: an absent Livy terminal in that case is a format failure. There is
+no generic transport variant in `NativeError`: `InvalidResponse`, unknown
+outcomes, cancellation, local timeout and other ambiguous errors are **not**
+converted into retryable transport failures. No backoff/Retry-After engine is
+installed.
+
+The old body is dropped before reconnecting. Request scope and original
+`parts` are preserved, with `after_chunk`/`from_part` taken only from the last
+successful acknowledgement. Partial frame bytes never advance that cursor.
+Service -1, trailing data, invalid format, budget, replay and sink failures are
+terminal regardless of recovery options. Success requires terminal **and
+actual EOF**, not merely receiving the terminal's eight bytes.
+
+EOF, errors, explicit `close`, and driver drop dispose the local body. A body
+read is locally owned across its await; cancelling that pull future drops the
+body immediately. Reusing an interrupted open/read fails closed rather than
+guessing how many bytes the cancelled host consumed. The body is also locally
+owned across a sink callback so unwinding releases it. None of these actions
+remotely cancels a statement or cleans up a borrowed session.
+
+`FramedStreamProgress` exposes opens/responses/reconnects/reads, accepted wire
+bytes, acknowledged payload/chunks, replay count, discarded-response bytes,
+EOF state, unacknowledged candidates and possible partial sink output.
+`FramedStreamError` retains an immutable snapshot, original handle/selectors
+and acknowledged cursor even after driver disposal. Diagnostic formatting
+does not print IDs, URLs, headers or payloads. Scope accessors are for deliberate
+caller reconciliation, not automatic logging. Counters do not imply output
+rollback or a process-memory cap.
+
+### Stream-driver validation handoff
+
+Added offline injected executor/body cases instrument read sizes, opens and
+body drops, including arbitrary fragmentation, pending backpressure,
+terminal-plus-EOF, truncation/trailing/failure, explicit bounded recovery,
+partial-body ambiguity, replay conflict, owner mismatch, header/encoding/media
+rejection before reads, frame/wire/read limits, deadline expiry, interrupted
+pulls and local close/drop. Every injected open asserts GET/Read with no
+mutation body and no old live response.
+
+There are 24 new test cases (23 async and one synchronous constructor/budget
+case), for 52 total test declarations. The original 28 test functions remain
+token-identical and all 13 pinned golden vectors are unchanged. Pinned
+Rust 1.99.1 rustfmt checks pass for the owned Rust files. A lexical scope check
+confirmed that all 52 declarations are top-level; this does not establish
+compiler test registration.
+
+No build, test execution, dependency change, live backend or credential
+operation was performed for this slice. Pinned rustfmt/static checks are not a
+test pass. The coordinator must run the feature-gated Arrow integration tests,
+affected SDK all-target tests, strict Clippy and independent review against
+the committed combined candidate. Existing IPC/HTTP validation receipts do
+not establish this new driver's behavior.

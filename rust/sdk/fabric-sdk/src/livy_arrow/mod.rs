@@ -12,6 +12,7 @@ mod delivery;
 #[cfg(feature = "livy-arrow-ipc")]
 pub mod ipc;
 mod request;
+mod stream;
 mod typed;
 
 pub use codec::{FramedDecoder, RawChunk, RawInline, StreamLimits, write_frame, write_terminal};
@@ -24,6 +25,10 @@ pub use request::{
     ARROW_CHUNKS_MEDIA_TYPE, ARROW_STREAM_MEDIA_TYPE, ArrowRequest, InlineFallback,
     ResponseHeaders, ResponseRepresentation, ResultSelectors, StatementHandle, StatementOwner,
     SubmitMode, SubmitOptions, validate_response_headers,
+};
+pub use stream::{
+    FramedResultStream, FramedResume, FramedStreamCause, FramedStreamError, FramedStreamOptions,
+    FramedStreamProgress, FramedStreamState, FramedStreamStop,
 };
 pub use typed::{DecodeLimits, TypedDecoder, TypedStream, UnsupportedDecoder};
 
