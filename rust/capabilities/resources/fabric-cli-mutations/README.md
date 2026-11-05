@@ -96,6 +96,15 @@ administrative mutations, recursive storage operations, ARM lifecycle and domain
 assignment are not implied by registering a verb. Resource skill headers
 currently fail explicitly when requested.
 
+## Additive v2 link composition
+
+The separate [`v2_link`](src/v2_link.rs) module exposes one common link operation
+and owner-restricted artifact facades over typed native SDK request builders.
+Resolution, bounded UTF-8 input, approval and operation execution remain
+caller-owned. It does not replace `ln`/`mklink` or mount a new production host.
+See the [native link contract](../../../docs/link-v2-contract.md) for supported
+relationships, explicit gaps, effects, and retained acceptance/error evidence.
+
 The native terminal selection adapter is a separate host integration step;
 without it the selection-dependent branches fail explicitly rather than
 choosing every resource. The next source-backed resource slice is shortcut
