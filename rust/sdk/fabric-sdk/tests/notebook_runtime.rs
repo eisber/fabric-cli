@@ -1913,7 +1913,11 @@ mod managed_driver_tests {
         NotebookChannel, OutputSink, ReadySession, RemoteOutcome,
     };
     use fabric_sdk::runtime::{NativeDeadline, NativeFuture};
-    use std::{sync::Arc, task::{Context, Poll, Waker}, time::Duration};
+    use std::{
+        sync::Arc,
+        task::{Context, Poll, Waker},
+        time::Duration,
+    };
 
     #[derive(Default)]
     struct DriverWire {
@@ -1958,7 +1962,8 @@ mod managed_driver_tests {
                 let (pending, error, drift) = {
                     let mut wire = self.wire.lock().unwrap();
                     wire.sent.push(frame.to_vec());
-                    wire.deadlines.push(deadline as *const NativeDeadline as usize);
+                    wire.deadlines
+                        .push(deadline as *const NativeDeadline as usize);
                     (wire.pending_send, wire.send_error.take(), wire.drift.take())
                 };
                 if let Some(ready) = drift {
@@ -1981,8 +1986,12 @@ mod managed_driver_tests {
                     let mut wire = self.wire.lock().unwrap();
                     wire.reads += 1;
                     wire.caps.push(max_bytes);
-                    wire.deadlines.push(deadline as *const NativeDeadline as usize);
-                    (wire.pending_read, wire.inbound.pop_front().unwrap_or(Ok(None)))
+                    wire.deadlines
+                        .push(deadline as *const NativeDeadline as usize);
+                    (
+                        wire.pending_read,
+                        wire.inbound.pop_front().unwrap_or(Ok(None)),
+                    )
                 };
                 if pending {
                     std::future::pending::<()>().await;
@@ -1999,7 +2008,8 @@ mod managed_driver_tests {
                 let (pending, error) = {
                     let mut wire = self.wire.lock().unwrap();
                     wire.closes += 1;
-                    wire.deadlines.push(deadline as *const NativeDeadline as usize);
+                    wire.deadlines
+                        .push(deadline as *const NativeDeadline as usize);
                     (wire.pending_close, wire.close_error.take())
                 };
                 if pending {
@@ -2015,7 +2025,11 @@ mod managed_driver_tests {
     impl DeadlineAlarm for DriverAlarm {
         fn wait<'a>(&'a self, deadline: &'a NativeDeadline) -> NativeFuture<'a, ()> {
             Box::pin(async move {
-                self.0.lock().unwrap().deadlines.push(deadline as *const NativeDeadline as usize);
+                self.0
+                    .lock()
+                    .unwrap()
+                    .deadlines
+                    .push(deadline as *const NativeDeadline as usize);
                 if let Ok(remaining) = deadline.remaining() {
                     tokio::time::sleep(remaining).await;
                 }
@@ -2038,11 +2052,15 @@ mod managed_driver_tests {
             deadline: &'a NativeDeadline,
         ) -> NativeFuture<'a, Result<(), NativeError>> {
             Box::pin(async move {
-                assert_eq!(serde_json::to_vec(&output.content).unwrap().len(), max_bytes);
+                assert_eq!(
+                    serde_json::to_vec(&output.content).unwrap().len(),
+                    max_bytes
+                );
                 {
                     let mut wire = self.wire.lock().unwrap();
                     wire.writes.push((index, output.clone()));
-                    wire.deadlines.push(deadline as *const NativeDeadline as usize);
+                    wire.deadlines
+                        .push(deadline as *const NativeDeadline as usize);
                 }
                 if let Some(gate) = &self.gate {
                     gate.notified().await;
@@ -2058,7 +2076,8 @@ mod managed_driver_tests {
 
     fn driver_wire(frames: Vec<JupyterMessage>) -> Arc<Mutex<DriverWire>> {
         Arc::new(Mutex::new(DriverWire {
-            inbound: frames.into_iter()
+            inbound: frames
+                .into_iter()
                 .map(|frame| Ok(Some(frame.to_vec(ProtocolLimits::default()).unwrap())))
                 .collect(),
             ..DriverWire::default()
@@ -2080,15 +2099,23 @@ mod managed_driver_tests {
         deadline: NativeDeadline,
     ) -> ManagedExecution {
         ManagedExecution::new(
-            Box::new(DriverChannel { ready: ready_driver_session(), wire: Arc::clone(wire) }),
+            Box::new(DriverChannel {
+                ready: ready_driver_session(),
+                wire: Arc::clone(wire),
+            }),
             Box::new(DriverAlarm(Arc::clone(wire))),
             &execute_request(),
             driver_options(limits, deadline),
-        ).unwrap()
+        )
+        .unwrap()
     }
 
     fn driver_sink(wire: &Arc<Mutex<DriverWire>>) -> DriverSink {
-        DriverSink { wire: Arc::clone(wire), gate: None, error: None }
+        DriverSink {
+            wire: Arc::clone(wire),
+            gate: None,
+            error: None,
+        }
     }
 
     fn driver_deadline() -> NativeDeadline {
@@ -2103,10 +2130,22 @@ mod managed_driver_tests {
     #[tokio::test]
     async fn driver_sends_actual_code_once_and_observes_native_workload_outcomes() {
         for (status, expected) in [
-            ("ok", ExecuteStatus::Ok), ("error", ExecuteStatus::Error), ("abort", ExecuteStatus::Abort),
+            ("ok", ExecuteStatus::Ok),
+            ("error", ExecuteStatus::Error),
+            ("abort", ExecuteStatus::Abort),
         ] {
-            let unrelated = inbound("other", "other-execution", "stream", json!({"name":"stdout","text":"not ours"}));
-            let idle = inbound("idle", "execute-message", "status", json!({"execution_state":"idle"}));
+            let unrelated = inbound(
+                "other",
+                "other-execution",
+                "stream",
+                json!({"name":"stdout","text":"not ours"}),
+            );
+            let idle = inbound(
+                "idle",
+                "execute-message",
+                "status",
+                json!({"execution_state":"idle"}),
+            );
             let wire = driver_wire(vec![unrelated, idle, stream("out"), terminal(status)]);
             let mut driver = managed_driver(&wire, DriverLimits::default(), driver_deadline());
             let mut sink = driver_sink(&wire);
@@ -2121,8 +2160,12 @@ mod managed_driver_tests {
             assert!(driver.submit().await.is_err());
             let wire = wire.lock().unwrap();
             assert_eq!(wire.sent.len(), 1);
-            let sent = JupyterMessage::from_slice(&wire.sent[0], ProtocolLimits::default()).unwrap();
-            assert_eq!(serde_json::to_value(sent).unwrap(), serde_json::to_value(execute_request().message()).unwrap());
+            let sent =
+                JupyterMessage::from_slice(&wire.sent[0], ProtocolLimits::default()).unwrap();
+            assert_eq!(
+                serde_json::to_value(sent).unwrap(),
+                serde_json::to_value(execute_request().message()).unwrap()
+            );
             assert_eq!(wire.writes[0].0, 0);
             assert_eq!(wire.writes[0].1.content["text"], json!(["partial\n"]));
             assert_eq!(wire.reads, 4);
@@ -2132,23 +2175,49 @@ mod managed_driver_tests {
 
     #[tokio::test]
     async fn driver_streams_mime_and_tracebacks_without_confusing_error_output_with_terminal() {
-        let rich = inbound("rich", "execute-message", "display_data", json!({
-            "data":{"text/plain":["one"],"application/json":{"nested":[1,null]}},
-            "metadata":{"future":true}
-        }));
-        let error = inbound("error", "execute-message", "error", json!({
-            "ename":"Example","evalue":"synthetic","traceback":["first","second"]
-        }));
+        let rich = inbound(
+            "rich",
+            "execute-message",
+            "display_data",
+            json!({
+                "data":{"text/plain":["one"],"application/json":{"nested":[1,null]}},
+                "metadata":{"future":true}
+            }),
+        );
+        let error = inbound(
+            "error",
+            "execute-message",
+            "error",
+            json!({
+                "ename":"Example","evalue":"synthetic","traceback":["first","second"]
+            }),
+        );
         let wire = driver_wire(vec![rich, error, terminal("error")]);
         let mut driver = managed_driver(&wire, DriverLimits::default(), driver_deadline());
         let mut sink = driver_sink(&wire);
         driver.submit().await.unwrap();
-        assert_eq!(driver.observe_next(&mut sink).await.unwrap(), DriverEvent::Output(0));
-        assert_eq!(driver.observe_next(&mut sink).await.unwrap(), DriverEvent::Output(1));
+        assert_eq!(
+            driver.observe_next(&mut sink).await.unwrap(),
+            DriverEvent::Output(0)
+        );
+        assert_eq!(
+            driver.observe_next(&mut sink).await.unwrap(),
+            DriverEvent::Output(1)
+        );
         assert_eq!(driver.remote_outcome(), RemoteOutcome::Unknown);
         assert_eq!(driver.run(&mut sink).await.unwrap(), ExecuteStatus::Error);
-        assert_eq!(driver.observer().outputs()[0].mime_data().unwrap()["application/json"], json!({"nested":[1,null]}));
-        assert_eq!(driver.observer().outputs()[1].error().unwrap().unwrap().traceback, ["first", "second"]);
+        assert_eq!(
+            driver.observer().outputs()[0].mime_data().unwrap()["application/json"],
+            json!({"nested":[1,null]})
+        );
+        assert_eq!(
+            driver.observer().outputs()[1]
+                .error()
+                .unwrap()
+                .unwrap()
+                .traceback,
+            ["first", "second"]
+        );
         assert!(driver.observer().reply().unwrap().error.is_some());
     }
 
@@ -2185,7 +2254,12 @@ mod managed_driver_tests {
         assert_eq!(driver.state(), DriverState::Failed);
         assert!(driver.run(&mut sink).await.is_err());
         assert!(driver.submit().await.is_err());
-        assert!(driver.cancel(MessageId::new("cancel").unwrap()).await.is_err());
+        assert!(
+            driver
+                .cancel(MessageId::new("cancel").unwrap())
+                .await
+                .is_err()
+        );
         assert_eq!(wire.lock().unwrap().reads, 1);
         assert_eq!(wire.lock().unwrap().sent.len(), 1);
     }
@@ -2193,11 +2267,19 @@ mod managed_driver_tests {
     #[tokio::test]
     async fn driver_bounds_unrelated_and_duplicate_traffic_independently_of_observer() {
         for frame in [
-            inbound("unrelated", "other", "execute_reply", json!({"status":"ok"})),
+            inbound(
+                "unrelated",
+                "other",
+                "execute_reply",
+                json!({"status":"ok"}),
+            ),
             stream("duplicate"),
         ] {
             let wire = driver_wire(vec![frame.clone(), frame.clone(), terminal("ok")]);
-            let limits = DriverLimits { frames: 2, ..DriverLimits::default() };
+            let limits = DriverLimits {
+                frames: 2,
+                ..DriverLimits::default()
+            };
             let mut driver = managed_driver(&wire, limits, driver_deadline());
             let mut sink = driver_sink(&wire);
             let failure = driver.run(&mut sink).await.unwrap_err();
@@ -2211,16 +2293,24 @@ mod managed_driver_tests {
     #[tokio::test]
     async fn driver_rejects_malformed_oversized_and_owner_session_frames() {
         let mut wrong_session = terminal("ok");
-        wrong_session.parent_header.insert("session".into(), "different-session".into());
+        wrong_session
+            .parent_header
+            .insert("session".into(), "different-session".into());
         for (bad, expected) in [
             (b"not-json".to_vec(), NativeError::InvalidResponse),
             (vec![b' '; 1025], NativeError::Limit),
-            (wrong_session.to_vec(ProtocolLimits::default()).unwrap(), NativeError::InvalidResponse),
+            (
+                wrong_session.to_vec(ProtocolLimits::default()).unwrap(),
+                NativeError::InvalidResponse,
+            ),
         ] {
             let wire = driver_wire(vec![stream("partial")]);
             wire.lock().unwrap().inbound.push_back(Ok(Some(bad)));
             let limits = DriverLimits {
-                protocol: ProtocolLimits { frame_bytes: 1024, ..ProtocolLimits::default() },
+                protocol: ProtocolLimits {
+                    frame_bytes: 1024,
+                    ..ProtocolLimits::default()
+                },
                 ..DriverLimits::default()
             };
             let mut driver = managed_driver(&wire, limits, driver_deadline());
@@ -2238,7 +2328,10 @@ mod managed_driver_tests {
         let frame = stream("out");
         let bytes = frame.to_vec(ProtocolLimits::default()).unwrap().len();
         let wire = driver_wire(vec![frame, terminal("ok")]);
-        let limits = DriverLimits { received_bytes: bytes, ..DriverLimits::default() };
+        let limits = DriverLimits {
+            received_bytes: bytes,
+            ..DriverLimits::default()
+        };
         let mut driver = managed_driver(&wire, limits, driver_deadline());
         let failure = driver.run(&mut driver_sink(&wire)).await.unwrap_err();
         assert_eq!(failure.cause, NativeError::Limit);
@@ -2250,24 +2343,42 @@ mod managed_driver_tests {
     #[test]
     fn driver_preflights_destination_limits_and_ids_before_any_send() {
         for limits in [
-            DriverLimits { frames: 0, ..DriverLimits::default() },
-            DriverLimits { received_bytes: 0, ..DriverLimits::default() },
             DriverLimits {
-                protocol: ProtocolLimits { frame_bytes: 1, ..ProtocolLimits::default() },
+                frames: 0,
                 ..DriverLimits::default()
             },
             DriverLimits {
-                protocol: ProtocolLimits { outputs: 0, ..ProtocolLimits::default() },
+                received_bytes: 0,
                 ..DriverLimits::default()
             },
             DriverLimits {
-                protocol: ProtocolLimits { code_bytes: 1, ..ProtocolLimits::default() },
+                protocol: ProtocolLimits {
+                    frame_bytes: 1,
+                    ..ProtocolLimits::default()
+                },
+                ..DriverLimits::default()
+            },
+            DriverLimits {
+                protocol: ProtocolLimits {
+                    outputs: 0,
+                    ..ProtocolLimits::default()
+                },
+                ..DriverLimits::default()
+            },
+            DriverLimits {
+                protocol: ProtocolLimits {
+                    code_bytes: 1,
+                    ..ProtocolLimits::default()
+                },
                 ..DriverLimits::default()
             },
         ] {
             let wire = driver_wire(vec![]);
             let result = ManagedExecution::new(
-                Box::new(DriverChannel { ready: ready_driver_session(), wire: Arc::clone(&wire) }),
+                Box::new(DriverChannel {
+                    ready: ready_driver_session(),
+                    wire: Arc::clone(&wire),
+                }),
                 Box::new(DriverAlarm(Arc::clone(&wire))),
                 &execute_request(),
                 driver_options(limits, driver_deadline()),
@@ -2278,12 +2389,21 @@ mod managed_driver_tests {
         }
         let wire = driver_wire(vec![]);
         let other = ExecuteRequest::new(
-            MessageId::new("request").unwrap(), SessionId::new("other-session").unwrap(),
-            "1", false, true, ProtocolLimits::default(),
-        ).unwrap();
+            MessageId::new("request").unwrap(),
+            SessionId::new("other-session").unwrap(),
+            "1",
+            false,
+            true,
+            ProtocolLimits::default(),
+        )
+        .unwrap();
         let result = ManagedExecution::new(
-            Box::new(DriverChannel { ready: ready_driver_session(), wire: Arc::clone(&wire) }),
-            Box::new(DriverAlarm(Arc::clone(&wire))), &other,
+            Box::new(DriverChannel {
+                ready: ready_driver_session(),
+                wire: Arc::clone(&wire),
+            }),
+            Box::new(DriverAlarm(Arc::clone(&wire))),
+            &other,
             driver_options(DriverLimits::default(), driver_deadline()),
         );
         assert!(matches!(result, Err(NativeError::InvalidInput)));
@@ -2294,18 +2414,39 @@ mod managed_driver_tests {
     fn driver_rejects_owner_kernel_and_comm_mismatch_without_channel_io() {
         let other_notebook = NotebookRuntime::new(
             NativeEndpoint::new(Url::parse("https://other.example.invalid").unwrap()).unwrap(),
-            "cap", "other-workspace", "other-notebook", ContentLimits::default(), 1024, 10,
-        ).unwrap();
-        let other_kernel = ResumeBinding { session: session(), kernel: KernelId::new("other").unwrap() };
+            "cap",
+            "other-workspace",
+            "other-notebook",
+            ContentLimits::default(),
+            1024,
+            10,
+        )
+        .unwrap();
+        let other_kernel = ResumeBinding {
+            session: session(),
+            kernel: KernelId::new("other").unwrap(),
+        };
         for ready in [
-            ReadySession::new(&other_notebook, binding(), CommId::new("control-comm").unwrap()),
-            ReadySession::new(&runtime(), other_kernel, CommId::new("control-comm").unwrap()),
+            ReadySession::new(
+                &other_notebook,
+                binding(),
+                CommId::new("control-comm").unwrap(),
+            ),
+            ReadySession::new(
+                &runtime(),
+                other_kernel,
+                CommId::new("control-comm").unwrap(),
+            ),
             ReadySession::new(&runtime(), binding(), CommId::new("other-comm").unwrap()),
         ] {
             let wire = driver_wire(vec![]);
             let result = ManagedExecution::new(
-                Box::new(DriverChannel { ready, wire: Arc::clone(&wire) }),
-                Box::new(DriverAlarm(Arc::clone(&wire))), &execute_request(),
+                Box::new(DriverChannel {
+                    ready,
+                    wire: Arc::clone(&wire),
+                }),
+                Box::new(DriverAlarm(Arc::clone(&wire))),
+                &execute_request(),
                 driver_options(DriverLimits::default(), driver_deadline()),
             );
             assert!(matches!(result, Err(NativeError::InvalidInput)));
@@ -2330,7 +2471,10 @@ mod managed_driver_tests {
             assert_eq!(wire.lock().unwrap().sent.len(), 1);
         }
         let wire = driver_wire(vec![stream("partial")]);
-        wire.lock().unwrap().inbound.push_back(Err(NativeError::InvalidResponse));
+        wire.lock()
+            .unwrap()
+            .inbound
+            .push_back(Err(NativeError::InvalidResponse));
         let mut driver = managed_driver(&wire, DriverLimits::default(), driver_deadline());
         let failure = driver.run(&mut driver_sink(&wire)).await.unwrap_err();
         assert_eq!(failure.remote, RemoteOutcome::Unknown);
@@ -2347,7 +2491,10 @@ mod managed_driver_tests {
         drop(send);
         assert_eq!(driver.state(), DriverState::SubmissionUnknown);
         assert_eq!(driver.remote_outcome(), RemoteOutcome::Unknown);
-        assert_eq!(driver.submit().await.unwrap_err().cause, NativeError::OutcomeUnknown);
+        assert_eq!(
+            driver.submit().await.unwrap_err().cause,
+            NativeError::OutcomeUnknown
+        );
         assert_eq!(wire.lock().unwrap().sent.len(), 1);
     }
 
@@ -2367,7 +2514,10 @@ mod managed_driver_tests {
             drop(observation);
             assert_eq!(driver.state(), DriverState::Interrupted);
             assert_eq!(driver.remote_outcome(), RemoteOutcome::Unknown);
-            assert_eq!(driver.observe_next(&mut sink).await.unwrap_err().cause, NativeError::Cancelled);
+            assert_eq!(
+                driver.observe_next(&mut sink).await.unwrap_err().cause,
+                NativeError::Cancelled
+            );
             assert_eq!(wire.lock().unwrap().reads, 1);
             assert_eq!(wire.lock().unwrap().sent.len(), 1);
         }
@@ -2389,7 +2539,9 @@ mod managed_driver_tests {
                 sink.gate = Some(Arc::new(tokio::sync::Notify::new()));
             }
             let failure = tokio::time::timeout(Duration::from_secs(2), driver.run(&mut sink))
-                .await.expect("driver did not enforce its pending-I/O deadline").unwrap_err();
+                .await
+                .expect("driver did not enforce its pending-I/O deadline")
+                .unwrap_err();
             assert_eq!(failure.cause, NativeError::TimedOut);
             assert_eq!(failure.remote, RemoteOutcome::Unknown);
             assert_eq!(wire.lock().unwrap().sent.len(), 1);
@@ -2400,14 +2552,29 @@ mod managed_driver_tests {
 
     #[tokio::test]
     async fn driver_uses_one_absolute_deadline_and_cancel_ack_is_not_terminal() {
-        let wire = driver_wire(vec![cancel_reply("ok"), stream("partial"), terminal("error")]);
+        let wire = driver_wire(vec![
+            cancel_reply("ok"),
+            stream("partial"),
+            terminal("error"),
+        ]);
         let mut driver = managed_driver(&wire, DriverLimits::default(), driver_deadline());
         let mut sink = driver_sink(&wire);
         driver.submit().await.unwrap();
-        driver.cancel(MessageId::new("cancel-control").unwrap()).await.unwrap();
-        assert_eq!(driver.observe_next(&mut sink).await.unwrap(), DriverEvent::CancellationAck(true));
+        driver
+            .cancel(MessageId::new("cancel-control").unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.observe_next(&mut sink).await.unwrap(),
+            DriverEvent::CancellationAck(true)
+        );
         assert_eq!(driver.remote_outcome(), RemoteOutcome::Unknown);
-        assert!(driver.cancel(MessageId::new("second-control").unwrap()).await.is_err());
+        assert!(
+            driver
+                .cancel(MessageId::new("second-control").unwrap())
+                .await
+                .is_err()
+        );
         assert_eq!(driver.run(&mut sink).await.unwrap(), ExecuteStatus::Error);
         driver.close().await.unwrap();
         let wire = wire.lock().unwrap();
@@ -2417,7 +2584,11 @@ mod managed_driver_tests {
         assert_eq!(cancel.content["data"]["content"], "execute-message");
         assert_eq!(cancel.content["data"]["type"], "cancel_cell_execution");
         assert!(wire.deadlines.len() > 5);
-        assert!(wire.deadlines.iter().all(|address| *address == wire.deadlines[0]));
+        assert!(
+            wire.deadlines
+                .iter()
+                .all(|address| *address == wire.deadlines[0])
+        );
     }
 
     #[tokio::test]
@@ -2425,9 +2596,18 @@ mod managed_driver_tests {
         let wire = driver_wire(vec![terminal("ok"), cancel_reply("ok")]);
         let mut driver = managed_driver(&wire, DriverLimits::default(), driver_deadline());
         driver.submit().await.unwrap();
-        driver.cancel(MessageId::new("cancel-control").unwrap()).await.unwrap();
-        assert_eq!(driver.run(&mut driver_sink(&wire)).await.unwrap(), ExecuteStatus::Ok);
-        assert_eq!(driver.observer().cancellation_state(), CancellationState::AwaitingAck);
+        driver
+            .cancel(MessageId::new("cancel-control").unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.run(&mut driver_sink(&wire)).await.unwrap(),
+            ExecuteStatus::Ok
+        );
+        assert_eq!(
+            driver.observer().cancellation_state(),
+            CancellationState::AwaitingAck
+        );
         assert_eq!(wire.lock().unwrap().reads, 1);
     }
 
@@ -2469,9 +2649,19 @@ mod managed_driver_tests {
                 assert_driver_pending(close.as_mut());
                 drop(close);
             } else {
-                let failure = tokio::time::timeout(Duration::from_secs(2), driver.close()).await.unwrap().unwrap_err();
+                let failure = tokio::time::timeout(Duration::from_secs(2), driver.close())
+                    .await
+                    .unwrap()
+                    .unwrap_err();
                 assert_eq!(failure.remote, RemoteOutcome::NotSubmitted);
-                assert_eq!(failure.cause, if stage == "timeout" { NativeError::TimedOut } else { NativeError::OutcomeUnknown });
+                assert_eq!(
+                    failure.cause,
+                    if stage == "timeout" {
+                        NativeError::TimedOut
+                    } else {
+                        NativeError::OutcomeUnknown
+                    }
+                );
             }
             assert_eq!(driver.state(), DriverState::Closed);
             assert_eq!(wire.lock().unwrap().drops, 1);
@@ -2491,7 +2681,10 @@ mod managed_driver_tests {
         assert_eq!(failure.cause, NativeError::TimedOut);
         assert_eq!(failure.remote, RemoteOutcome::NotSubmitted);
         assert!(wire.lock().unwrap().sent.is_empty());
-        assert_eq!(driver.close().await.unwrap_err().cause, NativeError::TimedOut);
+        assert_eq!(
+            driver.close().await.unwrap_err().cause,
+            NativeError::TimedOut
+        );
         assert_eq!(wire.lock().unwrap().closes, 0);
         assert_eq!(wire.lock().unwrap().drops, 1);
     }
@@ -2500,7 +2693,9 @@ mod managed_driver_tests {
     async fn driver_owner_drift_after_send_is_unknown_and_stops_observation() {
         let wire = driver_wire(vec![terminal("ok")]);
         wire.lock().unwrap().drift = Some(ReadySession::new(
-            &runtime(), binding(), CommId::new("changed-comm").unwrap(),
+            &runtime(),
+            binding(),
+            CommId::new("changed-comm").unwrap(),
         ));
         let mut driver = managed_driver(&wire, DriverLimits::default(), driver_deadline());
         let failure = driver.submit().await.unwrap_err();
@@ -2509,21 +2704,43 @@ mod managed_driver_tests {
         assert_eq!(wire.lock().unwrap().reads, 0);
         assert!(driver.run(&mut driver_sink(&wire)).await.is_err());
         let debug = format!("{driver:?} {failure:?} {}", failure);
-        for private in ["execute-message", "jupyter-session", "print('live')", "changed-comm", "example.invalid"] {
+        for private in [
+            "execute-message",
+            "jupyter-session",
+            "print('live')",
+            "changed-comm",
+            "example.invalid",
+        ] {
             assert!(!debug.contains(private));
         }
     }
 
     #[tokio::test]
     async fn driver_cancel_rejection_does_not_finish_or_drop_partial_outputs() {
-        let wire = driver_wire(vec![stream("partial"), cancel_reply("error"), terminal("ok")]);
+        let wire = driver_wire(vec![
+            stream("partial"),
+            cancel_reply("error"),
+            terminal("ok"),
+        ]);
         let mut driver = managed_driver(&wire, DriverLimits::default(), driver_deadline());
         let mut sink = driver_sink(&wire);
         driver.submit().await.unwrap();
-        driver.cancel(MessageId::new("cancel-control").unwrap()).await.unwrap();
-        assert_eq!(driver.observe_next(&mut sink).await.unwrap(), DriverEvent::Output(0));
-        assert_eq!(driver.observe_next(&mut sink).await.unwrap(), DriverEvent::CancellationAck(false));
-        assert_eq!(driver.observer().cancellation_state(), CancellationState::Rejected);
+        driver
+            .cancel(MessageId::new("cancel-control").unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.observe_next(&mut sink).await.unwrap(),
+            DriverEvent::Output(0)
+        );
+        assert_eq!(
+            driver.observe_next(&mut sink).await.unwrap(),
+            DriverEvent::CancellationAck(false)
+        );
+        assert_eq!(
+            driver.observer().cancellation_state(),
+            CancellationState::Rejected
+        );
         assert_eq!(driver.remote_outcome(), RemoteOutcome::Unknown);
         assert_eq!(driver.delivered_outputs(), 1);
         assert_eq!(driver.run(&mut sink).await.unwrap(), ExecuteStatus::Ok);
@@ -2534,12 +2751,23 @@ mod managed_driver_tests {
     async fn driver_output_limits_preserve_partial_without_delivering_over_budget_records() {
         let bytes = serde_json::to_vec(&stream("first").content).unwrap().len();
         for protocol in [
-            ProtocolLimits { outputs: 1, ..ProtocolLimits::default() },
-            ProtocolLimits { output_bytes: bytes, ..ProtocolLimits::default() },
+            ProtocolLimits {
+                outputs: 1,
+                ..ProtocolLimits::default()
+            },
+            ProtocolLimits {
+                output_bytes: bytes,
+                ..ProtocolLimits::default()
+            },
         ] {
             let wire = driver_wire(vec![stream("first"), stream("second"), terminal("ok")]);
             let mut driver = managed_driver(
-                &wire, DriverLimits { protocol, ..DriverLimits::default() }, driver_deadline(),
+                &wire,
+                DriverLimits {
+                    protocol,
+                    ..DriverLimits::default()
+                },
+                driver_deadline(),
             );
             let failure = driver.run(&mut driver_sink(&wire)).await.unwrap_err();
             assert_eq!(failure.cause, NativeError::Limit);
@@ -2568,14 +2796,25 @@ mod managed_driver_tests {
                 drop(cancel);
                 assert_eq!(driver.state(), DriverState::Interrupted);
             } else {
-                let failure = driver.cancel(MessageId::new("cancel-control").unwrap()).await.unwrap_err();
+                let failure = driver
+                    .cancel(MessageId::new("cancel-control").unwrap())
+                    .await
+                    .unwrap_err();
                 assert_eq!(failure.cause, NativeError::OutcomeUnknown);
                 assert_eq!(failure.remote, RemoteOutcome::Unknown);
             }
             assert!(driver.cancellation_attempted());
-            assert_eq!(driver.observer().cancellation_state(), CancellationState::NotRequested);
+            assert_eq!(
+                driver.observer().cancellation_state(),
+                CancellationState::NotRequested
+            );
             assert!(driver.observer().cancellation_reply().is_none());
-            assert!(driver.cancel(MessageId::new("replacement-control").unwrap()).await.is_err());
+            assert!(
+                driver
+                    .cancel(MessageId::new("replacement-control").unwrap())
+                    .await
+                    .is_err()
+            );
             assert_eq!(wire.lock().unwrap().sent.len(), 2);
         }
     }

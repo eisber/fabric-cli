@@ -35,11 +35,7 @@ pub struct ReadySession {
 
 impl ReadySession {
     /// Bind an explicitly ready session/kernel/comm to the selected Notebook owner.
-    pub fn new(
-        notebook: &NotebookRuntime,
-        session: ResumeBinding,
-        control_comm: CommId,
-    ) -> Self {
+    pub fn new(notebook: &NotebookRuntime, session: ResumeBinding, control_comm: CommId) -> Self {
         Self {
             origin: notebook.endpoint.clone(),
             capacity: notebook.capacity.clone(),
@@ -411,9 +407,11 @@ impl ManagedExecution {
         if let Err(error) = self.deadline.remaining() {
             return Err(self.fail(error));
         }
-        let max_bytes = self.limits.protocol.frame_bytes.min(
-            self.limits.received_bytes - self.received_bytes,
-        );
+        let max_bytes = self
+            .limits
+            .protocol
+            .frame_bytes
+            .min(self.limits.received_bytes - self.received_bytes);
         self.state = DriverState::Interrupted;
         let result = {
             let channel = self.channel.as_mut().expect("validated owned channel");
@@ -438,24 +436,22 @@ impl ManagedExecution {
         if frame.len() > max_bytes {
             return Err(self.fail(NativeError::Limit));
         }
-        let message = match super::protocol::JupyterMessage::from_slice(
-            &frame,
-            self.limits.protocol,
-        ) {
-            Ok(message) => message,
-            Err(error) => return Err(self.fail(error)),
-        };
+        let message =
+            match super::protocol::JupyterMessage::from_slice(&frame, self.limits.protocol) {
+                Ok(message) => message,
+                Err(error) => return Err(self.fail(error)),
+            };
         if let Some(session) = message.parent_header.get("session") {
             let Some(session) = session.as_str() else {
                 return Err(self.fail(NativeError::InvalidResponse));
             };
-            let correlated = message.parent_message_id() == Some(self.tracker.message_id().as_str())
-                || self.cancel_id.as_ref().is_some_and(|id| {
-                    message.parent_message_id() == Some(id.as_str())
-                });
-            if correlated
-                && session != self.ready.session.session.as_str()
-            {
+            let correlated = message.parent_message_id()
+                == Some(self.tracker.message_id().as_str())
+                || self
+                    .cancel_id
+                    .as_ref()
+                    .is_some_and(|id| message.parent_message_id() == Some(id.as_str()));
+            if correlated && session != self.ready.session.session.as_str() {
                 return Err(self.fail(NativeError::InvalidResponse));
             }
         }
@@ -504,7 +500,9 @@ impl ManagedExecution {
                 return Ok(DriverEvent::Finished(status));
             }
             Observation::CancellationAck => DriverEvent::CancellationAck(
-                self.tracker.cancellation_reply().is_some_and(|reply| reply.accepted()),
+                self.tracker
+                    .cancellation_reply()
+                    .is_some_and(|reply| reply.accepted()),
             ),
             Observation::KernelStatus => DriverEvent::KernelStatus,
             Observation::Ignored => DriverEvent::Skipped,
@@ -520,10 +518,7 @@ impl ManagedExecution {
     ///
     /// # Errors
     /// Preserves all submit/observation failures and never resumes poisoned state.
-    pub async fn run(
-        &mut self,
-        sink: &mut dyn OutputSink,
-    ) -> Result<ExecuteStatus, DriverFailure> {
+    pub async fn run(&mut self, sink: &mut dyn OutputSink) -> Result<ExecuteStatus, DriverFailure> {
         if self.state == DriverState::Prepared {
             self.submit().await?;
         }
@@ -606,7 +601,10 @@ impl ManagedExecution {
         };
         self.state = DriverState::Closed;
         if let Err(cause) = self.deadline.remaining() {
-            let failure = DriverFailure { cause, remote: self.remote_outcome() };
+            let failure = DriverFailure {
+                cause,
+                remote: self.remote_outcome(),
+            };
             self.failure = Some(failure);
             return Err(failure);
         }
@@ -617,7 +615,10 @@ impl ManagedExecution {
         )
         .await;
         if let Err(cause) = result {
-            let failure = DriverFailure { cause, remote: self.remote_outcome() };
+            let failure = DriverFailure {
+                cause,
+                remote: self.remote_outcome(),
+            };
             self.failure = Some(failure);
             return Err(failure);
         }
@@ -625,7 +626,11 @@ impl ManagedExecution {
     }
 
     fn check_ready(&mut self) -> Result<(), DriverFailure> {
-        if !self.channel.as_ref().is_some_and(|channel| channel.binding() == &self.ready) {
+        if !self
+            .channel
+            .as_ref()
+            .is_some_and(|channel| channel.binding() == &self.ready)
+        {
             return Err(self.fail(NativeError::InvalidInput));
         }
         Ok(())
@@ -643,7 +648,10 @@ impl ManagedExecution {
     }
 
     fn fail(&mut self, cause: NativeError) -> DriverFailure {
-        let failure = DriverFailure { cause, remote: self.remote_outcome() };
+        let failure = DriverFailure {
+            cause,
+            remote: self.remote_outcome(),
+        };
         self.state = DriverState::Failed;
         self.failure = Some(failure);
         match cause {
