@@ -55,6 +55,7 @@ arrow-cast = { version = "=60.1.0", default-features = false }
 arrow-csv = { version = "=60.1.0", default-features = false }
 arrow-json = { version = "=60.1.0", default-features = false }
 bytes = { version = "=1.12.1", default-features = false }
+flatbuffers = { version = "=25.12.19", default-features = false }
 parquet = { version = "=60.1.0", default-features = false, features = ["arrow"] }
 fabric-sdk-tabular = { path = "capabilities/tables/fabric-sdk-tabular" }
 fabric-sdk-dataflow = { path = "capabilities/tables/fabric-sdk-dataflow" }
