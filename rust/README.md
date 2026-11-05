@@ -27,6 +27,10 @@ For the separate CLI v2 effort, follow the
 implementation starts only after the selected specification and first wave
 are confirmed; this process does not change the existing CLI contract.
 
+The opt-in [v2 schema-discovery preview](docs/v2-schema-discovery.md) exposes
+operation contracts through a separate `fab-cli` binary. It does not execute
+mutations, replace `fab-rs`, or install a live data-schema host.
+
 ## Workspace components
 
 The workspace groups service clients and command adapters by capability:

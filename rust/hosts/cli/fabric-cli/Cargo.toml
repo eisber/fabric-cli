@@ -9,6 +9,7 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 description = "Bounded Fabric read-command composition with caller-owned dependencies"
+default-run = "fab-rs"
 
 [package.metadata.fabric]
 layer = "cli"
@@ -17,8 +18,14 @@ layer = "cli"
 name = "fab-rs"
 path = "src/main.rs"
 
+[[bin]]
+name = "fab-cli"
+path = "src/bin/fab_cli.rs"
+required-features = ["v2-discovery"]
+
 [features]
 default = []
+v2-discovery = ["dep:fabric-sdk-discovery"]
 repl = ["dep:fabric-cli-repl", "fabric-cli-repl/reedline-editor"]
 windows-broker = ["dep:fabric-identity", "dep:tokio", "fabric-identity/windows-broker"]
 native-host = ["dep:fabric-identity", "dep:tokio", "dep:fabric-sdk-http", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls", "dep:rustix", "dep:chrono"]
@@ -48,6 +55,7 @@ fabric-sdk-api.workspace = true
 fabric-sdk-onelake.workspace = true
 fabric-sdk-onelake-http.workspace = true
 fabric-sdk.workspace = true
+fabric-sdk-discovery = { workspace = true, optional = true }
 fabric-sdk-jobs.workspace = true
 fabric-sdk-operations.workspace = true
 fabric-sdk-tables.workspace = true

@@ -529,6 +529,7 @@ dependencies = [
  "fabric-identity",
  "fabric-sdk",
  "fabric-sdk-api",
+ "fabric-sdk-discovery",
  "fabric-sdk-http",
  "fabric-sdk-jobs",
  "fabric-sdk-onelake",
@@ -794,6 +795,7 @@ dependencies = [
  "base64 0.22.1",
  "fabric-core",
  "fabric-sdk-capacities",
+ "fabric-sdk-discovery",
  "fabric-sdk-folders",
  "fabric-sdk-items",
  "fabric-sdk-operations",
@@ -847,6 +849,15 @@ dependencies = [
  "azure_core",
  "fabric-sdk-api",
  "serde_json",
+]
+
+[[package]]
+name = "fabric-sdk-discovery"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -970,6 +981,7 @@ dependencies = [
  "fabric-sdk-onelake",
  "fabric-sdk-onelake-http",
  "fabric-sdk-operations",
+ "serde",
  "serde_json",
  "tokio",
 ]

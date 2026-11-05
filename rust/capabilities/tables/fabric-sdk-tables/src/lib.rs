@@ -9,6 +9,7 @@
 
 mod jobs;
 mod model;
+pub mod schema_document;
 
 pub use fabric_sdk_jobs::JobType as MaintenanceJobType;
 pub use jobs::{JobMaintenance, MaintenanceEvent};
