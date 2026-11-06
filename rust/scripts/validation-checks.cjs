@@ -91,7 +91,10 @@ const REGISTRY = Object.freeze({
       ...['test_release_verify.py', 'test_native_acceptance.py',
         'test_assemble_native_release.py', 'test_pinned_python_source.py',
         'test_v2_upstream.py']
-        .map(pattern => c.unit(['scripts'], pattern, false)),
+        .map(pattern => pattern === 'test_assemble_native_release.py' ?
+          c.python(['-m', 'unittest', 'discover', '-s', path.join(c.rust, 'scripts'),
+            '-p', pattern, '-v'], false, {cwd: c.artifacts}) :
+          c.unit(['scripts'], pattern, false)),
       c.unit(['tests', 'acceptance', 'identity'], 'test_check_report.py', false),
       c.python([c.file('scripts', 'pinned_python_source.py'), 'prepare',
         '--candidate-root', c.root, '--output', c.pinnedOutput], false, {
