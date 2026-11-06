@@ -236,6 +236,9 @@ The execution contract is:
 Invalid arguments use the sanitized error envelope. Unknown batch commands stop
 with exit 1 and a sanitized `UnexpectedError`. Diagnostics and debug formatting
 of batch invocations omit supplied command strings.
+Explicit tabular exports preserve the native command's terminal or cancellation
+disposition; adapting an error to an export receipt does not authorize the next
+batch command. Handled export failures retain the ordinary last-command rule.
 
 `parser::batch::run` takes a `BatchInvocation` and caller-owned `BatchHost`.
 `execute` receives split arguments and returns `CommandOutcome::Returned(u8)` or

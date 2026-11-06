@@ -1418,6 +1418,92 @@ async fn execute_job(
 }
 
 #[cfg(any(windows, feature = "headless"))]
+pub(crate) async fn execute_tabular_family(
+    export: &fabric_cli::tabular_export::ExportCommand,
+    families: &mut fabric_cli::families::FamilySession<'_, '_>,
+    sink: &mut impl fabric_cli::tabular_export::ExportSink,
+) -> (fabric_cli::tabular_export::ExportDelivery, CommandOutcome) {
+    use fabric_cli::tabular_export::{self, ExecutionFailure};
+    use fabric_cli_output::text::OutputFormat;
+
+    let session = families.reads;
+    let executor = families.http;
+    let mut original = None;
+    let captured = &mut original;
+    let delivery = tabular_export::dispatch(export, sink, |_| async move {
+        let result = match export.command.as_ref() {
+            Invocation::Read(read) => tabular_export::read_rows(session, read).await,
+            Invocation::JobRead(job) => {
+                tabular_export::job_rows(
+                    &fabric_cli::jobs::JobReadSession {
+                        reads: session,
+                        jobs: std::sync::Arc::new(fabric_cli_jobs::HttpJobExecutor::new(
+                            executor.clone(),
+                        )),
+                    },
+                    job,
+                )
+                .await
+            }
+            invocation => {
+                let mut invocation = invocation.clone();
+                match &mut invocation {
+                    Invocation::Access(access) => {
+                        access.output_format = Some(OutputFormat::Json);
+                    }
+                    Invocation::Table(table) => table.output_format = Some("json".into()),
+                    _ => {}
+                }
+                families
+                    .dispatch_tabular(&invocation, std::future::pending())
+                    .await
+                    .map_err(|_| {
+                        *captured = Some(CommandOutcome::Stop(1));
+                        ExecutionFailure {
+                            code: "export_adapter_failed".into(),
+                            message: "Native result presentation failed; execution is not retried"
+                                .into(),
+                        }
+                    })
+                    .and_then(|output| {
+                        *captured = Some(crate::batch_state::family_outcome(&output));
+                        tabular_export::family_rows(&invocation, output)
+                    })
+            }
+        };
+        if captured.is_none()
+            && let Err(error) = &result
+        {
+            let error = fabric_cli_output::CommandError::new(
+                Some(error.message.clone()),
+                Some(error.code.clone()),
+            );
+            match crate::batch_state::error_outcome(&error, 1) {
+                CommandOutcome::Returned(_) => {}
+                outcome => *captured = Some(outcome),
+            }
+        }
+        result
+    })
+    .await;
+    retain_export_outcome(delivery, original)
+}
+
+#[cfg(any(windows, feature = "headless"))]
+pub(crate) fn retain_export_outcome(
+    delivery: fabric_cli::tabular_export::ExportDelivery,
+    original: Option<CommandOutcome>,
+) -> (fabric_cli::tabular_export::ExportDelivery, CommandOutcome) {
+    // Unrendered family plans use a zero placeholder; the receipt owns the real exit.
+    let outcome = match original {
+        Some(CommandOutcome::Stop(_)) => CommandOutcome::Stop(delivery.exit_code),
+        Some(CommandOutcome::Cancelled(_)) => CommandOutcome::Cancelled(delivery.exit_code),
+        _ => CommandOutcome::Returned(delivery.exit_code),
+    };
+    (delivery, outcome)
+}
+
+#[cfg(any(windows, feature = "headless"))]
 async fn execute_family(
     session: &fabric_cli::session::ReadSession<'_>,
     executor: &fabric_sdk_http::HttpExecutor,
@@ -1580,38 +1666,12 @@ async fn execute_family(
                 resource_files: None,
             };
             if let Invocation::Tabular(export) = command {
-                use fabric_cli::tabular_export::{self, ExecutionFailure, FileSink};
-                let delivery = tabular_export::dispatch(
+                let (delivery, outcome) = execute_tabular_family(
                     export,
-                    &mut FileSink::default(),
-                    |_| async move {
-                        match export.command.as_ref() {
-                            Invocation::Read(read) => tabular_export::read_rows(session, read).await,
-                            Invocation::JobRead(job) => tabular_export::job_rows(
-                                &fabric_cli::jobs::JobReadSession {
-                                    reads: session,
-                                    jobs: std::sync::Arc::new(fabric_cli_jobs::HttpJobExecutor::new(executor.clone())),
-                                },
-                                job,
-                            ).await,
-                            invocation => {
-                                let mut invocation = invocation.clone();
-                                match &mut invocation {
-                                    Invocation::Access(access) => access.output_format = Some(OutputFormat::Json),
-                                    Invocation::Table(table) => table.output_format = Some("json".into()),
-                                    _ => {}
-                                }
-                                families.dispatch_tabular(&invocation, std::future::pending()).await
-                                    .map_err(|_| ExecutionFailure {
-                                        code: "export_adapter_failed".into(),
-                                        message: "Native result presentation failed; execution is not retried".into(),
-                                    })
-                                    .and_then(|output| tabular_export::family_rows(&invocation, output))
-                            }
-                        }
-                    },
-                ).await;
-                let outcome = CommandOutcome::Returned(delivery.exit_code);
+                    &mut families,
+                    &mut fabric_cli::tabular_export::FileSink::default(),
+                )
+                .await;
                 return Ok(get::Delivery::export(delivery, outcome));
             }
             let mut output = if matches!(command, Invocation::Deploy(_)) {

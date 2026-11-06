@@ -205,19 +205,19 @@ impl JobSession<'_, '_> {
                     crate::reads::required_id(&context)?,
                     job_type,
                 )
-                .map_err(export_job_error)?;
+                .map_err(JobCommandError::from)?;
                 let headers = JobRequestHeaders::with_skill(command.skill.as_deref())
-                    .map_err(export_job_error)?;
+                    .map_err(JobCommandError::from)?;
                 let sdk = sdk
                     .with_request_headers(headers.clone())
-                    .map_err(export_job_error)?;
+                    .map_err(JobCommandError::from)?;
                 let scoped = if headers.is_empty() {
                     None
                 } else {
                     Some(
                         operations
                             .with_request_headers(&headers)
-                            .map_err(export_job_error)?,
+                            .map_err(JobCommandError::from)?,
                     )
                 };
                 let rows = sdk
@@ -228,7 +228,7 @@ impl JobSession<'_, '_> {
                         cancelled.as_mut(),
                     )
                     .await
-                    .map_err(export_job_error)?;
+                    .map_err(JobCommandError::from)?;
                 return Ok(rows.map(|rows| fabric_cli_jobs::JobOutput {
                     input: fabric_cli_output::OutputInput {
                         data: Some(serde_json::Value::Array(rows.value)),
@@ -368,13 +368,6 @@ impl JsonInput for SelectedJobFiles {
 }
 
 pub(crate) struct ReadOnlyUi;
-
-fn export_job_error(error: fabric_sdk_jobs::JobError) -> JobCommandError {
-    match error {
-        fabric_sdk_jobs::JobError::Operation(error) => JobCommandError::Operation(Box::new(error)),
-        error => errors::error("JobReadFailed", error.to_string()).into(),
-    }
-}
 
 pub(crate) struct CheckedJobExecutor(pub(crate) Arc<dyn JobExecutor>);
 
