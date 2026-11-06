@@ -9,16 +9,20 @@
 //! runtime is installed.
 
 pub mod capacities;
+pub mod documents;
 pub mod folders;
 pub mod items;
 pub mod livy;
 #[cfg(feature = "livy-arrow")]
 pub mod livy_arrow;
+pub mod metadata;
 pub mod models;
 pub mod notebook_observability;
 pub mod notebook_runtime;
 pub mod notebooks;
 pub mod runtime;
+pub mod observe;
+pub mod representations;
 pub mod workspaces;
 
 /// Local operation contracts and schema projections, with no identity or service I/O.

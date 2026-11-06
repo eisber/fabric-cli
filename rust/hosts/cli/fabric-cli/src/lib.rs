@@ -19,6 +19,12 @@ pub mod execute;
 #[cfg(feature = "native-host")]
 pub mod families;
 mod folder_reads;
+pub mod get_backend;
+mod get_budget;
+pub mod get_command;
+pub mod get_metadata;
+pub mod get_resolution;
+pub mod get_target;
 pub mod jobs;
 pub mod local_commands;
 pub mod parser;
