@@ -866,6 +866,14 @@
   ],
   "profiles": [
     {
+      "id": "native-http-arrow",
+      "packages": ["fabric-sdk-http"],
+      "features": ["fabric-sdk-http/livy-arrow"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["sdk-graph"],
+      "tests": [{"package": "fabric-sdk-http", "target": "test:native_stream"}]
+    },
+    {
       "id": "livy-arrow",
       "packages": ["fabric-sdk"],
       "features": ["fabric-sdk/livy-arrow"],

@@ -1681,8 +1681,8 @@ async fn async_driver_does_not_invent_transport_retries_for_ambiguous_partial_fa
 #[tokio::test]
 async fn async_driver_retry_and_response_limits_preserve_the_actual_http_cause() {
     let executor = TestStreamExecutor::new(vec![
-        StreamOpen::Error(NativeError::Http(502)),
-        StreamOpen::Error(NativeError::Http(502)),
+        StreamOpen::Error(NativeError::Transport),
+        StreamOpen::Error(NativeError::Transport),
     ]);
     let mut options = resumable_options();
     options.resume = FramedResume::Recoverable {
@@ -1701,7 +1701,7 @@ async fn async_driver_retry_and_response_limits_preserve_the_actual_http_cause()
     assert_eq!(error.stop(), FramedStreamStop::RetryLimit);
     assert_eq!(
         error.cause(),
-        FramedStreamCause::Native(NativeError::Http(502))
+        FramedStreamCause::Native(NativeError::Transport)
     );
     assert_eq!(error.progress().open_attempts, 2);
     assert_eq!(error.progress().responses, 0);
@@ -1838,7 +1838,7 @@ async fn async_driver_never_bypasses_throttles_or_advertised_delays() {
             assert_eq!(executor.trace.lock().unwrap().drops, 1);
         }
     }
-    for status in [429, 503] {
+    for status in [408, 429, 500, 502, 503, 504] {
         let executor = TestStreamExecutor::new(vec![StreamOpen::Error(NativeError::Http(status))]);
         let mut stream = FramedResultStream::new(
             &executor,

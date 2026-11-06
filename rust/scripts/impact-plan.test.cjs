@@ -834,3 +834,17 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
       item.tests.some(test => test.target === `test:${target}`)));
   }
 });
+
+test('real HTTP-to-Arrow recovery boundary is explicitly tested with its forwarded feature', () => {
+  const root = path.resolve(__dirname, '..', '..');
+  const graph = JSON.parse(fs.readFileSync(path.join(root, 'rust/validation/impact-graph.json'), 'utf8'));
+  const profile = graph.profiles.find(item => item.id === 'native-http-arrow');
+  assert.ok(profile);
+  assert.deepEqual(profile.packages, ['fabric-sdk-http']);
+  assert.deepEqual(profile.features, ['fabric-sdk-http/livy-arrow']);
+  assert.deepEqual(profile.platforms, ['windows', 'linux', 'macos']);
+  assert.deepEqual(profile.tests, [{package: 'fabric-sdk-http', target: 'test:native_stream'}]);
+  const manifest = fs.readFileSync(path.join(root,
+    'rust/infrastructure/http/fabric-sdk-http/Cargo.toml'), 'utf8');
+  assert.ok(manifest.includes('livy-arrow = ["fabric-sdk/livy-arrow"]'));
+});

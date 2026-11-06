@@ -470,10 +470,6 @@ impl<'a> FramedResultStream<'a> {
         let recoverable = match (source, cause) {
             (RecoverySource::Io, FramedStreamCause::Native(NativeError::Transport))
             | (
-                RecoverySource::Io,
-                FramedStreamCause::Native(NativeError::Http(408 | 500 | 502 | 504)),
-            )
-            | (
                 RecoverySource::ResponseStatus,
                 FramedStreamCause::Arrow(ArrowError::Http(408 | 500 | 502 | 503 | 504)),
             ) => true,

@@ -203,6 +203,12 @@ fn response_error(error: NativeError, method: Method, state: DispatchState) -> N
     if !state.sent {
         return error;
     }
+    if matches!(
+        error,
+        NativeError::InvalidResponse | NativeError::Limit | NativeError::InvalidInput
+    ) {
+        return uncertain_response(error, method);
+    }
     if let Some(status) = state.status
         && !(200..=299).contains(&status)
     {
