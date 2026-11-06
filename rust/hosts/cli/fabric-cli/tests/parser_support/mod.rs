@@ -35,6 +35,7 @@ pub fn observe(input: &Value) -> Option<Value> {
         Ok(Invocation::Display(_)) => json!({"display": true}),
         Ok(
             Invocation::Batch(_)
+            | Invocation::Execute(_)
             | Invocation::JobRead(_)
             | Invocation::JobRun(_)
             | Invocation::JobMutation(_)
