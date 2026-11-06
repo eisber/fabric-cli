@@ -69,7 +69,10 @@ function coreCommands(plan, platform) {
     id, program: 'cargo', args: [command, '--offline', '--locked', ...args, ...extra],
   });
   const commands = [
-    {id: 'default:fmt', program: 'cargo', args: ['fmt', ...args, '--', '--check']},
+    ...[...new Set(plan.packages)].sort().map(name => ({
+      id: `default:fmt:${name}`, program: 'cargo',
+      args: ['fmt', '--package', name, '--', '--check'],
+    })),
     cargo('default:check', 'check', ['--all-targets']),
     cargo('default:clippy', 'clippy', ['--all-targets', '--', '-D', 'warnings']),
     ...testCommands(defaultTests(plan)),

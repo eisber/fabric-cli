@@ -27,6 +27,12 @@ dependencies. Python is a development-time oracle dependency only. Missing
 oracle modules produce an actionable error; `--restore-oracle-deps` permits
 restoring their existing pinned requirement files after a missing-module probe.
 
+Formatting runs one `cargo fmt --package <name> -- --check` per selected package,
+in sorted order, before compilation. This preserves the complete formatting
+gate while avoiding one workspace-wide rustfmt argument list exceeding native
+Windows process limits. Each package retains its own command receipt and any
+failure stops validation; compile, lint and test package selection is unchanged.
+
 Omitting a base plans the local working-tree changes, including staged,
 unstaged and untracked files. Use `--full` for full configured validation.
 `--files-json <absolute-json-array>` is for inspecting a hypothetical change set;

@@ -38,6 +38,27 @@ test('Cargo package arguments are sorted, deduplicated and not shell text', () =
   assert.deepEqual(packageArgs(['z', 'a', 'z']), ['--package', 'a', '--package', 'z']);
 });
 
+test('formatting checks every selected package with bounded per-package argv', () => {
+  const selected = plan();
+  selected.packages = ['z', 'cli', 'z', 'deploy'];
+  for (const platform of ['windows', 'linux', 'macos']) {
+    const commands = coreCommands(selected, platform);
+    const formatting = commands.filter(command => command.args[0] === 'fmt');
+    assert.deepEqual(formatting.map(command => command.id),
+      ['default:fmt:cli', 'default:fmt:deploy', 'default:fmt:z']);
+    assert.deepEqual(formatting.map(command => command.args), [
+      ['fmt', '--package', 'cli', '--', '--check'],
+      ['fmt', '--package', 'deploy', '--', '--check'],
+      ['fmt', '--package', 'z', '--', '--check'],
+    ]);
+    assert.ok(commands.indexOf(formatting.at(-1)) <
+      commands.findIndex(command => command.id === 'default:check'));
+    assert.deepEqual(commands.find(command => command.id === 'default:check').args,
+      ['check', '--offline', '--locked', '--package', 'cli', '--package', 'deploy',
+        '--package', 'z', '--all-targets']);
+  }
+});
+
 test('complete target selection keeps Notebook and downstream contracts, not unrelated suites', () => {
   const commands = coreCommands(plan(), 'windows');
   const tests = commands.filter(command => command.test && command.id !== 'default:doc');
