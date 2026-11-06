@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Offline parser, SDK/HTTP, projection, output and executable v2 read contracts.
+
 #![cfg(feature = "workspace-read-v2")]
 #![deny(unnameable_test_items)]
 
