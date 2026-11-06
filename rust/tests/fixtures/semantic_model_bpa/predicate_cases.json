@@ -1,0 +1,3174 @@
+[
+  {
+    "id": "r01-positive",
+    "rule": 1,
+    "label": "positive",
+    "object": {
+      "DataType": "Double"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r01-negative",
+    "rule": 1,
+    "label": "negative",
+    "object": {
+      "DataType": "Decimal"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r02-positive",
+    "rule": 2,
+    "label": "positive",
+    "object": {
+      "Type": "Calculated"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r02-negative",
+    "rule": 2,
+    "label": "negative",
+    "object": {
+      "Type": "Data"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r03-positive",
+    "rule": 3,
+    "label": "positive",
+    "object": {
+      "FromCardinality": "Many",
+      "ToCardinality": "Many",
+      "CrossFilteringBehavior": "OneDirection"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r03-negative",
+    "rule": 3,
+    "label": "negative",
+    "object": {
+      "FromCardinality": "Many",
+      "ToCardinality": "One",
+      "CrossFilteringBehavior": "OneDirection"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r03-bidirectional-one-to-many",
+    "rule": 3,
+    "label": "bidirectional-one-to-many",
+    "object": {
+      "FromCardinality": "Many",
+      "ToCardinality": "One",
+      "CrossFilteringBehavior": "BothDirections"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r04-positive",
+    "rule": 4,
+    "label": "positive",
+    "object": {
+      "FilterExpression": "userprincipalname()"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r04-negative",
+    "rule": 4,
+    "label": "negative",
+    "object": {
+      "FilterExpression": "TRUE()"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r04-regex-parentheses-are-not-literal",
+    "rule": 4,
+    "label": "regex-parentheses-are-not-literal",
+    "object": {
+      "FilterExpression": "USERNAME"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r05-positive",
+    "rule": 5,
+    "label": "positive",
+    "object": {
+      "Name": "Sales"
+    },
+    "calls": {
+      "used_in_relationships": [
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "Many"
+        }
+      ],
+      "all_rls": [
+        {
+          "Name": "Sales"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "used_in_relationships",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        },
+        {
+          "method": "all_rls",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r05-negative",
+    "rule": 5,
+    "label": "negative",
+    "object": {
+      "Name": "Sales"
+    },
+    "calls": {
+      "used_in_relationships": [
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "used_in_relationships",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r06-positive",
+    "rule": 6,
+    "label": "positive",
+    "object": {
+      "FromCardinality": "Many",
+      "ToCardinality": "Many",
+      "CrossFilteringBehavior": "BothDirections"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r06-negative",
+    "rule": 6,
+    "label": "negative",
+    "object": {
+      "FromCardinality": "Many",
+      "ToCardinality": "One",
+      "CrossFilteringBehavior": "BothDirections"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r07-positive",
+    "rule": 7,
+    "label": "positive",
+    "object": {
+      "IsAvailableInMDX": true,
+      "IsHidden": true,
+      "Parent": {
+        "IsHidden": false
+      },
+      "SortByColumn": null
+    },
+    "calls": {
+      "is_direct_lake": false,
+      "used_in_sort_by": [],
+      "used_in_hierarchies": []
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "is_direct_lake",
+          "keywords": [],
+          "positionalCount": 0
+        },
+        {
+          "method": "used_in_sort_by",
+          "keywords": [
+            "column"
+          ],
+          "positionalCount": 0
+        },
+        {
+          "method": "used_in_hierarchies",
+          "keywords": [
+            "column"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r07-negative",
+    "rule": 7,
+    "label": "negative",
+    "object": {
+      "IsAvailableInMDX": true,
+      "IsHidden": true,
+      "Parent": {
+        "IsHidden": false
+      },
+      "SortByColumn": null
+    },
+    "calls": {
+      "is_direct_lake": true
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "is_direct_lake",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r08-positive",
+    "rule": 8,
+    "label": "positive",
+    "object": {
+      "Parent": {
+        "Name": "Sales"
+      },
+      "Mode": "DirectQuery",
+      "DataCoverageDefinition": null
+    },
+    "calls": {
+      "is_hybrid_table": true
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "is_hybrid_table",
+          "keywords": [
+            "table_name"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r08-negative",
+    "rule": 8,
+    "label": "negative",
+    "object": {
+      "Parent": {
+        "Name": "Sales"
+      },
+      "Mode": "DirectQuery",
+      "DataCoverageDefinition": "TRUE()"
+    },
+    "calls": {
+      "is_hybrid_table": true
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "is_hybrid_table",
+          "keywords": [
+            "table_name"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r09-positive",
+    "rule": 9,
+    "label": "positive",
+    "object": {},
+    "calls": {
+      "all_partitions": [
+        {
+          "Mode": "Dual"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "all_partitions",
+          "keywords": [],
+          "positionalCount": 0
+        },
+        {
+          "method": "all_partitions",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r09-negative",
+    "rule": 9,
+    "label": "negative",
+    "object": {},
+    "calls": {
+      "all_partitions": [
+        {
+          "Mode": "Dual"
+        },
+        {
+          "Mode": "DirectQuery"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "all_partitions",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r10-positive",
+    "rule": 10,
+    "label": "positive",
+    "object": {
+      "Name": "Sales",
+      "Partitions": [
+        {
+          "Mode": "Import"
+        }
+      ]
+    },
+    "calls": {
+      "has_hybrid_table": true,
+      "used_in_relationships": [
+        {
+          "ToCardinality": "One",
+          "ToTable": {
+            "Name": "Sales"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "has_hybrid_table",
+          "keywords": [],
+          "positionalCount": 0
+        },
+        {
+          "method": "used_in_relationships",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r10-negative",
+    "rule": 10,
+    "label": "negative",
+    "object": {
+      "Name": "Sales",
+      "Partitions": [
+        {
+          "Mode": "Import"
+        }
+      ]
+    },
+    "calls": {
+      "has_hybrid_table": false
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "has_hybrid_table",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r11-positive",
+    "rule": 11,
+    "label": "positive",
+    "object": {
+      "SourceType": "M",
+      "Source": {
+        "Expression": "Table.Join(\"Sales\", \"Key\")"
+      }
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r11-negative",
+    "rule": 11,
+    "label": "negative",
+    "object": {
+      "SourceType": "M",
+      "Source": {
+        "Expression": "table.join(\"Sales\", \"Key\")"
+      }
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r12-positive",
+    "rule": 12,
+    "label": "positive",
+    "object": {
+      "Name": "Sales",
+      "CalculationGroup": null
+    },
+    "calls": {
+      "used_in_relationships": [
+        {
+          "FromTable": {
+            "Name": "Sales"
+          },
+          "ToTable": {
+            "Name": "Sales"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "used_in_relationships",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        },
+        {
+          "method": "used_in_relationships",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r12-negative",
+    "rule": 12,
+    "label": "negative",
+    "object": {
+      "Name": "Sales",
+      "CalculationGroup": {}
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r13-positive",
+    "rule": 13,
+    "label": "positive",
+    "object": {},
+    "calls": {
+      "is_direct_lake_using_view": true
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "is_direct_lake_using_view",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r13-negative",
+    "rule": 13,
+    "label": "negative",
+    "object": {},
+    "calls": {
+      "is_direct_lake_using_view": false
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "is_direct_lake_using_view",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r16-positive",
+    "rule": 16,
+    "label": "positive",
+    "object": {
+      "Expression": "divide([Amount], [Count], 0)"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r16-negative",
+    "rule": 16,
+    "label": "negative",
+    "object": {
+      "Expression": "DIVIDE([Amount], [Count])"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r16-literal-space-stripping",
+    "rule": 16,
+    "label": "literal-space-stripping",
+    "object": {
+      "Expression": "0 + [Amount]"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r16-tab-not-stripped",
+    "rule": 16,
+    "label": "tab-not-stripped",
+    "object": {
+      "Expression": "0\t+ [Amount]"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r17-positive",
+    "rule": 17,
+    "label": "positive",
+    "object": {
+      "Name": "Sales"
+    },
+    "calls": {
+      "is_field_parameter": false,
+      "is_calculated_table": true
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "is_field_parameter",
+          "keywords": [
+            "table_name"
+          ],
+          "positionalCount": 0
+        },
+        {
+          "method": "is_calculated_table",
+          "keywords": [
+            "table_name"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r17-negative",
+    "rule": 17,
+    "label": "negative",
+    "object": {
+      "Name": "Sales"
+    },
+    "calls": {
+      "is_field_parameter": true
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "is_field_parameter",
+          "keywords": [
+            "table_name"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r18-positive",
+    "rule": 18,
+    "label": "positive",
+    "object": {
+      "Type": "Calculated",
+      "Expression": "related ('T'[Amount])"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r18-negative",
+    "rule": 18,
+    "label": "negative",
+    "object": {
+      "Type": "Data",
+      "Expression": "RELATED('T'[Amount])"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r19-positive",
+    "rule": 19,
+    "label": "positive",
+    "object": {
+      "Relationships": [
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "BothDirections"
+        }
+      ]
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r19-negative",
+    "rule": 19,
+    "label": "negative",
+    "object": {
+      "Relationships": [
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        }
+      ]
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r19-threshold-exactly-30-percent",
+    "rule": 19,
+    "label": "threshold-exactly-30-percent",
+    "object": {
+      "Relationships": [
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "BothDirections"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "BothDirections"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "BothDirections"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        }
+      ]
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r19-threshold-40-percent",
+    "rule": 19,
+    "label": "threshold-40-percent",
+    "object": {
+      "Relationships": [
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "BothDirections"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "BothDirections"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "BothDirections"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "BothDirections"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        }
+      ]
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r19-double-counts-both-and-many",
+    "rule": 19,
+    "label": "double-counts-both-and-many",
+    "object": {
+      "Relationships": [
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "Many",
+          "CrossFilteringBehavior": "BothDirections"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        },
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One",
+          "CrossFilteringBehavior": "OneDirection"
+        }
+      ]
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r19-empty-relationships",
+    "rule": 19,
+    "label": "empty-relationships",
+    "object": {
+      "Relationships": []
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r20-positive",
+    "rule": 20,
+    "label": "positive",
+    "object": {
+      "Name": "LocalDateTable_test"
+    },
+    "calls": {
+      "is_calculated_table": true
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "is_calculated_table",
+          "keywords": [
+            "table_name"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r20-negative",
+    "rule": 20,
+    "label": "negative",
+    "object": {
+      "Name": "localdatetable_test"
+    },
+    "calls": {
+      "is_calculated_table": true
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "is_calculated_table",
+          "keywords": [
+            "table_name"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r21-positive",
+    "rule": 21,
+    "label": "positive",
+    "object": {
+      "Name": "Calendar",
+      "DataCategory": ""
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r21-negative",
+    "rule": 21,
+    "label": "negative",
+    "object": {
+      "Name": "Calendar",
+      "DataCategory": "Time"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r22-positive",
+    "rule": 22,
+    "label": "positive",
+    "object": {
+      "Partitions": [
+        {}
+      ]
+    },
+    "calls": {
+      "is_direct_lake": false,
+      "row_count": 25000001
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "is_direct_lake",
+          "keywords": [],
+          "positionalCount": 0
+        },
+        {
+          "method": "row_count",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r22-negative",
+    "rule": 22,
+    "label": "negative",
+    "object": {
+      "Partitions": [
+        {}
+      ]
+    },
+    "calls": {
+      "is_direct_lake": false,
+      "row_count": 25000000
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "is_direct_lake",
+          "keywords": [],
+          "positionalCount": 0
+        },
+        {
+          "method": "row_count",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r22-fractional-above-threshold",
+    "rule": 22,
+    "label": "fractional-above-threshold",
+    "object": {
+      "Partitions": [
+        {}
+      ]
+    },
+    "calls": {
+      "is_direct_lake": false,
+      "row_count": 25000000.5
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "is_direct_lake",
+          "keywords": [],
+          "positionalCount": 0
+        },
+        {
+          "method": "row_count",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r22-missing-row-count-is-not-zero",
+    "rule": 22,
+    "label": "missing-row-count-is-not-zero",
+    "object": {
+      "Partitions": [
+        {}
+      ]
+    },
+    "calls": {
+      "is_direct_lake": false
+    },
+    "expected": {
+      "outcome": "error",
+      "errorType": "MissingEvidence",
+      "observedCalls": [
+        {
+          "method": "is_direct_lake",
+          "keywords": [],
+          "positionalCount": 0
+        },
+        {
+          "method": "row_count",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r23-positive",
+    "rule": 23,
+    "label": "positive",
+    "object": {
+      "FilterExpression": "LEFT([Code],1)"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r23-negative",
+    "rule": 23,
+    "label": "negative",
+    "object": {
+      "FilterExpression": "LEFT ([Code],1)"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r24-positive",
+    "rule": 24,
+    "label": "positive",
+    "object": {
+      "Tables": []
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r24-negative",
+    "rule": 24,
+    "label": "negative",
+    "object": {
+      "Tables": [
+        {
+          "DataCategory": "Time",
+          "Columns": [
+            {
+              "IsKey": true,
+              "DataType": "DateTime"
+            }
+          ]
+        }
+      ]
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r25-positive",
+    "rule": 25,
+    "label": "positive",
+    "object": {
+      "Expression": ""
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r25-negative",
+    "rule": 25,
+    "label": "negative",
+    "object": {
+      "Expression": "SELECTEDMEASURE()"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r25-none-expression-data-error",
+    "rule": 25,
+    "label": "none-expression-data-error",
+    "object": {
+      "Expression": null
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "error",
+      "errorType": "TypeError",
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r26-positive",
+    "rule": 26,
+    "label": "positive",
+    "object": {
+      "FromColumn": {
+        "DataType": "Double"
+      },
+      "ToColumn": {
+        "DataType": "Int64"
+      }
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r26-negative",
+    "rule": 26,
+    "label": "negative",
+    "object": {
+      "FromColumn": {
+        "DataType": "Int64"
+      },
+      "ToColumn": {
+        "DataType": "Int64"
+      }
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r27-positive",
+    "rule": 27,
+    "label": "positive",
+    "object": {
+      "Type": "Data",
+      "SourceColumn": ""
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r27-negative",
+    "rule": 27,
+    "label": "negative",
+    "object": {
+      "Type": "Data",
+      "SourceColumn": "Amount"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r28-positive",
+    "rule": 28,
+    "label": "positive",
+    "object": {
+      "IsAvailableInMDX": false,
+      "SortByColumn": {}
+    },
+    "calls": {
+      "is_direct_lake": false,
+      "used_in_sort_by": [],
+      "used_in_hierarchies": []
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "is_direct_lake",
+          "keywords": [],
+          "positionalCount": 0
+        },
+        {
+          "method": "used_in_sort_by",
+          "keywords": [
+            "column"
+          ],
+          "positionalCount": 0
+        },
+        {
+          "method": "used_in_hierarchies",
+          "keywords": [
+            "column"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r28-negative",
+    "rule": 28,
+    "label": "negative",
+    "object": {
+      "IsAvailableInMDX": true
+    },
+    "calls": {
+      "is_direct_lake": false
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "is_direct_lake",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r29-positive",
+    "rule": 29,
+    "label": "positive",
+    "object": {
+      "Name": "Sales"
+    },
+    "calls": {
+      "all_measures": [
+        {
+          "Expression": "USERELATIONSHIP('A'[Id], 'Sales'[Id])"
+        }
+      ],
+      "all_rls": [
+        {
+          "Table": {
+            "Name": "Sales"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "all_measures",
+          "keywords": [],
+          "positionalCount": 0
+        },
+        {
+          "method": "all_rls",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r29-negative",
+    "rule": 29,
+    "label": "negative",
+    "object": {
+      "Name": "Sales"
+    },
+    "calls": {
+      "all_measures": [
+        {
+          "Expression": "SUM('Sales'[Amount])"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "all_measures",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r30-positive",
+    "rule": 30,
+    "label": "positive",
+    "object": {
+      "Expression": "IfError ([M], 0)"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r30-negative",
+    "rule": 30,
+    "label": "negative",
+    "object": {
+      "Expression": "IF([M] > 0, [M], 0)"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r31-positive",
+    "rule": 31,
+    "label": "positive",
+    "object": {
+      "Expression": "intersect ([A], [B])"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r31-negative",
+    "rule": 31,
+    "label": "negative",
+    "object": {
+      "Expression": "TREATAS([A], 'B'[Id])"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r32-positive",
+    "rule": 32,
+    "label": "positive",
+    "object": {
+      "Expression": "evaluateandlog ([M])"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r32-negative",
+    "rule": 32,
+    "label": "negative",
+    "object": {
+      "Expression": "[M]"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r33-positive",
+    "rule": 33,
+    "label": "positive",
+    "object": {
+      "Expression": "[Total]"
+    },
+    "calls": {
+      "all_measures": [
+        {
+          "Name": "Total"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "all_measures",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r33-negative",
+    "rule": 33,
+    "label": "negative",
+    "object": {
+      "Expression": " [Total] "
+    },
+    "calls": {
+      "all_measures": [
+        {
+          "Name": "Total"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "all_measures",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r34-positive",
+    "rule": 34,
+    "label": "positive",
+    "object": {
+      "Name": "A",
+      "Expression": "SUM ( 'T'[X] )"
+    },
+    "calls": {
+      "all_measures": [
+        {
+          "Name": "B",
+          "Expression": "SUM('T'[X])"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "all_measures",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r34-negative",
+    "rule": 34,
+    "label": "negative",
+    "object": {
+      "Name": "A",
+      "Expression": "sum('T'[X])"
+    },
+    "calls": {
+      "all_measures": [
+        {
+          "Name": "B",
+          "Expression": "SUM('T'[X])"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "all_measures",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r35-positive",
+    "rule": 35,
+    "label": "positive",
+    "object": {
+      "Expression": "DIVIDE([A],[B]) + 1"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r35-negative",
+    "rule": 35,
+    "label": "negative",
+    "object": {
+      "Expression": "DIVIDE([A],[B]) + 2"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r36-positive",
+    "rule": 36,
+    "label": "positive",
+    "object": {
+      "Expression": "1 - DIVIDE([A],[B])"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r36-negative",
+    "rule": 36,
+    "label": "negative",
+    "object": {
+      "Expression": "DIVIDE([A],[B])"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r37-positive",
+    "rule": 37,
+    "label": "positive",
+    "object": {
+      "Expression": "CALCULATE([M], FILTER('T', [Flag] > 0))"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r37-negative",
+    "rule": 37,
+    "label": "negative",
+    "object": {
+      "Expression": "CALCULATE([M], 'T'[Flag] > 0)"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r38-positive",
+    "rule": 38,
+    "label": "positive",
+    "object": {
+      "Expression": "CALCULATE([M], FILTER('T', 'T'[Flag] > 0))"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r38-negative",
+    "rule": 38,
+    "label": "negative",
+    "object": {
+      "Expression": "CALCULATE([M], 'T'[Flag] > 0)"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r39-positive",
+    "rule": 39,
+    "label": "positive",
+    "object": {
+      "Expression": "[A] / [B]"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r39-negative",
+    "rule": 39,
+    "label": "negative",
+    "object": {
+      "Expression": "DIVIDE([A],[B])"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r39-line-comment-not-division",
+    "rule": 39,
+    "label": "line-comment-not-division",
+    "object": {
+      "Expression": "[A] // comment"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r39-block-comment-not-division",
+    "rule": 39,
+    "label": "block-comment-not-division",
+    "object": {
+      "Expression": "[A] /* comment */"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r40-positive",
+    "rule": 40,
+    "label": "positive",
+    "object": {},
+    "calls": {
+      "unqualified_columns": [
+        "Amount"
+      ],
+      "dependencies": {
+        "oracleSynthetic": "opaque-not-a-dataframe"
+      }
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "unqualified_columns",
+          "keywords": [
+            "dependencies",
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r40-negative",
+    "rule": 40,
+    "label": "negative",
+    "object": {},
+    "calls": {
+      "unqualified_columns": [],
+      "dependencies": {
+        "oracleSynthetic": "opaque-not-a-dataframe"
+      }
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "unqualified_columns",
+          "keywords": [
+            "dependencies",
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r41-positive",
+    "rule": 41,
+    "label": "positive",
+    "object": {},
+    "calls": {
+      "fully_qualified_measures": [
+        "Total"
+      ],
+      "dependencies": {
+        "oracleSynthetic": "opaque-not-a-dataframe"
+      }
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "fully_qualified_measures",
+          "keywords": [
+            "dependencies",
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r41-negative",
+    "rule": 41,
+    "label": "negative",
+    "object": {},
+    "calls": {
+      "fully_qualified_measures": [],
+      "dependencies": {
+        "oracleSynthetic": "opaque-not-a-dataframe"
+      }
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "fully_qualified_measures",
+          "keywords": [
+            "dependencies",
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r42-positive",
+    "rule": 42,
+    "label": "positive",
+    "object": {},
+    "calls": {
+      "_get_expression": "sum ('T'[Label])",
+      "all_columns": [
+        {
+          "Name": "Label",
+          "DataType": "String"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "_get_expression",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        },
+        {
+          "method": "all_columns",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r42-negative",
+    "rule": 42,
+    "label": "negative",
+    "object": {},
+    "calls": {
+      "_get_expression": "SUM('T'[label])",
+      "all_columns": [
+        {
+          "Name": "Label",
+          "DataType": "String"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "_get_expression",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        },
+        {
+          "method": "all_columns",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r42-average-on-string",
+    "rule": 42,
+    "label": "average-on-string",
+    "object": {},
+    "calls": {
+      "_get_expression": "AVERAGE([Label])",
+      "all_columns": [
+        {
+          "Name": "Label",
+          "DataType": "String"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "_get_expression",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        },
+        {
+          "method": "all_columns",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r42-cross-table-name-only-match",
+    "rule": 42,
+    "label": "cross-table-name-only-match",
+    "object": {},
+    "calls": {
+      "_get_expression": "SUM('NumericTable'[Label])",
+      "all_columns": [
+        {
+          "Name": "Label",
+          "DataType": "String",
+          "Parent": {
+            "Name": "OtherTable"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "_get_expression",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        },
+        {
+          "method": "all_columns",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r43-positive",
+    "rule": 43,
+    "label": "positive",
+    "object": {
+      "IsActive": false,
+      "FromTable": {
+        "Name": "A"
+      },
+      "ToTable": {
+        "Name": "Sales"
+      },
+      "FromColumn": {
+        "Name": "Id"
+      },
+      "ToColumn": {
+        "Name": "Id"
+      }
+    },
+    "calls": {
+      "all_measures": [
+        {
+          "Expression": "SUM('A'[Amount])"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "all_measures",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r43-negative",
+    "rule": 43,
+    "label": "negative",
+    "object": {
+      "IsActive": false,
+      "FromTable": {
+        "Name": "A"
+      },
+      "ToTable": {
+        "Name": "Sales"
+      },
+      "FromColumn": {
+        "Name": "Id"
+      },
+      "ToColumn": {
+        "Name": "Id"
+      }
+    },
+    "calls": {
+      "all_measures": [
+        {
+          "Expression": "USERELATIONSHIP('A'[Id], 'Sales'[Id])"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "all_measures",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r43-reverse-activation-order",
+    "rule": 43,
+    "label": "reverse-activation-order",
+    "object": {
+      "IsActive": false,
+      "FromTable": {
+        "Name": "A"
+      },
+      "ToTable": {
+        "Name": "Sales"
+      },
+      "FromColumn": {
+        "Name": "Id"
+      },
+      "ToColumn": {
+        "Name": "Id"
+      }
+    },
+    "calls": {
+      "all_measures": [
+        {
+          "Expression": "USERELATIONSHIP('Sales'[Id], 'A'[Id])"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "all_measures",
+          "keywords": [],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r44-positive",
+    "rule": 44,
+    "label": "positive",
+    "object": {
+      "IsHidden": true,
+      "Parent": {
+        "IsHidden": false
+      }
+    },
+    "calls": {
+      "used_in_relationships": [],
+      "used_in_hierarchies": [],
+      "used_in_sort_by": [],
+      "depends_on": [
+        "dependency"
+      ],
+      "dependencies": {
+        "oracleSynthetic": "opaque-not-a-dataframe"
+      }
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "used_in_relationships",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        },
+        {
+          "method": "used_in_hierarchies",
+          "keywords": [
+            "column"
+          ],
+          "positionalCount": 0
+        },
+        {
+          "method": "used_in_sort_by",
+          "keywords": [
+            "column"
+          ],
+          "positionalCount": 0
+        },
+        {
+          "method": "depends_on",
+          "keywords": [
+            "dependencies",
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r44-negative",
+    "rule": 44,
+    "label": "negative",
+    "object": {
+      "IsHidden": true,
+      "Parent": {
+        "IsHidden": false
+      }
+    },
+    "calls": {
+      "used_in_relationships": [],
+      "used_in_hierarchies": [],
+      "used_in_sort_by": [],
+      "depends_on": [],
+      "dependencies": {
+        "oracleSynthetic": "opaque-not-a-dataframe"
+      }
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "used_in_relationships",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        },
+        {
+          "method": "used_in_hierarchies",
+          "keywords": [
+            "column"
+          ],
+          "positionalCount": 0
+        },
+        {
+          "method": "used_in_sort_by",
+          "keywords": [
+            "column"
+          ],
+          "positionalCount": 0
+        },
+        {
+          "method": "depends_on",
+          "keywords": [
+            "dependencies",
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r45-positive",
+    "rule": 45,
+    "label": "positive",
+    "object": {
+      "IsHidden": true
+    },
+    "calls": {
+      "referenced_by": [],
+      "dependencies": {
+        "oracleSynthetic": "opaque-not-a-dataframe"
+      }
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "referenced_by",
+          "keywords": [
+            "dependencies",
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r45-negative",
+    "rule": 45,
+    "label": "negative",
+    "object": {
+      "IsHidden": true
+    },
+    "calls": {
+      "referenced_by": [
+        "consumer"
+      ],
+      "dependencies": {
+        "oracleSynthetic": "opaque-not-a-dataframe"
+      }
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "referenced_by",
+          "keywords": [
+            "dependencies",
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r46-positive",
+    "rule": 46,
+    "label": "positive",
+    "object": {
+      "Name": "Sales",
+      "CalculationGroup": null
+    },
+    "calls": {
+      "used_in_relationships": [],
+      "is_field_parameter": false
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "used_in_relationships",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        },
+        {
+          "method": "is_field_parameter",
+          "keywords": [
+            "table_name"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r46-negative",
+    "rule": 46,
+    "label": "negative",
+    "object": {
+      "Name": "Sales",
+      "CalculationGroup": null
+    },
+    "calls": {
+      "used_in_relationships": [
+        {
+          "FromCardinality": "Many",
+          "ToCardinality": "One"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "used_in_relationships",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r47-positive",
+    "rule": 47,
+    "label": "positive",
+    "object": {
+      "CalculationGroup": {
+        "CalculationItems": []
+      }
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r47-negative",
+    "rule": 47,
+    "label": "negative",
+    "object": {
+      "CalculationGroup": {
+        "CalculationItems": [
+          {
+            "Name": "YTD"
+          }
+        ]
+      }
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r48-positive",
+    "rule": 48,
+    "label": "positive",
+    "object": {
+      "IsHidden": false,
+      "Description": ""
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r48-negative",
+    "rule": 48,
+    "label": "negative",
+    "object": {
+      "IsHidden": false,
+      "Description": " "
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r49-positive",
+    "rule": 49,
+    "label": "positive",
+    "object": {
+      "Name": "Date",
+      "DataType": "DateTime",
+      "FormatString": "General"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r49-negative",
+    "rule": 49,
+    "label": "negative",
+    "object": {
+      "Name": "DATE",
+      "DataType": "DateTime",
+      "FormatString": "YYYY-MM-DD"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r50-positive",
+    "rule": 50,
+    "label": "positive",
+    "object": {
+      "DataType": "Int64",
+      "IsHidden": false,
+      "Parent": {
+        "IsHidden": false
+      },
+      "SummarizeBy": "Sum"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r50-negative",
+    "rule": 50,
+    "label": "negative",
+    "object": {
+      "DataType": "Int64",
+      "IsHidden": false,
+      "Parent": {
+        "IsHidden": false
+      },
+      "SummarizeBy": "None"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r51-positive",
+    "rule": 51,
+    "label": "positive",
+    "object": {
+      "IsHidden": false,
+      "FormatString": "",
+      "FormatStringDefinition": null
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r51-negative",
+    "rule": 51,
+    "label": "negative",
+    "object": {
+      "IsHidden": false,
+      "FormatString": "",
+      "FormatStringDefinition": {
+        "Expression": "'0'"
+      }
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r52-positive",
+    "rule": 52,
+    "label": "positive",
+    "object": {
+      "Name": "CITYCode",
+      "DataCategory": ""
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r52-negative",
+    "rule": 52,
+    "label": "negative",
+    "object": {
+      "Name": "MyCity",
+      "DataCategory": ""
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r53-positive",
+    "rule": 53,
+    "label": "positive",
+    "object": {
+      "FormatString": "0%"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r53-negative",
+    "rule": 53,
+    "label": "negative",
+    "object": {
+      "FormatString": "#,0.0%;-#,0.0%;#,0.0%"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r54-positive",
+    "rule": 54,
+    "label": "positive",
+    "object": {
+      "FormatString": "0"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r54-negative",
+    "rule": 54,
+    "label": "negative",
+    "object": {
+      "FormatString": "#,0.0"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r54-currency-symbol-exemption",
+    "rule": 54,
+    "label": "currency-symbol-exemption",
+    "object": {
+      "FormatString": "$0"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r55-positive",
+    "rule": 55,
+    "label": "positive",
+    "object": {
+      "Name": "Id",
+      "IsHidden": false
+    },
+    "calls": {
+      "used_in_relationships": [
+        {
+          "FromColumn": {
+            "Name": "Id"
+          },
+          "FromCardinality": "Many"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "used_in_relationships",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r55-negative",
+    "rule": 55,
+    "label": "negative",
+    "object": {
+      "Name": "Id",
+      "IsHidden": true
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r56-positive",
+    "rule": 56,
+    "label": "positive",
+    "object": {
+      "Name": "Id",
+      "Table": {
+        "Name": "Sales",
+        "DataCategory": ""
+      },
+      "IsKey": false
+    },
+    "calls": {
+      "used_in_relationships": [
+        {
+          "ToTable": {
+            "Name": "Sales"
+          },
+          "ToColumn": {
+            "Name": "Id"
+          },
+          "ToCardinality": "One"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": [
+        {
+          "method": "used_in_relationships",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r56-negative",
+    "rule": 56,
+    "label": "negative",
+    "object": {
+      "Name": "Id",
+      "Table": {
+        "Name": "Sales",
+        "DataCategory": "Time"
+      },
+      "IsKey": false
+    },
+    "calls": {
+      "used_in_relationships": [
+        {
+          "ToTable": {
+            "Name": "Sales"
+          },
+          "ToColumn": {
+            "Name": "Id"
+          },
+          "ToCardinality": "One"
+        }
+      ]
+    },
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": [
+        {
+          "method": "used_in_relationships",
+          "keywords": [
+            "object"
+          ],
+          "positionalCount": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "r57-positive",
+    "rule": 57,
+    "label": "positive",
+    "object": {
+      "Name": "Month",
+      "DataType": "String",
+      "SortByColumn": ""
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r57-negative",
+    "rule": 57,
+    "label": "negative",
+    "object": {
+      "Name": "Months",
+      "DataType": "String",
+      "SortByColumn": ""
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r57-null-is-not-empty-string",
+    "rule": 57,
+    "label": "null-is-not-empty-string",
+    "object": {
+      "Name": "Month",
+      "DataType": "String",
+      "SortByColumn": null
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r58-positive",
+    "rule": 58,
+    "label": "positive",
+    "object": {
+      "FromColumn": {
+        "DataType": "String"
+      },
+      "ToColumn": {
+        "DataType": "Int64"
+      }
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r58-negative",
+    "rule": 58,
+    "label": "negative",
+    "object": {
+      "FromColumn": {
+        "DataType": "Int64"
+      },
+      "ToColumn": {
+        "DataType": "Int64"
+      }
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r59-positive",
+    "rule": 59,
+    "label": "positive",
+    "object": {
+      "Name": "Month",
+      "DataType": "DateTime",
+      "FormatString": "MMMM YYYY"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r59-negative",
+    "rule": 59,
+    "label": "negative",
+    "object": {
+      "Name": "Month",
+      "DataType": "DateTime",
+      "FormatString": "MMMM yyyy"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r60-positive",
+    "rule": 60,
+    "label": "positive",
+    "object": {
+      "IsHidden": false,
+      "Parent": {
+        "IsHidden": false
+      },
+      "Name": "IsActive",
+      "DataType": "Int64"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r60-negative",
+    "rule": 60,
+    "label": "negative",
+    "object": {
+      "IsHidden": false,
+      "Parent": {
+        "IsHidden": false
+      },
+      "Name": "IsActive",
+      "DataType": "String"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r60-space-flag-suffix",
+    "rule": 60,
+    "label": "space-flag-suffix",
+    "object": {
+      "IsHidden": false,
+      "Parent": {
+        "IsHidden": false
+      },
+      "Name": "Active Flag",
+      "DataType": "Double"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r61-positive",
+    "rule": 61,
+    "label": "positive",
+    "object": {
+      "Name": " Sales"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r61-negative",
+    "rule": 61,
+    "label": "negative",
+    "object": {
+      "Name": "Sales"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r61-empty-name-data-error",
+    "rule": 61,
+    "label": "empty-name-data-error",
+    "object": {
+      "Name": ""
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "error",
+      "errorType": "IndexError",
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r62-positive",
+    "rule": 62,
+    "label": "positive",
+    "object": {
+      "Name": "sales"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r62-negative",
+    "rule": 62,
+    "label": "negative",
+    "object": {
+      "Name": "7sales"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r62-empty-name-data-error",
+    "rule": 62,
+    "label": "empty-name-data-error",
+    "object": {
+      "Name": ""
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "error",
+      "errorType": "IndexError",
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r63-positive",
+    "rule": 63,
+    "label": "positive",
+    "object": {
+      "Name": "Sales\tTotal"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r63-negative",
+    "rule": 63,
+    "label": "negative",
+    "object": {
+      "Name": "Sales-Total!"
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r64-positive",
+    "rule": 64,
+    "label": "positive",
+    "object": {
+      "Name": "Import",
+      "Parent": {
+        "Name": "Sales",
+        "Partitions": [
+          {}
+        ]
+      }
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": true,
+      "observedCalls": []
+    }
+  },
+  {
+    "id": "r64-negative",
+    "rule": 64,
+    "label": "negative",
+    "object": {
+      "Name": "Import",
+      "Parent": {
+        "Name": "Sales",
+        "Partitions": [
+          {},
+          {}
+        ]
+      }
+    },
+    "calls": {},
+    "expected": {
+      "outcome": "predicate",
+      "violates": false,
+      "observedCalls": []
+    }
+  }
+]

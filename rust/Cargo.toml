@@ -37,6 +37,8 @@ default-members = [
     "capabilities/deployment/fabric-cli-transfer",
     "capabilities/tables/fabric-cli-tables",
     "capabilities/tables/fabric-sdk-tables",
+    "capabilities/semantic-model/fabric-sdk-semantic-model",
+    "capabilities/semantic-model/fabric-cli-semantic-model",
 ]
 resolver = "3"
 
@@ -48,6 +50,10 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+fabric-semantic-model-dotnet = { path = "capabilities/semantic-model/fabric-semantic-model-dotnet", default-features = false }
+fabric-sdk-semantic-model = { path = "capabilities/semantic-model/fabric-sdk-semantic-model", default-features = false }
+fabric-cli-semantic-model = { path = "capabilities/semantic-model/fabric-cli-semantic-model", default-features = false }
+netcorehost = { version = "=0.22.0", default-features = false, features = ["net8_0"] }
 fabric-cli-repl = { path = "hosts/repl/fabric-cli-repl", default-features = false }
 fabric-cli-update = { path = "hosts/update/fabric-cli-update", default-features = false }
 reedline = { version = "=0.52.1", default-features = false }

@@ -17,6 +17,8 @@ mod native_read;
 #[cfg(feature = "repl")]
 mod repl_host;
 mod runtime_config;
+#[cfg(feature = "semantic-model")]
+mod semantic_model;
 #[cfg(feature = "self-update")]
 mod update_host;
 
@@ -91,6 +93,8 @@ fn dispatch(
             write!(io::stdout().lock(), "{text}")?;
             return Ok(CommandOutcome::Returned(0));
         }
+        #[cfg(feature = "semantic-model")]
+        Ok(Invocation::SemanticModel(command)) => return semantic_model::run(&command),
         #[cfg(feature = "self-update")]
         Ok(Invocation::Update(_)) => {
             write_error(

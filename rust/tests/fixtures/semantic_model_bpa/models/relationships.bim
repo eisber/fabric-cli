@@ -1,0 +1,21 @@
+{
+  "name": "SyntheticRelationships",
+  "compatibilityLevel": 1600,
+  "model": {
+    "culture": "en-US",
+    "tables": [
+      {"name": "Sales", "columns": [{"name": "Id", "dataType": "double", "sourceColumn": "Id"}]},
+      {"name": "Bridge", "columns": [{"name": "Id", "dataType": "int64", "sourceColumn": "Id"}]}
+    ],
+    "relationships": [{
+      "name": "SyntheticManyToMany",
+      "fromTable": "Sales",
+      "fromColumn": "Id",
+      "toTable": "Bridge",
+      "toColumn": "Id",
+      "fromCardinality": "many",
+      "toCardinality": "many",
+      "crossFilteringBehavior": "bothDirections"
+    }]
+  }
+}

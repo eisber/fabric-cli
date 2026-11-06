@@ -1,0 +1,291 @@
+[
+  {
+    "id": "default-catalog-no-tables",
+    "model": "empty.bim",
+    "selectedRules": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64
+    ],
+    "expected": {
+      "outcome": "no_tables",
+      "returnValue": null,
+      "messages": [
+        "<warning> The 'Synthetic' semantic model within the 'Offline' workspace has no tables and therefore there are no valid BPA results."
+      ]
+    }
+  },
+  {
+    "id": "no-violations-is-empty-dataframe",
+    "model": "decimal.bim",
+    "selectedRules": [
+      1
+    ],
+    "expected": {
+      "outcome": "dataframe",
+      "columns": [
+        "Category",
+        "Rule Name",
+        "Severity",
+        "Object Type",
+        "Object Name",
+        "Description",
+        "URL"
+      ],
+      "rows": []
+    }
+  },
+  {
+    "id": "numeric-metadata-violation",
+    "model": "double.bim",
+    "selectedRules": [
+      1
+    ],
+    "expected": {
+      "outcome": "dataframe",
+      "columns": [
+        "Category",
+        "Rule Name",
+        "Severity",
+        "Object Type",
+        "Object Name",
+        "Description",
+        "URL"
+      ],
+      "rows": [
+        {
+          "Category": "Performance",
+          "Rule Name": "Do not use floating point data types",
+          "Severity": "Warning",
+          "Object Type": "Column",
+          "Object Name": "'Sales'[Amount]",
+          "Description": "The \"Double\" floating point data type should be avoided, as it can result in unpredictable roundoff errors and decreased performance in certain scenarios. Use \"Int64\" or \"Decimal\" where appropriate (but note that \"Decimal\" is limited to 4 digits after the decimal sign).",
+          "URL": null
+        }
+      ]
+    }
+  },
+  {
+    "id": "predicate-data-error-is-not-empty-results",
+    "model": "missing-source-column.bim",
+    "selectedRules": [
+      27
+    ],
+    "expected": {
+      "outcome": "error",
+      "errorType": "TypeError",
+      "origin": "original_predicate_or_selected_core"
+    }
+  },
+  {
+    "id": "malformed-bim-json",
+    "model": "malformed.bim",
+    "selectedRules": [
+      1
+    ],
+    "expected": {
+      "outcome": "input_error",
+      "errorType": "JSONDecodeError",
+      "origin": "oracle_json_reader_not_TOM"
+    }
+  },
+  {
+    "id": "relationship-and-model-scopes",
+    "model": "relationships.bim",
+    "selectedRules": [
+      3,
+      6,
+      19,
+      26,
+      58
+    ],
+    "expected": {
+      "outcome": "dataframe",
+      "columns": [
+        "Category",
+        "Rule Name",
+        "Severity",
+        "Object Type",
+        "Object Name",
+        "Description",
+        "URL"
+      ],
+      "rows": [
+        {
+          "Category": "Performance",
+          "Rule Name": "Check if bi-directional and many-to-many relationships are valid",
+          "Severity": "Warning",
+          "Object Type": "Relationship",
+          "Object Name": "'Sales'[Id] -> 'Bridge'[Id]",
+          "Description": "Bi-directional and many-to-many relationships may cause performance degradation or even have unintended consequences. Make sure to check these specific relationships to ensure they are working as designed and are actually necessary.",
+          "URL": "https://www.sqlbi.com/articles/bidirectional-relationships-and-ambiguity-in-dax"
+        },
+        {
+          "Category": "Performance",
+          "Rule Name": "Many-to-many relationships should be single-direction",
+          "Severity": "Warning",
+          "Object Type": "Relationship",
+          "Object Name": "'Sales'[Id] -> 'Bridge'[Id]",
+          "Description": null,
+          "URL": null
+        },
+        {
+          "Category": "Performance",
+          "Rule Name": "Avoid excessive bi-directional or many-to-many relationships",
+          "Severity": "Warning",
+          "Object Type": "Model",
+          "Object Name": "Model",
+          "Description": "Limit use of b-di and many-to-many relationships. This rule flags the model if more than 30% of relationships are bi-di or many-to-many.",
+          "URL": "https://www.sqlbi.com/articles/bidirectional-relationships-and-ambiguity-in-dax"
+        },
+        {
+          "Category": "Error Prevention",
+          "Rule Name": "Relationship columns should be of the same data type",
+          "Severity": "Warning",
+          "Object Type": "Relationship",
+          "Object Name": "'Sales'[Id] -> 'Bridge'[Id]",
+          "Description": "Columns used in a relationship should be of the same data type. Ideally, they will be of integer data type (see the related rule '[Formatting] Relationship columns should be of integer data type'). Having columns within a relationship which are of different data types may lead to various issues.",
+          "URL": null
+        },
+        {
+          "Category": "Formatting",
+          "Rule Name": "Relationship columns should be of integer data type",
+          "Severity": "Warning",
+          "Object Type": "Relationship",
+          "Object Name": "'Sales'[Id] -> 'Bridge'[Id]",
+          "Description": "It is a best practice for relationship columns to be of integer data type. This applies not only to data warehousing but data modeling as well.",
+          "URL": null
+        }
+      ]
+    }
+  },
+  {
+    "id": "multi-scope-case-and-names",
+    "model": "naming.bim",
+    "selectedRules": [
+      61,
+      62,
+      63
+    ],
+    "expected": {
+      "outcome": "dataframe",
+      "columns": [
+        "Category",
+        "Rule Name",
+        "Severity",
+        "Object Type",
+        "Object Name",
+        "Description",
+        "URL"
+      ],
+      "rows": [
+        {
+          "Category": "Formatting",
+          "Rule Name": "Objects should not start or end with a space",
+          "Severity": "Error",
+          "Object Type": "Table",
+          "Object Name": "sales\t ",
+          "Description": "Objects should not start or end with a space. This usually happens by accident and is difficult to find.",
+          "URL": null
+        },
+        {
+          "Category": "Formatting",
+          "Rule Name": "First letter of objects must be capitalized",
+          "Severity": "Info",
+          "Object Type": "Table",
+          "Object Name": "sales\t ",
+          "Description": "The first letter of object names should be capitalized to maintain professional quality.",
+          "URL": null
+        },
+        {
+          "Category": "Formatting",
+          "Rule Name": "First letter of objects must be capitalized",
+          "Severity": "Info",
+          "Object Type": "Column",
+          "Object Name": "'sales\t '[amount\n]",
+          "Description": "The first letter of object names should be capitalized to maintain professional quality.",
+          "URL": null
+        },
+        {
+          "Category": "Naming Conventions",
+          "Rule Name": "Object names must not contain special characters",
+          "Severity": "Warning",
+          "Object Type": "Table",
+          "Object Name": "sales\t ",
+          "Description": "Object names should not include tabs, line breaks, etc.",
+          "URL": null
+        },
+        {
+          "Category": "Naming Conventions",
+          "Rule Name": "Object names must not contain special characters",
+          "Severity": "Warning",
+          "Object Type": "Column",
+          "Object Name": "'sales\t '[amount\n]",
+          "Description": "Object names should not include tabs, line breaks, etc.",
+          "URL": null
+        }
+      ]
+    }
+  }
+]

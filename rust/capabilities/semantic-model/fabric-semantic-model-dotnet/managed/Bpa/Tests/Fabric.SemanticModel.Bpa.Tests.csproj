@@ -1,0 +1,19 @@
+<!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AssemblyName>Fabric.SemanticModel.Bpa.Tests</AssemblyName>
+    <RestoreConfigFile>$(MSBuildThisFileDirectory)..\..\..\..\..\..\NuGet.Config</RestoreConfigFile>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <NuGetLockFilePath>$(MSBuildThisFileDirectory)dependencies.lock.json</NuGetLockFilePath>
+    <RestoreLockedMode Condition="'$(RestoreLockedMode)' == ''">true</RestoreLockedMode>
+    <NuGetInteractive>false</NuGetInteractive>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Fabric.SemanticModel.Managed.csproj" />
+  </ItemGroup>
+</Project>

@@ -15,6 +15,9 @@ pub mod models;
 pub mod notebooks;
 pub mod workspaces;
 
+/// Read-only model analysis contracts; .NET activation is separately feature-gated.
+pub use fabric_sdk_semantic_model as semantic_model;
+
 pub use fabric_core::{
     Audience, CredentialSelection, EndpointBinding, EndpointError, RequestContext, ServiceOrigin,
     TokenCredential,

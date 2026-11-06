@@ -1,0 +1,1444 @@
+[
+  {
+    "id": "labs:552775a240bc8fb7efd5325de08bae9afcd2607f70aa6cc41d9c726165040b17",
+    "predicateId": "labs-001",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Do not use floating point data types",
+    "category": "Performance",
+    "scopes": [
+      "Column"
+    ],
+    "severity": "Warning",
+    "ruleName": "Do not use floating point data types",
+    "predicate": "lambda obj, tom: obj.DataType == TOM.DataType.Double",
+    "description": "The \"Double\" floating point data type should be avoided, as it can result in unpredictable roundoff errors and decreased performance in certain scenarios. Use \"Int64\" or \"Decimal\" where appropriate (but note that \"Decimal\" is limited to 4 digits after the decimal sign).",
+    "url": null,
+    "sourceLine": 157,
+    "requiredData": [
+      "TOM.DataType"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:9be083559df0f1f49c5f24a2cd0188a0fc34e4b263063c6a2a2489a3d96fad41",
+    "predicateId": "labs-002",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Avoid using calculated columns",
+    "category": "Performance",
+    "scopes": [
+      "Column"
+    ],
+    "severity": "Warning",
+    "ruleName": "Avoid using calculated columns",
+    "predicate": "lambda obj, tom: obj.Type == TOM.ColumnType.Calculated",
+    "description": "Calculated columns do not compress as well as data columns so they take up more memory. They also slow down processing times for both the table as well as process recalc. Offload calculated column logic to your data warehouse and turn these calculated columns into data columns.",
+    "url": "https://www.elegantbi.com/post/top10bestpractices",
+    "sourceLine": 165,
+    "requiredData": [
+      "TOM.Type"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:c6f3573f9ba4db7561641b5ae5fbe924c0d3aea6e9c334c78934f732c5390969",
+    "predicateId": "labs-003",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Check if bi-directional and many-to-many relationships are valid",
+    "category": "Performance",
+    "scopes": [
+      "Relationship"
+    ],
+    "severity": "Warning",
+    "ruleName": "Check if bi-directional and many-to-many relationships are valid",
+    "predicate": "lambda obj, tom: (\n                    obj.FromCardinality == TOM.RelationshipEndCardinality.Many\n                    and obj.ToCardinality == TOM.RelationshipEndCardinality.Many\n                )\n                or str(obj.CrossFilteringBehavior) == \"BothDirections\"",
+    "description": "Bi-directional and many-to-many relationships may cause performance degradation or even have unintended consequences. Make sure to check these specific relationships to ensure they are working as designed and are actually necessary.",
+    "url": "https://www.sqlbi.com/articles/bidirectional-relationships-and-ambiguity-in-dax",
+    "sourceLine": 174,
+    "requiredData": [
+      "TOM.CrossFilteringBehavior",
+      "TOM.FromCardinality",
+      "TOM.ToCardinality"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:b2427ad3decfe180218ede0fea34aa8e7e3e2ddd1050c4cc65b3d6bdb9afc596",
+    "predicateId": "labs-004",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Check if dynamic row level security (RLS) is necessary",
+    "category": "Performance",
+    "scopes": [
+      "Row Level Security"
+    ],
+    "severity": "Info",
+    "ruleName": "Check if dynamic row level security (RLS) is necessary",
+    "predicate": "lambda obj, tom: any(\n                    re.search(pattern, obj.FilterExpression, flags=re.IGNORECASE)\n                    for pattern in [\"USERPRINCIPALNAME()\", \"USERNAME()\"]\n                )",
+    "description": "Usage of dynamic row level security (RLS) can add memory and performance overhead. Please research the pros/cons of using it.",
+    "url": "https://docs.microsoft.com/power-bi/admin/service-admin-rls",
+    "sourceLine": 187,
+    "requiredData": [
+      "TOM.FilterExpression"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:aabdd839632d7ea0b819e56aa3fbed04f80255ebc92f512d638ccac8048ec240",
+    "predicateId": "labs-005",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Avoid using many-to-many relationships on tables used for dynamic row level security",
+    "category": "Performance",
+    "scopes": [
+      "Table"
+    ],
+    "severity": "Warning",
+    "ruleName": "Avoid using many-to-many relationships on tables used for dynamic row level security",
+    "predicate": "lambda obj, tom: any(\n                    r.FromCardinality == TOM.RelationshipEndCardinality.Many\n                    and r.ToCardinality == TOM.RelationshipEndCardinality.Many\n                    for r in tom.used_in_relationships(object=obj)\n                )\n                and any(t.Name == obj.Name for t in tom.all_rls())",
+    "description": "Using many-to-many relationships on tables which use dynamic row level security can cause serious query performance degradation. This pattern's performance problems compound when snowflaking multiple many-to-many relationships against a table which contains row level security. Instead, use one of the patterns shown in the article below where a single dimension table relates many-to-one to a security table.",
+    "url": "https://www.elegantbi.com/post/dynamicrlspatterns",
+    "sourceLine": 199,
+    "requiredData": [
+      "TOM.Name",
+      "TOM.relationships.cardinalities",
+      "TOM.relationships.endpoints",
+      "TOM.roles.TablePermissions"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:29384b7e0ee64136585d201780a1f1b0bda18b2fedbda2c8110a9eec8e087d9c",
+    "predicateId": "labs-006",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Many-to-many relationships should be single-direction",
+    "category": "Performance",
+    "scopes": [
+      "Relationship"
+    ],
+    "severity": "Warning",
+    "ruleName": "Many-to-many relationships should be single-direction",
+    "predicate": "lambda obj, tom: (\n                    obj.FromCardinality == TOM.RelationshipEndCardinality.Many\n                    and obj.ToCardinality == TOM.RelationshipEndCardinality.Many\n                )\n                and obj.CrossFilteringBehavior\n                == TOM.CrossFilteringBehavior.BothDirections",
+    "description": null,
+    "url": null,
+    "sourceLine": 213,
+    "requiredData": [
+      "TOM.CrossFilteringBehavior",
+      "TOM.FromCardinality",
+      "TOM.ToCardinality"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:dc4c3579144b576dcaabfa914d2ac9fbd5b69b59cec5305a02a819207857f4fe",
+    "predicateId": "labs-007",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Set IsAvailableInMdx to false on non-attribute columns",
+    "category": "Performance",
+    "scopes": [
+      "Column"
+    ],
+    "severity": "Warning",
+    "ruleName": "Set IsAvailableInMdx to false on non-attribute columns",
+    "predicate": "lambda obj, tom: tom.is_direct_lake() is False\n                and obj.IsAvailableInMDX\n                and (obj.IsHidden or obj.Parent.IsHidden)\n                and obj.SortByColumn is None\n                and not any(tom.used_in_sort_by(column=obj))\n                and not any(tom.used_in_hierarchies(column=obj))",
+    "description": "To speed up processing time and conserve memory after processing, attribute hierarchies should not be built for columns that are never used for slicing by MDX clients. In other words, all hidden columns that are not used as a Sort By Column or referenced in user hierarchies should have their IsAvailableInMdx property set to false. The IsAvailableInMdx property is not relevant for Direct Lake models.",
+    "url": "https://blog.crossjoin.co.uk/2018/07/02/isavailableinmdx-ssas-tabular",
+    "sourceLine": 225,
+    "requiredData": [
+      "TOM.IsAvailableInMDX",
+      "TOM.IsHidden",
+      "TOM.Parent",
+      "TOM.Parent.IsHidden",
+      "TOM.SortByColumn",
+      "TOM.hierarchies.levels.Column",
+      "TOM.partitions.Mode",
+      "TOM.table.columns.SortByColumn"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:99b0b8666e8d59aa608930f5b6ab8b8c754520769a0b8cb6f73a0b4958f97dfa",
+    "predicateId": "labs-008",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Set 'Data Coverage Definition' property on the DirectQuery partition of a hybrid table",
+    "category": "Performance",
+    "scopes": [
+      "Partition"
+    ],
+    "severity": "Warning",
+    "ruleName": "Set 'Data Coverage Definition' property on the DirectQuery partition of a hybrid table",
+    "predicate": "lambda obj, tom: tom.is_hybrid_table(table_name=obj.Parent.Name)\n                and obj.Mode == TOM.ModeType.DirectQuery\n                and obj.DataCoverageDefinition is None",
+    "description": "Setting the 'Data Coverage Definition' property may lead to better performance because the engine knows when it can only query the import-portion of the table and when it needs to query the DirectQuery portion of the table.",
+    "url": "https://learn.microsoft.com/analysis-services/tom/table-partitions?view=asallproducts-allversions",
+    "sourceLine": 239,
+    "requiredData": [
+      "TOM.DataCoverageDefinition",
+      "TOM.Mode",
+      "TOM.Parent",
+      "TOM.Parent.Name",
+      "TOM.table.partitions.Mode"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:1d95735eec1192bd13434e03733b690b4264790921aa47afc4f39d0483c0e85b",
+    "predicateId": "labs-009",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Dual mode is only relevant for dimension tables if DirectQuery is used for the corresponding fact table",
+    "category": "Performance",
+    "scopes": [
+      "Model"
+    ],
+    "severity": "Warning",
+    "ruleName": "Dual mode is only relevant for dimension tables if DirectQuery is used for the corresponding fact table",
+    "predicate": "lambda obj, tom: not any(\n                    p.Mode == TOM.ModeType.DirectQuery for p in tom.all_partitions()\n                )\n                and any(p.Mode == TOM.ModeType.Dual for p in tom.all_partitions())",
+    "description": "Only use Dual mode for dimension tables/partitions where a corresponding fact table is in DirectQuery. Using Dual mode in other circumstances (i.e. rest of the model is in Import mode) may lead to performance issues especially if the number of measures in the model is high.",
+    "url": null,
+    "sourceLine": 250,
+    "requiredData": [
+      "TOM.tables.partitions.Mode"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:002069df0ccfba4b590afec5b94538599432bcc72b79db4e80da8b6a3d606bc3",
+    "predicateId": "labs-010",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Set dimensions tables to dual mode instead of import when using DirectQuery on fact tables",
+    "category": "Performance",
+    "scopes": [
+      "Table"
+    ],
+    "severity": "Warning",
+    "ruleName": "Set dimensions tables to dual mode instead of import when using DirectQuery on fact tables",
+    "predicate": "lambda obj, tom: sum(\n                    1 for p in obj.Partitions if p.Mode == TOM.ModeType.Import\n                )\n                == 1\n                and obj.Partitions.Count == 1\n                and tom.has_hybrid_table()\n                and any(\n                    r.ToCardinality == TOM.RelationshipEndCardinality.One\n                    and r.ToTable.Name == obj.Name\n                    for r in tom.used_in_relationships(object=obj)\n                )",
+    "description": "When using DirectQuery, dimension tables should be set to Dual mode in order to improve query performance.",
+    "url": "https://learn.microsoft.com/power-bi/transform-model/desktop-storage-mode#propagation-of-the-dual-setting",
+    "sourceLine": 261,
+    "requiredData": [
+      "TOM.Name",
+      "TOM.Partitions",
+      "TOM.Partitions.Count",
+      "TOM.relationships.cardinalities",
+      "TOM.relationships.endpoints",
+      "TOM.tables.partitions.Mode"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:0ad15e1561cdb6a9deb8e3c8d51e8b93af9d25f8684f6af22241c1c33d70f0ec",
+    "predicateId": "labs-011",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Minimize Power Query transformations",
+    "category": "Performance",
+    "scopes": [
+      "Partition"
+    ],
+    "severity": "Warning",
+    "ruleName": "Minimize Power Query transformations",
+    "predicate": "lambda obj, tom: obj.SourceType == TOM.PartitionSourceType.M\n                and any(\n                    item in obj.Source.Expression\n                    for item in [\n                        'Table.Combine(\"',\n                        'Table.Join(\"',\n                        'Table.NestedJoin(\"',\n                        'Table.AddColumn(\"',\n                        'Table.Group(\"',\n                        'Table.Sort(\"',\n                        'Table.Pivot(\"',\n                        'Table.Unpivot(\"',\n                        'Table.UnpivotOtherColumns(\"',\n                        'Table.Distinct(\"',\n                        '[Query=(\"\"SELECT',\n                        \"Value.NativeQuery\",\n                        \"OleDb.Query\",\n                        \"Odbc.Query\",\n                    ]\n                )",
+    "description": "Minimize Power Query transformations in order to improve model processing performance. It is a best practice to offload these transformations to the data warehouse if possible. Also, please check whether query folding is occurring within your model. Please reference the article below for more information on query folding.",
+    "url": "https://docs.microsoft.com/power-query/power-query-folding",
+    "sourceLine": 280,
+    "requiredData": [
+      "TOM.Source",
+      "TOM.Source.Expression",
+      "TOM.SourceType"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:958a2232d5cbd04007dba4cb0d780a2207dc59570b4c47586fbd5c81e656b356",
+    "predicateId": "labs-012",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Consider a star-schema instead of a snowflake architecture",
+    "category": "Performance",
+    "scopes": [
+      "Table"
+    ],
+    "severity": "Warning",
+    "ruleName": "Consider a star-schema instead of a snowflake architecture",
+    "predicate": "lambda obj, tom: obj.CalculationGroup is None\n                and (\n                    any(\n                        r.FromTable.Name == obj.Name\n                        for r in tom.used_in_relationships(object=obj)\n                    )\n                    and any(\n                        r.ToTable.Name == obj.Name\n                        for r in tom.used_in_relationships(object=obj)\n                    )\n                )",
+    "description": "Generally speaking, a star-schema is the optimal architecture for tabular models. That being the case, there are valid cases to use a snowflake approach. Please check your model and consider moving to a star-schema architecture.",
+    "url": "https://docs.microsoft.com/power-bi/guidance/star-schema",
+    "sourceLine": 308,
+    "requiredData": [
+      "TOM.CalculationGroup",
+      "TOM.Name",
+      "TOM.relationships.cardinalities",
+      "TOM.relationships.endpoints"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:3c9c89f4256699fc75b5da175e0200413038826b216fad9804b47826a018c196",
+    "predicateId": "labs-013",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Avoid using views when using Direct Lake mode",
+    "category": "Performance",
+    "scopes": [
+      "Model"
+    ],
+    "severity": "Warning",
+    "ruleName": "Avoid using views when using Direct Lake mode",
+    "predicate": "lambda obj, tom: tom.is_direct_lake_using_view()",
+    "description": "In Direct Lake mode, views will always fall back to DirectQuery. Thus, in order to obtain the best performance use lakehouse tables instead of views.",
+    "url": "https://learn.microsoft.com/fabric/get-started/direct-lake-overview#fallback",
+    "sourceLine": 327,
+    "requiredData": [
+      "directLake.fallbackReasons"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:67c0b19f1ea47e34cc5ae43b83bed2ccc9684af2ed3b9902ddc624ccfcc12bce",
+    "predicateId": "labs-014",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Ensure Direct Lake tables do not source from a SQL view",
+    "category": "Performance",
+    "scopes": [
+      "Partition"
+    ],
+    "severity": "Warning",
+    "ruleName": "Ensure Direct Lake tables do not source from a SQL view",
+    "predicate": "lambda obj, tom: obj.Mode == TOM.ModeType.DirectLake\n                and obj.Parent.Name in _direct_lake_view_tables(tom)",
+    "description": "A Direct Lake table whose source is a SQL view (rather than a table) will always fall back to DirectQuery, which is slower and defeats the purpose of Direct Lake. Point the table at a lakehouse/warehouse table, or materialize the view as a delta table.",
+    "url": "https://learn.microsoft.com/fabric/get-started/direct-lake-overview#fallback",
+    "sourceLine": 336,
+    "requiredData": [
+      "TOM.Mode",
+      "TOM.Parent",
+      "TOM.Parent.Name",
+      "directLake.fallbackReasons"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:a2399e7e9e294b68fdf51dba9ad1dda3f706f320aa79a3e7108f3dcdb9130bce",
+    "predicateId": "labs-015",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Ensure Direct Lake source tables are V-Ordered",
+    "category": "Performance",
+    "scopes": [
+      "Partition"
+    ],
+    "severity": "Warning",
+    "ruleName": "Ensure Direct Lake source tables are V-Ordered",
+    "predicate": "lambda obj, tom: obj.Mode == TOM.ModeType.DirectLake\n                and obj.Parent.Name in _non_vordered_direct_lake_tables(tom)",
+    "description": "For the best Direct Lake performance, the delta tables a Direct Lake model reads from should be written with V-Order. This rule flags Direct Lake partitions whose lakehouse source table is not V-Ordered; re-write or OPTIMIZE the source table with V-Order enabled.",
+    "url": "https://learn.microsoft.com/fabric/data-engineering/delta-optimization-and-v-order",
+    "sourceLine": 346,
+    "requiredData": [
+      "TOM.Mode",
+      "TOM.Parent",
+      "TOM.Parent.Name",
+      "directLake.vOrder"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:b2228adeff7c22592f4a0d89c5ca03d7cedd1926b440157a7eaaf15af16a2594",
+    "predicateId": "labs-016",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Avoid adding 0 to a measure",
+    "category": "Performance",
+    "scopes": [
+      "Measure"
+    ],
+    "severity": "Warning",
+    "ruleName": "Avoid adding 0 to a measure",
+    "predicate": "lambda obj, tom: obj.Expression.replace(\" \", \"\").startswith(\"0+\")\n                or obj.Expression.replace(\" \", \"\").endswith(\"+0\")\n                or re.search(\n                    r\"DIVIDE\\s*\\(\\s*[^,]+,\\s*[^,]+,\\s*0\\s*\\)\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )\n                or re.search(\n                    r\"IFERROR\\s*\\(\\s*[^,]+,\\s*0\\s*\\)\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )",
+    "description": "Adding 0 to a measure in order for it not to show a blank value may negatively impact performance.",
+    "url": null,
+    "sourceLine": 356,
+    "requiredData": [
+      "TOM.Expression",
+      "TOM.Expression.replace",
+      "TOM.Expression.replace(' ', '').endswith",
+      "TOM.Expression.replace(' ', '').startswith"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:086c206702bd6d1b2017e33599f15f3aed4808750e2b29c447ac1428e8837fe1",
+    "predicateId": "labs-017",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Reduce usage of calculated tables",
+    "category": "Performance",
+    "scopes": [
+      "Table"
+    ],
+    "severity": "Warning",
+    "ruleName": "Reduce usage of calculated tables",
+    "predicate": "lambda obj, tom: tom.is_field_parameter(table_name=obj.Name) is False\n                and tom.is_calculated_table(table_name=obj.Name)",
+    "description": "Migrate calculated table logic to your data warehouse. Reliance on calculated tables will lead to technical debt and potential misalignments if you have multiple models on your platform.",
+    "url": null,
+    "sourceLine": 375,
+    "requiredData": [
+      "TOM.Name",
+      "TOM.columns.ExtendedProperties",
+      "TOM.columns.SourceColumn",
+      "TOM.partitions.Source.Expression",
+      "TOM.partitions.SourceType"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:e8165a1c70e27926414df04a11a77a8583b25c78286e35ac5b81686fd6d09d28",
+    "predicateId": "labs-018",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Reduce usage of calculated columns that use the RELATED function",
+    "category": "Performance",
+    "scopes": [
+      "Column"
+    ],
+    "severity": "Warning",
+    "ruleName": "Reduce usage of calculated columns that use the RELATED function",
+    "predicate": "lambda obj, tom: obj.Type == TOM.ColumnType.Calculated\n                and re.search(r\"related\\s*\\(\", obj.Expression, flags=re.IGNORECASE)",
+    "description": "Calculated columns do not compress as well as data columns and may cause longer processing times. As such, calculated columns should be avoided if possible. One scenario where they may be easier to avoid is if they use the RELATED function.",
+    "url": "https://www.sqlbi.com/articles/storage-differences-between-calculated-columns-and-calculated-tables",
+    "sourceLine": 384,
+    "requiredData": [
+      "TOM.Expression",
+      "TOM.Type"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:635ea35308d277c629853185b9a7a118aebc4e33b1393a718620960241a3fd5f",
+    "predicateId": "labs-019",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Avoid excessive bi-directional or many-to-many relationships",
+    "category": "Performance",
+    "scopes": [
+      "Model"
+    ],
+    "severity": "Warning",
+    "ruleName": "Avoid excessive bi-directional or many-to-many relationships",
+    "predicate": "lambda obj, tom: (\n                    (\n                        sum(\n                            1\n                            for r in obj.Relationships\n                            if r.CrossFilteringBehavior\n                            == TOM.CrossFilteringBehavior.BothDirections\n                        )\n                        + sum(\n                            1\n                            for r in obj.Relationships\n                            if (\n                                r.FromCardinality == TOM.RelationshipEndCardinality.Many\n                            )\n                            and (r.ToCardinality == TOM.RelationshipEndCardinality.Many)\n                        )\n                    )\n                    / max(int(obj.Relationships.Count), 1)\n                )\n                > 0.3",
+    "description": "Limit use of b-di and many-to-many relationships. This rule flags the model if more than 30% of relationships are bi-di or many-to-many.",
+    "url": "https://www.sqlbi.com/articles/bidirectional-relationships-and-ambiguity-in-dax",
+    "sourceLine": 394,
+    "requiredData": [
+      "TOM.Relationships",
+      "TOM.Relationships.Count"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:bebb519d74219b35a7817ec19bdbd2ea1c2f483c127a839eb04570442992b0f5",
+    "predicateId": "labs-020",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Remove auto-date table",
+    "category": "Performance",
+    "scopes": [
+      "Table"
+    ],
+    "severity": "Warning",
+    "ruleName": "Remove auto-date table",
+    "predicate": "lambda obj, tom: tom.is_calculated_table(table_name=obj.Name)\n                and (\n                    obj.Name.startswith(\"DateTableTemplate_\")\n                    or obj.Name.startswith(\"LocalDateTable_\")\n                )",
+    "description": "Avoid using auto-date tables. Make sure to turn off auto-date table in the settings in Power BI Desktop. This will save memory resources.",
+    "url": "https://www.youtube.com/watch?v=xu3uDEHtCrg",
+    "sourceLine": 426,
+    "requiredData": [
+      "TOM.Name",
+      "TOM.Name.startswith",
+      "TOM.partitions.SourceType"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:0e6bbaa8f89ac9b0c5323cbf8ee4c01da229df4182b00fdeddfb690fda83570c",
+    "predicateId": "labs-021",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Date/calendar tables should be marked as a date table",
+    "category": "Performance",
+    "scopes": [
+      "Table"
+    ],
+    "severity": "Warning",
+    "ruleName": "Date/calendar tables should be marked as a date table",
+    "predicate": "lambda obj, tom: (\n                    re.search(r\"date\", obj.Name, flags=re.IGNORECASE)\n                    or re.search(r\"calendar\", obj.Name, flags=re.IGNORECASE)\n                )\n                and str(obj.DataCategory) != \"Time\"",
+    "description": "This rule looks for tables that contain the words 'date' or 'calendar' as they should likely be marked as a date table.",
+    "url": "https://docs.microsoft.com/power-bi/transform-model/desktop-date-tables",
+    "sourceLine": 439,
+    "requiredData": [
+      "TOM.DataCategory",
+      "TOM.Name"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:b6685cc8a666ecf1c2eadf8c8edaac483d49867e9230144e4d0a73399923ac42",
+    "predicateId": "labs-022",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Large tables should be partitioned",
+    "category": "Performance",
+    "scopes": [
+      "Table"
+    ],
+    "severity": "Warning",
+    "ruleName": "Large tables should be partitioned",
+    "predicate": "lambda obj, tom: tom.is_direct_lake() is False\n                and int(obj.Partitions.Count) == 1\n                and tom.row_count(object=obj) > 25000000",
+    "description": "Large tables should be partitioned in order to optimize processing. This is not relevant for semantic models in Direct Lake mode as they can only have one partition per table.",
+    "url": null,
+    "sourceLine": 452,
+    "requiredData": [
+      "TOM.Partitions",
+      "TOM.Partitions.Count",
+      "TOM.partitions.Mode",
+      "extendedStatistics.tables.rowCount"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:bd1b32cc411e1813a6021d8bcbe25d324b4065b215585193066a7f9bb3a932dd",
+    "predicateId": "labs-023",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Limit row level security (RLS) logic",
+    "category": "Performance",
+    "scopes": [
+      "Row Level Security"
+    ],
+    "severity": "Warning",
+    "ruleName": "Limit row level security (RLS) logic",
+    "predicate": "lambda obj, tom: any(\n                    item in obj.FilterExpression.lower()\n                    for item in [\n                        \"right(\",\n                        \"left(\",\n                        \"filter(\",\n                        \"upper(\",\n                        \"lower(\",\n                        \"find(\",\n                    ]\n                )",
+    "description": "Try to simplify the DAX used for row level security. Usage of the functions within this rule can likely be offloaded to the upstream systems (data warehouse).",
+    "url": null,
+    "sourceLine": 462,
+    "requiredData": [
+      "TOM.FilterExpression",
+      "TOM.FilterExpression.lower"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:ae76bc3bb5e63be9f37a1a6abec9975a27dfbe52dd03934f26491cdd5e6b1f0a",
+    "predicateId": "labs-024",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Model should have a date table",
+    "category": "Performance",
+    "scopes": [
+      "Model"
+    ],
+    "severity": "Warning",
+    "ruleName": "Model should have a date table",
+    "predicate": "lambda obj, tom: not any(\n                    (c.IsKey and c.DataType == TOM.DataType.DateTime)\n                    and str(t.DataCategory) == \"Time\"\n                    for t in obj.Tables\n                    for c in t.Columns\n                )",
+    "description": "Generally speaking, models should generally have a date table. Models that do not have a date table generally are not taking advantage of features such as time intelligence or may not have a properly structured architecture.",
+    "url": null,
+    "sourceLine": 480,
+    "requiredData": [
+      "TOM.Tables"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:deb62e515468abf512b46f151a149da29f8e4fb5221cbf5b539290451e49ebf6",
+    "predicateId": "labs-025",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Calculation items must have an expression",
+    "category": "Error Prevention",
+    "scopes": [
+      "Calculation Item"
+    ],
+    "severity": "Error",
+    "ruleName": "Calculation items must have an expression",
+    "predicate": "lambda obj, tom: len(obj.Expression) == 0",
+    "description": "Calculation items must have an expression. Without an expression, they will not show any values.",
+    "url": null,
+    "sourceLine": 500,
+    "requiredData": [
+      "TOM.Expression"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:0b4fd9f4490c5272c815a9660381f75dd6a7c4077f904a16e86a0b631b2c85b8",
+    "predicateId": "labs-026",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Relationship columns should be of the same data type",
+    "category": "Error Prevention",
+    "scopes": [
+      "Relationship"
+    ],
+    "severity": "Warning",
+    "ruleName": "Relationship columns should be of the same data type",
+    "predicate": "lambda obj, tom: obj.FromColumn.DataType != obj.ToColumn.DataType",
+    "description": "Columns used in a relationship should be of the same data type. Ideally, they will be of integer data type (see the related rule '[Formatting] Relationship columns should be of integer data type'). Having columns within a relationship which are of different data types may lead to various issues.",
+    "url": null,
+    "sourceLine": 516,
+    "requiredData": [
+      "TOM.FromColumn",
+      "TOM.FromColumn.DataType",
+      "TOM.ToColumn",
+      "TOM.ToColumn.DataType"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:584cced8bfd394e733b098a1e923f64b166a6e2fd8c82d0ab3fb1a5b0722b0fb",
+    "predicateId": "labs-027",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Data columns must have a source column",
+    "category": "Error Prevention",
+    "scopes": [
+      "Column"
+    ],
+    "severity": "Error",
+    "ruleName": "Data columns must have a source column",
+    "predicate": "lambda obj, tom: obj.Type == TOM.ColumnType.Data\n                and len(obj.SourceColumn) == 0",
+    "description": "Data columns must have a source column. A data column without a source column will cause an error when processing the model.",
+    "url": null,
+    "sourceLine": 524,
+    "requiredData": [
+      "TOM.SourceColumn",
+      "TOM.Type"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:e2cf34ad32afc9c9e717f90d7550fa73a28c23bf7896752ddb6ca675df2efa36",
+    "predicateId": "labs-028",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Set IsAvailableInMdx to true on necessary columns",
+    "category": "Error Prevention",
+    "scopes": [
+      "Column"
+    ],
+    "severity": "Warning",
+    "ruleName": "Set IsAvailableInMdx to true on necessary columns",
+    "predicate": "lambda obj, tom: tom.is_direct_lake() is False\n                and obj.IsAvailableInMDX is False\n                and (\n                    any(tom.used_in_sort_by(column=obj))\n                    or any(tom.used_in_hierarchies(column=obj))\n                    or obj.SortByColumn is not None\n                )",
+    "description": "In order to avoid errors, ensure that attribute hierarchies are enabled if a column is used for sorting another column, used in a hierarchy, used in variations, or is sorted by another column. The IsAvailableInMdx property is not relevant for Direct Lake models.",
+    "url": null,
+    "sourceLine": 533,
+    "requiredData": [
+      "TOM.IsAvailableInMDX",
+      "TOM.SortByColumn",
+      "TOM.hierarchies.levels.Column",
+      "TOM.partitions.Mode",
+      "TOM.table.columns.SortByColumn"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:c0de2b4b4f67db8e9143b604d7c6f1dc00418d6347305adf44ea05b09ce015e8",
+    "predicateId": "labs-029",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Avoid the USERELATIONSHIP function and RLS against the same table",
+    "category": "Error Prevention",
+    "scopes": [
+      "Table"
+    ],
+    "severity": "Error",
+    "ruleName": "Avoid the USERELATIONSHIP function and RLS against the same table",
+    "predicate": "lambda obj, tom: any(\n                    re.search(\n                        r\"USERELATIONSHIP\\s*\\(\\s*.+?(?=])\\]\\s*,\\s*'*\"\n                        + re.escape(obj.Name)\n                        + r\"'*\\[\",\n                        m.Expression,\n                        flags=re.IGNORECASE,\n                    )\n                    for m in tom.all_measures()\n                )\n                and any(r.Table.Name == obj.Name for r in tom.all_rls())",
+    "description": "The USERELATIONSHIP function may not be used against a table which also leverages row-level security (RLS). This will generate an error when using the particular measure in a visual. This rule will highlight the table which is used in a measure's USERELATIONSHIP function as well as RLS.",
+    "url": "https://blog.crossjoin.co.uk/2013/05/10/userelationship-and-tabular-row-security",
+    "sourceLine": 547,
+    "requiredData": [
+      "TOM.Name",
+      "TOM.roles.TablePermissions",
+      "TOM.tables.measures.Expression",
+      "TOM.tables.measures.Name"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:0eb5b58ae8e0a24f7ab4d3916bd058f473354b4f313590ada1243b8cca3e1c45",
+    "predicateId": "labs-030",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Avoid using the IFERROR function",
+    "category": "DAX Expressions",
+    "scopes": [
+      "Measure"
+    ],
+    "severity": "Warning",
+    "ruleName": "Avoid using the IFERROR function",
+    "predicate": "lambda obj, tom: re.search(\n                    r\"iferror\\s*\\(\", obj.Expression, flags=re.IGNORECASE\n                )",
+    "description": "Avoid using the IFERROR function as it may cause performance degradation. If you are concerned about a divide-by-zero error, use the DIVIDE function as it naturally resolves such errors as blank (or you can customize what should be shown in case of such an error).",
+    "url": "https://www.elegantbi.com/post/top10bestpractices",
+    "sourceLine": 566,
+    "requiredData": [
+      "TOM.Expression"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:4d7a3dc32a2129ff6a5e19097453c768d13a3da63829cad2d0645ff82f355afa",
+    "predicateId": "labs-031",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Use the TREATAS function instead of INTERSECT for virtual relationships",
+    "category": "DAX Expressions",
+    "scopes": [
+      "Measure"
+    ],
+    "severity": "Warning",
+    "ruleName": "Use the TREATAS function instead of INTERSECT for virtual relationships",
+    "predicate": "lambda obj, tom: re.search(\n                    r\"intersect\\s*\\(\", obj.Expression, flags=re.IGNORECASE\n                )",
+    "description": "The TREATAS function is more efficient and provides better performance than the INTERSECT function when used in virutal relationships.",
+    "url": "https://www.sqlbi.com/articles/propagate-filters-using-treatas-in-dax",
+    "sourceLine": 577,
+    "requiredData": [
+      "TOM.Expression"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:de83df730e140b6c4f9470136c970a6285fe4b0e36d05096b96a66377b655979",
+    "predicateId": "labs-032",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#The EVALUATEANDLOG function should not be used in production models",
+    "category": "DAX Expressions",
+    "scopes": [
+      "Measure"
+    ],
+    "severity": "Warning",
+    "ruleName": "The EVALUATEANDLOG function should not be used in production models",
+    "predicate": "lambda obj, tom: re.search(\n                    r\"evaluateandlog\\s*\\(\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )",
+    "description": "The EVALUATEANDLOG function is meant to be used only in development/test environments and should not be used in production models.",
+    "url": "https://pbidax.wordpress.com/2022/08/16/introduce-the-dax-evaluateandlog-function",
+    "sourceLine": 588,
+    "requiredData": [
+      "TOM.Expression"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:0567b99cc61b7d73b1ef1ea69440d2beb370c664ce3bfd0ec24be1d475bcbd27",
+    "predicateId": "labs-033",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Measures should not be direct references of other measures",
+    "category": "DAX Expressions",
+    "scopes": [
+      "Measure"
+    ],
+    "severity": "Warning",
+    "ruleName": "Measures should not be direct references of other measures",
+    "predicate": "lambda obj, tom: any(\n                    obj.Expression == f\"[{m.Name}]\" for m in tom.all_measures()\n                )",
+    "description": "This rule identifies measures which are simply a reference to another measure. As an example, consider a model with two measures: [MeasureA] and [MeasureB]. This rule would be triggered for MeasureB if MeasureB's DAX was MeasureB:=[MeasureA]. Such duplicative measures should be removed.",
+    "url": null,
+    "sourceLine": 601,
+    "requiredData": [
+      "TOM.Expression",
+      "TOM.tables.measures.Expression",
+      "TOM.tables.measures.Name"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:3a626a9ffcad2854668dcd7ca6e07f08e70ad7b8ad89369ca9af913782c35711",
+    "predicateId": "labs-034",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#No two measures should have the same definition",
+    "category": "DAX Expressions",
+    "scopes": [
+      "Measure"
+    ],
+    "severity": "Warning",
+    "ruleName": "No two measures should have the same definition",
+    "predicate": "lambda obj, tom: any(\n                    re.sub(r\"\\s+\", \"\", obj.Expression)\n                    == re.sub(r\"\\s+\", \"\", m.Expression)\n                    and obj.Name != m.Name\n                    for m in tom.all_measures()\n                )",
+    "description": "Two measures with different names and defined by the same DAX expression should be avoided to reduce redundancy.",
+    "url": null,
+    "sourceLine": 611,
+    "requiredData": [
+      "TOM.Expression",
+      "TOM.Name",
+      "TOM.tables.measures.Expression",
+      "TOM.tables.measures.Name"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:53662284e0c64d15bca17c57d0a46d287d9a690404cb590c75cd872bf3e17992",
+    "predicateId": "labs-035",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Avoid addition or subtraction of constant values to results of divisions",
+    "category": "DAX Expressions",
+    "scopes": [
+      "Measure"
+    ],
+    "severity": "Warning",
+    "ruleName": "Avoid addition or subtraction of constant values to results of divisions",
+    "predicate": "lambda obj, tom: re.search(\n                    r\"DIVIDE\\s*\\((\\s*.*?)\\)\\s*[+-]\\s*1|\\/\\s*.*(?=[-+]\\s*1)\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )",
+    "description": "Adding a constant value may lead to performance degradation.",
+    "url": null,
+    "sourceLine": 624,
+    "requiredData": [
+      "TOM.Expression"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:e2ed5db645769bc5e2e4a73b9b5fe319c5b457be167f65b5f3356f7002b157e1",
+    "predicateId": "labs-036",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Avoid using '1-(x/y)' syntax",
+    "category": "DAX Expressions",
+    "scopes": [
+      "Measure"
+    ],
+    "severity": "Warning",
+    "ruleName": "Avoid using '1-(x/y)' syntax",
+    "predicate": "lambda obj, tom: re.search(\n                    r\"[0-9]+\\s*[-+]\\s*[\\(]*\\s*SUM\\s*\\(\\s*\\'*[A-Za-z0-9 _]+\\'*\\s*\\[[A-Za-z0-9 _]+\\]\\s*\\)\\s*/\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )\n                or re.search(\n                    r\"[0-9]+\\s*[-+]\\s*DIVIDE\\s*\\(\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )",
+    "description": "Instead of using the '1-(x/y)' or '1+(x/y)' syntax to achieve a percentage calculation, use the basic DAX functions (as shown below). Using the improved syntax will generally improve the performance. The '1+/-...' syntax always returns a value whereas the solution without the '1+/-...' does not (as the value may be 'blank'). Therefore the '1+/-...' syntax may return more rows/columns which may result in a slower query speed.    Let's clarify with an example:    Avoid this: 1 - SUM ( 'Sales'[CostAmount] ) / SUM( 'Sales'[SalesAmount] )  Better: DIVIDE ( SUM ( 'Sales'[SalesAmount] ) - SUM ( 'Sales'[CostAmount] ), SUM ( 'Sales'[SalesAmount] ) )  Best: VAR x = SUM ( 'Sales'[SalesAmount] ) RETURN DIVIDE ( x - SUM ( 'Sales'[CostAmount] ), x )",
+    "url": null,
+    "sourceLine": 636,
+    "requiredData": [
+      "TOM.Expression"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:98fcac4996ef5ae0158a816ece70c6c937668ff229a1991ba558628c3bc84324",
+    "predicateId": "labs-037",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Filter measure values by columns, not tables",
+    "category": "DAX Expressions",
+    "scopes": [
+      "Measure"
+    ],
+    "severity": "Warning",
+    "ruleName": "Filter measure values by columns, not tables",
+    "predicate": "lambda obj, tom: re.search(\n                    r\"CALCULATE\\s*\\(\\s*[^,]+,\\s*FILTER\\s*\\(\\s*\\'*[A-Za-z0-9 _]+\\'*\\s*,\\s*\\[[^\\]]+\\]\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )\n                or re.search(\n                    r\"CALCULATETABLE\\s*\\(\\s*[^,]*,\\s*FILTER\\s*\\(\\s*\\'*[A-Za-z0-9 _]+\\'*\\s*,\\s*\\[\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )",
+    "description": "Instead of using this pattern FILTER('Table',[Measure]>Value) for the filter parameters of a CALCULATE or CALCULATETABLE function, use one of the options below (if possible). Filtering on a specific column will produce a smaller table for the engine to process, thereby enabling faster performance. Using the VALUES function or the ALL function depends on the desired measure result.\nOption 1: FILTER(VALUES('Table'[Column]),[Measure] > Value)\nOption 2: FILTER(ALL('Table'[Column]),[Measure] > Value)",
+    "url": "https://docs.microsoft.com/power-bi/guidance/dax-avoid-avoid-filter-as-filter-argument",
+    "sourceLine": 653,
+    "requiredData": [
+      "TOM.Expression"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:6a9d6b8fe0f70382f10ae64d7bb6261517fb6b0850642f1357e86746fab64182",
+    "predicateId": "labs-038",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Filter column values with proper syntax",
+    "category": "DAX Expressions",
+    "scopes": [
+      "Measure"
+    ],
+    "severity": "Warning",
+    "ruleName": "Filter column values with proper syntax",
+    "predicate": "lambda obj, tom: re.search(\n                    r\"CALCULATE\\s*\\(\\s*[^,]+,\\s*FILTER\\s*\\(\\s*'*[A-Za-z0-9 _]+'*\\s*,\\s*'*[A-Za-z0-9 _]+'*\\[[A-Za-z0-9 _]+\\]\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )\n                or re.search(\n                    r\"CALCULATETABLE\\s*\\([^,]*,\\s*FILTER\\s*\\(\\s*'*[A-Za-z0-9 _]+'*\\s*,\\s*'*[A-Za-z0-9 _]+'*\\[[A-Za-z0-9 _]+\\]\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )",
+    "description": "Instead of using this pattern FILTER('Table','Table'[Column]=\"Value\") for the filter parameters of a CALCULATE or CALCULATETABLE function, use one of the options below. As far as whether to use the KEEPFILTERS function, see the second reference link below.\nOption 1: KEEPFILTERS('Table'[Column]=\"Value\")\nOption 2: 'Table'[Column]=\"Value\"",
+    "url": "https://docs.microsoft.com/power-bi/guidance/dax-avoid-avoid-filter-as-filter-argument  Reference: https://www.sqlbi.com/articles/using-keepfilters-in-dax",
+    "sourceLine": 671,
+    "requiredData": [
+      "TOM.Expression"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:a63b4f5233c330044fd2788e4ce26493b47dca39c53293a6302b8fcb11ce060c",
+    "predicateId": "labs-039",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Use the DIVIDE function for division",
+    "category": "DAX Expressions",
+    "scopes": [
+      "Measure"
+    ],
+    "severity": "Warning",
+    "ruleName": "Use the DIVIDE function for division",
+    "predicate": "lambda obj, tom: re.search(\n                    r\"\\]\\s*\\/(?!\\/)(?!\\*)|\\)\\s*\\/(?!\\/)(?!\\*)\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )",
+    "description": "Use the DIVIDE  function instead of using \"/\". The DIVIDE function resolves divide-by-zero cases. As such, it is recommended to use to avoid errors.",
+    "url": "https://docs.microsoft.com/power-bi/guidance/dax-divide-function-operator",
+    "sourceLine": 689,
+    "requiredData": [
+      "TOM.Expression"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:8ba8a163ec53c4e67ec7a01ea763f99a8a8fa8c6a41e4da3fa1717d26a80f8b8",
+    "predicateId": "labs-040",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Column references should be fully qualified",
+    "category": "DAX Expressions",
+    "scopes": [
+      "Measure",
+      "Calculated Table",
+      "Calculated Column",
+      "Calculation Item"
+    ],
+    "severity": "Error",
+    "ruleName": "Column references should be fully qualified",
+    "predicate": "lambda obj, tom: any(\n                    tom.unqualified_columns(object=obj, dependencies=dependencies)\n                )",
+    "description": "Using fully qualified column references makes it easier to distinguish between column and measure references, and also helps avoid certain errors. When referencing a column in DAX, first specify the table name, then specify the column name in square brackets.",
+    "url": "https://www.elegantbi.com/post/top10bestpractices",
+    "sourceLine": 702,
+    "requiredData": [
+      "dependencies.rows",
+      "options.dependencies=true"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:7036ae92e827235d9a0a97816bc730166d3325c6df6727edaa4e690174f32300",
+    "predicateId": "labs-041",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Measure references should be unqualified",
+    "category": "DAX Expressions",
+    "scopes": [
+      "Measure",
+      "Calculated Table",
+      "Calculated Column",
+      "Calculation Item"
+    ],
+    "severity": "Error",
+    "ruleName": "Measure references should be unqualified",
+    "predicate": "lambda obj, tom: any(\n                    tom.fully_qualified_measures(object=obj, dependencies=dependencies)\n                )",
+    "description": "Using unqualified measure references makes it easier to distinguish between column and measure references, and also helps avoid certain errors. When referencing a measure using DAX, do not specify the table name. Use only the measure name in square brackets.",
+    "url": "https://www.elegantbi.com/post/top10bestpractices",
+    "sourceLine": 718,
+    "requiredData": [
+      "dependencies.rows",
+      "options.dependencies=true"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:e3c9a03dcf7cd9dbb8dee09ecc1a6e8a97fe8462cb0d6775205db017a278c14f",
+    "predicateId": "labs-042",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Avoid using SUM or AVERAGE on a string column",
+    "category": "DAX Expressions",
+    "scopes": [
+      "Measure",
+      "Calculated Table",
+      "Calculated Column",
+      "Calculation Item"
+    ],
+    "severity": "Error",
+    "ruleName": "Avoid using SUM or AVERAGE on a string column",
+    "predicate": "lambda obj, tom: _uses_sum_or_average_on_string_column(obj, tom)",
+    "description": "The SUM and AVERAGE functions cannot aggregate a text (string) column and will raise an error. Ensure that these functions are applied to numeric columns, or use a different aggregation (for example COUNT or DISTINCTCOUNT) for text columns.",
+    "url": "https://dax.guide/sum",
+    "sourceLine": 734,
+    "requiredData": [
+      "TOM.columns.DataType",
+      "TOM.columns.Name",
+      "TOM.expression"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:0a3547914935abd5bf827b3c642918140a62aa1c3dee8ad4057c5dad472e39ba",
+    "predicateId": "labs-043",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Inactive relationships that are never activated",
+    "category": "DAX Expressions",
+    "scopes": [
+      "Relationship"
+    ],
+    "severity": "Warning",
+    "ruleName": "Inactive relationships that are never activated",
+    "predicate": "lambda obj, tom: obj.IsActive is False\n                and not any(\n                    re.search(\n                        r\"USERELATIONSHIP\\s*\\(\\s*\\'*\"\n                        + re.escape(obj.FromTable.Name)\n                        + r\"'*\\[\"\n                        + re.escape(obj.FromColumn.Name)\n                        + r\"\\]\\s*,\\s*'*\"\n                        + re.escape(obj.ToTable.Name)\n                        + r\"'*\\[\"\n                        + re.escape(obj.ToColumn.Name)\n                        + r\"\\]\",\n                        m.Expression,\n                        flags=re.IGNORECASE,\n                    )\n                    for m in tom.all_measures()\n                )",
+    "description": "Inactive relationships are activated using the USERELATIONSHIP function. If an inactive relationship is not referenced in any measure via this function, the relationship will not be used. It should be determined whether the relationship is not necessary or to activate the relationship via this method.",
+    "url": "https://dax.guide/userelationship",
+    "sourceLine": 748,
+    "requiredData": [
+      "TOM.FromColumn",
+      "TOM.FromColumn.Name",
+      "TOM.FromTable",
+      "TOM.FromTable.Name",
+      "TOM.IsActive",
+      "TOM.ToColumn",
+      "TOM.ToColumn.Name",
+      "TOM.ToTable",
+      "TOM.ToTable.Name",
+      "TOM.tables.measures.Expression",
+      "TOM.tables.measures.Name"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:f90aa0d481a0e5bc906ec4156c2261a9b50d7a7c2a565622ae79d57e8cdeafb1",
+    "predicateId": "labs-044",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Remove unnecessary columns",
+    "category": "Maintenance",
+    "scopes": [
+      "Column"
+    ],
+    "severity": "Warning",
+    "ruleName": "Remove unnecessary columns",
+    "predicate": "lambda obj, tom: (obj.IsHidden or obj.Parent.IsHidden)\n                and not any(tom.used_in_relationships(object=obj))\n                and not any(tom.used_in_hierarchies(column=obj))\n                and not any(tom.used_in_sort_by(column=obj))\n                and any(tom.depends_on(object=obj, dependencies=dependencies))",
+    "description": "Hidden columns that are not referenced by any DAX expressions, relationships, hierarchy levels or Sort By-properties should be removed.",
+    "url": null,
+    "sourceLine": 773,
+    "requiredData": [
+      "TOM.IsHidden",
+      "TOM.Parent",
+      "TOM.Parent.IsHidden",
+      "TOM.hierarchies.levels.Column",
+      "TOM.relationships.cardinalities",
+      "TOM.relationships.endpoints",
+      "TOM.table.columns.SortByColumn",
+      "dependencies.rows",
+      "options.dependencies=true"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:1ddcc787519efab4ad24d7b7ca609987775442319ebf83ed683177c23e0891b1",
+    "predicateId": "labs-045",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Remove unnecessary measures",
+    "category": "Maintenance",
+    "scopes": [
+      "Measure"
+    ],
+    "severity": "Warning",
+    "ruleName": "Remove unnecessary measures",
+    "predicate": "lambda obj, tom: obj.IsHidden\n                and not any(tom.referenced_by(object=obj, dependencies=dependencies))",
+    "description": "Hidden measures that are not referenced by any DAX expressions should be removed for maintainability.",
+    "url": null,
+    "sourceLine": 785,
+    "requiredData": [
+      "TOM.IsHidden",
+      "dependencies.rows",
+      "options.dependencies=true"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:f5712c7e50e6717308946111355999a559150f3cc92986079efdfa0807d57b5f",
+    "predicateId": "labs-046",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Ensure tables have relationships",
+    "category": "Maintenance",
+    "scopes": [
+      "Table"
+    ],
+    "severity": "Warning",
+    "ruleName": "Ensure tables have relationships",
+    "predicate": "lambda obj, tom: any(tom.used_in_relationships(object=obj)) is False\n                and obj.CalculationGroup is None\n                and tom.is_field_parameter(table_name=obj.Name) is False",
+    "description": "This rule highlights tables which are not connected to any other table in the model with a relationship.",
+    "url": null,
+    "sourceLine": 794,
+    "requiredData": [
+      "TOM.CalculationGroup",
+      "TOM.Name",
+      "TOM.columns.ExtendedProperties",
+      "TOM.columns.SourceColumn",
+      "TOM.partitions.Source.Expression",
+      "TOM.partitions.SourceType",
+      "TOM.relationships.cardinalities",
+      "TOM.relationships.endpoints"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:5698a41a976f97be3a666243537f302f838caaf8ec7c8cd848132cce07488489",
+    "predicateId": "labs-047",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Calculation groups with no calculation items",
+    "category": "Maintenance",
+    "scopes": [
+      "Table"
+    ],
+    "severity": "Warning",
+    "ruleName": "Calculation groups with no calculation items",
+    "predicate": "lambda obj, tom: obj.CalculationGroup is not None\n                and not any(obj.CalculationGroup.CalculationItems)",
+    "description": "Calculation groups have no function unless they have calculation items.",
+    "url": null,
+    "sourceLine": 804,
+    "requiredData": [
+      "TOM.CalculationGroup",
+      "TOM.CalculationGroup.CalculationItems"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:17940e9bbe493fe03135f2349b150dfc346ef2ee50e72d212fff97e16d8bdfc8",
+    "predicateId": "labs-048",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Visible objects with no description",
+    "category": "Maintenance",
+    "scopes": [
+      "Column",
+      "Measure",
+      "Table"
+    ],
+    "severity": "Info",
+    "ruleName": "Visible objects with no description",
+    "predicate": "lambda obj, tom: obj.IsHidden is False and len(obj.Description) == 0",
+    "description": "Add descriptions to objects. These descriptions are shown on hover within the Field List in Power BI Desktop. Additionally, you can leverage these descriptions to create an automated data dictionary.",
+    "url": null,
+    "sourceLine": 813,
+    "requiredData": [
+      "TOM.Description",
+      "TOM.IsHidden"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:b19fcd3a3a1d152f149502fcff0640a2f694be5b476ded5d9fe20f8d725b3bcf",
+    "predicateId": "labs-049",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Provide format string for 'Date' columns",
+    "category": "Formatting",
+    "scopes": [
+      "Column"
+    ],
+    "severity": "Warning",
+    "ruleName": "Provide format string for 'Date' columns",
+    "predicate": "lambda obj, tom: (re.search(r\"date\", obj.Name, flags=re.IGNORECASE))\n                and (obj.DataType == TOM.DataType.DateTime)\n                and (\n                    obj.FormatString.lower()\n                    not in [\n                        \"mm/dd/yyyy\",\n                        \"mm-dd-yyyy\",\n                        \"dd/mm/yyyy\",\n                        \"dd-mm-yyyy\",\n                        \"yyyy-mm-dd\",\n                        \"yyyy/mm/dd\",\n                    ]\n                )",
+    "description": "Columns of type \"DateTime\" that have \"Date\" in their names should be formatted.",
+    "url": null,
+    "sourceLine": 821,
+    "requiredData": [
+      "TOM.DataType",
+      "TOM.FormatString",
+      "TOM.FormatString.lower",
+      "TOM.Name"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:e6b55dc3376eda2d2a998af6f477f275cdbd51a44b7d8e8da822f3104b205ea6",
+    "predicateId": "labs-050",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Do not summarize numeric columns",
+    "category": "Formatting",
+    "scopes": [
+      "Column"
+    ],
+    "severity": "Warning",
+    "ruleName": "Do not summarize numeric columns",
+    "predicate": "lambda obj, tom: (\n                    (obj.DataType == TOM.DataType.Int64)\n                    or (obj.DataType == TOM.DataType.Decimal)\n                    or (obj.DataType == TOM.DataType.Double)\n                )\n                and (str(obj.SummarizeBy) != \"None\")\n                and not ((obj.IsHidden) or (obj.Parent.IsHidden))",
+    "description": "Numeric columns (integer, decimal, double) should have their SummarizeBy property set to \"None\" to avoid accidental summation in Power BI (create measures instead).",
+    "url": null,
+    "sourceLine": 841,
+    "requiredData": [
+      "TOM.DataType",
+      "TOM.IsHidden",
+      "TOM.Parent",
+      "TOM.Parent.IsHidden",
+      "TOM.SummarizeBy"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:94b3f4aabe0db98cc80db1a44945e707b8abf5e6432861c6ac16f7d1ad2f96ee",
+    "predicateId": "labs-051",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Provide format string for measures",
+    "category": "Formatting",
+    "scopes": [
+      "Measure"
+    ],
+    "severity": "Info",
+    "ruleName": "Provide format string for measures",
+    "predicate": "lambda obj, tom: obj.IsHidden is False\n                and len(obj.FormatString) == 0\n                and not obj.FormatStringDefinition",
+    "description": "Visible measures should have their format string property assigned.",
+    "url": null,
+    "sourceLine": 855,
+    "requiredData": [
+      "TOM.FormatString",
+      "TOM.FormatStringDefinition",
+      "TOM.IsHidden"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:7d432ea1034108a275fd952773cb2fb09150cf9cbaf862c90a2d9e9af2babeff",
+    "predicateId": "labs-052",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Add data category for columns",
+    "category": "Formatting",
+    "scopes": [
+      "Column"
+    ],
+    "severity": "Info",
+    "ruleName": "Add data category for columns",
+    "predicate": "lambda obj, tom: len(obj.DataCategory) == 0\n                and any(\n                    obj.Name.lower().startswith(item.lower())\n                    for item in [\n                        \"country\",\n                        \"city\",\n                        \"continent\",\n                        \"latitude\",\n                        \"longitude\",\n                    ]\n                )",
+    "description": "Add Data Category property for appropriate columns.",
+    "url": "https://docs.microsoft.com/power-bi/transform-model/desktop-data-categorization",
+    "sourceLine": 865,
+    "requiredData": [
+      "TOM.DataCategory",
+      "TOM.Name",
+      "TOM.Name.lower",
+      "TOM.Name.lower().startswith"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:989bc8d733436625296cf9fd878e4bcc6194f571110dbf4b02d145a98fd8a715",
+    "predicateId": "labs-053",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Percentages should be formatted with thousands separators and 1 decimal",
+    "category": "Formatting",
+    "scopes": [
+      "Measure"
+    ],
+    "severity": "Warning",
+    "ruleName": "Percentages should be formatted with thousands separators and 1 decimal",
+    "predicate": "lambda obj, tom: \"%\" in obj.FormatString\n                and obj.FormatString != \"#,0.0%;-#,0.0%;#,0.0%\"",
+    "description": "For a better user experience, percengage measures should be formatted with a '%' sign.",
+    "url": null,
+    "sourceLine": 884,
+    "requiredData": [
+      "TOM.FormatString"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:f56ae3d9608311899bb73e6962b4c42578e2c853ab3830a544e734f52e0d9bce",
+    "predicateId": "labs-054",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Whole numbers should be formatted with thousands separators and no decimals",
+    "category": "Formatting",
+    "scopes": [
+      "Measure"
+    ],
+    "severity": "Warning",
+    "ruleName": "Whole numbers should be formatted with thousands separators and no decimals",
+    "predicate": "lambda obj, tom: \"$\" not in obj.FormatString\n                and \"%\" not in obj.FormatString\n                and obj.FormatString not in [\"#,0\", \"#,0.0\"]",
+    "description": "For a better user experience, whole numbers should be formatted with commas.",
+    "url": null,
+    "sourceLine": 893,
+    "requiredData": [
+      "TOM.FormatString"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:8883b156c1d8b4961092f79cb0b44e89a0e1389861195057aa017dcde18231af",
+    "predicateId": "labs-055",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Hide foreign keys",
+    "category": "Formatting",
+    "scopes": [
+      "Column"
+    ],
+    "severity": "Info",
+    "ruleName": "Hide foreign keys",
+    "predicate": "lambda obj, tom: obj.IsHidden is False\n                and any(\n                    r.FromColumn.Name == obj.Name\n                    and r.FromCardinality == TOM.RelationshipEndCardinality.Many\n                    for r in tom.used_in_relationships(object=obj)\n                )",
+    "description": "Foreign keys should always be hidden as they should not be used by end users.",
+    "url": null,
+    "sourceLine": 903,
+    "requiredData": [
+      "TOM.IsHidden",
+      "TOM.Name",
+      "TOM.relationships.cardinalities",
+      "TOM.relationships.endpoints"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:adaf54a463cd0a991043b43cca60cd777ea45523d243f889bed8b279cdf615f1",
+    "predicateId": "labs-056",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Mark primary keys",
+    "category": "Formatting",
+    "scopes": [
+      "Column"
+    ],
+    "severity": "Info",
+    "ruleName": "Mark primary keys",
+    "predicate": "lambda obj, tom: any(\n                    r.ToTable.Name == obj.Table.Name\n                    and r.ToColumn.Name == obj.Name\n                    and r.ToCardinality == TOM.RelationshipEndCardinality.One\n                    for r in tom.used_in_relationships(object=obj)\n                )\n                and obj.IsKey is False\n                and obj.Table.DataCategory != \"Time\"",
+    "description": "Set the 'Key' property to 'True' for primary key columns within the column properties.",
+    "url": null,
+    "sourceLine": 916,
+    "requiredData": [
+      "TOM.IsKey",
+      "TOM.Name",
+      "TOM.Table",
+      "TOM.Table.DataCategory",
+      "TOM.Table.Name",
+      "TOM.relationships.cardinalities",
+      "TOM.relationships.endpoints"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:e6b3d67650064722e58fcc8599ac27f1b9190a2ff6a1e66c4a589e19f089e629",
+    "predicateId": "labs-057",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Month (as a string) must be sorted",
+    "category": "Formatting",
+    "scopes": [
+      "Column"
+    ],
+    "severity": "Info",
+    "ruleName": "Month (as a string) must be sorted",
+    "predicate": "lambda obj, tom: (re.search(r\"month\", obj.Name, flags=re.IGNORECASE))\n                and not (re.search(r\"months\", obj.Name, flags=re.IGNORECASE))\n                and (obj.DataType == TOM.DataType.String)\n                and len(str(obj.SortByColumn)) == 0",
+    "description": "This rule highlights month columns which are strings and are not sorted. If left unsorted, they will sort alphabetically (i.e. April, August...). Make sure to sort such columns so that they sort properly (January, February, March...).",
+    "url": null,
+    "sourceLine": 931,
+    "requiredData": [
+      "TOM.DataType",
+      "TOM.Name",
+      "TOM.SortByColumn"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:8b8e81b6b9299cffdf97c892ed52124e4287e9eb1e32694965b1c5dc2a12dead",
+    "predicateId": "labs-058",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Relationship columns should be of integer data type",
+    "category": "Formatting",
+    "scopes": [
+      "Relationship"
+    ],
+    "severity": "Warning",
+    "ruleName": "Relationship columns should be of integer data type",
+    "predicate": "lambda obj, tom: obj.FromColumn.DataType != TOM.DataType.Int64\n                or obj.ToColumn.DataType != TOM.DataType.Int64",
+    "description": "It is a best practice for relationship columns to be of integer data type. This applies not only to data warehousing but data modeling as well.",
+    "url": null,
+    "sourceLine": 942,
+    "requiredData": [
+      "TOM.FromColumn",
+      "TOM.FromColumn.DataType",
+      "TOM.ToColumn",
+      "TOM.ToColumn.DataType"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:29bb592f3b373f68f22ee9f857f6474490ded5f7ee74b63e0cbb7bb145a21452",
+    "predicateId": "labs-059",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Provide format string for 'Month' columns",
+    "category": "Formatting",
+    "scopes": [
+      "Column"
+    ],
+    "severity": "Warning",
+    "ruleName": "Provide format string for 'Month' columns",
+    "predicate": "lambda obj, tom: re.search(r\"month\", obj.Name, flags=re.IGNORECASE)\n                and obj.DataType == TOM.DataType.DateTime\n                and obj.FormatString != \"MMMM yyyy\"",
+    "description": "Columns of type \"DateTime\" that have \"Month\" in their names should be formatted as \"MMMM yyyy\".",
+    "url": null,
+    "sourceLine": 951,
+    "requiredData": [
+      "TOM.DataType",
+      "TOM.FormatString",
+      "TOM.Name"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:7288cbd6543b5342a2a507eed11e3f9860964bb8d2ad4350675be6fd8e0f3d6c",
+    "predicateId": "labs-060",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Format flag columns as Yes/No value strings",
+    "category": "Formatting",
+    "scopes": [
+      "Column"
+    ],
+    "severity": "Info",
+    "ruleName": "Format flag columns as Yes/No value strings",
+    "predicate": "lambda obj, tom: obj.Name.lower().startswith(\"is\")\n                and obj.DataType == TOM.DataType.Int64\n                and not (obj.IsHidden or obj.Parent.IsHidden)\n                or obj.Name.lower().endswith(\" flag\")\n                and obj.DataType != TOM.DataType.String\n                and not (obj.IsHidden or obj.Parent.IsHidden)",
+    "description": "Flags must be properly formatted as Yes/No as this is easier to read than using 0/1 integer values.",
+    "url": null,
+    "sourceLine": 961,
+    "requiredData": [
+      "TOM.DataType",
+      "TOM.IsHidden",
+      "TOM.Name",
+      "TOM.Name.lower",
+      "TOM.Name.lower().endswith",
+      "TOM.Name.lower().startswith",
+      "TOM.Parent",
+      "TOM.Parent.IsHidden"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:191a74fed97e51f429faa98e834de2c73dcaa61c4ae8bff1e6bc3a210cfaa831",
+    "predicateId": "labs-061",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Objects should not start or end with a space",
+    "category": "Formatting",
+    "scopes": [
+      "Table",
+      "Column",
+      "Measure",
+      "Partition",
+      "Hierarchy"
+    ],
+    "severity": "Error",
+    "ruleName": "Objects should not start or end with a space",
+    "predicate": "lambda obj, tom: obj.Name[0] == \" \" or obj.Name[-1] == \" \"",
+    "description": "Objects should not start or end with a space. This usually happens by accident and is difficult to find.",
+    "url": null,
+    "sourceLine": 974,
+    "requiredData": [
+      "TOM.Name"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:4d4d490986ad50f8c36b3433c13df844c3a1ec3409fc8ba167737852a49af602",
+    "predicateId": "labs-062",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#First letter of objects must be capitalized",
+    "category": "Formatting",
+    "scopes": [
+      "Table",
+      "Column",
+      "Measure",
+      "Partition",
+      "Hierarchy"
+    ],
+    "severity": "Info",
+    "ruleName": "First letter of objects must be capitalized",
+    "predicate": "lambda obj, tom: obj.Name[0] != obj.Name[0].upper()",
+    "description": "The first letter of object names should be capitalized to maintain professional quality.",
+    "url": null,
+    "sourceLine": 982,
+    "requiredData": [
+      "TOM.Name",
+      "TOM.Name[0].upper"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:937ee275c379f57913b3684c8c0561e36d799d6fe5b8b72573c347b35de2bc72",
+    "predicateId": "labs-063",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Object names must not contain special characters",
+    "category": "Naming Conventions",
+    "scopes": [
+      "Table",
+      "Column",
+      "Measure",
+      "Partition",
+      "Hierarchy"
+    ],
+    "severity": "Warning",
+    "ruleName": "Object names must not contain special characters",
+    "predicate": "lambda obj, tom: re.search(r\"[\\t\\r\\n]\", obj.Name)",
+    "description": "Object names should not include tabs, line breaks, etc.",
+    "url": null,
+    "sourceLine": 990,
+    "requiredData": [
+      "TOM.Name"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  },
+  {
+    "id": "labs:634db4b725a0bb59a622c42fd119633a87653aadf6030d4bb66f1c92b84d1c68",
+    "predicateId": "labs-064",
+    "sourceKey": "src/sempy_labs/_model_bpa_rules.py#Partition name should match table name for single partition tables",
+    "category": "Naming Conventions",
+    "scopes": [
+      "Partition"
+    ],
+    "severity": "Info",
+    "ruleName": "Partition name should match table name for single partition tables",
+    "predicate": "lambda obj, tom: obj.Parent.Partitions.Count == 1\n                and obj.Name != obj.Parent.Name",
+    "description": "For a table with a single partition, the partition name should match the table name for clarity and consistency.",
+    "url": null,
+    "sourceLine": 998,
+    "requiredData": [
+      "TOM.Name",
+      "TOM.Parent",
+      "TOM.Parent.Name",
+      "TOM.Parent.Partitions",
+      "TOM.Parent.Partitions.Count"
+    ],
+    "implementation": "Predicates.Evaluate",
+    "unsupported": false
+  }
+]
