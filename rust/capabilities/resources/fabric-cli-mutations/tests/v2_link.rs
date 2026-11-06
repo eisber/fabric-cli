@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Offline common-link schema, approval, native identity and evidence contracts.
+
 #![deny(unnameable_test_items)]
 
 use fabric_cli_mutations::{
