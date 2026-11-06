@@ -235,7 +235,8 @@
       "depends_on": ["core", "http", "sdk"],
       "tests": [
         {"package": "fabric-sdk-transport", "target": "lib"},
-        {"package": "fabric-sdk-transport", "target": "example:sdk_consumer"}
+        {"package": "fabric-sdk-transport", "target": "example:sdk_consumer"},
+        {"package": "fabric-sdk-transport", "target": "test:notebook_websocket"}
       ],
       "checks": ["transport", "transport-graphs", "headless", "updater", "native-read"]
     },
@@ -921,6 +922,13 @@
     }
   ],
   "profiles": [
+    {
+      "id": "notebook-websocket",
+      "packages": ["fabric-sdk-transport"],
+      "features": ["fabric-sdk-transport/notebook-websocket"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["transport-graphs"]
+    },
     {
       "id": "native-http-arrow",
       "packages": ["fabric-sdk-http"],

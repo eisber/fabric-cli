@@ -74,5 +74,9 @@ name = "sdk_consumer"
 required-features = ["hyper-rustls"]
 test = true
 
+[[test]]
+name = "notebook_websocket"
+required-features = ["notebook-websocket"]
+
 [lints]
 workspace = true

@@ -1770,7 +1770,7 @@ async fn async_driver_nontransient_errors_never_reopen_or_repeat_a_mutation() {
 
 #[tokio::test]
 async fn async_driver_http_status_recovery_is_explicit_and_opt_in() {
-    for status in [408, 500, 502, 503, 504] {
+    for status in [408, 429, 500, 502, 503, 504] {
         let mut first = stream_reply(vec![]);
         first.status = status;
         let executor = TestStreamExecutor::new(vec![

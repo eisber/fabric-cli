@@ -839,6 +839,8 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     ['fabric-sdk', 'livy-arrow', 'livy_arrow', 'rust/sdk/fabric-sdk/Cargo.toml'],
     ['fabric-sdk', 'livy-arrow-ipc', 'livy_arrow_ipc', 'rust/sdk/fabric-sdk/Cargo.toml'],
     ['fabric-cli', 'runtime-v2', 'runtime_v2', 'rust/hosts/cli/fabric-cli/Cargo.toml'],
+    ['fabric-sdk-transport', 'notebook-websocket', 'notebook_websocket',
+      'rust/infrastructure/http/fabric-sdk-transport/Cargo.toml'],
   ];
   for (const [pkg, feature, target, manifestPath] of cases) {
     const profile = graph.profiles.find(item =>
