@@ -9,6 +9,7 @@ mod auth;
 #[cfg(all(windows, feature = "windows-broker"))]
 mod auth_binding;
 mod batch_state;
+mod delete_host;
 #[cfg(feature = "headless")]
 mod headless;
 mod local_host;
@@ -110,6 +111,7 @@ fn dispatch(
         Ok(Invocation::Cancel(command)) => {
             return dispatch_cancel(&command, Some(local_state));
         }
+        Ok(Invocation::Delete(command)) => return delete_host::run(&command),
         #[cfg(feature = "self-update")]
         Ok(Invocation::Update(_)) => {
             write_error(

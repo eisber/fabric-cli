@@ -16,6 +16,8 @@ use thiserror::Error;
 
 /// Explicit service origins and validated endpoint bindings.
 pub mod endpoint;
+/// Host-neutral operation metadata, assessed effects and execution evidence.
+pub mod operation;
 /// Runtime-neutral authentication and cancellation for injected execution.
 pub mod request;
 

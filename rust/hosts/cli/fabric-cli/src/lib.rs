@@ -12,6 +12,7 @@ pub mod auth_commands;
 #[cfg(feature = "v2-cancel")]
 pub mod cancel;
 pub mod console;
+pub mod delete;
 pub mod deploy;
 mod errors;
 #[cfg(feature = "native-host")]

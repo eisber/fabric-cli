@@ -15,6 +15,7 @@ layer = "core"
 
 [dependencies]
 azure_core.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 
 [lints]

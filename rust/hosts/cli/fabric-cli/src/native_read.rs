@@ -18,6 +18,17 @@ pub(crate) type Failure = (&'static str, String, u8);
 #[path = "native_get.rs"]
 mod get;
 
+#[path = "native_delete.rs"]
+mod delete;
+
+pub(crate) fn run_delete(
+    prepared: fabric_cli::delete::PreparedDelete,
+    output: fabric_cli::delete::ReservedDeleteOutput,
+    deadline: std::time::Instant,
+) -> io::Result<CommandOutcome> {
+    delete::run(prepared, output, deadline)
+}
+
 #[cfg(all(test, feature = "headless"))]
 #[path = "headless_host_tests.rs"]
 mod headless_host_tests;

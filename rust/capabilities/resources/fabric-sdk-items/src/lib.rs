@@ -9,6 +9,7 @@
 
 mod collections;
 pub mod create;
+pub mod delete;
 mod items;
 pub mod ml_models;
 pub mod models;
