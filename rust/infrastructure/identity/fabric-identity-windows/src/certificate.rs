@@ -92,7 +92,8 @@ impl CertificateSelector {
 
 impl fmt::Debug for CertificateSelector {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CertificateSelector").finish_non_exhaustive()
+        f.debug_struct("CertificateSelector")
+            .finish_non_exhaustive()
     }
 }
 
@@ -105,9 +106,7 @@ pub(crate) fn validate_key_policy(
     bits: u32,
 ) -> Result<(), CertificateError> {
     let expected = match allowed_provider {
-        AllowedCertificateProvider::MicrosoftSoftware => {
-            "Microsoft Software Key Storage Provider"
-        }
+        AllowedCertificateProvider::MicrosoftSoftware => "Microsoft Software Key Storage Provider",
     };
     if actual_provider != expected {
         return Err(CertificateError::ProviderNotAllowed);
@@ -414,9 +413,7 @@ fn start_with(
     selector: CertificateSelector,
     signing_input: Vec<u8>,
     pool: Arc<WorkerPool>,
-    work: impl FnOnce(&CertificateSelector, &[u8], &dyn Fn() -> bool) -> WorkOutcome
-    + Send
-    + 'static,
+    work: impl FnOnce(&CertificateSelector, &[u8], &dyn Fn() -> bool) -> WorkOutcome + Send + 'static,
 ) -> Result<CertificateSignOperation, CertificateError> {
     if signing_input.is_empty() || signing_input.len() > SIGNING_INPUT_LIMIT {
         return Err(CertificateError::InvalidInput);
