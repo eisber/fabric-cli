@@ -2,6 +2,10 @@
 
 # Table SDK
 
+For the additive parent-owned v2 APIs and their deliberately gated capabilities,
+see [artifact-first table adapters](../../../docs/artifact-first-tables.md).
+The following sections describe the unchanged v1 compatibility APIs.
+
 `TableClient` provides Delta schema reads, Lakehouse table loading and table
 maintenance composition. Supply a credential and explicit Fabric and OneLake
 selections for the same account and tenant.

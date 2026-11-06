@@ -6,10 +6,23 @@
 //! Credentials, service execution, generic Fabric operation reconciliation and
 //! generic job lifecycle are injected. This crate never creates a runtime,
 //! transport, identity backend, temporary file or ambient configuration.
+//!
+//! The additive [`lakehouse`], [`kql_database`] and [`warehouse`] modules expose
+//! parent-owned native operations. They do not change the v1 compatibility
+//! methods below or turn table identity into an independent artifact.
 
 mod jobs;
 mod model;
 
+pub mod capabilities;
+pub mod kql_database;
+pub mod kql_databases;
+pub mod lakehouse;
+pub mod lakehouses;
+pub mod warehouse;
+pub mod warehouses;
+
+pub use fabric_sdk_jobs as maintenance_jobs;
 pub use fabric_sdk_jobs::JobType as MaintenanceJobType;
 pub use jobs::{JobMaintenance, MaintenanceEvent};
 pub use model::{LoadMode, LoadOptions, Maintenance, SourceKind, TablePath};

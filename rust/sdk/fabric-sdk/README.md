@@ -33,6 +33,11 @@ omissions rather than fabricating empty fields.
 
 Related focused crates provide jobs, OneLake, access, catalog, raw API execution
 and tables. Use them directly for their service-specific contracts.
+The [artifact-first table adapters](../../docs/artifact-first-tables.md) are
+available directly from the focused `fabric-sdk-tables` crate under parent-owned
+modules. They are not reexported here: that edge would cycle through the shared
+HTTP test consumers. Their native executors must be supplied by the caller;
+discovery is not proof of a configured CLI/MCP host.
 
 ## Execution and safety
 
