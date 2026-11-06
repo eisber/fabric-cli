@@ -28,6 +28,16 @@ use std::{
 pub enum IpcResultCause {
     /// Actual HTTP, framing, replay, decoding or acknowledged sink failure.
     Stream(FramedStreamError),
+    /// Exact decoding/output error plus the ledger's poisoned observation.
+    ///
+    /// The generic delivery ledger normalizes callback failures to `SinkFailed`;
+    /// this retains the more specific IPC cause without changing that contract.
+    Chunk {
+        /// Original schema, decode, bound or sink failure.
+        cause: ArrowError,
+        /// Full stream failure, including acknowledged cursor and partial state.
+        observation: FramedStreamError,
+    },
     /// Native IPC or local output failure outside an acknowledgement.
     Arrow(ArrowError),
     /// The original local budget expired, including during synchronous output.
@@ -213,18 +223,29 @@ pub async fn write_ipc_result<W: Write + ?Sized>(
         })?;
     let handle = observation.0.handle().clone();
     loop {
-        observation
-            .0
-            .acknowledge(&handle, |chunk| {
+        let mut chunk_error = None;
+        let acknowledged = observation.0.acknowledge(&handle, |chunk| {
+            let result = (|| {
                 let observed_schema = decoder.inspect_schema(chunk, decode_limits)?;
                 if observed_schema != schema {
                     return Err(ArrowError::SchemaConflict);
                 }
                 decoder.decode(chunk, decode_limits, &mut |batch| output.write_batch(batch))
-            })
-            .map_err(|error| {
-                observation.error(IpcResultCause::Stream(error), bytes.load(Ordering::Relaxed))
-            })?;
+            })();
+            chunk_error = result.as_ref().err().copied();
+            result
+        });
+        if let Err(error) = acknowledged {
+            let cause = match (chunk_error, error.cause()) {
+                (_, crate::livy_arrow::FramedStreamCause::Native(NativeError::TimedOut))
+                | (None, _) => IpcResultCause::Stream(error),
+                (Some(cause), _) => IpcResultCause::Chunk {
+                    cause,
+                    observation: error,
+                },
+            };
+            return Err(observation.error(cause, bytes.load(Ordering::Relaxed)));
+        }
         match observation.0.next_chunk().await {
             Ok(Some(_)) => {}
             Ok(None) => break,

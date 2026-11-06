@@ -1547,9 +1547,14 @@ async fn result_partial_sink_and_constructor_failure_preserve_bytes_without_repl
                 IpcResultCause::Arrow(ArrowError::SinkFailed)
             ));
         } else {
-            let IpcResultCause::Stream(original) = error.cause() else {
+            let IpcResultCause::Chunk {
+                cause,
+                observation: original,
+            } = error.cause()
+            else {
                 panic!("missing sink failure")
             };
+            assert_eq!(*cause, ArrowError::SinkFailed);
             assert_eq!(
                 original.cause(),
                 FramedStreamCause::Arrow(ArrowError::SinkFailed)
@@ -1630,17 +1635,28 @@ async fn result_missing_terminal_and_output_bounds_never_finalize_partial_bytes(
         )
         .await
         .unwrap_err();
-        let IpcResultCause::Stream(original) = error.cause() else {
-            panic!("missing structured failure")
-        };
-        assert_eq!(
-            original.cause(),
-            FramedStreamCause::Arrow(if missing_terminal {
-                ArrowError::Truncated
-            } else {
-                ArrowError::Limit
-            }),
-        );
+        if missing_terminal {
+            let IpcResultCause::Stream(original) = error.cause() else {
+                panic!("missing truncation failure")
+            };
+            assert_eq!(
+                original.cause(),
+                FramedStreamCause::Arrow(ArrowError::Truncated)
+            );
+        } else {
+            let IpcResultCause::Chunk {
+                cause,
+                observation: original,
+            } = error.cause()
+            else {
+                panic!("missing original output bound")
+            };
+            assert_eq!(*cause, ArrowError::Limit);
+            assert_eq!(
+                original.cause(),
+                FramedStreamCause::Arrow(ArrowError::SinkFailed)
+            );
+        }
         assert_eq!(error.output_bytes(), sink.bytes.len());
         assert_eq!(sink.flushes, 0);
         assert_eq!(executor.trace.opens.load(Ordering::SeqCst), 1);
@@ -1951,12 +1967,13 @@ async fn result_schema_conflict_does_not_acknowledge_or_finish_second_chunk() {
     let error = write_ipc_result(&mut stream, &mut bytes, LIMITS, OUTPUT_LIMITS)
         .await
         .unwrap_err();
-    let IpcResultCause::Stream(cause) = error.cause() else {
+    let IpcResultCause::Chunk { cause, observation } = error.cause() else {
         panic!("missing original cause")
     };
+    assert_eq!(*cause, ArrowError::SchemaConflict);
     assert_eq!(
-        cause.cause(),
-        FramedStreamCause::Arrow(ArrowError::SchemaConflict)
+        observation.cause(),
+        FramedStreamCause::Arrow(ArrowError::SinkFailed)
     );
     assert_eq!(error.progress().delivered_chunks, 1);
     assert!(error.cursor().is_some());
