@@ -220,12 +220,13 @@ test('selector tests include all shared planners, runner, registry and legacy te
     path.join('scripts', 'rust-fast-check.test.cjs')]);
 });
 
-test('oracle preparation runs all six dependency tests before its captured marker', () => {
+test('oracle preparation runs all seven dependency tests before its captured marker', () => {
   const result = commands('oracle-tools');
-  assert.equal(result.length, 7);
+  assert.equal(result.length, 8);
   assert.deepEqual(result.slice(0, -1).map(command => valueAfter(command, '-p')).sort(), [
     'test_assemble_native_release.py', 'test_check_report.py',
-    'test_native_acceptance.py', 'test_pinned_python_source.py', 'test_release_verify.py',
+    'test_native_acceptance.py', 'test_native_acceptance_pty_cleanup.py',
+    'test_pinned_python_source.py', 'test_release_verify.py',
     'test_v2_upstream.py',
   ]);
   const identity = result.find(command => command.args.includes('test_check_report.py'));
@@ -253,7 +254,7 @@ test('release assembly validation honors controller isolation without changing s
     '-s', path.join(rust, 'scripts'), '-p', 'test_assemble_native_release.py', '-v']);
   assert.ok(path.isAbsolute(valueAfter(controller[0], '-s')));
   assert.equal(result.filter(command => command.args.includes('test_assemble_native_release.py')).length, 1);
-  assert.equal(result.length, 7);
+  assert.equal(result.length, 8);
 });
 
 test('upstream tracking inputs select the candidate-only offline tooling tests', () => {

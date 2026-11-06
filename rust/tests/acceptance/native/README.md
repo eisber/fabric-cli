@@ -286,6 +286,11 @@ Windows children start suspended, join an owned kill-on-close Job, then resume;
 cleanup terminates that Job and observes zero active processes. POSIX commands
 own a new session/process group, which is killed and checked on completion,
 including on normal direct-child exit. Unconfirmed cleanup fails the case.
+After terminal capture ends, cleanup drains queued PTY bytes while waiting for
+the owned child to be reaped. This avoids a full Darwin PTY blocking the killed
+session leader's final close. Drained cleanup bytes do not extend captured output
+or its 64-KiB limit; the existing one-second wait and half-second fallback budgets
+remain unchanged. Child reaping and process-group absence are still required.
 Spawn failures retain a static execution diagnostic and `no_child_created`;
 failed cleanup retains fixed failure codes, never a successful cleanup claim.
 This is a trusted-process lifecycle boundary, not containment against malicious
@@ -344,5 +349,9 @@ contact providers or certify a registered host. An actual native matrix still
 requires all controller prerequisites above and independent evidence review.
 The synthetic raw-child PTY flood must actually run on POSIX. Its explicit
 Windows-only skip is not a runtime pass and cannot satisfy Linux/macOS coverage.
+The separate four-case `test_native_acceptance_pty_cleanup.py` unit suite checks
+draining, the unchanged wait deadline, and fail-closed descriptor/selector errors with
+synthetic handles. The existing `oracle-tools` gate also runs it; these unit
+checks do not replace any case in the frozen 32-case suite or native PTY proof.
 These commands have not been executed for the current source freeze; a fresh
 numbered controller grant is required before any unit/native process starts.

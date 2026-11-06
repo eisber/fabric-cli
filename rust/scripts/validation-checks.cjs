@@ -88,7 +88,7 @@ const REGISTRY = Object.freeze({
   'oracle-tools': {
     step: 'Prepare isolated frozen Python source and candidate oracle overlays',
     commands: c => [
-      ...['test_release_verify.py', 'test_native_acceptance.py',
+      ...['test_release_verify.py', 'test_native_acceptance.py', 'test_native_acceptance_pty_cleanup.py',
         'test_assemble_native_release.py', 'test_pinned_python_source.py',
         'test_v2_upstream.py']
         .map(pattern => pattern === 'test_assemble_native_release.py' ?

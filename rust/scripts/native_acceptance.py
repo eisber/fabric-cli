@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import ctypes
+import errno
 import hashlib
 import json
 import math
@@ -376,6 +377,39 @@ class WindowsTree:
         return empty
 
 
+def wait_owned_process(child: subprocess.Popen[bytes], timeout: float, master: int | None) -> int:
+    """Reap the owned child while draining a PTY within the existing wait budget."""
+    if master is None:
+        return child.wait(timeout=timeout)
+    import select
+
+    deadline = time.monotonic() + timeout
+    while True:
+        code = child.poll()
+        if code is not None:
+            return code
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(child.args, timeout)
+        try:
+            readable, _, _ = select.select([master], [], [], min(0.01, remaining))
+        except ValueError as error:
+            raise OSError(errno.EINVAL, "Owned PTY selector failed") from error
+        if readable:
+            # A full Darwin PTY can block the killed session leader's final close.
+            # Capture has already ended; discard queued bytes, never extend its limit.
+            try:
+                chunk = os.read(master, 4096)
+            except BlockingIOError:
+                continue
+            except OSError as error:
+                if error.errno != errno.EIO:
+                    raise
+                chunk = b""
+            if not chunk:
+                time.sleep(min(0.005, max(0, deadline - time.monotonic())))
+
+
 def execute(
     argv: list[str], cwd: Path, env: dict[str, str], seconds: float,
     deadline: float, stdin: bytes = b"", terminal: dict[str, Any] | None = None,
@@ -554,7 +588,7 @@ def execute(
             cleanup = True
         if child is not None:
             try:
-                child.wait(timeout=1)
+                wait_owned_process(child, 1, master)
             except subprocess.TimeoutExpired:
                 try:
                     child.kill()  # A specific owned PID; never a process-name kill.
@@ -562,7 +596,7 @@ def execute(
                     cleanup_failures.append("owned_process_signal_failed")
                 cleanup = False
                 try:
-                    child.wait(timeout=0.5)
+                    wait_owned_process(child, 0.5, master)
                 except (subprocess.TimeoutExpired, OSError):
                     cleanup_failures.append("owned_process_wait_unconfirmed")
             except OSError:
