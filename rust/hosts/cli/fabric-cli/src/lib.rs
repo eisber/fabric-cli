@@ -23,6 +23,8 @@ mod reads;
 pub mod session;
 #[cfg(feature = "native-host")]
 pub mod tables;
+#[cfg(feature = "v2-preview")]
+pub mod v2_preview;
 mod workspace_get;
 
 pub use folder_reads::FolderReadHost;

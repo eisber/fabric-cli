@@ -8,6 +8,11 @@ default-members = [
     "hosts/repl/fabric-cli-repl",
     "infrastructure/core/fabric-core",
     "infrastructure/core/fabric-core-json",
+    "infrastructure/core/fabric-v2-contracts",
+    "capabilities/ontology/fabric-sdk-ontology-workload",
+    "capabilities/ontology/fabric-sdk-ontology",
+    "capabilities/ontology/fabric-cli-ontology",
+    "capabilities/dataagents/fabric-sdk-dataagent-ontology",
     "infrastructure/identity/fabric-identity",
     "sdk/fabric-sdk",
     "capabilities/resources/fabric-sdk-workspaces",
@@ -54,6 +59,11 @@ reedline = { version = "=0.52.1", default-features = false }
 fabric-cli-context = { path = "hosts/cli/fabric-cli-context" }
 fabric-core = { path = "infrastructure/core/fabric-core" }
 fabric-core-json = { path = "infrastructure/core/fabric-core-json" }
+fabric-v2-contracts = { path = "infrastructure/core/fabric-v2-contracts" }
+fabric-sdk-ontology-workload = { path = "capabilities/ontology/fabric-sdk-ontology-workload" }
+fabric-sdk-ontology = { path = "capabilities/ontology/fabric-sdk-ontology" }
+fabric-cli-ontology = { path = "capabilities/ontology/fabric-cli-ontology" }
+fabric-sdk-dataagent-ontology = { path = "capabilities/dataagents/fabric-sdk-dataagent-ontology" }
 fabric-identity = { path = "infrastructure/identity/fabric-identity" }
 fabric-cli-output = { path = "hosts/cli/fabric-cli-output" }
 fabric-cli-query = { path = "hosts/cli/fabric-cli-query" }

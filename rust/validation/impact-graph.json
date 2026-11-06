@@ -852,6 +852,13 @@
   ],
   "profiles": [
     {
+      "id": "v2-preview",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-preview"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "native-transport",
       "packages": ["fabric-sdk-transport"],
       "features": ["fabric-sdk-transport/hyper-rustls"],
