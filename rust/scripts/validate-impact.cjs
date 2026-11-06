@@ -132,7 +132,8 @@ function commandResult(command, context, execute = spawnSync) {
   const result = execute(command.program, command.args, {
     cwd: command.cwd || path.join(context.root, 'rust'),
     env: {...process.env, PYTHONUTF8: '1', PYTHONDONTWRITEBYTECODE: '1',
-      FAB_UPDATE_TEST_ROOT: context.artifacts, ...command.env},
+      FAB_UPDATE_TEST_ROOT: context.artifacts, FAB_CLI_V2_TEST_ROOT: context.artifacts,
+      FAB_IDENTITY_TEST_ROOT: context.artifacts, ...command.env},
     encoding: 'utf8',
     timeout: Math.min(context.commandTimeout,
       Math.max(1, Math.min(context.deadline, command.deadline || context.deadline) - Date.now())),

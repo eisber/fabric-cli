@@ -127,6 +127,10 @@ test('recorded command execution retains failures, output hashes, counts and lit
     assert.equal(program, 'cargo');
     assert.deepEqual(args, command.args);
     assert.equal(opts.shell, false);
+    for (const name of ['FAB_UPDATE_TEST_ROOT', 'FAB_CLI_V2_TEST_ROOT', 'FAB_IDENTITY_TEST_ROOT']) {
+      assert.equal(opts.env[name], root);
+      assert.ok(path.isAbsolute(opts.env[name]));
+    }
     return {status: 0, stdout: 'test result: ok. 4 passed; 0 failed; 1 ignored;\n', stderr: ''};
   };
   commandResult(command, context, execute);
