@@ -49,7 +49,7 @@ pub struct DeleteCommandError {
     message: &'static str,
     invalid: bool,
     /// Original assessment failure, including typed metadata when available.
-    pub sdk: Option<DeleteFailure>,
+    pub sdk: Option<Box<DeleteFailure>>,
     /// Original local output failure; not implicitly displayed.
     pub io: Option<io::Error>,
 }
@@ -57,13 +57,13 @@ pub struct DeleteCommandError {
 impl DeleteCommandError {
     /// Stable error code, without raw arguments or local/provider diagnostics.
     pub fn code(&self) -> &str {
-        self.sdk.as_ref().map_or(self.code, DeleteFailure::code)
+        self.sdk.as_deref().map_or(self.code, DeleteFailure::code)
     }
 
     /// Safe public diagnostic.
     pub fn message(&self) -> &str {
         self.sdk
-            .as_ref()
+            .as_deref()
             .map_or(self.message, DeleteFailure::message)
     }
 
@@ -136,7 +136,7 @@ fn sdk_error(error: DeleteFailure) -> DeleteCommandError {
         code: "DeleteFailed",
         message: "Delete assessment failed",
         invalid: error.code() == "InvalidInput",
-        sdk: Some(error),
+        sdk: Some(Box::new(error)),
         io: None,
     }
 }
