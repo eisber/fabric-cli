@@ -830,6 +830,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-cli-ontology"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "fabric-cli-output"
 version = "0.1.0"
 dependencies = [
@@ -1045,11 +1054,15 @@ dependencies = [
  "fabric-core",
  "fabric-sdk-capacities",
  "fabric-sdk-discovery",
+ "fabric-sdk-dataagent-ontology",
  "fabric-sdk-folders",
  "fabric-sdk-items",
+ "fabric-sdk-ontology",
+ "fabric-sdk-ontology-workload",
  "fabric-sdk-operations",
  "fabric-sdk-workspaces",
  "ring",
+ "fabric-v2-contracts",
  "serde",
  "serde_json",
  "tokio",
@@ -1121,6 +1134,23 @@ dependencies = [
  "fabric-sdk-workspaces",
  "serde",
  "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-sdk-dataagent-ontology"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "azure_core",
+ "fabric-core",
+ "fabric-sdk-ontology-workload",
+ "fabric-sdk-operations",
+ "fabric-sdk-paging",
+ "fabric-sdk-workspaces",
+ "serde",
+ "serde_json",
+ "thiserror",
  "tokio",
 ]
 
@@ -1206,6 +1236,32 @@ dependencies = [
  "fabric-sdk-http",
  "fabric-sdk-onelake",
  "futures-util",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-sdk-ontology"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "azure_core",
+ "base64 0.22.1",
+ "fabric-core",
+ "fabric-sdk-items",
+ "fabric-sdk-operations",
+ "fabric-sdk-workspaces",
+ "fabric-v2-contracts",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-sdk-ontology-workload"
+version = "0.1.0"
+dependencies = [
+ "serde",
  "serde_json",
  "tokio",
 ]
@@ -1305,6 +1361,14 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "fabric-v2-contracts"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

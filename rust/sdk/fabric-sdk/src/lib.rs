@@ -25,6 +25,17 @@ pub mod workspaces;
 pub mod discovery {
     pub use fabric_sdk_discovery::*;
 }
+/// DataAgent-owned Ontology attachment and source-guidance workflows.
+pub use fabric_sdk_dataagent_ontology as dataagent_ontology;
+/// Public Ontology metadata/model/native-definition operations.
+pub use fabric_sdk_ontology as ontology;
+/// Explicitly caller-injected private Ontology workload operations.
+pub use fabric_sdk_ontology_workload as ontology_workload;
+/// Host-neutral v2 registration, preparation and receipt contracts.
+///
+/// CLI/MCP consumers use this SDK-layer reexport rather than acquiring a direct
+/// dependency on core implementation crates.
+pub use fabric_v2_contracts as v2;
 
 pub use fabric_core::{
     Audience, CredentialSelection, EndpointBinding, EndpointError, RequestContext, ServiceOrigin,
