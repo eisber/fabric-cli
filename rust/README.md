@@ -27,6 +27,11 @@ For the separate CLI v2 effort, follow the
 implementation starts only after the selected specification and first wave
 are confirmed; this process does not change the existing CLI contract.
 
+The opt-in [v2 workspace read slice](docs/workspace-v2-reads.md) provides the
+separate `fab-cli` binary with primary metadata and bounded item listing.
+It does not replace `fab-rs` or Python `fab`, enable mutations, or establish
+complete v2 support.
+
 ## Workspace components
 
 The workspace groups service clients and command adapters by capability:

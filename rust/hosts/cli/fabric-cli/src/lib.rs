@@ -24,6 +24,8 @@ pub mod session;
 #[cfg(feature = "native-host")]
 pub mod tables;
 mod workspace_get;
+#[cfg(feature = "workspace-read-v2")]
+pub mod workspace_v2;
 
 pub use folder_reads::FolderReadHost;
 pub use projection::{NoQuery, Projection, PythonQuery};

@@ -3,6 +3,7 @@
 
 [package]
 name = "fabric-cli"
+default-run = "fab-rs"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -17,8 +18,14 @@ layer = "cli"
 name = "fab-rs"
 path = "src/main.rs"
 
+[[bin]]
+name = "fab-cli"
+path = "src/v2_main.rs"
+required-features = ["workspace-read-v2"]
+
 [features]
 default = []
+workspace-read-v2 = []
 repl = ["dep:fabric-cli-repl", "fabric-cli-repl/reedline-editor"]
 windows-broker = ["dep:fabric-identity", "dep:tokio", "fabric-identity/windows-broker"]
 native-host = ["dep:fabric-identity", "dep:tokio", "dep:fabric-sdk-http", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls", "dep:rustix", "dep:chrono"]

@@ -27,6 +27,7 @@ use thiserror::Error;
 mod bound;
 mod operations;
 mod query_trace;
+pub mod workspace_reads;
 pub use bound::{Origin, RawRequestOptions, RequestBounds};
 pub use fabric_sdk_operations::{OperationError, OperationErrorKind};
 pub use query_trace::{DispatchedQuery, QueryDispatchTrace};
@@ -303,6 +304,13 @@ pub struct ApiClient {
 }
 
 impl ApiClient {
+    /// Borrow the caller's explicit non-secret identity selection.
+    ///
+    /// This metadata does not verify token claims or grant resource access.
+    pub fn selection(&self) -> &CredentialSelection {
+        &self.selection
+    }
+
     /// Stores dependencies without I/O or discovery. Provider binding is caller-owned.
     pub fn new(
         credential: Arc<dyn TokenCredential>,

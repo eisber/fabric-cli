@@ -236,7 +236,10 @@
       "package": "fabric-sdk-api",
       "inputs": ["rust/capabilities/resources/fabric-sdk-api/src/**", "rust/tests/compatibility/raw_api/cases.json"],
       "depends_on": ["core", "json", "sdk-workspaces", "paging", "operations"],
-      "tests": [{"package": "fabric-sdk-api", "target": "lib"}],
+      "tests": [
+        {"package": "fabric-sdk-api", "target": "lib"},
+        {"package": "fabric-sdk-api", "target": "test:workspace_reads"}
+      ],
       "checks": ["resource-oracle"]
     },
     {
@@ -600,6 +603,18 @@
       "checks": ["definitions-oracle", "read-parity", "native-read"]
     },
     {
+      "id": "workspace-read-v2",
+      "package": "fabric-cli",
+      "inputs": ["rust/hosts/cli/fabric-cli/src/workspace_v2.rs", "rust/hosts/cli/fabric-cli/src/v2_main.rs", "rust/hosts/cli/fabric-cli/src/native_workspace_v2_tests.rs", "rust/docs/workspace-v2-reads.md"],
+      "depends_on": ["sdk-api", "query", "resources", "definitions", "cli-native-shared"],
+      "tests": [
+        {"package": "fabric-cli", "target": "lib"},
+        {"package": "fabric-cli", "target": "bin:fab-cli"},
+        {"package": "fabric-cli", "target": "test:workspace_v2"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "cli-reads",
       "package": "fabric-cli",
       "inputs": ["rust/hosts/cli/fabric-cli/src/reads.rs", "rust/hosts/cli/fabric-cli/src/folder_reads.rs", "rust/hosts/cli/fabric-cli/src/workspace_get.rs", "rust/hosts/cli/fabric-cli/src/projection.rs"],
@@ -844,13 +859,34 @@
         "deploy-shared", "deploy-workflow", "deploy-notebook", "deploy-spark-environment",
         "definitions", "transfer", "cli-deployment", "cli-get", "cli-reads", "cli-resources",
         "cli-jobs", "cli-tables", "cli-local", "repl", "cli-repl", "updater",
-        "cli-updater", "cli-auth", "cli-headless", "cli-native-shared", "cli-shared-test-helpers"
+        "cli-updater", "cli-auth", "cli-headless", "cli-native-shared", "cli-shared-test-helpers", "workspace-read-v2"
       ],
       "tests": [{"package": "fabric-cli", "target": "test:workspace_contract"}],
       "checks": ["dependency-graph"]
     }
   ],
   "profiles": [
+    {
+      "id": "workspace-read-v2",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/workspace-read-v2"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "workspace-read-v2-native",
+      "packages": ["fabric-cli", "fabric-identity", "fabric-sdk-transport"],
+      "features": ["fabric-cli/workspace-read-v2", "fabric-cli/native-read"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["native-read"]
+    },
+    {
+      "id": "workspace-read-v2-headless",
+      "packages": ["fabric-cli", "fabric-identity", "fabric-sdk-transport"],
+      "features": ["fabric-cli/workspace-read-v2", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["headless"]
+    },
     {
       "id": "native-transport",
       "packages": ["fabric-sdk-transport"],
