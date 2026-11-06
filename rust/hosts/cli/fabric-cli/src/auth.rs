@@ -82,134 +82,6 @@ fn write_preflight_error(
     )
 }
 
-#[cfg(test)]
-mod preflight_tests {
-    use super::*;
-    use fabric_cli::parser::batch::{self, BatchHost, BatchInvocation};
-
-    struct Host {
-        code: &'static str,
-        exit: u8,
-        executed: usize,
-        summarized: bool,
-        stderr: Vec<u8>,
-    }
-
-    impl BatchHost for Host {
-        type Error = io::Error;
-
-        fn execute(&mut self, _: &[&str]) -> io::Result<batch::CommandOutcome> {
-            self.executed += 1;
-            if self.executed == 1 {
-                #[cfg(windows)]
-                if self.code == "cancelled" {
-                    let mut stdout = Vec::new();
-                    let outcome = write_auth_outcome(
-                        Err(("cancelled", "Synthetic cancellation.".into())),
-                        &mut stdout,
-                        &mut self.stderr,
-                    )?;
-                    assert!(stdout.is_empty());
-                    return Ok(outcome.into());
-                }
-                write_preflight_error(
-                    self.code,
-                    "Synthetic preflight failure.",
-                    self.exit,
-                    OutputFormat::Json,
-                    &mut self.stderr,
-                )
-                .map(Into::into)
-            } else {
-                Ok(batch::CommandOutcome::Returned(0))
-            }
-        }
-
-        fn separator(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-
-        fn summary(&mut self, _: &BatchInvocation) -> io::Result<()> {
-            self.summarized = true;
-            Ok(())
-        }
-    }
-
-    fn run(code: &'static str, exit: u8) -> (u8, Host) {
-        let mut host = Host {
-            code,
-            exit,
-            executed: 0,
-            summarized: false,
-            stderr: Vec::new(),
-        };
-        let exit = batch::run(
-            &BatchInvocation {
-                commands: vec!["auth status".into(), "config set show_hidden true".into()],
-                output_format: None,
-            },
-            &mut host,
-        )
-        .unwrap();
-        assert!(String::from_utf8_lossy(&host.stderr).contains(code));
-        (exit, host)
-    }
-
-    #[test]
-    fn configuration_and_runtime_failures_stop_before_the_next_command_and_summary() {
-        for (code, expected) in [("invalid_configuration", 2), ("runtime_failed", 1)] {
-            let (exit, host) = run(code, expected);
-            assert_eq!(exit, expected);
-            assert_eq!(host.executed, 1);
-            assert!(!host.summarized);
-        }
-    }
-
-    #[test]
-    fn handled_selection_failures_preserve_last_command_exit_and_summary() {
-        for code in ["NotConfigured", "interaction_required"] {
-            let (exit, host) = run(code, 1);
-            assert_eq!(exit, 0);
-            assert_eq!(host.executed, 2);
-            assert!(host.summarized);
-        }
-    }
-
-    #[test]
-    #[cfg(windows)]
-    fn typed_auth_cancellation_stops_without_replay_next_command_or_summary() {
-        let (exit, host) = run("cancelled", 1);
-        assert_eq!(exit, 1);
-        assert_eq!(host.executed, 1);
-        assert!(!host.summarized);
-    }
-
-    #[test]
-    fn failed_preflight_output_is_not_a_command_outcome() {
-        struct BrokenWriter;
-        impl io::Write for BrokenWriter {
-            fn write(&mut self, _: &[u8]) -> io::Result<usize> {
-                Err(io::ErrorKind::BrokenPipe.into())
-            }
-
-            fn flush(&mut self) -> io::Result<()> {
-                Ok(())
-            }
-        }
-
-        assert!(
-            write_preflight_error(
-                "invalid_configuration",
-                "Synthetic preflight failure.",
-                2,
-                OutputFormat::Json,
-                BrokenWriter,
-            )
-            .is_err()
-        );
-    }
-}
-
 fn selected_format(
     command: &AuthCommand,
 ) -> Result<OutputFormat, fabric_cli::auth_commands::Failure> {
@@ -873,5 +745,133 @@ mod tests {
             "11111111-2222-3333-4444-555555555555"
         );
         assert_eq!(commands::Broker::account(&broker), "selected@example.test");
+    }
+}
+
+#[cfg(test)]
+mod preflight_tests {
+    use super::*;
+    use fabric_cli::parser::batch::{self, BatchHost, BatchInvocation};
+
+    struct Host {
+        code: &'static str,
+        exit: u8,
+        executed: usize,
+        summarized: bool,
+        stderr: Vec<u8>,
+    }
+
+    impl BatchHost for Host {
+        type Error = io::Error;
+
+        fn execute(&mut self, _: &[&str]) -> io::Result<batch::CommandOutcome> {
+            self.executed += 1;
+            if self.executed == 1 {
+                #[cfg(windows)]
+                if self.code == "cancelled" {
+                    let mut stdout = Vec::new();
+                    let outcome = write_auth_outcome(
+                        Err(("cancelled", "Synthetic cancellation.".into())),
+                        &mut stdout,
+                        &mut self.stderr,
+                    )?;
+                    assert!(stdout.is_empty());
+                    return Ok(outcome.into());
+                }
+                write_preflight_error(
+                    self.code,
+                    "Synthetic preflight failure.",
+                    self.exit,
+                    OutputFormat::Json,
+                    &mut self.stderr,
+                )
+                .map(Into::into)
+            } else {
+                Ok(batch::CommandOutcome::Returned(0))
+            }
+        }
+
+        fn separator(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn summary(&mut self, _: &BatchInvocation) -> io::Result<()> {
+            self.summarized = true;
+            Ok(())
+        }
+    }
+
+    fn run(code: &'static str, exit: u8) -> (u8, Host) {
+        let mut host = Host {
+            code,
+            exit,
+            executed: 0,
+            summarized: false,
+            stderr: Vec::new(),
+        };
+        let exit = batch::run(
+            &BatchInvocation {
+                commands: vec!["auth status".into(), "config set show_hidden true".into()],
+                output_format: None,
+            },
+            &mut host,
+        )
+        .unwrap();
+        assert!(String::from_utf8_lossy(&host.stderr).contains(code));
+        (exit, host)
+    }
+
+    #[test]
+    fn configuration_and_runtime_failures_stop_before_the_next_command_and_summary() {
+        for (code, expected) in [("invalid_configuration", 2), ("runtime_failed", 1)] {
+            let (exit, host) = run(code, expected);
+            assert_eq!(exit, expected);
+            assert_eq!(host.executed, 1);
+            assert!(!host.summarized);
+        }
+    }
+
+    #[test]
+    fn handled_selection_failures_preserve_last_command_exit_and_summary() {
+        for code in ["NotConfigured", "interaction_required"] {
+            let (exit, host) = run(code, 1);
+            assert_eq!(exit, 0);
+            assert_eq!(host.executed, 2);
+            assert!(host.summarized);
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn typed_auth_cancellation_stops_without_replay_next_command_or_summary() {
+        let (exit, host) = run("cancelled", 1);
+        assert_eq!(exit, 1);
+        assert_eq!(host.executed, 1);
+        assert!(!host.summarized);
+    }
+
+    #[test]
+    fn failed_preflight_output_is_not_a_command_outcome() {
+        struct BrokenWriter;
+        impl io::Write for BrokenWriter {
+            fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+                Err(io::ErrorKind::BrokenPipe.into())
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        assert!(
+            write_preflight_error(
+                "invalid_configuration",
+                "Synthetic preflight failure.",
+                2,
+                OutputFormat::Json,
+                BrokenWriter,
+            )
+            .is_err()
+        );
     }
 }
