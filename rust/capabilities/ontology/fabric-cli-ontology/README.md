@@ -81,8 +81,11 @@ and caller runtime are reused. There is no separate auth/runtime/poller.
 The injected host supplies exact resolved IDs and canonical selectors, bounded
 local input, finite deadline/cancellation policy, atomic no-clobber output
 reservation, and approval bound to the immutable request/body/output/effects.
-Optional local-write effects must have been declared by the existing descriptor.
-Required effects cannot be omitted. Replacement records existing-only and
+Input (including stdin) selects local-read, and file output selects local-write.
+Both effects must be declared as required or optional by the existing descriptor;
+undeclared selections fail before input consumption or output reservation.
+Optional selections are approved together, and required effects remain exactly
+once. Replacement records existing-only and
 unguarded concurrency; unsupported revision conditions never disappear.
 
 Only after these phases does the adapter call the released metadata,
