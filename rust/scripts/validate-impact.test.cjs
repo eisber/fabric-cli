@@ -118,6 +118,27 @@ test('no target-name test filters or invalid Cargo selectors can silently run ze
   assert.throws(() => testCommands([{package: 'a', target: 'test:a --ignored'}]), /Unsupported Cargo/);
 });
 
+test('long command identities retain full evidence with bounded collision-resistant log names', t => {
+  const root = temporary(t);
+  const context = {root, artifacts: root, commandTimeout: 1000, deadline: Date.now() + 10000, results: []};
+  const execute = () => ({status: 0, stdout: 'test result: ok. 1 passed; 0 failed; 0 ignored;\n', stderr: ''});
+  for (const suffix of ['first', 'second']) {
+    const id = `default:test:${'fabric-package,'.repeat(80)}${suffix}`;
+    commandResult({id, program: 'cargo', args: ['test', '--all-targets']}, context, execute);
+    const record = context.results.at(-1);
+    assert.equal(record.id, id);
+    assert.equal(record.tests_passed, 1);
+    assert.match(path.basename(record.stdout), /-[a-f0-9]{16}\.stdout\.log$/);
+    for (const key of ['stdout', 'stderr']) {
+      assert.ok(path.basename(record[key]).length <= 128);
+      assert.ok(fs.existsSync(record[key]));
+    }
+  }
+  assert.notEqual(context.results[0].stdout, context.results[1].stdout);
+  const recorded = JSON.parse(fs.readFileSync(path.join(root, 'commands.json'), 'utf8'));
+  assert.deepEqual(recorded.map(item => item.id), context.results.map(item => item.id));
+});
+
 test('recorded command execution retains failures, output hashes, counts and literal arguments', t => {
   const root = temporary(t);
   const context = {root, artifacts: root, commandTimeout: 1000, deadline: Date.now() + 10000, results: []};

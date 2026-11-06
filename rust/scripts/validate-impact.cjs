@@ -136,8 +136,11 @@ function commandResult(command, context, execute = spawnSync) {
     windowsHide: true,
     shell: false,
   });
-  const prefix = `${String(context.results.length).padStart(3, '0')}-${command.id || 'contract'}`
+  const digest = value => crypto.createHash('sha256').update(value).digest('hex');
+  const identity = `${String(context.results.length).padStart(3, '0')}-${command.id || 'contract'}`
     .replace(/[^a-zA-Z0-9._-]/g, '_');
+  const prefix = identity.length <= 113 ? identity :
+    `${identity.slice(0, 96)}-${digest(identity).slice(0, 16)}`;
   const stdout = result.stdout || '';
   const stderr = result.stderr || '';
   const stdoutFile = path.join(context.artifacts, `${prefix}.stdout.log`);
@@ -145,7 +148,6 @@ function commandResult(command, context, execute = spawnSync) {
   fs.writeFileSync(stdoutFile, stdout);
   fs.writeFileSync(stderrFile, stderr);
   if (command.stdout) fs.writeFileSync(command.stdout, stdout);
-  const digest = value => crypto.createHash('sha256').update(value).digest('hex');
   const counts = [...stdout.matchAll(/test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored/g)];
   const record = {
     id: command.id, program: command.program, args: command.args,
