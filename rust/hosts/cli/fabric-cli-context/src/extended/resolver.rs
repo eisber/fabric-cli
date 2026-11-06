@@ -9,8 +9,8 @@ use super::{
     VirtualWorkspaceKind, item_folders,
 };
 use crate::{
-    ContextError, HomeContext, Lookup, NodeKind, PathInput, ResolveOptions, Resolver,
-    UnsupportedBranch, split_parts,
+    ContextError, HomeContext, Lookup, NameHintFailure, NameHints, NodeKind, PathInput,
+    ResolveOptions, Resolver, SearchOptions, UnsupportedBranch, split_parts,
 };
 
 /// A virtual resource lookup, not an HTTP endpoint.
@@ -261,6 +261,40 @@ impl<'a, L: HierarchyLookup + ?Sized> PathResolver<'a, L> {
             }
             Err(error) => Err(PathFailure { error, notices }),
         }
+    }
+
+    /// Resolve exactly with opt-in hints for Fabric workspace/folder/item misses.
+    ///
+    /// Virtual, OneLake and local failures have no candidate snapshot boundary.
+    /// A local fallback attempt, suppressed lookup, unsupported path or other
+    /// failure never collects hints. Existing notices and errors remain intact.
+    pub fn resolve_with_hints(
+        &self,
+        input: PathInput<'_>,
+        options: ResolveOptions,
+        search: SearchOptions,
+    ) -> Result<PathResolution, NameHintFailure<PathFailure>> {
+        let lookup = crate::hints::HintLookup::new(self.lookup, options.raise_error);
+        let resolver = PathResolver {
+            lookup: &lookup,
+            local: self.local,
+            current: Arc::clone(&self.current),
+            home: self.home.clone(),
+            list_policy: self.list_policy.clone(),
+            list_command: self.list_command.clone(),
+        };
+        resolver.resolve(input, options).map_err(|failure| {
+            let hints = if failure
+                .notices
+                .iter()
+                .any(|notice| matches!(notice, PathNotice::LocalFallback(_)))
+            {
+                NameHints::NotApplicable
+            } else {
+                lookup.hints(&failure.error, search)
+            };
+            NameHintFailure { failure, hints }
+        })
     }
 
     /// Explicit atomic context change after success, rejecting local current contexts.

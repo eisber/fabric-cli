@@ -550,6 +550,7 @@ dependencies = [
 name = "fabric-cli-context"
 version = "0.1.0"
 dependencies = [
+ "fabric-name-search",
  "serde_json",
 ]
 
@@ -804,6 +805,10 @@ dependencies = [
  "windows",
  "windows-future",
 ]
+
+[[package]]
+name = "fabric-name-search"
+version = "0.1.0"
 
 [[package]]
 name = "fabric-sdk"

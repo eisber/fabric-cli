@@ -24,15 +24,27 @@
       "checks": ["json-parity"]
     },
     {
+      "id": "name-search",
+      "package": "fabric-name-search",
+      "inputs": ["rust/infrastructure/search/fabric-name-search/src/**"],
+      "depends_on": [],
+      "tests": [
+        {"package": "fabric-name-search", "target": "lib"},
+        {"package": "fabric-name-search", "target": "test:suggestions"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "context",
       "package": "fabric-cli-context",
       "inputs": ["rust/hosts/cli/fabric-cli-context/src/**", "rust/tests/compatibility/context/cases.json", "rust/tests/compatibility/context/extended_cases.json"],
-      "depends_on": [],
+      "depends_on": ["name-search"],
       "tests": [
         {"package": "fabric-cli-context", "target": "lib"},
         {"package": "fabric-cli-context", "target": "test:contract"},
         {"package": "fabric-cli-context", "target": "test:extended_contract"},
         {"package": "fabric-cli-context", "target": "test:extended_python_cases"},
+        {"package": "fabric-cli-context", "target": "test:name_hints"},
         {"package": "fabric-cli-context", "target": "test:python_cases"}
       ],
       "checks": ["context-output"]
