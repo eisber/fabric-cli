@@ -553,7 +553,6 @@ async fn shared_executor_outcomes_and_uncertainty_are_returned_unchanged_once() 
         raw_service_error: Some(Box::new(json!({"errorCode": "ConnectionUseDenied"}))),
         operation_id: Some("existing-operation".into()),
         mutation_may_have_occurred: true,
-        ..ResourceError::input()
     };
     for (kind, body) in [
         (

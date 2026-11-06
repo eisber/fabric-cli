@@ -45,6 +45,8 @@ It does not replace `rm` or promise recoverable deletion or physical erasure.
 The opt-in [v2 schema-discovery preview](docs/v2-schema-discovery.md) exposes
 operation contracts through a separate `fab-cli-discovery` binary. It does not execute
 mutations, replace `fab-rs`, or install a live data-schema host.
+See the [shared tabular file output contract](docs/tabular-output.md) for the
+export syntax, current consumers, and validation evidence limits.
 
 ## Workspace components
 

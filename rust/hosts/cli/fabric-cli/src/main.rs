@@ -73,6 +73,9 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
             2,
         );
     }
+    if let Ok(Invocation::NativeTabular(command)) = &invocation {
+        return write_export(fabric_cli::native_tabular::not_configured(command)).map(exit_status);
+    }
     #[cfg(feature = "self-update")]
     if let Ok(invocation) = &invocation {
         if let Invocation::Update(command) = invocation {
@@ -99,6 +102,48 @@ fn dispatch(
     local_state: &mut BatchState,
 ) -> io::Result<CommandOutcome> {
     let (error, exit) = match invocation {
+        Ok(Invocation::NativeTabular(command)) => {
+            return write_export(fabric_cli::native_tabular::not_configured(&command));
+        }
+        Ok(invocation @ Invocation::Tabular(_)) => {
+            let Invocation::Tabular(export) = &invocation else {
+                unreachable!("matched tabular export");
+            };
+            let source =
+                fabric_cli::tabular_export::source(&export.command).unwrap_or("unsupported");
+            if fabric_cli::tabular_export::preflight(&export.request).is_err() {
+                let delivery = fabric_cli::tabular_export::ExportDelivery::preflight_failed(
+                    source,
+                    &export.request,
+                );
+                return write_export(delivery);
+            }
+            if matches!(source, "config ls" | "label list-local") {
+                let store = local_host::store().map_err(io::Error::other)?;
+                let delivery = fabric_cli::tabular_export::dispatch_local(
+                    export,
+                    &store,
+                    &mut fabric_cli::tabular_export::FileSink::default(),
+                )
+                .expect("local export selected");
+                return write_export(delivery);
+            }
+            #[cfg(feature = "native-host")]
+            {
+                return native_read::run_family(&invocation, local_state);
+            }
+            #[cfg(not(feature = "native-host"))]
+            {
+                let delivery = fabric_cli::tabular_export::ExportDelivery::host_failed(
+                    source,
+                    &export.request,
+                    "NotConfigured",
+                    &HostError::NotConfigured.to_string(),
+                    1,
+                );
+                return write_export(delivery);
+            }
+        }
         Ok(Invocation::Batch(invocation)) => {
             return batch::run(&invocation, &mut BatchExecution { local_state })
                 .map(CommandOutcome::Returned);
@@ -246,6 +291,15 @@ fn dispatch_cancel(
     }
 }
 
+fn write_export(
+    delivery: fabric_cli::tabular_export::ExportDelivery,
+) -> io::Result<CommandOutcome> {
+    delivery
+        .write_to_streams(&mut io::stdout().lock(), &mut io::stderr().lock())
+        .map(CommandOutcome::Returned)
+        .map_err(fabric_cli::tabular_export::ReceiptWriteFailure::into_io_error)
+}
+
 fn write_error(error: CommandError, exit: u8) -> io::Result<ExitCode> {
     let envelope = ErrorEnvelope { error };
     let mut stderr = io::stderr().lock();
@@ -360,7 +414,15 @@ fn main() -> ExitCode {
     match run(&mut update_lifetime) {
         Ok(code) => code,
         Err(error) => {
-            eprintln!("fab-rs: output failed: {error}");
+            if error
+                .get_ref()
+                .and_then(|error| {
+                    error.downcast_ref::<fabric_cli::tabular_export::ReceiptWriteFailure>()
+                })
+                .is_none()
+            {
+                eprintln!("fab-rs: output failed: {error}");
+            }
             ExitCode::FAILURE
         }
     }

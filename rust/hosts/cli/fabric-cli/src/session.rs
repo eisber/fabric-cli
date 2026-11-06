@@ -282,12 +282,23 @@ impl<'session> ReadSession<'session> {
         })
     }
 
-    async fn execute(
+    pub(crate) async fn execute(
         &self,
         command: &ReadCommand,
         operations: Option<&dyn OperationExecutor>,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Option<fabric_cli_output::OutputInput>, ReadFailure> {
+        self.execute_with_target(command, operations, cancelled)
+            .await
+            .map(|(input, _)| input)
+    }
+
+    pub(crate) async fn execute_with_target(
+        &self,
+        command: &ReadCommand,
+        operations: Option<&dyn OperationExecutor>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<(Option<OutputInput>, Arc<Element>), ReadFailure> {
         if self.tenant.id() != Some(self.sdk.selection().tenant())
             || self.tenant.kind() != fabric_cli_context::NodeKind::Tenant
             || self.sdk.selection().audience() != fabric_sdk::Audience::Fabric
@@ -337,12 +348,14 @@ impl<'session> ReadSession<'session> {
             }
             return host
                 .workspace_get_with_evidence(&target, &normalized, operations, cancelled.as_mut())
-                .await;
+                .await
+                .map(|input| (input, target));
         }
         host.with_folders(self.executor)
             .with_scalar_query()
             .execute_with_source_operations(&normalized, operations, cancelled.as_mut())
             .await
+            .map(|input| (input, target))
             .map_err(Into::into)
     }
 }
