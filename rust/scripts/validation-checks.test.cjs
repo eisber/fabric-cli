@@ -257,6 +257,22 @@ test('release assembly validation honors controller isolation without changing s
   assert.equal(result.length, 8);
 });
 
+test('native CI front-loads exact engineering suites without replacing the full gate', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
+  assert.ok(workflow.indexOf('Check bounded engineering cleanup before native compilation') <
+    workflow.indexOf('Record actual native toolchain and restore locked dependencies'));
+  assert.ok(workflow.includes('("test_native_acceptance.py", 32)'));
+  assert.ok(workflow.includes('("test_native_acceptance_pty_cleanup.py", 4)'));
+  assert.ok(workflow.includes('not result.expectedFailures and skips == expected'));
+  assert.ok(workflow.includes('"discovered": discovered, "run": 0'));
+  assert.ok(workflow.includes('"passed": False, "reason": "inventory_mismatch"'));
+  assert.ok(workflow.includes('persist()\n                  raise SystemExit(1)'));
+  assert.ok(workflow.includes('Execute the shared local and CI validation plan'));
+  assert.ok(workflow.includes('--restore-oracle-deps --execute'));
+  assert.ok(workflow.includes('Require successful selection and every selected native check'));
+  assert.ok(workflow.includes('contents: read'));
+});
+
 test('upstream tracking inputs select the candidate-only offline tooling tests', () => {
   const actual = JSON.parse(fs.readFileSync(
     path.join(__dirname, '..', 'validation', 'impact-graph.json'), 'utf8'));

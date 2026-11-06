@@ -353,5 +353,9 @@ The separate four-case `test_native_acceptance_pty_cleanup.py` unit suite checks
 draining, the unchanged wait deadline, and fail-closed descriptor/selector errors with
 synthetic handles. The existing `oracle-tools` gate also runs it; these unit
 checks do not replace any case in the frozen 32-case suite or native PTY proof.
+The existing three-platform Rust CI also runs both exact engineering suites
+before native compilation, retaining their run counts, skip reasons, and logs.
+The complete dependency-impact plan still runs afterward; an early unit pass
+does not establish Rust, full-profile, or complete native acceptance.
 These commands have not been executed for the current source freeze; a fresh
 numbered controller grant is required before any unit/native process starts.
