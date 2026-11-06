@@ -7,6 +7,10 @@ with explicit metadata, confirmation, execution and output capabilities.
 The [resource adapter](src/frontdoor/README.md) provides root command
 registrations and typed command conversion.
 
+The separate [create v2 contract](../../../docs/create-v2-contract.md) specifies
+the target existence policies and receipt boundaries. It does not describe the
+current v1 `create` alias or establish a v2 executable root or service-host mount.
+
 ## Host composition
 
 `MutationHost` consumes `ResourceOperations`, `MutationUi` and

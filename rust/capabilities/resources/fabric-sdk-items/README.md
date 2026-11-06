@@ -49,6 +49,20 @@ Malformed input, credential failure, service errors, unsafe links, cancellation
 and execution limits remain distinct. Definition retrieval and enriched command
 metadata composition are separate operations.
 
+## Create policy contracts
+
+The additive `create` module plans default-error, complete-content overwrite,
+skip, and collection-scoped duplicate actions. A caller-owned schema validator
+and exact target resolution feed one planner; file input does not select an
+implicit update. Result guards retain native identity and operation evidence
+without treating acceptance, partial results, or unknown outcomes as completion.
+
+These are pure contracts, not Fabric endpoints or an executable command. Native
+adapters must enforce the selected action and advertise its exact capabilities.
+No HTTP executor, runtime, credential discovery, or SDK-to-CLI dependency is
+introduced. See the [create v2 contract](../../../docs/create-v2-contract.md) for
+input, conflict, evidence, and remaining integration boundaries.
+
 ## MLModel native parameter and serving contracts
 
 The additive `ml_models` module describes MLModel item and endpoint operations
