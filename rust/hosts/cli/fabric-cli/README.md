@@ -257,6 +257,9 @@ Authentication uses the same explicit broker selection and command engine as a
 single invocation. Its typed outcome distinguishes cancellation from a handled
 provider failure even though both retain exit 1. Cancellation, timeout and
 signal-handler failure stop before the next command and suppress the summary.
+Invalid authentication configuration (exit 2) and failure to initialize its
+runtime also stop before the next command; ordinary handled selection failures
+still preserve the last-command exit rule.
 No new credential backend, acquisition rule or token input is introduced.
 
 Default local execution has no installed Ctrl+C handler. The existing Tokio

@@ -1171,7 +1171,7 @@ fn native_executor(
     .map_err(|_| failure("transport_failed", "The HTTP executor could not start.", 1))
 }
 
-#[cfg(all(test, any(windows, feature = "headless")))]
+#[cfg(all(test, feature = "headless"))]
 async fn execute_injected(
     command: NativeCommand<'_>,
     (credential, client, identity_client): (

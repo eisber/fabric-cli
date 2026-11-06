@@ -222,7 +222,7 @@ impl Delivery {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "headless"))]
     pub(super) fn into_plan_parts(self) -> (TextPlan, CommandOutcome) {
         match self {
             #[cfg(any(windows, feature = "headless"))]
