@@ -267,6 +267,8 @@ test('native CI front-loads exact engineering suites without replacing the full 
   assert.ok(workflow.includes('"discovered": discovered, "run": 0'));
   assert.ok(workflow.includes('"passed": False, "reason": "inventory_mismatch"'));
   assert.ok(workflow.includes('persist()\n                  raise SystemExit(1)'));
+  assert.ok(workflow.includes('report["pty_receipts"].append(captured[0])'));
+  assert.ok(workflow.includes('return captured'));
   assert.ok(workflow.includes('Execute the shared local and CI validation plan'));
   assert.ok(workflow.includes('--restore-oracle-deps --execute'));
   assert.ok(workflow.includes('Require successful selection and every selected native check'));

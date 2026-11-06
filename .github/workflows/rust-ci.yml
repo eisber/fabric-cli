@@ -90,13 +90,14 @@ jobs:
           import platform
           import sys
           import unittest
+          from unittest.mock import patch
 
           source = pathlib.Path(sys.argv[1]).resolve()
           artifacts = pathlib.Path(sys.argv[2]).resolve()
           artifacts.mkdir(parents=True, exist_ok=False)
           os.chdir(artifacts)
           report = {"kind": "engineering-unit-preflight", "head": os.environ["GITHUB_SHA"],
-                    "host": platform.system(), "suites": [], "passed": False}
+                    "host": platform.system(), "suites": [], "pty_receipts": [], "passed": False}
           def persist():
               pathlib.Path("receipt.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
               print(json.dumps(report))
@@ -120,7 +121,19 @@ jobs:
                   persist()
                   raise SystemExit(1)
               with open(pattern + ".log", "w", encoding="utf-8") as log:
-                  result = unittest.TextTestRunner(stream=log, verbosity=2).run(suite)
+                  runner = unittest.TextTestRunner(stream=log, verbosity=2)
+                  if pattern == "test_native_acceptance.py":
+                      import native_acceptance as acceptance
+                      original_execute = acceptance.execute
+                      def observe_execute(*args, **kwargs):
+                          captured = original_execute(*args, **kwargs)
+                          if kwargs.get("terminal") is not None:
+                              report["pty_receipts"].append(captured[0])
+                          return captured
+                      with patch.object(acceptance, "execute", observe_execute):
+                          result = runner.run(suite)
+                  else:
+                      result = runner.run(suite)
               skips = [(test.id(), reason) for test, reason in result.skipped]
               expected = [("test_native_acceptance.FilesystemTests.test_raw_pty_cursor_flood_without_input_reads_is_bounded_and_reaped",
                            "requires_native_POSIX_PTY")] if os.name == "nt" and count == 32 else []
