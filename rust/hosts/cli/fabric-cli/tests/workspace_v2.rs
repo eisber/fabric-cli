@@ -45,10 +45,11 @@ fn parsed(args: &[&str]) -> WorkspaceCommand {
 fn client(replies: impl IntoIterator<Item = Reply>) -> (ApiClient, Arc<Http>, Arc<Credential>) {
     let http = Arc::new(Http::new(replies));
     let credential = Arc::new(Credential::default());
+    let sdk = folder_support::sdk(credential.clone());
     let executor = Arc::new(executor(http.clone(), Arc::new(Timer::default())));
     let client = ApiClient::new(
-        credential.clone(),
-        CredentialSelection::new("selected-account", "selected-tenant", Audience::Fabric).unwrap(),
+        Arc::clone(sdk.credential()),
+        sdk.selection().clone(),
         Arc::new(fabric_cli_resources::ResourceHttpExecutor(executor)),
     );
     (client, http, credential)
@@ -86,7 +87,7 @@ fn primary_common_and_facade_contracts_are_equal_and_never_enrich() {
         let envelope = value(&result);
         assert_eq!(envelope["data"], metadata);
         assert_eq!(envelope["meta"]["coverage"]["complete"], true);
-        assert_eq!(envelope["meta"]["context"]["tenant"], "selected-tenant");
+        assert_eq!(envelope["meta"]["context"]["tenant"], "offline-tenant");
         assert_eq!(
             *http.requests.lock().unwrap(),
             [format!(

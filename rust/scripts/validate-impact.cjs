@@ -133,8 +133,12 @@ function commandResult(command, context, execute = spawnSync) {
     windowsHide: true,
     shell: false,
   });
-  const prefix = `${String(context.results.length).padStart(3, '0')}-${command.id || 'contract'}`
+  const rawPrefix = `${String(context.results.length).padStart(3, '0')}-${command.id || 'contract'}`
     .replace(/[^a-zA-Z0-9._-]/g, '_');
+  // Full-workspace commands list every package; retain the complete ID in the
+  // receipt while bounding each log filename below native component limits.
+  const prefix = rawPrefix.length <= 120 ? rawPrefix :
+    `${rawPrefix.slice(0, 96)}-${crypto.createHash('sha256').update(rawPrefix).digest('hex').slice(0, 16)}`;
   const stdout = result.stdout || '';
   const stderr = result.stderr || '';
   const stdoutFile = path.join(context.artifacts, `${prefix}.stdout.log`);

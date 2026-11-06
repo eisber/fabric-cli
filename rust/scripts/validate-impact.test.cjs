@@ -118,6 +118,23 @@ test('recorded command execution retains failures, output hashes, counts and lit
   assert.equal(context.results[1].exit, null);
 });
 
+test('full-workspace command log names stay bounded while receipts retain exact IDs', t => {
+  const root = temporary(t);
+  const context = {root, artifacts: root, commandTimeout: 1000, deadline: Date.now() + 10000, results: []};
+  const id = `default:test:${Array.from({length: 40}, (_, i) => `fabric-package-${i}`).join(',')}`;
+  const command = {id, program: 'cargo', args: ['test', '--workspace']};
+  commandResult(command, context, () => ({status: 0, stdout: 'complete\n', stderr: ''}));
+  const record = context.results[0];
+  assert.equal(record.id, id);
+  assert.deepEqual(record.args, command.args);
+  for (const [file, contents] of [[record.stdout, 'complete\n'], [record.stderr, '']]) {
+    assert.ok(path.basename(file).length <= 131);
+    assert.match(path.basename(file), /-[a-f0-9]{16}\.(stdout|stderr)\.log$/);
+    assert.equal(fs.readFileSync(file, 'utf8'), contents);
+  }
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'commands.json'), 'utf8'))[0].id, id);
+});
+
 test('missing full-gate marker profiles fail, rather than passing an empty contract', t => {
   const root = temporary(t);
   fs.mkdirSync(path.join(root, 'rust', 'validation'), {recursive: true});
