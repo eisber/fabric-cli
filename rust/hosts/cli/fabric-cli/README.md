@@ -311,6 +311,10 @@ no-clobber output preflight, and preserves real operation evidence on local
 cancellation, timeout or output failure without replay. Noninteractive native
 processes without an approval capability fail closed; embedders inject
 `execute::host::ExecutionApproval`. The default binary returns `NotConfigured`.
+Result decoding or serialization failure stops a batch before subsequent
+commands, even when the query already completed; the query is never replayed.
+Authorization diagnostics retain the actual HTTP status alongside operation
+evidence, including empty HTTP 401 responses with `Unauthorized` exit 4.
 See the [complete execution contract](../../../docs/dataflow-execution.md) for
 finite limits, exact format references, permission/gateway prerequisites,
 unimplemented providers and the detailed refresh-log API gap. Existing v1

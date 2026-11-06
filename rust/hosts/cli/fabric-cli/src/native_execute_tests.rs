@@ -81,6 +81,10 @@ fn result() -> (StatusCode, Headers, Vec<u8>) {
         vec![Arc::new(Int64Array::from(vec![Some(7), None]))],
     )
     .unwrap();
+    arrow_response(batch)
+}
+
+fn arrow_response(batch: RecordBatch) -> (StatusCode, Headers, Vec<u8>) {
     let mut body = Vec::new();
     {
         let mut writer =
@@ -120,9 +124,28 @@ async fn invoke(wire: Arc<Wire>, timeout: Duration) -> get::Delivery {
 }
 
 async fn invoke_format(wire: Arc<Wire>, timeout: Duration, format: &str) -> get::Delivery {
+    invoke_bounded(wire, timeout, format, None).await
+}
+
+async fn invoke_bounded(
+    wire: Arc<Wire>,
+    timeout: Duration,
+    format: &str,
+    max_bytes: Option<usize>,
+) -> get::Delivery {
+    let mut arguments = vec![
+        "fab-rs".to_owned(),
+        "execute".into(),
+        TARGET.into(),
+        "--wait".into(),
+        "--format".into(),
+        format.into(),
+    ];
+    if let Some(max_bytes) = max_bytes {
+        arguments.extend(["--max-bytes".into(), max_bytes.to_string()]);
+    }
     let fabric_cli::parser::Invocation::Execute(command) =
-        fabric_cli::parser::parse_args(["fab-rs", "execute", TARGET, "--wait", "--format", format])
-            .unwrap()
+        fabric_cli::parser::parse_args(arguments).unwrap()
     else {
         panic!("root execute")
     };
@@ -695,16 +718,184 @@ fn unicode_result() -> (StatusCode, Headers, Vec<u8>) {
         vec![Arc::new(StringArray::from(vec!["\u{e9}", "\u{96ea}"]))],
     )
     .unwrap();
-    let mut body = Vec::new();
-    {
-        let mut writer =
-            arrow_ipc::writer::StreamWriter::try_new(&mut body, batch.schema().as_ref()).unwrap();
-        writer.write(&batch).unwrap();
-        writer.finish().unwrap();
+    arrow_response(batch)
+}
+
+#[test]
+fn accepted_query_result_limit_stops_batch_before_mutation_summary_or_replay() {
+    use fabric_cli::parser::batch::{self, BatchHost, BatchInvocation};
+
+    struct Host {
+        runtime: tokio::runtime::Runtime,
+        wire: Arc<Wire>,
+        mutations: usize,
+        summarized: bool,
+        stdout: Vec<u8>,
+        stderr: Vec<u8>,
     }
-    let mut headers = Headers::new();
-    headers.insert("content-type", "application/vnd.apache.arrow.stream");
-    (StatusCode::Ok, headers, body)
+    impl BatchHost for Host {
+        type Error = io::Error;
+
+        fn execute(&mut self, arguments: &[&str]) -> io::Result<batch::CommandOutcome> {
+            if arguments == ["execute"] {
+                let delivery = self.runtime.block_on(invoke_bounded(
+                    Arc::clone(&self.wire),
+                    Duration::from_secs(30),
+                    "json",
+                    Some(4096),
+                ));
+                delivery
+                    .write_to(&mut self.stdout, &mut self.stderr)
+                    .map(Into::into)
+            } else {
+                assert_eq!(arguments, ["mutate"]);
+                self.mutations += 1;
+                Ok(batch::CommandOutcome::Returned(0))
+            }
+        }
+
+        fn separator(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn summary(&mut self, _: &BatchInvocation) -> io::Result<()> {
+            self.summarized = true;
+            Ok(())
+        }
+    }
+
+    let text = "\"".repeat(2500);
+    let batch = RecordBatch::try_new(
+        Arc::new(Schema::new(vec![Field::new("text", DataType::Utf8, false)])),
+        vec![Arc::new(StringArray::from(vec![text.as_str()]))],
+    )
+    .unwrap();
+    let response = arrow_response(batch);
+    assert!(response.2.len() < 4096);
+    assert!(
+        serde_json::to_vec(&serde_json::json!({"rows": [[text]]}))
+            .unwrap()
+            .len()
+            > 4096
+    );
+    let wire = accepted_wire();
+    *wire.replies.lock().unwrap().back_mut().unwrap() = response;
+    let mut host = Host {
+        runtime: tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap(),
+        wire: Arc::clone(&wire),
+        mutations: 0,
+        summarized: false,
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+    };
+    assert_eq!(
+        batch::run(
+            &BatchInvocation {
+                commands: vec!["execute".into(), "mutate".into()],
+                output_format: None,
+            },
+            &mut host,
+        )
+        .unwrap(),
+        1
+    );
+    assert_eq!(host.mutations, 0);
+    assert!(!host.summarized);
+    assert!(host.stdout.is_empty());
+    let diagnostic: serde_json::Value = serde_json::from_slice(&host.stderr).unwrap();
+    assert_eq!(diagnostic["error"]["code"], "execution_failed");
+    assert_eq!(diagnostic["operation"]["id"], OPERATION);
+    assert_eq!(diagnostic["operation"]["mutationMayHaveOccurred"], true);
+    assert_eq!(
+        diagnostic["operation"]["remoteCancellationRequested"],
+        false
+    );
+    let requests = wire.requests.lock().unwrap();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.method() == Method::Post)
+            .count(),
+        1
+    );
+    assert!(wire.replies.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn native_http_authorization_errors_retain_status_effects_and_operation_without_replay() {
+    for (status, status_number, code, exit, body) in [
+        (StatusCode::Unauthorized, 401, "Unauthorized", 4, Vec::new()),
+        (
+            StatusCode::Forbidden,
+            403,
+            "Forbidden",
+            1,
+            br#"{"errorCode":"NativeDenied","message":"synthetic denial"}"#.to_vec(),
+        ),
+    ] {
+        for accepted in [false, true] {
+            let wire = if accepted {
+                let wire = accepted_wire();
+                {
+                    let mut replies = wire.replies.lock().unwrap();
+                    replies.pop_back();
+                    replies.pop_back();
+                    replies.push_back((status, Headers::new(), body.clone()));
+                }
+                wire
+            } else {
+                Arc::new(Wire {
+                    replies: Mutex::new(VecDeque::from([(status, Headers::new(), body.clone())])),
+                    requests: Mutex::new(Vec::new()),
+                })
+            };
+            let get::Delivery::Execution(delivery) =
+                invoke(Arc::clone(&wire), Duration::from_secs(30)).await
+            else {
+                panic!("execution delivery");
+            };
+            assert_eq!(
+                delivery.evidence.as_ref().unwrap().http_status,
+                Some(status_number)
+            );
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            assert_eq!(
+                delivery.write_to(&mut stdout, &mut stderr).unwrap(),
+                CommandOutcome::Returned(exit)
+            );
+            assert!(stdout.is_empty());
+            let diagnostic: serde_json::Value = serde_json::from_slice(&stderr).unwrap();
+            assert_eq!(diagnostic["error"]["code"], code);
+            assert_eq!(diagnostic["operation"]["httpStatus"], status_number);
+            assert_eq!(diagnostic["operation"]["mutationMayHaveOccurred"], true);
+            assert_eq!(
+                diagnostic["operation"]["remoteCancellationRequested"],
+                false
+            );
+            assert_eq!(
+                diagnostic["operation"]["id"],
+                serde_json::json!(accepted.then_some(OPERATION))
+            );
+            if body.is_empty() {
+                assert!(diagnostic["operation"]["serviceError"].is_null());
+            } else {
+                assert_eq!(
+                    diagnostic["operation"]["serviceError"],
+                    serde_json::from_slice::<serde_json::Value>(&body).unwrap()
+                );
+            }
+            assert_eq!(
+                wire.requests.lock().unwrap().len(),
+                if accepted { 2 } else { 1 }
+            );
+            assert!(wire.replies.lock().unwrap().is_empty());
+        }
+    }
 }
 
 #[tokio::test]
