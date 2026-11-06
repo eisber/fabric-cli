@@ -100,6 +100,12 @@ serde = { version = "1.0.229", features = ["derive"] }
 # CLI output preserves Python dictionary order and finite-float parsing fidelity.
 # These features intentionally unify across every workspace JSON consumer.
 serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip"] }
+csv = { version = "=1.4.0", default-features = false }
+bytes = { version = "=1.12.1", default-features = false, features = ["std"] }
+arrow-array = { version = "=60.1.0", default-features = false }
+arrow-schema = { version = "=60.1.0", default-features = false }
+parquet = { version = "=60.1.0", default-features = false, features = ["arrow"] }
+tempfile = { version = "=3.27.0", default-features = false, features = ["getrandom"] }
 thiserror = "2.0.21"
 jpx-core = { version = "=0.3.1", default-features = false }
 tokio = { version = "1.54.1", default-features = false, features = ["macros", "rt", "time", "net", "io-util", "sync"] }

@@ -62,6 +62,10 @@ pub struct ReadCommand {
 /// A parse result with help/version separated from service execution.
 #[derive(Clone, Debug)]
 pub enum Invocation {
+    /// Real run/query/execute frontend with an explicitly injected backend boundary.
+    NativeTabular(crate::native_tabular::NativeCommand),
+    /// Explicit tabular file delivery around one declared production operation.
+    Tabular(crate::tabular_export::ExportCommand),
     /// Help/version text, written to stdout without configuring a host.
     Display(String),
     /// Ordered source `-c` strings, parsed individually immediately before dispatch.
@@ -134,7 +138,7 @@ pub fn command() -> Command {
         .subcommands(fabric_cli_local::root_commands())
         .subcommands(fabric_cli_mutations::frontdoor::resource_subcommands())
         .subcommands(fabric_cli_transfer::transfer_subcommands());
-    command
+    let command = command
         .subcommand(fabric_cli_tables::command())
         .subcommand(jobs::register())
         .subcommand(
@@ -180,7 +184,8 @@ pub fn command() -> Command {
                         .long("force")
                         .action(ArgAction::SetTrue),
                 ),
-        )
+        );
+    crate::tabular_export::register(crate::native_tabular::register(command))
 }
 
 /// Parse arguments including argv[0], without printing or exiting.
@@ -275,6 +280,26 @@ where
             INVALID_ARGUMENTS,
         ));
     };
+    if matches!(name, "run" | "query" | "execute") {
+        return crate::native_tabular::from_matches(name, values).map(Invocation::NativeTabular);
+    }
+    let export = crate::tabular_export::request(&matches);
+    let wrap = |mut invocation: Invocation| {
+        if let Some(request) = export {
+            if let Invocation::Access(command) = &mut invocation
+                && let fabric_cli_resources::frontdoor::AccessKind::AclGet { output, .. } =
+                    &mut command.kind
+            {
+                *output = None;
+            }
+            Invocation::Tabular(crate::tabular_export::ExportCommand {
+                command: Box::new(invocation),
+                request,
+            })
+        } else {
+            invocation
+        }
+    };
     if values.subcommand_name().is_none()
         && let Some(group) = parser.find_subcommand_mut(name).filter(|group| {
             group.has_subcommands() && (group.is_arg_required_else_help_set() || name == "config")
@@ -293,10 +318,10 @@ where
         *output = output
             .take()
             .or_else(|| matches.get_one::<String>("output_format").cloned());
-        return Ok(invocation);
+        return Ok(wrap(invocation));
     }
     if !matches!(name, "ls" | "get") {
-        return family_invocation(&matches);
+        return family_invocation(&matches).map(wrap);
     }
     let list = name == "ls";
     let spelling = root.and_then(|index| args.get(index));
@@ -311,7 +336,7 @@ where
             fabric_cli_query::join_query_args(&tokens)
         })
     };
-    Ok(Invocation::Read(ReadCommand {
+    Ok(wrap(Invocation::Read(ReadCommand {
         kind: if list { ReadKind::List } else { ReadKind::Get },
         name: name.into(),
         path: values
@@ -329,7 +354,7 @@ where
         verbose: !list && values.get_flag("verbose"),
         force: !list && values.get_flag("force"),
         output_format: matches.get_one::<String>("output_format").cloned(),
-    }))
+    })))
 }
 
 fn root_argument(args: &[OsString]) -> Option<usize> {

@@ -59,6 +59,10 @@ enum NativeCommand<'a> {
 
 fn has_bound_context(command: NativeCommand<'_>) -> bool {
     match command {
+        NativeCommand::Family(Invocation::Tabular(export)) => matches!(
+            export.command.as_ref(),
+            Invocation::Read(_) | Invocation::JobRead(_)
+        ),
         NativeCommand::Family(Invocation::Deploy(_)) => true,
         NativeCommand::Family(Invocation::Transfer(transfer)) => {
             transfer.kind != fabric_cli_transfer::TransferKind::Deploy
@@ -436,6 +440,26 @@ fn run_command(command: NativeCommand<'_>, state: &mut BatchState) -> io::Result
     })();
     match result {
         Ok(delivery) => delivery.write_to(&mut io::stdout().lock(), &mut io::stderr().lock()),
+        Err((code, message, exit))
+            if matches!(command, NativeCommand::Family(Invocation::Tabular(_))) =>
+        {
+            let NativeCommand::Family(Invocation::Tabular(export)) = command else {
+                unreachable!("matched explicit export");
+            };
+            let source =
+                fabric_cli::tabular_export::source(&export.command).unwrap_or("unsupported");
+            let delivery = fabric_cli::tabular_export::ExportDelivery::host_failed(
+                source,
+                &export.request,
+                code,
+                &message,
+                exit,
+            );
+            delivery
+                .write_to_streams(&mut io::stdout().lock(), &mut io::stderr().lock())
+                .map_err(fabric_cli::tabular_export::ReceiptWriteFailure::into_io_error)?;
+            Ok(failure_outcome(code, exit))
+        }
         Err(error) => write_error(error),
     }
 }
@@ -1053,9 +1077,7 @@ async fn execute_authenticated_injected(
                 .map(|(plan, outcome)| get::Delivery::plan(plan, outcome))
         }
         NativeCommand::Family(command) => {
-            execute_family(&session, &executor, command, state, broker_identity)
-                .await
-                .map(|(plan, outcome)| get::Delivery::plan(plan, outcome))
+            execute_family(&session, &executor, command, state, broker_identity).await
         }
     };
     match result {
@@ -1125,8 +1147,7 @@ async fn execute_family(
     command: &Invocation,
     state: &mut BatchState,
     broker_identity: bool,
-) -> Result<(fabric_cli_output::text::TextPlan, CommandOutcome), fabric_cli_output::text::TextError>
-{
+) -> Result<get::Delivery, fabric_cli_output::text::TextError> {
     use fabric_cli_output::text::{self, OutputFormat, Presentation, TextOptions};
 
     let result = state
@@ -1281,6 +1302,41 @@ async fn execute_family(
                     .map(|files| files.as_mut() as &mut dyn fabric_cli_transfer::TransferFiles),
                 resource_files: None,
             };
+            if let Invocation::Tabular(export) = command {
+                use fabric_cli::tabular_export::{self, ExecutionFailure, FileSink};
+                let delivery = tabular_export::dispatch(
+                    export,
+                    &mut FileSink::default(),
+                    |_| async move {
+                        match export.command.as_ref() {
+                            Invocation::Read(read) => tabular_export::read_rows(session, read).await,
+                            Invocation::JobRead(job) => tabular_export::job_rows(
+                                &fabric_cli::jobs::JobReadSession {
+                                    reads: session,
+                                    jobs: std::sync::Arc::new(fabric_cli_jobs::HttpJobExecutor::new(executor.clone())),
+                                },
+                                job,
+                            ).await,
+                            invocation => {
+                                let mut invocation = invocation.clone();
+                                match &mut invocation {
+                                    Invocation::Access(access) => access.output_format = Some(OutputFormat::Json),
+                                    Invocation::Table(table) => table.output_format = Some("json".into()),
+                                    _ => {}
+                                }
+                                families.dispatch_tabular(&invocation, std::future::pending()).await
+                                    .map_err(|_| ExecutionFailure {
+                                        code: "export_adapter_failed".into(),
+                                        message: "Native result presentation failed; execution is not retried".into(),
+                                    })
+                                    .and_then(|output| tabular_export::family_rows(&invocation, output))
+                            }
+                        }
+                    },
+                ).await;
+                let outcome = CommandOutcome::Returned(delivery.exit_code);
+                return Ok(get::Delivery::export(delivery, outcome));
+            }
             let mut output = if matches!(command, Invocation::Deploy(_)) {
                 let inputs = deploy_inputs::snapshot_environment().map_err(|error| {
                     fabric_cli_local::LocalError::command("InvalidInput", error.to_string())
@@ -1319,7 +1375,7 @@ async fn execute_family(
             notices.append(&mut output.plan.records);
             output.plan.records = notices;
             let outcome = crate::batch_state::family_outcome(&output);
-            Ok::<_, fabric_cli_local::LocalError>((output.plan, outcome))
+            Ok::<_, fabric_cli_local::LocalError>(get::Delivery::plan(output.plan, outcome))
         })
         .await;
     match result {
@@ -1336,7 +1392,7 @@ async fn execute_family(
         )
         .map(|plan| {
             let outcome = crate::batch_state::error_outcome(&error.command_error(), plan.exit_code);
-            (plan, outcome)
+            get::Delivery::plan(plan, outcome)
         }),
     }
 }

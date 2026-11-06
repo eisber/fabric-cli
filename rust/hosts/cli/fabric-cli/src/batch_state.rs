@@ -289,7 +289,10 @@ pub(crate) fn family_outcome(output: &fabric_cli::families::FamilyOutput) -> Com
     let exit = output.plan.exit_code;
     match &output.evidence {
         FamilyEvidence::CommandFailure(error) => error_outcome(error, exit),
-        FamilyEvidence::Access(Err(error)) => code_outcome(Some(&error.code), exit),
+        FamilyEvidence::Access(Err(error))
+        | FamilyEvidence::AccessTable {
+            result: Err(error), ..
+        } => code_outcome(Some(&error.code), exit),
         FamilyEvidence::Resource(Err(error)) => code_outcome(Some(&error.code), exit),
         FamilyEvidence::Removal(Err(error)) => code_outcome(Some(&error.error.code), exit),
         FamilyEvidence::Storage(Err(error)) => {

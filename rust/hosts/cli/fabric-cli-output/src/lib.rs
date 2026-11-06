@@ -30,6 +30,7 @@
 
 mod encoding;
 pub mod production_unicode;
+pub mod tabular;
 pub mod text;
 
 use serde::Serialize;
