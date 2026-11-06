@@ -186,6 +186,29 @@ or proposed synchronization is a published or completed feature.
 
 ## Central merge pipeline
 
+### Combined candidate checkpoint
+
+The common branch now composes the committed CLI local host, name hints,
+Notebook cancellation, create policy, definition copy, typed delete, relationship
+link, schema discovery, Notebook/Livy protocol, Dataflow execution/result
+formats, SQL database and native get candidates. MLModel SDK contracts were
+already present. Each lane's immutable source head is preserved in merge
+ancestry; uncommitted drafts and unrelated Python preparation history are not
+part of this composition.
+
+This is candidate integration, not feature-completion or production acceptance.
+The local host keeps `fab-cli`, schema discovery uses `fab-cli-discovery`, and
+the explicit get/runtime preview keeps `fab-cli-v2`. Distinct preview executable
+names prevent one candidate from overwriting another Cargo build output.
+Shared feature profiles and acceptance checks are retained. Integration repairs
+reject legacy shortcut normalization in schema selectors, reconcile Cargo
+dependency edges, and preserve every composed adapter and SDK export.
+
+The combined candidate must still pass its recorded dependency-impact,
+native/optional-feature and independent integration-review gates. No lane is
+complete merely because its source head is merged; close a session only after
+its agreed finished scope and publication are verified.
+
 The v2 coordinator is the single writer and merger of the common branch. Lane
 owners continue in their own worktrees and submit small PRs or explicitly
 released immutable commits. Never switch, clean, reset, or merge into a peer's

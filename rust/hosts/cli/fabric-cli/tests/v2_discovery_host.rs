@@ -418,6 +418,55 @@ fn boundary_quotes_are_rejected_before_resolver_credentials_or_reads() {
 }
 
 #[test]
+fn shortcut_markers_are_rejected_without_reading_an_existing_normalized_target() {
+    let credential = Arc::new(Credential::default());
+    let sdk = client(credential.clone());
+    let storage = Storage::new([listing("00001"), metadata(&json!({"fields": []}))]);
+    let executor = TableWithOneLake {
+        tables: &NoMutation,
+        storage: &storage,
+    };
+    let resolver = Resolver::new("Lakehouse", "Tables/salesArchive");
+    let provider = DeltaDataSchemaProvider {
+        sdk: &sdk,
+        executor: &executor,
+        resolver: &resolver,
+        limits: TableLimits::default(),
+    };
+    let host = DiscoveryHost {
+        data_schema: Some(&provider),
+    };
+    for path in [
+        "/Existing.Workspace/Book.Lakehouse/Tables/sales.ShortcutArchive",
+        "/Existing.Workspace/Book.Lakehouse/Tables/sales.shortcutArchive",
+        "/Existing.Workspace/Book.Lakehouse/Tables/schema.Shortcut/sales",
+        "/Existing.Workspace/Book.Lakehouse/Tables/schema.shortcut/sales",
+    ] {
+        assert!(matches!(
+            DataSchemaRequest::parse(path),
+            Err(DiscoveryFailure::Unsupported)
+        ));
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        assert_eq!(
+            complete(host.run(
+                ["fab-cli-discovery", "schema", path],
+                pending(),
+                &mut out,
+                &mut err,
+            ))
+            .unwrap(),
+            1
+        );
+        assert!(out.is_empty());
+        let error: Value = serde_json::from_slice(&err).unwrap();
+        assert_eq!(error["error"]["code"], "unsupported");
+    }
+    assert!(resolver.calls.lock().unwrap().is_empty());
+    assert!(credential.0.lock().unwrap().is_empty());
+    assert!(storage.urls.lock().unwrap().is_empty());
+}
+
+#[test]
 fn literal_internal_quotes_are_preserved_through_the_real_delta_adapter() {
     for table in ["sales'archive", "sales\"archive", "'sales", "\"sales"] {
         let path = format!("/Existing.Workspace/Book.Lakehouse/Tables/{table}");
@@ -481,6 +530,10 @@ fn resolved_backend_and_facet_are_rechecked_before_credentials_or_storage() {
         ("Lakehouse", "Tables"),
         ("Lakehouse", "Tables/sales/extra/facet"),
         ("Lakehouse", "Tables/*"),
+        ("Lakehouse", "Tables/sales.ShortcutArchive"),
+        ("Lakehouse", "Tables/sales.shortcutArchive"),
+        ("Lakehouse", "Tables/schema.Shortcut/sales"),
+        ("Lakehouse", "Tables/schema.shortcut/sales"),
     ] {
         let credential = Arc::new(Credential::default());
         let sdk = client(credential.clone());

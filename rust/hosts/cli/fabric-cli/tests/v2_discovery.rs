@@ -49,7 +49,7 @@ mod preview {
     use std::process::{Command, Output, Stdio};
 
     fn invoke(args: &[&str]) -> Output {
-        let mut process = Command::new(env!("CARGO_BIN_EXE_fab-cli"));
+        let mut process = Command::new(env!("CARGO_BIN_EXE_fab-cli-discovery"));
         process
             .env_clear()
             .env("NO_COLOR", "1")

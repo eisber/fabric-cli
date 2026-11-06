@@ -20,9 +20,9 @@ pub mod models;
 pub mod notebook_observability;
 pub mod notebook_runtime;
 pub mod notebooks;
-pub mod runtime;
 pub mod observe;
 pub mod representations;
+pub mod runtime;
 pub mod workspaces;
 
 /// Local operation contracts and schema projections, with no identity or service I/O.
@@ -35,15 +35,15 @@ pub use fabric_sdk_dataagent_ontology as dataagent_ontology;
 pub use fabric_sdk_ontology as ontology;
 /// Explicitly caller-injected private Ontology workload operations.
 pub use fabric_sdk_ontology_workload as ontology_workload;
+/// Typed SQLDatabase metadata requests using caller-owned shared execution.
+pub use fabric_sdk_sql_database as sql_databases;
+/// Transport-independent native SQLDatabase definition validation and encoding.
+pub use fabric_sdk_sql_definition as sql_definitions;
 /// Host-neutral v2 registration, preparation and receipt contracts.
 ///
 /// CLI/MCP consumers use this SDK-layer reexport rather than acquiring a direct
 /// dependency on core implementation crates.
 pub use fabric_v2_contracts as v2;
-/// Typed SQLDatabase metadata requests using caller-owned shared execution.
-pub use fabric_sdk_sql_database as sql_databases;
-/// Transport-independent native SQLDatabase definition validation and encoding.
-pub use fabric_sdk_sql_definition as sql_definitions;
 
 pub use fabric_core::{
     Audience, CredentialSelection, EndpointBinding, EndpointError, RequestContext, ServiceOrigin,

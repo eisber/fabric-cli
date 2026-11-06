@@ -24,7 +24,7 @@ path = "tests/definition_copy_v2.rs"
 required-features = ["native-host", "v2-copy"]
 
 [[bin]]
-name = "fab-cli"
+name = "fab-cli-discovery"
 path = "src/bin/fab_cli.rs"
 required-features = ["v2-discovery"]
 

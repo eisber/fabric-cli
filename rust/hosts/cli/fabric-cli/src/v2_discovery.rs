@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Opt-in `fab-cli` discovery preview, independent of the v1 parser and dispatcher.
+//! Opt-in `fab-cli-discovery` preview, independent of the v1 parser and dispatcher.
 //!
 //! Operation descriptors come exclusively from the neutral SDK registry. A
 //! lexical target match establishes neither existence nor authorization. This
@@ -117,7 +117,7 @@ impl fmt::Display for DiscoveryFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::InvalidArguments => {
-                "Invalid arguments. Run fab-cli --help for discovery preview usage."
+                "Invalid arguments. Run fab-cli-discovery --help for discovery preview usage."
             }
             Self::ExecutionNotImplemented => {
                 "Mutation execution is not implemented in this discovery preview. Use an operation with <path> --schema."
@@ -184,6 +184,8 @@ fn table_error_code(kind: &TableErrorKind) -> &'static str {
 /// engines, globs, encoded selectors or OS paths. Literal quotes at either end
 /// of the complete selector are unsupported because legacy token resolution
 /// would strip them; internal quotes remain literal and are not normalized.
+/// Legacy shortcut markers are unsupported because the existing resolver and
+/// Delta reader remove them from otherwise literal table names.
 #[derive(Debug)]
 pub struct DataSchemaRequest {
     path: String,
@@ -224,6 +226,8 @@ fn exact_segment(segment: &str) -> bool {
         && !matches!(segment, "." | "..")
         && segment.trim() == segment
         && !segment.contains(['\\', '*', '?', '[', ']', '{', '}', '%', ':', '#'])
+        && !segment.contains(".Shortcut")
+        && !segment.contains(".shortcut")
         && !segment.chars().any(char::is_control)
 }
 
@@ -264,7 +268,7 @@ pub enum ParsedDiscovery {
 /// registry, not these command spellings, owns supported operation/type pairs
 /// and all input constraints. Unsupported alias pairs remain explicit failures.
 pub fn command() -> Command {
-    let mut root = Command::new("fab-cli")
+    let mut root = Command::new("fab-cli-discovery")
         .version(VERSION)
         .about("Opt-in Fabric schema/discovery preview")
         .after_help(BOUNDARIES)

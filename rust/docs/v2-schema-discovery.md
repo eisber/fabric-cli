@@ -2,7 +2,9 @@
 
 # V2 schema-discovery preview
 
-The opt-in `v2-discovery` feature adds a separate `fab-cli` discovery binary.
+The opt-in `v2-discovery` feature adds a separate `fab-cli-discovery` binary.
+The separate local-host package retains the `fab-cli` executable; distinct
+preview names prevent Cargo output collisions when both candidates are built.
 The existing Python CLI, `fab-rs` grammar, mutation handlers and compatibility
 fixtures are unchanged. `fab-rs` remains the package's default executable,
 including when additional features are enabled.
@@ -17,10 +19,10 @@ is not part of this feature.
 Run these commands from `rust/`:
 
 ```text
-cargo run --locked -p fabric-cli --features v2-discovery --bin fab-cli -- create /New.Workspace --schema
-cargo run --locked -p fabric-cli --features v2-discovery --bin fab-cli -- update /Existing.Workspace --schema
-cargo run --locked -p fabric-cli --features v2-discovery --bin fab-cli -- delete /Existing.Workspace --schema
-cargo run --locked -p fabric-cli --features v2-discovery --bin fab-cli -- run /Existing.Workspace/Analysis.Notebook --schema
+cargo run --locked -p fabric-cli --features v2-discovery --bin fab-cli-discovery -- create /New.Workspace --schema
+cargo run --locked -p fabric-cli --features v2-discovery --bin fab-cli-discovery -- update /Existing.Workspace --schema
+cargo run --locked -p fabric-cli --features v2-discovery --bin fab-cli-discovery -- delete /Existing.Workspace --schema
+cargo run --locked -p fabric-cli --features v2-discovery --bin fab-cli-discovery -- run /Existing.Workspace/Analysis.Notebook --schema
 ```
 
 `--schema` inspects the exact registered operation contract. It does not read a
@@ -72,6 +74,11 @@ Lakehouse Delta table paths only. It delegates to `TableClient::schema_document`
 which reuses the existing JSON-commit metadata reader and shared OneLake
 execution. It does not introduce a second log scanner, pager, HTTP client,
 credential chain or runtime.
+
+Selectors containing `.Shortcut` or `.shortcut` are rejected before resolution,
+and resolved table/schema components are checked again before storage access.
+The legacy resolver and Delta reader strip these markers; rejecting them here
+prevents schema discovery from silently reading a different existing table.
 
 The additive data document preserves the native schema and column types.
 Unknown nullability remains null; false is not replaced with a default.
