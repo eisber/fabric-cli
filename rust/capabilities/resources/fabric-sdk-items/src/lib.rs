@@ -11,6 +11,7 @@ mod collections;
 pub mod create;
 pub mod delete;
 mod items;
+pub mod links;
 pub mod ml_models;
 pub mod models;
 pub mod mutations;
