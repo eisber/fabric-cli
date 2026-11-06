@@ -84,10 +84,10 @@ pub(crate) fn write_failure(envelope: &DeleteEnvelope, exit: u8) -> io::Result<C
     ))
 }
 
-fn failure_outcome(code: Option<&str>, exit: u8) -> CommandOutcome {
+pub(crate) fn failure_outcome(code: Option<&str>, exit: u8) -> CommandOutcome {
     match code {
-        Some("Cancelled") => CommandOutcome::Cancelled(exit),
-        Some("Timeout" | "SignalFailed" | "OutputFailed" | "ProjectionFailed") => {
+        // An interrupted native approval can leave its blocking stdin reader alive.
+        Some("Cancelled" | "Timeout" | "SignalFailed" | "OutputFailed" | "ProjectionFailed") => {
             CommandOutcome::Stop(exit)
         }
         _ => CommandOutcome::Returned(exit),
@@ -102,7 +102,7 @@ mod tests {
     fn interruption_and_output_failure_stop_enclosing_batches() {
         assert_eq!(
             failure_outcome(Some("Cancelled"), 1),
-            CommandOutcome::Cancelled(1)
+            CommandOutcome::Stop(1)
         );
         for code in [
             "Timeout",

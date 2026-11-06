@@ -22,6 +22,8 @@ pub enum ResolvedGetTarget {
         workspace_id: String,
         /// Canonical item.
         item_id: String,
+        /// Declared owner type, retained even when the item is GUID-qualified.
+        item_type: Option<String>,
         /// Requested representation.
         representation: GetRepresentation,
     },
@@ -172,6 +174,7 @@ pub async fn resolve(
     Ok(ResolvedGetTarget::Item {
         workspace_id,
         item_id,
+        item_type,
         representation,
     })
 }

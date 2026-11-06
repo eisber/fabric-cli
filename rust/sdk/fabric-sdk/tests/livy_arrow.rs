@@ -1734,6 +1734,7 @@ async fn async_driver_nontransient_errors_never_reopen_or_repeat_a_mutation() {
         NativeError::Http(401),
         NativeError::Http(403),
         NativeError::Http(404),
+        NativeError::Http(429),
         NativeError::Http(501),
         NativeError::InvalidResponse,
         NativeError::InvalidInput,
@@ -1784,9 +1785,20 @@ async fn async_driver_http_status_recovery_is_explicit_and_opt_in() {
             stream_deadline(),
         )
         .unwrap();
-        assert!(stream.next_chunk().await.unwrap().is_none());
-        assert_eq!(stream.progress().responses, 2);
-        assert_eq!(executor.trace.lock().unwrap().drops, 2);
+        if status == 429 {
+            let error = stream.next_chunk().await.unwrap_err();
+            assert_eq!(
+                error.cause(),
+                FramedStreamCause::Arrow(ArrowError::Http(status))
+            );
+            assert_eq!(error.stop(), FramedStreamStop::Fatal);
+            assert_eq!(stream.progress().responses, 1);
+            assert_eq!(executor.trace.lock().unwrap().drops, 1);
+        } else {
+            assert!(stream.next_chunk().await.unwrap().is_none());
+            assert_eq!(stream.progress().responses, 2);
+            assert_eq!(executor.trace.lock().unwrap().drops, 2);
+        }
     }
     let executor = TestStreamExecutor::new(vec![StreamOpen::Error(NativeError::Http(503))]);
     let mut stream = FramedResultStream::new(
@@ -1801,6 +1813,45 @@ async fn async_driver_http_status_recovery_is_explicit_and_opt_in() {
         stream.next_chunk().await.unwrap_err().stop(),
         FramedStreamStop::Fatal
     );
+}
+
+#[tokio::test]
+async fn retry_after_throttling_retains_original_http_error_without_an_immediate_get() {
+    for status in [429, 503] {
+        for retry_after in ["15", "Wed, 21 Oct 2015 07:28:00 GMT"] {
+            let mut reply = stream_reply(vec![]);
+            reply.status = status;
+            reply
+                .headers
+                .insert("Retry-After".into(), retry_after.into());
+            let executor = TestStreamExecutor::new(vec![StreamOpen::Reply(reply)]);
+            let mut stream = FramedResultStream::new(
+                &executor,
+                handle(),
+                ResultSelectors::default(),
+                resumable_options(),
+                stream_deadline(),
+            )
+            .unwrap();
+            let error = stream.next_chunk().await.unwrap_err();
+            assert_eq!(
+                error.cause(),
+                FramedStreamCause::Arrow(ArrowError::Http(status))
+            );
+            assert_eq!(error.stop(), FramedStreamStop::Fatal);
+            assert_eq!(error.progress().state, FramedStreamState::Failed);
+            assert_eq!(error.progress().reconnects, 0);
+            assert_eq!(error.progress().open_attempts, 1);
+            assert_eq!(
+                stream.next_chunk().await.unwrap_err().cause(),
+                error.cause()
+            );
+            let trace = executor.trace.lock().unwrap();
+            assert_eq!(trace.requests.len(), 1);
+            assert!(trace.read_limits.is_empty());
+            assert_eq!(trace.drops, 1);
+        }
+    }
 }
 
 #[tokio::test]

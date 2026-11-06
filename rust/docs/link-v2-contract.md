@@ -119,6 +119,9 @@ identity metadata. A malformed completed response returns an explicit
 mutation may have occurred. Errors retain the native status, operation ID,
 service details, and mutation uncertainty through `MutationError::operation`.
 
+`execute` returns a boxed `LinkFailure` on error so the result remains small
+without dropping target, effect or original-response reconciliation evidence.
+
 The small `LinkReceipt::metadata()` projection does not echo native request
 contents, connection details, or returned source data. The original observation
 remains available to authorized programmatic consumers.

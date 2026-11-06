@@ -328,4 +328,33 @@ mod tests {
         assert!(!output.contains("Use 'quit' or 'exit'"));
         assert!(!output.contains("Goodbye!"));
     }
+
+    #[test]
+    fn interrupted_delete_approval_stops_before_another_editor_read() {
+        fn cancelled_delete(
+            invocation: Result<Invocation, clap::Error>,
+            _: &mut BatchState,
+        ) -> io::Result<CommandOutcome> {
+            assert!(matches!(invocation.unwrap(), Invocation::Delete(_)));
+            Ok(crate::delete_host::failure_outcome(Some("Cancelled"), 1))
+        }
+        let mut input = Input(VecDeque::from([
+            InputEvent::Line(
+                "delete /11111111-1111-1111-1111-111111111111.Workspace/22222222-2222-2222-2222-222222222222.Notebook --permanent"
+                    .into(),
+            ),
+            InputEvent::Line("quit".into()),
+        ]));
+        let mut host = CommandShell {
+            state: BatchState::new_interactive(Ok(("/Demo.Workspace".into(), false))),
+            output: Vec::new(),
+            dispatch: cancelled_delete,
+        };
+        assert!(matches!(
+            fabric_cli_repl::run(&mut input, &mut host, Options::default()),
+            Err(RunError::Host(HostError::Terminal(1))),
+        ));
+        assert_eq!(input.0.len(), 1);
+        assert_eq!(host.state.path().unwrap(), "/Demo.Workspace");
+    }
 }

@@ -198,10 +198,6 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                     limit: cap.get(),
                     observed: cap.get().saturating_add(1),
                 })?;
-            let source_limits = RepresentationLimits {
-                max_response_bytes: remaining,
-                max_result_bytes: cap,
-            };
             let metadata = MetadataHost {
                 client: self.client,
                 items: budget,
@@ -242,9 +238,10 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                 ResolvedGetTarget::Item {
                     workspace_id,
                     item_id,
+                    item_type,
                     representation,
-                } => match representation {
-                    GetRepresentation::Metadata => {
+                } => {
+                    let declared_metadata = if let Some(item_type) = item_type {
                         let read = metadata
                             .read(
                                 MetadataTarget::Item {
@@ -259,215 +256,257 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                             )
                             .await
                             .map_err(|error| backend_error("MetadataReadFailed", error))?;
-                        Ok(json_payload(read.data().clone()))
+                        if read.data()["type"].as_str() != Some(item_type.as_str()) {
+                            return Err(backend_error(
+                                "TargetResolutionFailed",
+                                crate::get_resolution::GetResolutionError::NotFound,
+                            ));
+                        }
+                        Some(read)
+                    } else {
+                        None
+                    };
+                    if matches!(representation, GetRepresentation::Metadata)
+                        && let Some(read) = declared_metadata
+                    {
+                        return Ok(json_payload(read.data().clone()));
                     }
-                    GetRepresentation::Job { job_id } => {
-                        let observation = observe(
-                            self.client,
-                            budget,
-                            &ReadHandle::Job {
-                                workspace_id: workspace_id.clone(),
-                                item_id: item_id.clone(),
-                                job_id: job_id.clone(),
-                            },
-                            observer_options(options, false, remaining),
-                            pending(),
-                        )
-                        .await
-                        .map_err(|error| backend_error("ObservationFailed", error))?;
-                        observation_payload(observation)
-                    }
-                    GetRepresentation::Definition {
-                        native_format,
-                        part,
-                    } => {
-                        let mut read = fabric_sdk::representations::read_definition(
-                            self.client,
-                            budget,
-                            &DefinitionTarget {
-                                workspace_id: workspace_id.clone(),
-                                item_id: item_id.clone(),
-                                native_format: native_format.clone(),
-                            },
-                            source_limits,
-                            pending(),
-                        )
-                        .await
-                        .map_err(|error| backend_error("DefinitionReadFailed", error))?;
-                        if let DefinitionRead::Accepted { operation_id } = &read {
-                            if !options.wait {
-                                let mut receipt = json_payload(json!({
-                                    "status":"accepted",
-                                    "handle":format!("/operations/{operation_id}"),
-                                    "completed":false
-                                }));
-                                receipt.data["meta"]["outcome"] = json!("accepted");
-                                receipt.complete = false;
-                                return Ok(receipt);
-                            }
-                            let handle = read.accepted_handle().ok_or_else(|| {
-                                unsupported("definition did not retain its returned handle")
-                            })?;
+                    let remaining = NonZeroUsize::new(budget.remaining_bytes()).ok_or(
+                        GetCommandError::ByteLimit {
+                            limit: cap.get(),
+                            observed: cap.get().saturating_add(1),
+                        },
+                    )?;
+                    let source_limits = RepresentationLimits {
+                        max_response_bytes: remaining,
+                        max_result_bytes: cap,
+                    };
+                    match representation {
+                        GetRepresentation::Metadata => {
+                            let read = metadata
+                                .read(
+                                    MetadataTarget::Item {
+                                        workspace_id,
+                                        item_id,
+                                    },
+                                    MetadataLimits {
+                                        max_response_bytes: remaining,
+                                        max_result_bytes: cap,
+                                    },
+                                    pending(),
+                                )
+                                .await
+                                .map_err(|error| backend_error("MetadataReadFailed", error))?;
+                            Ok(json_payload(read.data().clone()))
+                        }
+                        GetRepresentation::Job { job_id } => {
                             let observation = observe(
                                 self.client,
                                 budget,
-                                &handle,
-                                observer_options(options, true, remaining),
+                                &ReadHandle::Job {
+                                    workspace_id: workspace_id.clone(),
+                                    item_id: item_id.clone(),
+                                    job_id: job_id.clone(),
+                                },
+                                observer_options(options, false, remaining),
                                 pending(),
                             )
                             .await
                             .map_err(|error| backend_error("ObservationFailed", error))?;
-                            let result = observation
-                                .result
-                                .ok_or_else(|| unsupported("definition result was not returned"))?;
-                            read =
-                                DefinitionRead::from_completed_result(&result.bytes, source_limits)
-                                    .map_err(|error| {
-                                        backend_error("DefinitionResultInvalid", error)
-                                    })?;
+                            observation_payload(observation)
                         }
-                        match part {
-                            Some(path) => {
-                                let bytes = read.part_bytes(path).map_err(|error| {
-                                    backend_error("DefinitionPartFailed", error)
-                                })?;
-                                Ok(byte_payload(bytes, None))
-                            }
-                            None => match read {
-                                DefinitionRead::Completed { definition } => {
-                                    Ok(json_payload(definition))
-                                }
-                                DefinitionRead::Accepted { .. } => {
-                                    unreachable!("acceptance returned above")
-                                }
-                            },
-                        }
-                    }
-                    GetRepresentation::File(relative) => {
-                        let (client, _) = self
-                            .storage
-                            .ok_or_else(|| unsupported("storage unavailable"))?;
-                        let path = OneLakePath::new(workspace_id, item_id, relative)
-                            .map_err(|error| backend_error("InvalidStorageTarget", error))?;
-                        let file = fabric_sdk::representations::read_file(
-                            client,
-                            budget,
-                            &path,
-                            source_limits,
-                            pending(),
-                        )
-                        .await
-                        .map_err(|error| backend_error("FileReadFailed", error))?;
-                        let media_type = file
-                            .headers
-                            .iter()
-                            .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
-                            .map(|(_, value)| value.clone());
-                        Ok(byte_payload(file.bytes, media_type))
-                    }
-                    GetRepresentation::Docs(view) => {
-                        let provider = self
-                            .documents
-                            .ok_or_else(|| unsupported("documentation unavailable"))?;
-                        let root = DocsKey {
-                            owner: DocsOwner::Item {
-                                tenant: self.client.selection().tenant().into(),
-                                workspace: workspace_id.clone(),
-                                item: item_id.clone(),
-                            },
-                            view: if view.is_empty() {
-                                "docs".into()
-                            } else {
-                                format!("docs/{view}")
-                            },
-                            facet: None,
-                            subresource: None,
-                            stage: None,
-                            revision_selector: None,
-                        };
-                        let materialized = fabric_sdk::documents::materialize(
-                            provider,
-                            root,
-                            DocsOptions {
-                                recursive: options.recursive,
-                                depth: if options.recursive {
-                                    Some(options.depth.unwrap_or(1))
-                                } else {
-                                    None
+                        GetRepresentation::Definition {
+                            native_format,
+                            part,
+                        } => {
+                            let mut read = fabric_sdk::representations::read_definition(
+                                self.client,
+                                budget,
+                                &DefinitionTarget {
+                                    workspace_id: workspace_id.clone(),
+                                    item_id: item_id.clone(),
+                                    native_format: native_format.clone(),
                                 },
-                                max_nodes: NonZeroUsize::new(100).unwrap(),
-                                max_pages: NonZeroUsize::new(10).unwrap(),
-                                max_bytes: remaining,
-                            },
-                            pending(),
-                        )
-                        .await;
-                        let (graph, mut descendant_partial) = match materialized {
-                            Ok(graph) => (graph, false),
-                            Err(error)
-                                if matches!(error.kind, DocsErrorKind::Provider(_))
-                                    && error.partial.nodes.iter().any(|node| {
-                                        node.key == error.partial.root
-                                            && node.status == NodeStatus::Available
-                                    }) =>
-                            {
-                                (*error.partial, true)
+                                source_limits,
+                                pending(),
+                            )
+                            .await
+                            .map_err(|error| backend_error("DefinitionReadFailed", error))?;
+                            if let DefinitionRead::Accepted { operation_id } = &read {
+                                if !options.wait {
+                                    let mut receipt = json_payload(json!({
+                                        "status":"accepted",
+                                        "handle":format!("/operations/{operation_id}"),
+                                        "completed":false
+                                    }));
+                                    receipt.data["meta"]["outcome"] = json!("accepted");
+                                    receipt.complete = false;
+                                    return Ok(receipt);
+                                }
+                                let handle = read.accepted_handle().ok_or_else(|| {
+                                    unsupported("definition did not retain its returned handle")
+                                })?;
+                                let observation = observe(
+                                    self.client,
+                                    budget,
+                                    &handle,
+                                    observer_options(options, true, remaining),
+                                    pending(),
+                                )
+                                .await
+                                .map_err(|error| backend_error("ObservationFailed", error))?;
+                                let result = observation.result.ok_or_else(|| {
+                                    unsupported("definition result was not returned")
+                                })?;
+                                read = DefinitionRead::from_completed_result(
+                                    &result.bytes,
+                                    source_limits,
+                                )
+                                .map_err(|error| backend_error("DefinitionResultInvalid", error))?;
                             }
-                            Err(error) => return Err(backend_error("DocsReadFailed", error)),
-                        };
-                        if let Coverage::Incomplete { reasons } = &graph.coverage {
-                            descendant_partial |= reasons.iter().any(|reason| {
-                                reason.key.as_ref().is_some_and(|key| key != &graph.root)
-                                    && matches!(
-                                        reason.kind,
-                                        CoverageReasonKind::Denied
-                                            | CoverageReasonKind::NotFound
-                                            | CoverageReasonKind::Unsupported
-                                            | CoverageReasonKind::Unavailable
-                                    )
-                            });
+                            match part {
+                                Some(path) => {
+                                    let bytes = read.part_bytes(path).map_err(|error| {
+                                        backend_error("DefinitionPartFailed", error)
+                                    })?;
+                                    Ok(byte_payload(bytes, None))
+                                }
+                                None => match read {
+                                    DefinitionRead::Completed { definition } => {
+                                        Ok(json_payload(definition))
+                                    }
+                                    DefinitionRead::Accepted { .. } => {
+                                        unreachable!("acceptance returned above")
+                                    }
+                                },
+                            }
                         }
-                        let complete = match &graph.coverage {
-                            Coverage::Complete => true,
-                            Coverage::Incomplete { reasons } => reasons.iter().all(|reason| {
-                                matches!(
-                                    reason.kind,
-                                    CoverageReasonKind::NonRecursive
-                                        | CoverageReasonKind::DepthLimit
-                                        | CoverageReasonKind::CrossOwnerBoundary
-                                        | CoverageReasonKind::OutsideSubtree
-                                        | CoverageReasonKind::Unadvertised
-                                        | CoverageReasonKind::ReferenceOnly
-                                        | CoverageReasonKind::Omitted
-                                ) || (descendant_partial
-                                    && matches!(
-                                        reason.kind,
-                                        CoverageReasonKind::Denied
-                                            | CoverageReasonKind::NotFound
-                                            | CoverageReasonKind::Unsupported
-                                            | CoverageReasonKind::Unavailable
-                                    ))
-                            }),
-                        };
-                        let graph_data =
-                            serde_json::to_value(&graph).map_err(GetCommandError::Json)?;
-                        let data = json!({
-                            "data":graph_data,
-                            "meta":{
-                                "representation":"docs",
-                                "outcome":if descendant_partial {"partial"} else {"completed"},
-                                "coverage":graph.coverage,"root":graph.root
+                        GetRepresentation::File(relative) => {
+                            let (client, _) = self
+                                .storage
+                                .ok_or_else(|| unsupported("storage unavailable"))?;
+                            let path = OneLakePath::new(workspace_id, item_id, relative)
+                                .map_err(|error| backend_error("InvalidStorageTarget", error))?;
+                            let file = fabric_sdk::representations::read_file(
+                                client,
+                                budget,
+                                &path,
+                                source_limits,
+                                pending(),
+                            )
+                            .await
+                            .map_err(|error| backend_error("FileReadFailed", error))?;
+                            let media_type = file
+                                .headers
+                                .iter()
+                                .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
+                                .map(|(_, value)| value.clone());
+                            Ok(byte_payload(file.bytes, media_type))
+                        }
+                        GetRepresentation::Docs(view) => {
+                            let provider = self
+                                .documents
+                                .ok_or_else(|| unsupported("documentation unavailable"))?;
+                            let root = DocsKey {
+                                owner: DocsOwner::Item {
+                                    tenant: self.client.selection().tenant().into(),
+                                    workspace: workspace_id.clone(),
+                                    item: item_id.clone(),
+                                },
+                                view: if view.is_empty() {
+                                    "docs".into()
+                                } else {
+                                    format!("docs/{view}")
+                                },
+                                facet: None,
+                                subresource: None,
+                                stage: None,
+                                revision_selector: None,
+                            };
+                            let materialized = fabric_sdk::documents::materialize(
+                                provider,
+                                root,
+                                DocsOptions {
+                                    recursive: options.recursive,
+                                    depth: if options.recursive {
+                                        Some(options.depth.unwrap_or(1))
+                                    } else {
+                                        None
+                                    },
+                                    max_nodes: NonZeroUsize::new(100).unwrap(),
+                                    max_pages: NonZeroUsize::new(10).unwrap(),
+                                    max_bytes: remaining,
+                                },
+                                pending(),
+                            )
+                            .await;
+                            let (graph, mut descendant_partial) = match materialized {
+                                Ok(graph) => (graph, false),
+                                Err(error)
+                                    if matches!(error.kind, DocsErrorKind::Provider(_))
+                                        && error.partial.nodes.iter().any(|node| {
+                                            node.key == error.partial.root
+                                                && node.status == NodeStatus::Available
+                                        }) =>
+                                {
+                                    (*error.partial, true)
+                                }
+                                Err(error) => return Err(backend_error("DocsReadFailed", error)),
+                            };
+                            if let Coverage::Incomplete { reasons } = &graph.coverage {
+                                descendant_partial |= reasons.iter().any(|reason| {
+                                    reason.key.as_ref().is_some_and(|key| key != &graph.root)
+                                        && matches!(
+                                            reason.kind,
+                                            CoverageReasonKind::Denied
+                                                | CoverageReasonKind::NotFound
+                                                | CoverageReasonKind::Unsupported
+                                                | CoverageReasonKind::Unavailable
+                                        )
+                                });
                             }
-                        });
-                        Ok(GetPayload {
-                            data,
-                            raw: None,
-                            markdown: None,
-                            media_type: "text/markdown".into(),
-                            complete,
-                        })
+                            let complete = match &graph.coverage {
+                                Coverage::Complete => true,
+                                Coverage::Incomplete { reasons } => reasons.iter().all(|reason| {
+                                    matches!(
+                                        reason.kind,
+                                        CoverageReasonKind::NonRecursive
+                                            | CoverageReasonKind::DepthLimit
+                                            | CoverageReasonKind::CrossOwnerBoundary
+                                            | CoverageReasonKind::OutsideSubtree
+                                            | CoverageReasonKind::Unadvertised
+                                            | CoverageReasonKind::ReferenceOnly
+                                            | CoverageReasonKind::Omitted
+                                    ) || (descendant_partial
+                                        && matches!(
+                                            reason.kind,
+                                            CoverageReasonKind::Denied
+                                                | CoverageReasonKind::NotFound
+                                                | CoverageReasonKind::Unsupported
+                                                | CoverageReasonKind::Unavailable
+                                        ))
+                                }),
+                            };
+                            let graph_data =
+                                serde_json::to_value(&graph).map_err(GetCommandError::Json)?;
+                            let data = json!({
+                                "data":graph_data,
+                                "meta":{
+                                    "representation":"docs",
+                                    "outcome":if descendant_partial {"partial"} else {"completed"},
+                                    "coverage":graph.coverage,"root":graph.root
+                                }
+                            });
+                            Ok(GetPayload {
+                                data,
+                                raw: None,
+                                markdown: None,
+                                media_type: "text/markdown".into(),
+                                complete,
+                            })
+                        }
                     }
-                },
+                }
             }
         })
     }

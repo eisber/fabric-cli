@@ -284,7 +284,7 @@ async fn submit(
     wait: bool,
     bounds: OperationLimits,
     cancelled: impl Future<Output = ()> + Send,
-) -> Result<LinkReceipt, LinkFailure> {
+) -> Result<LinkReceipt, Box<LinkFailure>> {
     let request = prepared(owner, wait);
     let expected_effects = request.effects();
     let http = fixture.http();

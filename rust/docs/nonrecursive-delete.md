@@ -56,6 +56,10 @@ replaces that default. The native budget covers approval, credential setup,
 submission and observation after local validation. Timeout and interruption
 preserve known evidence and never repeat or undo the delete.
 
+An interrupted native approval stops the enclosing batch or REPL before another
+input read. Its blocking console reader may still be finishing after bounded
+runtime shutdown; another editor must not compete with that reader for stdin.
+
 ## Typed metadata across layers
 
 The shared core represents operation annotations as typed runtime data, not
@@ -76,6 +80,9 @@ The receipt uses a separate versioned JSON envelope. `--project` changes only
 `data`; target, effect, approval and operation evidence remain in `meta`.
 Unknown facts remain unknown. Accepted is not completed, and ambiguous transport
 failure is not evidence that deletion failed harmlessly.
+
+`DeleteCommandError::sdk` retains the original SDK failure in a box, keeping the
+command error small without changing its typed source or reconciliation data.
 
 `--output` reserves a new local file before mutation and never truncates an
 existing destination. A failed operation may leave the reserved file empty;

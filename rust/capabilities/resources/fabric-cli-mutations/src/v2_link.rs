@@ -497,11 +497,12 @@ impl std::error::Error for LinkFailure {}
 /// A missing/failed/declined approval sends no request. Service, cancellation,
 /// deadline and malformed-response failures preserve reconciliation evidence.
 /// No branch replays a mutation, changes identity or rolls back a created link.
+/// The boxed failure retains every target, effect and observed-response field.
 pub async fn execute(
     prepared: PreparedLink,
     operations: &mut dyn ResourceOperations,
     approval: Option<&mut dyn LinkApproval>,
-) -> Result<LinkReceipt, LinkFailure> {
+) -> Result<LinkReceipt, Box<LinkFailure>> {
     let result = async {
         let approval = approval
             .ok_or_else(|| MutationError::new("ApprovalRequired", "Link requires host approval"))?;
@@ -517,11 +518,13 @@ pub async fn execute(
             .map_err(MutationError::from)
     }
     .await;
-    let outcome = result.map_err(|error| LinkFailure {
-        target: prepared.target.clone(),
-        effects: prepared.effects,
-        error,
-        observed: None,
+    let outcome = result.map_err(|error| {
+        Box::new(LinkFailure {
+            target: prepared.target.clone(),
+            effects: prepared.effects,
+            error,
+            observed: None,
+        })
     })?;
     if !valid_completion(&prepared.target, &outcome) {
         let mut error = ResourceError::input();
@@ -531,12 +534,12 @@ pub async fn execute(
             error.status = Some(*status);
         }
         error.mutation_may_have_occurred = true;
-        return Err(LinkFailure {
+        return Err(Box::new(LinkFailure {
             target: prepared.target,
             effects: prepared.effects,
             error: error.into(),
             observed: Some(outcome),
-        });
+        }));
     }
     Ok(LinkReceipt {
         target: prepared.target,

@@ -41,6 +41,12 @@ enumeration; machine identity paths are also accepted:
 or percent-escaped segments are not advertised by this initial grammar. Folder
 resolution and non-item service scopes are not silently approximated.
 
+A declared item suffix remains a type constraint even with GUID selectors.
+Authoritative item metadata must match that type before metadata is delivered or
+any definition, file, run or documentation representation is fetched. This check
+uses the same invocation deadline and byte budget. Untyped machine paths remain
+valid and do not acquire an implicit owner-type constraint.
+
 | Target | Binding |
 | --- | --- |
 | Workspace | Primary metadata only |

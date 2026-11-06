@@ -842,8 +842,10 @@ async fn response_request_and_delay_bounds_are_not_clipped_success() {
     let credential = Credential::default();
     let selection = selection();
     let executor = Executor::new([arrow_response()]);
-    let mut limits = OperationLimits::default();
-    limits.max_response_bytes = NonZeroUsize::new(BYTES.len()).unwrap();
+    let limits = OperationLimits {
+        max_response_bytes: NonZeroUsize::new(BYTES.len()).unwrap(),
+        ..OperationLimits::default()
+    };
     let mut session = OperationSession::new(&credential, &selection, executor, limits, pending());
     assert_eq!(
         execute_query(

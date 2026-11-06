@@ -38,7 +38,7 @@ use std::{
     pin::Pin,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -81,6 +81,8 @@ struct Executor {
     replies: Mutex<VecDeque<Reply>>,
     calls: Mutex<Vec<(String, String)>>,
     waits: Mutex<Vec<Duration>>,
+    block_item: AtomicBool,
+    item_started: tokio::sync::Notify,
 }
 
 impl Executor {
@@ -127,6 +129,14 @@ impl ItemExecutor for Executor {
         request: ItemRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<ItemResponse, ItemExecutionError>> + Send + 'a>> {
         Box::pin(async move {
+            if self.block_item.load(Ordering::SeqCst) {
+                self.calls
+                    .lock()
+                    .unwrap()
+                    .push((request.method().into(), request.url().path().into()));
+                self.item_started.notify_one();
+                return pending().await;
+            }
             let reply = self.take(request.method(), request.url().path());
             Ok(ItemResponse {
                 status: reply.status,
@@ -287,6 +297,98 @@ async fn metadata_projection_keeps_json_types_and_never_fetches_source() {
     assert_eq!(result["data"], false);
     assert_eq!(result["meta"]["outcome"], "completed");
     assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn guid_qualified_owner_type_is_checked_before_metadata_or_representation_delivery() {
+    for suffix in ["", "/src/definition", "/Files/test.bin"] {
+        for actual_type in [Some("SemanticModel"), None] {
+            let f = Fixture::new();
+            let mut data = serde_json::json!({"id": ITEM, "displayName": "Wrong owner"});
+            if let Some(actual_type) = actual_type {
+                data["type"] = actual_type.into();
+            }
+            f.executor.response(
+                "GET",
+                format!("/v1/workspaces/{WS}/items/{ITEM}"),
+                200,
+                &serde_json::to_vec(&data).unwrap(),
+                &[],
+            );
+            let result = stdout(
+                &f,
+                &[
+                    "get".into(),
+                    format!("/{WS}.Workspace/{ITEM}.Notebook{suffix}"),
+                ],
+            )
+            .await;
+            assert!(matches!(
+                result,
+                Err(GetCommandError::Backend {
+                    code: "TargetResolutionFailed",
+                    ..
+                })
+            ));
+            assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+            assert_eq!(
+                f.credential.0.lock().unwrap().as_slice(),
+                ["https://api.fabric.microsoft.com/.default"]
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn guid_qualified_metadata_reuses_the_authoritative_type_check() {
+    let f = Fixture::new();
+    f.executor.response(
+        "GET",
+        format!("/v1/workspaces/{WS}/items/{ITEM}"),
+        200,
+        format!(r#"{{"id":"{ITEM}","type":"Notebook","displayName":"Book"}}"#).as_bytes(),
+        &[],
+    );
+    let bytes = stdout(
+        &f,
+        &["get".into(), format!("/{WS}.Workspace/{ITEM}.Notebook")],
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&bytes).unwrap()["data"]["type"],
+        "Notebook"
+    );
+    assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn cancelling_guid_owner_verification_never_fetches_its_representation() {
+    let f = Fixture::new();
+    f.executor.block_item.store(true, Ordering::SeqCst);
+    let args = [
+        "get".into(),
+        format!("/{WS}.Workspace/{ITEM}.Notebook/src/definition"),
+    ];
+    let prepared = f.prepared(&args);
+    let backend = f.backend();
+    let result = prepared
+        .acquire(&backend, async {
+            f.executor.item_started.notified().await;
+            fabric_cli::get_command::GetInterruption::Cancelled
+        })
+        .await;
+    assert!(matches!(
+        result,
+        Err(GetCommandError::Interrupted(
+            fabric_cli::get_command::GetInterruption::Cancelled
+        ))
+    ));
+    let calls = f.executor.calls.lock().unwrap();
+    assert_eq!(
+        calls.as_slice(),
+        &[("GET".into(), format!("/v1/workspaces/{WS}/items/{ITEM}"))]
+    );
 }
 
 #[tokio::test]

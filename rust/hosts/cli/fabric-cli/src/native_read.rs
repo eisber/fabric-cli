@@ -535,7 +535,7 @@ fn run_cancel_selected(
             .bind_get(state)
             .map_err(|_| failure("invalid_configuration", "Invalid credential binding.", 2))?;
     }
-    let (client, identity_client) = native_clients(&credential)?;
+    let (client, identity_client) = native_clients(&credential, false)?;
     let runtime = native_runtime()?;
     let reason = Arc::new(AtomicU8::new(0));
     let signal_reason = reason.clone();
@@ -680,6 +680,19 @@ fn run_selected(
 #[cfg(test)]
 mod endpoint_tests {
     use super::*;
+
+    #[cfg(any(windows, feature = "headless"))]
+    #[test]
+    fn dataflow_execution_alone_selects_the_extended_transport_read_window() {
+        assert_eq!(
+            native_transport_options(true).read_timeout,
+            std::time::Duration::from_secs(95)
+        );
+        assert_eq!(
+            native_transport_options(false).read_timeout,
+            std::time::Duration::from_secs(30)
+        );
+    }
 
     #[test]
     fn cancellation_and_configuration_failure_do_not_share_a_control_reason() {
@@ -1042,7 +1055,8 @@ async fn execute_delivery(
     state: &mut BatchState,
     get_inputs: Option<get::Inputs<'_>>,
 ) -> Result<get::Delivery, Failure> {
-    let (client, identity_client) = native_clients(&credential)?;
+    let (client, identity_client) =
+        native_clients(&credential, matches!(command, NativeCommand::Execution(..)))?;
     execute_injected_delivery(
         command,
         (credential, client, identity_client),
@@ -1063,26 +1077,14 @@ type NativeClients = (
 );
 
 #[cfg(any(windows, feature = "headless"))]
-fn native_clients(credential: &NativeCredential) -> Result<NativeClients, Failure> {
-    use fabric_sdk_transport::{NativeHttpClient, ProxyPolicy, TransportOptions, TrustPolicy};
-    use std::{num::NonZeroUsize, sync::Arc, time::Duration};
+fn native_clients(
+    credential: &NativeCredential,
+    execution: bool,
+) -> Result<NativeClients, Failure> {
+    use fabric_sdk_transport::NativeHttpClient;
+    use std::sync::Arc;
 
-    let options = TransportOptions {
-        connect_timeout: Duration::from_secs(10),
-        read_timeout: Duration::from_secs(if matches!(command, NativeCommand::Execution(..)) {
-            // Execute Query has a service-side 90-second evaluation window.
-            95
-        } else {
-            30
-        }),
-        write_timeout: Duration::from_secs(30),
-        pool_idle_timeout: Duration::from_secs(60),
-        max_idle_per_host: NonZeroUsize::new(4).expect("nonzero constant"),
-        trust: TrustPolicy::Platform {
-            additional_roots: Vec::new(),
-        },
-        proxy: ProxyPolicy::None,
-    };
+    let options = native_transport_options(execution);
     let identity_client = credential
         .metadata_endpoint()
         .map(|endpoint| {
@@ -1097,16 +1099,38 @@ fn native_clients(credential: &NativeCredential) -> Result<NativeClients, Failur
                 2,
             )
         })?;
-    let client = NativeHttpClient::new(options).map_err(|_| {
-        failure(
-            "transport_failed",
-            "The native HTTP client could not start.",
-            1,
-        )
-    })?;
-    let client = Arc::new(client);
-    let identity_client = identity_client.unwrap_or_else(|| client.clone());
-    Ok((client, identity_client))
+    let client: Arc<dyn azure_core::http::HttpClient> =
+        Arc::new(NativeHttpClient::new(options).map_err(|_| {
+            failure(
+                "transport_failed",
+                "The native HTTP client could not start.",
+                1,
+            )
+        })?);
+    Ok((client.clone(), identity_client.unwrap_or(client)))
+}
+
+#[cfg(any(windows, feature = "headless"))]
+fn native_transport_options(execution: bool) -> fabric_sdk_transport::TransportOptions {
+    use fabric_sdk_transport::{ProxyPolicy, TransportOptions, TrustPolicy};
+    use std::{num::NonZeroUsize, time::Duration};
+
+    TransportOptions {
+        connect_timeout: Duration::from_secs(10),
+        read_timeout: Duration::from_secs(if execution {
+            // Execute Query has a service-side 90-second evaluation window.
+            95
+        } else {
+            30
+        }),
+        write_timeout: Duration::from_secs(30),
+        pool_idle_timeout: Duration::from_secs(60),
+        max_idle_per_host: NonZeroUsize::new(4).expect("nonzero constant"),
+        trust: TrustPolicy::Platform {
+            additional_roots: Vec::new(),
+        },
+        proxy: ProxyPolicy::None,
+    }
 }
 
 #[cfg(any(windows, feature = "headless"))]
