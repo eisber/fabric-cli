@@ -15,6 +15,11 @@ layer = "sdk"
 
 [features]
 default = []
+notebook-websocket = [
+    "dep:fabric-sdk",
+    "dep:tokio-tungstenite",
+    "dep:futures-util",
+]
 hyper-rustls = [
     "dep:async-trait",
     "dep:azure_core",
@@ -49,7 +54,9 @@ rustls = { workspace = true, optional = true }
 rustls-platform-verifier = { workspace = true, optional = true }
 async-compression = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
-futures-util = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true, features = ["sink"] }
+fabric-sdk = { workspace = true, optional = true }
+tokio-tungstenite = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rustls-native-certs = { workspace = true, optional = true }
