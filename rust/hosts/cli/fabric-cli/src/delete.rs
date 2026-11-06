@@ -101,7 +101,7 @@ impl fmt::Display for DeleteCommandError {
 
 impl std::error::Error for DeleteCommandError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        if let Some(error) = &self.sdk {
+        if let Some(error) = self.sdk.as_deref() {
             Some(error)
         } else {
             self.io

@@ -33,7 +33,13 @@ fn defaults_are_explicit_and_never_approve_permanent_deletion() {
     assert_eq!(command.timeout, Duration::from_secs(30));
     assert_eq!(command.format, "json");
     assert_eq!(command.output, "-");
-    assert!(preflight(&command, None).is_err());
+    let error = preflight(&command, None).unwrap_err();
+    let source = std::error::Error::source(&error).unwrap();
+    let source = source
+        .downcast_ref::<fabric_sdk::items::delete::DeleteFailure>()
+        .expect("boxing must preserve the original typed SDK error source");
+    assert_eq!(source.code(), "UnsupportedCapability");
+    assert!(source.metadata().is_some());
 }
 
 #[test]

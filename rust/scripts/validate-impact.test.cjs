@@ -118,6 +118,34 @@ test('recorded command execution retains failures, output hashes, counts and lit
   assert.equal(context.results[1].exit, null);
 });
 
+test('full-workspace command log names stay bounded without changing scope or receipts', t => {
+  const root = temporary(t);
+  const packages = Array.from({length: 40}, (_, index) =>
+    `fabric-package-with-a-long-name-${String(index).padStart(2, '0')}`);
+  const [command] = testCommands(packages.map(name => ({package: name, target: 'all'})));
+  const run = id => {
+    const context = {root, artifacts: root, commandTimeout: 1000,
+      deadline: Date.now() + 10000, results: []};
+    commandResult({...command, id}, context, (program, args) => {
+      assert.equal(program, command.program);
+      assert.deepEqual(args, command.args);
+      return {status: 0, stdout: 'test result: ok. 1 passed; 0 failed; 0 ignored;\n', stderr: ''};
+    });
+    const [record] = context.results;
+    assert.equal(record.id, id);
+    assert.deepEqual(record.args, command.args);
+    for (const log of [record.stdout, record.stderr]) {
+      assert.ok(path.basename(log).length <= 111);
+      assert.ok(fs.existsSync(log));
+    }
+    return path.basename(record.stdout);
+  };
+  assert.ok(command.id.length > 255);
+  const first = run(command.id);
+  assert.equal(first, run(command.id), 'the same command has a stable log basename');
+  assert.notEqual(first, run(`${command.id}-distinct-tail`));
+});
+
 test('missing full-gate marker profiles fail, rather than passing an empty contract', t => {
   const root = temporary(t);
   fs.mkdirSync(path.join(root, 'rust', 'validation'), {recursive: true});
