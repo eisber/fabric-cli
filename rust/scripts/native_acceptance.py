@@ -410,6 +410,16 @@ def wait_owned_process(child: subprocess.Popen[bytes], timeout: float, master: i
                 time.sleep(min(0.005, max(0, deadline - time.monotonic())))
 
 
+def terminal_state(slave: int, before: Any) -> tuple[bool, str | None]:
+    """Observe restoration separately from confirmed process/resource cleanup."""
+    import termios
+
+    try:
+        return termios.tcgetattr(slave) == before, None
+    except (OSError, termios.error):
+        return False, "terminal_state_unavailable"
+
+
 def execute(
     argv: list[str], cwd: Path, env: dict[str, str], seconds: float,
     deadline: float, stdin: bytes = b"", terminal: dict[str, Any] | None = None,
@@ -427,6 +437,7 @@ def execute(
     threads: list[threading.Thread] = []
     master = slave = None
     restored = raw_observed = False
+    terminal_state_error: str | None = None
     input_queue_limit = False
     timed_out = False
     execution_error: str | None = None
@@ -624,12 +635,7 @@ def execute(
                 cleanup = False
                 cleanup_failures.append("io_threads_still_active")
         if slave is not None:
-            import termios
-            try:
-                restored = termios.tcgetattr(slave) == before
-            except (OSError, termios.error):
-                cleanup = False
-                cleanup_failures.append("terminal_state_unavailable")
+            restored, terminal_state_error = terminal_state(slave, before)
             for descriptor in (master, slave):
                 try:
                     os.close(descriptor)
@@ -668,6 +674,7 @@ def execute(
         receipt["terminal"] = {
             "kind": "native_kernel_pty_not_visual_acceptance",
             "raw_observed": raw_observed, "termios_restored": restored,
+            "state_observation_error": terminal_state_error,
             "cursor_queries": terminal.get("protocol_cursor_queries", 0),
             "input_bytes_written": terminal.get("protocol_input_bytes_written", 0),
             "input_queue_limit": input_queue_limit,

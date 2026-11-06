@@ -291,6 +291,10 @@ the owned child to be reaped. This avoids a full Darwin PTY blocking the killed
 session leader's final close. Drained cleanup bytes do not extend captured output
 or its 64-KiB limit; the existing one-second wait and half-second fallback budgets
 remain unchanged. Child reaping and process-group absence are still required.
+Terminal-state observation is separate: a hung-up terminal may no longer expose
+its settings after the child has been reaped. Its observation error is retained,
+and `termios_restored` remains false. This does not invalidate confirmed process
+and descriptor cleanup, but it cannot satisfy terminal-restoration acceptance.
 Spawn failures retain a static execution diagnostic and `no_child_created`;
 failed cleanup retains fixed failure codes, never a successful cleanup claim.
 This is a trusted-process lifecycle boundary, not containment against malicious
@@ -349,8 +353,9 @@ contact providers or certify a registered host. An actual native matrix still
 requires all controller prerequisites above and independent evidence review.
 The synthetic raw-child PTY flood must actually run on POSIX. Its explicit
 Windows-only skip is not a runtime pass and cannot satisfy Linux/macOS coverage.
-The separate four-case `test_native_acceptance_pty_cleanup.py` unit suite checks
-draining, the unchanged wait deadline, and fail-closed descriptor/selector errors with
+The separate five-case `test_native_acceptance_pty_cleanup.py` unit suite checks
+draining, the unchanged wait deadline, fail-closed descriptor/selector errors, and
+explicit unavailable terminal-state observation with
 synthetic handles. The existing `oracle-tools` gate also runs it; these unit
 checks do not replace any case in the frozen 32-case suite or native PTY proof.
 The existing three-platform Rust CI also runs both exact engineering suites

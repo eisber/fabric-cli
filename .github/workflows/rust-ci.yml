@@ -104,7 +104,7 @@ jobs:
           persist()
           passed = True
           for pattern, count in [("test_native_acceptance.py", 32),
-                                 ("test_native_acceptance_pty_cleanup.py", 4)]:
+                                 ("test_native_acceptance_pty_cleanup.py", 5)]:
               try:
                   suite = unittest.defaultTestLoader.discover(str(source), pattern=pattern)
               except (ImportError, OSError):

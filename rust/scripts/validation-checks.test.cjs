@@ -262,7 +262,7 @@ test('native CI front-loads exact engineering suites without replacing the full 
   assert.ok(workflow.indexOf('Check bounded engineering cleanup before native compilation') <
     workflow.indexOf('Record actual native toolchain and restore locked dependencies'));
   assert.ok(workflow.includes('("test_native_acceptance.py", 32)'));
-  assert.ok(workflow.includes('("test_native_acceptance_pty_cleanup.py", 4)'));
+  assert.ok(workflow.includes('("test_native_acceptance_pty_cleanup.py", 5)'));
   assert.ok(workflow.includes('not result.expectedFailures and skips == expected'));
   assert.ok(workflow.includes('"discovered": discovered, "run": 0'));
   assert.ok(workflow.includes('"passed": False, "reason": "inventory_mismatch"'));

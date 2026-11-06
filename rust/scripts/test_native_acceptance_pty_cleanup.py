@@ -6,6 +6,7 @@
 import errno
 import select
 import subprocess
+import sys
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, call, patch
@@ -43,3 +44,16 @@ class PtyWaitTests(unittest.TestCase):
                 acceptance.wait_owned_process(child, 1, 123)
         self.assertEqual(rejected.exception.errno, errno.EINVAL)
         self.assertEqual(rejected.exception.strerror, "Owned PTY selector failed")
+
+    def test_unavailable_terminal_state_remains_explicit_and_cannot_prove_restoration(self) -> None:
+        read = Mock()
+        module = SimpleNamespace(tcgetattr=read, error=OSError)
+        with patch.dict(sys.modules, {"termios": module}):
+            for value, expected in [([1, 2], (True, None)), ([1, 3], (False, None))]:
+                read.return_value = value
+                self.assertEqual(acceptance.terminal_state(123, [1, 2]), expected)
+            read.side_effect = OSError(errno.EIO, "synthetic hung-up terminal")
+            self.assertEqual(
+                acceptance.terminal_state(123, [1, 2]),
+                (False, "terminal_state_unavailable"),
+            )
