@@ -340,13 +340,12 @@ fn validate_reference_text(value: &str) -> Result<(), ResourceError> {
     }
     // SQL and other native paths are not URLs. Only inspect URLs when parsable;
     // do not normalize or impose a URI grammar on arbitrary datasource selectors.
-    if let Ok(url) = Url::parse(value) {
-        if !url.username().is_empty()
+    if let Ok(url) = Url::parse(value)
+        && (!url.username().is_empty()
             || url.password().is_some()
-            || url.query_pairs().any(|(key, _)| credential_key(&key))
-        {
-            return Err(ResourceError::input());
-        }
+            || url.query_pairs().any(|(key, _)| credential_key(&key)))
+    {
+        return Err(ResourceError::input());
     }
     Ok(())
 }

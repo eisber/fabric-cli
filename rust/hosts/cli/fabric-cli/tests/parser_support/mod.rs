@@ -38,6 +38,7 @@ pub fn observe(input: &Value) -> Option<Value> {
             | Invocation::JobRead(_)
             | Invocation::JobRun(_)
             | Invocation::JobMutation(_)
+            | Invocation::Execute(_)
             | Invocation::Local(_)
             | Invocation::Access(_)
             | Invocation::Resource(_)

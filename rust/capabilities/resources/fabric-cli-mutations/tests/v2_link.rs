@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+//! Offline v2 relationship-link resolution, approval and effect contracts.
 
 #![deny(unnameable_test_items)]
 

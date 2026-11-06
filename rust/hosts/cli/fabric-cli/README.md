@@ -29,6 +29,10 @@ cargo run --locked -p fabric-cli --features native-read -- deploy --help
 Help, version and local command setup do not authenticate. Default and
 broker-only builds do not install a remote execution host.
 
+The offline legacy read probes accept only read invocations. Job and Dataflow
+`execute` invocations remain explicit errors in those probes; their dedicated
+command tests cover execution separately.
+
 In a `native-read` build, `fab-rs auth login` uses the saved selection or opens
 WAM's work-account picker. Successful login saves only the account, tenant and
 client ID; `fab-rs ls /` then reuses that selection with silent WAM credentials
