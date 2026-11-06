@@ -586,7 +586,7 @@ fn validated_native_page_boundary_is_partial_even_when_every_row_fits() {
                 pending(),
             ))
             .unwrap();
-            assert_eq!(result.data, Value::Array(rows));
+            assert_eq!(result.data, Value::Array(rows.clone()));
             assert!(!result.complete);
             assert!(result.truncated);
             assert_eq!(backend.requests.lock().unwrap().len(), 1);
