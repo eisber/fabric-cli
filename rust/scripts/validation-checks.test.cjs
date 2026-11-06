@@ -533,7 +533,7 @@ test('transport assertion accepts exact allowed graphs, CRLF and normal repeated
 
 test('every forbidden default backend or higher layer fails in either captured graph', () => {
   const forbidden = ['hyper', 'hyper-util', 'hyper-rustls', 'rustls',
-    'rustls-platform-verifier', 'reqwest', 'native-tls', 'openssl',
+    'rustls-platform-verifier', 'tokio-tungstenite', 'tungstenite', 'reqwest', 'native-tls', 'openssl',
     'fabric-identity', 'fabric-identity-windows', 'fabric-cli', 'fabric-deploy'];
   for (const pkg of Object.keys(safeDefaults)) for (const name of forbidden) {
     assert.throws(() => assertTransportGraphs({
@@ -543,7 +543,7 @@ test('every forbidden default backend or higher layer fails in either captured g
 });
 
 test('opt-in rejects unrelated backends and every missing or ambiguously named required backend', () => {
-  for (const name of ['reqwest', 'native-tls', 'openssl', 'fabric-identity',
+  for (const name of ['tokio-tungstenite', 'tungstenite', 'reqwest', 'native-tls', 'openssl', 'fabric-identity',
     'fabric-identity-windows', 'fabric-cli', 'fabric-deploy']) {
     assert.throws(() => assertTransportGraphs(safeDefaults,
       `${optinGraph}\n${name} v1.0.0\n${name} v1.0.0 (*)`), /unrelated backend or higher layer/);
