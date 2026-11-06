@@ -29,6 +29,8 @@ for isolated offline fixtures; local and hosted runs use the same wiring.
 Python is a development-time oracle dependency only. Missing
 oracle modules produce an actionable error; `--restore-oracle-deps` permits
 restoring their existing pinned requirement files after a missing-module probe.
+Frozen-source Git invocations enable long paths without changing repository or
+global Git configuration, so Windows artifact paths retain the full oracle tree.
 
 Omitting a base plans the local working-tree changes, including staged,
 unstaged and untracked files. Use `--full` for full configured validation.

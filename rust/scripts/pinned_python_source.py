@@ -55,6 +55,8 @@ def _git(root: Path, *arguments: str) -> bytes:
             "-c",
             "core.autocrlf=false",
             "-c",
+            "core.longpaths=true",
+            "-c",
             f"core.hooksPath={root / '.git' / 'pinned-source-disabled-hooks'}",
             *arguments,
         ],

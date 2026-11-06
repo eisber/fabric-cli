@@ -17,6 +17,35 @@ from unittest.mock import patch
 import pinned_python_source as provider
 
 
+class GitInvocationTests(unittest.TestCase):
+    """Keep long-path support scoped to the isolated Git invocation."""
+
+    def test_long_paths_preserve_source_bytes_hooks_and_literal_arguments(self) -> None:
+        """Enable Windows checkout paths without modifying Git configuration."""
+        root = Path(__file__).resolve().parent
+        with patch.object(
+            provider.subprocess, "check_output", return_value=b"synthetic"
+        ) as execute:
+            self.assertEqual(provider._git(root, "status", "--short"), b"synthetic")
+        self.assertEqual(
+            execute.call_args.args[0],
+            [
+                "git",
+                "--no-pager",
+                "-c",
+                "core.autocrlf=false",
+                "-c",
+                "core.longpaths=true",
+                "-c",
+                f"core.hooksPath={root / '.git' / 'pinned-source-disabled-hooks'}",
+                "status",
+                "--short",
+            ],
+        )
+        self.assertEqual(execute.call_args.kwargs["cwd"], root)
+        self.assertEqual(execute.call_args.kwargs["env"]["GIT_TERMINAL_PROMPT"], "0")
+
+
 class PinnedPythonSourceTests(unittest.TestCase):
     """Keep provenance guards intact while candidate product source advances."""
 
