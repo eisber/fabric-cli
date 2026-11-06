@@ -59,6 +59,23 @@ impl TableSession<'_, '_> {
         command: &TableCommand,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<FamilyOutput, TextError> {
+        self.dispatch_impl(command, cancelled, false).await
+    }
+
+    pub(crate) async fn dispatch_tabular(
+        &self,
+        command: &TableCommand,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<FamilyOutput, TextError> {
+        self.dispatch_impl(command, cancelled, true).await
+    }
+
+    async fn dispatch_impl(
+        &self,
+        command: &TableCommand,
+        cancelled: impl Future<Output = ()> + Send,
+        tabular: bool,
+    ) -> Result<FamilyOutput, TextError> {
         let format = OutputFormat::resolve(
             command.output_format.as_deref(),
             self.settings
@@ -149,6 +166,15 @@ impl TableSession<'_, '_> {
         }
         .await;
         let warnings = warnings.0.into_inner().expect("warning mutex poisoned");
+        if tabular {
+            return Ok(FamilyOutput {
+                plan: TextPlan {
+                    records: Vec::new(),
+                    exit_code: 0,
+                },
+                evidence: FamilyEvidence::Table(TableEvidence { result, warnings }),
+            });
+        }
         let mut plan = TextPlan {
             records: Vec::new(),
             exit_code: 0,

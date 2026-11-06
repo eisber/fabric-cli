@@ -27,6 +27,7 @@ pub mod get_resolution;
 pub mod get_target;
 pub mod jobs;
 pub mod local_commands;
+pub mod native_tabular;
 pub mod parser;
 mod projection;
 mod reads;
@@ -35,6 +36,7 @@ pub mod runtime_v2;
 pub mod session;
 #[cfg(feature = "native-host")]
 pub mod tables;
+pub mod tabular_export;
 /// Opt-in operation-contract discovery and caller-injected data-schema reads.
 #[cfg(feature = "v2-discovery")]
 pub mod v2_discovery;
