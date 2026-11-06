@@ -42,6 +42,10 @@ adds exact Notebook deletion with explicit permanent intent and host approval.
 Its typed operation metadata propagates through SDK results and CLI receipts.
 It does not replace `rm` or promise recoverable deletion or physical erasure.
 
+The opt-in [v2 schema-discovery preview](docs/v2-schema-discovery.md) exposes
+operation contracts through a separate `fab-cli` binary. It does not execute
+mutations, replace `fab-rs`, or install a live data-schema host.
+
 ## Workspace components
 
 The workspace groups service clients and command adapters by capability:

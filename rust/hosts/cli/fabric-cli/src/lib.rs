@@ -26,6 +26,9 @@ mod reads;
 pub mod session;
 #[cfg(feature = "native-host")]
 pub mod tables;
+/// Opt-in operation-contract discovery and caller-injected data-schema reads.
+#[cfg(feature = "v2-discovery")]
+pub mod v2_discovery;
 mod workspace_get;
 
 pub use folder_reads::FolderReadHost;

@@ -33,6 +33,7 @@ default-members = [
     "capabilities/resources/fabric-sdk-api",
     "capabilities/resources/fabric-sdk-access",
     "capabilities/resources/fabric-sdk-catalog",
+    "capabilities/resources/fabric-sdk-discovery",
     "capabilities/resources/fabric-cli-resources",
     "capabilities/storage/fabric-cli-storage-files",
     "capabilities/local/fabric-cli-local",
@@ -68,6 +69,7 @@ fabric-cli-mutations = { path = "capabilities/resources/fabric-cli-mutations" }
 fabric-sdk-api = { path = "capabilities/resources/fabric-sdk-api" }
 fabric-sdk-access = { path = "capabilities/resources/fabric-sdk-access" }
 fabric-sdk-catalog = { path = "capabilities/resources/fabric-sdk-catalog" }
+fabric-sdk-discovery = { path = "capabilities/resources/fabric-sdk-discovery" }
 fabric-cli-resources = { path = "capabilities/resources/fabric-cli-resources" }
 fabric-cli-storage-files = { path = "capabilities/storage/fabric-cli-storage-files" }
 fabric-cli-local = { path = "capabilities/local/fabric-cli-local" }

@@ -15,6 +15,11 @@ pub mod models;
 pub mod notebooks;
 pub mod workspaces;
 
+/// Local operation contracts and schema projections, with no identity or service I/O.
+pub mod discovery {
+    pub use fabric_sdk_discovery::*;
+}
+
 pub use fabric_core::{
     Audience, CredentialSelection, EndpointBinding, EndpointError, RequestContext, ServiceOrigin,
     TokenCredential,

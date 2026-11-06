@@ -1019,9 +1019,16 @@
       "checks": ["updater"]
     },
     {
+      "id": "v2-discovery",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-discovery"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": []
+    },
+    {
       "id": "combined",
       "packages": ["fabric-cli", "fabric-identity", "fabric-identity-windows", "fabric-cli-repl", "fabric-cli-update", "fabric-sdk-transport"],
-      "features": ["fabric-cli/native-read", "fabric-cli/headless", "fabric-cli/certificate-store-windows", "fabric-cli/repl", "fabric-cli/self-update", "fabric-identity/certificate-store-windows", "fabric-identity-windows/certificate-store", "fabric-cli-update/fixture-harness"],
+      "features": ["fabric-cli/native-read", "fabric-cli/headless", "fabric-cli/certificate-store-windows", "fabric-cli/repl", "fabric-cli/self-update", "fabric-cli/v2-discovery", "fabric-identity/certificate-store-windows", "fabric-identity-windows/certificate-store", "fabric-cli-update/fixture-harness"],
       "platforms": ["windows", "linux", "macos"],
       "checks": ["combined"]
     }
