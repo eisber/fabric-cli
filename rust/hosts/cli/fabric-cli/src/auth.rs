@@ -8,7 +8,9 @@ use fabric_cli::parser::AuthCommand;
 use fabric_cli_output::text::OutputFormat;
 #[cfg(all(test, windows))]
 use serde_json::json;
-use std::io::{self, Write};
+use std::io;
+#[cfg(windows)]
+use std::io::Write;
 #[cfg(windows)]
 use std::sync::{
     Arc,
