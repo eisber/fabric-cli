@@ -701,235 +701,6 @@ fn run_selected(
     ))
 }
 
-#[cfg(test)]
-mod endpoint_tests {
-    use super::*;
-
-    #[cfg(any(windows, feature = "headless"))]
-    #[test]
-    fn dataflow_execution_alone_selects_the_extended_transport_read_window() {
-        assert_eq!(
-            native_transport_options(true).read_timeout,
-            std::time::Duration::from_secs(95)
-        );
-        assert_eq!(
-            native_transport_options(false).read_timeout,
-            std::time::Duration::from_secs(30)
-        );
-    }
-
-    #[test]
-    fn cancellation_and_configuration_failure_do_not_share_a_control_reason() {
-        assert_eq!(
-            failure_outcome("cancelled", 2),
-            CommandOutcome::Cancelled(2)
-        );
-        assert_eq!(
-            failure_outcome("invalid_configuration", 2),
-            CommandOutcome::Stop(2)
-        );
-        assert_eq!(failure_outcome("timed_out", 1), CommandOutcome::Stop(1));
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn physical_copy_does_not_activate_the_definition_filesystem_boundary() {
-        for verb in ["cp", "mv"] {
-            let command =
-                fabric_cli::parser::parse_args(["fab-rs", verb, "source.bin", "target.bin"])
-                    .unwrap();
-            assert!(!consumes_definition_files(&command));
-        }
-        let command = fabric_cli::parser::parse_args([
-            "fab-rs",
-            "export",
-            "Demo.Workspace/Book.Notebook",
-            "-o",
-            "output",
-            "-f",
-        ])
-        .unwrap();
-        assert!(consumes_definition_files(&command));
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn native_get_option_gate_defers_get_output_to_full_engine() {
-        for flag in ["--force", "--verbose"] {
-            let Invocation::Read(command) = fabric_cli::parser::parse_args([
-                "fab-rs",
-                "get",
-                "Demo.Workspace/Book.Notebook",
-                "-q",
-                "id",
-                flag,
-            ])
-            .unwrap() else {
-                panic!("expected GET invocation");
-            };
-            selected_read_options(&command).unwrap();
-        }
-        let Invocation::Read(command) = fabric_cli::parser::parse_args([
-            "fab-rs",
-            "get",
-            "Demo.Workspace",
-            "--output",
-            "private-output-path",
-        ])
-        .unwrap() else {
-            panic!("expected GET invocation");
-        };
-        selected_read_options(&command).unwrap();
-        assert_eq!(command.output.as_deref(), Some("private-output-path"));
-    }
-
-    #[test]
-    fn default_public_daily_and_msit_keep_one_fabric_scope() {
-        assert_eq!(
-            selected_endpoint(None).unwrap(),
-            EndpointBinding::public(ServiceOrigin::Fabric)
-        );
-        for host in [
-            "api.fabric.microsoft.com",
-            "dailyapi.fabric.microsoft.com",
-            "msitapi.fabric.microsoft.com",
-        ] {
-            let endpoint = selected_endpoint(Some(host.into())).unwrap();
-            assert_eq!(endpoint.host(), host);
-            assert_eq!(endpoint.origin(), ServiceOrigin::Fabric);
-            assert_eq!(
-                endpoint.audience().scope(),
-                "https://api.fabric.microsoft.com/.default"
-            );
-        }
-    }
-
-    #[test]
-    fn invalid_endpoint_inputs_fail_without_echoing_the_host() {
-        for host in [
-            "",
-            "https://msitapi.fabric.microsoft.com",
-            "api.fabric.microsoft.com:443",
-            "api.fabric.microsoft.com/path",
-            "api.fabric.microsoft.com.example.test",
-            "unknown.example.test",
-            "user@api.fabric.microsoft.com",
-        ] {
-            let (code, message, exit) = selected_endpoint(Some(host.into())).unwrap_err();
-            assert_eq!(code, "invalid_configuration");
-            assert_eq!(message, "Invalid Fabric endpoint hostname.");
-            assert_eq!(exit, 2);
-        }
-    }
-}
-
-#[cfg(test)]
-mod runtime_tests {
-    use super::*;
-    use std::{
-        future::{Future, poll_fn},
-        sync::{
-            Arc,
-            atomic::{AtomicBool, Ordering},
-            mpsc,
-        },
-        time::Duration,
-    };
-
-    fn runtime() -> tokio::runtime::Runtime {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .max_blocking_threads(1)
-            .build()
-            .unwrap()
-    }
-
-    #[test]
-    fn no_watchdog_stays_pending_and_a_finite_watchdog_elapses() {
-        runtime().block_on(async {
-            let mut unbounded = std::pin::pin!(wait_for_deadline(None));
-            poll_fn(|context| {
-                assert!(unbounded.as_mut().poll(context).is_pending());
-                std::task::Poll::Ready(())
-            })
-            .await;
-            tokio::time::timeout(
-                Duration::from_secs(5),
-                wait_for_deadline(Some(Duration::ZERO)),
-            )
-            .await
-            .expect("an explicit finite watchdog must still elapse");
-        });
-    }
-
-    #[test]
-    fn shutdown_preserves_the_original_success_or_typed_failure() {
-        for result in [
-            Ok(7_u8),
-            Err(failure("synthetic_failed", "Synthetic failure.", 4)),
-        ] {
-            assert_eq!(finish_runtime(runtime(), result.clone()), result);
-        }
-    }
-
-    #[test]
-    fn shutdown_is_bounded_while_blocking_work_can_still_finish_with_effects() {
-        let runtime = runtime();
-        let (entered, started) = mpsc::channel();
-        let (release, gate) = mpsc::channel();
-        let (completed, completion) = mpsc::channel();
-        let effect = Arc::new(AtomicBool::new(false));
-        let worker_effect = Arc::clone(&effect);
-        let _worker = runtime.spawn_blocking(move || {
-            entered.send(()).unwrap();
-            gate.recv_timeout(Duration::from_secs(30)).unwrap();
-            worker_effect.store(true, Ordering::SeqCst);
-            completed.send(()).unwrap();
-        });
-        started.recv_timeout(Duration::from_secs(10)).unwrap();
-        let (returned, result) = mpsc::channel();
-        let shutdown = std::thread::spawn(move || {
-            returned
-                .send(finish_runtime(
-                    runtime,
-                    Err::<u8, _>(interrupted_failure("cancelled", "Read cancelled.", 2)),
-                ))
-                .unwrap();
-        });
-
-        // Release before asserting, so a regression to ordinary runtime Drop
-        // fails the test without stranding its blocking worker.
-        let observed = result.recv_timeout(Duration::from_secs(10));
-        let effect_before_release = effect.load(Ordering::SeqCst);
-        release.send(()).unwrap();
-        completion.recv_timeout(Duration::from_secs(10)).unwrap();
-        shutdown.join().unwrap();
-
-        assert_eq!(
-            observed.unwrap(),
-            Err(interrupted_failure("cancelled", "Read cancelled.", 2))
-        );
-        assert!(!effect_before_release);
-        assert!(effect.load(Ordering::SeqCst));
-    }
-
-    #[test]
-    fn interruption_diagnostics_retain_code_exit_and_mutation_uncertainty() {
-        for (code, message, exit) in [
-            ("cancelled", "Read cancelled.", 2),
-            ("timed_out", "The read command deadline elapsed.", 1),
-        ] {
-            let (actual_code, actual_message, actual_exit) =
-                interrupted_failure(code, message, exit);
-            assert_eq!(actual_code, code);
-            assert_eq!(actual_exit, exit);
-            assert!(actual_message.starts_with(message));
-            assert!(actual_message.contains("may still complete"));
-            assert!(actual_message.contains("No rollback is implied"));
-        }
-    }
-}
-
 #[cfg(any(windows, feature = "headless"))]
 fn run_selected(
     command: NativeCommand<'_>,
@@ -1860,6 +1631,235 @@ mod tests {
                 selected_home(name.into()).unwrap_err().0,
                 "invalid_configuration"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod endpoint_tests {
+    use super::*;
+
+    #[cfg(any(windows, feature = "headless"))]
+    #[test]
+    fn dataflow_execution_alone_selects_the_extended_transport_read_window() {
+        assert_eq!(
+            native_transport_options(true).read_timeout,
+            std::time::Duration::from_secs(95)
+        );
+        assert_eq!(
+            native_transport_options(false).read_timeout,
+            std::time::Duration::from_secs(30)
+        );
+    }
+
+    #[test]
+    fn cancellation_and_configuration_failure_do_not_share_a_control_reason() {
+        assert_eq!(
+            failure_outcome("cancelled", 2),
+            CommandOutcome::Cancelled(2)
+        );
+        assert_eq!(
+            failure_outcome("invalid_configuration", 2),
+            CommandOutcome::Stop(2)
+        );
+        assert_eq!(failure_outcome("timed_out", 1), CommandOutcome::Stop(1));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn physical_copy_does_not_activate_the_definition_filesystem_boundary() {
+        for verb in ["cp", "mv"] {
+            let command =
+                fabric_cli::parser::parse_args(["fab-rs", verb, "source.bin", "target.bin"])
+                    .unwrap();
+            assert!(!consumes_definition_files(&command));
+        }
+        let command = fabric_cli::parser::parse_args([
+            "fab-rs",
+            "export",
+            "Demo.Workspace/Book.Notebook",
+            "-o",
+            "output",
+            "-f",
+        ])
+        .unwrap();
+        assert!(consumes_definition_files(&command));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_get_option_gate_defers_get_output_to_full_engine() {
+        for flag in ["--force", "--verbose"] {
+            let Invocation::Read(command) = fabric_cli::parser::parse_args([
+                "fab-rs",
+                "get",
+                "Demo.Workspace/Book.Notebook",
+                "-q",
+                "id",
+                flag,
+            ])
+            .unwrap() else {
+                panic!("expected GET invocation");
+            };
+            selected_read_options(&command).unwrap();
+        }
+        let Invocation::Read(command) = fabric_cli::parser::parse_args([
+            "fab-rs",
+            "get",
+            "Demo.Workspace",
+            "--output",
+            "private-output-path",
+        ])
+        .unwrap() else {
+            panic!("expected GET invocation");
+        };
+        selected_read_options(&command).unwrap();
+        assert_eq!(command.output.as_deref(), Some("private-output-path"));
+    }
+
+    #[test]
+    fn default_public_daily_and_msit_keep_one_fabric_scope() {
+        assert_eq!(
+            selected_endpoint(None).unwrap(),
+            EndpointBinding::public(ServiceOrigin::Fabric)
+        );
+        for host in [
+            "api.fabric.microsoft.com",
+            "dailyapi.fabric.microsoft.com",
+            "msitapi.fabric.microsoft.com",
+        ] {
+            let endpoint = selected_endpoint(Some(host.into())).unwrap();
+            assert_eq!(endpoint.host(), host);
+            assert_eq!(endpoint.origin(), ServiceOrigin::Fabric);
+            assert_eq!(
+                endpoint.audience().scope(),
+                "https://api.fabric.microsoft.com/.default"
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_endpoint_inputs_fail_without_echoing_the_host() {
+        for host in [
+            "",
+            "https://msitapi.fabric.microsoft.com",
+            "api.fabric.microsoft.com:443",
+            "api.fabric.microsoft.com/path",
+            "api.fabric.microsoft.com.example.test",
+            "unknown.example.test",
+            "user@api.fabric.microsoft.com",
+        ] {
+            let (code, message, exit) = selected_endpoint(Some(host.into())).unwrap_err();
+            assert_eq!(code, "invalid_configuration");
+            assert_eq!(message, "Invalid Fabric endpoint hostname.");
+            assert_eq!(exit, 2);
+        }
+    }
+}
+
+#[cfg(test)]
+mod runtime_tests {
+    use super::*;
+    use std::{
+        future::{Future, poll_fn},
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+            mpsc,
+        },
+        time::Duration,
+    };
+
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .max_blocking_threads(1)
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn no_watchdog_stays_pending_and_a_finite_watchdog_elapses() {
+        runtime().block_on(async {
+            let mut unbounded = std::pin::pin!(wait_for_deadline(None));
+            poll_fn(|context| {
+                assert!(unbounded.as_mut().poll(context).is_pending());
+                std::task::Poll::Ready(())
+            })
+            .await;
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                wait_for_deadline(Some(Duration::ZERO)),
+            )
+            .await
+            .expect("an explicit finite watchdog must still elapse");
+        });
+    }
+
+    #[test]
+    fn shutdown_preserves_the_original_success_or_typed_failure() {
+        for result in [
+            Ok(7_u8),
+            Err(failure("synthetic_failed", "Synthetic failure.", 4)),
+        ] {
+            assert_eq!(finish_runtime(runtime(), result.clone()), result);
+        }
+    }
+
+    #[test]
+    fn shutdown_is_bounded_while_blocking_work_can_still_finish_with_effects() {
+        let runtime = runtime();
+        let (entered, started) = mpsc::channel();
+        let (release, gate) = mpsc::channel();
+        let (completed, completion) = mpsc::channel();
+        let effect = Arc::new(AtomicBool::new(false));
+        let worker_effect = Arc::clone(&effect);
+        let _worker = runtime.spawn_blocking(move || {
+            entered.send(()).unwrap();
+            gate.recv_timeout(Duration::from_secs(30)).unwrap();
+            worker_effect.store(true, Ordering::SeqCst);
+            completed.send(()).unwrap();
+        });
+        started.recv_timeout(Duration::from_secs(10)).unwrap();
+        let (returned, result) = mpsc::channel();
+        let shutdown = std::thread::spawn(move || {
+            returned
+                .send(finish_runtime(
+                    runtime,
+                    Err::<u8, _>(interrupted_failure("cancelled", "Read cancelled.", 2)),
+                ))
+                .unwrap();
+        });
+
+        // Release before asserting, so a regression to ordinary runtime Drop
+        // fails the test without stranding its blocking worker.
+        let observed = result.recv_timeout(Duration::from_secs(10));
+        let effect_before_release = effect.load(Ordering::SeqCst);
+        release.send(()).unwrap();
+        completion.recv_timeout(Duration::from_secs(10)).unwrap();
+        shutdown.join().unwrap();
+
+        assert_eq!(
+            observed.unwrap(),
+            Err(interrupted_failure("cancelled", "Read cancelled.", 2))
+        );
+        assert!(!effect_before_release);
+        assert!(effect.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn interruption_diagnostics_retain_code_exit_and_mutation_uncertainty() {
+        for (code, message, exit) in [
+            ("cancelled", "Read cancelled.", 2),
+            ("timed_out", "The read command deadline elapsed.", 1),
+        ] {
+            let (actual_code, actual_message, actual_exit) =
+                interrupted_failure(code, message, exit);
+            assert_eq!(actual_code, code);
+            assert_eq!(actual_exit, exit);
+            assert!(actual_message.starts_with(message));
+            assert!(actual_message.contains("may still complete"));
+            assert!(actual_message.contains("No rollback is implied"));
         }
     }
 }
