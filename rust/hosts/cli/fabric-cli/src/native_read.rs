@@ -18,9 +18,27 @@ pub(crate) type Failure = (&'static str, String, u8);
 #[path = "native_get.rs"]
 mod get;
 
+#[path = "native_delete.rs"]
+mod delete;
+
+pub(crate) fn run_delete(
+    prepared: fabric_cli::delete::PreparedDelete,
+    output: fabric_cli::delete::ReservedDeleteOutput,
+    deadline: std::time::Instant,
+) -> io::Result<CommandOutcome> {
+    delete::run(prepared, output, deadline)
+}
+#[cfg(any(windows, feature = "headless"))]
+#[path = "native_execute.rs"]
+mod execute;
+
 #[cfg(all(test, feature = "headless"))]
 #[path = "headless_host_tests.rs"]
 mod headless_host_tests;
+
+#[cfg(all(test, feature = "v2-cancel", feature = "headless"))]
+#[path = "native_cancel_tests.rs"]
+mod native_cancel_tests;
 
 #[cfg(any(windows, feature = "headless"))]
 #[path = "native_settings.rs"]
@@ -50,6 +68,11 @@ use terminal_ui::NativeMutationUi;
     )
 )]
 enum NativeCommand<'a> {
+    #[cfg(any(windows, feature = "headless"))]
+    Execution(
+        &'a fabric_cli::execute::host::ApprovedExecution,
+        std::time::Instant,
+    ),
     Read(&'a ReadCommand),
     Job(&'a JobReadCommand),
     JobExecution(&'a JobRunCommand),
@@ -59,6 +82,10 @@ enum NativeCommand<'a> {
 
 fn has_bound_context(command: NativeCommand<'_>) -> bool {
     match command {
+        NativeCommand::Family(Invocation::Tabular(export)) => matches!(
+            export.command.as_ref(),
+            Invocation::Read(_) | Invocation::JobRead(_)
+        ),
         NativeCommand::Family(Invocation::Deploy(_)) => true,
         NativeCommand::Family(Invocation::Transfer(transfer)) => {
             transfer.kind != fabric_cli_transfer::TransferKind::Deploy
@@ -109,6 +136,14 @@ fn finish_runtime<T>(runtime: tokio::runtime::Runtime, result: T) -> T {
     // not cancel those calls or erase their possible filesystem effects.
     runtime.shutdown_timeout(std::time::Duration::from_secs(1));
     result
+}
+
+#[cfg(any(windows, feature = "headless"))]
+fn native_runtime() -> Result<tokio::runtime::Runtime, Failure> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|_| failure("runtime_failed", "The read runtime could not start.", 1))
 }
 
 #[cfg(any(windows, feature = "headless", test))]
@@ -382,6 +417,23 @@ pub(crate) fn run(command: &ReadCommand, state: &mut BatchState) -> io::Result<C
     run_command(NativeCommand::Read(command), state)
 }
 
+pub(crate) fn run_execute(
+    command: &fabric_cli::execute::ExecuteCommand,
+    state: &mut BatchState,
+) -> io::Result<CommandOutcome> {
+    #[cfg(any(windows, feature = "headless"))]
+    return execute::run(command, state);
+    #[cfg(not(any(windows, feature = "headless")))]
+    {
+        let _ = (command, state);
+        write_error(failure(
+            "unsupported",
+            "The native execution host is unavailable.",
+            1,
+        ))
+    }
+}
+
 pub(crate) fn run_job(
     command: &JobReadCommand,
     state: &mut BatchState,
@@ -401,6 +453,179 @@ pub(crate) fn run_job_mutation(
     state: &mut BatchState,
 ) -> io::Result<CommandOutcome> {
     run_command(NativeCommand::JobMutation(command), state)
+}
+
+#[cfg(feature = "v2-cancel")]
+pub(crate) fn run_cancel(
+    command: &fabric_cli::parser::CancelCommand,
+    state: Option<&mut BatchState>,
+) -> io::Result<CommandOutcome> {
+    use fabric_cli::cancel::{Dispatch, preflight};
+    let target = match preflight(command) {
+        Ok(target) => target,
+        Err(error) => {
+            let delivery = Dispatch::unavailable(None, None, error.code(), &error.to_string(), 2);
+            return Ok(CommandOutcome::Stop(
+                delivery.write_to(&mut io::stdout().lock(), &mut io::stderr().lock()),
+            ));
+        }
+    };
+    let endpoint = match selected_endpoint(std::env::var_os("FAB_API_ENDPOINT_FABRIC")) {
+        Ok(endpoint) => endpoint,
+        Err((code, _, exit)) => {
+            let delivery = Dispatch::unavailable(
+                Some(&target),
+                None,
+                code,
+                "Invalid cancellation host configuration.",
+                exit,
+            );
+            return Ok(CommandOutcome::Stop(
+                delivery.write_to(&mut io::stdout().lock(), &mut io::stderr().lock()),
+            ));
+        }
+    };
+    #[cfg(any(windows, feature = "headless"))]
+    let result = selected_credential()
+        .and_then(|credential| run_cancel_selected(command, credential, endpoint.clone(), state));
+    #[cfg(not(any(windows, feature = "headless")))]
+    let result: Result<Dispatch, Failure> = (|| {
+        let _ = state;
+        required("FAB_RUST_TENANT")?;
+        required("FAB_RUST_ACCOUNT")?;
+        required("FAB_RUST_CLIENT_ID")?;
+        Err(failure(
+            "unsupported",
+            "Native credentials currently require Windows.",
+            1,
+        ))
+    })();
+    let delivery = match result {
+        Ok(delivery) => delivery,
+        Err((code, _, exit)) => Dispatch::unavailable(
+            Some(&target),
+            Some(&endpoint),
+            code,
+            "Cancellation host is unavailable.",
+            exit,
+        ),
+    };
+    let exit = delivery.write_to(&mut io::stdout().lock(), &mut io::stderr().lock());
+    Ok(if exit != delivery.exit_code() || exit == 2 {
+        CommandOutcome::Stop(exit)
+    } else if delivery.value()["error"]["interruption"] == "cancelled" {
+        CommandOutcome::Cancelled(exit)
+    } else if delivery.value()["error"]["interruption"].is_string() {
+        CommandOutcome::Stop(exit)
+    } else {
+        CommandOutcome::Returned(exit)
+    })
+}
+
+#[cfg(all(feature = "v2-cancel", any(windows, feature = "headless")))]
+fn run_cancel_selected(
+    command: &fabric_cli::parser::CancelCommand,
+    credential: NativeCredential,
+    endpoint: EndpointBinding,
+    state: Option<&mut BatchState>,
+) -> Result<fabric_cli::cancel::Dispatch, Failure> {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU8, Ordering},
+    };
+    // Explicit IDs need no navigation, metadata snapshot or saved output format.
+    if let Some(state) = state {
+        credential
+            .bind_get(state)
+            .map_err(|_| failure("invalid_configuration", "Invalid credential binding.", 2))?;
+    }
+    let (client, identity_client) = native_clients(&credential, false)?;
+    let runtime = native_runtime()?;
+    let reason = Arc::new(AtomicU8::new(0));
+    let signal_reason = reason.clone();
+    let deadline = fabric_sdk_http::ExecutionOptions::default().timeout;
+    let result = runtime.block_on(execute_cancel_injected(
+        command,
+        (credential, client, identity_client),
+        endpoint,
+        async move {
+            tokio::select! {
+                biased;
+                signal = tokio::signal::ctrl_c() => {
+                    signal_reason.store(if signal.is_ok() { 1 } else { 2 }, Ordering::Relaxed);
+                }
+                _ = wait_for_deadline(Some(deadline)) => {
+                    signal_reason.store(3, Ordering::Relaxed);
+                }
+            }
+        },
+    ));
+    let result = match reason.load(Ordering::Relaxed) {
+        1 => result.interrupted("cancelled"),
+        2 => result.interrupted("signal_failed"),
+        3 => result.interrupted("timed_out"),
+        _ => result,
+    };
+    Ok(finish_runtime(runtime, result))
+}
+
+#[cfg(all(feature = "v2-cancel", any(windows, feature = "headless")))]
+async fn execute_cancel_injected(
+    command: &fabric_cli::parser::CancelCommand,
+    (credential, client, identity_client): (
+        NativeCredential,
+        std::sync::Arc<dyn azure_core::http::HttpClient>,
+        std::sync::Arc<dyn azure_core::http::HttpClient>,
+    ),
+    endpoint: EndpointBinding,
+    cancelled: impl std::future::Future<Output = ()> + Send,
+) -> fabric_cli::cancel::Dispatch {
+    use fabric_cli::cancel::{Dispatch, preflight};
+    use fabric_sdk::{Audience, CredentialSelection, RequestContext};
+    use futures_util::future::{Either, select};
+    use std::sync::Arc;
+
+    let target = match preflight(command) {
+        Ok(target) => target,
+        Err(error) => {
+            return Dispatch::unavailable(None, None, error.code(), &error.to_string(), 2);
+        }
+    };
+    let unavailable = |code: &str, exit| {
+        Dispatch::unavailable(
+            Some(&target),
+            Some(&endpoint),
+            code,
+            "Cancellation host is unavailable.",
+            exit,
+        )
+    };
+    let selection =
+        match CredentialSelection::new(credential.account(), credential.tenant(), Audience::Fabric)
+        {
+            Ok(selection) => selection,
+            Err(_) => return unavailable("invalid_configuration", 2),
+        };
+    let (credential, cancelled) = match select(
+        Box::pin(credential.connect(identity_client)),
+        Box::pin(cancelled),
+    )
+    .await
+    {
+        Either::Left((Ok(credential), cancelled)) => (credential, cancelled),
+        Either::Left((Err((code, _, exit)), _)) => return unavailable(code, exit),
+        Either::Right(_) => return unavailable("Cancelled", 1),
+    };
+    let executor = match native_executor(client, endpoint.clone()) {
+        Ok(executor) => executor,
+        Err((code, _, exit)) => return unavailable(code, exit),
+    };
+    let sdk = fabric_sdk_jobs::JobClient::with_context(
+        RequestContext::with_endpoint(credential, selection, endpoint),
+        Arc::new(fabric_cli_jobs::HttpJobExecutor::new(executor)),
+        fabric_sdk_jobs::JobLimits::default(),
+    );
+    fabric_cli::cancel::dispatch(command, &sdk, cancelled).await
 }
 
 pub(crate) fn run_family(
@@ -436,6 +661,26 @@ fn run_command(command: NativeCommand<'_>, state: &mut BatchState) -> io::Result
     })();
     match result {
         Ok(delivery) => delivery.write_to(&mut io::stdout().lock(), &mut io::stderr().lock()),
+        Err((code, message, exit))
+            if matches!(command, NativeCommand::Family(Invocation::Tabular(_))) =>
+        {
+            let NativeCommand::Family(Invocation::Tabular(export)) = command else {
+                unreachable!("matched explicit export");
+            };
+            let source =
+                fabric_cli::tabular_export::source(&export.command).unwrap_or("unsupported");
+            let delivery = fabric_cli::tabular_export::ExportDelivery::host_failed(
+                source,
+                &export.request,
+                code,
+                &message,
+                exit,
+            );
+            delivery
+                .write_to_streams(&mut io::stdout().lock(), &mut io::stderr().lock())
+                .map_err(fabric_cli::tabular_export::ReceiptWriteFailure::into_io_error)?;
+            Ok(failure_outcome(code, exit))
+        }
         Err(error) => write_error(error),
     }
 }
@@ -459,6 +704,19 @@ fn run_selected(
 #[cfg(test)]
 mod endpoint_tests {
     use super::*;
+
+    #[cfg(any(windows, feature = "headless"))]
+    #[test]
+    fn dataflow_execution_alone_selects_the_extended_transport_read_window() {
+        assert_eq!(
+            native_transport_options(true).read_timeout,
+            std::time::Duration::from_secs(95)
+        );
+        assert_eq!(
+            native_transport_options(false).read_timeout,
+            std::time::Duration::from_secs(30)
+        );
+    }
 
     #[test]
     fn cancellation_and_configuration_failure_do_not_share_a_control_reason() {
@@ -703,6 +961,7 @@ fn run_selected(
         selected_read_options(command)?;
     }
     let skill = match command {
+        NativeCommand::Execution(..) => None,
         NativeCommand::Read(_) => None,
         NativeCommand::Job(command) => command.skill.as_deref(),
         NativeCommand::JobExecution(command) => command.skill.as_deref(),
@@ -735,10 +994,7 @@ fn run_selected(
             2,
         ));
     }
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|_| failure("runtime_failed", "The read runtime could not start.", 1))?;
+    let runtime = native_runtime()?;
     let before = state
         .navigation
         .as_ref()
@@ -823,20 +1079,36 @@ async fn execute_delivery(
     state: &mut BatchState,
     get_inputs: Option<get::Inputs<'_>>,
 ) -> Result<get::Delivery, Failure> {
-    use fabric_sdk_transport::{NativeHttpClient, ProxyPolicy, TransportOptions, TrustPolicy};
-    use std::{num::NonZeroUsize, sync::Arc, time::Duration};
+    let (client, identity_client) =
+        native_clients(&credential, matches!(command, NativeCommand::Execution(..)))?;
+    execute_injected_delivery(
+        command,
+        (credential, client, identity_client),
+        current,
+        home,
+        endpoint,
+        settings,
+        state,
+        get_inputs,
+    )
+    .await
+}
 
-    let options = TransportOptions {
-        connect_timeout: Duration::from_secs(10),
-        read_timeout: Duration::from_secs(30),
-        write_timeout: Duration::from_secs(30),
-        pool_idle_timeout: Duration::from_secs(60),
-        max_idle_per_host: NonZeroUsize::new(4).expect("nonzero constant"),
-        trust: TrustPolicy::Platform {
-            additional_roots: Vec::new(),
-        },
-        proxy: ProxyPolicy::None,
-    };
+#[cfg(any(windows, feature = "headless"))]
+type NativeClients = (
+    std::sync::Arc<dyn azure_core::http::HttpClient>,
+    std::sync::Arc<dyn azure_core::http::HttpClient>,
+);
+
+#[cfg(any(windows, feature = "headless"))]
+fn native_clients(
+    credential: &NativeCredential,
+    execution: bool,
+) -> Result<NativeClients, Failure> {
+    use fabric_sdk_transport::NativeHttpClient;
+    use std::sync::Arc;
+
+    let options = native_transport_options(execution);
     let identity_client = credential
         .metadata_endpoint()
         .map(|endpoint| {
@@ -851,26 +1123,52 @@ async fn execute_delivery(
                 2,
             )
         })?;
-    let client = NativeHttpClient::new(options).map_err(|_| {
-        failure(
-            "transport_failed",
-            "The native HTTP client could not start.",
-            1,
-        )
-    })?;
-    let client = Arc::new(client);
-    let identity_client = identity_client.unwrap_or_else(|| client.clone());
-    execute_injected_delivery(
-        command,
-        (credential, client, identity_client),
-        current,
-        home,
-        endpoint,
-        settings,
-        state,
-        get_inputs,
+    let client: Arc<dyn azure_core::http::HttpClient> =
+        Arc::new(NativeHttpClient::new(options).map_err(|_| {
+            failure(
+                "transport_failed",
+                "The native HTTP client could not start.",
+                1,
+            )
+        })?);
+    Ok((client.clone(), identity_client.unwrap_or(client)))
+}
+
+#[cfg(any(windows, feature = "headless"))]
+fn native_transport_options(execution: bool) -> fabric_sdk_transport::TransportOptions {
+    use fabric_sdk_transport::{ProxyPolicy, TransportOptions, TrustPolicy};
+    use std::{num::NonZeroUsize, time::Duration};
+
+    TransportOptions {
+        connect_timeout: Duration::from_secs(10),
+        read_timeout: Duration::from_secs(if execution {
+            // Execute Query has a service-side 90-second evaluation window.
+            95
+        } else {
+            30
+        }),
+        write_timeout: Duration::from_secs(30),
+        pool_idle_timeout: Duration::from_secs(60),
+        max_idle_per_host: NonZeroUsize::new(4).expect("nonzero constant"),
+        trust: TrustPolicy::Platform {
+            additional_roots: Vec::new(),
+        },
+        proxy: ProxyPolicy::None,
+    }
+}
+
+#[cfg(any(windows, feature = "headless"))]
+fn native_executor(
+    client: std::sync::Arc<dyn azure_core::http::HttpClient>,
+    endpoint: EndpointBinding,
+) -> Result<fabric_sdk_http::HttpExecutor, Failure> {
+    fabric_sdk_http::HttpExecutor::new(
+        client,
+        std::sync::Arc::new(fabric_sdk_transport::TokioTimer),
+        fabric_sdk_http::ExecutionOptions::default(),
     )
-    .await
+    .map(|executor| executor.with_endpoint(endpoint))
+    .map_err(|_| failure("transport_failed", "The HTTP executor could not start.", 1))
 }
 
 #[cfg(all(test, any(windows, feature = "headless")))]
@@ -921,23 +1219,22 @@ async fn execute_injected_delivery(
     get_inputs: Option<get::Inputs<'_>>,
 ) -> Result<get::Delivery, Failure> {
     use fabric_sdk::{Audience, Client, CredentialSelection, RequestContext};
-    use fabric_sdk_http::{ExecutionOptions, HttpExecutor};
-    use fabric_sdk_transport::TokioTimer;
-    use std::sync::Arc;
-
     let selection =
         CredentialSelection::new(credential.account(), credential.tenant(), Audience::Fabric)
             .map_err(|_| failure("invalid_configuration", "Invalid credential selection.", 2))?;
     let broker_identity = credential.is_broker();
-    let credential = credential.connect(identity_client).await?;
+    let credential = match command {
+        NativeCommand::Execution(_, deadline) => {
+            execute::before_submission(credential.connect(identity_client), deadline).await?
+        }
+        _ => credential.connect(identity_client).await?,
+    };
     let sdk = Client::with_context(RequestContext::with_endpoint(
         credential,
         selection,
         endpoint.clone(),
     ));
-    let executor = HttpExecutor::new(client, Arc::new(TokioTimer), ExecutionOptions::default())
-        .map_err(|_| failure("transport_failed", "The HTTP executor could not start.", 1))?
-        .with_endpoint(endpoint);
+    let executor = native_executor(client, endpoint)?;
     execute_authenticated_injected(
         command,
         sdk,
@@ -968,6 +1265,9 @@ async fn execute_authenticated_injected(
     broker_identity: bool,
     get_inputs: Option<get::Inputs<'_>>,
 ) -> Result<get::Delivery, Failure> {
+    if let NativeCommand::Execution(approved, deadline) = command {
+        return execute::dispatch(approved, deadline, &sdk, executor).await;
+    }
     use fabric_cli::session::ReadSession;
     use std::sync::Arc;
     let now = azure_core::time::OffsetDateTime::now_utc();
@@ -1001,6 +1301,7 @@ async fn execute_authenticated_injected(
         config: settings.reads,
     };
     let result = match command {
+        NativeCommand::Execution(..) => unreachable!("execution uses its typed result host"),
         NativeCommand::Read(command) => {
             let command = settings
                 .read_command(command)
@@ -1053,9 +1354,7 @@ async fn execute_authenticated_injected(
                 .map(|(plan, outcome)| get::Delivery::plan(plan, outcome))
         }
         NativeCommand::Family(command) => {
-            execute_family(&session, &executor, command, state, broker_identity)
-                .await
-                .map(|(plan, outcome)| get::Delivery::plan(plan, outcome))
+            execute_family(&session, &executor, command, state, broker_identity).await
         }
     };
     match result {
@@ -1125,8 +1424,7 @@ async fn execute_family(
     command: &Invocation,
     state: &mut BatchState,
     broker_identity: bool,
-) -> Result<(fabric_cli_output::text::TextPlan, CommandOutcome), fabric_cli_output::text::TextError>
-{
+) -> Result<get::Delivery, fabric_cli_output::text::TextError> {
     use fabric_cli_output::text::{self, OutputFormat, Presentation, TextOptions};
 
     let result = state
@@ -1281,6 +1579,41 @@ async fn execute_family(
                     .map(|files| files.as_mut() as &mut dyn fabric_cli_transfer::TransferFiles),
                 resource_files: None,
             };
+            if let Invocation::Tabular(export) = command {
+                use fabric_cli::tabular_export::{self, ExecutionFailure, FileSink};
+                let delivery = tabular_export::dispatch(
+                    export,
+                    &mut FileSink::default(),
+                    |_| async move {
+                        match export.command.as_ref() {
+                            Invocation::Read(read) => tabular_export::read_rows(session, read).await,
+                            Invocation::JobRead(job) => tabular_export::job_rows(
+                                &fabric_cli::jobs::JobReadSession {
+                                    reads: session,
+                                    jobs: std::sync::Arc::new(fabric_cli_jobs::HttpJobExecutor::new(executor.clone())),
+                                },
+                                job,
+                            ).await,
+                            invocation => {
+                                let mut invocation = invocation.clone();
+                                match &mut invocation {
+                                    Invocation::Access(access) => access.output_format = Some(OutputFormat::Json),
+                                    Invocation::Table(table) => table.output_format = Some("json".into()),
+                                    _ => {}
+                                }
+                                families.dispatch_tabular(&invocation, std::future::pending()).await
+                                    .map_err(|_| ExecutionFailure {
+                                        code: "export_adapter_failed".into(),
+                                        message: "Native result presentation failed; execution is not retried".into(),
+                                    })
+                                    .and_then(|output| tabular_export::family_rows(&invocation, output))
+                            }
+                        }
+                    },
+                ).await;
+                let outcome = CommandOutcome::Returned(delivery.exit_code);
+                return Ok(get::Delivery::export(delivery, outcome));
+            }
             let mut output = if matches!(command, Invocation::Deploy(_)) {
                 let inputs = deploy_inputs::snapshot_environment().map_err(|error| {
                     fabric_cli_local::LocalError::command("InvalidInput", error.to_string())
@@ -1319,7 +1652,7 @@ async fn execute_family(
             notices.append(&mut output.plan.records);
             output.plan.records = notices;
             let outcome = crate::batch_state::family_outcome(&output);
-            Ok::<_, fabric_cli_local::LocalError>((output.plan, outcome))
+            Ok::<_, fabric_cli_local::LocalError>(get::Delivery::plan(output.plan, outcome))
         })
         .await;
     match result {
@@ -1336,7 +1669,7 @@ async fn execute_family(
         )
         .map(|plan| {
             let outcome = crate::batch_state::error_outcome(&error.command_error(), plan.exit_code);
-            (plan, outcome)
+            get::Delivery::plan(plan, outcome)
         }),
     }
 }

@@ -6,6 +6,16 @@
 command sessions and native host composition. Command behavior lives in focused
 libraries; this crate connects them to explicit runtime capabilities.
 
+The additive `get_metadata` library entry composes the SDK's explicit metadata
+operation with preflighted, no-clobber exact local output. It does not replace
+the existing executable GET or register v2 command syntax. See the
+[explicit retrieval contract](../../../docs/explicit-get.md).
+
+The separate opt-in `fab-cli-v2` binary (existing `headless` feature) mounts
+the [experimental v2 get surface](../../../docs/v2-get.md). The default run target
+remains `fab-rs`. Service credentials and providers are explicitly selected;
+the v2 head does not activate private FabricAIHub APIs.
+
 ## Run the application
 
 From `rust/`:
@@ -18,6 +28,10 @@ cargo run --locked -p fabric-cli --features native-read -- deploy --help
 
 Help, version and local command setup do not authenticate. Default and
 broker-only builds do not install a remote execution host.
+
+The offline legacy read probes accept only read invocations. Job and Dataflow
+`execute` invocations remain explicit errors in those probes; their dedicated
+command tests cover execution separately.
 
 In a `native-read` build, `fab-rs auth login` uses the saved selection or opens
 WAM's work-account picker. Successful login saves only the account, tenant and
@@ -279,6 +293,25 @@ Those values are not credential inputs.
 caller's blocking executor. Deferred path selection preserves classification
 order and limits local authority to explicit arguments or trusted local
 configuration documents.
+
+## Native Dataflow query execution
+
+The additive v2 `execute` root binds an explicit
+`/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/<query-name>` target
+with required `--wait`. `--format json|csv|parquet` uses the shared native Arrow
+tabular result component; Parquet requires a new file destination. Optional
+`--input FILE|-` supplies strict JSON for `customMashupDocument` and
+`arrowVersion` (1 or 2), not SQL text.
+
+The host requires target/input-bound approval before credentials, performs
+no-clobber output preflight, and preserves real operation evidence on local
+cancellation, timeout or output failure without replay. Noninteractive native
+processes without an approval capability fail closed; embedders inject
+`execute::host::ExecutionApproval`. The default binary returns `NotConfigured`.
+See the [complete execution contract](../../../docs/dataflow-execution.md) for
+finite limits, exact format references, permission/gateway prerequisites,
+unimplemented providers and the detailed refresh-log API gap. Existing v1
+JMESPath metadata projection is unchanged. Excel output is deferred.
 
 ## Output and execution boundaries
 

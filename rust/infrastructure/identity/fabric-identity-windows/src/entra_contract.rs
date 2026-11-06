@@ -22,6 +22,8 @@ pub enum TokenAudience {
     OneLake,
     /// Azure Resource Manager.
     Arm,
+    /// Native SQL, acquired only for an explicit SQL token request.
+    Sql,
 }
 
 impl TokenAudience {
@@ -31,6 +33,7 @@ impl TokenAudience {
             Self::Fabric => "https://api.fabric.microsoft.com/.default",
             Self::OneLake => "https://storage.azure.com/.default",
             Self::Arm => "https://management.azure.com/.default",
+            Self::Sql => "https://database.windows.net/.default",
         }
     }
 }

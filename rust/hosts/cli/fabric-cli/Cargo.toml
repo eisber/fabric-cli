@@ -9,6 +9,7 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 description = "Bounded Fabric read-command composition with caller-owned dependencies"
+default-run = "fab-rs"
 
 [package.metadata.fabric]
 layer = "cli"
@@ -17,12 +18,30 @@ layer = "cli"
 name = "fab-rs"
 path = "src/main.rs"
 
+[[test]]
+name = "definition_copy_v2"
+path = "tests/definition_copy_v2.rs"
+required-features = ["native-host", "v2-copy"]
+
+[[bin]]
+name = "fab-cli-discovery"
+path = "src/bin/fab_cli.rs"
+required-features = ["v2-discovery"]
+
+[[bin]]
+name = "fab-cli-v2"
+path = "src/v2_main.rs"
+required-features = ["headless"]
+
 [features]
 default = []
+v2-cancel = []
+v2-copy = []
+v2-discovery = ["dep:fabric-sdk-discovery"]
 runtime-v2 = []
 repl = ["dep:fabric-cli-repl", "fabric-cli-repl/reedline-editor"]
 windows-broker = ["dep:fabric-identity", "dep:tokio", "fabric-identity/windows-broker"]
-native-host = ["dep:fabric-identity", "dep:tokio", "dep:fabric-sdk-http", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls", "dep:rustix", "dep:chrono"]
+native-host = ["dep:fabric-identity", "dep:tokio", "dep:fabric-sdk-http", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls", "dep:chrono"]
 native-read = ["native-host", "windows-broker"]
 headless = ["native-host", "fabric-identity/headless"]
 certificate-store-windows = ["headless", "fabric-identity/certificate-store-windows"]
@@ -49,27 +68,37 @@ fabric-sdk-api.workspace = true
 fabric-sdk-onelake.workspace = true
 fabric-sdk-onelake-http.workspace = true
 fabric-sdk.workspace = true
+fabric-sdk-discovery = { workspace = true, optional = true }
 fabric-sdk-jobs.workspace = true
 fabric-sdk-operations.workspace = true
 fabric-sdk-tables.workspace = true
+fabric-sdk-dataflow.workspace = true
+fabric-sdk-tabular.workspace = true
 fabric-sdk-workspaces.workspace = true
 fabric-sdk-http = { workspace = true, optional = true }
 fabric-sdk-transport = { workspace = true, optional = true }
 azure_core.workspace = true
+base64.workspace = true
 futures-util.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 fabric-identity = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["signal"] }
 thiserror.workspace = true
+tempfile.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-rustix = { workspace = true, optional = true }
+rustix.workspace = true
 
 [dev-dependencies]
+arrow-array.workspace = true
+arrow-csv.workspace = true
+arrow-ipc.workspace = true
+arrow-schema.workspace = true
 async-trait.workspace = true
 azure_core.workspace = true
 fabric-sdk-http.workspace = true
+parquet.workspace = true
 tokio.workspace = true
 
 [[test]]

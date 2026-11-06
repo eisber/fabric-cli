@@ -117,6 +117,12 @@ framed-v2 completion, IPC validity and sink completion remain separate gates.
 data. It does not authorize retries: only an explicit owner-bound GET resume
 policy may consume it, and possibly dispatched mutations retain unknown outcome.
 
+Framed GET recovery does not automatically reconnect after HTTP 429 or HTTP 503
+with `Retry-After`. Without a caller-injected throttling wait, the stream returns
+the original HTTP failure and remains failed rather than immediately consuming
+its reconnect allowance. Callers retain control of timing under their absolute
+deadline; this policy adds no timer, retry engine or mutation replay.
+
 `FramedDecoder::push(fragment)` accepts arbitrary HTTP fragmentation, returns
 the consumed prefix length and stops at **one complete chunk**. If that chunk
 is pending, another push consumes zero. Retain the unconsumed suffix; call

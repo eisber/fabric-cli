@@ -8,7 +8,10 @@
 //! installed. See the crate README for Python source mapping and safety exceptions.
 
 mod collections;
+pub mod create;
+pub mod delete;
 mod items;
+pub mod links;
 pub mod ml_models;
 pub mod models;
 pub mod mutations;

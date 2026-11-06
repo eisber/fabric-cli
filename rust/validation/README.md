@@ -58,7 +58,7 @@ required obligations; the executor owns lifecycle ordering. In particular,
 after comparisons, not merely as a successful pre-comparison check. Every Python
 comparison check selects both obligations.
 
-The nine profiles include the distinct `native-read-repl` combination in
+The ten profiles include the distinct `native-read-repl` combination in
 addition to standalone native reads and the combined host. Both certificate
 profiles explicitly name the identity provider and native certificate feature;
 the combined host does not rely solely on a CLI feature forwarding that edge.
@@ -66,6 +66,12 @@ Profile checks can be markers without auxiliary commands: their evidence is the
 core planner's actual feature-specific check/lint and selected-target execution,
 not the presence of the marker alone. Profile-provider packages outside the
 selected capability compile without acquiring unrelated test suites.
+
+The `v2-discovery` profile covers the optional `fab-cli` binary and discovery
+consumer tests on all three platforms. The combined profile enables discovery
+alongside the existing host features, including self-update, to preserve
+feature-composition coverage. This profile grants no live data or mutation
+authority.
 
 ## Source-derived contract map
 

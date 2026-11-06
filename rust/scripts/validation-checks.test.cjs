@@ -95,7 +95,11 @@ for (const id of EXPECTED_IDS) {
       assert.ok(['command', 'prepare-oracle', 'verify-oracle', 'transport-graphs']
         .includes(command.kind));
       assert.ok(path.isAbsolute(command.cwd));
-      assert.ok([rust, pinnedRust].includes(command.cwd));
+      if (command.args.includes('test_assemble_native_release.py')) {
+        assert.equal(command.cwd, artifacts);
+      } else {
+        assert.ok([rust, pinnedRust].includes(command.cwd));
+      }
       assert.equal(command.shell, undefined);
       if (command.stdout) inside(artifacts, command.stdout);
       if (command.program === 'python') {
@@ -167,7 +171,10 @@ test('only tooling tests, REPL source tests and integrity helpers use candidate 
   let comparisons = 0;
   for (const id of CHECK_IDS) for (const command of commands(id)) {
     if (command.program !== 'python') continue;
-    if (['oracle-tools', 'repl', 'frozen-verify'].includes(id)) {
+    if (command.args.includes('test_assemble_native_release.py')) {
+      assert.equal(command.cwd, artifacts);
+      assert.equal(valueAfter(command, '-s'), path.join(rust, 'scripts'));
+    } else if (['oracle-tools', 'repl', 'frozen-verify'].includes(id)) {
       assert.equal(command.cwd, rust);
     } else {
       comparisons++;
@@ -236,6 +243,17 @@ test('oracle preparation runs all six dependency tests before its captured marke
   assert.deepEqual(verify.args, ['-B', path.join('scripts', 'pinned_python_source.py'),
     'verify', '--output', pinnedOutput]);
   assert.equal(verify.stdout, undefined);
+});
+
+test('release assembly validation honors controller isolation without changing selected tests', () => {
+  const result = commands('oracle-tools');
+  const controller = result.filter(command => command.cwd === artifacts);
+  assert.equal(controller.length, 1);
+  assert.deepEqual(controller[0].args, ['-B', '-m', 'unittest', 'discover',
+    '-s', path.join(rust, 'scripts'), '-p', 'test_assemble_native_release.py', '-v']);
+  assert.ok(path.isAbsolute(valueAfter(controller[0], '-s')));
+  assert.equal(result.filter(command => command.args.includes('test_assemble_native_release.py')).length, 1);
+  assert.equal(result.length, 7);
 });
 
 test('upstream tracking inputs select the candidate-only offline tooling tests', () => {

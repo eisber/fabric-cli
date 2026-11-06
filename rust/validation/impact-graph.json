@@ -24,15 +24,27 @@
       "checks": ["json-parity"]
     },
     {
+      "id": "name-search",
+      "package": "fabric-name-search",
+      "inputs": ["rust/infrastructure/search/fabric-name-search/src/**"],
+      "depends_on": [],
+      "tests": [
+        {"package": "fabric-name-search", "target": "lib"},
+        {"package": "fabric-name-search", "target": "test:suggestions"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "context",
       "package": "fabric-cli-context",
       "inputs": ["rust/hosts/cli/fabric-cli-context/src/**", "rust/tests/compatibility/context/cases.json", "rust/tests/compatibility/context/extended_cases.json"],
-      "depends_on": [],
+      "depends_on": ["name-search"],
       "tests": [
         {"package": "fabric-cli-context", "target": "lib"},
         {"package": "fabric-cli-context", "target": "test:contract"},
         {"package": "fabric-cli-context", "target": "test:extended_contract"},
         {"package": "fabric-cli-context", "target": "test:extended_python_cases"},
+        {"package": "fabric-cli-context", "target": "test:name_hints"},
         {"package": "fabric-cli-context", "target": "test:python_cases"}
       ],
       "checks": ["context-output"]
@@ -368,6 +380,7 @@
       "depends_on": ["core", "sdk-workspaces", "paging", "operations", "http"],
       "tests": [
         {"package": "fabric-sdk-jobs", "target": "lib"},
+        {"package": "fabric-sdk-jobs", "target": "test:cancellation"},
         {"package": "fabric-sdk-jobs", "target": "test:command_policy"},
         {"package": "fabric-sdk-jobs", "target": "test:endpoint_context"},
         {"package": "fabric-sdk-jobs", "target": "test:endpoint_unicode"},
@@ -544,6 +557,7 @@
       "tests": [
         {"package": "fabric-deploy", "target": "lib"},
         {"package": "fabric-deploy", "target": "test:definitions"},
+        {"package": "fabric-deploy", "target": "test:definition_copy_v2"},
         {"package": "fabric-deploy", "target": "test:export_parity"},
         {"package": "fabric-deploy", "target": "test:get_definition_value"},
         {"package": "fabric-deploy", "target": "test:get_projected_output"}
@@ -650,6 +664,16 @@
         {"package": "fabric-cli", "target": "test:batch_shared_local"}
       ],
       "checks": ["resource-oracle", "import-oracle", "export-oracle", "native-read"]
+    },
+    {
+      "id": "cli-copy-v2",
+      "package": "fabric-cli",
+      "inputs": ["rust/hosts/cli/fabric-cli/src/families/copy_v2.rs"],
+      "depends_on": ["definitions", "context", "output", "http", "operations"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:definition_copy_v2"}
+      ],
+      "checks": ["resource-oracle", "definitions-oracle"]
     },
     {
       "id": "cli-jobs",
@@ -772,6 +796,18 @@
       "checks": ["broker", "native-read", "combined"]
     },
     {
+      "id": "cli-cancel",
+      "package": "fabric-cli",
+      "inputs": ["rust/hosts/cli/fabric-cli/src/cancel.rs", "rust/hosts/cli/fabric-cli/src/native_cancel_tests.rs", "rust/hosts/cli/fabric-cli/src/parser/cancel.rs", "rust/hosts/cli/fabric-cli/tests/cancel.rs"],
+      "depends_on": ["sdk-jobs", "http", "output"],
+      "tests": [
+        {"package": "fabric-cli", "target": "lib"},
+        {"package": "fabric-cli", "target": "bin:fab-rs"},
+        {"package": "fabric-cli", "target": "test:cancel"}
+      ],
+      "checks": ["native-read", "headless"]
+    },
+    {
       "id": "cli-headless",
       "package": "fabric-cli",
       "inputs": ["rust/hosts/cli/fabric-cli/src/headless.rs", "rust/hosts/cli/fabric-cli/src/headless_host_tests.rs"],
@@ -843,6 +879,24 @@
       "checks": ["read-parity", "import-oracle", "export-oracle", "native-read"]
     },
     {
+      "id": "cli-v2",
+      "package": "fabric-cli-v2",
+      "inputs": ["rust/hosts/cli/fabric-cli-v2/src/**", "rust/hosts/cli/fabric-cli-v2/tests/**"],
+      "depends_on": ["output", "cli-auth", "updater", "transport"],
+      "tests": [
+        {"package": "fabric-cli-v2", "target": "lib"},
+        {"package": "fabric-cli-v2", "target": "bin:fab-cli"},
+        {"package": "fabric-cli-v2", "target": "test:auth"},
+        {"package": "fabric-cli-v2", "target": "test:configure"},
+        {"package": "fabric-cli-v2", "target": "test:head"},
+        {"package": "fabric-cli-v2", "target": "test:output"},
+        {"package": "fabric-cli-v2", "target": "test:report"},
+        {"package": "fabric-cli-v2", "target": "test:show"},
+        {"package": "fabric-cli-v2", "target": "test:upgrade"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "workspace-architecture",
       "package": "fabric-cli",
       "coverage": "structural",
@@ -858,8 +912,9 @@
         "sdk-jobs", "jobs", "sdk-tables", "tables", "local",
         "deploy-shared", "deploy-workflow", "deploy-notebook", "deploy-spark-environment",
         "definitions", "transfer", "cli-deployment", "cli-get", "cli-reads", "cli-runtime-v2", "cli-resources",
-        "cli-jobs", "cli-tables", "cli-local", "repl", "cli-repl", "updater",
-        "cli-updater", "cli-auth", "cli-headless", "cli-native-shared", "cli-shared-test-helpers"
+        "cli-jobs", "cli-cancel", "cli-tables", "cli-local", "repl", "cli-repl", "updater",
+        "cli-updater", "cli-auth", "cli-headless", "cli-native-shared", "cli-shared-test-helpers",
+        "cli-v2"
       ],
       "tests": [{"package": "fabric-cli", "target": "test:workspace_contract"}],
       "checks": ["dependency-graph"]
@@ -872,6 +927,55 @@
       "features": ["fabric-sdk-http/livy-arrow"],
       "platforms": ["windows", "linux", "macos"],
       "checks": ["sdk-graph"]
+    },
+    {
+      "id": "cli-v2-broker",
+      "packages": ["fabric-cli-v2"],
+      "features": ["fabric-cli-v2/windows-broker"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "cli-v2-updater",
+      "packages": ["fabric-cli-v2"],
+      "features": ["fabric-cli-v2/self-update"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "cli-v2-combined",
+      "packages": ["fabric-cli-v2"],
+      "features": ["fabric-cli-v2/windows-broker", "fabric-cli-v2/self-update"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-cancel",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-cancel"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["native-read", "headless"]
+    },
+    {
+      "id": "v2-cancel-native",
+      "packages": ["fabric-cli", "fabric-identity", "fabric-sdk-transport"],
+      "features": ["fabric-cli/v2-cancel", "fabric-cli/native-read", "fabric-identity/windows-broker"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["native-read"]
+    },
+    {
+      "id": "v2-cancel-headless",
+      "packages": ["fabric-cli", "fabric-identity"],
+      "features": ["fabric-cli/v2-cancel", "fabric-cli/headless", "fabric-identity/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["headless"]
+    },
+    {
+      "id": "v2-cancel-combined",
+      "packages": ["fabric-cli", "fabric-identity", "fabric-identity-windows", "fabric-cli-repl", "fabric-cli-update", "fabric-sdk-transport"],
+      "features": ["fabric-cli/v2-cancel", "fabric-cli/native-read", "fabric-cli/headless", "fabric-cli/certificate-store-windows", "fabric-cli/repl", "fabric-cli/self-update", "fabric-identity/certificate-store-windows", "fabric-identity-windows/certificate-store", "fabric-cli-update/fixture-harness"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["combined"]
     },
     {
       "id": "livy-arrow",
@@ -923,6 +1027,13 @@
       "checks": ["native-read"]
     },
     {
+      "id": "v2-copy",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/native-host", "fabric-cli/v2-copy"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": []
+    },
+    {
       "id": "headless",
       "packages": ["fabric-cli", "fabric-identity"],
       "features": ["fabric-cli/headless", "fabric-identity/headless"],
@@ -951,9 +1062,16 @@
       "checks": ["updater"]
     },
     {
+      "id": "v2-discovery",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-discovery"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": []
+    },
+    {
       "id": "combined",
       "packages": ["fabric-cli", "fabric-identity", "fabric-identity-windows", "fabric-cli-repl", "fabric-cli-update", "fabric-sdk-transport"],
-      "features": ["fabric-cli/native-read", "fabric-cli/headless", "fabric-cli/certificate-store-windows", "fabric-cli/repl", "fabric-cli/self-update", "fabric-identity/certificate-store-windows", "fabric-identity-windows/certificate-store", "fabric-cli-update/fixture-harness"],
+      "features": ["fabric-cli/native-read", "fabric-cli/headless", "fabric-cli/certificate-store-windows", "fabric-cli/repl", "fabric-cli/self-update", "fabric-cli/v2-discovery", "fabric-identity/certificate-store-windows", "fabric-identity-windows/certificate-store", "fabric-cli-update/fixture-harness"],
       "platforms": ["windows", "linux", "macos"],
       "checks": ["combined"]
     }

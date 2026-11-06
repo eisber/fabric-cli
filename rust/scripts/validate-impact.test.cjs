@@ -38,24 +38,46 @@ test('Cargo package arguments are sorted, deduplicated and not shell text', () =
   assert.deepEqual(packageArgs(['z', 'a', 'z']), ['--package', 'a', '--package', 'z']);
 });
 
-test('formatting checks every selected package with bounded per-package argv', () => {
+test('formatting covers every selected package without changing compile selection', () => {
   const selected = plan();
   selected.packages = ['z', 'cli', 'z', 'deploy'];
   for (const platform of ['windows', 'linux', 'macos']) {
     const commands = coreCommands(selected, platform);
     const formatting = commands.filter(command => command.args[0] === 'fmt');
-    assert.deepEqual(formatting.map(command => command.id),
-      ['default:fmt:cli', 'default:fmt:deploy', 'default:fmt:z']);
-    assert.deepEqual(formatting.map(command => command.args), [
-      ['fmt', '--package', 'cli', '--', '--check'],
-      ['fmt', '--package', 'deploy', '--', '--check'],
-      ['fmt', '--package', 'z', '--', '--check'],
-    ]);
+    assert.deepEqual(formatting.flatMap(command =>
+      command.args.flatMap((arg, index) => arg === '--package' ? [command.args[index + 1]] : [])),
+    ['cli', 'deploy', 'z']);
+    if (platform === 'windows') {
+      assert.deepEqual(formatting.map(command => command.id),
+        ['default:fmt:cli', 'default:fmt:deploy', 'default:fmt:z']);
+    }
     assert.ok(commands.indexOf(formatting.at(-1)) <
       commands.findIndex(command => command.id === 'default:check'));
     assert.deepEqual(commands.find(command => command.id === 'default:check').args,
       ['check', '--offline', '--locked', '--package', 'cli', '--package', 'deploy',
         '--package', 'z', '--all-targets']);
+  }
+});
+
+test('Windows formatting bounds each expanded rustfmt invocation without omitting packages', () => {
+  const p = plan();
+  p.packages = Array.from({length: 35}, (_, index) => `component-${String(index).padStart(2, '0')}`);
+  p.packages.push(p.packages[0]);
+  const commands = coreCommands(p, 'windows').filter(command => command.args[0] === 'fmt');
+  assert.equal(commands.length, 35);
+  assert.deepEqual(commands.map(command => command.args[2]), [...new Set(p.packages)].sort());
+  for (const command of commands) {
+    assert.deepEqual(command.args, ['fmt', '--package', command.args[2], '--', '--check']);
+    assert.equal(command.id, `default:fmt:${command.args[2]}`);
+  }
+});
+
+test('POSIX formatting retains the combined selected-package check', () => {
+  for (const platform of ['linux', 'macos']) {
+    const formatting = coreCommands(plan(), platform).filter(command => command.args[0] === 'fmt');
+    assert.equal(formatting.length, 1);
+    assert.equal(formatting[0].id, 'default:fmt');
+    assert.deepEqual(formatting[0].args, ['fmt', '--package', 'cli', '--package', 'deploy', '--', '--check']);
   }
 });
 
@@ -147,17 +169,63 @@ test('recorded command execution retains failures, output hashes, counts and lit
     assert.equal(program, 'cargo');
     assert.deepEqual(args, command.args);
     assert.equal(opts.shell, false);
+    for (const name of ['FAB_UPDATE_TEST_ROOT', 'FAB_CLI_V2_TEST_ROOT', 'FAB_IDENTITY_TEST_ROOT']) {
+      assert.equal(opts.env[name], root);
+      assert.ok(path.isAbsolute(opts.env[name]));
+    }
     return {status: 0, stdout: 'test result: ok. 4 passed; 0 failed; 1 ignored;\n', stderr: ''};
   };
   commandResult(command, context, execute);
   assert.equal(context.results[0].tests_passed, 4);
   assert.equal(context.results[0].tests_ignored, 1);
+  assert.equal(path.basename(context.results[0].stdout), '000-literal_test.stdout.log');
   assert.match(context.results[0].stdout_sha256, /^[a-f0-9]{64}$/);
   assert.throws(() => commandResult(command, context, () => ({
     status: null, error: new Error('deadline exceeded'), stdout: '', stderr: 'partial',
   })), /Validation failed/);
   assert.equal(context.results.length, 2);
   assert.equal(context.results[1].exit, null);
+});
+
+test('full-workspace command ids use bounded diagnostic filenames without losing receipt identity', t => {
+  const root = temporary(t);
+  const context = {root, artifacts: root, commandTimeout: 1000, deadline: Date.now() + 10000, results: []};
+  const id = `default:test:${Array.from({length: 35}, (_, index) =>
+    `fabric-workspace-component-${index}`).join(',')}`;
+  const execute = () => ({status: 0, stdout: 'recorded stdout', stderr: 'recorded stderr'});
+  for (const suffix of ['', ',different-final-component']) {
+    commandResult({id: id + suffix, program: 'cargo', args: ['test', '--all-targets']},
+      context, execute);
+  }
+  assert.deepEqual(context.results.map(record => record.id), [id, `${id},different-final-component`]);
+  for (const record of context.results) {
+    assert.ok(Buffer.byteLength(path.basename(record.stdout)) <= 80);
+    assert.ok(Buffer.byteLength(path.basename(record.stderr)) <= 80);
+    assert.equal(fs.readFileSync(record.stdout, 'utf8'), 'recorded stdout');
+    assert.equal(fs.readFileSync(record.stderr, 'utf8'), 'recorded stderr');
+    assert.deepEqual(record.args, ['test', '--all-targets']);
+  }
+  assert.notEqual(path.basename(context.results[0].stdout).slice(4),
+    path.basename(context.results[1].stdout).slice(4));
+});
+
+test('full-workspace command log names stay bounded without losing command identity', t => {
+  const root = temporary(t);
+  const context = {root, artifacts: root, commandTimeout: 1000, deadline: Date.now() + 10000, results: []};
+  const common = `default:test:${Array.from({length: 40}, (_, i) => `fabric-long-package-${i}`).join(',')}`;
+  for (const suffix of ['a', 'b']) {
+    const id = `${common}:${suffix}`;
+    commandResult({id, program: 'cargo', args: ['test', '--all-targets']}, context,
+      () => ({status: 0, stdout: 'test result: ok. 1 passed; 0 failed; 0 ignored;\n', stderr: ''}));
+    const record = context.results.at(-1);
+    assert.equal(record.id, id);
+    assert.ok(path.basename(record.stdout).length < 128);
+    assert.ok(path.basename(record.stderr).length < 128);
+    assert.equal(fs.readFileSync(record.stdout, 'utf8'),
+      'test result: ok. 1 passed; 0 failed; 0 ignored;\n');
+    assert.ok(fs.existsSync(record.stderr));
+  }
+  assert.notEqual(context.results[0].stdout, context.results[1].stdout);
 });
 
 test('missing full-gate marker profiles fail, rather than passing an empty contract', t => {

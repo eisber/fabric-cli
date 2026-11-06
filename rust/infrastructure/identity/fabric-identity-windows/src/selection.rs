@@ -27,6 +27,7 @@ const PUBLIC_AUTHORITY: &str = "https://login.microsoftonline.com";
 const CONSUMER_TENANT: &str = "9188040d-6c67-4c5b-b112-36a304b66dad";
 
 /// Non-secret phase of an explicitly requested WAM account selection.
+#[cfg(windows)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AccountSelectionStage {
     /// Waiting for Windows to return its work-account provider.

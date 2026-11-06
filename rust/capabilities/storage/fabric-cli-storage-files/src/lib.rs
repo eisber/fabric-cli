@@ -6,10 +6,15 @@
 //! This library does not resolve Fabric paths, parse commands, prompt, discover
 //! credentials, start a runtime, or implement a second HTTP/operation engine.
 
+mod exact_output;
 mod local;
 mod resource;
 mod selected;
 mod upload;
+pub use exact_output::{
+    ExactOutputError, ExactOutputErrorKind, ExactOutputFile, ExactOutputPathError,
+    ExactOutputReceipt, ExactOutputStage,
+};
 pub use resource::{ResourceFileError, ResourceFileHost, ResourceFileResult};
 pub use selected::SelectedFileSystem;
 pub use upload::UploadResult;

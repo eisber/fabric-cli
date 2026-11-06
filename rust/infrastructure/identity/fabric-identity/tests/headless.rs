@@ -28,6 +28,7 @@ const CLIENT: &str = "22222222-2222-2222-2222-222222222222";
 const FABRIC: &str = "https://api.fabric.microsoft.com/.default";
 const STORAGE: &str = "https://storage.azure.com/.default";
 const ARM: &str = "https://management.azure.com/.default";
+const SQL: &str = "https://database.windows.net/.default";
 
 #[path = "headless/pipelines.rs"]
 mod pipelines;
@@ -146,6 +147,17 @@ async fn official_secret_provider_uses_exact_scopes_public_authority_and_memory_
         assert!(form.contains(&format!("scope=https%3A%2F%2F{resource}%2F.default")));
     }
     assert_eq!(format!("{credential:?}"), "HeadlessCredential { .. }");
+}
+
+#[tokio::test]
+async fn explicit_sql_scope_uses_a_separate_provider_request_without_fabric_fallback() {
+    let http = FakeHttp::new([token("sql-token", 3600)]);
+    let credential = secret(http.clone());
+    let token = credential.get_token(&[SQL], None).await.unwrap();
+    assert_eq!(token.token.secret(), "sql-token");
+    let requests = http.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert!(body(&requests[0]).contains("scope=https%3A%2F%2Fdatabase.windows.net%2F.default"));
 }
 
 #[tokio::test]

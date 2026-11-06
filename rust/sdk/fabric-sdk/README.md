@@ -23,6 +23,10 @@ selected endpoint with the appropriate audience.
 | --- | --- |
 | `workspaces` | Workspace listing, ordered metadata and optional enrichment |
 | `items` | Item listing, generic lookup and finite collection-specific metadata |
+| `metadata` | Explicit primary workspace or generic item metadata, without enrichment |
+| `representations` | Native multipart definition/part and OneLake file reads |
+| `observe` | Bounded observation of existing operation and item-job handles |
+| `documents` | Injected served-docs provider and bounded, coverage-aware graph |
 | `folders` | Folder listing and lookup with explicit query options |
 | `capacities` | Fabric capacity listing |
 | `notebooks` | Prepared Notebook definitions and publication |
@@ -31,13 +35,28 @@ selected endpoint with the appropriate audience.
 | `notebook_observability` | Explicit public/workload monitoring, logs and Notebook resource requests |
 | `livy` | Explicit Fabric/native Livy profiles, owned handles, JSON results and bounded uploads |
 | `livy_arrow` (opt-in) | Raw framed-v2 decoding, request contracts and in-memory replay policy |
+| `sql_databases` | Typed SQLDatabase metadata GET and single-page LIST requests |
+| `sql_definitions` | Bounded native DACPAC/SQL project definition validation and encoding |
 
 `get_item_metadata` preserves the insertion-ordered response object separately
 from the typed `Item` representation. Workspace enrichments retain typed optional
 omissions rather than fabricating empty fields.
 
+The additive `MetadataHost` composes only the explicitly addressed metadata read,
+with caller-selected response and compact-result limits. It does not select a
+definition from query text. `get_workspace_primary_metadata` skips all optional
+enrichments without changing the existing enriched API. See
+[explicit metadata retrieval](../../docs/explicit-get.md) for the shared read
+contract and the separate CLI local-file adapter.
+
 Related focused crates provide jobs, OneLake, access, catalog, raw API execution
 and tables. Use them directly for their service-specific contracts.
+
+The SQL modules reexport the focused SDK leaves. Metadata requests use the
+caller's shared executor; they do not connect to SQL, retrieve definitions
+implicitly, or register a CLI command. Definition validation preserves native
+parts and bytes without granting filesystem or deployment authority. These
+modules do not implement database mutations, TDS queries, or a full backup.
 
 ## Execution and safety
 

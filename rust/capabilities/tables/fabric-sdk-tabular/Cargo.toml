@@ -1,0 +1,31 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-sdk-tabular"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Bounded engine-neutral Arrow results and CSV, JSON, and Parquet encoding"
+
+[package.metadata.fabric]
+layer = "sdk"
+
+[dependencies]
+arrow-array.workspace = true
+arrow-ipc.workspace = true
+arrow-schema.workspace = true
+base64.workspace = true
+flatbuffers.workspace = true
+parquet.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+arrow-csv.workspace = true
+bytes.workspace = true
+
+[lints]
+workspace = true

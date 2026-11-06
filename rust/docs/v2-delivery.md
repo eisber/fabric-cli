@@ -117,6 +117,15 @@ establish integration correctness.
 
 ## Command dependency and ownership ledger
 
+The additive [`fabric-v2-contracts`](../infrastructure/core/fabric-v2-contracts/README.md)
+core library supplies deterministic operation descriptors, enumerated
+generation/facet/representation bindings and type-constrained facade discovery.
+It performs no execution or authorization. Conditional and unsupported
+capabilities remain explicit in discovery; an operation registration is not
+proof that its provider, CLI handler or MCP host is available. The library takes
+already-resolved targets and does not change the existing v1 path grammar,
+executable or independent oracle.
+
 The coordinator maintains a command-level ledger from the selected live
 specification. Keep private specification exports and coordination artifacts
 outside the public repository unless their publication is explicitly approved.
@@ -176,6 +185,29 @@ exact action needed. Do not claim that a queued worker, local branch, test plan,
 or proposed synchronization is a published or completed feature.
 
 ## Central merge pipeline
+
+### Combined candidate checkpoint
+
+The common branch now composes the committed CLI local host, name hints,
+Notebook cancellation, create policy, definition copy, typed delete, relationship
+link, schema discovery, Notebook/Livy protocol, Dataflow execution/result
+formats, SQL database and native get candidates. MLModel SDK contracts were
+already present. Each lane's immutable source head is preserved in merge
+ancestry; uncommitted drafts and unrelated Python preparation history are not
+part of this composition.
+
+This is candidate integration, not feature-completion or production acceptance.
+The local host keeps `fab-cli`, schema discovery uses `fab-cli-discovery`, and
+the explicit get/runtime preview keeps `fab-cli-v2`. Distinct preview executable
+names prevent one candidate from overwriting another Cargo build output.
+Shared feature profiles and acceptance checks are retained. Integration repairs
+reject legacy shortcut normalization in schema selectors, reconcile Cargo
+dependency edges, and preserve every composed adapter and SDK export.
+
+The combined candidate must still pass its recorded dependency-impact,
+native/optional-feature and independent integration-review gates. No lane is
+complete merely because its source head is merged; close a session only after
+its agreed finished scope and publication are verified.
 
 The v2 coordinator is the single writer and merger of the common branch. Lane
 owners continue in their own worktrees and submit small PRs or explicitly

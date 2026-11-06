@@ -28,6 +28,11 @@ assert_eq!(project(&rows, None)?, rows);
 | Object or list expression result | Ordered JSON tree |
 | Scalar expression result | Display string encoded as a JSON string |
 | `project(data, None)` | Original value without evaluation |
+| `project_value(data, expression)` | Explicit typed projection; scalars remain null/boolean/number |
+
+`project_value` is the additive v2 boundary. It rejects an empty expression
+instead of requesting a property inventory. Existing `search` and `project`
+compatibility behavior is unchanged.
 
 `join_query_args` joins tokens with spaces and strips surrounding quote
 characters. An absent query remains distinct from an explicitly empty query.

@@ -20,8 +20,29 @@ pub fn read_confirmation(
     output: &mut impl Write,
     question: &str,
 ) -> io::Result<bool> {
+    read_confirmation_with_default(input, output, question, true)
+}
+
+/// Read a destructive-action confirmation with an entered empty line declining.
+///
+/// EOF, invalid input and prompt failures remain errors rather than approval.
+/// Existing source-compatible confirmation keeps its separate yes default.
+pub fn read_explicit_confirmation(
+    input: &mut impl BufRead,
+    output: &mut impl Write,
+    question: &str,
+) -> io::Result<bool> {
+    read_confirmation_with_default(input, output, question, false)
+}
+
+fn read_confirmation_with_default(
+    input: &mut impl BufRead,
+    output: &mut impl Write,
+    question: &str,
+    default_yes: bool,
+) -> io::Result<bool> {
     output.write_all(question.as_bytes())?;
-    output.write_all(b" [Y/n] ")?;
+    output.write_all(if default_yes { b" [Y/n] " } else { b" [y/N] " })?;
     output.flush()?;
     let mut answer = String::new();
     let count = io::Read::take(&mut *input, ANSWER_LIMIT + 1).read_line(&mut answer)?;
@@ -44,7 +65,8 @@ pub fn read_confirmation(
         ));
     }
     match answer.trim().to_ascii_lowercase().as_str() {
-        "" | "y" | "yes" => Ok(true),
+        "" => Ok(default_yes),
+        "y" | "yes" => Ok(true),
         "n" | "no" => Ok(false),
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,

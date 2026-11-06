@@ -1,0 +1,29 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-sdk-dataflow"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Caller-injected native Dataflow Execute Query over shared bounded operations"
+
+[package.metadata.fabric]
+layer = "sdk"
+
+[dependencies]
+fabric-sdk-operations.workspace = true
+fabric-sdk-workspaces.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+azure_core.workspace = true
+fabric-core.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

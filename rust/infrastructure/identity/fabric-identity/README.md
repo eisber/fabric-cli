@@ -24,11 +24,18 @@ Construction does not create a runtime, acquire a token or contact a provider.
 | `Certificate` | `ClientAssertionCredential` | Separate `certificate-store-windows` feature; explicit non-exporting signer, public-cloud tenant/client and immutable certificate fingerprint |
 
 Use the caller's Tokio runtime for token acquisition. The wrapper accepts exactly
-one Fabric, OneLake or ARM public-cloud `.default` scope. It rejects unknown,
+one Fabric, OneLake, ARM or native SQL public-cloud `.default` scope. It rejects unknown,
 empty and combined scopes before any provider or file work. OAuth requests are
 pinned to the selected tenant at `login.microsoftonline.com`; ambient authority
 overrides are not used. Endpoint bindings for Fabric daily/MSIT service traffic
 do not change the token authority or audience.
+
+Native SQL requests use `https://database.windows.net/.default`, never a Fabric
+REST token. SQL is acquired only on an explicit credential request. Existing
+Windows login and status retain their original Fabric/OneLake/ARM sequence;
+an explicit SQL refresh uses the same bound account and remains silent.
+Supporting this scope does not grant SQL database permissions, enable a query
+binding, or establish live Fabric SQL authentication support.
 
 The official providers maintain memory-only access-token caches, separated by
 scope, and renew within five minutes of expiry. Assertion files are read again

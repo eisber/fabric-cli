@@ -13,9 +13,14 @@
 
 mod catalog;
 mod extended;
+mod hints;
 mod model;
 
 pub use extended::*;
+pub use hints::{
+    CandidateNames, NameHint, NameHintFailure, NameHints, NameHintsUnavailable, SearchError,
+    SearchOptions,
+};
 
 pub use catalog::{Catalog, Lookup, LookupKind, LookupRequest};
 pub use model::{
@@ -163,6 +168,27 @@ impl<'a, L: Lookup + ?Sized> Resolver<'a, L> {
             stack.push(node);
         }
         Ok(stack.pop().expect("a tenant root is always present"))
+    }
+
+    /// Resolve exactly, adding advisory names only to an eligible `NotFound`.
+    ///
+    /// This opt-in API preserves legacy resolution and errors. It consults only
+    /// [`Lookup::candidate_names`] from the failed scope/type, never changes the
+    /// target, and never collects hints for `raise_error = false`.
+    pub fn resolve_with_hints(
+        &self,
+        input: PathInput<'_>,
+        options: ResolveOptions,
+        search: SearchOptions,
+    ) -> Result<Arc<Element>, NameHintFailure<ContextError>> {
+        let lookup = hints::HintLookup::new(self.lookup, options.raise_error);
+        let resolver = Resolver::new(&lookup, Arc::clone(&self.current), self.home.clone());
+        resolver
+            .resolve(input, options)
+            .map_err(|failure| NameHintFailure {
+                hints: lookup.hints(&failure, search),
+                failure,
+            })
     }
 
     /// Explicitly change current context only after successful complete resolution.

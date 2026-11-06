@@ -417,6 +417,32 @@ test('Missing required-feature coverage fails planning, never declares clean', (
   }), /no applicable profile/);
 });
 
+test('Discovery binary has an explicit cross-platform profile and combined coverage', () => {
+  const graph = JSON.parse(fs.readFileSync(
+    path.join(__dirname, '..', 'validation', 'impact-graph.json'), 'utf8'));
+  const discovery = graph.profiles.find(item => item.id === 'v2-discovery');
+  assert.ok(discovery);
+  assert.deepEqual(discovery.platforms, ['windows', 'linux', 'macos']);
+  assert.ok(graph.profiles.find(item => item.id === 'combined').features
+    .includes('fabric-cli/v2-discovery'));
+  const input = {
+    root: ROOT,
+    metadata: metadata([pkg('fabric-cli', [], [
+      target('fab-cli', 'bin', 'rust/crates/fabric-cli/src/bin/fab_cli.rs', ['v2-discovery']),
+    ], {default: [], 'v2-discovery': []})]),
+    graph: {schema: 1, profiles: [discovery]},
+    files: ['rust/Cargo.toml'],
+  };
+  const result = plan(input);
+  const binary = result.target_catalog.find(item => item.target === 'bin:fab-cli');
+  assert.equal(binary.default_available, false);
+  assert.deepEqual(binary.profiles, ['v2-discovery']);
+  for (const platform of discovery.platforms) {
+    assert.ok(commands(result, platform).commands.some(item =>
+      item.profile === 'v2-discovery' && item.args.includes('--all-targets')));
+  }
+});
+
 test('Weak dependency features do not activate an otherwise disabled optional dependency', () => {
   const input = fixture();
   const models = pkg('models', [], [target('special', 'test',

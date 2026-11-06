@@ -34,10 +34,13 @@ pub fn observe(input: &Value) -> Option<Value> {
         Ok(Invocation::Read(command)) => json!({"read": meaning(&command)}),
         Ok(Invocation::Display(_)) => json!({"display": true}),
         Ok(
-            Invocation::Batch(_)
+            Invocation::NativeTabular(_)
+            | Invocation::Tabular(_)
+            | Invocation::Batch(_)
             | Invocation::JobRead(_)
             | Invocation::JobRun(_)
             | Invocation::JobMutation(_)
+            | Invocation::Execute(_)
             | Invocation::Local(_)
             | Invocation::Access(_)
             | Invocation::Resource(_)
@@ -47,10 +50,13 @@ pub fn observe(input: &Value) -> Option<Value> {
         ) => {
             json!({"error": true})
         }
+        Ok(Invocation::Delete(_)) => json!({"error": true}),
         #[cfg(feature = "windows-broker")]
         Ok(Invocation::Auth(_)) => json!({"error": true}),
         #[cfg(feature = "self-update")]
         Ok(Invocation::Update(_)) => json!({"error": true}),
+        #[cfg(feature = "v2-cancel")]
+        Ok(Invocation::Cancel(_)) => json!({"error": true}),
         Err(_) => json!({"error": true}),
     };
     Some(json!({"id": input["id"], "parse": result}))

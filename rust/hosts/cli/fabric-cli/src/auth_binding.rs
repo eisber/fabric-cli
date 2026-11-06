@@ -35,6 +35,7 @@ fn storage(error: io::Error) -> Failure {
     )
 }
 
+#[cfg(any(feature = "native-host", test))]
 fn absent() -> Failure {
     (
         "NotConfigured",
