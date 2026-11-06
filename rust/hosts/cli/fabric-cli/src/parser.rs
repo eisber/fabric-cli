@@ -74,6 +74,8 @@ pub enum Invocation {
     /// Opt-in, ID-only Notebook run cancellation; never a terminal-state claim.
     #[cfg(feature = "v2-cancel")]
     Cancel(CancelCommand),
+    /// Explicit v2 named Dataflow query execution, separate from item jobs.
+    Execute(crate::execute::ExecuteCommand),
     /// Ordered source `-c` strings, parsed individually immediately before dispatch.
     Batch(batch::BatchInvocation),
     /// A command requiring explicitly supplied dependencies.
@@ -149,6 +151,7 @@ pub fn command() -> Command {
         .subcommands(fabric_cli_mutations::frontdoor::resource_subcommands())
         .subcommands(fabric_cli_transfer::transfer_subcommands());
     delete::register(command)
+        .subcommand(crate::execute::command())
         .subcommand(fabric_cli_tables::command())
         .subcommand(jobs::register())
         .subcommand(
@@ -221,6 +224,10 @@ where
         }
     }
     let mut parser = command();
+    if root.and_then(|index| args[index].to_str()) == Some("execute") {
+        // V1's inherited last-value-wins policy must not discard v2 selectors.
+        parser = parser.args_override_self(false);
+    }
     if batch::has_root_option(&args) {
         // Python stores the root version flag but executes a supplied command
         // list first. Keep the existing non-batch Clap version precedence.
@@ -321,6 +328,12 @@ where
     }
     if name == "delete" {
         return DeleteCommand::from_matches(values).map(Invocation::Delete);
+    }
+    if name == "execute" {
+        if matches.contains_id("output_format") {
+            return Err(invalid_arguments());
+        }
+        return crate::execute::from_matches(values).map(Invocation::Execute);
     }
     if !matches!(name, "ls" | "get") {
         return family_invocation(&matches);

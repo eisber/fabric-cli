@@ -40,6 +40,8 @@ default-members = [
     "capabilities/deployment/fabric-cli-transfer",
     "capabilities/tables/fabric-cli-tables",
     "capabilities/tables/fabric-sdk-tables",
+    "capabilities/tables/fabric-sdk-tabular",
+    "capabilities/tables/fabric-sdk-dataflow",
 ]
 resolver = "3"
 
@@ -52,6 +54,12 @@ publish = false
 
 [workspace.dependencies]
 fabric-cli = { path = "hosts/cli/fabric-cli", default-features = false }
+arrow-csv = { version = "=60.1.0", default-features = false }
+bytes = { version = "=1.12.1", default-features = false }
+flatbuffers = { version = "=25.12.19", default-features = false }
+parquet = { version = "=60.1.0", default-features = false, features = ["arrow"] }
+fabric-sdk-tabular = { path = "capabilities/tables/fabric-sdk-tabular" }
+fabric-sdk-dataflow = { path = "capabilities/tables/fabric-sdk-dataflow" }
 fabric-cli-repl = { path = "hosts/repl/fabric-cli-repl", default-features = false }
 fabric-cli-update = { path = "hosts/update/fabric-cli-update", default-features = false }
 reedline = { version = "=0.52.1", default-features = false }

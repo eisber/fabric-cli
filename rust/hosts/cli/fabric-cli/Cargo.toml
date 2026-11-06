@@ -67,6 +67,8 @@ fabric-sdk-discovery = { workspace = true, optional = true }
 fabric-sdk-jobs.workspace = true
 fabric-sdk-operations.workspace = true
 fabric-sdk-tables.workspace = true
+fabric-sdk-dataflow.workspace = true
+fabric-sdk-tabular.workspace = true
 fabric-sdk-workspaces.workspace = true
 fabric-sdk-http = { workspace = true, optional = true }
 fabric-sdk-transport = { workspace = true, optional = true }
@@ -82,9 +84,14 @@ thiserror.workspace = true
 rustix = { workspace = true, optional = true }
 
 [dev-dependencies]
+arrow-array.workspace = true
+arrow-csv.workspace = true
+arrow-ipc.workspace = true
+arrow-schema.workspace = true
 async-trait.workspace = true
 azure_core.workspace = true
 fabric-sdk-http.workspace = true
+parquet.workspace = true
 tokio.workspace = true
 
 [[test]]

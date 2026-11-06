@@ -280,6 +280,25 @@ caller's blocking executor. Deferred path selection preserves classification
 order and limits local authority to explicit arguments or trusted local
 configuration documents.
 
+## Native Dataflow query execution
+
+The additive v2 `execute` root binds an explicit
+`/<workspace-id>.Workspace/<dataflow-id>.Dataflow/queries/<query-name>` target
+with required `--wait`. `--format json|csv|parquet` uses the shared native Arrow
+tabular result component; Parquet requires a new file destination. Optional
+`--input FILE|-` supplies strict JSON for `customMashupDocument` and
+`arrowVersion` (1 or 2), not SQL text.
+
+The host requires target/input-bound approval before credentials, performs
+no-clobber output preflight, and preserves real operation evidence on local
+cancellation, timeout or output failure without replay. Noninteractive native
+processes without an approval capability fail closed; embedders inject
+`execute::host::ExecutionApproval`. The default binary returns `NotConfigured`.
+See the [complete execution contract](../../../docs/dataflow-execution.md) for
+finite limits, exact format references, permission/gateway prerequisites,
+unimplemented providers and the detailed refresh-log API gap. Existing v1
+JMESPath metadata projection is unchanged. Excel output is deferred.
+
 ## Output and execution boundaries
 
 Use returned plans and original evidence until output delivery completes.
