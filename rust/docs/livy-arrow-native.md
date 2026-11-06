@@ -407,7 +407,14 @@ an injected executor/body which ignores the deadline while awaiting I/O.
 
 Recovery requires explicit `FramedResume::Recoverable` and stays within both
 the reconnect and response budgets. Opaque `NativeError::Transport` evidence
-and actual HTTP 408/429/500/502/503/504 errors are eligible. Transport evidence
+and actual HTTP 408/500/502/504 errors are eligible. A returned HTTP 503 response
+without a delay header is also eligible; a metadata-free native 503 error is
+not, because its server-directed delay cannot be inspected. HTTP 429 always
+stops. Any failed response advertising `Retry-After` also stops, preserving the
+actual failure rather than retrying early or inventing a restarted deadline.
+This intentionally includes zero, positive, HTTP-date, malformed and overflowing
+values: no caller-runtime backoff scheduler is installed by this driver.
+Transport evidence
 is the additive shared ABI from coordinator commit
 `a360d5a35abad679745fdb6f22fceda83e5ae03f`; the driver preserves it directly as
 `FramedStreamCause::Native`, without converting it through `ArrowError`.
