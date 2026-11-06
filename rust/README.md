@@ -27,6 +27,9 @@ For the separate CLI v2 effort, follow the
 implementation starts only after the selected specification and first wave
 are confirmed; this process does not change the existing CLI contract.
 
+See the [shared tabular file output contract](docs/tabular-output.md) for the
+export syntax, current consumers, and validation evidence limits.
+
 ## Workspace components
 
 The workspace groups service clients and command adapters by capability:

@@ -17,12 +17,14 @@ pub mod families;
 mod folder_reads;
 pub mod jobs;
 pub mod local_commands;
+pub mod native_tabular;
 pub mod parser;
 mod projection;
 mod reads;
 pub mod session;
 #[cfg(feature = "native-host")]
 pub mod tables;
+pub mod tabular_export;
 mod workspace_get;
 
 pub use folder_reads::FolderReadHost;
