@@ -63,6 +63,13 @@ pub enum FamilyEvidence {
     CommandFailure(CommandError),
     /// Access result retains original accepted-operation uncertainty.
     Access(Result<fabric_cli_resources::CommandValue, fabric_cli_resources::CommandError>),
+    /// Native access result plus a genuine schema from its resolved endpoint.
+    AccessTable {
+        /// Original result before presentation or file delivery.
+        result: Result<fabric_cli_resources::CommandValue, fabric_cli_resources::CommandError>,
+        /// Empty-result schema; absent for arbitrary projection results.
+        empty_schema: Option<fabric_cli_output::tabular::TabularTable>,
+    },
     /// Fabric mutation result retains earlier creation and cache evidence.
     Resource(Result<MutationResult, MutationError>),
     /// Ordered workspace/tenant removal, including partial outputs and cache work.
@@ -164,8 +171,37 @@ impl FamilySession<'_, '_> {
         inputs: &crate::deploy::DeployInputs,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<FamilyOutput, TextError> {
-        self.dispatch_with_resource_ui(invocation, inputs, None, None, cancelled)
+        self.dispatch_with_resource_ui(invocation, inputs, None, None, false, cancelled)
             .await
+    }
+
+    /// Execute a declared access/schema producer without rendering its data.
+    ///
+    /// The caller receives native evidence and owns explicit export delivery.
+    pub async fn dispatch_tabular(
+        &mut self,
+        invocation: &Invocation,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<FamilyOutput, TextError> {
+        if !matches!(
+            crate::tabular_export::source(invocation),
+            Some("acl ls" | "acl get" | "find" | "table schema")
+        ) {
+            return self.command_failure(
+                errors::unsupported("This family leaf does not declare a remote tabular result"),
+                invocation,
+                OutputFormat::Json,
+            );
+        }
+        self.dispatch_with_resource_ui(
+            invocation,
+            &crate::deploy::DeployInputs::default(),
+            None,
+            None,
+            true,
+            cancelled,
+        )
+        .await
     }
 
     /// Dispatch with explicit workspace/tenant removal selection and confirmation.
@@ -184,6 +220,7 @@ impl FamilySession<'_, '_> {
             &crate::deploy::DeployInputs::default(),
             Some(ui),
             None,
+            false,
             cancelled,
         )
         .await
@@ -208,6 +245,7 @@ impl FamilySession<'_, '_> {
             &crate::deploy::DeployInputs::default(),
             None,
             Some(files),
+            false,
             cancelled,
         )
         .await
@@ -219,6 +257,7 @@ impl FamilySession<'_, '_> {
         inputs: &crate::deploy::DeployInputs,
         removal_ui: Option<&mut dyn RemovalUi>,
         physical_files: Option<&dyn resource_files::ResourceFileInputs>,
+        tabular: bool,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<FamilyOutput, TextError> {
         let mut cancelled = std::pin::pin!(cancelled);
@@ -241,13 +280,16 @@ impl FamilySession<'_, '_> {
         };
         let configured = settings.get("output_format").and_then(Value::as_str);
         if let Invocation::Table(command) = invocation {
-            return crate::tables::TableSession {
+            let tables = crate::tables::TableSession {
                 reads: self.reads,
                 http: self.http,
                 settings: &settings,
-            }
-            .dispatch(command, cancelled.as_mut())
-            .await;
+            };
+            return if tabular {
+                tables.dispatch_tabular(command, cancelled.as_mut()).await
+            } else {
+                tables.dispatch(command, cancelled.as_mut()).await
+            };
         }
         let explicit = match invocation {
             Invocation::Local(command) => command.output_format.as_deref(),
@@ -364,8 +406,8 @@ impl FamilySession<'_, '_> {
                     | AccessKind::LabelChange { path, .. } => Some(path),
                     _ => None,
                 };
-                if let Some(path) = path
-                    && let Err(error) = context
+                let target_kind = if let Some(path) = path {
+                    match context
                         .resolve(
                             self.reads,
                             self.http,
@@ -378,9 +420,13 @@ impl FamilySession<'_, '_> {
                             cancelled.as_mut(),
                         )
                         .await
-                {
-                    return self.command_failure(error, invocation, format);
-                }
+                    {
+                        Ok(target) => target.fabric().map(|target| target.kind()),
+                        Err(error) => return self.command_failure(error, invocation, format),
+                    }
+                } else {
+                    None
+                };
                 let api = |audience| {
                     let selection = fabric_sdk::CredentialSelection::new(
                         self.reads.sdk.selection().account(),
@@ -429,6 +475,21 @@ impl FamilySession<'_, '_> {
                 }
                 .execute(command, cancelled.as_mut())
                 .await;
+                if tabular {
+                    return Ok(FamilyOutput {
+                        plan: TextPlan {
+                            records: Vec::new(),
+                            exit_code: 0,
+                        },
+                        evidence: FamilyEvidence::AccessTable {
+                            result,
+                            empty_schema: crate::tabular_export::access_schema(
+                                command,
+                                target_kind,
+                            ),
+                        },
+                    });
+                }
                 let output = frontdoor::render(
                     command,
                     result.clone(),
