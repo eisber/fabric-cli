@@ -828,6 +828,24 @@
       "checks": ["read-parity", "import-oracle", "export-oracle", "native-read"]
     },
     {
+      "id": "cli-v2",
+      "package": "fabric-cli-v2",
+      "inputs": ["rust/hosts/cli/fabric-cli-v2/src/**", "rust/hosts/cli/fabric-cli-v2/tests/**"],
+      "depends_on": ["output", "cli-auth", "updater", "transport"],
+      "tests": [
+        {"package": "fabric-cli-v2", "target": "lib"},
+        {"package": "fabric-cli-v2", "target": "bin:fab-cli"},
+        {"package": "fabric-cli-v2", "target": "test:auth"},
+        {"package": "fabric-cli-v2", "target": "test:configure"},
+        {"package": "fabric-cli-v2", "target": "test:head"},
+        {"package": "fabric-cli-v2", "target": "test:output"},
+        {"package": "fabric-cli-v2", "target": "test:report"},
+        {"package": "fabric-cli-v2", "target": "test:show"},
+        {"package": "fabric-cli-v2", "target": "test:upgrade"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "workspace-architecture",
       "package": "fabric-cli",
       "coverage": "structural",
@@ -844,13 +862,35 @@
         "deploy-shared", "deploy-workflow", "deploy-notebook", "deploy-spark-environment",
         "definitions", "transfer", "cli-deployment", "cli-get", "cli-reads", "cli-resources",
         "cli-jobs", "cli-tables", "cli-local", "repl", "cli-repl", "updater",
-        "cli-updater", "cli-auth", "cli-headless", "cli-native-shared", "cli-shared-test-helpers"
+        "cli-updater", "cli-auth", "cli-headless", "cli-native-shared", "cli-shared-test-helpers",
+        "cli-v2"
       ],
       "tests": [{"package": "fabric-cli", "target": "test:workspace_contract"}],
       "checks": ["dependency-graph"]
     }
   ],
   "profiles": [
+    {
+      "id": "cli-v2-broker",
+      "packages": ["fabric-cli-v2"],
+      "features": ["fabric-cli-v2/windows-broker"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "cli-v2-updater",
+      "packages": ["fabric-cli-v2"],
+      "features": ["fabric-cli-v2/self-update"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "cli-v2-combined",
+      "packages": ["fabric-cli-v2"],
+      "features": ["fabric-cli-v2/windows-broker", "fabric-cli-v2/self-update"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
     {
       "id": "native-transport",
       "packages": ["fabric-sdk-transport"],

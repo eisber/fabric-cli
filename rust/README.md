@@ -27,6 +27,12 @@ For the separate CLI v2 effort, follow the
 implementation starts only after the selected specification and first wave
 are confirmed; this process does not change the existing CLI contract.
 
+The additive [v2 local host](hosts/cli/fabric-cli-v2/README.md) provides the
+six selected `cli` operations through a separate `fab-cli` executable.
+It preserves `fab-rs` and its compatibility fixtures, distinguishes manual
+handoffs from delivered actions, and fails explicitly when an optional
+provider or trusted installation profile is unavailable.
+
 ## Workspace components
 
 The workspace groups service clients and command adapters by capability:
@@ -65,6 +71,7 @@ front-ends are not implemented by this layout.
 | [Native transport](infrastructure/http/fabric-sdk-transport/README.md) | Optional `hyper-rustls` backend and asynchronous timers |
 | [Deployment](capabilities/deployment/fabric-deploy/README.md) | Configuration, parameters, repository planning, item publication and orphan removal |
 | [CLI](hosts/cli/fabric-cli/README.md) | Argument parsing, command sessions and native host composition |
+| [V2 local host](hosts/cli/fabric-cli-v2/README.md) | Separate six-leaf `cli` group, explicit effects and bounded optional providers |
 | [Interactive shell](hosts/repl/fabric-cli-repl/README.md) | Optional terminal editor and shell loop, independent of SDK and command implementations |
 | [Release updates](hosts/update/fabric-cli-update/README.md) | Explicit release trust, bounded downloads and installation-custody checks |
 | [Path context](hosts/cli/fabric-cli-context/README.md) | Immutable hierarchy, path resolution and command context |

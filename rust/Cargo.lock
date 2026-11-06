@@ -727,6 +727,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-cli-v2"
+version = "0.1.0"
+dependencies = [
+ "azure_core",
+ "clap",
+ "fabric-cli",
+ "fabric-cli-output",
+ "fabric-cli-update",
+ "fabric-identity",
+ "fabric-sdk-transport",
+ "futures-util",
+ "ring",
+ "semver",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "fabric-core"
 version = "0.1.0"
 dependencies = [

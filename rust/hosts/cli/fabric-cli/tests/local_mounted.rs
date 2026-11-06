@@ -419,7 +419,7 @@ fn configuration_stays_credential_free_with_a_persisted_remote_context() {
     success(&invoke(&root.0, &["config", "get", "output_format"]));
     let pwd = invoke(&root.0, &["pwd"]);
     assert!(!pwd.status.success());
-    if cfg!(feature = "native-read") {
+    if cfg!(feature = "native-host") {
         assert!(pwd.stdout.is_empty());
         assert!(String::from_utf8_lossy(&pwd.stderr).contains("NotConfigured"));
     } else {

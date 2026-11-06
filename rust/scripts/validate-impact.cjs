@@ -68,8 +68,15 @@ function coreCommands(plan, platform) {
   const cargo = (id, command, extra) => ({
     id, program: 'cargo', args: [command, '--offline', '--locked', ...args, ...extra],
   });
+  // cargo-fmt expands targets into rustfmt argv, exceeding Windows limits for a full workspace.
+  const formatting = platform === 'windows' ?
+    [...new Set(plan.packages)].sort().map(name => ({
+      id: `default:fmt:${name}`, program: 'cargo',
+      args: ['fmt', '--package', name, '--', '--check'],
+    })) :
+    [{id: 'default:fmt', program: 'cargo', args: ['fmt', ...args, '--', '--check']}];
   const commands = [
-    {id: 'default:fmt', program: 'cargo', args: ['fmt', ...args, '--', '--check']},
+    ...formatting,
     cargo('default:check', 'check', ['--all-targets']),
     cargo('default:clippy', 'clippy', ['--all-targets', '--', '-D', 'warnings']),
     ...testCommands(defaultTests(plan)),
@@ -125,7 +132,8 @@ function commandResult(command, context, execute = spawnSync) {
   const result = execute(command.program, command.args, {
     cwd: command.cwd || path.join(context.root, 'rust'),
     env: {...process.env, PYTHONUTF8: '1', PYTHONDONTWRITEBYTECODE: '1',
-      FAB_UPDATE_TEST_ROOT: context.artifacts, ...command.env},
+      FAB_UPDATE_TEST_ROOT: context.artifacts, FAB_CLI_V2_TEST_ROOT: context.artifacts,
+      FAB_IDENTITY_TEST_ROOT: context.artifacts, ...command.env},
     encoding: 'utf8',
     timeout: Math.min(context.commandTimeout,
       Math.max(1, Math.min(context.deadline, command.deadline || context.deadline) - Date.now())),
@@ -133,8 +141,12 @@ function commandResult(command, context, execute = spawnSync) {
     windowsHide: true,
     shell: false,
   });
-  const prefix = `${String(context.results.length).padStart(3, '0')}-${command.id || 'contract'}`
-    .replace(/[^a-zA-Z0-9._-]/g, '_');
+  const commandId = String(command.id || 'contract');
+  const safeId = commandId.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const label = safeId.length > 64 ?
+    `${safeId.slice(0, 40)}-${crypto.createHash('sha256').update(commandId).digest('hex').slice(0, 16)}` :
+    safeId;
+  const prefix = `${String(context.results.length).padStart(3, '0')}-${label}`;
   const stdout = result.stdout || '';
   const stderr = result.stderr || '';
   const stdoutFile = path.join(context.artifacts, `${prefix}.stdout.log`);
