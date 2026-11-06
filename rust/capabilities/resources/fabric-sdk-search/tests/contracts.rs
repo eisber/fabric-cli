@@ -80,7 +80,10 @@ fn failed(source: Source) -> SourceObservation {
 
 fn complete<T>(future: impl Future<Output = T>) -> T {
     let mut future = pin!(future);
-    match future.as_mut().poll(&mut Context::from_waker(noop_waker())) {
+    match future
+        .as_mut()
+        .poll(&mut Context::from_waker(&noop_waker()))
+    {
         Poll::Ready(value) => value,
         Poll::Pending => panic!("synthetic future must be immediately ready"),
     }
@@ -989,7 +992,8 @@ fn midflight_cancellation_drops_both_provider_futures() {
         }
     });
     let mut work = pin!(operation.execute(&input, cancel));
-    let mut context = Context::from_waker(noop_waker());
+    let waker = noop_waker();
+    let mut context = Context::from_waker(&waker);
     assert!(work.as_mut().poll(&mut context).is_pending());
     assert_eq!((catalog.calls(), relevance.calls()), (1, 1));
     cancelled.store(true, Ordering::SeqCst);
