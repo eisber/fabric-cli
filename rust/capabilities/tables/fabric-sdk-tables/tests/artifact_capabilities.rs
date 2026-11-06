@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Parent-owned discovery contracts without service execution.
+
 #![deny(unnameable_test_items)]
 
 use fabric_sdk_tables::capabilities::{

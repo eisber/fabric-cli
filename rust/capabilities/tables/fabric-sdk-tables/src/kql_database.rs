@@ -1551,15 +1551,15 @@ fn reject_duplicate_keys(bytes: &[u8]) -> Result<(), KustoError> {
                 if i >= bytes.len() {
                     return Err(invalid());
                 }
-                if let Some(Container::Object(keys, key_expected)) = stack.last_mut() {
-                    if *key_expected {
-                        let key: String =
-                            serde_json::from_slice(&bytes[start..=i]).map_err(|_| invalid())?;
-                        if !keys.insert(key) {
-                            return Err(invalid());
-                        }
-                        *key_expected = false;
+                if let Some(Container::Object(keys, key_expected)) = stack.last_mut()
+                    && *key_expected
+                {
+                    let key: String =
+                        serde_json::from_slice(&bytes[start..=i]).map_err(|_| invalid())?;
+                    if !keys.insert(key) {
+                        return Err(invalid());
                     }
+                    *key_expected = false;
                 }
             }
             _ => {}

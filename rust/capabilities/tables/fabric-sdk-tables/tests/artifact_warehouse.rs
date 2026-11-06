@@ -101,7 +101,7 @@ impl TokenCredential for Credential {
                 token: TOKEN.into(),
                 expires_on: OffsetDateTime::UNIX_EPOCH,
             }),
-            CredentialAction::Failure => Err(azure_core::Error::message(
+            CredentialAction::Failure => Err(azure_core::Error::with_message(
                 azure_core::error::ErrorKind::Other,
                 "offline credential failure",
             )),

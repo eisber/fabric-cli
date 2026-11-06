@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Public parent-module construction and shared descriptor contracts.
+
 #![deny(unnameable_test_items)]
 
 use fabric_sdk_tables::lakehouses::tables::TableOperation;
