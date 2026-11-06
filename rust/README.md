@@ -33,6 +33,10 @@ It preserves `fab-rs` and its compatibility fixtures, distinguishes manual
 handoffs from delivered actions, and fails explicitly when an optional
 provider or trusted installation profile is unavailable.
 
+The opt-in [`v2-cancel` slice](docs/v2-cancel.md) requests cancellation of one
+existing Notebook scheduler run using an explicit ID-based path. Its acceptance
+receipt does not claim terminal cancellation or rollback.
+
 ## Workspace components
 
 The workspace groups service clients and command adapters by capability:
