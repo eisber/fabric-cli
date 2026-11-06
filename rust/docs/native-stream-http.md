@@ -59,7 +59,8 @@ This conservative method classification also covers a POST declared as a read.
 When a valid non-2xx HTTP status has already been observed, subsequent transport
 failure retains `Http(status)` rather than replacing that known status with uncertainty.
 Metadata/protocol/input validation failures and local limits retain their actual
-read error even for non-2xx responses; mutations retain unknown outcome.
+read error even for non-2xx responses. Mutation handling is unchanged: a known
+non-2xx status retains `Http(status)`; otherwise lost observation remains unknown.
 They must not become status-only errors that a consumer could wrongly retry
 after rejected metadata erased a server-directed delay.
 An observed HTTP failure is not a guarantee of mutation rollback; the caller

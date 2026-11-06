@@ -1225,7 +1225,7 @@ async fn invalid_failure_response_metadata_retains_validation_error_instead_of_r
             assert_eq!(
                 failure(native.open(&request(method), limits(), &deadline()).await),
                 if method == NativeMethod::Post {
-                    NativeError::OutcomeUnknown
+                    NativeError::Http(status)
                 } else {
                     NativeError::InvalidResponse
                 },

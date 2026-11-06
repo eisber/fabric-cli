@@ -211,7 +211,8 @@
         {"package": "fabric-sdk-http", "target": "test:capacity_adapter"},
         {"package": "fabric-sdk-http", "target": "test:endpoint_context"},
         {"package": "fabric-sdk-http", "target": "test:folder_adapter"},
-        {"package": "fabric-sdk-http", "target": "test:native_runtime"}
+        {"package": "fabric-sdk-http", "target": "test:native_runtime"},
+        {"package": "fabric-sdk-http", "target": "test:native_stream"}
       ],
       "checks": ["resource-oracle"]
     },
@@ -870,8 +871,7 @@
       "packages": ["fabric-sdk-http"],
       "features": ["fabric-sdk-http/livy-arrow"],
       "platforms": ["windows", "linux", "macos"],
-      "checks": ["sdk-graph"],
-      "tests": [{"package": "fabric-sdk-http", "target": "test:native_stream"}]
+      "checks": ["sdk-graph"]
     },
     {
       "id": "livy-arrow",

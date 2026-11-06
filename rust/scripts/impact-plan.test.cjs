@@ -843,7 +843,8 @@ test('real HTTP-to-Arrow recovery boundary is explicitly tested with its forward
   assert.deepEqual(profile.packages, ['fabric-sdk-http']);
   assert.deepEqual(profile.features, ['fabric-sdk-http/livy-arrow']);
   assert.deepEqual(profile.platforms, ['windows', 'linux', 'macos']);
-  assert.deepEqual(profile.tests, [{package: 'fabric-sdk-http', target: 'test:native_stream'}]);
+  assert.ok(graph.components.some(component => component.package === 'fabric-sdk-http' &&
+    component.tests.some(test => test.target === 'test:native_stream')));
   const manifest = fs.readFileSync(path.join(root,
     'rust/infrastructure/http/fabric-sdk-http/Cargo.toml'), 'utf8');
   assert.ok(manifest.includes('livy-arrow = ["fabric-sdk/livy-arrow"]'));
