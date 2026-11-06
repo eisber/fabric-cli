@@ -471,6 +471,7 @@ impl TokenCredential for HeadlessCredential {
             ["https://api.fabric.microsoft.com/.default"]
                 | ["https://storage.azure.com/.default"]
                 | ["https://management.azure.com/.default"]
+                | ["https://database.windows.net/.default"]
         ) {
             return Err(credential_error(HeadlessError::Scope));
         }

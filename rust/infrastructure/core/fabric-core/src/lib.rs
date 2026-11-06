@@ -30,6 +30,8 @@ pub enum Audience {
     OneLake,
     /// Azure Resource Manager.
     Arm,
+    /// Native SQL connections, separate from Fabric REST and HTTP origins.
+    Sql,
 }
 
 impl Audience {
@@ -39,6 +41,7 @@ impl Audience {
             Self::Fabric => "https://api.fabric.microsoft.com/.default",
             Self::OneLake => "https://storage.azure.com/.default",
             Self::Arm => "https://management.azure.com/.default",
+            Self::Sql => "https://database.windows.net/.default",
         }
     }
 }
@@ -151,6 +154,10 @@ mod tests {
         assert_eq!(
             Audience::Arm.scope(),
             "https://management.azure.com/.default"
+        );
+        assert_eq!(
+            Audience::Sql.scope(),
+            "https://database.windows.net/.default"
         );
     }
 

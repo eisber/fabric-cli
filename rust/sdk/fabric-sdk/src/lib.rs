@@ -36,6 +36,10 @@ pub use fabric_sdk_ontology_workload as ontology_workload;
 /// CLI/MCP consumers use this SDK-layer reexport rather than acquiring a direct
 /// dependency on core implementation crates.
 pub use fabric_v2_contracts as v2;
+/// Typed SQLDatabase metadata requests using caller-owned shared execution.
+pub use fabric_sdk_sql_database as sql_databases;
+/// Transport-independent native SQLDatabase definition validation and encoding.
+pub use fabric_sdk_sql_definition as sql_definitions;
 
 pub use fabric_core::{
     Audience, CredentialSelection, EndpointBinding, EndpointError, RequestContext, ServiceOrigin,
