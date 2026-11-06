@@ -204,7 +204,12 @@
         {"package": "fabric-sdk", "target": "test:workspace_facade"},
         {"package": "fabric-sdk", "target": "test:item_facade"},
         {"package": "fabric-sdk", "target": "test:folder_facade"},
-        {"package": "fabric-sdk", "target": "test:capacity_facade"}
+        {"package": "fabric-sdk", "target": "test:capacity_facade"},
+        {"package": "fabric-sdk", "target": "test:notebook_runtime"},
+        {"package": "fabric-sdk", "target": "test:notebook_observability"},
+        {"package": "fabric-sdk", "target": "test:livy_native"},
+        {"package": "fabric-sdk", "target": "test:livy_arrow"},
+        {"package": "fabric-sdk", "target": "test:livy_arrow_ipc"}
       ],
       "checks": ["sdk-example", "sdk-graph"]
     },
@@ -217,7 +222,8 @@
         {"package": "fabric-sdk-http", "target": "lib"},
         {"package": "fabric-sdk-http", "target": "test:capacity_adapter"},
         {"package": "fabric-sdk-http", "target": "test:endpoint_context"},
-        {"package": "fabric-sdk-http", "target": "test:folder_adapter"}
+        {"package": "fabric-sdk-http", "target": "test:folder_adapter"},
+        {"package": "fabric-sdk-http", "target": "test:native_runtime"}
       ],
       "checks": ["resource-oracle"]
     },
@@ -631,6 +637,14 @@
       "checks": ["read-parity", "broker-read-parity", "context-output"]
     },
     {
+      "id": "cli-runtime-v2",
+      "package": "fabric-cli",
+      "inputs": ["rust/hosts/cli/fabric-cli/src/runtime_v2/**"],
+      "depends_on": ["sdk", "http", "output", "context"],
+      "tests": [{"package": "fabric-cli", "target": "test:runtime_v2"}],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "cli-resources",
       "package": "fabric-cli",
       "inputs": ["rust/hosts/cli/fabric-cli/src/families.rs", "rust/hosts/cli/fabric-cli/src/families/context.rs", "rust/hosts/cli/fabric-cli/src/families/resource_files.rs", "rust/hosts/cli/fabric-cli/src/families/native_resource_files.rs"],
@@ -896,7 +910,7 @@
         "onelake", "onelake-http", "mutations", "resource-set", "storage-files",
         "sdk-jobs", "jobs", "sdk-tables", "tables", "local",
         "deploy-shared", "deploy-workflow", "deploy-notebook", "deploy-spark-environment",
-        "definitions", "transfer", "cli-deployment", "cli-get", "cli-reads", "cli-resources",
+        "definitions", "transfer", "cli-deployment", "cli-get", "cli-reads", "cli-runtime-v2", "cli-resources",
         "cli-jobs", "cli-cancel", "cli-tables", "cli-local", "repl", "cli-repl", "updater",
         "cli-updater", "cli-auth", "cli-headless", "cli-native-shared", "cli-shared-test-helpers",
         "cli-v2"
@@ -954,6 +968,27 @@
       "features": ["fabric-cli/v2-cancel", "fabric-cli/native-read", "fabric-cli/headless", "fabric-cli/certificate-store-windows", "fabric-cli/repl", "fabric-cli/self-update", "fabric-identity/certificate-store-windows", "fabric-identity-windows/certificate-store", "fabric-cli-update/fixture-harness"],
       "platforms": ["windows", "linux", "macos"],
       "checks": ["combined"]
+    },
+    {
+      "id": "livy-arrow",
+      "packages": ["fabric-sdk"],
+      "features": ["fabric-sdk/livy-arrow"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["sdk-graph"]
+    },
+    {
+      "id": "livy-arrow-ipc",
+      "packages": ["fabric-sdk"],
+      "features": ["fabric-sdk/livy-arrow-ipc"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["sdk-graph"]
+    },
+    {
+      "id": "runtime-v2-reads",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/runtime-v2"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
     },
     {
       "id": "native-transport",

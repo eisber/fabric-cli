@@ -831,3 +831,32 @@ test('Graph cannot execute commands and test filters remain argv values rather t
   assert.deepEqual(command.args.slice(-2), ['--', 'name; echo nope']);
   assert.ok(!Object.hasOwn(command, 'shell'));
 });
+
+test('native runtime feature tests have explicit CI profiles and cannot pass as empty default targets', () => {
+  const root = path.resolve(__dirname, '..', '..');
+  const graph = JSON.parse(fs.readFileSync(path.join(root, 'rust/validation/impact-graph.json'), 'utf8'));
+  const cases = [
+    ['fabric-sdk', 'livy-arrow', 'livy_arrow', 'rust/sdk/fabric-sdk/Cargo.toml'],
+    ['fabric-sdk', 'livy-arrow-ipc', 'livy_arrow_ipc', 'rust/sdk/fabric-sdk/Cargo.toml'],
+    ['fabric-cli', 'runtime-v2', 'runtime_v2', 'rust/hosts/cli/fabric-cli/Cargo.toml'],
+  ];
+  for (const [pkg, feature, target, manifestPath] of cases) {
+    const profile = graph.profiles.find(item =>
+      item.packages.includes(pkg) && item.features.includes(`${pkg}/${feature}`));
+    assert.ok(profile, `Missing explicit profile for ${pkg}/${feature}`);
+    assert.deepEqual(profile.platforms, ['windows', 'linux', 'macos']);
+    assert.ok(graph.components.some(item => item.package === pkg &&
+      item.tests.some(test => test.target === `test:${target}`)));
+    const manifest = fs.readFileSync(path.join(root, manifestPath), 'utf8');
+    const section = manifest.split('[[test]]').find(item => item.includes(`name = "${target}"`));
+    assert.ok(section, `Missing Cargo test declaration for ${target}`);
+    assert.ok(section.includes(`required-features = ["${feature}"]`));
+  }
+  for (const [pkg, target] of [
+    ['fabric-sdk', 'notebook_runtime'], ['fabric-sdk', 'notebook_observability'],
+    ['fabric-sdk', 'livy_native'], ['fabric-sdk-http', 'native_runtime'],
+  ]) {
+    assert.ok(graph.components.some(item => item.package === pkg &&
+      item.tests.some(test => test.target === `test:${target}`)));
+  }
+});

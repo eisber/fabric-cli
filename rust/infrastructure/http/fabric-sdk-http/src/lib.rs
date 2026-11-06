@@ -93,6 +93,8 @@ mod capacities;
 pub use bound::PublicOrigin;
 mod folders;
 mod items;
+pub mod native_runtime;
+pub mod native_stream;
 mod operations;
 #[cfg(test)]
 mod tests;

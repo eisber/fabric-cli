@@ -64,6 +64,20 @@ Errors are sanitized and exclude URLs, queries, tokens, bodies, proxy credential
 and provider error chains. Finite request/response allocation remains enforced
 by the composed shared executor.
 
+Typed upstream I/O failures remain `Io`; upstream data-conversion/other failures
+retain their non-I/O classification. Decoder-origin gzip/zlib corruption and
+clean compressed truncation are `DataConversion`, not transport-recovery
+evidence. Hyper parse errors are distinct from typed socket failures and
+premature message EOF. Unknown, TLS and unproven user failures are not
+automatically labelled I/O.
+
+Existing Livy routes and existing Arrow Accept media additionally reject
+duplicate singleton format/handle metadata before Azure `Headers` combines it.
+Generic response conversion and legitimate repeated non-singleton headers are
+unchanged. This is not a guarantee against raw duplicates erased by an earlier
+parser or a custom HTTP client. See
+[native streaming provenance and metadata limits](../../../docs/native-stream-http.md).
+
 ## Offline composition
 
 The `sdk_consumer` example uses synthetic credentials and cancels before network

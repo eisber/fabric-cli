@@ -23,6 +23,8 @@ pub mod local_commands;
 pub mod parser;
 mod projection;
 mod reads;
+#[cfg(feature = "runtime-v2")]
+pub mod runtime_v2;
 pub mod session;
 #[cfg(feature = "native-host")]
 pub mod tables;

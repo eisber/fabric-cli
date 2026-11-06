@@ -13,6 +13,11 @@ description = "Fabric SDK facade with caller-injected Azure credentials"
 [package.metadata.fabric]
 layer = "sdk"
 
+[features]
+default = []
+livy-arrow = ["dep:ring"]
+livy-arrow-ipc = ["livy-arrow", "dep:arrow-array", "dep:arrow-schema", "dep:arrow-ipc"]
+
 [dependencies]
 azure_core.workspace = true
 base64.workspace = true
@@ -25,6 +30,10 @@ fabric-sdk-operations.workspace = true
 fabric-sdk-discovery.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+ring = { workspace = true, optional = true }
+arrow-array = { workspace = true, optional = true }
+arrow-schema = { workspace = true, optional = true }
+arrow-ipc = { workspace = true, optional = true }
 
 [dev-dependencies]
 async-trait.workspace = true
@@ -33,6 +42,16 @@ tokio.workspace = true
 [[example]]
 name = "injected_credentials"
 test = true
+
+[[test]]
+name = "livy_arrow"
+path = "tests/livy_arrow.rs"
+required-features = ["livy-arrow"]
+
+[[test]]
+name = "livy_arrow_ipc"
+path = "tests/livy_arrow_ipc.rs"
+required-features = ["livy-arrow-ipc"]
 
 [lints]
 workspace = true

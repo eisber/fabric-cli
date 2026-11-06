@@ -51,3 +51,24 @@ Dropping a future stops local waiting and releases owned resources; it does not
 roll back a dispatched mutation. Errors retain original status and uncertainty.
 No transport implementation, identity provider, CLI, deployment engine or
 global runtime is installed by this crate.
+
+## Pull-based native Fabric streaming
+
+`native_stream::NativeFabricStreamExecutor::new(context, http)` implements the
+SDK's `NativeStreamExecutor` using the same explicit Fabric credential and
+endpoint policy as `NativeFabricExecutor`. `open` returns the actual HTTP body
+without collecting or polling it. Every method, including GET and inline POST,
+dispatches once; this stream path does not enter the buffered retry loop.
+
+`NativeStreamLimits` bounds exposed fragments and total HTTP body bytes before
+copying. One absolute `NativeDeadline` covers credentials, headers, pending body
+reads and caller pauses. The existing injected timer races pending work, and
+supplying a fresh read deadline cannot extend the opening deadline. EOF,
+errors, dropping a body or cancelling a polled read dispose local resources,
+never remote work. Actual statuses/media/headers and mutation uncertainty remain
+explicit.
+
+See [native streaming boundaries and evidence](../../../docs/native-stream-http.md)
+for disposal semantics, metadata bounds, offline instrumented tests and the
+Azure header-duplicate visibility limitation. No new transport/runtime/auth
+engine, native/MWC origin policy or live-service support claim is implied.
