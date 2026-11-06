@@ -6,6 +6,7 @@
 #![cfg(all(feature = "native-host", feature = "v2-copy"))]
 #![deny(unnameable_test_items)]
 
+#[path = "family_support/shared.rs"]
 mod family_support;
 
 use azure_core::http::{AsyncRawResponse, HttpClient, Request};
