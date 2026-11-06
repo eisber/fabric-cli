@@ -60,23 +60,47 @@ pub(super) fn candidate(
 mod tests {
     use super::*;
 
+    fn native_fixture_path(value: &str) -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(value)
+        } else {
+            // Retain every lexical case while using the current host's path grammar.
+            let value = value
+                .strip_prefix("C:")
+                .or_else(|| value.strip_prefix("D:"))
+                .unwrap_or(value);
+            PathBuf::from(value.replace('\\', "/"))
+        }
+    }
+
+    #[test]
+    fn fixture_roots_and_relative_inputs_keep_their_path_classification() {
+        assert!(native_fixture_path(r"C:\work").is_absolute());
+        assert!(native_fixture_path(r"D:\outside\input").is_absolute());
+        assert!(!native_fixture_path(r"..\input").is_absolute());
+    }
+
     #[test]
     fn explicit_candidates_preserve_absolute_roots_and_defer_path_validation() {
-        let current = Path::new(r"C:\work");
+        let current = native_fixture_path(r"C:\work");
         for (input, expected) in [
             ("input", r"C:\work\input"),
             (r"D:\outside\input", r"D:\outside\input"),
             (r"..\input", r"C:\work\..\input"),
             (r"\input", r"C:\input"),
         ] {
-            assert_eq!(candidate(input, current, None, None), Path::new(expected));
+            let input = native_fixture_path(input);
+            assert_eq!(
+                candidate(input.to_str().unwrap(), &current, None, None),
+                native_fixture_path(expected)
+            );
         }
     }
 
     #[test]
     fn windows_tilde_selection_matches_home_and_named_user_rules() {
-        let current = Path::new(r"C:\work");
-        let home = Path::new(r"C:\Users\owner");
+        let current = native_fixture_path(r"C:\work");
+        let home = native_fixture_path(r"C:\Users\owner");
         let user = Some(OsStr::new("owner"));
         for (input, expected) in [
             ("~", r"C:\Users\owner"),
@@ -85,27 +109,43 @@ mod tests {
             (r"~owner\input", r"C:\Users\owner\input"),
             (r"~other\input", r"C:\Users\other\input"),
         ] {
+            let input = native_fixture_path(input);
             assert_eq!(
-                candidate(input, current, Some(home), user),
-                Path::new(expected)
+                candidate(input.to_str().unwrap(), &current, Some(&home), user),
+                native_fixture_path(expected)
             );
         }
         assert_eq!(
-            candidate(r"~\input", current, None, user),
-            current.join(r"~\input")
+            candidate(
+                native_fixture_path(r"~\input").to_str().unwrap(),
+                &current,
+                None,
+                user
+            ),
+            current.join(native_fixture_path(r"~\input"))
         );
         for unmatched in [
-            Path::new(r"C:\Custom\profile"),
-            Path::new("C:\\Users\\owner\\"),
+            native_fixture_path(r"C:\Custom\profile"),
+            native_fixture_path("C:\\Users\\owner\\"),
         ] {
             assert_eq!(
-                candidate(r"~other\input", current, Some(unmatched), user),
-                current.join(r"~other\input")
+                candidate(
+                    native_fixture_path(r"~other\input").to_str().unwrap(),
+                    &current,
+                    Some(&unmatched),
+                    user
+                ),
+                current.join(native_fixture_path(r"~other\input"))
             );
         }
         assert_eq!(
-            candidate(r"~owner\input", current, Some(home), None),
-            current.join(r"~owner\input")
+            candidate(
+                native_fixture_path(r"~owner\input").to_str().unwrap(),
+                &current,
+                Some(&home),
+                None
+            ),
+            current.join(native_fixture_path(r"~owner\input"))
         );
     }
 }

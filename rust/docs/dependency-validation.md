@@ -31,6 +31,9 @@ oracle modules produce an actionable error; `--restore-oracle-deps` permits
 restoring their existing pinned requirement files after a missing-module probe.
 Frozen-source Git invocations enable long paths without changing repository or
 global Git configuration, so Windows artifact paths retain the full oracle tree.
+Lexical source-path unit tests retain the same exact cases on every host, using
+native fixture separators and absolute roots rather than interpreting Windows
+drive paths as POSIX-relative filenames.
 
 Omitting a base plans the local working-tree changes, including staged,
 unstaged and untracked files. Use `--full` for full configured validation.
