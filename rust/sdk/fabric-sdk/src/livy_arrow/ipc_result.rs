@@ -203,7 +203,7 @@ pub async fn write_ipc_result<W: Write + ?Sized>(
     let schema = match observation.0.next_chunk().await {
         Ok(Some(chunk)) => decoder
             .inspect_schema(chunk, decode_limits)
-            .map_err(|error| IpcResultCause::Arrow(error)),
+            .map_err(IpcResultCause::Arrow),
         Ok(None) => Err(IpcResultCause::MissingSchema),
         Err(error) => Err(IpcResultCause::Stream(error)),
     }
