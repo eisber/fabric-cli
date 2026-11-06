@@ -4,6 +4,8 @@
 //! Central family composition over the existing command-local metadata session.
 
 pub(crate) mod context;
+#[cfg(feature = "v2-copy")]
+pub mod copy_v2;
 mod deploy_http;
 pub(crate) mod export_files;
 #[cfg(feature = "native-host")]
@@ -74,6 +76,17 @@ pub enum FamilyEvidence {
         /// Original result and any local or remote partial effects.
         result: Result<ResourceFileResult, ResourceFileError>,
         /// Actual renderer failure, not a transfer retry or rollback.
+        error: TextError,
+    },
+    /// Create-only definition-copy response or original failure.
+    #[cfg(feature = "v2-copy")]
+    DefinitionCopy(Result<copy_v2::DefinitionCopyResult, copy_v2::DefinitionCopyFailure>),
+    /// Definition-copy evidence retained when rendering itself fails.
+    #[cfg(feature = "v2-copy")]
+    DefinitionCopyRenderFailure {
+        /// Original result, response, known IDs and mutation uncertainty.
+        result: Result<copy_v2::DefinitionCopyResult, copy_v2::DefinitionCopyFailure>,
+        /// Renderer error, not evidence that the remote create failed.
         error: TextError,
     },
     /// Definition transfer retains original operation IDs and file progress.
@@ -599,6 +612,21 @@ impl FamilySession<'_, '_> {
                         Ok(value) => destination = Some(value),
                         Err(error) => return self.command_failure(error, invocation, format),
                     }
+                }
+                #[cfg(feature = "v2-copy")]
+                if copy_v2::handles(command, &target) {
+                    let destination = destination.as_ref().ok_or(TextError::InvalidTableEntries)?;
+                    let result = copy_v2::execute(
+                        self.reads,
+                        self.http,
+                        self.mutations,
+                        command,
+                        &target,
+                        destination,
+                        cancelled.as_mut(),
+                    )
+                    .await;
+                    return copy_v2::render(result, timestamp, command.name(), format);
                 }
                 let resolver =
                     PathResolver::new(&context, current.clone(), self.reads.home.clone(), "ls")

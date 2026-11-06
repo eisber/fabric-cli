@@ -10,6 +10,7 @@
 
 mod bulk;
 mod codec;
+mod copy_v2;
 mod get_output;
 mod get_value;
 mod import;
@@ -24,6 +25,10 @@ pub use bulk::{
 pub use codec::{
     DefinitionFile, ExportStorage, decode_export_files, decode_export_files_for_storage,
     validate_part_path,
+};
+pub use copy_v2::{
+    CopyDefinitionDestination, DefinitionCopyError, DefinitionCopyErrorKind, DefinitionCopyReceipt,
+    PreparedDefinitionCopy, prepare_definition_copy,
 };
 pub use get_output::{GetOutputNewline, GetOutputValue, serialize_get_projected_result};
 pub use get_value::{
