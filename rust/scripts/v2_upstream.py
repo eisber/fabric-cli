@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 APPROVED_BASE_SHA = "a9df45501ec53d921c6fc765c726c32979b85931"
+ACCEPTED_UPSTREAM_SHA = "19cf15ae3e5fdcd7b4f90d47cc21e1c2ead4980a"
 REMOTE = "rust-upstream"
 UPSTREAM_URL = "https://github.com/eisber/fabric-cli.git"
 UPSTREAM_BRANCH = "refs/heads/feature/rust"
@@ -267,6 +268,14 @@ def report(
         )
     head = _commit(root, "HEAD")
     cached = _commit(root, UPSTREAM_REF)
+    accepted = None
+    if base_sha.lower() == APPROVED_BASE_SHA:
+        accepted = _commit(root, ACCEPTED_UPSTREAM_SHA)
+        if not _ancestor(root, accepted, head):
+            raise TrackingError(
+                "accepted_lineage",
+                "HEAD does not contain the recorded accepted Rust checkpoint.",
+            )
     branch = _git(
         root, "symbolic-ref", "--quiet", "HEAD", ok_codes=(0, 1)
     ).stdout.strip()
@@ -312,6 +321,17 @@ def report(
         "branch": branch or None,
         "upstream_head_sha": upstream,
         "cached_upstream_sha": cached,
+        "accepted_upstream": (
+            {
+                "sha": accepted,
+                "is_ancestor_of_head": True,
+                "is_ancestor_of_cached": _ancestor(root, accepted, cached),
+                "is_ancestor_of_observed": _ancestor(root, accepted, upstream),
+                "source": "recorded_normal_merge",
+            }
+            if accepted is not None
+            else None
+        ),
         "upstream": {
             "url": UPSTREAM_URL,
             "branch": UPSTREAM_BRANCH,

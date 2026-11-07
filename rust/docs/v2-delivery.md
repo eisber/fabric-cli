@@ -7,6 +7,36 @@ work. Its source baseline is `feature/rust` in `eisber/fabric-cli`, initially
 `a9df45501ec53d921c6fc765c726c32979b85931`. This process does not change the
 existing command grammar, release support, or compatibility expectations.
 
+### Round-two source and layout checkpoint
+
+The first normal layout-adoption merge is
+`79b92b213e16b4d9afcb4c29b979a4dd0553bf01`. Its parents are the completed
+first-round v2 checkpoint `988730eb1a191174a1b0b765cd3b9dfcb1e16f16` and the
+actually merged Rust checkpoint `19cf15ae3e5fdcd7b4f90d47cc21e1c2ead4980a`.
+Both complete ancestries are preserved. The latter is the recorded accepted
+upstream source, not a guessed moving `feature/rust` tip. This isolated source
+merge is not common-branch publication or combined-candidate gate acceptance.
+Notebook follow-up adoption and the coordinator's exact-SHA publication release
+remain separate requirements.
+
+New reusable v2 packages now live under `sdk/sql/`, `sdk/search/`,
+`sdk/ontology/`, `sdk/dataagents/`, `sdk/dataflow/`, and `sdk/tabular/`.
+Shared `sdk/contracts/` retains its core layer. CLI Ontology adapters live in
+`frontends/cli/commands/ontology/`; the six-leaf local host has its own
+`frontends/cli/v2/` package. It does not replace `frontends/cli/app/` or its
+`fab-rs`, `fab-cli-v2`, `fab-cli-discovery`, and `fab-cli-workspace` targets.
+Grouping directories are not packages, and physical SDK placement grants no
+new dependency direction.
+
+Round-two lanes start only from the coordinator's published checkpoint and
+locate packages by Cargo manifest identity, not historical capability paths.
+Register new leaves, safe defaults, actual test targets, shared helpers and
+optional profiles in the existing Cargo-metadata impact plan. Preserve frozen
+Python source, source-bound oracle overlays and historical evidence aliases;
+do not regenerate expectations when paths move. A new composition needs
+independent source/consumer and architecture/default/validation reviews plus
+current complete Windows, Linux and macOS plans and the stable gate.
+
 The common v2 integration branch is
 `dev/marcozo/fab-cli-v2-integration-20261104` in `eisber/fabric-cli`.
 All v2 lane PRs target this branch, not `feature/rust` or `main`.
@@ -65,6 +95,14 @@ trusted `feature/rust` branch and downloads its exact commit objects. It does
 not update tracking refs or `FETCH_HEAD`; subsequent offline reports still use
 the cached ref. Retain the fetched report and reviewed SHA for integration.
 The helper never merges, commits, pushes, or validates product code.
+
+The original baseline pin remains immutable. Default-baseline reports also
+prove that the recorded accepted upstream SHA is an ancestor of the candidate.
+They label whether the cached and observed upstream contain that checkpoint
+separately: a stale cache is not a current-provider or rollback claim.
+Custom `--base-sha` reports do not silently inherit another checkpoint ledger.
+Git invocations enable native long-path support without changing repository or
+global configuration.
 
 The helper exits 0 for a complete safe report, including ordinary ahead/behind
 divergence; 1 for an operational, lineage, or safety failure with JSON on stderr;

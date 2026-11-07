@@ -201,6 +201,23 @@ class UpstreamTests(unittest.TestCase):
         self.git("update-ref", "HEAD", local)
         self.assertEqual((self.report()["ahead"], self.report()["behind"]), (1, 0))
 
+    def test_recorded_accepted_checkpoint_is_proven_without_chasing_a_stale_cache(self) -> None:
+        """Accepted ancestry is independent of cached or currently observed heads."""
+        accepted = self.commit("accepted Rust", self.base)
+        local = self.commit("combined v2", accepted)
+        self.git("update-ref", "HEAD", local)
+        with patch.object(tracker, "APPROVED_BASE_SHA", self.base), patch.object(
+            tracker, "ACCEPTED_UPSTREAM_SHA", accepted
+        ):
+            record = self.report()["accepted_upstream"]
+            self.assertEqual(record["sha"], accepted)
+            self.assertTrue(record["is_ancestor_of_head"])
+            self.assertFalse(record["is_ancestor_of_cached"])
+            self.assertFalse(record["is_ancestor_of_observed"])
+            self.git("update-ref", "HEAD", self.base)
+            with self.assertRaisesRegex(tracker.TrackingError, "accepted Rust"):
+                self.report()
+
     def test_rewritten_cached_upstream_is_rejected(self) -> None:
         """An unrelated upstream cannot silently become the new base."""
         rewritten = self.commit("unrelated upstream")
