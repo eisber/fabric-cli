@@ -375,6 +375,37 @@ struct BoundResources {
     fabric_host: String,
 }
 
+fn public_origin(origin: Origin) -> PublicOrigin {
+    match origin {
+        Origin::Fabric => PublicOrigin::Fabric,
+        Origin::Arm => PublicOrigin::Arm,
+        Origin::OneLake => PublicOrigin::OneLake,
+        Origin::PowerBi => PublicOrigin::PowerBi,
+        Origin::RelevanceEngine => PublicOrigin::RelevanceEngine,
+    }
+}
+
+#[cfg(test)]
+mod origin_tests {
+    #![deny(unnameable_test_items)]
+
+    use super::*;
+
+    #[test]
+    fn every_api_origin_retains_its_exact_transport_binding() {
+        for (api, transport) in [
+            (Origin::Fabric, PublicOrigin::Fabric),
+            (Origin::Arm, PublicOrigin::Arm),
+            (Origin::OneLake, PublicOrigin::OneLake),
+            (Origin::PowerBi, PublicOrigin::PowerBi),
+            (Origin::RelevanceEngine, PublicOrigin::RelevanceEngine),
+        ] {
+            assert_eq!(public_origin(api), transport);
+            assert_eq!(api.audience(), transport.audience());
+        }
+    }
+}
+
 impl fabric_sdk_api::Executor for BoundResources {
     fn supports(&self, _: &Request) -> bool {
         true
@@ -398,16 +429,11 @@ impl fabric_sdk_api::Executor for BoundResources {
     > {
         Box::pin(async move {
             let mut url = request.url().clone();
-            let origin = match request.origin() {
-                Origin::Fabric => {
-                    url.set_host(Some(&self.fabric_host))
-                        .map_err(|_| fabric_sdk_api::ExecutionError::Failed)?;
-                    PublicOrigin::Fabric
-                }
-                Origin::Arm => PublicOrigin::Arm,
-                Origin::OneLake => PublicOrigin::OneLake,
-                Origin::PowerBi => PublicOrigin::PowerBi,
-            };
+            let origin = public_origin(request.origin());
+            if request.origin() == Origin::Fabric {
+                url.set_host(Some(&self.fabric_host))
+                    .map_err(|_| fabric_sdk_api::ExecutionError::Failed)?;
+            }
             self.http
                 .execute_bound(
                     origin,
