@@ -306,6 +306,13 @@ pub struct ApiClient {
 }
 
 impl ApiClient {
+    /// Borrow the caller's explicit non-secret identity selection.
+    ///
+    /// This metadata does not verify token claims or grant resource access.
+    pub fn selection(&self) -> &CredentialSelection {
+        &self.selection
+    }
+
     /// Stores dependencies without I/O or discovery. Provider binding is caller-owned.
     pub fn new(
         credential: Arc<dyn TokenCredential>,

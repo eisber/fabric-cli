@@ -260,6 +260,25 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn explicit_json_projection_preserves_types_without_changing_legacy_search() {
+        let data = json!({"n": 2, "b": false, "nothing": null, "rows": [1, 2]});
+        for (expression, expected, legacy) in [
+            ("n", json!(2), json!("2")),
+            ("b", json!(false), json!("False")),
+            ("nothing", Value::Null, json!("None")),
+            ("length(rows)", json!(2), json!("2")),
+        ] {
+            assert_eq!(project_json(&data, expression).unwrap(), expected);
+            assert_eq!(search(&data, expression).unwrap(), legacy);
+        }
+        assert!(validate_json_projection("").is_err());
+        assert!(validate_json_projection("  ").is_err());
+        assert!(validate_json_projection("[?").is_err());
+        assert_eq!(project_json(&data, ".").unwrap(), data);
+        assert_eq!(project_json(&data, "@").unwrap(), data);
+    }
+
+    #[test]
     fn candidate_preserves_order_numbers_and_real_operators() {
         let data: Value = serde_json::from_str(
             r#"{"z":1.0,"a":9007199254740993,"rows":[{"id":"b","n":2},{"id":"a","n":1}]}"#,
