@@ -321,12 +321,16 @@ pub async fn execute_native<H: NativeHost>(
         ));
     }
     let id = member(&resolved, representation == Representation::Entities)?;
+    let workspace = resolved
+        .identity()
+        .workspace_id()
+        .ok_or(CapabilityError::Invalid("Native owner workspace required."))?;
     let body = support::input(args, host, limits.input_bytes)?;
     let request = request(args.verb, id, body.as_ref())?;
     let context = host.native_context().map_err(CapabilityError::Host)?;
     let target = OntologyTarget::new(
         WorkloadIdentity::digital_operations(),
-        resolved.identity().workspace_id(),
+        workspace,
         resolved
             .identity()
             .item_id()

@@ -405,7 +405,10 @@ where
     }
     let request = request(args, representation, body.clone(), limits)?;
     let sdk_target = sdk::OntologyTarget::new(
-        resolved.identity().workspace_id(),
+        resolved
+            .identity()
+            .workspace_id()
+            .ok_or(AdapterError::Invalid("Workspace identity required."))?,
         resolved
             .identity()
             .item_id()

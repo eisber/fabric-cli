@@ -24,13 +24,15 @@ pub enum ServiceOrigin {
     Arm,
     /// The Power BI REST API, using the Fabric token audience.
     PowerBi,
+    /// Direct Relevance Engine discovery on the Power BI service.
+    RelevanceEngine,
 }
 
 impl ServiceOrigin {
     /// Returns the fixed public-cloud token audience for this service.
     pub const fn audience(self) -> Audience {
         match self {
-            Self::Fabric | Self::PowerBi => Audience::Fabric,
+            Self::Fabric | Self::PowerBi | Self::RelevanceEngine => Audience::Fabric,
             Self::OneLake => Audience::OneLake,
             Self::Arm => Audience::Arm,
         }
@@ -42,7 +44,7 @@ impl ServiceOrigin {
             Self::Fabric => "api.fabric.microsoft.com",
             Self::OneLake => "onelake.dfs.fabric.microsoft.com",
             Self::Arm => "management.azure.com",
-            Self::PowerBi => "api.powerbi.com",
+            Self::PowerBi | Self::RelevanceEngine => "api.powerbi.com",
         }
     }
 
@@ -51,6 +53,7 @@ impl ServiceOrigin {
         match self {
             Self::Fabric => "/v1",
             Self::PowerBi => "/v1.0/myorg",
+            Self::RelevanceEngine => "/relevanceengine/v1",
             Self::OneLake | Self::Arm => "",
         }
     }
@@ -490,5 +493,21 @@ mod tests {
                 "{uri:?}"
             );
         }
+    }
+    #[test]
+    fn relevance_discovery_has_an_explicit_root_not_a_powerbi_route_rewrite() {
+        let endpoint = EndpointBinding::public(ServiceOrigin::RelevanceEngine);
+        assert_eq!(endpoint.host(), "api.powerbi.com");
+        assert_eq!(endpoint.api_path(), "/relevanceengine/v1");
+        assert_eq!(endpoint.audience(), Audience::Fabric);
+        assert_eq!(
+            endpoint
+                .url("/relevanceengine/v1/discoverArtifacts")
+                .unwrap()
+                .as_str(),
+            "https://api.powerbi.com/relevanceengine/v1/discoverArtifacts"
+        );
+        assert!(endpoint.url("//foreign.example/discoverArtifacts").is_err());
+        assert_eq!(ServiceOrigin::PowerBi.root_path(), "/v1.0/myorg");
     }
 }

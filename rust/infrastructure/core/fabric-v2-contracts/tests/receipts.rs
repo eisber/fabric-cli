@@ -170,7 +170,7 @@ fn accepted_receipts_require_a_real_handle_and_never_serialize_as_succeeded() {
     assert_eq!(encoded["status"], "accepted");
     assert!(encoded.get("data").is_none());
     assert_eq!(receipt.evidence(), &observed);
-    assert_eq!(receipt.target().identity().workspace_id(), WORKSPACE);
+    assert_eq!(receipt.target().identity().workspace_id(), Some(WORKSPACE));
 }
 
 #[test]
@@ -378,7 +378,10 @@ fn create_collection_keeps_real_parent_identity_without_fabricating_an_item() {
     impl ApprovalPolicy for CollectionPolicy {
         type Error = &'static str;
         fn authorize(&mut self, operation: &PreparedOperation) -> Result<(), Self::Error> {
-            assert_eq!(operation.target().identity().workspace_id(), WORKSPACE);
+            assert_eq!(
+                operation.target().identity().workspace_id(),
+                Some(WORKSPACE)
+            );
             assert_eq!(operation.target().identity().item_id(), None);
             assert_eq!(operation.preconditions(), &[Precondition::CreateOnly]);
             Ok(())

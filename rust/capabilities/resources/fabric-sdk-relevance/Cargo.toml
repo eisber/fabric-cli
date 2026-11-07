@@ -1,0 +1,30 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-sdk-relevance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Bounded native Relevance Engine discovery over caller-injected shared execution"
+
+[package.metadata.fabric]
+layer = "sdk"
+
+[dependencies]
+azure_core.workspace = true
+fabric-core.workspace = true
+fabric-sdk-api.workspace = true
+fabric-sdk-workspaces.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true
