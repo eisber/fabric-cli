@@ -182,12 +182,16 @@ impl TableClient {
     /// No separate scanner, pager, transport, checkpoint or SQL fallback is used.
     /// The document exposes unavailable source revision, unestablished snapshot
     /// consistency and unknown completeness, even on a successful read.
+    /// Paths containing `.Shortcut` or `.shortcut` are rejected before token
+    /// acquisition because the legacy reader removes those substrings.
     ///
     /// # Errors
     /// Preserves all existing read, HTTP, limit, missing-metadata and cancellation
     /// failures. Malformed inner JSON, integer tokens outside the exact i64/u64
     /// domain, or malformed schema structure are
     /// [`TableErrorKind::InvalidResponse`], not a successful empty document.
+    /// Normalization-sensitive paths return [`TableErrorKind::InvalidInput`]
+    /// rather than selecting a different table.
     pub async fn schema_document(
         &self,
         executor: &dyn TableExecutor,
@@ -195,6 +199,9 @@ impl TableClient {
         limits: TableLimits,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<DataSchemaDocument, TableError> {
+        if table.local_path().contains(".Shortcut") || table.local_path().contains(".shortcut") {
+            return Err(TableError::new(TableErrorKind::InvalidInput));
+        }
         let schema = self
             .schema_string(executor, table, limits, cancelled)
             .await?;
