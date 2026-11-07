@@ -169,6 +169,14 @@ function sourceDifferences(before, after) {
     .map(name => ({path: name, before: previous.get(name) || null, after: current.get(name) || null}));
 }
 
+function recordSourceAfter(root, artifacts, before) {
+  const after = sourceInventory(root);
+  fs.writeFileSync(path.join(artifacts, 'source-after.json'), `${JSON.stringify(after, null, 2)}\n`);
+  fs.writeFileSync(path.join(artifacts, 'source-differences.json'),
+    `${JSON.stringify(sourceDifferences(before, after), null, 2)}\n`);
+  return after.digest;
+}
+
 function buildEnvironment(environment = process.env) {
   const names = ['CARGO_BUILD_JOBS', 'RUST_TEST_THREADS', 'CARGO_PROFILE_DEV_DEBUG',
     'CARGO_PROFILE_TEST_DEBUG', 'CARGO_INCREMENTAL'];
@@ -434,33 +442,43 @@ function main(argv) {
     return commandResult(command, context);
   };
   fs.writeFileSync(receiptFile, `${JSON.stringify(receipt, null, 2)}\n`);
+  let failure;
   try {
     if (opts.stage !== 'contracts') for (const command of commands) run(command);
     if (opts.stage !== 'core') runContracts(context, registry, run);
-    const inventoryAfter = sourceInventory(opts.root);
-    fs.writeFileSync(path.join(opts.artifacts, 'source-after.json'), `${JSON.stringify(inventoryAfter, null, 2)}\n`);
-    fs.writeFileSync(path.join(opts.artifacts, 'source-differences.json'),
-      `${JSON.stringify(sourceDifferences(inventoryBefore, inventoryAfter), null, 2)}\n`);
-    receipt.source_after = sourceDigest(opts.root);
-    requireThat(before === receipt.source_after, 'Source changed during validation');
-    planner.verifyPlan(plan, {root: opts.root});
-    receipt.complete_plan = opts.stage === 'all';
-    receipt.status = receipt.complete_plan ? 'passed' : 'partial_passed';
   } catch (error) {
     receipt.status = 'failed';
     receipt.error = error.message;
-    throw error;
+    failure = error;
   } finally {
+    try {
+      receipt.source_after = recordSourceAfter(opts.root, opts.artifacts, inventoryBefore);
+      requireThat(before === receipt.source_after, 'Source changed during validation');
+      if (!failure) {
+        planner.verifyPlan(plan, {root: opts.root});
+        receipt.complete_plan = opts.stage === 'all';
+        receipt.status = receipt.complete_plan ? 'passed' : 'partial_passed';
+      }
+    } catch (error) {
+      receipt.source_integrity_error = error.message;
+      receipt.status = 'failed';
+      if (!failure) {
+        receipt.error = error.message;
+        failure = error;
+      }
+    }
     receipt.finished_at = new Date().toISOString();
     receipt.commands = context.results.length;
     receipt.tests_passed = context.results.reduce((total, item) => total + item.tests_passed, 0);
     receipt.tests_ignored = context.results.reduce((total, item) => total + item.tests_ignored, 0);
     fs.writeFileSync(receiptFile, `${JSON.stringify(receipt, null, 2)}\n`);
   }
+  if (failure) throw failure;
 }
 
 module.exports = {packageArgs, ownFeatures, defaultTests, profileTests, testCommands, coreCommands, commandResult,
-  sourceDigest, sourceInventory, sourceDifferences, oracleVersions, restoreOracleDependencies, runContracts, options, buildEnvironment};
+  sourceDigest, sourceInventory, sourceDifferences, recordSourceAfter, oracleVersions,
+  restoreOracleDependencies, runContracts, options, buildEnvironment};
 if (require.main === module) {
   try { main(process.argv.slice(2)); }
   catch (error) { console.error(error.message); process.exitCode = 1; }

@@ -51,5 +51,19 @@ fn managed_build_uses_output_working_directory_and_exact_original_sdk_pin() {
         original
     );
     assert!(!source.join("managed/NuGet").exists());
+    for (name, relative) in [
+        ("USERPROFILE", "dotnet-home"),
+        ("APPDATA", "dotnet-home/AppData/Roaming"),
+        ("LOCALAPPDATA", "dotnet-home/AppData/Local"),
+    ] {
+        let selected = command
+            .get_envs()
+            .find(|(key, _)| *key == std::ffi::OsStr::new(name))
+            .unwrap()
+            .1
+            .unwrap();
+        assert_eq!(std::path::Path::new(selected), output.join(relative));
+        assert!(std::path::Path::new(selected).is_dir());
+    }
     std::fs::remove_dir_all(fixture).unwrap();
 }

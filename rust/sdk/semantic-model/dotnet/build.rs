@@ -40,12 +40,11 @@ fn main() {
         "bin",
         "packages",
         "dotnet-home",
-        "appdata",
-        "localappdata",
+        "dotnet-home/AppData/Roaming",
+        "dotnet-home/AppData/Local",
         "scratch",
         "http-cache",
         "plugin-cache",
-        "build-root",
     ] {
         fs::create_dir_all(output.join(directory))
             .expect("create isolated managed build directory");
@@ -141,12 +140,16 @@ fn isolate_build_environment(command: &mut Command, output: &Path) {
         }
     }
     let home = output.join("dotnet-home");
+    let appdata = home.join("AppData/Roaming");
+    let localappdata = home.join("AppData/Local");
+    fs::create_dir_all(&appdata).expect("create isolated profile roaming data directory");
+    fs::create_dir_all(&localappdata).expect("create isolated profile local data directory");
     command
         .env("DOTNET_CLI_HOME", &home)
         .env("HOME", &home)
         .env("USERPROFILE", &home)
-        .env("APPDATA", output.join("appdata"))
-        .env("LOCALAPPDATA", output.join("localappdata"))
+        .env("APPDATA", appdata)
+        .env("LOCALAPPDATA", localappdata)
         .env("NUGET_PACKAGES", output.join("packages"))
         .env("NUGET_HTTP_CACHE_PATH", output.join("http-cache"))
         .env("NUGET_PLUGINS_CACHE_PATH", output.join("plugin-cache"))

@@ -9,7 +9,7 @@ const path = require('node:path');
 const {test} = require('node:test');
 const {packageArgs, ownFeatures, testCommands, coreCommands, commandResult,
   oracleVersions, restoreOracleDependencies, runContracts, options, buildEnvironment,
-  sourceDigest, sourceInventory, sourceDifferences} =
+  sourceDigest, sourceInventory, sourceDifferences, recordSourceAfter} =
   require('./validate-impact.cjs');
 const {selection, equalSelection} = require('./impact-ci.cjs');
 const {plan: impactPlan} = require('./impact-plan.cjs');
@@ -83,6 +83,27 @@ test('build receipts retain only explicit Cargo resource settings, not unrelated
   assert.ok(!workflow.includes('CARGO_PROFILE_DEV_DEBUG_ASSERTIONS'));
 });
 
+test('after-inventory retains exact source writes even when a validation command fails', t => {
+  const {execFileSync} = require('node:child_process');
+  const root = temporary(t);
+  const artifacts = temporary(t);
+  execFileSync('git', ['init', '--quiet'], {cwd: root});
+  const before = sourceInventory(root);
+  const context = {root, artifacts, results: [], deadline: Date.now() + 10000, commandTimeout: 1000};
+  assert.throws(() => commandResult({id: 'failing-writer', program: 'fixture', args: []}, context,
+    () => {
+      fs.writeFileSync(path.join(root, 'generated.txt'), 'actual writer');
+      return {status: 1, stdout: '', stderr: 'original failure'};
+    }), /Validation failed: failing-writer/);
+  const after = recordSourceAfter(root, artifacts, before);
+  assert.notEqual(after, before.digest);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(artifacts, 'source-after.json'))).digest, after);
+  const differences = JSON.parse(fs.readFileSync(path.join(artifacts, 'source-differences.json')));
+  assert.equal(differences[0].path, 'generated.txt');
+  assert.equal(differences[0].after.tracked, false);
+  assert.equal(context.results[0].exit, 1);
+  assert.equal(fs.readFileSync(context.results[0].stderr, 'utf8'), 'original failure');
+});
 test('command receipts record the actual allowlisted build overrides', t => {
   const directory = temporary(t);
   const context = {root: directory, artifacts: directory, results: [],
