@@ -224,7 +224,8 @@
         {"package": "fabric-sdk-http", "target": "test:capacity_adapter"},
         {"package": "fabric-sdk-http", "target": "test:endpoint_context"},
         {"package": "fabric-sdk-http", "target": "test:folder_adapter"},
-        {"package": "fabric-sdk-http", "target": "test:native_runtime"}
+        {"package": "fabric-sdk-http", "target": "test:native_runtime"},
+        {"package": "fabric-sdk-http", "target": "test:native_stream"}
       ],
       "checks": ["resource-oracle"]
     },
@@ -235,7 +236,8 @@
       "depends_on": ["core", "http", "sdk"],
       "tests": [
         {"package": "fabric-sdk-transport", "target": "lib"},
-        {"package": "fabric-sdk-transport", "target": "example:sdk_consumer"}
+        {"package": "fabric-sdk-transport", "target": "example:sdk_consumer"},
+        {"package": "fabric-sdk-transport", "target": "test:notebook_websocket"}
       ],
       "checks": ["transport", "transport-graphs", "headless", "updater", "native-read"]
     },
@@ -980,6 +982,20 @@
     }
   ],
   "profiles": [
+    {
+      "id": "notebook-websocket",
+      "packages": ["fabric-sdk-transport"],
+      "features": ["fabric-sdk-transport/notebook-websocket"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["transport-graphs"]
+    },
+    {
+      "id": "native-http-arrow",
+      "packages": ["fabric-sdk-http"],
+      "features": ["fabric-sdk-http/livy-arrow"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["sdk-graph"]
+    },
     {
       "id": "v2-preview",
       "packages": ["fabric-cli"],
