@@ -309,28 +309,28 @@ function candidatePlan(stage, manifest, target, output, exists) {
       cargo('test', '--offline', '--locked', ...packages, '--doc', '--', '--test-threads=1'),
     ];
     if (manifest.lane === 'deploy-mount') return [
-      ...(exists('capabilities/deployment/fabric-deploy/tests/parameter_transforms.rs') ? [
+      ...(exists('sdk/deployment/tests/parameter_transforms.rs') ? [
         cargo('test', '--offline', '--locked', '-p', 'fabric-deploy',
           '--test', 'parameter_transforms', '--', '--test-threads=1'),
       ] : []),
       cargo('test', '--offline', '--locked', '-p', 'fabric-deploy',
         '--test', 'config', '--test', 'repository', '--test', 'parameters', '--test', 'yaml',
-        ...(exists('capabilities/deployment/fabric-deploy/tests/parameter_transforms.rs') ? ['--test', 'parameter_transforms'] : []),
+        ...(exists('sdk/deployment/tests/parameter_transforms.rs') ? ['--test', 'parameter_transforms'] : []),
         '--', '--list'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
         '--test', 'deploy_parameters', '--test', 'deploy_mount', '--test', 'family_mounts',
-        ...(exists('hosts/cli/fabric-cli/tests/export_parity_mount.rs') ? ['--test', 'export_parity_mount'] : []),
-        ...(exists('hosts/cli/fabric-cli/tests/deploy_full.rs') ? ['--test', 'deploy_full'] : []),
-        ...(exists('hosts/cli/fabric-cli/tests/native_deploy_inputs.rs') ? ['--test', 'native_deploy_inputs'] : []),
-        ...(exists('hosts/cli/fabric-cli/tests/deploy_inputs_debug.rs') ? ['--test', 'deploy_inputs_debug'] : []),
+        ...(exists('frontends/cli/app/tests/export_parity_mount.rs') ? ['--test', 'export_parity_mount'] : []),
+        ...(exists('frontends/cli/app/tests/deploy_full.rs') ? ['--test', 'deploy_full'] : []),
+        ...(exists('frontends/cli/app/tests/native_deploy_inputs.rs') ? ['--test', 'native_deploy_inputs'] : []),
+        ...(exists('frontends/cli/app/tests/deploy_inputs_debug.rs') ? ['--test', 'deploy_inputs_debug'] : []),
         '--', '--list'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-deploy', '--', '--test-threads=1'),
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli', '--features', 'native-read',
         '--test', 'deploy_parameters', '--test', 'deploy_mount', '--test', 'family_mounts',
-        ...(exists('hosts/cli/fabric-cli/tests/export_parity_mount.rs') ? ['--test', 'export_parity_mount'] : []),
-        ...(exists('hosts/cli/fabric-cli/tests/deploy_full.rs') ? ['--test', 'deploy_full'] : []),
-        ...(exists('hosts/cli/fabric-cli/tests/native_deploy_inputs.rs') ? ['--test', 'native_deploy_inputs'] : []),
-        ...(exists('hosts/cli/fabric-cli/tests/deploy_inputs_debug.rs') ? ['--test', 'deploy_inputs_debug'] : []),
+        ...(exists('frontends/cli/app/tests/export_parity_mount.rs') ? ['--test', 'export_parity_mount'] : []),
+        ...(exists('frontends/cli/app/tests/deploy_full.rs') ? ['--test', 'deploy_full'] : []),
+        ...(exists('frontends/cli/app/tests/native_deploy_inputs.rs') ? ['--test', 'native_deploy_inputs'] : []),
+        ...(exists('frontends/cli/app/tests/deploy_inputs_debug.rs') ? ['--test', 'deploy_inputs_debug'] : []),
         '--', '--test-threads=1'),
     ];
     if (windowsAuth) return [
@@ -382,19 +382,19 @@ function candidatePlan(stage, manifest, target, output, exists) {
   }
   requireThat(stage === 'family', `Unknown stage: ${stage}`);
   if (manifest.lane === 'deploy-mount') {
-    requireThat(exists('hosts/cli/fabric-cli/tests/deploy_mount.rs'),
+    requireThat(exists('frontends/cli/app/tests/deploy_mount.rs'),
       'Released offline deployment root consumer is missing');
     const source = path.join(output, 'cicd-source');
     const cicd = '5ca096c00a9a878c646c59fe537b883eba951329';
     const references = ['config_reference', 'config_warning_reference',
       'orchestration_reference', 'operation_section_reference', 'literal_parameter_reference',
       'literal_parameter_payload_reference', 'transform_adapter_reference'];
-    if (exists('capabilities/deployment/fabric-deploy/tests/transform_program_reference.py')) references.push('transform_program_reference');
+    if (exists('sdk/deployment/tests/transform_program_reference.py')) references.push('transform_program_reference');
     for (const name of ['configured_flags_reference', 'flag_protocol_reference',
       'config_value_edges_reference', 'parameter_context_reference', 'parameter_pipeline_reference',
       'path_filter_reference', 'selected_constants_reference', 'parameter_resolution_reference',
       'parameter_schema_edges_reference', 'config_extensions_execution_reference']) {
-      if (exists(`capabilities/deployment/fabric-deploy/tests/${name}.py`)) references.push(name);
+      if (exists(`sdk/deployment/tests/${name}.py`)) references.push(name);
     }
     return [
       {program: 'git', args: ['init', source]},
@@ -402,14 +402,14 @@ function candidatePlan(stage, manifest, target, output, exists) {
       {program: 'git', args: ['-C', source, 'fetch', '--depth=1',
         'https://github.com/microsoft/fabric-cicd.git', cicd]},
       {program: 'git', args: ['-C', source, 'checkout', '--detach', cicd]},
-      ...references.map(name => python(`capabilities/deployment/fabric-deploy/tests/${name}.py`,
+      ...references.map(name => python(`sdk/deployment/tests/${name}.py`,
         '--reference-root', source,
         ...(name === 'path_filter_reference' ? ['--observations', path.join(output, 'path-filter-observed.json')] : []))),
-      python('capabilities/deployment/fabric-deploy/tests/yaml_scalar_reference.py'),
-      python('capabilities/deployment/fabric-deploy/tests/operation_result_reference.py',
+      python('sdk/deployment/tests/yaml_scalar_reference.py'),
+      python('sdk/deployment/tests/operation_result_reference.py',
         '--cli-reference-root', root, '--cicd-reference-root', source),
-      python('hosts/cli/fabric-cli/tests/deploy_wrapper_reference.py', '--reference-root', root),
-      python('capabilities/deployment/fabric-deploy/tests/definition_import_reference_checks.py'),
+      python('frontends/cli/app/tests/deploy_wrapper_reference.py', '--reference-root', root),
+      python('sdk/deployment/tests/definition_import_reference_checks.py'),
       python('tests/compatibility/run_export_source_parity.py',
         '--artifacts', path.join(rust, 'target', 'export-source-receipts')),
       cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
@@ -417,22 +417,22 @@ function candidatePlan(stage, manifest, target, output, exists) {
     ];
   }
   if (windowsAuth) {
-    for (const file of ['hosts/cli/fabric-cli/tests/auth_commands.rs',
-      'infrastructure/identity/fabric-identity-windows/src/native.rs']) {
+    for (const file of ['frontends/cli/app/tests/auth_commands.rs',
+      'sdk/authentication/windows/src/native.rs']) {
       requireThat(exists(file), `Reviewed native offline auth consumer is missing: ${file}`);
     }
     return [cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
       '--features', 'windows-broker', '--doc', '--', '--test-threads=1')];
   }
   if (cliAuth) {
-    requireThat(exists('hosts/cli/fabric-cli/tests/auth_commands.rs'),
+    requireThat(exists('frontends/cli/app/tests/auth_commands.rs'),
       'Released offline auth command consumer is missing');
     return [cargo('test', '--offline', '--locked', '-p', 'fabric-cli',
       '--features', 'windows-broker', '--doc', '--', '--test-threads=1')];
   }
   if (manifest.lane === 'cli-95') {
-    for (const file of ['hosts/cli/fabric-cli/tests/table_mounted.rs',
-      'hosts/cli/fabric-cli/tests/auth_commands.rs']) {
+    for (const file of ['frontends/cli/app/tests/table_mounted.rs',
+      'frontends/cli/app/tests/auth_commands.rs']) {
       requireThat(exists(file), `Released combined CLI consumer is missing: ${file}`);
     }
   }
@@ -507,7 +507,7 @@ function candidatePlan(stage, manifest, target, output, exists) {
     commands.push(python('tests/compatibility/run_definition_parity.py', '--artifacts', path.join(output, 'definition')));
   }
   if (has('fabric-cli') || has('fabric-cli-transfer') || has('fabric-deploy')) {
-    commands.push(python('capabilities/deployment/fabric-deploy/tests/definition_import_reference_checks.py'),
+    commands.push(python('sdk/deployment/tests/definition_import_reference_checks.py'),
       python('tests/compatibility/run_export_source_parity.py',
         '--artifacts', path.join(rust, 'target', 'export-source-receipts')));
   }

@@ -164,6 +164,11 @@ function commandResult(command, context, execute = spawnSync) {
   if (command.stdout) fs.writeFileSync(command.stdout, stdout);
   const digest = value => crypto.createHash('sha256').update(value).digest('hex');
   const counts = [...stdout.matchAll(/test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored/g)];
+  const unittest = command.test === 'unittest';
+  const summaries = unittest ? [...`${stdout}\n${stderr}`.matchAll(
+    /^Ran (\d+) tests? in [^\r\n]+\r?$/gm)] : [];
+  const skipped = unittest ? Number(/(?:^|\W)skipped=(\d+)/m.exec(stderr)?.[1] || 0) : 0;
+  const pythonCount = summaries.length === 1 ? Number(summaries[0][1]) : 0;
   const record = {
     id: command.id, program: command.program, args: command.args,
     cwd: command.cwd || path.join(context.root, 'rust'), elapsed_ms: Date.now() - started,
@@ -171,14 +176,17 @@ function commandResult(command, context, execute = spawnSync) {
     exit: result.status, signal: result.signal || null, error: result.error?.message || null,
     stdout: stdoutFile, stderr: stderrFile,
     stdout_sha256: digest(stdout), stderr_sha256: digest(stderr),
-    tests_passed: counts.reduce((total, match) => total + Number(match[1]), 0),
-    tests_ignored: counts.reduce((total, match) => total + Number(match[3]), 0),
+    tests_passed: counts.reduce((total, match) => total + Number(match[1]), 0) +
+      (result.status === 0 ? Math.max(0, pythonCount - skipped) : 0),
+    tests_ignored: counts.reduce((total, match) => total + Number(match[3]), 0) + skipped,
   };
   context.results.push(record);
   fs.writeFileSync(path.join(context.artifacts, 'commands.json'), `${JSON.stringify(context.results, null, 2)}\n`);
   requireThat(!result.error && result.status === 0 && !result.signal,
     `Validation failed: ${command.id || command.program} (exit ${result.status}; ` +
     `${result.error?.message || result.signal || 'see command logs'})`);
+  requireThat(!unittest || (summaries.length === 1 && pythonCount > skipped),
+    `Validation discovered no executed unittest cases: ${command.id || command.program}`);
   return stdout;
 }
 

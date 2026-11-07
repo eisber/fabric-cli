@@ -1,6 +1,59 @@
 <!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
 
-# Complete Python command inventory and Rust implementation gaps
+# Command implementation and acceptance
+
+## Current assessment
+
+The current executable registers all **52 canonical Python command leaves**
+from source `cf67fd52ea8b47e24c725e73d792de6f4a08e2e4`, plus the Rust-only
+`update` command. This is registration coverage, **not 100% behavioral parity**.
+The six help groups, aliases, batch mode, optional REPL, resources, options,
+output streams, side effects and failure paths remain separate contracts.
+
+The machine-readable
+[acceptance inventory](../validation/command-acceptance.json) replaces the old
+unavailable-command table as the current resource/option map. Its 24 surface
+groups identify concrete Cargo test targets, known differences and live
+acceptance status. Validate it against actual metadata, from `rust/`:
+
+```text
+cargo metadata --offline --locked --no-deps --format-version 1 > <absolute-artifact-metadata-file>
+python -B scripts/check_command_acceptance.py --metadata <absolute-artifact-metadata-file>
+```
+
+Successful validation means the complete source command set and named test
+targets exist. It explicitly reports `tests_executed: false` and no parity
+percentage. Only execution receipts establish what passed at a particular
+source inventory, feature selection and native OS.
+
+### Implemented surfaces and acceptance boundaries
+
+| Surface | Current implementation | Remaining acceptance boundary |
+| --- | --- | --- |
+| Local configuration, navigation, help and output | Mounted executable handlers, platform configuration roots, text/JSON output and persisted command-line context | Native terminal/browser appearance and complete interactive-shell acceptance |
+| Reads, hidden resources and OneLake GET | Shared SDK/context/HTTP composition; resource-specific properties, ARM reconciliation and confined local output | Controlled live resource/permission coverage; see [GET support](get-option-support.md) |
+| Mutations, access, files, jobs, tables and deployment | Mounted capability handlers with offline request, operation, output and filesystem contracts | Every source-supported resource/option combination is not a certified live-service result |
+| Authentication | Optional Windows broker, explicit unattended providers, device-code flow and native certificate backends | Native store/helper/provider and tenant-policy acceptance; see [identity status](decisions/identity-backend.md) |
+| Batch and REPL | Shared command sessions; ordinary returned errors continue and terminal cancellation/cleanup outcomes stop | Native three-platform terminal and signal acceptance remains separate |
+| Self-update | Explicit trust, installation custody and bounded update protocol | Signing, distribution, trusted installer/helper deployment and clean-machine acceptance |
+
+Important intentional differences remain explicit: no Azure CLI/Python runtime
+or developer-tool credential fallback; sanitized parser diagnostics; bounded
+origins, responses and operations; local path confinement; and no claim that
+accepted remote work is completed or that cancellation rolls back effects.
+`extension` preserves the source's unsupported warning rather than adding a
+plugin system. Device code is not Windows broker SSO or proof of Conditional
+Access compatibility.
+
+Use [stable coverage reporting](test-coverage.md) for measured lines, functions
+and regions. Test counts, command registrations, SDK endpoint counts and these
+inventory groups are not interchangeable coverage percentages.
+
+## Historical October 25 inventory
+
+The remainder preserves the original assessment and subsequent integration
+provenance. Its unavailable/missing labels describe the named historical
+checkpoint, **not the current executable**.
 
 ## Source and measurement
 
@@ -27,10 +80,10 @@ Automatic help, flags, batch and REPL modes are additional surfaces below.
 These counts are a command denominator, **not a full behavioral denominator**:
 each path has resource, option, mode, output and failure variations.
 
-## Complete command table
+## Historical complete command table
 
-Every leaf below remains unavailable as a successful live command in the
-published executable. `ls`/`dir` and `get` parse but return `NotConfigured`;
+At that historical checkpoint, every leaf below was unavailable as a successful
+live command in the published executable. `ls`/`dir` and `get` parsed but returned `NotConfigured`;
 other leaves are not registered there, including Python's `version` leaf.
 Rust `--help`/`--version` work but are preview contracts, not Python equivalence.
 

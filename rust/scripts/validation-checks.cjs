@@ -61,7 +61,11 @@ function context(options) {
     ['-B', ...args], {cwd: frozen ? pinnedRust : rust, env: {...PYTHON_ENV}, ...extra});
   const unit = (directory, pattern, frozen = true) => python([
     '-m', 'unittest', 'discover', '-s', file(...directory), '-p', pattern, '-v',
-  ], frozen);
+  ], frozen, {test: 'unittest'});
+  const toolingUnit = (directory, pattern) => python([
+    '-m', 'unittest', 'discover', '-s', file(rust, ...directory), '-p', pattern, '-v',
+  ], false, {cwd: artifacts, test: 'unittest',
+    env: {...PYTHON_ENV, TMPDIR: artifacts, TEMP: artifacts, TMP: artifacts}});
   const reference = (parts, ...args) => python([file(...parts), ...args]);
   const run = (pkg, example, quiet = false) => cargo('run', ...(quiet ? ['--quiet'] : []),
     '--offline', '--locked', '-p', pkg, '--example', example);
@@ -71,7 +75,8 @@ function context(options) {
     '--folder-probe', file(probes, `folder_read_probe${suffix}`),
     '--artifacts', artifact(name));
   return {root, rust, artifacts, pinnedOutput, pinnedRust, parameterRoot, probes, suffix,
-    plan: options.plan, file, artifact, command, cargo, python, unit, reference, run, readParity};
+    plan: options.plan, file, artifact, command, cargo, python, unit, toolingUnit,
+    reference, run, readParity};
 }
 
 // Each entry owns the named legacy workflow step, not commands supplied by the
@@ -80,22 +85,36 @@ const REGISTRY = Object.freeze({
   'selector-tests': {
     step: 'Affected-crate selection assertions and shared runner contracts',
     commands: c => [c.command('node', ['--test',
-      c.file('scripts', 'impact-plan.test.cjs'),
-      c.file('scripts', 'validate-impact.test.cjs'),
-      c.file('scripts', 'validation-checks.test.cjs'),
-      c.file('scripts', 'rust-fast-check.test.cjs')])],
+      c.file(c.rust, 'scripts', 'impact-plan.test.cjs'),
+      c.file(c.rust, 'scripts', 'validate-impact.test.cjs'),
+      c.file(c.rust, 'scripts', 'validation-checks.test.cjs'),
+      c.file(c.rust, 'scripts', 'rust-fast-check.test.cjs'),
+      c.file(c.rust, 'scripts', 'rust-coverage.test.cjs')], {
+      cwd: c.artifacts,
+      env: {IMPACT_TEST_ROOT: c.artifacts, TMPDIR: c.artifacts,
+        TEMP: c.artifacts, TMP: c.artifacts},
+    })],
+  },
+  'command-inventory': {
+    step: 'Validate declared command acceptance targets against actual Cargo metadata',
+    commands: c => {
+      const metadata = c.artifact('command-inventory-metadata.json');
+      return [
+        {...c.cargo('metadata', '--offline', '--locked', '--no-deps', '--format-version', '1'),
+          stdout: metadata},
+        c.python([c.file('scripts', 'check_command_acceptance.py'),
+          '--root', c.root, '--metadata', metadata], false),
+      ];
+    },
   },
   'oracle-tools': {
     step: 'Prepare isolated frozen Python source and candidate oracle overlays',
     commands: c => [
-      ...['test_release_verify.py', 'test_native_acceptance.py', 'test_native_acceptance_pty_cleanup.py',
+      ...['test_release_verify.py', 'test_native_acceptance*.py',
         'test_assemble_native_release.py', 'test_pinned_python_source.py',
-        'test_v2_upstream.py']
-        .map(pattern => pattern === 'test_assemble_native_release.py' ?
-          c.python(['-m', 'unittest', 'discover', '-s', path.join(c.rust, 'scripts'),
-            '-p', pattern, '-v'], false, {cwd: c.artifacts}) :
-          c.unit(['scripts'], pattern, false)),
-      c.unit(['tests', 'acceptance', 'identity'], 'test_check_report.py', false),
+        'test_check_command_acceptance.py', 'test_v2_upstream.py']
+        .map(pattern => c.toolingUnit(['scripts'], pattern)),
+      c.toolingUnit(['tests', 'acceptance', 'identity'], 'test_check_report.py'),
       c.python([c.file('scripts', 'pinned_python_source.py'), 'prepare',
         '--candidate-root', c.root, '--output', c.pinnedOutput], false, {
         kind: 'prepare-oracle', stdout: c.artifact('pinned-python-receipt.json'),
@@ -105,8 +124,8 @@ const REGISTRY = Object.freeze({
   },
   'batch-oracle': {
     step: 'Verify independent pinned batch observations',
-    commands: c => [c.reference(['hosts', 'cli', 'fabric-cli', 'tests', 'batch_reference.py'],
-      '--check', c.file('hosts', 'cli', 'fabric-cli', 'tests', 'batch_source.json'))],
+    commands: c => [c.reference(['frontends', 'cli', 'app', 'tests', 'batch_reference.py'],
+      '--check', c.file('frontends', 'cli', 'app', 'tests', 'batch_source.json'))],
   },
   transport: {
     step: 'Validate the explicitly selected native transport',
@@ -184,8 +203,14 @@ const REGISTRY = Object.freeze({
   repl: {
     step: 'Check optional removable terminal host without terminal or identity access',
     // Core: fabric-cli + fabric-cli-repl, feature fabric-cli/repl.
-    commands: c => [c.unit(['hosts', 'repl', 'fabric-cli-repl', 'tests'],
+    commands: c => [c.unit(['frontends', 'cli', 'shell', 'tests'],
       'test_source_oracle.py', false)],
+  },
+  interactive: {
+    step: 'Check explicit device-code credentials and native host without live authentication',
+    // Core: fabric-cli/interactive and fabric-identity/interactive, including
+    // provider tests and feature-forwarding CLI consumers in the selected profile.
+    commands: () => [],
   },
   headless: {
     step: 'Check explicit headless credentials and native host without live authentication',
@@ -245,7 +270,7 @@ const REGISTRY = Object.freeze({
   },
   'import-oracle': {
     step: 'Require immutable import input and Environment lifecycle source receipts',
-    commands: c => [c.reference(['capabilities', 'deployment', 'fabric-deploy',
+    commands: c => [c.reference(['sdk', 'deployment',
       'tests', 'definition_import_reference_checks.py'])],
   },
   'parameters-oracle': {
@@ -260,7 +285,7 @@ const REGISTRY = Object.freeze({
       ...['configured_flags', 'flag_protocol', 'config_value_edges', 'parameter_context',
         'parameter_pipeline', 'path_filter', 'selected_constants', 'parameter_resolution',
         'parameter_schema_edges', 'config_extensions_execution'].map(name =>
-        c.reference(['capabilities', 'deployment', 'fabric-deploy', 'tests',
+        c.reference(['sdk', 'deployment', 'tests',
           `${name}_reference.py`], '--reference-root', c.parameterRoot)),
     ],
   },
@@ -380,6 +405,8 @@ function assertTransportGraphs(defaults, optin) {
     'Default transport graphs must be keyed by package name');
   for (const pkg of ['fabric-sdk', 'fabric-sdk-transport']) {
     requireThat(typeof defaults[pkg] === 'string', `Missing default ${pkg} graph`);
+    requireThat(new RegExp(`^${pkg} v`, 'm').test(defaults[pkg]),
+      `Missing default ${pkg} package in captured graph`);
     requireThat(!DEFAULT_TRANSPORT_FORBIDDEN.test(defaults[pkg]),
       `Default ${pkg} graph selected a backend or higher layer`);
   }

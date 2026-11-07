@@ -173,7 +173,7 @@ After building the example, the independent offline oracle can be run with
 Python and PyArrow:
 
 ```text
-python hosts/cli/fabric-cli/tests/native_tabular_oracle.py --example "<built-example-path>" --artifact-root "<evidence-directory>"
+python frontends/cli/app/tests/native_tabular_oracle.py --example "<built-example-path>" --artifact-root "<evidence-directory>"
 ```
 
 The oracle runs all nine parser/host exports, checks exact values and native

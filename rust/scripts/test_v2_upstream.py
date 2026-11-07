@@ -72,6 +72,8 @@ class UpstreamTests(unittest.TestCase):
                 "-c",
                 "core.autocrlf=false",
                 "-c",
+                "core.longpaths=true",
+                "-c",
                 f"core.hooksPath={os.devnull}",
                 "-c",
                 "commit.gpgsign=false",
@@ -554,6 +556,7 @@ class UpstreamTests(unittest.TestCase):
         self.assertEqual(environment["GIT_NO_LAZY_FETCH"], "1")
         self.assertEqual(environment["GIT_NO_REPLACE_OBJECTS"], "1")
         self.assertIn("credential.helper=", run.call_args.args[0])
+        self.assertIn("core.longpaths=true", run.call_args.args[0])
         with patch.object(
             tracker.subprocess,
             "run",

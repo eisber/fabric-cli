@@ -93,7 +93,7 @@ batches, including empty batches. Exceeding any budget
 is a nonzero failure, never a silently clipped successful result.
 
 See the [shared result contract](tabular-results.md) and
-[`fabric-sdk-tabular` README](../capabilities/tables/fabric-sdk-tabular/README.md)
+[`fabric-sdk-tabular` README](../sdk/tabular/README.md)
 for the exact schema-bearing JSON representation, CSV quoting/null convention,
 Parquet types, unsupported/lossy types and multiple-result-set policy. Native
 `PQ Arrow Metadata` failure evidence is inspected before output can succeed.

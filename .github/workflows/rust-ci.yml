@@ -37,6 +37,7 @@ jobs:
           rust/scripts/validate-impact.test.cjs
           rust/scripts/validation-checks.test.cjs
           rust/scripts/rust-fast-check.test.cjs
+          rust/scripts/rust-coverage.test.cjs
       - name: Select capability targets, Cargo consumers and feature contracts
         id: select
         env:
@@ -84,6 +85,15 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
+      - name: Record actual native toolchain and restore locked dependencies
+        working-directory: rust
+        run: |
+          cargo --version
+          rustc --version --verbose
+          rustup show active-toolchain
+          cargo fetch --locked
+      - name: Recompute and verify the same dependency selection on this host
+        run: node rust/scripts/impact-ci.cjs native "$RUNNER_TEMP/rust-impact-selection"
       - name: Check bounded engineering cleanup before native compilation
         run: |
           python -I -B - "$GITHUB_WORKSPACE/rust/scripts" "$RUNNER_TEMP/rust-engineering-unit" <<'PY'
@@ -105,62 +115,52 @@ jobs:
               pathlib.Path("receipt.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
               print(json.dumps(report))
           persist()
-          passed = True
-          for pattern, count in [("test_native_acceptance.py", 32),
-                                 ("test_native_acceptance_pty_cleanup.py", 5)]:
-              try:
-                  suite = unittest.defaultTestLoader.discover(str(source), pattern=pattern)
-              except (ImportError, OSError):
-                  report["suites"].append({"pattern": pattern, "expected": count,
-                                           "discovered": None, "run": 0,
-                                           "passed": False, "reason": "discovery_failed"})
-                  persist()
-                  raise SystemExit(1)
-              discovered = suite.countTestCases()
-              if discovered != count:
-                  report["suites"].append({"pattern": pattern, "expected": count,
-                                           "discovered": discovered, "run": 0,
-                                           "passed": False, "reason": "inventory_mismatch"})
-                  persist()
-                  raise SystemExit(1)
-              with open(pattern + ".log", "w", encoding="utf-8") as log:
-                  runner = unittest.TextTestRunner(stream=log, verbosity=2)
-                  if pattern == "test_native_acceptance.py":
-                      import native_acceptance as acceptance
-                      original_execute = acceptance.execute
-                      def observe_execute(*args, **kwargs):
-                          captured = original_execute(*args, **kwargs)
-                          if kwargs.get("terminal") is not None:
-                              report["pty_receipts"].append(captured[0])
-                          return captured
-                      with patch.object(acceptance, "execute", observe_execute):
-                          result = runner.run(suite)
-                  else:
-                      result = runner.run(suite)
-              skips = [(test.id(), reason) for test, reason in result.skipped]
-              expected = [("test_native_acceptance.FilesystemTests.test_raw_pty_cursor_flood_without_input_reads_is_bounded_and_reaped",
-                           "requires_native_POSIX_PTY")] if os.name == "nt" and count == 32 else []
-              success = result.wasSuccessful() and result.testsRun == count and not result.expectedFailures and skips == expected
-              passed = passed and success
+          pattern, count = "test_native_acceptance*.py", 38
+          suite = unittest.defaultTestLoader.discover(str(source), pattern=pattern)
+          discovered = suite.countTestCases()
+          if discovered != count:
               report["suites"].append({"pattern": pattern, "expected": count,
-                                       "discovered": discovered, "run": result.testsRun,
-                                       "failures": len(result.failures), "errors": len(result.errors),
-                                       "expected_failures": len(result.expectedFailures),
-                                       "skipped": skips, "passed": success})
+                                       "discovered": discovered, "run": 0,
+                                       "passed": False, "reason": "inventory_mismatch"})
               persist()
-          report["passed"] = passed
+              raise SystemExit(1)
+          import native_acceptance as acceptance
+          original_execute = acceptance.execute
+          def observe_execute(*args, **kwargs):
+              captured = original_execute(*args, **kwargs)
+              if kwargs.get("terminal") is not None:
+                  report["pty_receipts"].append(captured[0])
+              return captured
+          with open("native-acceptance.log", "w", encoding="utf-8") as log:
+              with patch.object(acceptance, "execute", observe_execute):
+                  result = unittest.TextTestRunner(stream=log, verbosity=2).run(suite)
+          skips = [(test.id(), reason) for test, reason in result.skipped]
+          expected = [("test_native_acceptance.FilesystemTests.test_raw_pty_cursor_flood_without_input_reads_is_bounded_and_reaped",
+                       "requires_native_POSIX_PTY")] if os.name == "nt" else []
+          success = result.wasSuccessful() and result.testsRun == count and not result.expectedFailures and skips == expected
+          report["suites"].append({"pattern": pattern, "expected": count,
+                                   "discovered": discovered, "run": result.testsRun,
+                                   "failures": len(result.failures), "errors": len(result.errors),
+                                   "expected_failures": len(result.expectedFailures),
+                                   "skipped": skips, "passed": success})
+          report["passed"] = success
           persist()
-          raise SystemExit(0 if passed else 1)
+          raise SystemExit(0 if success else 1)
           PY
-      - name: Record actual native toolchain and restore locked dependencies
+      - name: Preflight every current feature and target under strict native lints
+        if: success() || failure()
+        working-directory: rust
+        run: cargo clippy --offline --locked --workspace --all-targets --all-features -- -D warnings
+      - name: Exercise complete native CLI targets before the full feature plan
+        env:
+          FAB_IDENTITY_TEST_ROOT: ${{ runner.temp }}/rust-cli-preflight
+          FAB_UPDATE_TEST_ROOT: ${{ runner.temp }}/rust-cli-preflight
+          FAB_CLI_V2_TEST_ROOT: ${{ runner.temp }}/rust-cli-preflight
+          IMPACT_TEST_ROOT: ${{ runner.temp }}/rust-cli-preflight
         working-directory: rust
         run: |
-          cargo --version
-          rustc --version --verbose
-          rustup show active-toolchain
-          cargo fetch --locked
-      - name: Recompute and verify the same dependency selection on this host
-        run: node rust/scripts/impact-ci.cjs native "$RUNNER_TEMP/rust-impact-selection"
+          mkdir -p "$FAB_IDENTITY_TEST_ROOT"
+          cargo test --offline --locked -p fabric-cli --all-targets --all-features --no-fail-fast
       - name: Execute the shared local and CI validation plan
         run: >-
           node rust/scripts/validate-impact.cjs
@@ -177,6 +177,7 @@ jobs:
             ${{ runner.temp }}/rust-impact-results
             ${{ runner.temp }}/rust-engineering-unit/*.log
             ${{ runner.temp }}/rust-engineering-unit/receipt.json
+            ${{ runner.temp }}/rust-cli-preflight
           if-no-files-found: error
 
   validation:

@@ -1,0 +1,270 @@
+{
+  "copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "schema": 1,
+  "python_source": "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4",
+  "assessment_base": "a9df45501ec53d921c6fc765c726c32979b85931",
+  "evidence_policy": "Targets identify executable offline contracts, not recorded passes or exhaustive behavioral coverage. Execution receipts must name the tested revision, features and platform separately.",
+  "groups": ["auth", "config", "acl", "label", "job", "table"],
+  "surfaces": [
+    {
+      "id": "listing",
+      "commands": ["ls"],
+      "resource_branches": ["tenant workspaces", "workspace items and folders", "hidden resource collections", "OneLake paths"],
+      "option_branches": ["short versus long", "hidden names", "folder-listing setting", "array JMESPath projection", "text and JSON", "continuation pages", "explicit Fabric endpoint"],
+      "failure_branches": ["missing resource", "unknown future item type", "malformed response", "later-page failure", "cancellation", "writer failure"],
+      "rust_targets": ["fabric-cli/read_commands", "fabric-cli/read_session", "fabric-cli/folder_reads", "fabric-cli/native_endpoint_reads"],
+      "known_differences": ["Short workspace-item listing exposes names only before projection, as in Python.", "Pagination, response sizes and selected origins are bounded."],
+      "live_acceptance": "manual_read_smoke"
+    },
+    {
+      "id": "get",
+      "commands": ["get"],
+      "resource_branches": ["workspace metadata and enrichment", "generic and specialized item metadata", "definitions", "hidden resources", "OneLake resource properties"],
+      "option_branches": ["metadata-property queries", "definition consent versus force", "source verbose flag", "projection before output", "local and Lakehouse output", "source synchronous operations"],
+      "failure_branches": ["unsupported Python resource type", "declined consent", "definition access denied", "optional enrichment failure", "invalid payload domain", "partial output", "operation cancellation"],
+      "rust_targets": ["fabric-cli/get_options", "fabric-cli/get_host", "fabric-cli/workspace_get", "fabric-cli/source_operations"],
+      "known_differences": ["Legacy metadata-only library dispatch intentionally requires an injected definition/output host.", "Hidden-resource and OneLake GET use caller-owned resource configuration, shared ARM reconciliation and confined output; source-supported behavior is distinct from live acceptance."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "navigation",
+      "commands": ["cd", "pwd", "open"],
+      "resource_branches": ["tenant root", "workspace and item", "folder", "OneLake Files", "current and home context"],
+      "option_branches": ["absolute and relative paths", "joined argv paths", "command-line context persistence", "in-memory batch and REPL state", "injected browser URL"],
+      "failure_branches": ["invalid context", "unsupported path", "missing home", "failed browser", "cancelled discovery"],
+      "rust_targets": ["fabric-cli/local_mounted", "fabric-cli/batch_shared_local", "fabric-cli/family_mounts", "fabric-cli-context/extended_contract"],
+      "known_differences": ["REPL navigation and history remain in memory.", "Browser and terminal appearance require native acceptance."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "local-settings",
+      "commands": ["config set", "config get", "config ls", "config clear-cache"],
+      "resource_branches": ["non-secret config.json", "platform user configuration directory", "explicit config-root override", "configured default capacity"],
+      "option_branches": ["defaults and legacy-key migration", "allowed setting values", "default output format", "context persistence", "shared batch settings"],
+      "failure_branches": ["malformed JSON", "invalid setting", "relative or empty override", "file permission error"],
+      "rust_targets": ["fabric-cli/local_mounted", "fabric-cli/default_config_root", "fabric-cli/native_settings", "fabric-cli-local/config_consumer"],
+      "known_differences": ["No Python profile is imported.", "Clear-cache does not delete broker bindings, tokens or local configuration; executable metadata snapshots are command-scoped."],
+      "live_acceptance": "offline_only"
+    },
+    {
+      "id": "local-presentation",
+      "commands": ["clear", "desc", "extension", "version"],
+      "resource_branches": ["terminal", "command support descriptions", "file extensions", "product version"],
+      "option_branches": ["group help and aliases", "source help spelling", "JSON and text", "credential-free help/version"],
+      "failure_branches": ["unsupported extension warning", "invalid arguments", "writer failure", "terminal failure"],
+      "rust_targets": ["fabric-cli/local_mounted", "fabric-cli/argv_contract", "fabric-cli/cli_contract"],
+      "known_differences": ["Rust adds --version/-V; parser diagnostics are sanitized rather than echoing rejected values.", "Extension remains unsupported by design, matching the Python warning rather than inventing plugins."],
+      "live_acceptance": "offline_only"
+    },
+    {
+      "id": "resource-create-exists",
+      "commands": ["exists", "mkdir"],
+      "resource_branches": ["workspace", "item", "folder", "OneLake directory", "item templates and creation dependencies"],
+      "option_branches": ["source-supported type selection", "existing destination", "force and overwrite policies", "shared metadata resolution"],
+      "failure_branches": ["unsupported type", "missing parent", "conflict", "service failure", "accepted operation without completion", "cancelled discovery"],
+      "rust_targets": ["fabric-cli/family_mounts", "fabric-cli/resource_release_gaps", "fabric-cli-mutations/consumer", "fabric-cli-mutations/operation_error_projection"],
+      "known_differences": ["Operations and local paths are bounded and origin-confined; accepted service work is not fabricated as completed."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "resource-remove",
+      "commands": ["rm"],
+      "resource_branches": ["single item", "folder", "workspace and tenant selection", "OneLake file and directory"],
+      "option_branches": ["force", "hard deletion", "injected confirmation", "ordered multi-selection", "shared operation reconciliation"],
+      "failure_branches": ["decline or EOF", "missing selection UI", "partial deletion", "cancellation", "writer failure after service effects"],
+      "rust_targets": ["fabric-cli/native_removal_ui", "fabric-cli/native_terminal_ui", "fabric-cli/resource_release_gaps", "fabric-cli-mutations/removal"],
+      "known_differences": ["Tenant force never grants implicit consent to arbitrary selections.", "Cancellation and writer failure preserve completed or uncertain effects without replay."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "resource-copy-move",
+      "commands": ["cp", "mv"],
+      "resource_branches": ["Fabric items", "OneLake remote paths", "local upload", "local download", "cross-workspace references"],
+      "option_branches": ["recursive input policy", "overwrite and force", "path collisions", "binary file bytes", "physical adapter selection"],
+      "failure_branches": ["unsupported source/destination combination", "partial append or local write", "invalid path", "cancelled transfer", "render failure after copy"],
+      "rust_targets": ["fabric-cli/native_resource_files", "fabric-cli/async_transfer_files", "fabric-cli/family_mounts", "fabric-cli-storage-files/resource_command", "fabric-cli-storage-files/download", "fabric-cli-storage-files/upload"],
+      "known_differences": ["Confinement and symlink/reparse restrictions are deliberate safety differences.", "Local cancellation does not promise rollback of file or remote effects."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "resource-set",
+      "commands": ["set"],
+      "resource_branches": ["workspace", "workspace Spark settings", "item metadata", "item definitions", "folder metadata"],
+      "option_branches": ["query and input", "force", "definition decoding/encoding", "Notebook dependencies", "source resource support matrix"],
+      "failure_branches": ["invalid metadata input", "unsupported query/resource", "missing parent", "service failure", "mutation uncertainty"],
+      "rust_targets": ["fabric-cli/family_mounts", "fabric-cli/resource_release_gaps", "fabric-cli-mutations/public_set", "fabric-cli-output/definitions"],
+      "known_differences": ["Invalid or unsupported payload domains fail explicitly instead of lossy conversion."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "shortcuts",
+      "commands": ["ln"],
+      "resource_branches": ["OneLake shortcuts", "external shortcut targets", "Lakehouse Files destination"],
+      "option_branches": ["shortcut type", "target input", "force", "destination preflight and conflict policy"],
+      "failure_branches": ["unsupported type", "invalid target", "missing destination", "conflict", "service failure", "partial operation"],
+      "rust_targets": ["fabric-cli/family_mounts", "fabric-cli-mutations/shortcuts", "fabric-cli-mutations/shared_policy"],
+      "known_differences": ["External target properties remain caller-supplied; no credentials are discovered from the environment."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "resource-lifecycle",
+      "commands": ["start", "stop", "assign", "unassign"],
+      "resource_branches": ["mirrored database lifecycle", "capacity lifecycle", "workspace/capacity assignment", "source-supported domain assignment"],
+      "option_branches": ["selected workspace", "force", "before-action state reads", "Fabric versus ARM audience"],
+      "failure_branches": ["unsupported target", "missing capacity", "invalid state", "service error", "accepted operation uncertainty"],
+      "rust_targets": ["fabric-cli/family_mounts", "fabric-cli/native_settings", "fabric-cli-mutations/consumer", "fabric-cli-mutations/shared_policy"],
+      "known_differences": ["Only source-supported resource/command pairs are eligible; a generic endpoint does not enable every resource type."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "definition-export",
+      "commands": ["export", "bulk-export"],
+      "resource_branches": ["source-supported item definitions", "workspace hierarchy", "folder traversal", "local and supported storage destinations"],
+      "option_branches": ["recursive", "force", "output root", "definition formats", "Notebook cleanup", "response-index filtering", "part-name collisions"],
+      "failure_branches": ["unsupported Python resource/type", "definition access denied", "invalid Base64/UTF-8", "path escape", "partial output", "writer failure"],
+      "rust_targets": ["fabric-cli/export_parity_mount", "fabric-deploy/export_parity", "fabric-cli-transfer/commands", "fabric-deploy/definitions"],
+      "known_differences": ["Part paths and payload allocation are bounded; unsafe local join behavior is not reproduced.", "Unsupported source scopes remain explicit failures rather than silently exporting a different target."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "definition-import",
+      "commands": ["import"],
+      "resource_branches": ["local definition inputs", "item creation/update", "Notebook dependencies", "Environment import lifecycle"],
+      "option_branches": ["force", "file before directory classification", "excluded parts", "formats", "shared operations"],
+      "failure_branches": ["remote input rejected", "unsupported source/type", "malformed payload", "partial create/update", "cancelled preparation"],
+      "rust_targets": ["fabric-cli/export_parity_mount", "fabric-cli/family_mounts", "fabric-cli-transfer/commands", "fabric-deploy/definitions"],
+      "known_differences": ["Import authority is local and explicitly classified; a failed remote resolution cannot authorize a local write/read fallback."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "deployment",
+      "commands": ["deploy"],
+      "resource_branches": ["source configuration model", "repository item families", "Notebook", "Spark/Environment", "standard and bulk publication", "unpublish"],
+      "option_branches": ["configuration path", "environment overrides", "parameters and templates", "selected features/constants", "item filters", "dependency ordering"],
+      "failure_branches": ["invalid configuration", "bounded regex/JSONPath domain", "unsupported feature", "nonfatal workflow warning", "partial publish", "cancelled worker"],
+      "rust_targets": ["fabric-cli/deploy_full", "fabric-cli/deploy_mount", "fabric-cli/deploy_parameters", "fabric-cli/deployment_worker_bridge", "fabric-deploy/workflow", "fabric-deploy/configured_flags", "fabric-deploy/parameter_transforms"],
+      "known_differences": ["Regex/JSON/value and filesystem policies have explicit finite domains.", "Configured source item types are not a live-service certification for every family."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "catalog",
+      "commands": ["find"],
+      "resource_branches": ["OneLake catalog results", "workspace/item projections", "command-line and interactive result pages"],
+      "option_branches": ["type filters", "long versus short", "JMESPath", "continuation paging", "Unicode and generated ellipsis"],
+      "failure_branches": ["invalid filter", "unsupported type", "partial page", "invalid projection", "cancellation", "render/writer failure"],
+      "rust_targets": ["fabric-cli/family_mounts", "fabric-cli-resources/access_contract", "fabric-cli/native_terminal_ui"],
+      "known_differences": ["Catalog and rendering budgets remain finite; complete Unicode width comes from the pinned provider, not an ASCII fallback."],
+      "live_acceptance": "manual_read_smoke"
+    },
+    {
+      "id": "raw-api",
+      "commands": ["api"],
+      "resource_branches": ["explicit Fabric", "OneLake", "ARM", "Power BI origins"],
+      "option_branches": ["method", "query parameters", "headers", "input body", "projection", "source header display", "multipart classification"],
+      "failure_branches": ["unbound origin", "forbidden credential/framing header", "malformed input", "service failure", "cancelled request"],
+      "rust_targets": ["fabric-cli/family_mounts", "fabric-cli-resources/access_contract", "fabric-sdk-http/endpoint_context"],
+      "known_differences": ["Origins/audiences and allowed headers are explicit; arbitrary token/host/cookie overrides are rejected.", "Mutation requests are not automatically replayed."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "access",
+      "commands": ["acl ls", "acl get", "acl set", "acl rm"],
+      "resource_branches": ["workspace", "item", "source-supported external access targets", "principal/role assignments"],
+      "option_branches": ["identity selector", "role", "force and confirmation", "projection", "paging", "text and JSON"],
+      "failure_branches": ["unknown principal", "unsupported target", "decline", "malformed service response", "mutation uncertainty"],
+      "rust_targets": ["fabric-cli/family_mounts", "fabric-cli-resources/access_contract", "fabric-cli/native_terminal_ui"],
+      "known_differences": ["Source support checks remain per-resource; accepted changes retain uncertainty rather than claiming confirmation."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "labels",
+      "commands": ["label set", "label rm", "label list-local"],
+      "resource_branches": ["configured local label definitions", "source-supported Fabric item labels"],
+      "option_branches": ["label name", "force", "confirmation", "JSON/text", "local-only execution before credential setup"],
+      "failure_branches": ["missing label definitions", "invalid definitions", "missing item", "decline", "accepted mutation uncertainty"],
+      "rust_targets": ["fabric-cli/family_mounts", "fabric-cli/local_mounted", "fabric-cli-resources/access_contract"],
+      "known_differences": ["Local label lookup never triggers remote authentication; label application does not grant service permissions."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "job-submit",
+      "commands": ["job start", "job run"],
+      "resource_branches": ["Notebook", "SparkJobDefinition", "DataPipeline", "Lakehouse TableMaintenance", "GraphModel"],
+      "option_branches": ["parameters", "Notebook configuration", "file input", "skill header", "signed timeout", "polling interval", "cancel-on-timeout", "every terminal job state"],
+      "failure_branches": ["invalid parameter/config combination", "unsupported source type", "invalid numeric domain", "accepted submission", "failed/unknown state tables", "cancellation and cleanup"],
+      "rust_targets": ["fabric-cli/job_execution", "fabric-cli/job_command_parity", "fabric-cli/job_numeric_parity", "fabric-cli/job_watchdog", "fabric-cli-jobs/commands"],
+      "known_differences": ["Waits and shared response bounds are explicit; service acceptance is not completion.", "Source scalar/string conversion and Python quirks remain separately captured."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "job-read-cancel",
+      "commands": ["job run-list", "job run-status", "job run-cancel"],
+      "resource_branches": ["item job instances", "item schedules", "generic Fabric operation bridge"],
+      "option_branches": ["schedule versus instance", "ID", "wait", "skill header", "paging", "source output columns"],
+      "failure_branches": ["invalid ID", "later-page failure", "headerless 202", "unconfirmed cancellation", "timeout", "writer failure"],
+      "rust_targets": ["fabric-cli/job_read_session", "fabric-cli/job_mutations", "fabric-cli/source_operations", "fabric-cli-jobs/operation_bridge", "fabric-sdk-jobs/jobs"],
+      "known_differences": ["Cancellation acceptance is not confirmation; original operation evidence is retained."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "job-schedules",
+      "commands": ["job run-sch", "job run-update", "job run-rm"],
+      "resource_branches": ["Notebook/Spark/pipeline schedules", "source-supported job types"],
+      "option_branches": ["daily/weekly/cron input", "enable/disable", "GET-before-PATCH", "force and confirmation", "skill header"],
+      "failure_branches": ["missing fields", "source time-shape quirks", "conflicting flags", "decline", "shared-operation errors"],
+      "rust_targets": ["fabric-cli/job_mutations", "fabric-cli/job_arguments", "fabric-cli-jobs/commands", "fabric-sdk-jobs/command_policy"],
+      "known_differences": ["Source schedule parsing quirks are preserved rather than silently normalized into stricter calendar semantics."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "table-schema-load",
+      "commands": ["table schema", "table load"],
+      "resource_branches": ["Lakehouse Delta tables", "OneLake transaction logs", "local/storage load inputs"],
+      "option_branches": ["schema and format", "file classification", "load options", "generic-operation completion", "actual HTTP adapter"],
+      "failure_branches": ["unsupported target", "invalid Delta log", "invalid load options", "partial operation", "cancellation"],
+      "rust_targets": ["fabric-cli/table_mounted", "fabric-cli-tables/complete_pipeline", "fabric-cli-tables/options", "fabric-sdk-tables/contracts", "fabric-sdk-tables/onelake_adapter"],
+      "known_differences": ["Delta logs, input bytes and operation waits are bounded.", "Not every storage format or resource is implied by table command registration."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "table-maintenance",
+      "commands": ["table optimize", "table vacuum"],
+      "resource_branches": ["Lakehouse Delta TableMaintenance jobs"],
+      "option_branches": ["retention", "dry-run", "V-Order", "Z-order", "job submission/wait/cancel"],
+      "failure_branches": ["invalid numeric option", "unsupported target", "maintenance failure", "operation uncertainty", "cancelled wait"],
+      "rust_targets": ["fabric-cli/table_mounted", "fabric-cli-tables/maintenance_adapter", "fabric-cli-tables/operation_adapter", "fabric-sdk-tables/maintenance_jobs", "fabric-sdk-jobs/table_maintenance"],
+      "known_differences": ["Maintenance composes the jobs/operation engines; it is not an independent assumed-success API call."],
+      "live_acceptance": "unvalidated"
+    },
+    {
+      "id": "authentication",
+      "commands": ["auth login", "auth status", "auth logout"],
+      "resource_branches": ["Windows WAM", "explicit unattended providers", "Windows native certificate store", "Linux pinned direct PKCS11 provider", "macOS isolated Keychain certificate helper", "device-code flow with OS protected persistence"],
+      "option_branches": ["account and tenant selection", "silent versus interactive", "saved non-secret binding", "text/JSON", "refresh and logout", "provider-specific explicit configuration"],
+      "failure_branches": ["identity mismatch", "interaction required", "cancelled/late native completion", "invalid response metadata", "unavailable platform/provider", "protected-store failure", "helper trust failure", "uncertain child cleanup"],
+      "rust_targets": ["fabric-cli/auth_arguments", "fabric-cli/auth_commands", "fabric-cli/interactive_arguments", "fabric-cli/broker_selection", "fabric-cli/headless_configuration", "fabric-cli/headless_graph", "fabric-identity/headless", "fabric-identity/protected_store_helper"],
+      "known_differences": ["Native CLI authentication is not Python switch/cache compatibility.", "No az/azd/Python fallback, raw access-token input, or plaintext credential cache.", "Cross-platform interactive work in this change requires its own frozen-source and platform evidence; this inventory does not declare it live accepted."],
+      "live_acceptance": "manual_auth_smoke"
+    }
+  ],
+  "additional_surfaces": [
+    {
+      "id": "batch",
+      "commands": ["-c", "--command"],
+      "boundaries": ["source tokenization", "shared navigation/settings", "last returned exit", "terminal cancellation", "separator/raw command-count summary", "no replay on output failure"],
+      "rust_targets": ["fabric-cli/batch_commands", "fabric-cli/batch_parser", "fabric-cli/batch_shared_local", "fabric-cli/batch_terminal_outcomes"]
+    },
+    {
+      "id": "repl",
+      "commands": ["interactive no-argument mode"],
+      "boundaries": ["separate optional Reedline", "aliases and lexical errors", "memory-only history", "in-memory navigation", "terminal-only activation", "EOF/cancellation and state restoration"],
+      "rust_targets": ["fabric-cli-repl/shell_loop", "fabric-cli-repl/editor_adapter", "fabric-cli-repl/source_contract", "fabric-cli/cli_contract"]
+    },
+    {
+      "id": "update",
+      "commands": ["update"],
+      "boundaries": ["explicit check/apply", "pinned GitHub publisher", "signature and feature identity", "installer custody", "separate bounded helper", "same-major policy", "recovery without command replay"],
+      "rust_targets": ["fabric-cli/update_commands", "fabric-cli-update/contracts", "fabric-cli-update/native_fixture"]
+    }
+  ]
+}

@@ -5,955 +5,2610 @@
     {
       "id": "core",
       "package": "fabric-core",
-      "inputs": ["rust/infrastructure/core/fabric-core/src/**"],
+      "inputs": [
+        "rust/sdk/request-context/src/**"
+      ],
       "depends_on": [],
-      "tests": [{"package": "fabric-core", "target": "lib"}],
-      "checks": ["dependency-graph"]
+      "tests": [
+        {
+          "package": "fabric-core",
+          "target": "lib"
+        }
+      ],
+      "checks": [
+        "dependency-graph"
+      ]
     },
     {
       "id": "json",
       "package": "fabric-core-json",
-      "inputs": ["rust/infrastructure/core/fabric-core-json/src/**", "rust/tests/compatibility/output/definition-cases.json", "rust/tests/compatibility/output/native-cases.json", "rust/tests/compatibility/output/unicode-json-cases.json"],
+      "inputs": [
+        "rust/sdk/json/src/**",
+        "rust/tests/compatibility/output/definition-cases.json",
+        "rust/tests/compatibility/output/native-cases.json",
+        "rust/tests/compatibility/output/unicode-json-cases.json"
+      ],
       "depends_on": [],
       "tests": [
-        {"package": "fabric-core-json", "target": "lib"},
-        {"package": "fabric-core-json", "target": "test:consumer"},
-        {"package": "fabric-core-json", "target": "test:native"},
-        {"package": "fabric-core-json", "target": "test:unicode"}
+        {
+          "package": "fabric-core-json",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-core-json",
+          "target": "test:consumer"
+        },
+        {
+          "package": "fabric-core-json",
+          "target": "test:native"
+        },
+        {
+          "package": "fabric-core-json",
+          "target": "test:unicode"
+        }
       ],
-      "checks": ["json-parity"]
+      "checks": [
+        "json-parity"
+      ]
     },
     {
       "id": "name-search",
       "package": "fabric-name-search",
-      "inputs": ["rust/infrastructure/search/fabric-name-search/src/**"],
+      "inputs": [
+        "rust/sdk/search/names/src/**"
+      ],
       "depends_on": [],
       "tests": [
-        {"package": "fabric-name-search", "target": "lib"},
-        {"package": "fabric-name-search", "target": "test:suggestions"}
+        {
+          "package": "fabric-name-search",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-name-search",
+          "target": "test:suggestions"
+        }
       ],
-      "checks": ["dependency-graph"]
+      "checks": [
+        "dependency-graph"
+      ]
     },
     {
       "id": "context",
       "package": "fabric-cli-context",
-      "inputs": ["rust/hosts/cli/fabric-cli-context/src/**", "rust/tests/compatibility/context/cases.json", "rust/tests/compatibility/context/extended_cases.json"],
-      "depends_on": ["name-search"],
-      "tests": [
-        {"package": "fabric-cli-context", "target": "lib"},
-        {"package": "fabric-cli-context", "target": "test:contract"},
-        {"package": "fabric-cli-context", "target": "test:extended_contract"},
-        {"package": "fabric-cli-context", "target": "test:extended_python_cases"},
-        {"package": "fabric-cli-context", "target": "test:name_hints"},
-        {"package": "fabric-cli-context", "target": "test:python_cases"}
+      "inputs": [
+        "rust/frontends/cli/paths/src/**",
+        "rust/tests/compatibility/context/cases.json",
+        "rust/tests/compatibility/context/extended_cases.json"
       ],
-      "checks": ["context-output"]
+      "depends_on": [
+        "name-search"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli-context",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli-context",
+          "target": "test:contract"
+        },
+        {
+          "package": "fabric-cli-context",
+          "target": "test:extended_contract"
+        },
+        {
+          "package": "fabric-cli-context",
+          "target": "test:extended_python_cases"
+        },
+        {
+          "package": "fabric-cli-context",
+          "target": "test:name_hints"
+        },
+        {
+          "package": "fabric-cli-context",
+          "target": "test:python_cases"
+        }
+      ],
+      "checks": [
+        "context-output"
+      ]
     },
     {
       "id": "output",
       "package": "fabric-cli-output",
-      "inputs": ["rust/hosts/cli/fabric-cli-output/src/**", "rust/tests/compatibility/output/cases.json", "rust/tests/compatibility/output/text-cases.json"],
-      "depends_on": ["json"],
-      "tests": [
-        {"package": "fabric-cli-output", "target": "lib"},
-        {"package": "fabric-cli-output", "target": "test:consumer"},
-        {"package": "fabric-cli-output", "target": "test:definitions"},
-        {"package": "fabric-cli-output", "target": "test:output_audit"},
-        {"package": "fabric-cli-output", "target": "test:text"}
+      "inputs": [
+        "rust/frontends/cli/output/src/**",
+        "rust/tests/compatibility/output/cases.json",
+        "rust/tests/compatibility/output/text-cases.json"
       ],
-      "checks": ["json-parity", "context-output"]
+      "depends_on": [
+        "json"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli-output",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli-output",
+          "target": "test:consumer"
+        },
+        {
+          "package": "fabric-cli-output",
+          "target": "test:definitions"
+        },
+        {
+          "package": "fabric-cli-output",
+          "target": "test:output_audit"
+        },
+        {
+          "package": "fabric-cli-output",
+          "target": "test:text"
+        }
+      ],
+      "checks": [
+        "json-parity",
+        "context-output"
+      ]
     },
     {
       "id": "query",
       "package": "fabric-cli-query",
-      "inputs": ["rust/hosts/cli/fabric-cli-query/src/**", "rust/tests/compatibility/query/cases.json", "rust/tests/compatibility/query_arguments/cases.json", "rust/tests/compatibility/query_arguments/consumers.json"],
-      "depends_on": ["output"],
-      "tests": [
-        {"package": "fabric-cli-query", "target": "lib"},
-        {"package": "fabric-cli-query", "target": "test:consumer"}
+      "inputs": [
+        "rust/frontends/cli/query/src/**",
+        "rust/tests/compatibility/query/cases.json",
+        "rust/tests/compatibility/query_arguments/cases.json",
+        "rust/tests/compatibility/query_arguments/consumers.json"
       ],
-      "checks": ["read-parity", "broker-read-parity"]
+      "depends_on": [
+        "output"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli-query",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli-query",
+          "target": "test:consumer"
+        }
+      ],
+      "checks": [
+        "read-parity",
+        "broker-read-parity"
+      ]
     },
     {
       "id": "identity-policy",
       "package": "fabric-identity",
-      "inputs": ["rust/infrastructure/identity/fabric-identity/src/lib.rs"],
-      "depends_on": ["core"],
-      "tests": [
-        {"package": "fabric-identity", "target": "lib"},
-        {"package": "fabric-identity", "target": "test:headless"},
-        {"package": "fabric-identity", "target": "example:safe_consumer"}
+      "inputs": [
+        "rust/sdk/authentication/credentials/src/lib.rs"
       ],
-      "checks": ["broker", "headless", "certificate", "combined"]
+      "depends_on": [
+        "core"
+      ],
+      "tests": [
+        {
+          "package": "fabric-identity",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-identity",
+          "target": "test:headless"
+        },
+        {
+          "package": "fabric-identity",
+          "target": "example:safe_consumer"
+        }
+      ],
+      "checks": [
+        "broker",
+        "headless",
+        "certificate",
+        "combined"
+      ]
     },
     {
       "id": "identity-broker",
       "package": "fabric-identity",
-      "inputs": ["rust/infrastructure/identity/fabric-identity/src/windows.rs"],
-      "depends_on": ["identity-policy", "windows-broker"],
-      "tests": [
-        {"package": "fabric-identity", "target": "lib"},
-        {"package": "fabric-identity", "target": "example:safe_consumer"}
+      "inputs": [
+        "rust/sdk/authentication/credentials/src/windows.rs"
       ],
-      "checks": ["broker", "native-read"]
+      "depends_on": [
+        "identity-policy",
+        "windows-broker"
+      ],
+      "tests": [
+        {
+          "package": "fabric-identity",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-identity",
+          "target": "example:safe_consumer"
+        }
+      ],
+      "checks": [
+        "broker",
+        "native-read"
+      ]
     },
     {
       "id": "identity-headless",
       "package": "fabric-identity",
-      "inputs": ["rust/infrastructure/identity/fabric-identity/src/headless.rs", "rust/infrastructure/identity/fabric-identity/src/headless_tests.rs", "rust/infrastructure/identity/fabric-identity/src/assertion_file.rs", "rust/infrastructure/identity/fabric-identity/src/pipelines.rs", "rust/infrastructure/identity/fabric-identity/src/pipelines_tests.rs", "rust/infrastructure/identity/fabric-identity/tests/headless/**"],
-      "depends_on": ["identity-policy"],
-      "tests": [
-        {"package": "fabric-identity", "target": "lib"},
-        {"package": "fabric-identity", "target": "test:headless"}
+      "inputs": [
+        "rust/sdk/authentication/credentials/src/headless.rs",
+        "rust/sdk/authentication/credentials/src/headless_tests.rs",
+        "rust/sdk/authentication/credentials/src/assertion_file.rs",
+        "rust/sdk/authentication/credentials/src/pipelines.rs",
+        "rust/sdk/authentication/credentials/src/pipelines_tests.rs",
+        "rust/sdk/authentication/credentials/tests/headless/**"
       ],
-      "checks": ["headless", "combined"]
+      "depends_on": [
+        "identity-policy"
+      ],
+      "tests": [
+        {
+          "package": "fabric-identity",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-identity",
+          "target": "test:headless"
+        }
+      ],
+      "checks": [
+        "headless",
+        "combined"
+      ]
     },
     {
       "id": "identity-certificate",
       "package": "fabric-identity",
-      "inputs": ["rust/infrastructure/identity/fabric-identity/src/certificate.rs", "rust/infrastructure/identity/fabric-identity/src/certificate_tests.rs"],
-      "depends_on": ["identity-headless", "windows-certificate"],
-      "tests": [
-        {"package": "fabric-identity", "target": "lib"},
-        {"package": "fabric-identity", "target": "test:headless"}
+      "inputs": [
+        "rust/sdk/authentication/credentials/src/certificate.rs",
+        "rust/sdk/authentication/credentials/src/certificate_tests.rs"
       ],
-      "checks": ["certificate", "combined"]
+      "depends_on": [
+        "identity-headless",
+        "windows-certificate"
+      ],
+      "tests": [
+        {
+          "package": "fabric-identity",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-identity",
+          "target": "test:headless"
+        }
+      ],
+      "checks": [
+        "certificate",
+        "combined"
+      ]
     },
     {
       "id": "windows-broker",
       "package": "fabric-identity-windows",
-      "inputs": ["rust/infrastructure/identity/fabric-identity-windows/src/lib.rs", "rust/infrastructure/identity/fabric-identity-windows/src/native.rs", "rust/infrastructure/identity/fabric-identity-windows/src/request.rs", "rust/infrastructure/identity/fabric-identity-windows/src/entra.rs", "rust/infrastructure/identity/fabric-identity-windows/src/entra_contract.rs", "rust/infrastructure/identity/fabric-identity-windows/src/selection.rs"],
+      "inputs": [
+        "rust/sdk/authentication/windows/src/lib.rs",
+        "rust/sdk/authentication/windows/src/native.rs",
+        "rust/sdk/authentication/windows/src/request.rs",
+        "rust/sdk/authentication/windows/src/entra.rs",
+        "rust/sdk/authentication/windows/src/entra_contract.rs",
+        "rust/sdk/authentication/windows/src/selection.rs"
+      ],
       "depends_on": [],
-      "tests": [{"package": "fabric-identity-windows", "target": "lib"}],
-      "checks": ["broker", "native-read", "combined"]
+      "tests": [
+        {
+          "package": "fabric-identity-windows",
+          "target": "lib"
+        }
+      ],
+      "checks": [
+        "broker",
+        "native-read",
+        "combined"
+      ]
     },
     {
       "id": "windows-certificate",
       "package": "fabric-identity-windows",
-      "inputs": ["rust/infrastructure/identity/fabric-identity-windows/src/certificate.rs", "rust/infrastructure/identity/fabric-identity-windows/src/certificate_tests.rs", "rust/infrastructure/identity/fabric-identity-windows/src/certificate_vectors.rs", "rust/infrastructure/identity/fabric-identity-windows/src/native_certificate.rs"],
-      "depends_on": ["windows-broker"],
-      "tests": [{"package": "fabric-identity-windows", "target": "lib"}],
-      "checks": ["certificate", "combined"]
+      "inputs": [
+        "rust/sdk/authentication/windows/src/certificate.rs",
+        "rust/sdk/authentication/windows/src/certificate_tests.rs",
+        "rust/sdk/authentication/windows/src/certificate_vectors.rs",
+        "rust/sdk/authentication/windows/src/native_certificate.rs"
+      ],
+      "depends_on": [
+        "windows-broker"
+      ],
+      "tests": [
+        {
+          "package": "fabric-identity-windows",
+          "target": "lib"
+        }
+      ],
+      "checks": [
+        "certificate",
+        "combined"
+      ]
     },
     {
       "id": "sdk-workspaces",
       "package": "fabric-sdk-workspaces",
-      "inputs": ["rust/capabilities/resources/fabric-sdk-workspaces/src/**", "rust/tests/compatibility/workspaces/cases.json", "rust/tests/compatibility/workspace_get/*.json"],
-      "depends_on": ["core"],
-      "tests": [
-        {"package": "fabric-sdk-workspaces", "target": "lib"},
-        {"package": "fabric-sdk-workspaces", "target": "test:continuation_query"},
-        {"package": "fabric-sdk-workspaces", "target": "test:metadata"},
-        {"package": "fabric-sdk-workspaces", "target": "test:standalone"}
+      "inputs": [
+        "rust/sdk/workspaces/src/**",
+        "rust/tests/compatibility/workspaces/cases.json",
+        "rust/tests/compatibility/workspace_get/*.json"
       ],
-      "checks": ["read-parity", "resource-oracle"]
+      "depends_on": [
+        "core"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk-workspaces",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-sdk-workspaces",
+          "target": "test:continuation_query"
+        },
+        {
+          "package": "fabric-sdk-workspaces",
+          "target": "test:metadata"
+        },
+        {
+          "package": "fabric-sdk-workspaces",
+          "target": "test:standalone"
+        }
+      ],
+      "checks": [
+        "read-parity",
+        "resource-oracle"
+      ]
     },
     {
       "id": "sdk-items",
       "package": "fabric-sdk-items",
-      "inputs": ["rust/capabilities/resources/fabric-sdk-items/src/**", "rust/tests/compatibility/items/*.json", "rust/tests/compatibility/items/*.rs"],
-      "depends_on": ["core", "sdk-workspaces"],
-      "tests": [
-        {"package": "fabric-sdk-items", "target": "lib"},
-        {"package": "fabric-sdk-items", "target": "test:standalone"}
+      "inputs": [
+        "rust/sdk/items/src/**",
+        "rust/tests/compatibility/items/*.json",
+        "rust/tests/compatibility/items/*.rs"
       ],
-      "checks": ["read-parity", "resource-oracle"]
+      "depends_on": [
+        "core",
+        "sdk-workspaces"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk-items",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-sdk-items",
+          "target": "test:standalone"
+        }
+      ],
+      "checks": [
+        "read-parity",
+        "resource-oracle"
+      ]
     },
     {
       "id": "sdk-folders",
       "package": "fabric-sdk-folders",
-      "inputs": ["rust/capabilities/resources/fabric-sdk-folders/src/**", "rust/tests/compatibility/folders/cases.json"],
-      "depends_on": ["core", "sdk-workspaces", "sdk-items"],
-      "tests": [
-        {"package": "fabric-sdk-folders", "target": "lib"},
-        {"package": "fabric-sdk-folders", "target": "test:standalone"}
+      "inputs": [
+        "rust/sdk/folders/src/**",
+        "rust/tests/compatibility/folders/cases.json"
       ],
-      "checks": ["read-parity", "resource-oracle"]
+      "depends_on": [
+        "core",
+        "sdk-workspaces",
+        "sdk-items"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk-folders",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-sdk-folders",
+          "target": "test:standalone"
+        }
+      ],
+      "checks": [
+        "read-parity",
+        "resource-oracle"
+      ]
     },
     {
       "id": "sdk-capacities",
       "package": "fabric-sdk-capacities",
-      "inputs": ["rust/capabilities/resources/fabric-sdk-capacities/src/**", "rust/tests/compatibility/capacities/cases.json"],
-      "depends_on": ["core", "sdk-workspaces"],
-      "tests": [
-        {"package": "fabric-sdk-capacities", "target": "lib"},
-        {"package": "fabric-sdk-capacities", "target": "test:standalone"}
+      "inputs": [
+        "rust/sdk/capacities/src/**",
+        "rust/tests/compatibility/capacities/cases.json"
       ],
-      "checks": ["read-parity"]
+      "depends_on": [
+        "core",
+        "sdk-workspaces"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk-capacities",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-sdk-capacities",
+          "target": "test:standalone"
+        }
+      ],
+      "checks": [
+        "read-parity"
+      ]
     },
     {
       "id": "operations",
       "package": "fabric-sdk-operations",
-      "inputs": ["rust/infrastructure/execution/fabric-sdk-operations/src/**"],
-      "depends_on": ["core", "sdk-workspaces"],
-      "tests": [
-        {"package": "fabric-sdk-operations", "target": "lib"},
-        {"package": "fabric-sdk-operations", "target": "test:endpoint_context"},
-        {"package": "fabric-sdk-operations", "target": "test:path_segments"},
-        {"package": "fabric-sdk-operations", "target": "test:standalone"}
+      "inputs": [
+        "rust/sdk/operations/src/**"
       ],
-      "checks": ["resource-oracle"]
+      "depends_on": [
+        "core",
+        "sdk-workspaces"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk-operations",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-sdk-operations",
+          "target": "test:endpoint_context"
+        },
+        {
+          "package": "fabric-sdk-operations",
+          "target": "test:path_segments"
+        },
+        {
+          "package": "fabric-sdk-operations",
+          "target": "test:standalone"
+        }
+      ],
+      "checks": [
+        "resource-oracle"
+      ]
     },
     {
       "id": "sdk",
       "package": "fabric-sdk",
-      "inputs": ["rust/sdk/fabric-sdk/src/**"],
-      "depends_on": ["core", "sdk-workspaces", "sdk-items", "sdk-folders", "sdk-capacities", "operations"],
-      "tests": [
-        {"package": "fabric-sdk", "target": "lib"},
-        {"package": "fabric-sdk", "target": "test:workspace_facade"},
-        {"package": "fabric-sdk", "target": "test:item_facade"},
-        {"package": "fabric-sdk", "target": "test:folder_facade"},
-        {"package": "fabric-sdk", "target": "test:capacity_facade"},
-        {"package": "fabric-sdk", "target": "test:notebook_runtime"},
-        {"package": "fabric-sdk", "target": "test:notebook_observability"},
-        {"package": "fabric-sdk", "target": "test:livy_native"},
-        {"package": "fabric-sdk", "target": "test:livy_arrow"},
-        {"package": "fabric-sdk", "target": "test:livy_arrow_ipc"},
-        {"package": "fabric-sdk", "target": "test:search_public_surface"}
+      "inputs": [
+        "rust/sdk/client/src/**"
       ],
-      "checks": ["sdk-example", "sdk-graph"]
+      "depends_on": [
+        "core",
+        "sdk-workspaces",
+        "sdk-items",
+        "sdk-folders",
+        "sdk-capacities",
+        "operations"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-sdk",
+          "target": "test:workspace_facade"
+        },
+        {
+          "package": "fabric-sdk",
+          "target": "test:item_facade"
+        },
+        {
+          "package": "fabric-sdk",
+          "target": "test:folder_facade"
+        },
+        {
+          "package": "fabric-sdk",
+          "target": "test:capacity_facade"
+        },
+        {
+          "package": "fabric-sdk",
+          "target": "test:notebook_runtime"
+        },
+        {
+          "package": "fabric-sdk",
+          "target": "test:notebook_observability"
+        },
+        {
+          "package": "fabric-sdk",
+          "target": "test:livy_native"
+        },
+        {
+          "package": "fabric-sdk",
+          "target": "test:livy_arrow"
+        },
+        {
+          "package": "fabric-sdk",
+          "target": "test:livy_arrow_ipc"
+        },
+        {
+          "package": "fabric-sdk",
+          "target": "test:search_public_surface"
+        }
+      ],
+      "checks": [
+        "sdk-example",
+        "sdk-graph"
+      ]
     },
     {
       "id": "http",
       "package": "fabric-sdk-http",
-      "inputs": ["rust/infrastructure/http/fabric-sdk-http/src/**", "rust/tests/compatibility/http/retry-cases.json"],
-      "depends_on": ["core", "sdk", "sdk-items", "sdk-folders", "sdk-workspaces", "operations"],
-      "tests": [
-        {"package": "fabric-sdk-http", "target": "lib"},
-        {"package": "fabric-sdk-http", "target": "test:capacity_adapter"},
-        {"package": "fabric-sdk-http", "target": "test:endpoint_context"},
-        {"package": "fabric-sdk-http", "target": "test:folder_adapter"},
-        {"package": "fabric-sdk-http", "target": "test:native_runtime"}
+      "inputs": [
+        "rust/sdk/http/executor/src/**",
+        "rust/tests/compatibility/http/retry-cases.json"
       ],
-      "checks": ["resource-oracle"]
+      "depends_on": [
+        "core",
+        "sdk",
+        "sdk-items",
+        "sdk-folders",
+        "sdk-workspaces",
+        "operations"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk-http",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-sdk-http",
+          "target": "test:capacity_adapter"
+        },
+        {
+          "package": "fabric-sdk-http",
+          "target": "test:endpoint_context"
+        },
+        {
+          "package": "fabric-sdk-http",
+          "target": "test:folder_adapter"
+        },
+        {
+          "package": "fabric-sdk-http",
+          "target": "test:native_runtime"
+        }
+      ],
+      "checks": [
+        "resource-oracle"
+      ]
     },
     {
       "id": "transport",
       "package": "fabric-sdk-transport",
-      "inputs": ["rust/infrastructure/http/fabric-sdk-transport/src/**"],
-      "depends_on": ["core", "http", "sdk"],
-      "tests": [
-        {"package": "fabric-sdk-transport", "target": "lib"},
-        {"package": "fabric-sdk-transport", "target": "example:sdk_consumer"}
+      "inputs": [
+        "rust/sdk/http/transport/src/**"
       ],
-      "checks": ["transport", "transport-graphs", "headless", "updater", "native-read"]
+      "depends_on": [
+        "core",
+        "http",
+        "sdk"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk-transport",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-sdk-transport",
+          "target": "example:sdk_consumer"
+        }
+      ],
+      "checks": [
+        "transport",
+        "transport-graphs",
+        "headless",
+        "updater",
+        "native-read"
+      ]
     },
     {
       "id": "paging",
       "package": "fabric-sdk-paging",
-      "inputs": ["rust/infrastructure/execution/fabric-sdk-paging/src/**"],
-      "depends_on": ["sdk-workspaces"],
-      "tests": [
-        {"package": "fabric-sdk-paging", "target": "lib"},
-        {"package": "fabric-sdk-paging", "target": "test:paging"}
+      "inputs": [
+        "rust/sdk/pagination/src/**"
       ],
-      "checks": ["jobs-oracle"]
+      "depends_on": [
+        "sdk-workspaces"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk-paging",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-sdk-paging",
+          "target": "test:paging"
+        }
+      ],
+      "checks": [
+        "jobs-oracle"
+      ]
     },
     {
       "id": "sdk-api",
       "package": "fabric-sdk-api",
-      "inputs": ["rust/capabilities/resources/fabric-sdk-api/src/**", "rust/tests/compatibility/raw_api/cases.json"],
-      "depends_on": ["core", "json", "sdk-workspaces", "paging", "operations"],
-      "tests": [
-        {"package": "fabric-sdk-api", "target": "lib"},
-        {"package": "fabric-sdk-api", "target": "test:workspace_reads"},
-        {"package": "fabric-sdk-api", "target": "test:explicit_endpoint"}
+      "inputs": [
+        "rust/sdk/api-requests/src/**",
+        "rust/tests/compatibility/raw_api/cases.json"
       ],
-      "checks": ["resource-oracle"]
+      "depends_on": [
+        "core",
+        "json",
+        "sdk-workspaces",
+        "paging",
+        "operations"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk-api",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-sdk-api",
+          "target": "test:workspace_reads"
+        },
+        {
+          "package": "fabric-sdk-api",
+          "target": "test:explicit_endpoint"
+        }
+      ],
+      "checks": [
+        "resource-oracle"
+      ]
     },
     {
       "id": "sdk-access",
       "package": "fabric-sdk-access",
-      "inputs": ["rust/capabilities/resources/fabric-sdk-access/src/**", "rust/tests/compatibility/access/*.json"],
-      "depends_on": ["sdk-api"],
-      "tests": [{"package": "fabric-sdk-access", "target": "lib"}],
-      "checks": ["resource-oracle"]
+      "inputs": [
+        "rust/sdk/access/src/**",
+        "rust/tests/compatibility/access/*.json"
+      ],
+      "depends_on": [
+        "sdk-api"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk-access",
+          "target": "lib"
+        }
+      ],
+      "checks": [
+        "resource-oracle"
+      ]
     },
     {
       "id": "sdk-catalog",
       "package": "fabric-sdk-catalog",
-      "inputs": ["rust/capabilities/resources/fabric-sdk-catalog/src/**", "rust/tests/compatibility/catalog/*.json"],
-      "depends_on": ["sdk-api"],
-      "tests": [
-        {"package": "fabric-sdk-catalog", "target": "lib"},
-        {"package": "fabric-sdk-catalog", "target": "test:search_v2"}
+      "inputs": [
+        "rust/sdk/catalog/src/**",
+        "rust/tests/compatibility/catalog/*.json"
       ],
-      "checks": ["resource-oracle"]
+      "depends_on": [
+        "sdk-api"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk-catalog",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-sdk-catalog",
+          "target": "test:search_v2"
+        }
+      ],
+      "checks": [
+        "resource-oracle"
+      ]
     },
     {
       "id": "sdk-relevance",
       "package": "fabric-sdk-relevance",
-      "inputs": ["rust/capabilities/resources/fabric-sdk-relevance/src/**", "rust/capabilities/resources/fabric-sdk-relevance/tests/**"],
-      "depends_on": ["core", "sdk-api", "sdk-workspaces"],
-      "tests": [
-        {"package": "fabric-sdk-relevance", "target": "lib"},
-        {"package": "fabric-sdk-relevance", "target": "test:api_binding"},
-        {"package": "fabric-sdk-relevance", "target": "test:discovery"}
+      "inputs": [
+        "rust/sdk/search/relevance/src/**",
+        "rust/sdk/search/relevance/tests/**"
       ],
-      "checks": ["dependency-graph"]
+      "depends_on": [
+        "core",
+        "sdk-api",
+        "sdk-workspaces"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk-relevance",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-sdk-relevance",
+          "target": "test:api_binding"
+        },
+        {
+          "package": "fabric-sdk-relevance",
+          "target": "test:discovery"
+        }
+      ],
+      "checks": [
+        "dependency-graph"
+      ]
     },
     {
       "id": "sdk-search",
       "package": "fabric-sdk-search",
-      "inputs": ["rust/capabilities/resources/fabric-sdk-search/src/**", "rust/capabilities/resources/fabric-sdk-search/tests/**"],
-      "depends_on": ["sdk-api", "sdk-catalog", "sdk-relevance"],
-      "tests": [
-        {"package": "fabric-sdk-search", "target": "lib"},
-        {"package": "fabric-sdk-search", "target": "test:bridge"},
-        {"package": "fabric-sdk-search", "target": "test:contracts"},
-        {"package": "fabric-sdk-search", "target": "test:providers"}
+      "inputs": [
+        "rust/sdk/search/client/src/**",
+        "rust/sdk/search/client/tests/**"
       ],
-      "checks": ["dependency-graph"]
+      "depends_on": [
+        "sdk-api",
+        "sdk-catalog",
+        "sdk-relevance"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk-search",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-sdk-search",
+          "target": "test:bridge"
+        },
+        {
+          "package": "fabric-sdk-search",
+          "target": "test:contracts"
+        },
+        {
+          "package": "fabric-sdk-search",
+          "target": "test:providers"
+        }
+      ],
+      "checks": [
+        "dependency-graph"
+      ]
     },
     {
       "id": "resources",
       "package": "fabric-cli-resources",
-      "inputs": ["rust/capabilities/resources/fabric-cli-resources/src/**"],
-      "depends_on": ["context", "output", "query", "sdk-api", "sdk-access", "sdk-catalog", "http"],
-      "tests": [
-        {"package": "fabric-cli-resources", "target": "lib"},
-        {"package": "fabric-cli-resources", "target": "test:access_contract"}
+      "inputs": [
+        "rust/frontends/cli/commands/resources/src/**"
       ],
-      "checks": ["resource-oracle"]
+      "depends_on": [
+        "context",
+        "output",
+        "query",
+        "sdk-api",
+        "sdk-access",
+        "sdk-catalog",
+        "http"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli-resources",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli-resources",
+          "target": "test:access_contract"
+        }
+      ],
+      "checks": [
+        "resource-oracle"
+      ]
     },
     {
       "id": "onelake",
       "package": "fabric-sdk-onelake",
-      "inputs": ["rust/capabilities/storage/fabric-sdk-onelake/src/**"],
-      "depends_on": ["core", "sdk-workspaces"],
-      "tests": [
-        {"package": "fabric-sdk-onelake", "target": "lib"},
-        {"package": "fabric-sdk-onelake", "target": "test:consumer"}
+      "inputs": [
+        "rust/sdk/storage/onelake/src/**"
       ],
-      "checks": ["resource-oracle"]
+      "depends_on": [
+        "core",
+        "sdk-workspaces"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk-onelake",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-sdk-onelake",
+          "target": "test:consumer"
+        }
+      ],
+      "checks": [
+        "resource-oracle"
+      ]
     },
     {
       "id": "onelake-http",
       "package": "fabric-sdk-onelake-http",
-      "inputs": ["rust/capabilities/storage/fabric-sdk-onelake-http/src/**"],
-      "depends_on": ["core", "http", "onelake"],
-      "tests": [
-        {"package": "fabric-sdk-onelake-http", "target": "lib"},
-        {"package": "fabric-sdk-onelake-http", "target": "test:consumer"}
+      "inputs": [
+        "rust/sdk/storage/http/src/**"
       ],
-      "checks": ["resource-oracle"]
+      "depends_on": [
+        "core",
+        "http",
+        "onelake"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk-onelake-http",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-sdk-onelake-http",
+          "target": "test:consumer"
+        }
+      ],
+      "checks": [
+        "resource-oracle"
+      ]
     },
     {
       "id": "mutations",
       "package": "fabric-cli-mutations",
       "inputs": [
-        "rust/capabilities/resources/fabric-cli-mutations/src/lib.rs",
-        "rust/capabilities/resources/fabric-cli-mutations/src/create.rs",
-        "rust/capabilities/resources/fabric-cli-mutations/src/errors.rs",
-        "rust/capabilities/resources/fabric-cli-mutations/src/execution.rs",
-        "rust/capabilities/resources/fabric-cli-mutations/src/frontdoor/**",
-        "rust/capabilities/resources/fabric-cli-mutations/src/lifecycle.rs",
-        "rust/capabilities/resources/fabric-cli-mutations/src/moves.rs",
-        "rust/capabilities/resources/fabric-cli-mutations/src/onelake_read.rs",
-        "rust/capabilities/resources/fabric-cli-mutations/src/onelake_write.rs",
-        "rust/capabilities/resources/fabric-cli-mutations/src/removal.rs",
-        "rust/capabilities/resources/fabric-cli-mutations/src/shortcuts.rs",
-        "rust/capabilities/resources/fabric-cli-mutations/src/sql_database.rs",
-        "rust/capabilities/resources/fabric-cli-mutations/src/template_enumeration.rs",
-        "rust/capabilities/resources/fabric-cli-mutations/src/templates.rs",
-        "rust/capabilities/resources/fabric-cli-mutations/templates/**",
-        "rust/capabilities/resources/fabric-cli-mutations/tests/fallible_ui/**"
+        "rust/frontends/cli/commands/resource-mutations/src/lib.rs",
+        "rust/frontends/cli/commands/resource-mutations/src/create.rs",
+        "rust/frontends/cli/commands/resource-mutations/src/errors.rs",
+        "rust/frontends/cli/commands/resource-mutations/src/execution.rs",
+        "rust/frontends/cli/commands/resource-mutations/src/frontdoor/**",
+        "rust/frontends/cli/commands/resource-mutations/src/lifecycle.rs",
+        "rust/frontends/cli/commands/resource-mutations/src/moves.rs",
+        "rust/frontends/cli/commands/resource-mutations/src/onelake_read.rs",
+        "rust/frontends/cli/commands/resource-mutations/src/onelake_write.rs",
+        "rust/frontends/cli/commands/resource-mutations/src/removal.rs",
+        "rust/frontends/cli/commands/resource-mutations/src/shortcuts.rs",
+        "rust/frontends/cli/commands/resource-mutations/src/sql_database.rs",
+        "rust/frontends/cli/commands/resource-mutations/src/template_enumeration.rs",
+        "rust/frontends/cli/commands/resource-mutations/src/templates.rs",
+        "rust/frontends/cli/commands/resource-mutations/templates/**",
+        "rust/frontends/cli/commands/resource-mutations/tests/fallible_ui/**"
       ],
-      "depends_on": ["context", "output", "query", "sdk-workspaces", "sdk-items", "sdk-folders", "http", "operations", "onelake", "onelake-http"],
+      "depends_on": [
+        "context",
+        "output",
+        "query",
+        "sdk-workspaces",
+        "sdk-items",
+        "sdk-folders",
+        "http",
+        "operations",
+        "onelake",
+        "onelake-http"
+      ],
       "tests": [
-        {"package": "fabric-cli-mutations", "target": "lib"},
-        {"package": "fabric-cli-mutations", "target": "test:consumer"},
-        {"package": "fabric-cli-mutations", "target": "test:copy_preflight"},
-        {"package": "fabric-cli-mutations", "target": "test:fallible_ui"},
-        {"package": "fabric-cli-mutations", "target": "test:onelake_read"},
-        {"package": "fabric-cli-mutations", "target": "test:onelake_write"},
-        {"package": "fabric-cli-mutations", "target": "test:operation_error_projection"},
-        {"package": "fabric-cli-mutations", "target": "test:public_set"},
-        {"package": "fabric-cli-mutations", "target": "test:removal"},
-        {"package": "fabric-cli-mutations", "target": "test:shared_policy"},
-        {"package": "fabric-cli-mutations", "target": "test:shortcuts"}
+        {
+          "package": "fabric-cli-mutations",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli-mutations",
+          "target": "test:consumer"
+        },
+        {
+          "package": "fabric-cli-mutations",
+          "target": "test:copy_preflight"
+        },
+        {
+          "package": "fabric-cli-mutations",
+          "target": "test:fallible_ui"
+        },
+        {
+          "package": "fabric-cli-mutations",
+          "target": "test:onelake_read"
+        },
+        {
+          "package": "fabric-cli-mutations",
+          "target": "test:onelake_write"
+        },
+        {
+          "package": "fabric-cli-mutations",
+          "target": "test:operation_error_projection"
+        },
+        {
+          "package": "fabric-cli-mutations",
+          "target": "test:public_set"
+        },
+        {
+          "package": "fabric-cli-mutations",
+          "target": "test:removal"
+        },
+        {
+          "package": "fabric-cli-mutations",
+          "target": "test:shared_policy"
+        },
+        {
+          "package": "fabric-cli-mutations",
+          "target": "test:shortcuts"
+        }
       ],
-      "checks": ["resource-oracle"]
+      "checks": [
+        "resource-oracle"
+      ]
     },
     {
       "id": "resource-set",
       "package": "fabric-cli-mutations",
-      "inputs": ["rust/capabilities/resources/fabric-cli-mutations/src/set.rs"],
-      "depends_on": ["mutations"],
-      "tests": [
-        {"package": "fabric-cli-mutations", "target": "lib"},
-        {"package": "fabric-cli-mutations", "target": "test:consumer"},
-        {"package": "fabric-cli-mutations", "target": "test:public_set"},
-        {"package": "fabric-cli-mutations", "target": "test:shared_policy"},
-        {"package": "fabric-cli-mutations", "target": "test:fallible_ui"}
+      "inputs": [
+        "rust/frontends/cli/commands/resource-mutations/src/set.rs"
       ],
-      "checks": ["resource-oracle"]
+      "depends_on": [
+        "mutations"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli-mutations",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli-mutations",
+          "target": "test:consumer"
+        },
+        {
+          "package": "fabric-cli-mutations",
+          "target": "test:public_set"
+        },
+        {
+          "package": "fabric-cli-mutations",
+          "target": "test:shared_policy"
+        },
+        {
+          "package": "fabric-cli-mutations",
+          "target": "test:fallible_ui"
+        }
+      ],
+      "checks": [
+        "resource-oracle"
+      ]
     },
     {
       "id": "storage-files",
       "package": "fabric-cli-storage-files",
-      "inputs": ["rust/capabilities/storage/fabric-cli-storage-files/src/**"],
-      "depends_on": ["context", "output", "mutations", "onelake", "onelake-http", "http", "sdk-workspaces"],
-      "tests": [
-        {"package": "fabric-cli-storage-files", "target": "lib"},
-        {"package": "fabric-cli-storage-files", "target": "test:download"},
-        {"package": "fabric-cli-storage-files", "target": "test:local_adapter"},
-        {"package": "fabric-cli-storage-files", "target": "test:resource_command"},
-        {"package": "fabric-cli-storage-files", "target": "test:selected_adapter"},
-        {"package": "fabric-cli-storage-files", "target": "test:upload"}
+      "inputs": [
+        "rust/frontends/cli/commands/files/src/**"
       ],
-      "checks": ["resource-oracle"]
+      "depends_on": [
+        "context",
+        "output",
+        "mutations",
+        "onelake",
+        "onelake-http",
+        "http",
+        "sdk-workspaces"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli-storage-files",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli-storage-files",
+          "target": "test:download"
+        },
+        {
+          "package": "fabric-cli-storage-files",
+          "target": "test:local_adapter"
+        },
+        {
+          "package": "fabric-cli-storage-files",
+          "target": "test:resource_command"
+        },
+        {
+          "package": "fabric-cli-storage-files",
+          "target": "test:selected_adapter"
+        },
+        {
+          "package": "fabric-cli-storage-files",
+          "target": "test:upload"
+        }
+      ],
+      "checks": [
+        "resource-oracle"
+      ]
     },
     {
       "id": "sdk-jobs",
       "package": "fabric-sdk-jobs",
-      "inputs": ["rust/capabilities/jobs/fabric-sdk-jobs/src/**", "rust/tests/compatibility/jobs/*.json", "rust/tests/compatibility/jobs/support.rs", "rust/tests/compatibility/job_reads/cases.json"],
-      "depends_on": ["core", "sdk-workspaces", "paging", "operations", "http"],
-      "tests": [
-        {"package": "fabric-sdk-jobs", "target": "lib"},
-        {"package": "fabric-sdk-jobs", "target": "test:cancellation"},
-        {"package": "fabric-sdk-jobs", "target": "test:command_policy"},
-        {"package": "fabric-sdk-jobs", "target": "test:endpoint_context"},
-        {"package": "fabric-sdk-jobs", "target": "test:endpoint_unicode"},
-        {"package": "fabric-sdk-jobs", "target": "test:jobs"},
-        {"package": "fabric-sdk-jobs", "target": "test:numeric"},
-        {"package": "fabric-sdk-jobs", "target": "test:table_maintenance"}
+      "inputs": [
+        "rust/sdk/jobs/src/**",
+        "rust/tests/compatibility/jobs/*.json",
+        "rust/tests/compatibility/jobs/support.rs",
+        "rust/tests/compatibility/job_reads/cases.json"
       ],
-      "checks": ["jobs-oracle"]
+      "depends_on": [
+        "core",
+        "sdk-workspaces",
+        "paging",
+        "operations",
+        "http"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk-jobs",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-sdk-jobs",
+          "target": "test:cancellation"
+        },
+        {
+          "package": "fabric-sdk-jobs",
+          "target": "test:command_policy"
+        },
+        {
+          "package": "fabric-sdk-jobs",
+          "target": "test:endpoint_context"
+        },
+        {
+          "package": "fabric-sdk-jobs",
+          "target": "test:endpoint_unicode"
+        },
+        {
+          "package": "fabric-sdk-jobs",
+          "target": "test:jobs"
+        },
+        {
+          "package": "fabric-sdk-jobs",
+          "target": "test:numeric"
+        },
+        {
+          "package": "fabric-sdk-jobs",
+          "target": "test:table_maintenance"
+        }
+      ],
+      "checks": [
+        "jobs-oracle"
+      ]
     },
     {
       "id": "jobs",
       "package": "fabric-cli-jobs",
-      "inputs": ["rust/capabilities/jobs/fabric-cli-jobs/src/**"],
-      "depends_on": ["context", "output", "mutations", "sdk-jobs", "http", "operations", "sdk-workspaces"],
-      "tests": [
-        {"package": "fabric-cli-jobs", "target": "lib"},
-        {"package": "fabric-cli-jobs", "target": "test:commands"},
-        {"package": "fabric-cli-jobs", "target": "test:endpoint_binding"},
-        {"package": "fabric-cli-jobs", "target": "test:operation_bridge"},
-        {"package": "fabric-cli-jobs", "target": "test:operation_output"}
+      "inputs": [
+        "rust/frontends/cli/commands/jobs/src/**"
       ],
-      "checks": ["jobs-oracle"]
+      "depends_on": [
+        "context",
+        "output",
+        "mutations",
+        "sdk-jobs",
+        "http",
+        "operations",
+        "sdk-workspaces"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli-jobs",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli-jobs",
+          "target": "test:commands"
+        },
+        {
+          "package": "fabric-cli-jobs",
+          "target": "test:endpoint_binding"
+        },
+        {
+          "package": "fabric-cli-jobs",
+          "target": "test:operation_bridge"
+        },
+        {
+          "package": "fabric-cli-jobs",
+          "target": "test:operation_output"
+        }
+      ],
+      "checks": [
+        "jobs-oracle"
+      ]
     },
     {
       "id": "sdk-tables",
       "package": "fabric-sdk-tables",
-      "inputs": ["rust/capabilities/tables/fabric-sdk-tables/src/**", "rust/tests/compatibility/tables/*.json"],
-      "depends_on": ["core", "json", "sdk-jobs", "operations", "onelake", "http", "onelake-http"],
-      "tests": [
-        {"package": "fabric-sdk-tables", "target": "lib"},
-        {"package": "fabric-sdk-tables", "target": "test:contracts"},
-        {"package": "fabric-sdk-tables", "target": "test:maintenance_jobs"},
-        {"package": "fabric-sdk-tables", "target": "test:onelake_adapter"}
+      "inputs": [
+        "rust/sdk/tables/src/**",
+        "rust/tests/compatibility/tables/*.json"
       ],
-      "checks": ["resource-oracle", "jobs-oracle"]
+      "depends_on": [
+        "core",
+        "json",
+        "sdk-jobs",
+        "operations",
+        "onelake",
+        "http",
+        "onelake-http"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk-tables",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-sdk-tables",
+          "target": "test:contracts"
+        },
+        {
+          "package": "fabric-sdk-tables",
+          "target": "test:maintenance_jobs"
+        },
+        {
+          "package": "fabric-sdk-tables",
+          "target": "test:onelake_adapter"
+        }
+      ],
+      "checks": [
+        "resource-oracle",
+        "jobs-oracle"
+      ]
     },
     {
       "id": "tables",
       "package": "fabric-cli-tables",
-      "inputs": ["rust/capabilities/tables/fabric-cli-tables/src/**"],
-      "depends_on": ["context", "output", "mutations", "sdk-tables", "http", "operations", "sdk-workspaces", "onelake", "onelake-http", "sdk-jobs"],
-      "tests": [
-        {"package": "fabric-cli-tables", "target": "lib"},
-        {"package": "fabric-cli-tables", "target": "test:complete_pipeline"},
-        {"package": "fabric-cli-tables", "target": "test:handlers"},
-        {"package": "fabric-cli-tables", "target": "test:maintenance_adapter"},
-        {"package": "fabric-cli-tables", "target": "test:operation_adapter"},
-        {"package": "fabric-cli-tables", "target": "test:options"},
-        {"package": "fabric-cli-tables", "target": "test:shared_http"}
+      "inputs": [
+        "rust/frontends/cli/commands/tables/src/**"
       ],
-      "checks": ["resource-oracle", "jobs-oracle"]
+      "depends_on": [
+        "context",
+        "output",
+        "mutations",
+        "sdk-tables",
+        "http",
+        "operations",
+        "sdk-workspaces",
+        "onelake",
+        "onelake-http",
+        "sdk-jobs"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli-tables",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli-tables",
+          "target": "test:complete_pipeline"
+        },
+        {
+          "package": "fabric-cli-tables",
+          "target": "test:handlers"
+        },
+        {
+          "package": "fabric-cli-tables",
+          "target": "test:maintenance_adapter"
+        },
+        {
+          "package": "fabric-cli-tables",
+          "target": "test:operation_adapter"
+        },
+        {
+          "package": "fabric-cli-tables",
+          "target": "test:options"
+        },
+        {
+          "package": "fabric-cli-tables",
+          "target": "test:shared_http"
+        }
+      ],
+      "checks": [
+        "resource-oracle",
+        "jobs-oracle"
+      ]
     },
     {
       "id": "local",
       "package": "fabric-cli-local",
-      "inputs": ["rust/capabilities/local/fabric-cli-local/src/**", "rust/capabilities/local/fabric-cli-local/tests/fixtures/**"],
-      "depends_on": ["context", "output"],
-      "tests": [
-        {"package": "fabric-cli-local", "target": "lib"},
-        {"package": "fabric-cli-local", "target": "test:config_consumer"},
-        {"package": "fabric-cli-local", "target": "test:navigation_consumer"}
+      "inputs": [
+        "rust/frontends/cli/commands/local/src/**",
+        "rust/frontends/cli/commands/local/tests/fixtures/**"
       ],
-      "checks": ["repl", "context-output"]
+      "depends_on": [
+        "context",
+        "output"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli-local",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli-local",
+          "target": "test:config_consumer"
+        },
+        {
+          "package": "fabric-cli-local",
+          "target": "test:navigation_consumer"
+        }
+      ],
+      "checks": [
+        "repl",
+        "context-output"
+      ]
     },
     {
       "id": "deploy-shared",
       "package": "fabric-deploy",
       "inputs": [
-        "rust/capabilities/deployment/fabric-deploy/src/config.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/deployment_config.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/deployment_config/**",
-        "rust/capabilities/deployment/fabric-deploy/src/model.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/parameters.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/parameter_transforms.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/parameter_transforms/**",
-        "rust/capabilities/deployment/fabric-deploy/src/planner.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/processors.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/repository.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/transforms.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/yaml.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/workflow/parameters.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/workflow/parameter_context.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/workflow/text.rs",
-        "rust/capabilities/deployment/fabric-deploy/tests/config*_source.json",
-        "rust/capabilities/deployment/fabric-deploy/tests/flag_protocol_source.json",
-        "rust/capabilities/deployment/fabric-deploy/tests/literal_parameter*_source.json",
-        "rust/capabilities/deployment/fabric-deploy/tests/operation_*_source.json",
-        "rust/capabilities/deployment/fabric-deploy/tests/parameter*_source.json",
-        "rust/capabilities/deployment/fabric-deploy/tests/path_filter*_source.json",
-        "rust/capabilities/deployment/fabric-deploy/tests/selected_constants_source.json",
-        "rust/capabilities/deployment/fabric-deploy/tests/transform*_source.json",
-        "rust/capabilities/deployment/fabric-deploy/tests/yaml_scalar_source.json",
+        "rust/sdk/deployment/src/config.rs",
+        "rust/sdk/deployment/src/deployment_config.rs",
+        "rust/sdk/deployment/src/deployment_config/**",
+        "rust/sdk/deployment/src/model.rs",
+        "rust/sdk/deployment/src/parameters.rs",
+        "rust/sdk/deployment/src/parameter_transforms.rs",
+        "rust/sdk/deployment/src/parameter_transforms/**",
+        "rust/sdk/deployment/src/planner.rs",
+        "rust/sdk/deployment/src/processors.rs",
+        "rust/sdk/deployment/src/repository.rs",
+        "rust/sdk/deployment/src/transforms.rs",
+        "rust/sdk/deployment/src/yaml.rs",
+        "rust/sdk/deployment/src/workflow/parameters.rs",
+        "rust/sdk/deployment/src/workflow/parameter_context.rs",
+        "rust/sdk/deployment/src/workflow/text.rs",
+        "rust/sdk/deployment/tests/config*_source.json",
+        "rust/sdk/deployment/tests/flag_protocol_source.json",
+        "rust/sdk/deployment/tests/literal_parameter*_source.json",
+        "rust/sdk/deployment/tests/operation_*_source.json",
+        "rust/sdk/deployment/tests/parameter*_source.json",
+        "rust/sdk/deployment/tests/path_filter*_source.json",
+        "rust/sdk/deployment/tests/selected_constants_source.json",
+        "rust/sdk/deployment/tests/transform*_source.json",
+        "rust/sdk/deployment/tests/yaml_scalar_source.json",
         "rust/tests/fixtures/deploy/config.json",
         "rust/tests/fixtures/deploy/ids.json",
         "rust/tests/fixtures/deploy/transforms.json",
         "rust/tests/fixtures/deploy/yaml.json"
       ],
-      "depends_on": ["json", "sdk", "operations", "sdk-workspaces", "core", "http"],
-      "tests": [
-        {"package": "fabric-deploy", "target": "lib"},
-        {"package": "fabric-deploy", "target": "test:config"},
-        {"package": "fabric-deploy", "target": "test:configured_flags"},
-        {"package": "fabric-deploy", "target": "test:parameter_context"},
-        {"package": "fabric-deploy", "target": "test:parameter_transforms"},
-        {"package": "fabric-deploy", "target": "test:parameters"},
-        {"package": "fabric-deploy", "target": "test:planner_source"},
-        {"package": "fabric-deploy", "target": "test:repository"},
-        {"package": "fabric-deploy", "target": "test:yaml"}
+      "depends_on": [
+        "json",
+        "sdk",
+        "operations",
+        "sdk-workspaces",
+        "core",
+        "http"
       ],
-      "checks": ["parameters-oracle"]
+      "tests": [
+        {
+          "package": "fabric-deploy",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:config"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:configured_flags"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:parameter_context"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:parameter_transforms"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:parameters"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:planner_source"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:repository"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:yaml"
+        }
+      ],
+      "checks": [
+        "parameters-oracle"
+      ]
     },
     {
       "id": "deploy-workflow",
       "package": "fabric-deploy",
       "inputs": [
-        "rust/capabilities/deployment/fabric-deploy/src/workflow.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/workflow/families.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/workflow/families/bulk.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/workflow/families/dataflow.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/workflow/families/kql.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/workflow/families/lakehouse.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/workflow/families/report.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/workflow/families/semanticmodel.rs",
-        "rust/capabilities/deployment/fabric-deploy/src/workflow/unpublish.rs",
-        "rust/capabilities/deployment/fabric-deploy/tests/workflow_support/additional.rs",
+        "rust/sdk/deployment/src/workflow.rs",
+        "rust/sdk/deployment/src/workflow/families.rs",
+        "rust/sdk/deployment/src/workflow/families/bulk.rs",
+        "rust/sdk/deployment/src/workflow/families/dataflow.rs",
+        "rust/sdk/deployment/src/workflow/families/kql.rs",
+        "rust/sdk/deployment/src/workflow/families/lakehouse.rs",
+        "rust/sdk/deployment/src/workflow/families/report.rs",
+        "rust/sdk/deployment/src/workflow/families/semanticmodel.rs",
+        "rust/sdk/deployment/src/workflow/unpublish.rs",
+        "rust/sdk/deployment/tests/workflow_support/additional.rs",
         "rust/tests/compatibility/deploy_workflow/*.json"
       ],
-      "depends_on": ["deploy-shared"],
-      "tests": [
-        {"package": "fabric-deploy", "target": "lib"},
-        {"package": "fabric-deploy", "target": "test:workflow"},
-        {"package": "fabric-deploy", "target": "test:publisher_source_contract"},
-        {"package": "fabric-deploy", "target": "test:deployment_endpoint"},
-        {"package": "fabric-deploy", "target": "test:configured_flags"},
-        {"package": "fabric-deploy", "target": "test:planner_source"}
+      "depends_on": [
+        "deploy-shared"
       ],
-      "checks": ["parameters-oracle"]
+      "tests": [
+        {
+          "package": "fabric-deploy",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:workflow"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:publisher_source_contract"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:deployment_endpoint"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:configured_flags"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:planner_source"
+        }
+      ],
+      "checks": [
+        "parameters-oracle"
+      ]
     },
     {
       "id": "deploy-notebook",
       "package": "fabric-deploy",
-      "inputs": ["rust/capabilities/deployment/fabric-deploy/src/notebook.rs", "rust/capabilities/deployment/fabric-deploy/src/publish.rs"],
-      "depends_on": ["deploy-shared", "deploy-workflow"],
-      "tests": [
-        {"package": "fabric-deploy", "target": "lib"},
-        {"package": "fabric-deploy", "target": "test:notebook"},
-        {"package": "fabric-deploy", "target": "test:repository"},
-        {"package": "fabric-deploy", "target": "test:parameter_transforms"},
-        {"package": "fabric-deploy", "target": "test:planner_source"},
-        {"package": "fabric-deploy", "target": "test:deployment_endpoint"},
-        {"package": "fabric-deploy", "target": "test:workflow"}
+      "inputs": [
+        "rust/sdk/deployment/src/notebook.rs",
+        "rust/sdk/deployment/src/publish.rs"
       ],
-      "checks": ["definitions-oracle", "import-oracle", "parameters-oracle", "export-oracle"]
+      "depends_on": [
+        "deploy-shared",
+        "deploy-workflow"
+      ],
+      "tests": [
+        {
+          "package": "fabric-deploy",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:notebook"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:repository"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:parameter_transforms"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:planner_source"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:deployment_endpoint"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:workflow"
+        }
+      ],
+      "checks": [
+        "definitions-oracle",
+        "import-oracle",
+        "parameters-oracle",
+        "export-oracle"
+      ]
     },
     {
       "id": "deploy-spark-environment",
       "package": "fabric-deploy",
-      "inputs": ["rust/capabilities/deployment/fabric-deploy/src/workflow/families/environment.rs", "rust/capabilities/deployment/fabric-deploy/tests/workflow_support/environment_scalars.rs"],
-      "depends_on": ["deploy-shared", "deploy-workflow"],
-      "tests": [
-        {"package": "fabric-deploy", "target": "lib"},
-        {"package": "fabric-deploy", "target": "test:workflow"},
-        {"package": "fabric-deploy", "target": "test:publisher_source_contract"},
-        {"package": "fabric-deploy", "target": "test:deployment_endpoint"},
-        {"package": "fabric-deploy", "target": "test:configured_flags"}
+      "inputs": [
+        "rust/sdk/deployment/src/workflow/families/environment.rs",
+        "rust/sdk/deployment/tests/workflow_support/environment_scalars.rs"
       ],
-      "checks": ["parameters-oracle", "import-oracle"]
+      "depends_on": [
+        "deploy-shared",
+        "deploy-workflow"
+      ],
+      "tests": [
+        {
+          "package": "fabric-deploy",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:workflow"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:publisher_source_contract"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:deployment_endpoint"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:configured_flags"
+        }
+      ],
+      "checks": [
+        "parameters-oracle",
+        "import-oracle"
+      ]
     },
     {
       "id": "definitions",
       "package": "fabric-deploy",
-      "inputs": ["rust/capabilities/deployment/fabric-deploy/src/definitions/**", "rust/capabilities/deployment/fabric-deploy/tests/definition*_source.json", "rust/capabilities/deployment/fabric-deploy/tests/definition_export_windows.json", "rust/capabilities/deployment/fabric-deploy/tests/get_definition_value_reference.json"],
-      "depends_on": ["json", "core", "sdk", "operations", "sdk-workspaces"],
-      "tests": [
-        {"package": "fabric-deploy", "target": "lib"},
-        {"package": "fabric-deploy", "target": "test:definitions"},
-        {"package": "fabric-deploy", "target": "test:definition_copy_v2"},
-        {"package": "fabric-deploy", "target": "test:export_parity"},
-        {"package": "fabric-deploy", "target": "test:get_definition_value"},
-        {"package": "fabric-deploy", "target": "test:get_projected_output"}
+      "inputs": [
+        "rust/sdk/deployment/src/definitions/**",
+        "rust/sdk/deployment/tests/definition*_source.json",
+        "rust/sdk/deployment/tests/definition_export_windows.json",
+        "rust/sdk/deployment/tests/get_definition_value_reference.json"
       ],
-      "checks": ["definitions-oracle", "import-oracle", "export-oracle"]
+      "depends_on": [
+        "json",
+        "core",
+        "sdk",
+        "operations",
+        "sdk-workspaces"
+      ],
+      "tests": [
+        {
+          "package": "fabric-deploy",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:definitions"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:definition_copy_v2"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:export_parity"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:get_definition_value"
+        },
+        {
+          "package": "fabric-deploy",
+          "target": "test:get_projected_output"
+        }
+      ],
+      "checks": [
+        "definitions-oracle",
+        "import-oracle",
+        "export-oracle"
+      ]
     },
     {
       "id": "transfer",
       "package": "fabric-cli-transfer",
-      "inputs": ["rust/capabilities/deployment/fabric-cli-transfer/src/**", "rust/capabilities/deployment/fabric-cli-transfer/tests/source_receipt.json"],
-      "depends_on": ["context", "output", "mutations", "definitions", "deploy-notebook", "deploy-spark-environment", "sdk", "operations", "http", "sdk-workspaces"],
-      "tests": [
-        {"package": "fabric-cli-transfer", "target": "lib"},
-        {"package": "fabric-cli-transfer", "target": "test:commands"}
+      "inputs": [
+        "rust/frontends/cli/commands/transfer/src/**",
+        "rust/frontends/cli/commands/transfer/tests/source_receipt.json"
       ],
-      "checks": ["import-oracle", "export-oracle"]
+      "depends_on": [
+        "context",
+        "output",
+        "mutations",
+        "definitions",
+        "deploy-notebook",
+        "deploy-spark-environment",
+        "sdk",
+        "operations",
+        "http",
+        "sdk-workspaces"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli-transfer",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli-transfer",
+          "target": "test:commands"
+        }
+      ],
+      "checks": [
+        "import-oracle",
+        "export-oracle"
+      ]
     },
     {
       "id": "cli-deployment",
       "package": "fabric-cli",
       "inputs": [
-        "rust/hosts/cli/fabric-cli/src/deploy.rs",
-        "rust/hosts/cli/fabric-cli/src/native_deploy_inputs.rs",
-        "rust/hosts/cli/fabric-cli/src/native_transfer_paths.rs",
-        "rust/hosts/cli/fabric-cli/src/families/deploy_http.rs",
-        "rust/hosts/cli/fabric-cli/src/families/transfer_files.rs",
-        "rust/hosts/cli/fabric-cli/src/families/transfer_files/**",
-        "rust/hosts/cli/fabric-cli/src/families/export_files.rs",
-        "rust/hosts/cli/fabric-cli/tests/deploy_support/**",
-        "rust/hosts/cli/fabric-cli/tests/export_support/**",
-        "rust/hosts/cli/fabric-cli/tests/deploy_wrapper_source.json"
+        "rust/frontends/cli/app/src/deploy.rs",
+        "rust/frontends/cli/app/src/native_deploy_inputs.rs",
+        "rust/frontends/cli/app/src/native_transfer_paths.rs",
+        "rust/frontends/cli/app/src/families/deploy_http.rs",
+        "rust/frontends/cli/app/src/families/transfer_files.rs",
+        "rust/frontends/cli/app/src/families/transfer_files/**",
+        "rust/frontends/cli/app/src/families/export_files.rs",
+        "rust/frontends/cli/app/tests/deploy_support/**",
+        "rust/frontends/cli/app/tests/export_support/**",
+        "rust/frontends/cli/app/tests/deploy_wrapper_source.json"
       ],
-      "depends_on": ["deploy-shared", "deploy-workflow", "deploy-notebook", "deploy-spark-environment", "definitions", "transfer", "storage-files"],
+      "depends_on": [
+        "deploy-shared",
+        "deploy-workflow",
+        "deploy-notebook",
+        "deploy-spark-environment",
+        "definitions",
+        "transfer",
+        "storage-files"
+      ],
       "tests": [
-        {"package": "fabric-cli", "target": "lib"},
-        {"package": "fabric-cli", "target": "test:async_transfer_files"},
-        {"package": "fabric-cli", "target": "test:deploy_full"},
-        {"package": "fabric-cli", "target": "test:deploy_inputs_debug"},
-        {"package": "fabric-cli", "target": "test:deploy_mount"},
-        {"package": "fabric-cli", "target": "test:deploy_parameters"},
-        {"package": "fabric-cli", "target": "test:deployment_worker_bridge"},
-        {"package": "fabric-cli", "target": "test:export_parity_mount"},
-        {"package": "fabric-cli", "target": "test:family_mounts"},
-        {"package": "fabric-cli", "target": "test:native_deploy_inputs"}
+        {
+          "package": "fabric-cli",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:async_transfer_files"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:deploy_full"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:deploy_inputs_debug"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:deploy_mount"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:deploy_parameters"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:deployment_worker_bridge"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:export_parity_mount"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:family_mounts"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_deploy_inputs"
+        }
       ],
-      "checks": ["import-oracle", "export-oracle", "native-read"]
+      "checks": [
+        "import-oracle",
+        "export-oracle",
+        "native-read"
+      ]
     },
     {
       "id": "cli-get",
       "package": "fabric-cli",
-      "inputs": ["rust/hosts/cli/fabric-cli/src/get_host.rs", "rust/hosts/cli/fabric-cli/src/get_options.rs", "rust/hosts/cli/fabric-cli/src/get_output.rs", "rust/hosts/cli/fabric-cli/src/native_get.rs", "rust/hosts/cli/fabric-cli/src/native_get_tests.rs"],
-      "depends_on": ["definitions", "transfer", "query", "output", "sdk-workspaces", "sdk-items", "operations"],
-      "tests": [
-        {"package": "fabric-cli", "target": "lib"},
-        {"package": "fabric-cli", "target": "test:get_host"},
-        {"package": "fabric-cli", "target": "test:get_options"},
-        {"package": "fabric-cli", "target": "test:workspace_get"},
-        {"package": "fabric-cli", "target": "test:native_endpoint_reads"},
-        {"package": "fabric-cli", "target": "test:output_contract_audit"}
+      "inputs": [
+        "rust/frontends/cli/app/src/get_host.rs",
+        "rust/frontends/cli/app/src/get_options.rs",
+        "rust/frontends/cli/app/src/get_output.rs",
+        "rust/frontends/cli/app/src/native_get.rs",
+        "rust/frontends/cli/app/src/native_get_tests.rs"
       ],
-      "checks": ["definitions-oracle", "read-parity", "native-read"]
+      "depends_on": [
+        "definitions",
+        "transfer",
+        "query",
+        "output",
+        "sdk-workspaces",
+        "sdk-items",
+        "operations"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:get_host"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:get_options"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:workspace_get"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_endpoint_reads"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:output_contract_audit"
+        }
+      ],
+      "checks": [
+        "definitions-oracle",
+        "read-parity",
+        "native-read"
+      ]
     },
     {
       "id": "cli-reads",
       "package": "fabric-cli",
-      "inputs": ["rust/hosts/cli/fabric-cli/src/reads.rs", "rust/hosts/cli/fabric-cli/src/folder_reads.rs", "rust/hosts/cli/fabric-cli/src/workspace_get.rs", "rust/hosts/cli/fabric-cli/src/projection.rs"],
-      "depends_on": ["context", "query", "output", "sdk", "sdk-workspaces", "sdk-items", "sdk-folders", "sdk-capacities"],
-      "tests": [
-        {"package": "fabric-cli", "target": "lib"},
-        {"package": "fabric-cli", "target": "test:read_commands"},
-        {"package": "fabric-cli", "target": "test:folder_reads"},
-        {"package": "fabric-cli", "target": "test:workspace_get"},
-        {"package": "fabric-cli", "target": "test:query_arguments"},
-        {"package": "fabric-cli", "target": "test:get_options"},
-        {"package": "fabric-cli", "target": "test:workspace_contract"},
-        {"package": "fabric-cli", "target": "test:output_contract_audit"}
+      "inputs": [
+        "rust/frontends/cli/app/src/reads.rs",
+        "rust/frontends/cli/app/src/folder_reads.rs",
+        "rust/frontends/cli/app/src/workspace_get.rs",
+        "rust/frontends/cli/app/src/projection.rs"
       ],
-      "checks": ["read-parity", "broker-read-parity", "context-output"]
+      "depends_on": [
+        "context",
+        "query",
+        "output",
+        "sdk",
+        "sdk-workspaces",
+        "sdk-items",
+        "sdk-folders",
+        "sdk-capacities"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:read_commands"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:folder_reads"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:workspace_get"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:query_arguments"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:get_options"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:workspace_contract"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:output_contract_audit"
+        }
+      ],
+      "checks": [
+        "read-parity",
+        "broker-read-parity",
+        "context-output"
+      ]
     },
     {
       "id": "cli-runtime-v2",
       "package": "fabric-cli",
-      "inputs": ["rust/hosts/cli/fabric-cli/src/runtime_v2/**"],
-      "depends_on": ["sdk", "http", "output", "context"],
-      "tests": [{"package": "fabric-cli", "target": "test:runtime_v2"}],
-      "checks": ["dependency-graph"]
+      "inputs": [
+        "rust/frontends/cli/app/src/runtime_v2/**"
+      ],
+      "depends_on": [
+        "sdk",
+        "http",
+        "output",
+        "context"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "test:runtime_v2"
+        }
+      ],
+      "checks": [
+        "dependency-graph"
+      ]
     },
     {
       "id": "cli-resources",
       "package": "fabric-cli",
-      "inputs": ["rust/hosts/cli/fabric-cli/src/families.rs", "rust/hosts/cli/fabric-cli/src/families/context.rs", "rust/hosts/cli/fabric-cli/src/families/resource_files.rs", "rust/hosts/cli/fabric-cli/src/families/native_resource_files.rs"],
-      "depends_on": ["resources", "mutations", "resource-set", "onelake", "onelake-http", "storage-files", "context", "output", "local"],
-      "tests": [
-        {"package": "fabric-cli", "target": "lib"},
-        {"package": "fabric-cli", "target": "test:family_mounts"},
-        {"package": "fabric-cli", "target": "test:resource_release_gaps"},
-        {"package": "fabric-cli", "target": "test:native_resource_files"},
-        {"package": "fabric-cli", "target": "test:native_removal_ui"},
-        {"package": "fabric-cli", "target": "test:export_parity_mount"},
-        {"package": "fabric-cli", "target": "test:deploy_full"},
-        {"package": "fabric-cli", "target": "test:deploy_mount"},
-        {"package": "fabric-cli", "target": "test:table_mounted"},
-        {"package": "fabric-cli", "target": "test:output_contract_audit"},
-        {"package": "fabric-cli", "target": "test:batch_shared_local"}
+      "inputs": [
+        "rust/frontends/cli/app/src/families.rs",
+        "rust/frontends/cli/app/src/families/context.rs",
+        "rust/frontends/cli/app/src/families/resource_files.rs",
+        "rust/frontends/cli/app/src/families/native_resource_files.rs"
       ],
-      "checks": ["resource-oracle", "import-oracle", "export-oracle", "native-read"]
+      "depends_on": [
+        "resources",
+        "mutations",
+        "resource-set",
+        "onelake",
+        "onelake-http",
+        "storage-files",
+        "context",
+        "output",
+        "local"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:family_mounts"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:resource_release_gaps"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_resource_files"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_removal_ui"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:export_parity_mount"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:deploy_full"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:deploy_mount"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:table_mounted"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:output_contract_audit"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:batch_shared_local"
+        }
+      ],
+      "checks": [
+        "resource-oracle",
+        "import-oracle",
+        "export-oracle",
+        "native-read"
+      ]
     },
     {
       "id": "cli-copy-v2",
       "package": "fabric-cli",
-      "inputs": ["rust/hosts/cli/fabric-cli/src/families/copy_v2.rs"],
-      "depends_on": ["definitions", "context", "output", "http", "operations"],
-      "tests": [
-        {"package": "fabric-cli", "target": "test:definition_copy_v2"}
+      "inputs": [
+        "rust/frontends/cli/app/src/families/copy_v2.rs"
       ],
-      "checks": ["resource-oracle", "definitions-oracle"]
+      "depends_on": [
+        "definitions",
+        "context",
+        "output",
+        "http",
+        "operations"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "test:definition_copy_v2"
+        }
+      ],
+      "checks": [
+        "resource-oracle",
+        "definitions-oracle"
+      ]
     },
     {
       "id": "cli-jobs",
       "package": "fabric-cli",
-      "inputs": ["rust/hosts/cli/fabric-cli/src/jobs.rs", "rust/hosts/cli/fabric-cli/src/parser/jobs.rs", "rust/hosts/cli/fabric-cli/tests/job_execution_support/**", "rust/hosts/cli/fabric-cli/tests/parser_support/**"],
-      "depends_on": ["jobs", "sdk-jobs", "http", "operations", "output", "context"],
-      "tests": [
-        {"package": "fabric-cli", "target": "lib"},
-        {"package": "fabric-cli", "target": "test:job_arguments"},
-        {"package": "fabric-cli", "target": "test:job_cli_contract"},
-        {"package": "fabric-cli", "target": "test:job_command_parity"},
-        {"package": "fabric-cli", "target": "test:job_endpoint_context"},
-        {"package": "fabric-cli", "target": "test:job_execution"},
-        {"package": "fabric-cli", "target": "test:job_mutations"},
-        {"package": "fabric-cli", "target": "test:job_numeric_parity"},
-        {"package": "fabric-cli", "target": "test:job_read_session"},
-        {"package": "fabric-cli", "target": "test:job_watchdog"},
-        {"package": "fabric-cli", "target": "test:native_settings"}
+      "inputs": [
+        "rust/frontends/cli/app/src/jobs.rs",
+        "rust/frontends/cli/app/src/parser/jobs.rs",
+        "rust/frontends/cli/app/tests/job_execution_support/**",
+        "rust/frontends/cli/app/tests/parser_support/**"
       ],
-      "checks": ["jobs-oracle", "native-read"]
+      "depends_on": [
+        "jobs",
+        "sdk-jobs",
+        "http",
+        "operations",
+        "output",
+        "context"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:job_arguments"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:job_cli_contract"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:job_command_parity"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:job_endpoint_context"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:job_execution"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:job_mutations"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:job_numeric_parity"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:job_read_session"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:job_watchdog"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_settings"
+        }
+      ],
+      "checks": [
+        "jobs-oracle",
+        "native-read"
+      ]
     },
     {
       "id": "cli-tables",
       "package": "fabric-cli",
-      "inputs": ["rust/hosts/cli/fabric-cli/src/tables.rs"],
-      "depends_on": ["tables", "sdk-tables"],
-      "tests": [
-        {"package": "fabric-cli", "target": "lib"},
-        {"package": "fabric-cli", "target": "test:table_mounted"},
-        {"package": "fabric-cli", "target": "test:output_contract_audit"}
+      "inputs": [
+        "rust/frontends/cli/app/src/tables.rs"
       ],
-      "checks": ["resource-oracle", "native-read"]
+      "depends_on": [
+        "tables",
+        "sdk-tables"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:table_mounted"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:output_contract_audit"
+        }
+      ],
+      "checks": [
+        "resource-oracle",
+        "native-read"
+      ]
     },
     {
       "id": "cli-local",
       "package": "fabric-cli",
-      "inputs": ["rust/hosts/cli/fabric-cli/src/local_commands.rs", "rust/hosts/cli/fabric-cli/src/local_host.rs", "rust/hosts/cli/fabric-cli/src/runtime_config.rs"],
-      "depends_on": ["local", "context", "output"],
-      "tests": [
-        {"package": "fabric-cli", "target": "lib"},
-        {"package": "fabric-cli", "target": "test:local_mounted"},
-        {"package": "fabric-cli", "target": "test:default_config_root"},
-        {"package": "fabric-cli", "target": "test:batch_shared_local"},
-        {"package": "fabric-cli", "target": "test:cli_contract"},
-        {"package": "fabric-cli", "target": "test:workspace_contract"}
+      "inputs": [
+        "rust/frontends/cli/app/src/local_commands.rs",
+        "rust/frontends/cli/app/src/local_host.rs",
+        "rust/frontends/cli/app/src/runtime_config.rs"
       ],
-      "checks": ["context-output", "repl"]
+      "depends_on": [
+        "local",
+        "context",
+        "output"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:local_mounted"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:default_config_root"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:batch_shared_local"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:cli_contract"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:workspace_contract"
+        }
+      ],
+      "checks": [
+        "context-output",
+        "repl"
+      ]
     },
     {
       "id": "repl",
       "package": "fabric-cli-repl",
-      "inputs": ["rust/hosts/repl/fabric-cli-repl/src/**", "rust/hosts/repl/fabric-cli-repl/tests/contract.json"],
+      "inputs": [
+        "rust/frontends/cli/shell/src/**",
+        "rust/frontends/cli/shell/tests/contract.json"
+      ],
       "depends_on": [],
       "tests": [
-        {"package": "fabric-cli-repl", "target": "lib"},
-        {"package": "fabric-cli-repl", "target": "test:editor_adapter"},
-        {"package": "fabric-cli-repl", "target": "test:shell_loop"},
-        {"package": "fabric-cli-repl", "target": "test:source_contract"}
+        {
+          "package": "fabric-cli-repl",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli-repl",
+          "target": "test:editor_adapter"
+        },
+        {
+          "package": "fabric-cli-repl",
+          "target": "test:shell_loop"
+        },
+        {
+          "package": "fabric-cli-repl",
+          "target": "test:source_contract"
+        }
       ],
-      "checks": ["repl"]
+      "checks": [
+        "repl"
+      ]
     },
     {
       "id": "cli-repl",
       "package": "fabric-cli",
-      "inputs": ["rust/hosts/cli/fabric-cli/src/repl_host.rs"],
-      "depends_on": ["repl", "local"],
-      "tests": [
-        {"package": "fabric-cli", "target": "bin:fab-rs"},
-        {"package": "fabric-cli", "target": "test:cli_contract"},
-        {"package": "fabric-cli", "target": "test:argv_contract"},
-        {"package": "fabric-cli", "target": "test:batch_shared_local"}
+      "inputs": [
+        "rust/frontends/cli/app/src/repl_host.rs"
       ],
-      "checks": ["repl", "combined"]
+      "depends_on": [
+        "repl",
+        "local"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "bin:fab-rs"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:cli_contract"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:argv_contract"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:batch_shared_local"
+        }
+      ],
+      "checks": [
+        "repl",
+        "combined"
+      ]
     },
     {
       "id": "updater",
       "package": "fabric-cli-update",
-      "inputs": ["rust/hosts/update/fabric-cli-update/src/**", "rust/hosts/update/fabric-cli-update/tests/fixtures/**"],
+      "inputs": [
+        "rust/frontends/cli/update/src/**",
+        "rust/frontends/cli/update/tests/fixtures/**"
+      ],
       "depends_on": [],
       "tests": [
-        {"package": "fabric-cli-update", "target": "lib"},
-        {"package": "fabric-cli-update", "target": "bin:fab-rs-update-helper"},
-        {"package": "fabric-cli-update", "target": "bin:fabric-update-lifecycle-fixture"},
-        {"package": "fabric-cli-update", "target": "bin:fabric-update-helper-fixture"},
-        {"package": "fabric-cli-update", "target": "test:contracts"},
-        {"package": "fabric-cli-update", "target": "test:native_fixture"}
+        {
+          "package": "fabric-cli-update",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli-update",
+          "target": "bin:fab-rs-update-helper"
+        },
+        {
+          "package": "fabric-cli-update",
+          "target": "bin:fabric-update-lifecycle-fixture"
+        },
+        {
+          "package": "fabric-cli-update",
+          "target": "bin:fabric-update-helper-fixture"
+        },
+        {
+          "package": "fabric-cli-update",
+          "target": "test:contracts"
+        },
+        {
+          "package": "fabric-cli-update",
+          "target": "test:native_fixture"
+        }
       ],
-      "checks": ["updater"]
+      "checks": [
+        "updater"
+      ]
     },
     {
       "id": "cli-updater",
       "package": "fabric-cli",
-      "inputs": ["rust/hosts/cli/fabric-cli/src/update_host.rs", "rust/hosts/cli/fabric-cli/src/parser/update.rs"],
-      "depends_on": ["updater", "transport"],
-      "tests": [
-        {"package": "fabric-cli", "target": "lib"},
-        {"package": "fabric-cli", "target": "bin:fab-rs"},
-        {"package": "fabric-cli", "target": "test:update_commands"},
-        {"package": "fabric-cli", "target": "test:cli_contract"},
-        {"package": "fabric-cli", "target": "test:argv_contract"},
-        {"package": "fabric-cli", "target": "test:workspace_contract"}
+      "inputs": [
+        "rust/frontends/cli/app/src/update_host.rs",
+        "rust/frontends/cli/app/src/parser/update.rs"
       ],
-      "checks": ["updater", "combined"]
+      "depends_on": [
+        "updater",
+        "transport"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "bin:fab-rs"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:update_commands"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:cli_contract"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:argv_contract"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:workspace_contract"
+        }
+      ],
+      "checks": [
+        "updater",
+        "combined"
+      ]
     },
     {
       "id": "cli-auth",
       "package": "fabric-cli",
-      "inputs": ["rust/hosts/cli/fabric-cli/src/auth.rs", "rust/hosts/cli/fabric-cli/src/auth_binding.rs", "rust/hosts/cli/fabric-cli/src/runtime_config.rs", "rust/hosts/cli/fabric-cli/src/auth_commands.rs", "rust/hosts/cli/fabric-cli/src/parser/auth.rs"],
-      "depends_on": ["identity-broker"],
-      "tests": [
-        {"package": "fabric-cli", "target": "lib"},
-        {"package": "fabric-cli", "target": "bin:fab-rs"},
-        {"package": "fabric-cli", "target": "test:auth_arguments"},
-        {"package": "fabric-cli", "target": "test:auth_commands"},
-        {"package": "fabric-cli", "target": "test:broker_selection"},
-        {"package": "fabric-cli", "target": "test:default_config_root"},
-        {"package": "fabric-cli", "target": "test:cli_contract"},
-        {"package": "fabric-cli", "target": "test:argv_contract"}
+      "inputs": [
+        "rust/frontends/cli/app/src/auth.rs",
+        "rust/frontends/cli/app/src/auth_binding.rs",
+        "rust/frontends/cli/app/src/runtime_config.rs",
+        "rust/frontends/cli/app/src/auth_commands.rs",
+        "rust/frontends/cli/app/src/parser/auth.rs",
+        "rust/frontends/cli/app/src/interactive.rs",
+        "rust/frontends/cli/app/src/interactive_binding.rs"
       ],
-      "checks": ["broker", "native-read", "combined"]
+      "depends_on": [
+        "identity-broker",
+        "identity-interactive"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "bin:fab-rs"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:auth_arguments"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:auth_commands"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:broker_selection"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:default_config_root"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:cli_contract"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:argv_contract"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:interactive_arguments"
+        }
+      ],
+      "checks": [
+        "broker",
+        "native-read",
+        "combined",
+        "interactive"
+      ]
     },
     {
       "id": "cli-cancel",
       "package": "fabric-cli",
-      "inputs": ["rust/hosts/cli/fabric-cli/src/cancel.rs", "rust/hosts/cli/fabric-cli/src/native_cancel_tests.rs", "rust/hosts/cli/fabric-cli/src/parser/cancel.rs", "rust/hosts/cli/fabric-cli/tests/cancel.rs"],
-      "depends_on": ["sdk-jobs", "http", "output"],
-      "tests": [
-        {"package": "fabric-cli", "target": "lib"},
-        {"package": "fabric-cli", "target": "bin:fab-rs"},
-        {"package": "fabric-cli", "target": "test:cancel"}
+      "inputs": [
+        "rust/frontends/cli/app/src/cancel.rs",
+        "rust/frontends/cli/app/src/native_cancel_tests.rs",
+        "rust/frontends/cli/app/src/parser/cancel.rs",
+        "rust/frontends/cli/app/tests/cancel.rs"
       ],
-      "checks": ["native-read", "headless"]
+      "depends_on": [
+        "sdk-jobs",
+        "http",
+        "output"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "bin:fab-rs"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:cancel"
+        }
+      ],
+      "checks": [
+        "native-read",
+        "headless"
+      ]
     },
     {
       "id": "cli-headless",
       "package": "fabric-cli",
-      "inputs": ["rust/hosts/cli/fabric-cli/src/headless.rs", "rust/hosts/cli/fabric-cli/src/headless_host_tests.rs"],
-      "depends_on": ["identity-headless", "identity-certificate", "transport"],
-      "tests": [
-        {"package": "fabric-cli", "target": "bin:fab-rs"},
-        {"package": "fabric-cli", "target": "test:headless_graph"},
-        {"package": "fabric-cli", "target": "test:headless_configuration"},
-        {"package": "fabric-cli", "target": "test:cli_contract"},
-        {"package": "fabric-cli", "target": "test:argv_contract"}
+      "inputs": [
+        "rust/frontends/cli/app/src/headless.rs",
+        "rust/frontends/cli/app/src/headless_host_tests.rs"
       ],
-      "checks": ["headless", "certificate", "combined"]
+      "depends_on": [
+        "identity-headless",
+        "identity-certificate",
+        "transport",
+        "identity-native-certificates"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "bin:fab-rs"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:headless_graph"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:headless_configuration"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:cli_contract"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:argv_contract"
+        }
+      ],
+      "checks": [
+        "headless",
+        "certificate",
+        "combined"
+      ]
     },
     {
       "id": "cli-native-shared",
       "package": "fabric-cli",
-      "inputs": ["rust/hosts/cli/fabric-cli/src/native_read.rs", "rust/hosts/cli/fabric-cli/src/runtime_config.rs", "rust/hosts/cli/fabric-cli/src/native_settings.rs", "rust/hosts/cli/fabric-cli/src/native_terminal_ui.rs", "rust/hosts/cli/fabric-cli/src/console.rs"],
-      "depends_on": ["identity-broker", "identity-headless", "transport"],
-      "tests": [
-        {"package": "fabric-cli", "target": "lib"},
-        {"package": "fabric-cli", "target": "bin:fab-rs"},
-        {"package": "fabric-cli", "target": "test:console_confirmation"},
-        {"package": "fabric-cli", "target": "test:console_selection"},
-        {"package": "fabric-cli", "target": "test:native_settings"},
-        {"package": "fabric-cli", "target": "test:native_terminal_ui"},
-        {"package": "fabric-cli", "target": "test:native_endpoint_configuration"},
-        {"package": "fabric-cli", "target": "test:native_endpoint_reads"},
-        {"package": "fabric-cli", "target": "test:native_resource_files"},
-        {"package": "fabric-cli", "target": "test:native_removal_ui"},
-        {"package": "fabric-cli", "target": "test:native_deploy_inputs"},
-        {"package": "fabric-cli", "target": "test:get_host"},
-        {"package": "fabric-cli", "target": "test:get_options"},
-        {"package": "fabric-cli", "target": "test:read_session"},
-        {"package": "fabric-cli", "target": "test:job_read_session"},
-        {"package": "fabric-cli", "target": "test:job_watchdog"},
-        {"package": "fabric-cli", "target": "test:family_mounts"},
-        {"package": "fabric-cli", "target": "test:deploy_mount"},
-        {"package": "fabric-cli", "target": "test:table_mounted"},
-        {"package": "fabric-cli", "target": "test:headless_configuration"}
+      "inputs": [
+        "rust/frontends/cli/app/src/native_read.rs",
+        "rust/frontends/cli/app/src/runtime_config.rs",
+        "rust/frontends/cli/app/src/native_settings.rs",
+        "rust/frontends/cli/app/src/native_terminal_ui.rs",
+        "rust/frontends/cli/app/src/console.rs"
       ],
-      "checks": ["native-read", "headless", "combined"]
+      "depends_on": [
+        "identity-broker",
+        "identity-headless",
+        "transport"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "bin:fab-rs"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:console_confirmation"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:console_selection"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_settings"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_terminal_ui"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_endpoint_configuration"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_endpoint_reads"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_resource_files"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_removal_ui"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_deploy_inputs"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:get_host"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:get_options"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:read_session"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:job_read_session"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:job_watchdog"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:family_mounts"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:deploy_mount"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:table_mounted"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:headless_configuration"
+        }
+      ],
+      "checks": [
+        "native-read",
+        "headless",
+        "combined"
+      ]
     },
     {
       "id": "cli-shared-test-helpers",
       "package": "fabric-cli",
-      "inputs": ["rust/hosts/cli/fabric-cli/tests/family_support/**", "rust/hosts/cli/fabric-cli/tests/folder_support/**", "rust/hosts/cli/fabric-cli/tests/support/**"],
+      "inputs": [
+        "rust/frontends/cli/app/tests/family_support/**",
+        "rust/frontends/cli/app/tests/folder_support/**",
+        "rust/frontends/cli/app/tests/support/**"
+      ],
       "depends_on": [],
       "tests": [
-        {"package": "fabric-cli", "target": "test:family_mounts"},
-        {"package": "fabric-cli", "target": "test:deploy_full"},
-        {"package": "fabric-cli", "target": "test:deploy_mount"},
-        {"package": "fabric-cli", "target": "test:export_parity_mount"},
-        {"package": "fabric-cli", "target": "test:native_resource_files"},
-        {"package": "fabric-cli", "target": "test:native_removal_ui"},
-        {"package": "fabric-cli", "target": "test:resource_release_gaps"},
-        {"package": "fabric-cli", "target": "test:table_mounted"},
-        {"package": "fabric-cli", "target": "test:output_contract_audit"},
-        {"package": "fabric-cli", "target": "test:folder_reads"},
-        {"package": "fabric-cli", "target": "test:get_host"},
-        {"package": "fabric-cli", "target": "test:get_options"},
-        {"package": "fabric-cli", "target": "test:read_commands"},
-        {"package": "fabric-cli", "target": "test:read_session"},
-        {"package": "fabric-cli", "target": "test:job_read_session"},
-        {"package": "fabric-cli", "target": "test:native_endpoint_reads"},
-        {"package": "fabric-cli", "target": "test:native_settings"},
-        {"package": "fabric-cli", "target": "test:source_operations"},
-        {"package": "fabric-cli", "target": "test:workspace_get"}
+        {
+          "package": "fabric-cli",
+          "target": "test:family_mounts"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:deploy_full"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:deploy_mount"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:export_parity_mount"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_resource_files"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_removal_ui"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:resource_release_gaps"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:table_mounted"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:output_contract_audit"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:folder_reads"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:get_host"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:get_options"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:read_commands"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:read_session"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:job_read_session"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_endpoint_reads"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_settings"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:source_operations"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:workspace_get"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:headless_configuration"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:job_cli_contract"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:local_mounted"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_endpoint_configuration"
+        }
       ],
-      "checks": ["read-parity", "import-oracle", "export-oracle", "native-read"]
+      "checks": [
+        "read-parity",
+        "import-oracle",
+        "export-oracle",
+        "native-read"
+      ]
     },
     {
       "id": "cli-v2",
       "package": "fabric-cli-v2",
-      "inputs": ["rust/hosts/cli/fabric-cli-v2/src/**", "rust/hosts/cli/fabric-cli-v2/tests/**"],
-      "depends_on": ["output", "cli-auth", "updater", "transport"],
-      "tests": [
-        {"package": "fabric-cli-v2", "target": "lib"},
-        {"package": "fabric-cli-v2", "target": "bin:fab-cli"},
-        {"package": "fabric-cli-v2", "target": "test:auth"},
-        {"package": "fabric-cli-v2", "target": "test:configure"},
-        {"package": "fabric-cli-v2", "target": "test:head"},
-        {"package": "fabric-cli-v2", "target": "test:output"},
-        {"package": "fabric-cli-v2", "target": "test:report"},
-        {"package": "fabric-cli-v2", "target": "test:show"},
-        {"package": "fabric-cli-v2", "target": "test:upgrade"}
+      "inputs": [
+        "rust/frontends/cli/v2/src/**",
+        "rust/frontends/cli/v2/tests/**"
       ],
-      "checks": ["dependency-graph"]
+      "depends_on": [
+        "output",
+        "cli-auth",
+        "updater",
+        "transport"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli-v2",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli-v2",
+          "target": "bin:fab-cli"
+        },
+        {
+          "package": "fabric-cli-v2",
+          "target": "test:auth"
+        },
+        {
+          "package": "fabric-cli-v2",
+          "target": "test:configure"
+        },
+        {
+          "package": "fabric-cli-v2",
+          "target": "test:head"
+        },
+        {
+          "package": "fabric-cli-v2",
+          "target": "test:output"
+        },
+        {
+          "package": "fabric-cli-v2",
+          "target": "test:report"
+        },
+        {
+          "package": "fabric-cli-v2",
+          "target": "test:show"
+        },
+        {
+          "package": "fabric-cli-v2",
+          "target": "test:upgrade"
+        }
+      ],
+      "checks": [
+        "dependency-graph"
+      ]
     },
     {
       "id": "workspace-read-v2",
       "package": "fabric-cli",
-      "inputs": ["rust/hosts/cli/fabric-cli/src/workspace_v2.rs", "rust/hosts/cli/fabric-cli/src/workspace_v2_main.rs", "rust/hosts/cli/fabric-cli/src/native_workspace_v2.rs", "rust/hosts/cli/fabric-cli/src/native_workspace_v2_tests.rs", "rust/docs/workspace-v2-reads.md"],
-      "depends_on": ["sdk-api", "query", "resources", "definitions", "cli-native-shared"],
-      "tests": [
-        {"package": "fabric-cli", "target": "lib"},
-        {"package": "fabric-cli", "target": "bin:fab-cli-workspace"},
-        {"package": "fabric-cli", "target": "test:workspace_v2"}
+      "inputs": [
+        "rust/frontends/cli/app/src/workspace_v2.rs",
+        "rust/frontends/cli/app/src/workspace_v2_main.rs",
+        "rust/frontends/cli/app/src/native_workspace_v2.rs",
+        "rust/frontends/cli/app/src/native_workspace_v2_tests.rs",
+        "rust/docs/workspace-v2-reads.md"
       ],
-      "checks": ["dependency-graph"]
+      "depends_on": [
+        "sdk-api",
+        "query",
+        "resources",
+        "definitions",
+        "cli-native-shared"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "bin:fab-cli-workspace"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:workspace_v2"
+        }
+      ],
+      "checks": [
+        "dependency-graph"
+      ]
     },
     {
       "id": "cli-search-v2",
       "package": "fabric-cli",
-      "inputs": ["rust/hosts/cli/fabric-cli/src/search_command.rs", "rust/hosts/cli/fabric-cli/src/v2_search_main.rs", "rust/hosts/cli/fabric-cli/src/v2_main.rs", "rust/hosts/cli/fabric-cli/tests/search_command.rs", "rust/hosts/cli/fabric-cli/tests/search_wire.rs", "rust/hosts/cli/fabric-cli/tests/v2_search_binary.rs", "rust/docs/search-v2.md"],
-      "depends_on": ["sdk-search", "sdk", "query", "cli-headless", "cli-get"],
-      "tests": [
-        {"package": "fabric-cli", "target": "lib"},
-        {"package": "fabric-cli", "target": "bin:fab-cli-v2"},
-        {"package": "fabric-cli", "target": "test:search_command"},
-        {"package": "fabric-cli", "target": "test:search_wire"},
-        {"package": "fabric-cli", "target": "test:v2_search_binary"},
-        {"package": "fabric-cli", "target": "test:v2_get_binary"}
+      "inputs": [
+        "rust/frontends/cli/app/src/search_command.rs",
+        "rust/frontends/cli/app/src/v2_search_main.rs",
+        "rust/frontends/cli/app/src/v2_main.rs",
+        "rust/frontends/cli/app/tests/search_command.rs",
+        "rust/frontends/cli/app/tests/search_wire.rs",
+        "rust/frontends/cli/app/tests/v2_search_binary.rs",
+        "rust/docs/search-v2.md"
       ],
-      "checks": ["headless", "native-read", "combined"]
+      "depends_on": [
+        "sdk-search",
+        "sdk",
+        "query",
+        "cli-headless",
+        "cli-get"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "bin:fab-cli-v2"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:search_command"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:search_wire"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:v2_search_binary"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:v2_get_binary"
+        }
+      ],
+      "checks": [
+        "headless",
+        "native-read",
+        "combined"
+      ]
     },
     {
       "id": "workspace-architecture",
@@ -961,213 +2616,773 @@
       "coverage": "structural",
       "inputs": [],
       "depends_on": [
-        "core", "json", "context", "output", "query",
-        "identity-policy", "identity-broker", "identity-headless", "identity-certificate",
-        "windows-broker", "windows-certificate",
-        "sdk-workspaces", "sdk-items", "sdk-folders", "sdk-capacities",
-        "operations", "sdk", "http", "transport", "paging",
-        "sdk-api", "sdk-access", "sdk-catalog", "sdk-relevance", "sdk-search", "resources",
-        "onelake", "onelake-http", "mutations", "resource-set", "storage-files",
-        "sdk-jobs", "jobs", "sdk-tables", "tables", "local",
-        "deploy-shared", "deploy-workflow", "deploy-notebook", "deploy-spark-environment",
-        "definitions", "transfer", "cli-deployment", "cli-get", "cli-reads", "cli-runtime-v2", "cli-resources",
-        "cli-jobs", "cli-cancel", "cli-tables", "cli-local", "repl", "cli-repl", "updater",
-        "cli-updater", "cli-auth", "cli-headless", "cli-native-shared", "cli-shared-test-helpers",
-        "cli-v2", "workspace-read-v2", "cli-search-v2"
+        "core",
+        "json",
+        "context",
+        "output",
+        "query",
+        "identity-policy",
+        "identity-broker",
+        "identity-headless",
+        "identity-certificate",
+        "windows-broker",
+        "windows-certificate",
+        "sdk-workspaces",
+        "sdk-items",
+        "sdk-folders",
+        "sdk-capacities",
+        "operations",
+        "sdk",
+        "http",
+        "transport",
+        "paging",
+        "sdk-api",
+        "sdk-access",
+        "sdk-catalog",
+        "sdk-relevance",
+        "sdk-search",
+        "resources",
+        "onelake",
+        "onelake-http",
+        "mutations",
+        "resource-set",
+        "storage-files",
+        "sdk-jobs",
+        "jobs",
+        "sdk-tables",
+        "tables",
+        "local",
+        "deploy-shared",
+        "deploy-workflow",
+        "deploy-notebook",
+        "deploy-spark-environment",
+        "definitions",
+        "transfer",
+        "cli-deployment",
+        "cli-get",
+        "cli-reads",
+        "cli-runtime-v2",
+        "cli-resources",
+        "cli-jobs",
+        "cli-cancel",
+        "cli-tables",
+        "cli-local",
+        "repl",
+        "cli-repl",
+        "updater",
+        "cli-updater",
+        "cli-auth",
+        "cli-headless",
+        "cli-native-shared",
+        "cli-shared-test-helpers",
+        "cli-v2",
+        "workspace-read-v2",
+        "cli-search-v2"
       ],
-      "tests": [{"package": "fabric-cli", "target": "test:workspace_contract"}],
-      "checks": ["dependency-graph"]
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "test:workspace_contract"
+        }
+      ],
+      "checks": [
+        "dependency-graph",
+        "command-inventory"
+      ]
+    },
+    {
+      "id": "identity-interactive",
+      "package": "fabric-identity",
+      "inputs": [
+        "rust/sdk/authentication/credentials/src/interactive*.rs",
+        "rust/sdk/authentication/credentials/src/bin/protected_store_helper.rs",
+        "rust/sdk/authentication/credentials/tests/protected_store_helper.rs"
+      ],
+      "depends_on": [
+        "identity-policy",
+        "identity-macos-helper"
+      ],
+      "tests": [
+        {
+          "package": "fabric-identity",
+          "target": "lib"
+        },
+        {
+          "package": "fabric-identity",
+          "target": "test:protected_store_helper"
+        },
+        {
+          "package": "fabric-identity",
+          "target": "bin:fabric-protected-store-helper"
+        }
+      ],
+      "checks": [
+        "interactive",
+        "combined"
+      ]
+    },
+    {
+      "id": "identity-macos-helper",
+      "package": "fabric-identity",
+      "inputs": [
+        "rust/sdk/authentication/credentials/src/macos_helper.rs"
+      ],
+      "depends_on": [
+        "identity-policy"
+      ],
+      "tests": [
+        {
+          "package": "fabric-identity",
+          "target": "lib"
+        }
+      ],
+      "checks": [
+        "interactive",
+        "certificate",
+        "combined"
+      ]
+    },
+    {
+      "id": "identity-native-certificates",
+      "package": "fabric-identity",
+      "inputs": [
+        "rust/sdk/authentication/credentials/src/certificate_pkcs11.rs",
+        "rust/sdk/authentication/credentials/src/certificate_macos*.rs",
+        "rust/sdk/authentication/credentials/src/bin/keychain_helper.rs"
+      ],
+      "depends_on": [
+        "identity-headless",
+        "identity-macos-helper"
+      ],
+      "tests": [
+        {
+          "package": "fabric-identity",
+          "target": "lib"
+        }
+      ],
+      "checks": [
+        "certificate",
+        "combined"
+      ]
     }
   ],
   "profiles": [
     {
       "id": "v2-preview",
-      "packages": ["fabric-cli"],
-      "features": ["fabric-cli/v2-preview"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["dependency-graph"]
+      "packages": [
+        "fabric-cli"
+      ],
+      "features": [
+        "fabric-cli/v2-preview"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "dependency-graph"
+      ]
     },
     {
       "id": "v2-preview-combined",
-      "packages": ["fabric-cli", "fabric-identity", "fabric-identity-windows", "fabric-cli-repl", "fabric-cli-update", "fabric-sdk-transport"],
-      "features": ["fabric-cli/v2-preview", "fabric-cli/workspace-read-v2", "fabric-cli/native-read", "fabric-cli/headless", "fabric-cli/certificate-store-windows", "fabric-cli/repl", "fabric-cli/self-update", "fabric-cli/v2-discovery", "fabric-cli/v2-cancel", "fabric-cli/v2-copy", "fabric-cli/runtime-v2", "fabric-identity/certificate-store-windows", "fabric-identity-windows/certificate-store", "fabric-cli-update/fixture-harness"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["combined"]
+      "packages": [
+        "fabric-cli",
+        "fabric-identity",
+        "fabric-identity-windows",
+        "fabric-cli-repl",
+        "fabric-cli-update",
+        "fabric-sdk-transport"
+      ],
+      "features": [
+        "fabric-cli/v2-preview",
+        "fabric-cli/workspace-read-v2",
+        "fabric-cli/native-read",
+        "fabric-cli/headless",
+        "fabric-cli/certificate-store-windows",
+        "fabric-cli/repl",
+        "fabric-cli/self-update",
+        "fabric-cli/v2-discovery",
+        "fabric-cli/v2-cancel",
+        "fabric-cli/v2-copy",
+        "fabric-cli/runtime-v2",
+        "fabric-identity/certificate-store-windows",
+        "fabric-identity-windows/certificate-store",
+        "fabric-cli-update/fixture-harness"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "combined"
+      ]
     },
     {
       "id": "workspace-read-v2",
-      "packages": ["fabric-cli"],
-      "features": ["fabric-cli/workspace-read-v2"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["dependency-graph"]
+      "packages": [
+        "fabric-cli"
+      ],
+      "features": [
+        "fabric-cli/workspace-read-v2"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "dependency-graph"
+      ]
     },
     {
       "id": "workspace-read-v2-native",
-      "packages": ["fabric-cli", "fabric-identity", "fabric-sdk-transport"],
-      "features": ["fabric-cli/workspace-read-v2", "fabric-cli/native-read"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["native-read"]
+      "packages": [
+        "fabric-cli",
+        "fabric-identity",
+        "fabric-sdk-transport"
+      ],
+      "features": [
+        "fabric-cli/workspace-read-v2",
+        "fabric-cli/native-read"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "native-read"
+      ]
     },
     {
       "id": "workspace-read-v2-headless",
-      "packages": ["fabric-cli", "fabric-identity", "fabric-sdk-transport"],
-      "features": ["fabric-cli/workspace-read-v2", "fabric-cli/headless"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["headless"]
+      "packages": [
+        "fabric-cli",
+        "fabric-identity",
+        "fabric-sdk-transport"
+      ],
+      "features": [
+        "fabric-cli/workspace-read-v2",
+        "fabric-cli/headless"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "headless"
+      ]
     },
     {
       "id": "workspace-read-v2-combined",
-      "packages": ["fabric-cli", "fabric-identity", "fabric-identity-windows", "fabric-cli-repl", "fabric-cli-update", "fabric-sdk-transport"],
-      "features": ["fabric-cli/workspace-read-v2", "fabric-cli/native-read", "fabric-cli/headless", "fabric-cli/certificate-store-windows", "fabric-cli/repl", "fabric-cli/self-update", "fabric-cli/v2-discovery", "fabric-identity/certificate-store-windows", "fabric-identity-windows/certificate-store", "fabric-cli-update/fixture-harness"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["combined"]
+      "packages": [
+        "fabric-cli",
+        "fabric-identity",
+        "fabric-identity-windows",
+        "fabric-cli-repl",
+        "fabric-cli-update",
+        "fabric-sdk-transport"
+      ],
+      "features": [
+        "fabric-cli/workspace-read-v2",
+        "fabric-cli/native-read",
+        "fabric-cli/headless",
+        "fabric-cli/certificate-store-windows",
+        "fabric-cli/repl",
+        "fabric-cli/self-update",
+        "fabric-cli/v2-discovery",
+        "fabric-identity/certificate-store-windows",
+        "fabric-identity-windows/certificate-store",
+        "fabric-cli-update/fixture-harness"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "combined"
+      ]
     },
     {
       "id": "cli-v2-broker",
-      "packages": ["fabric-cli-v2"],
-      "features": ["fabric-cli-v2/windows-broker"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["dependency-graph"]
+      "packages": [
+        "fabric-cli-v2"
+      ],
+      "features": [
+        "fabric-cli-v2/windows-broker"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "dependency-graph"
+      ]
     },
     {
       "id": "cli-v2-updater",
-      "packages": ["fabric-cli-v2"],
-      "features": ["fabric-cli-v2/self-update"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["dependency-graph"]
+      "packages": [
+        "fabric-cli-v2"
+      ],
+      "features": [
+        "fabric-cli-v2/self-update"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "dependency-graph"
+      ]
     },
     {
       "id": "cli-v2-combined",
-      "packages": ["fabric-cli-v2"],
-      "features": ["fabric-cli-v2/windows-broker", "fabric-cli-v2/self-update"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["dependency-graph"]
+      "packages": [
+        "fabric-cli-v2"
+      ],
+      "features": [
+        "fabric-cli-v2/windows-broker",
+        "fabric-cli-v2/self-update"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "dependency-graph"
+      ]
     },
     {
       "id": "v2-cancel",
-      "packages": ["fabric-cli"],
-      "features": ["fabric-cli/v2-cancel"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["native-read", "headless"]
+      "packages": [
+        "fabric-cli"
+      ],
+      "features": [
+        "fabric-cli/v2-cancel"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "native-read",
+        "headless"
+      ]
     },
     {
       "id": "v2-cancel-native",
-      "packages": ["fabric-cli", "fabric-identity", "fabric-sdk-transport"],
-      "features": ["fabric-cli/v2-cancel", "fabric-cli/native-read", "fabric-identity/windows-broker"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["native-read"]
+      "packages": [
+        "fabric-cli",
+        "fabric-identity",
+        "fabric-sdk-transport"
+      ],
+      "features": [
+        "fabric-cli/v2-cancel",
+        "fabric-cli/native-read",
+        "fabric-identity/windows-broker"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "native-read"
+      ]
     },
     {
       "id": "v2-cancel-headless",
-      "packages": ["fabric-cli", "fabric-identity"],
-      "features": ["fabric-cli/v2-cancel", "fabric-cli/headless", "fabric-identity/headless"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["headless"]
+      "packages": [
+        "fabric-cli",
+        "fabric-identity"
+      ],
+      "features": [
+        "fabric-cli/v2-cancel",
+        "fabric-cli/headless",
+        "fabric-identity/headless"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "headless"
+      ]
     },
     {
       "id": "v2-cancel-combined",
-      "packages": ["fabric-cli", "fabric-identity", "fabric-identity-windows", "fabric-cli-repl", "fabric-cli-update", "fabric-sdk-transport"],
-      "features": ["fabric-cli/v2-cancel", "fabric-cli/native-read", "fabric-cli/headless", "fabric-cli/certificate-store-windows", "fabric-cli/repl", "fabric-cli/self-update", "fabric-identity/certificate-store-windows", "fabric-identity-windows/certificate-store", "fabric-cli-update/fixture-harness"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["combined"]
+      "packages": [
+        "fabric-cli",
+        "fabric-identity",
+        "fabric-identity-windows",
+        "fabric-cli-repl",
+        "fabric-cli-update",
+        "fabric-sdk-transport"
+      ],
+      "features": [
+        "fabric-cli/v2-cancel",
+        "fabric-cli/native-read",
+        "fabric-cli/headless",
+        "fabric-cli/certificate-store-windows",
+        "fabric-cli/repl",
+        "fabric-cli/self-update",
+        "fabric-identity/certificate-store-windows",
+        "fabric-identity-windows/certificate-store",
+        "fabric-cli-update/fixture-harness"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "combined"
+      ]
     },
     {
       "id": "livy-arrow",
-      "packages": ["fabric-sdk"],
-      "features": ["fabric-sdk/livy-arrow"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["sdk-graph"]
+      "packages": [
+        "fabric-sdk"
+      ],
+      "features": [
+        "fabric-sdk/livy-arrow"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "sdk-graph"
+      ]
     },
     {
       "id": "livy-arrow-ipc",
-      "packages": ["fabric-sdk"],
-      "features": ["fabric-sdk/livy-arrow-ipc"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["sdk-graph"]
+      "packages": [
+        "fabric-sdk"
+      ],
+      "features": [
+        "fabric-sdk/livy-arrow-ipc"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "sdk-graph"
+      ]
     },
     {
       "id": "runtime-v2-reads",
-      "packages": ["fabric-cli"],
-      "features": ["fabric-cli/runtime-v2"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["dependency-graph"]
+      "packages": [
+        "fabric-cli"
+      ],
+      "features": [
+        "fabric-cli/runtime-v2"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "dependency-graph"
+      ]
     },
     {
       "id": "native-transport",
-      "packages": ["fabric-sdk-transport"],
-      "features": ["fabric-sdk-transport/hyper-rustls"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["transport", "transport-graphs"]
+      "packages": [
+        "fabric-sdk-transport"
+      ],
+      "features": [
+        "fabric-sdk-transport/hyper-rustls"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "transport",
+        "transport-graphs"
+      ]
     },
     {
       "id": "windows-broker",
-      "packages": ["fabric-cli", "fabric-identity", "fabric-identity-windows"],
-      "features": ["fabric-cli/windows-broker", "fabric-identity/windows-broker"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["broker"]
+      "packages": [
+        "fabric-cli",
+        "fabric-identity",
+        "fabric-identity-windows"
+      ],
+      "features": [
+        "fabric-cli/windows-broker",
+        "fabric-identity/windows-broker"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "broker"
+      ]
     },
     {
       "id": "native-read",
-      "packages": ["fabric-cli", "fabric-identity", "fabric-sdk-transport"],
-      "features": ["fabric-cli/native-read", "fabric-identity/windows-broker"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["native-read"]
+      "packages": [
+        "fabric-cli",
+        "fabric-identity",
+        "fabric-sdk-transport"
+      ],
+      "features": [
+        "fabric-cli/native-read",
+        "fabric-identity/windows-broker"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "native-read"
+      ]
     },
     {
       "id": "native-read-repl",
-      "packages": ["fabric-cli", "fabric-identity", "fabric-cli-repl", "fabric-sdk-transport"],
-      "features": ["fabric-cli/native-read", "fabric-identity/windows-broker", "fabric-cli/repl", "fabric-cli-repl/reedline-editor"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["native-read"]
+      "packages": [
+        "fabric-cli",
+        "fabric-identity",
+        "fabric-cli-repl",
+        "fabric-sdk-transport"
+      ],
+      "features": [
+        "fabric-cli/native-read",
+        "fabric-identity/windows-broker",
+        "fabric-cli/repl",
+        "fabric-cli-repl/reedline-editor"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "native-read"
+      ]
     },
     {
       "id": "v2-copy",
-      "packages": ["fabric-cli"],
-      "features": ["fabric-cli/native-host", "fabric-cli/v2-copy"],
-      "platforms": ["windows", "linux", "macos"],
+      "packages": [
+        "fabric-cli"
+      ],
+      "features": [
+        "fabric-cli/native-host",
+        "fabric-cli/v2-copy"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
       "checks": []
     },
     {
       "id": "headless",
-      "packages": ["fabric-cli", "fabric-identity"],
-      "features": ["fabric-cli/headless", "fabric-identity/headless"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["headless"]
+      "packages": [
+        "fabric-cli",
+        "fabric-identity"
+      ],
+      "features": [
+        "fabric-cli/headless",
+        "fabric-identity/headless"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "headless"
+      ]
     },
     {
       "id": "certificate",
-      "packages": ["fabric-cli", "fabric-identity", "fabric-identity-windows"],
-      "features": ["fabric-cli/certificate-store-windows", "fabric-identity/certificate-store-windows", "fabric-identity-windows/certificate-store"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["certificate"]
+      "packages": [
+        "fabric-cli",
+        "fabric-identity",
+        "fabric-identity-windows"
+      ],
+      "features": [
+        "fabric-cli/certificate-store-windows",
+        "fabric-identity/certificate-store-windows",
+        "fabric-identity-windows/certificate-store"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "certificate"
+      ]
     },
     {
       "id": "repl",
-      "packages": ["fabric-cli", "fabric-cli-repl"],
-      "features": ["fabric-cli/repl", "fabric-cli-repl/reedline-editor"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["repl"]
+      "packages": [
+        "fabric-cli",
+        "fabric-cli-repl"
+      ],
+      "features": [
+        "fabric-cli/repl",
+        "fabric-cli-repl/reedline-editor"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "repl"
+      ]
     },
     {
       "id": "updater",
-      "packages": ["fabric-cli", "fabric-cli-update"],
-      "features": ["fabric-cli/self-update", "fabric-cli-update/fixture-harness"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["updater"]
+      "packages": [
+        "fabric-cli",
+        "fabric-cli-update"
+      ],
+      "features": [
+        "fabric-cli/self-update",
+        "fabric-cli-update/fixture-harness"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "updater"
+      ]
     },
     {
       "id": "v2-discovery",
-      "packages": ["fabric-cli"],
-      "features": ["fabric-cli/v2-discovery"],
-      "platforms": ["windows", "linux", "macos"],
+      "packages": [
+        "fabric-cli"
+      ],
+      "features": [
+        "fabric-cli/v2-discovery"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
       "checks": []
     },
     {
       "id": "combined",
-      "packages": ["fabric-cli", "fabric-identity", "fabric-identity-windows", "fabric-cli-repl", "fabric-cli-update", "fabric-sdk-transport"],
-      "features": ["fabric-cli/native-read", "fabric-cli/headless", "fabric-cli/certificate-store-windows", "fabric-cli/repl", "fabric-cli/self-update", "fabric-cli/v2-discovery", "fabric-identity/certificate-store-windows", "fabric-identity-windows/certificate-store", "fabric-cli-update/fixture-harness"],
-      "platforms": ["windows", "linux", "macos"],
-      "checks": ["combined"]
+      "packages": [
+        "fabric-cli",
+        "fabric-identity",
+        "fabric-identity-windows",
+        "fabric-cli-repl",
+        "fabric-cli-update",
+        "fabric-sdk-transport"
+      ],
+      "features": [
+        "fabric-cli/native-read",
+        "fabric-cli/headless",
+        "fabric-cli/certificate-store-windows",
+        "fabric-cli/repl",
+        "fabric-cli/self-update",
+        "fabric-cli/v2-discovery",
+        "fabric-identity/certificate-store-windows",
+        "fabric-identity-windows/certificate-store",
+        "fabric-cli-update/fixture-harness",
+        "fabric-cli/interactive",
+        "fabric-cli/certificate-store-pkcs11",
+        "fabric-cli/certificate-store-macos",
+        "fabric-identity/interactive",
+        "fabric-identity/certificate-store-pkcs11",
+        "fabric-identity/certificate-store-macos"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "combined"
+      ]
+    },
+    {
+      "id": "interactive",
+      "packages": [
+        "fabric-cli",
+        "fabric-identity",
+        "fabric-sdk-transport"
+      ],
+      "features": [
+        "fabric-cli/interactive",
+        "fabric-identity/interactive",
+        "fabric-sdk-transport/hyper-rustls"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "interactive"
+      ]
+    },
+    {
+      "id": "certificate-pkcs11",
+      "packages": [
+        "fabric-cli",
+        "fabric-identity"
+      ],
+      "features": [
+        "fabric-cli/certificate-store-pkcs11",
+        "fabric-identity/certificate-store-pkcs11"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "certificate"
+      ]
+    },
+    {
+      "id": "certificate-macos",
+      "packages": [
+        "fabric-cli",
+        "fabric-identity"
+      ],
+      "features": [
+        "fabric-cli/certificate-store-macos",
+        "fabric-identity/certificate-store-macos"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "certificate"
+      ]
     }
   ],
   "checks": [
@@ -1176,231 +3391,684 @@
       "packages": [],
       "components": [],
       "inputs": [],
-      "platforms": ["windows", "linux", "macos"],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
       "depends_on": []
     },
     {
       "id": "oracle-tools",
       "packages": [],
       "components": [],
-      "inputs": ["rust/tests/compatibility/requirements.txt", "rust/tests/compatibility/workspace_get/requirements.txt", "rust/tests/compatibility/folder_commands/requirements.txt"],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["selector-tests"]
+      "inputs": [
+        "rust/tests/compatibility/requirements.txt",
+        "rust/tests/compatibility/workspace_get/requirements.txt",
+        "rust/tests/compatibility/folder_commands/requirements.txt"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "selector-tests"
+      ]
     },
     {
       "id": "frozen-verify",
       "packages": [],
       "components": [],
-      "inputs": ["rust/scripts/v2_upstream.py", "rust/scripts/test_v2_upstream.py"],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["oracle-tools"]
+      "inputs": [
+        "rust/scripts/v2_upstream.py",
+        "rust/scripts/test_v2_upstream.py"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "oracle-tools"
+      ]
     },
     {
       "id": "batch-oracle",
-      "packages": ["fabric-cli"],
+      "packages": [
+        "fabric-cli"
+      ],
       "components": [],
-      "inputs": ["rust/hosts/cli/fabric-cli/tests/batch_reference.py", "rust/hosts/cli/fabric-cli/tests/batch_source.json"],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["oracle-tools", "frozen-verify"]
+      "inputs": [
+        "rust/frontends/cli/app/tests/batch_reference.py",
+        "rust/frontends/cli/app/tests/batch_source.json"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "oracle-tools",
+        "frozen-verify"
+      ]
     },
     {
       "id": "transport",
-      "packages": ["fabric-sdk-transport"],
-      "components": ["transport"],
+      "packages": [
+        "fabric-sdk-transport"
+      ],
+      "components": [
+        "transport"
+      ],
       "inputs": [],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["selector-tests"]
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "selector-tests"
+      ]
     },
     {
       "id": "transport-graphs",
-      "packages": ["fabric-sdk", "fabric-sdk-transport"],
-      "components": ["transport"],
+      "packages": [
+        "fabric-sdk",
+        "fabric-sdk-transport"
+      ],
+      "components": [
+        "transport"
+      ],
       "inputs": [],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["selector-tests"]
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "selector-tests"
+      ]
     },
     {
       "id": "read-parity",
-      "packages": ["fabric-cli", "fabric-cli-query"],
-      "components": ["cli-reads", "cli-get", "query"],
-      "inputs": ["rust/tests/compatibility/run_read_parity.py", "rust/tests/compatibility/test_run_read_parity.py", "rust/tests/compatibility/commands/**", "rust/tests/compatibility/query/**", "rust/tests/compatibility/query_arguments/**", "rust/tests/compatibility/workspaces/**", "rust/tests/compatibility/workspace_get/**", "rust/tests/compatibility/items/**", "rust/tests/compatibility/capacities/**", "rust/tests/compatibility/folders/**", "rust/tests/compatibility/folder_commands/**", "rust/tests/compatibility/argv_review/**", "rust/hosts/cli/fabric-cli/tests/test_get_host_source.py", "rust/hosts/cli/fabric-cli/tests/test_get_options_source.py"],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["oracle-tools", "frozen-verify"]
+      "packages": [
+        "fabric-cli",
+        "fabric-cli-query"
+      ],
+      "components": [
+        "cli-reads",
+        "cli-get",
+        "query"
+      ],
+      "inputs": [
+        "rust/tests/compatibility/run_read_parity.py",
+        "rust/tests/compatibility/test_run_read_parity.py",
+        "rust/tests/compatibility/commands/**",
+        "rust/tests/compatibility/query/**",
+        "rust/tests/compatibility/query_arguments/**",
+        "rust/tests/compatibility/workspaces/**",
+        "rust/tests/compatibility/workspace_get/**",
+        "rust/tests/compatibility/items/**",
+        "rust/tests/compatibility/capacities/**",
+        "rust/tests/compatibility/folders/**",
+        "rust/tests/compatibility/folder_commands/**",
+        "rust/tests/compatibility/argv_review/**",
+        "rust/frontends/cli/app/tests/test_get_host_source.py",
+        "rust/frontends/cli/app/tests/test_get_options_source.py"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "oracle-tools",
+        "frozen-verify"
+      ]
     },
     {
       "id": "json-parity",
-      "packages": ["fabric-core-json", "fabric-cli-output"],
-      "components": ["json", "output"],
-      "inputs": ["rust/tests/compatibility/output/**"],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["oracle-tools", "frozen-verify"]
+      "packages": [
+        "fabric-core-json",
+        "fabric-cli-output"
+      ],
+      "components": [
+        "json",
+        "output"
+      ],
+      "inputs": [
+        "rust/tests/compatibility/output/**"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "oracle-tools",
+        "frozen-verify"
+      ]
     },
     {
       "id": "broker",
-      "packages": ["fabric-cli", "fabric-identity", "fabric-identity-windows"],
-      "components": ["identity-policy", "identity-broker", "windows-broker", "cli-auth"],
+      "packages": [
+        "fabric-cli",
+        "fabric-identity",
+        "fabric-identity-windows"
+      ],
+      "components": [
+        "identity-policy",
+        "identity-broker",
+        "windows-broker",
+        "cli-auth"
+      ],
       "inputs": [],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["selector-tests"]
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "selector-tests"
+      ]
     },
     {
       "id": "repl",
-      "packages": ["fabric-cli", "fabric-cli-repl"],
-      "components": ["repl", "cli-repl"],
-      "inputs": ["rust/hosts/repl/fabric-cli-repl/tests/test_source_oracle.py"],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["oracle-tools", "frozen-verify"]
+      "packages": [
+        "fabric-cli",
+        "fabric-cli-repl"
+      ],
+      "components": [
+        "repl",
+        "cli-repl"
+      ],
+      "inputs": [
+        "rust/frontends/cli/shell/tests/test_source_oracle.py"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "oracle-tools",
+        "frozen-verify"
+      ]
     },
     {
       "id": "headless",
-      "packages": ["fabric-cli", "fabric-identity"],
-      "components": ["identity-policy", "identity-headless", "cli-headless"],
+      "packages": [
+        "fabric-cli",
+        "fabric-identity"
+      ],
+      "components": [
+        "identity-policy",
+        "identity-headless",
+        "cli-headless"
+      ],
       "inputs": [],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["selector-tests"]
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "selector-tests"
+      ]
     },
     {
       "id": "certificate",
-      "packages": ["fabric-cli", "fabric-identity", "fabric-identity-windows"],
-      "components": ["identity-certificate", "windows-certificate", "cli-headless"],
+      "packages": [
+        "fabric-cli",
+        "fabric-identity",
+        "fabric-identity-windows"
+      ],
+      "components": [
+        "identity-certificate",
+        "windows-certificate",
+        "cli-headless"
+      ],
       "inputs": [],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["selector-tests"]
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "selector-tests"
+      ]
     },
     {
       "id": "updater",
-      "packages": ["fabric-cli", "fabric-cli-update"],
-      "components": ["updater", "cli-updater"],
+      "packages": [
+        "fabric-cli",
+        "fabric-cli-update"
+      ],
+      "components": [
+        "updater",
+        "cli-updater"
+      ],
       "inputs": [],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["selector-tests"]
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "selector-tests"
+      ]
     },
     {
       "id": "combined",
-      "packages": ["fabric-cli", "fabric-identity", "fabric-identity-windows", "fabric-cli-repl", "fabric-cli-update", "fabric-sdk-transport"],
-      "components": ["cli-native-shared", "cli-auth", "cli-headless", "cli-repl", "cli-updater"],
+      "packages": [
+        "fabric-cli",
+        "fabric-identity",
+        "fabric-identity-windows",
+        "fabric-cli-repl",
+        "fabric-cli-update",
+        "fabric-sdk-transport"
+      ],
+      "components": [
+        "cli-native-shared",
+        "cli-auth",
+        "cli-headless",
+        "cli-repl",
+        "cli-updater"
+      ],
       "inputs": [],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["selector-tests"]
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "selector-tests"
+      ]
     },
     {
       "id": "jobs-oracle",
-      "packages": ["fabric-cli", "fabric-cli-jobs", "fabric-sdk-jobs", "fabric-sdk-paging"],
-      "components": ["paging", "sdk-jobs", "jobs", "cli-jobs"],
-      "inputs": ["rust/tests/compatibility/jobs/**", "rust/tests/compatibility/job_reads/**", "rust/tests/compatibility/job_execution/**", "rust/tests/compatibility/job_mutations/**"],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["oracle-tools", "frozen-verify"]
+      "packages": [
+        "fabric-cli",
+        "fabric-cli-jobs",
+        "fabric-sdk-jobs",
+        "fabric-sdk-paging"
+      ],
+      "components": [
+        "paging",
+        "sdk-jobs",
+        "jobs",
+        "cli-jobs"
+      ],
+      "inputs": [
+        "rust/tests/compatibility/jobs/**",
+        "rust/tests/compatibility/job_reads/**",
+        "rust/tests/compatibility/job_execution/**",
+        "rust/tests/compatibility/job_mutations/**"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "oracle-tools",
+        "frozen-verify"
+      ]
     },
     {
       "id": "definitions-oracle",
-      "packages": ["fabric-deploy"],
-      "components": ["definitions", "deploy-notebook"],
-      "inputs": ["rust/tests/compatibility/run_definition_parity.py", "rust/tests/compatibility/test_run_definition_parity.py", "rust/capabilities/deployment/fabric-deploy/tests/definition-reference.md", "rust/capabilities/deployment/fabric-deploy/tests/definition*_reference.py", "rust/capabilities/deployment/fabric-deploy/tests/get_definition_value_reference.py"],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["oracle-tools", "frozen-verify"]
+      "packages": [
+        "fabric-deploy"
+      ],
+      "components": [
+        "definitions",
+        "deploy-notebook"
+      ],
+      "inputs": [
+        "rust/tests/compatibility/run_definition_parity.py",
+        "rust/tests/compatibility/test_run_definition_parity.py",
+        "rust/sdk/deployment/tests/definition-reference.md",
+        "rust/sdk/deployment/tests/definition*_reference.py",
+        "rust/sdk/deployment/tests/get_definition_value_reference.py"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "oracle-tools",
+        "frozen-verify"
+      ]
     },
     {
       "id": "import-oracle",
-      "packages": ["fabric-cli", "fabric-cli-transfer", "fabric-deploy"],
-      "components": ["definitions", "transfer", "cli-deployment", "deploy-spark-environment"],
-      "inputs": ["rust/capabilities/deployment/fabric-deploy/tests/definition_import*_reference.py", "rust/capabilities/deployment/fabric-deploy/tests/definition_import_reference_checks.py", "rust/capabilities/deployment/fabric-cli-transfer/tests/source_reference.py", "rust/capabilities/deployment/fabric-cli-transfer/tests/test_source_reference.py"],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["oracle-tools", "frozen-verify"]
+      "packages": [
+        "fabric-cli",
+        "fabric-cli-transfer",
+        "fabric-deploy"
+      ],
+      "components": [
+        "definitions",
+        "transfer",
+        "cli-deployment",
+        "deploy-spark-environment"
+      ],
+      "inputs": [
+        "rust/sdk/deployment/tests/definition_import*_reference.py",
+        "rust/sdk/deployment/tests/definition_import_reference_checks.py",
+        "rust/frontends/cli/commands/transfer/tests/source_reference.py",
+        "rust/frontends/cli/commands/transfer/tests/test_source_reference.py"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "oracle-tools",
+        "frozen-verify"
+      ]
     },
     {
       "id": "parameters-oracle",
-      "packages": ["fabric-deploy"],
-      "components": ["deploy-shared", "deploy-workflow", "deploy-notebook", "deploy-spark-environment"],
+      "packages": [
+        "fabric-deploy"
+      ],
+      "components": [
+        "deploy-shared",
+        "deploy-workflow",
+        "deploy-notebook",
+        "deploy-spark-environment"
+      ],
       "inputs": [
-        "rust/capabilities/deployment/fabric-deploy/tests/config*_reference.py",
-        "rust/capabilities/deployment/fabric-deploy/tests/flag_protocol_reference.py",
-        "rust/capabilities/deployment/fabric-deploy/tests/literal_parameter*_reference.py",
-        "rust/capabilities/deployment/fabric-deploy/tests/operation_*_reference.py",
-        "rust/capabilities/deployment/fabric-deploy/tests/orchestration_reference.py",
-        "rust/capabilities/deployment/fabric-deploy/tests/parameter*_reference.py",
-        "rust/capabilities/deployment/fabric-deploy/tests/path_filter_reference.py",
-        "rust/capabilities/deployment/fabric-deploy/tests/publish_reference.py",
-        "rust/capabilities/deployment/fabric-deploy/tests/selected_constants_reference.py",
-        "rust/capabilities/deployment/fabric-deploy/tests/transform*_reference.py",
-        "rust/capabilities/deployment/fabric-deploy/tests/yaml_scalar_reference.py",
-        "rust/hosts/cli/fabric-cli/tests/deploy_wrapper_reference.py",
+        "rust/sdk/deployment/tests/config*_reference.py",
+        "rust/sdk/deployment/tests/flag_protocol_reference.py",
+        "rust/sdk/deployment/tests/literal_parameter*_reference.py",
+        "rust/sdk/deployment/tests/operation_*_reference.py",
+        "rust/sdk/deployment/tests/orchestration_reference.py",
+        "rust/sdk/deployment/tests/parameter*_reference.py",
+        "rust/sdk/deployment/tests/path_filter_reference.py",
+        "rust/sdk/deployment/tests/publish_reference.py",
+        "rust/sdk/deployment/tests/selected_constants_reference.py",
+        "rust/sdk/deployment/tests/transform*_reference.py",
+        "rust/sdk/deployment/tests/yaml_scalar_reference.py",
+        "rust/frontends/cli/app/tests/deploy_wrapper_reference.py",
         "rust/tests/compatibility/deploy_workflow/**",
         "rust/tests/fixtures/deploy/reference_oracle.py"
       ],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["oracle-tools", "frozen-verify"]
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "oracle-tools",
+        "frozen-verify"
+      ]
     },
     {
       "id": "export-oracle",
-      "packages": ["fabric-cli", "fabric-cli-transfer", "fabric-deploy"],
-      "components": ["definitions", "transfer", "cli-deployment"],
-      "inputs": ["rust/tests/compatibility/run_export_source_parity.py", "rust/capabilities/deployment/fabric-deploy/tests/definition_export*_reference.py", "rust/capabilities/deployment/fabric-deploy/tests/definition_transfer_input_reference.py"],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["oracle-tools", "frozen-verify"]
+      "packages": [
+        "fabric-cli",
+        "fabric-cli-transfer",
+        "fabric-deploy"
+      ],
+      "components": [
+        "definitions",
+        "transfer",
+        "cli-deployment"
+      ],
+      "inputs": [
+        "rust/tests/compatibility/run_export_source_parity.py",
+        "rust/sdk/deployment/tests/definition_export*_reference.py",
+        "rust/sdk/deployment/tests/definition_transfer_input_reference.py"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "oracle-tools",
+        "frozen-verify"
+      ]
     },
     {
       "id": "native-read",
-      "packages": ["fabric-cli", "fabric-identity"],
-      "components": ["cli-get", "cli-deployment", "cli-native-shared", "cli-jobs", "cli-tables", "cli-resources"],
-      "inputs": ["rust/tests/compatibility/read_session/**"],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["oracle-tools", "frozen-verify"]
+      "packages": [
+        "fabric-cli",
+        "fabric-identity"
+      ],
+      "components": [
+        "cli-get",
+        "cli-deployment",
+        "cli-native-shared",
+        "cli-jobs",
+        "cli-tables",
+        "cli-resources"
+      ],
+      "inputs": [
+        "rust/tests/compatibility/read_session/**"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "oracle-tools",
+        "frozen-verify"
+      ]
     },
     {
       "id": "context-output",
-      "packages": ["fabric-cli", "fabric-cli-context", "fabric-cli-output"],
-      "components": ["context", "output", "cli-local"],
-      "inputs": ["rust/tests/compatibility/context/**", "rust/tests/compatibility/output/text_reference.py", "rust/tests/compatibility/output/test_text_reference.py"],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["oracle-tools", "frozen-verify"]
+      "packages": [
+        "fabric-cli",
+        "fabric-cli-context",
+        "fabric-cli-output"
+      ],
+      "components": [
+        "context",
+        "output",
+        "cli-local"
+      ],
+      "inputs": [
+        "rust/tests/compatibility/context/**",
+        "rust/tests/compatibility/output/text_reference.py",
+        "rust/tests/compatibility/output/test_text_reference.py"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "oracle-tools",
+        "frozen-verify"
+      ]
     },
     {
       "id": "broker-read-parity",
-      "packages": ["fabric-cli", "fabric-cli-query"],
-      "components": ["cli-reads", "query"],
-      "inputs": ["rust/tests/compatibility/run_read_parity.py"],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["oracle-tools", "frozen-verify"]
+      "packages": [
+        "fabric-cli",
+        "fabric-cli-query"
+      ],
+      "components": [
+        "cli-reads",
+        "query"
+      ],
+      "inputs": [
+        "rust/tests/compatibility/run_read_parity.py"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "oracle-tools",
+        "frozen-verify"
+      ]
     },
     {
       "id": "sdk-example",
-      "packages": ["fabric-sdk"],
-      "components": ["sdk"],
-      "inputs": ["rust/sdk/fabric-sdk/examples/injected_credentials.rs"],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["selector-tests"]
+      "packages": [
+        "fabric-sdk"
+      ],
+      "components": [
+        "sdk"
+      ],
+      "inputs": [
+        "rust/sdk/client/examples/injected_credentials.rs"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "selector-tests"
+      ]
     },
     {
       "id": "resource-oracle",
-      "packages": ["fabric-cli-mutations", "fabric-sdk-operations", "fabric-sdk-onelake", "fabric-sdk-onelake-http"],
-      "components": ["mutations", "resource-set", "onelake", "onelake-http", "operations", "resources", "cli-resources"],
-      "inputs": ["rust/tests/compatibility/run_resource_parity.py", "rust/tests/compatibility/test_run_resource_parity.py", "rust/tests/compatibility/access/**", "rust/tests/compatibility/catalog/**", "rust/tests/compatibility/raw_api/**", "rust/tests/compatibility/tables/**", "rust/tests/compatibility/http/**", "rust/tests/compatibility/orchestration/**"],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["oracle-tools", "frozen-verify"]
+      "packages": [
+        "fabric-cli-mutations",
+        "fabric-sdk-operations",
+        "fabric-sdk-onelake",
+        "fabric-sdk-onelake-http"
+      ],
+      "components": [
+        "mutations",
+        "resource-set",
+        "onelake",
+        "onelake-http",
+        "operations",
+        "resources",
+        "cli-resources"
+      ],
+      "inputs": [
+        "rust/tests/compatibility/run_resource_parity.py",
+        "rust/tests/compatibility/test_run_resource_parity.py",
+        "rust/tests/compatibility/access/**",
+        "rust/tests/compatibility/catalog/**",
+        "rust/tests/compatibility/raw_api/**",
+        "rust/tests/compatibility/tables/**",
+        "rust/tests/compatibility/http/**",
+        "rust/tests/compatibility/orchestration/**"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "oracle-tools",
+        "frozen-verify"
+      ]
     },
     {
       "id": "cli-smoke",
-      "packages": ["fabric-cli"],
-      "components": ["cli-deployment", "cli-get", "cli-reads", "cli-resources", "cli-jobs", "cli-tables", "cli-local", "cli-repl", "cli-updater", "cli-auth", "cli-headless", "cli-native-shared"],
+      "packages": [
+        "fabric-cli"
+      ],
+      "components": [
+        "cli-deployment",
+        "cli-get",
+        "cli-reads",
+        "cli-resources",
+        "cli-jobs",
+        "cli-tables",
+        "cli-local",
+        "cli-repl",
+        "cli-updater",
+        "cli-auth",
+        "cli-headless",
+        "cli-native-shared"
+      ],
       "inputs": [],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["selector-tests"]
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "selector-tests"
+      ]
     },
     {
       "id": "sdk-graph",
-      "packages": ["fabric-sdk"],
-      "components": ["sdk"],
+      "packages": [
+        "fabric-sdk"
+      ],
+      "components": [
+        "sdk"
+      ],
       "inputs": [],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["selector-tests"]
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "selector-tests"
+      ]
     },
     {
       "id": "dependency-graph",
       "packages": [],
-      "components": ["workspace-architecture"],
+      "components": [
+        "workspace-architecture"
+      ],
       "inputs": [],
-      "platforms": ["windows", "linux", "macos"],
-      "depends_on": ["selector-tests"]
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "selector-tests"
+      ]
+    },
+    {
+      "id": "command-inventory",
+      "packages": [],
+      "components": [
+        "workspace-architecture"
+      ],
+      "inputs": [
+        "rust/validation/command-acceptance.json",
+        "rust/scripts/check_command_acceptance.py",
+        "rust/scripts/test_check_command_acceptance.py"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "interactive",
+      "packages": [
+        "fabric-cli",
+        "fabric-identity"
+      ],
+      "components": [
+        "identity-interactive",
+        "cli-auth"
+      ],
+      "inputs": [],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "depends_on": [
+        "selector-tests"
+      ]
     }
   ]
 }

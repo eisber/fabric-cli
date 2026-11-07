@@ -124,8 +124,10 @@ This recognizes protocol identities, **not six platform acceptance passes**.
 `evidence_ref`; no hosted CI label is interpreted as an OS minimum. GNU targets
 do not establish glibc independence.
 
-Explicit CLI features may be `headless`, `native-host`, `native-read`, `repl`,
-`self-update`, `windows-broker`, with defaults disabled.
+Explicit CLI features may be `headless`, `interactive`, `native-host`,
+`native-read`, `repl`, `self-update`, `windows-broker`,
+`certificate-store-windows`, `certificate-store-pkcs11` or
+`certificate-store-macos`, with defaults disabled.
 `headless` resolves `native-host`; `native-read` resolves `native-host` and
 `windows-broker`. Broker/read builds require Windows. The record's
 `resolved_features` means these package-local host identity features, **not**
@@ -135,6 +137,18 @@ current `feature_variant()` order is `self-update`, then enabled `headless`,
 For non-updater engineering builds the same order omits `self-update`, or is
 `default` when empty. These builds cannot pass the production update-feature
 gate. Variant identities are limited to the updater's 64-byte bound.
+
+Feature sets containing `interactive`, `certificate-store-pkcs11` or
+`certificate-store-macos` use the version-2 identity: `f2-` followed by the
+first 60 lowercase hexadecimal characters of SHA-256 over
+`fabric-cli-feature-v2`, a NUL byte, and the sorted resolved package-local
+feature names joined by NUL bytes. No trailing NUL is added. Forwarded
+`native-host`, `headless` and `windows-broker` features participate when enabled;
+all-feature builds therefore remain distinct within the bound. The Rust host
+and assembler use the same encoding. Existing feature sets retain their legacy
+identities, including the compact Windows-certificate identity. Native
+certificate helper installation and independent path/digest trust remain
+separate requirements; a CLI feature bit does not deploy or authorize a helper.
 
 `custody` is one of `standalone`, `msi`, `winget`, `homebrew`, `deb`, `rpm`,
 appropriate to the target OS. `root` is an explicit absolute planned native

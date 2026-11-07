@@ -3,7 +3,7 @@
 # Microsoft Fabric CLI and SDK for Rust
 
 This workspace provides the `fab-rs` command-line application, reusable Fabric
-service clients, deployment orchestration, and optional Windows authentication.
+service clients, deployment orchestration, and optional native authentication.
 Applications can use the SDK and deployment libraries without invoking the CLI.
 
 ## Get started
@@ -19,7 +19,7 @@ cargo run --locked -p fabric-sdk --example injected_credentials
 The SDK example uses synthetic credentials and performs no service requests.
 Default builds support local commands and argument validation without connecting
 to an account. Remote command execution requires an explicitly configured host.
-See the [CLI guide](hosts/cli/fabric-cli/README.md) for command composition and
+See the [CLI guide](frontends/cli/app/README.md) for command composition and
 [native host configuration](docs/native-read-host.md) for service execution.
 
 For the separate CLI v2 effort, follow the
@@ -27,7 +27,7 @@ For the separate CLI v2 effort, follow the
 implementation starts only after the selected specification and first wave
 are confirmed; this process does not change the existing CLI contract.
 
-The additive [v2 local host](hosts/cli/fabric-cli-v2/README.md) provides the
+The additive [v2 local host](frontends/cli/v2/README.md) provides the
 six selected `cli` operations through a separate `fab-cli` executable.
 It preserves `fab-rs` and its compatibility fixtures, distinguishes manual
 handoffs from delivered actions, and fails explicitly when an optional
@@ -55,55 +55,82 @@ The opt-in [workspace v2 read slice](docs/workspace-v2-reads.md) uses the separa
 executable and the native GET `fab-cli-v2` entry point; no preview overwrites
 another's Cargo output or selects a provider implicitly.
 
-The workspace groups service clients and command adapters by capability:
+The source roots separate reusable functionality from CLI-specific interaction.
+Paths below are relative to this directory; each package leaf retains its own
+manifest, source, tests, examples and assets:
 
 ```text
-capabilities\
-  resources\       Workspace, item, folder, capacity, access and catalog APIs
-  jobs\            Job APIs and command adapters
-  storage\         OneLake APIs, HTTP adapter and file commands
-  tables\          Table APIs and command adapters
-  deployment\      Deployment workflows and definition transfer commands
-  local\           Local configuration and navigation commands
-hosts\
-  cli\             Executable composition, context, query and presentation
-  repl\            Optional Reedline editor and removable shell loop
-  update\          Pinned-trust release verification and update orchestration
-infrastructure\
-  core\            Shared contracts and JSON encoding
-  identity\        Credential selection and optional Windows broker
-  http\            Shared executor and native transport
-  execution\       Paging and operation reconciliation
-  search\          Pure, bounded name-similarity suggestions
-sdk\               Public SDK facade
+sdk/
+  client/          Combined public SDK client
+  capacities/      Capacity APIs
+  workspaces/      Workspace APIs
+  items/           Item APIs
+  folders/         Folder APIs
+  jobs/            Job APIs
+  tables/          Table APIs
+  tabular/         Shared data codecs and bounded tabular delivery
+  dataflow/        Dataflow execution and result contracts
+  sql/             database/ and definition/ service clients
+  ontology/        client/ and workload/ service clients
+  dataagents/      ontology/ attachment and navigation contracts
+  search/          client/, relevance/, discovery/ and names/
+  contracts/       Shared v2 operation contracts (core layer)
+  catalog/         Metadata discovery
+  access/          Access APIs
+  api-requests/    Explicit API requests
+  storage/         onelake/ models and http/ adapter
+  authentication/  credentials/ providers and isolated windows/ interop
+  deployment/      Reusable deployment workflows
+  http/            executor/ and optional transport/
+  pagination/      Shared paging
+  operations/      Request completion and polling
+  request-context/ Endpoint and credential contracts
+  json/            Shared ordered JSON encoding
+frontends/cli/
+  app/             fab-rs executable and central composition
+  v2/              Separate six-leaf local fab-cli executable
+  commands/        resources/, resource-mutations/, jobs/, files/,
+                   tables/, local/ and transfer/ adapters
+  paths/           Path resolution and command context
+  query/           CLI query projection
+  output/          Presentation and streams
+  shell/           Optional terminal editor and shell loop
+  update/          Pinned-trust release verification and updates
 ```
 
-Each leaf crate retains its package name and dependency boundaries. A capability
-may contain both SDK and CLI crates; that proximity does not make CLI-specific
-arguments, prompts or output contracts part of the SDK. Additional front-ends,
+Each leaf crate retains its package name and dependency boundaries. Grouping
+directories are not additional packages. Physical placement under `sdk/` does
+not change logical layers or make authentication providers dependencies of SDK
+service clients. CLI deployment handling stays in `frontends/cli/app/src/deploy.rs`;
+the reusable workflow library is `sdk/deployment/`. Additional front-ends,
 such as MCP servers or Azure DevOps tasks, can add host composition and
 capability-specific adapters without invoking the CLI executable. Those
 front-ends are not implemented by this layout.
 
 | Component | Responsibility |
 | --- | --- |
-| [Fabric SDK](sdk/fabric-sdk/README.md) | Workspace, item, folder and capacity clients over caller-injected credentials and execution policies |
+| [Fabric SDK](sdk/client/README.md) | Workspace, item, folder and capacity clients over caller-injected credentials and execution policies |
 | [Artifact-first tables](docs/artifact-first-tables.md) | Parent-owned Lakehouse, KQLDatabase and Warehouse SDK adapters with distinct native loading contracts |
-| [HTTP execution](infrastructure/http/fabric-sdk-http/README.md) | Shared authentication, request limits, retries, paging and operation adapters |
-| [Native transport](infrastructure/http/fabric-sdk-transport/README.md) | Optional `hyper-rustls` backend and asynchronous timers |
-| [Deployment](capabilities/deployment/fabric-deploy/README.md) | Configuration, parameters, repository planning, item publication and orphan removal |
-| [CLI](hosts/cli/fabric-cli/README.md) | Argument parsing, command sessions and native host composition |
-| [V2 local host](hosts/cli/fabric-cli-v2/README.md) | Separate six-leaf `cli` group, explicit effects and bounded optional providers |
-| [Interactive shell](hosts/repl/fabric-cli-repl/README.md) | Optional terminal editor and shell loop, independent of SDK and command implementations |
-| [Release updates](hosts/update/fabric-cli-update/README.md) | Explicit release trust, bounded downloads and installation-custody checks |
-| [Path context](hosts/cli/fabric-cli-context/README.md) | Immutable hierarchy, path resolution and command context |
-| [Name search](infrastructure/search/fabric-name-search/README.md) | Reusable, deterministic typo suggestions over caller-authorized names; never automatic correction |
-| [Output](hosts/cli/fabric-cli-output/README.md) | Structured envelopes, text presentation and stream handling |
+| [HTTP execution](sdk/http/executor/README.md) | Shared authentication, request limits, retries, paging and operation adapters |
+| [Native transport](sdk/http/transport/README.md) | Optional `hyper-rustls` backend and asynchronous timers |
+| [Deployment](sdk/deployment/README.md) | Configuration, parameters, repository planning, item publication and orphan removal |
+| [CLI](frontends/cli/app/README.md) | Argument parsing, command sessions and native host composition |
+| [V2 local host](frontends/cli/v2/README.md) | Separate six-leaf `cli` group, explicit effects and bounded optional providers |
+| [Interactive shell](frontends/cli/shell/README.md) | Optional terminal editor and shell loop, independent of SDK and command implementations |
+| [Release updates](frontends/cli/update/README.md) | Explicit release trust, bounded downloads and installation-custody checks |
+| [Path context](frontends/cli/paths/README.md) | Immutable hierarchy, path resolution and command context |
+| [Name search](sdk/search/names/README.md) | Reusable, deterministic typo suggestions over caller-authorized names; never automatic correction |
+| [Output](frontends/cli/output/README.md) | Structured envelopes, text presentation and stream handling |
 | [Workflow skills](skills/README.md) | Boundaries for workflows that compose CLI commands |
 
 Focused SDK crates provide additional service APIs, including jobs, OneLake,
 access, catalog, tables and raw requests. Each crate documents its own public
 interface and supported operations.
+
+For current implementation boundaries, use the
+[command/resource acceptance inventory](docs/command-parity.md), not historical
+scaffold tables. [Coverage reporting](docs/test-coverage.md) distinguishes actual
+line/function/region measurements from registered commands and test counts.
 
 Service and deployment libraries do not discover credentials, prompt users, create a runtime, initialize
 global logging, or terminate the process. The caller supplies these capabilities
@@ -125,7 +152,7 @@ authentication tool, or persist a local token cache.
 Headless service commands acquire tokens when needed; they do not require a
 desktop `auth login`. Identity inputs and service permissions must be configured
 for the selected environment. Never supply secrets as command-line arguments.
-See the [identity guide](infrastructure/identity/fabric-identity/README.md) for
+See the [identity guide](sdk/authentication/credentials/README.md) for
 provider inputs, assertion renewal and managed-host limits.
 
 The SDK continues to accept caller-injected credentials independently of these

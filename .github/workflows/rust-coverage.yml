@@ -1,0 +1,77 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Rust coverage
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "43 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-coverage-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  coverage:
+    name: Full coverage (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04, macos-15]
+    env:
+      CARGO_BUILD_JOBS: "2"
+      RUST_TEST_THREADS: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test coverage reporting contracts
+        run: |
+          node --test rust/scripts/rust-coverage.test.cjs
+          python -B -m unittest discover -s rust/scripts -p test_check_command_acceptance.py -v
+      - name: Install pinned missing coverage tools
+        working-directory: rust
+        run: |
+          rustup component add llvm-tools-preview --toolchain 1.99.1
+          cargo install cargo-llvm-cov --version '=0.9.1' --locked
+          cargo fetch --locked
+      - name: Validate acceptance declarations against actual Cargo targets
+        run: |
+          (cd rust && cargo metadata --offline --locked --no-deps --format-version 1) > "$RUNNER_TEMP/command-acceptance-metadata.json"
+          python -B rust/scripts/check_command_acceptance.py --metadata "$RUNNER_TEMP/command-acceptance-metadata.json"
+      - name: Measure all-feature native workspace coverage
+        run: >-
+          node rust/scripts/rust-coverage.cjs
+          --output "$RUNNER_TEMP/rust-coverage"
+          --scope full --timeout-seconds 9000 --execute
+      - name: Add measured scope and denominators to the run summary
+        if: always()
+        run: |
+          if [[ -f "$RUNNER_TEMP/rust-coverage/summary.md" ]]; then
+            cat "$RUNNER_TEMP/rust-coverage/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Retain coverage and actual command results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-coverage-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/rust-coverage/receipt.json
+            ${{ runner.temp }}/rust-coverage/summary.json
+            ${{ runner.temp }}/rust-coverage/summary.md
+            ${{ runner.temp }}/rust-coverage/llvm-summary.json
+            ${{ runner.temp }}/rust-coverage/lcov.info
+            ${{ runner.temp }}/rust-coverage/html
+            ${{ runner.temp }}/rust-coverage/*.log

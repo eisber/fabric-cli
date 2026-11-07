@@ -41,7 +41,8 @@ TARGETS = {
     "aarch64-apple-darwin": ("macos", "aarch64"),
 }
 FEATURE_ORDER = (
-    "certificate-store-windows", "headless", "native-host", "native-read", "repl", "windows-broker"
+    "certificate-store-windows", "headless", "native-host", "native-read", "repl", "windows-broker",
+    "interactive", "certificate-store-pkcs11", "certificate-store-macos",
 )
 ROOT_FEATURES = set(FEATURE_ORDER) | {"self-update"}
 EXPECT_FIELDS = {
@@ -205,8 +206,10 @@ def feature_identity(explicit: Any) -> tuple[list[str], str]:
     resolved = set(explicit)
     if "native-read" in resolved:
         resolved.update(("native-host", "windows-broker"))
-    if "certificate-store-windows" in resolved:
+    if {"certificate-store-windows", "certificate-store-pkcs11", "certificate-store-macos"} & resolved:
         resolved.add("headless")
+    if "interactive" in resolved:
+        resolved.add("native-host")
     if "headless" in resolved:
         resolved.add("native-host")
     identity_features = resolved.copy()
@@ -217,7 +220,11 @@ def feature_identity(explicit: Any) -> tuple[list[str], str]:
     identity = (["self-update"] if "self-update" in resolved else []) + [
         name for name in FEATURE_ORDER if name in identity_features
     ]
-    result = "+".join(identity) or "default"
+    if {"interactive", "certificate-store-pkcs11", "certificate-store-macos"} & resolved:
+        payload = ("fabric-cli-feature-v2\0" + "\0".join(sorted(resolved))).encode("utf-8")
+        result = "f2-" + hashlib.sha256(payload).hexdigest()[:60]
+    else:
+        result = "+".join(identity) or "default"
     require(len(result) <= 64, "Variant exceeds updater identity bound")
     return sorted(resolved), result
 

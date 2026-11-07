@@ -66,7 +66,7 @@ protected source fixture was modified.
 Re-execute both captures from `rust/`:
 
 ```text
-python -B capabilities/deployment/fabric-deploy/tests/definition_import_reference_checks.py
+python -B sdk/deployment/tests/definition_import_reference_checks.py
 ```
 
 The checker uses a newly created caller-workspace directory, removes only that
@@ -196,18 +196,18 @@ live Fabric and non-Windows native runs remain unexecuted.
 
 ## Changed files
 
-- `rust/capabilities/deployment/fabric-deploy/src/definitions/import.rs`
-- `rust/capabilities/deployment/fabric-deploy/src/definitions/import_tests.rs`
-- `rust/capabilities/deployment/fabric-deploy/tests/definition_import_lifecycle_reference.py`
-- `rust/capabilities/deployment/fabric-deploy/tests/definition_import_lifecycle_source.json`
-- `rust/capabilities/deployment/fabric-deploy/tests/definition_import_inputs_reference.py`
-- `rust/capabilities/deployment/fabric-deploy/tests/definition_import_inputs_source.json`
-- `rust/capabilities/deployment/fabric-deploy/tests/definition_import_reference_checks.py`
-- `rust/capabilities/deployment/fabric-cli-transfer/src/lib.rs`
-- `rust/capabilities/deployment/fabric-cli-transfer/src/import_environment.rs`
-- `rust/capabilities/deployment/fabric-cli-transfer/src/local.rs` (import resolution and checks)
-- `rust/hosts/cli/fabric-cli/src/families/transfer_files.rs` (import worker methods)
-- `rust/hosts/cli/fabric-cli/tests/family_mounts.rs` (additive test registration only)
-- `rust/hosts/cli/fabric-cli/tests/family_support/import_parity.rs`
-- `rust/hosts/cli/fabric-cli/tests/family_support/import_roots.rs`
+- `rust/sdk/deployment/src/definitions/import.rs`
+- `rust/sdk/deployment/src/definitions/import_tests.rs`
+- `rust/sdk/deployment/tests/definition_import_lifecycle_reference.py`
+- `rust/sdk/deployment/tests/definition_import_lifecycle_source.json`
+- `rust/sdk/deployment/tests/definition_import_inputs_reference.py`
+- `rust/sdk/deployment/tests/definition_import_inputs_source.json`
+- `rust/sdk/deployment/tests/definition_import_reference_checks.py`
+- `rust/frontends/cli/commands/transfer/src/lib.rs`
+- `rust/frontends/cli/commands/transfer/src/import_environment.rs`
+- `rust/frontends/cli/commands/transfer/src/local.rs` (import resolution and checks)
+- `rust/frontends/cli/app/src/families/transfer_files.rs` (import worker methods)
+- `rust/frontends/cli/app/tests/family_mounts.rs` (additive test registration only)
+- `rust/frontends/cli/app/tests/family_support/import_parity.rs`
+- `rust/frontends/cli/app/tests/family_support/import_roots.rs`
 - `rust/docs/import-command-parity.md`

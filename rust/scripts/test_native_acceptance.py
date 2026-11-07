@@ -279,6 +279,21 @@ class FilesystemTests(unittest.TestCase):
         self.assertTrue(result["timeout"])
         self.assertEqual(result["cleanup"], "owned_tree_terminated")
 
+    def test_slow_process_creation_retains_cleanup_ownership(self) -> None:
+        original = acceptance.subprocess.Popen
+
+        def delayed_spawn(*args: object, **kwargs: object) -> subprocess.Popen[bytes]:
+            child = original(*args, **kwargs)
+            time.sleep(0.15)
+            return child
+
+        with patch.object(acceptance.subprocess, "Popen", side_effect=delayed_spawn):
+            result, _, _ = self.child("wait", seconds=0.05)
+        self.assertTrue(result["timeout"])
+        self.assertEqual(result["cleanup"], "owned_tree_terminated")
+        self.assertEqual(result["cleanup_failure_codes"], [])
+        self.assertLess(result["elapsed_seconds"], 1.8)
+
     @unittest.skipIf(os.name == "nt", "requires_native_POSIX_PTY")
     def test_raw_pty_cursor_flood_without_input_reads_is_bounded_and_reaped(self) -> None:
         for seconds, budget in [(0.2, 1), (1, 0.2)]:

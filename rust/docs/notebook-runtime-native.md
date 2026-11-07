@@ -241,7 +241,7 @@ Monitoring, resources/files, public session history, daemon management, telemetr
 attribution, widget-output enrichment and all model/Copilot features are outside
 this first core wave. They are not represented by successful stubs.
 
-Offline tests in `sdk/fabric-sdk/tests/notebook_runtime.rs` exercise exact
+Offline tests in `sdk/client/tests/notebook_runtime.rs` exercise exact
 routes/payloads/effects, lossless transforms, selectors and invalid types/bounds,
 Lakehouse precedence/siblings, injected HTTP failures/once-only dispatch,
 saved-vs-live outputs, protocol correlation, cancellation races/partial outputs

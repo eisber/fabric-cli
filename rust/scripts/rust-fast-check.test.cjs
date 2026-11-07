@@ -201,15 +201,15 @@ test('deploy preflight first runs actual library then native root consumer, neve
   assert.ok(family.some(item => item.program === 'git' &&
     item.args.slice(-4).join(' ') === 'config --local core.autocrlf true'));
   assert.ok(family.at(-2).args.includes('--doc'));
-  assert.ok(family.some(item => item.args.includes('capabilities/deployment/fabric-deploy/tests/orchestration_reference.py')));
-  assert.ok(family.some(item => item.args.includes('hosts/cli/fabric-cli/tests/deploy_wrapper_reference.py')));
-  assert.ok(family.some(item => item.args.includes('capabilities/deployment/fabric-deploy/tests/definition_import_reference_checks.py')));
-  assert.ok(family.some(item => item.args.includes('capabilities/deployment/fabric-deploy/tests/operation_result_reference.py')));
-  const operation = family.find(item => item.args.includes('capabilities/deployment/fabric-deploy/tests/operation_result_reference.py'));
+  assert.ok(family.some(item => item.args.includes('sdk/deployment/tests/orchestration_reference.py')));
+  assert.ok(family.some(item => item.args.includes('frontends/cli/app/tests/deploy_wrapper_reference.py')));
+  assert.ok(family.some(item => item.args.includes('sdk/deployment/tests/definition_import_reference_checks.py')));
+  assert.ok(family.some(item => item.args.includes('sdk/deployment/tests/operation_result_reference.py')));
+  const operation = family.find(item => item.args.includes('sdk/deployment/tests/operation_result_reference.py'));
   assert.ok(operation.args.includes('--cli-reference-root') && operation.args.includes('--cicd-reference-root'));
   assert.ok(!operation.args.includes('--reference-root'));
-  const scalar = family.find(item => item.args.includes('capabilities/deployment/fabric-deploy/tests/yaml_scalar_reference.py'));
-  assert.deepEqual(scalar.args, ['-B', 'capabilities/deployment/fabric-deploy/tests/yaml_scalar_reference.py']);
+  const scalar = family.find(item => item.args.includes('sdk/deployment/tests/yaml_scalar_reference.py'));
+  assert.deepEqual(scalar.args, ['-B', 'sdk/deployment/tests/yaml_scalar_reference.py']);
   for (const item of [...commands, ...family]) {
     assert.ok(!item.args.includes('run') && !item.args.includes('--config'));
   }
@@ -224,7 +224,7 @@ test('released parameter transform target runs first and retains its source comp
   assert.ok(tests[0].args.includes('parameter_transforms'));
   assert.ok(tests[1].args.includes('parameter_transforms') && tests[1].args.includes('--list'));
   const family = plan('family', manifest, '/target', '/receipts', () => true);
-  assert.ok(family.some(item => item.args.includes('capabilities/deployment/fabric-deploy/tests/transform_program_reference.py')));
+  assert.ok(family.some(item => item.args.includes('sdk/deployment/tests/transform_program_reference.py')));
 });
 
 test('released full deployment consumer and parameter source captures cannot be omitted', () => {
@@ -244,28 +244,28 @@ test('released full deployment consumer and parameter source captures cannot be 
   for (const name of ['configured_flags', 'flag_protocol', 'config_value_edges', 'parameter_context',
     'parameter_pipeline', 'path_filter', 'selected_constants', 'parameter_resolution',
     'parameter_schema_edges', 'config_extensions_execution']) {
-    assert.ok(family.some(item => item.args.includes(`capabilities/deployment/fabric-deploy/tests/${name}_reference.py`)));
+    assert.ok(family.some(item => item.args.includes(`sdk/deployment/tests/${name}_reference.py`)));
   }
-  const paths = family.find(item => item.args.includes('capabilities/deployment/fabric-deploy/tests/path_filter_reference.py'));
+  const paths = family.find(item => item.args.includes('sdk/deployment/tests/path_filter_reference.py'));
   assert.ok(paths.args.includes('--observations'));
   assert.ok(paths.args.includes(path.join('/receipts', 'path-filter-observed.json')));
 });
 
 test('capability layout preserves every released filesystem-selected deployment and auth check', () => {
   const expected = new Set([
-    'capabilities/deployment/fabric-deploy/tests/parameter_transforms.rs',
-    'hosts/cli/fabric-cli/tests/deploy_mount.rs',
-    'hosts/cli/fabric-cli/tests/export_parity_mount.rs',
-    'hosts/cli/fabric-cli/tests/deploy_full.rs',
-    'hosts/cli/fabric-cli/tests/native_deploy_inputs.rs',
-    'hosts/cli/fabric-cli/tests/deploy_inputs_debug.rs',
-    'hosts/cli/fabric-cli/tests/auth_commands.rs',
-    'hosts/cli/fabric-cli/tests/table_mounted.rs',
-    'infrastructure/identity/fabric-identity-windows/src/native.rs',
+    'sdk/deployment/tests/parameter_transforms.rs',
+    'frontends/cli/app/tests/deploy_mount.rs',
+    'frontends/cli/app/tests/export_parity_mount.rs',
+    'frontends/cli/app/tests/deploy_full.rs',
+    'frontends/cli/app/tests/native_deploy_inputs.rs',
+    'frontends/cli/app/tests/deploy_inputs_debug.rs',
+    'frontends/cli/app/tests/auth_commands.rs',
+    'frontends/cli/app/tests/table_mounted.rs',
+    'sdk/authentication/windows/src/native.rs',
     ...['transform_program', 'configured_flags', 'flag_protocol', 'config_value_edges',
       'parameter_context', 'parameter_pipeline', 'path_filter', 'selected_constants',
       'parameter_resolution', 'parameter_schema_edges', 'config_extensions_execution']
-      .map(name => `capabilities/deployment/fabric-deploy/tests/${name}_reference.py`),
+      .map(name => `sdk/deployment/tests/${name}_reference.py`),
   ]);
   const seen = new Set();
   const exists = file => {
@@ -440,7 +440,7 @@ test('CI composition cannot modify product, old workflow, lock or oracle', () =>
     'rust/tests/performance/startup.py', 'rust/tests/performance/test_startup.py',
     'rust/tests/performance/measurement-request.json', 'rust/docs/performance-baseline.md']);
   for (const file of ['rust/Cargo.lock', '.github/workflows/rust-ci.yml',
-    'rust/hosts/cli/fabric-cli/src/main.rs', 'rust/tests/compatibility/jobs/reference.py']) {
+    'rust/frontends/cli/app/src/main.rs', 'rust/tests/compatibility/jobs/reference.py']) {
     assert.throws(() => ciDelta([file]));
   }
 });
@@ -531,7 +531,7 @@ test('job and import source receipts remain required for their command consumers
   for (const packages of [['fabric-cli'], ['fabric-cli-transfer'], ['fabric-deploy']]) {
     const commands = plan('family', {lane: 'baseline', packages}, '/target', '/receipts', () => true);
     assert.ok(commands.some(item => item.program === 'python' &&
-      item.args.includes('capabilities/deployment/fabric-deploy/tests/definition_import_reference_checks.py')));
+      item.args.includes('sdk/deployment/tests/definition_import_reference_checks.py')));
     assert.ok(commands.some(item => item.program === 'python' &&
       item.args.includes('tests/compatibility/run_export_source_parity.py')));
   }
@@ -572,7 +572,7 @@ test('source plans isolate frozen Python while retaining candidate native binari
         assert.equal(item.args[item.args.indexOf('--cli-reference-root') + 1], checkout);
         assert.equal(item.args[item.args.indexOf('--cicd-reference-root') + 1], path.join(output, 'cicd-source'));
       }
-      if (item.args.includes('hosts/cli/fabric-cli/tests/deploy_wrapper_reference.py')) {
+      if (item.args.includes('frontends/cli/app/tests/deploy_wrapper_reference.py')) {
         assert.equal(item.args[item.args.indexOf('--reference-root') + 1], checkout);
       }
       if (item.args.includes('tests/compatibility/run_export_source_parity.py')) {
@@ -636,10 +636,10 @@ test('definition examples use unique native filenames and retain both unchanged 
   }
   assert.ok(!native.some(command =>
     command.args.includes('fabric-core-json') && command.args.includes('definition_json')));
-  const coreExamples = path.resolve(__dirname, '../infrastructure/core/fabric-core-json/examples');
+  const coreExamples = path.resolve(__dirname, '../sdk/json/examples');
   assert.ok(fs.existsSync(path.join(coreExamples, 'core_definition_json.rs')));
   assert.ok(!fs.existsSync(path.join(coreExamples, 'definition_json.rs')));
-  assert.ok(fs.existsSync(path.resolve(__dirname, '../hosts/cli/fabric-cli-output/examples/definition_json.rs')));
+  assert.ok(fs.existsSync(path.resolve(__dirname, '../frontends/cli/output/examples/definition_json.rs')));
 });
 
 test('native-values requires native and text observations without weakening oracle', () => {
@@ -746,7 +746,7 @@ test('full native workflow routes every oracle through isolated source and absol
   assert.equal(verify[0].kind, 'verify-oracle');
   assert.ok(verify[0].args.includes('verify'));
   const pinned = path.join(nativeContext.artifacts, 'pinned-python', 'source', 'rust');
-  const candidatePython = new Set(['oracle-tools', 'frozen-verify', 'repl']);
+  const candidatePython = new Set(['oracle-tools', 'frozen-verify', 'repl', 'command-inventory']);
   const calls = CHECK_IDS.filter(id => id !== 'dependency-graph').flatMap(id =>
     commandsFor(id, nativeContext).map(command => ({...command, check: id})));
   const references = calls.filter(command => command.program === 'python' &&
@@ -755,7 +755,7 @@ test('full native workflow routes every oracle through isolated source and absol
   assert.ok(references.every(command => command.cwd === pinned));
   const batch = commandsFor('batch-oracle', nativeContext)[0];
   assert.ok(batch.args.includes('--check'));
-  assert.ok(batch.args.includes(path.join('hosts', 'cli', 'fabric-cli', 'tests', 'batch_source.json')));
+  assert.ok(batch.args.includes(path.join('frontends', 'cli', 'app', 'tests', 'batch_source.json')));
   const probes = calls.flatMap(command => command.args.flatMap((arg, index) =>
     /^--(?:read-probe|query-probe|folder-probe|rust-probe|probe|probes)$/.test(arg)
       ? [command.args[index + 1]] : []));

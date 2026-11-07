@@ -330,6 +330,7 @@ class WindowsTree:
         from ctypes import wintypes as w
 
         require(bool(self.api.AssignProcessToJobObject(self.handle, int(child._handle))), "job_assign_failed")
+        require(time.monotonic() < deadline, "process_start_deadline")
 
         class Thread(ctypes.Structure):
             _fields_ = [
@@ -478,9 +479,9 @@ def execute(
 
             options.update(stdin=slave, stdout=slave, stderr=slave, preexec_fn=controlling_terminal)
         child = subprocess.Popen(argv, **options)
-        require(time.monotonic() < end, "process_start_deadline")
         if tree:
             tree.attach(child, end)
+        require(time.monotonic() < end, "process_start_deadline")
         if terminal is None:
             for stream, buffer in zip((child.stdout, child.stderr), buffers):
                 thread = threading.Thread(target=capture, args=(stream, buffer), daemon=True)

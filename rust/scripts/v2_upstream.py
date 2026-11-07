@@ -79,6 +79,8 @@ def _git(
                 "-c",
                 "core.fsmonitor=false",
                 "-c",
+                "core.longpaths=true",
+                "-c",
                 f"core.hooksPath={os.devnull}",
                 "-c",
                 "credential.helper=",

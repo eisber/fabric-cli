@@ -198,6 +198,26 @@ class AssemblyTests(unittest.TestCase):
         self.expected_path.write_bytes(release.encode(self.expected))
         self.expect_sha = release.sha(self.expected_path.read_bytes())
 
+    def test_v2_feature_identity_has_fixed_cross_language_vectors(self) -> None:
+        """New auth features stay distinct without changing legacy identities."""
+        cases = [
+            (["interactive", "self-update"],
+             ["interactive", "native-host", "self-update"],
+             "f2-62b5bbb2c7c88db4f19bf88fdeeaff3c1372549262a637cad370d191d14c"),
+            (["certificate-store-pkcs11", "self-update"],
+             ["certificate-store-pkcs11", "headless", "native-host", "self-update"],
+             "f2-2b218b712ab89d8dd0792c0537d773a0bb2445cf1888ec116dee2f782f0a"),
+            (["certificate-store-macos", "self-update"],
+             ["certificate-store-macos", "headless", "native-host", "self-update"],
+             "f2-0b36a624b0d55e28806b447a9cd158e155f6bccee71d6aec00cb7dee18cb"),
+        ]
+        for explicit, resolved, identity in cases:
+            with self.subTest(features=explicit):
+                self.assertEqual(release.feature_identity(explicit), (resolved, identity))
+                self.assertLessEqual(len(identity), 64)
+        self.assertEqual(release.feature_identity(["self-update"]),
+                         (["self-update"], "self-update"))
+
     def assemble(self, dirty: Path | None = None) -> dict:
         return release.assemble(self.expected_path, self.expect_sha, self.build_path,
                                 self.cli_path, self.helper_path, self.output, 1500, dirty)

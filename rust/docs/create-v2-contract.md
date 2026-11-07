@@ -194,7 +194,7 @@ unverified. Source availability does not establish completed contract coverage.
 The existing
 [resource mutation compatibility record](mutation-compatibility.md) describes
 bounded v1 behavior, not v2 create acceptance. The
-[resource mutation library](../capabilities/resources/fabric-cli-mutations/README.md)
+[resource mutation library](../frontends/cli/commands/resource-mutations/README.md)
 continues to document its existing handlers separately.
 
 | Surface | Coverage boundary |

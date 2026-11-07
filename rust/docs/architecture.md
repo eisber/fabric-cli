@@ -12,28 +12,39 @@ It is not a full port, release contract, or replacement for the Python product.
 
 ### Physical organization
 
-The workspace is capability-first. Related service clients and CLI adapters
-live together without merging their packages or changing their architectural
-layers:
+The two source roots separate reusable functionality from user interaction.
+SDK features use short directory names; CLI-specific composition and adapters
+live under `frontends/cli/`. Packages remain independently buildable, with
+unchanged names and logical layers:
 
 | Location | Ownership |
 | --- | --- |
-| `capabilities/resources/` | Workspace, item, folder, capacity, catalog, access and explicit API clients; resource command adapters |
-| `capabilities/jobs/` | Job service clients and command adapters |
-| `capabilities/storage/` | OneLake models, HTTP adapter and file commands |
-| `capabilities/tables/` | Table service clients and command adapters |
-| `capabilities/deployment/` | Deployment workflows and definition transfer adapters |
-| `capabilities/local/` | Local configuration, navigation and platform commands |
-| `hosts/cli/` | Executable composition and CLI-specific context, query and presentation |
-| `hosts/repl/` | Removable shell loop and opt-in Reedline terminal adapter |
-| `hosts/update/` | Pinned-trust release verification and optional standalone updater |
-| `infrastructure/core/` | Shared contracts and ordered JSON encoding |
-| `infrastructure/identity/` | Credential selection and isolated Windows interop |
-| `infrastructure/http/` | Shared HTTP execution and optional native transport |
-| `infrastructure/execution/` | Shared paging and operation reconciliation |
-| `sdk/` | Public SDK facade |
+| `sdk/client/` | Combined public SDK client, including existing Notebook modules |
+| `sdk/capacities/`, `workspaces/`, `items/`, `folders/`, `jobs/`, `tables/`, `catalog/`, `access/`, `api-requests/` | Focused service clients (all paths under `sdk/`) |
+| `sdk/storage/onelake/`, `sdk/storage/http/` | OneLake models and HTTP adapter |
+| `sdk/authentication/credentials/`, `sdk/authentication/windows/` | Optional credential providers and isolated Windows interop |
+| `sdk/deployment/` | Reusable configuration, transforms, planning, publication and definition operations |
+| `sdk/http/executor/`, `sdk/http/transport/` | Shared HTTP execution and optional native transport |
+| `sdk/pagination/`, `sdk/operations/` | Shared paging, request completion and polling |
+| `sdk/request-context/`, `sdk/json/` | Shared endpoint/credential contracts and ordered JSON encoding |
+| `sdk/contracts/` | Shared v2 descriptors and capability contracts, retaining the core layer |
+| `sdk/sql/database/`, `sdk/sql/definition/` | SQL database and definition service contracts |
+| `sdk/tabular/`, `sdk/dataflow/` | Shared tabular codecs and Dataflow execution/result contracts |
+| `sdk/ontology/client/`, `sdk/ontology/workload/`, `sdk/dataagents/ontology/` | Reusable Ontology and DataAgent operations |
+| `sdk/search/client/`, `relevance/`, `discovery/`, `names/` | Search, relevance, discovery and bounded name ranking (all under `sdk/search/`) |
+| `frontends/cli/app/` | `fab-rs` executable, central composition and CLI deployment handling |
+| `frontends/cli/v2/` | Distinct six-leaf local host and `fab-cli` executable |
+| `frontends/cli/commands/` | Resource, resource-mutation, job, file, table, local and transfer adapters |
+| `frontends/cli/paths/`, `query/`, `output/` | CLI-specific context, query and presentation (all paths under `frontends/cli/`) |
+| `frontends/cli/shell/` | Removable shell loop and opt-in Reedline terminal adapter |
+| `frontends/cli/update/` | Pinned-trust release verification and optional standalone updater |
 
-Each directory contains existing named crates. There are no empty MCP or
+Each package leaf retains its manifest, sources, tests, examples and assets;
+grouping directories are not packages. Directory names do not change package or
+target names. Authentication and deployment retain their identity/deploy logical
+layers, not the SDK layer, and service clients do not depend on identity providers.
+CLI deployment argument handling remains in `frontends/cli/app/src/deploy.rs`,
+not a new command package. There are no empty MCP or
 Azure DevOps task packages. Future front-ends should compose reusable APIs and
 provide their own input, confirmation and output adapters; they must not launch
 the CLI or depend on CLI-specific types simply to reuse service operations.
@@ -95,8 +106,11 @@ The same composition mounts cancellation and all three schedule mutations throug
 explicit injected confirmation. Native non-forced removal remains unsupported,
 not an implicit yes or blocking library prompt.
 The initial five crates are not a fixed count or a maximum. Workspace membership
-uses `capabilities/*/*`, `hosts/*/*`, `infrastructure/*/*`, and `sdk/*`, so
-crates are discovered within their capability or shared ownership group.
+registers package leaves under `sdk/` and `frontends/cli/`, using explicit paths
+or globs that match only packages. Independent recursive manifest discovery in
+the architecture contract detects unregistered packages and rejects obsolete
+production source trees. Do not use a blanket `sdk/*` glob: it would also match
+grouping directories without manifests.
 Default members explicitly include safe crates and exclude the
 optional `fabric-identity-windows` native boundary. Add new safe crates to
 `default-members`. Each crate declares its architectural layer in its own manifest:
@@ -206,7 +220,7 @@ Skills describe workflows using the CLI. They do not contain service logic.
 ### Reusable name suggestions
 
 `fabric-name-search` is a dependency-free SDK-layer leaf under
-`infrastructure/search/`. It ranks only caller-supplied names, with finite input
+`sdk/search/names/`. It ranks only caller-supplied names, with finite input
 and result limits. SDK, CLI and future MCP consumers can reuse it without a
 service client, credential provider, runtime, CLI dependency or external index.
 The physical infrastructure directory does not make it a core-layer dependency;
@@ -471,7 +485,7 @@ Notebook service requests. It accepts a caller-owned Azure `HttpClient` and
 asynchronous timer, with bounded streaming, deadlines, read-status retries and
 no mutation replay. It depends on the SDK facade, not the reverse, so focused
 SDK consumers remain free to inject other executors. See its
-[source mapping and compatibility limits](../infrastructure/http/fabric-sdk-http/README.md).
+[source mapping and compatibility limits](../sdk/http/executor/README.md).
 It does not install a production HTTP/TLS backend or create a runtime.
 
 Libraries must not prompt implicitly, exit the process, initialize a global logger, create
@@ -486,7 +500,7 @@ STA thread is a WinRT/UI requirement, not an independent async runtime.
 
 `azure_core` default features remain disabled. Direct SDK consumers still
 exclude HTTP/TLS implementations. The optional
-[`fabric-sdk-transport`](../infrastructure/http/fabric-sdk-transport/README.md) SDK-layer crate
+[`fabric-sdk-transport`](../sdk/http/transport/README.md) SDK-layer crate
 has no default backend; its `hyper-rustls` feature selects one pooled Hyper
 client, Rustls with a per-client ring provider, explicit platform/additional
 trust, a direct/static-HTTP-proxy policy and bounded decoded streaming.

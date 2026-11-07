@@ -17,6 +17,13 @@ than extending the historical merger chains below. At each stage, use distinct
 review perspectives and record actual evidence tied to the immutable subject.
 Source unions and old component checks do not prove a combined executable.
 
+The current package roots are `sdk/` for reusable libraries and
+`frontends/cli/` for CLI-specific packages. Package names, logical layers,
+credential injection and optional native boundaries remain unchanged.
+See [physical organization](architecture.md#physical-organization) for the
+current paths. Dated receipts below retain the paths used at their checkpoints;
+they are not current file locators or validation evidence for a relocated tree.
+
 Within authorized scope, research, implement, validate, and repair without routine
 human handoffs. Use the bounded repair and blocker protocol when intent, authority,
 or required evidence is missing. The assigned integration owner remains the only
@@ -156,7 +163,7 @@ evidence. Select `ResourceTransferHost` and injected `ResourceFiles` for storage
 `cp`/`mv`; preserve the separate `OneLakeWriteResult`/`OneLakeWriteError`
 create/append/flush and partial-effect evidence. These are eleven bounded
 family-adapter leaves, not eleven new mounted executable paths. See the
-[resource host contract](../capabilities/resources/fabric-cli-mutations/src/frontdoor/README.md)
+[resource host contract](../frontends/cli/commands/resource-mutations/src/frontdoor/README.md)
 for unsupported branches and source argument limitations.
 
 The transfer API is
@@ -168,7 +175,7 @@ deferred import cache effects, original `TransferError` operation uncertainty,
 and shared `render_result`/`render_error`/`write_result` stream failures.
 `LocalTransferFiles` requires an explicit stable local root. Full config-driven
 `deploy` remains an explicit `NotSupported` gap, not a fourth happy leaf.
-See the [transfer contract](../capabilities/deployment/fabric-cli-transfer/README.md).
+See the [transfer contract](../frontends/cli/commands/transfer/README.md).
 
 Cargo composition adds the safe transfer default member, its centralized local
 path declarations and package block, and the resource crate's existing Clap
@@ -242,7 +249,7 @@ navigation uses `HierarchyLookup`/`PathElement`; access borrows
 metadata session to these released boundaries, not add another resolver,
 runtime, HTTP engine or credential fallback. ACL export and access skill-header
 binding remain explicitly unsupported; REPL/batch and platform debt are not
-closed by source composition. See the [local host contract](../capabilities/local/fabric-cli-local/README.md)
+closed by source composition. See the [local host contract](../frontends/cli/commands/local/README.md)
 and [access host contract](access-frontdoor.md).
 
 #### Source readiness is not merged-head validation
@@ -375,8 +382,8 @@ steps and local-write evidence, not only its formatted message. The actual sourc
 lease survives upload; cancellation is cooperative, not rollback. This crate
 does not add recursive copies, local-to-local copies, physical moves, parent
 directory creation or cleanup deletion. See its
-[host contract](../capabilities/storage/fabric-cli-storage-files/HOST-CONTRACT.md) and
-[source branches](../capabilities/storage/fabric-cli-storage-files/SOURCE-BRANCHES.md).
+[host contract](../frontends/cli/commands/files/HOST-CONTRACT.md) and
+[source branches](../frontends/cli/commands/files/SOURCE-BRANCHES.md).
 
 #### Actual validation and remaining gate
 
@@ -624,7 +631,7 @@ certification. PAC/system/authenticated proxies, client certificates,
 enterprise revocation certification, HTTP/2/3, additional codecs and live Fabric
 proof remain outside this slice. Unsupported encoding chains, raw deflate and
 response trailers fail explicitly. See the
-[complete transport contract](../infrastructure/http/fabric-sdk-transport/README.md).
+[complete transport contract](../sdk/http/transport/README.md).
 
 ### Enriched workspace metadata GET integration
 

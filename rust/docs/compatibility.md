@@ -38,7 +38,7 @@ read host; the bootstrap table below continues to describe default builds.
 The optional `repl` feature adds a separately packaged Reedline terminal host;
 no arguments then enter that host only with terminal stdin and stdout. Default
 no-argument diagnostics remain unchanged. See the [interactive shell
-contract](../hosts/repl/fabric-cli-repl/README.md) for aliases, lexing, EOF,
+contract](../frontends/cli/shell/README.md) for aliases, lexing, EOF,
 bounded memory-only history and remaining terminal-appearance differences.
 See [native host setup and limits](native-read-host.md) for supported composition,
 distinct failures and still-unexecuted live acceptance.
@@ -189,7 +189,7 @@ that new helper.
 | Installation | Authentication and deployment without installed Azure CLI, Azure Developer CLI, or Python |
 | Platforms | Native Windows/macOS/Linux execution and packaging evidence |
 
-The [bounded Notebook deployment implementation](../capabilities/deployment/fabric-deploy/README.md)
+The [bounded Notebook deployment implementation](../sdk/deployment/README.md)
 is native Rust, not a permanent Python subprocess bridge. Broad configuration,
 transforms, planning and Git behavior remain compatibility gates; the single
 Notebook path is not a full deployment port.
@@ -220,10 +220,10 @@ Notebook operation/result retrieval. Seven source-pinned Python HTTPS retry
 traces are checked independently by
 [`tests/compatibility/http/reference.py`](../tests/compatibility/http/README.md).
 This is a bounded SDK execution slice, not CLI parity. The adapter's
-[compatibility limits](../infrastructure/http/fabric-sdk-http/README.md) explicitly retain
+[compatibility limits](../sdk/http/executor/README.md) explicitly retain
 the no-mutation-replay exception and enumerate unported HTTP behavior.
 
-The separately selected [native transport](../infrastructure/http/fabric-sdk-transport/README.md)
+The separately selected [native transport](../sdk/http/transport/README.md)
 now has offline Hyper/Rustls wire evidence with the actual SDK/shared executor,
 bounded decoding, explicit trust/static proxy settings, cancellation and no
 backend replay. The facade still has no default transport. These checks do not

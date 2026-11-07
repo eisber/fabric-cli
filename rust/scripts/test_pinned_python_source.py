@@ -81,7 +81,7 @@ class PinnedPythonSourceTests(unittest.TestCase):
         self.write("rust/scripts/other_helper.py", b"VALUE = 2\n")
         self.write("rust/cli/capability/src/lib.rs", b"// Never built in the oracle.\n")
         self.template = (
-            "rust/capabilities/resources/fabric-cli-mutations/"
+            "rust/frontends/cli/commands/resource-mutations/"
             "templates/Blank.SemanticModel/.platform"
         )
         self.evidence = (
@@ -89,7 +89,7 @@ class PinnedPythonSourceTests(unittest.TestCase):
         )
         self.write(self.template, b'{"candidate_native_template": true}\n')
         self.write(
-            "rust/capabilities/resources/fabric-cli-mutations/src/templates.rs",
+            "rust/frontends/cli/commands/resource-mutations/src/templates.rs",
             b"// Product implementation is not oracle evidence.\n",
         )
         self.head = self.commit("candidate Rust and advanced Python", self.pin)
@@ -180,7 +180,7 @@ class PinnedPythonSourceTests(unittest.TestCase):
         self.assertFalse(
             (
                 checkout
-                / "rust/capabilities/resources/fabric-cli-mutations/src/templates.rs"
+                / "rust/frontends/cli/commands/resource-mutations/src/templates.rs"
             ).exists()
         )
         self.assertFalse((checkout / "rust/target").exists())
@@ -341,9 +341,7 @@ class PreparedResourceTemplateTests(unittest.TestCase):
             references = (
                 checkout
                 / "rust"
-                / "capabilities"
-                / "resources"
-                / "fabric-cli-mutations"
+                / "frontends" / "cli" / "commands" / "resource-mutations"
                 / "tests"
             )
 

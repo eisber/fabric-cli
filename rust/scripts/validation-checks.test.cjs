@@ -11,8 +11,8 @@ const {CHECK_IDS, commandsFor, validateRegistry, assertTransportGraphs} =
   require('./validation-checks.cjs');
 
 const EXPECTED_IDS = [
-  'selector-tests', 'oracle-tools', 'batch-oracle', 'transport', 'transport-graphs',
-  'read-parity', 'json-parity', 'broker', 'repl', 'headless', 'certificate', 'updater',
+  'selector-tests', 'command-inventory', 'oracle-tools', 'batch-oracle', 'transport', 'transport-graphs',
+  'read-parity', 'json-parity', 'broker', 'repl', 'interactive', 'headless', 'certificate', 'updater',
   'combined', 'jobs-oracle', 'definitions-oracle', 'import-oracle', 'parameters-oracle',
   'export-oracle', 'native-read', 'context-output', 'broker-read-parity', 'sdk-example',
   'resource-oracle', 'cli-smoke', 'sdk-graph', 'dependency-graph', 'frozen-verify',
@@ -44,6 +44,44 @@ const inside = (parent, child) => {
     !path.isAbsolute(relative), `${child} is not contained in ${parent}`);
 };
 
+test('native preflights preserve exact engineering inventory and the mandatory full matrix', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/rust-ci.yml'), 'utf8');
+  assert.match(workflow, /pattern, count = "test_native_acceptance\*\.py", 38/);
+  assert.ok(workflow.includes('result.testsRun == count and not result.expectedFailures and skips == expected'));
+  assert.ok(workflow.includes('requires_native_POSIX_PTY'));
+  assert.ok(workflow.includes('with open("native-acceptance.log", "w", encoding="utf-8")'));
+  assert.ok(!workflow.includes('with open(pattern + ".log"'));
+  assert.ok(workflow.includes('cargo clippy --offline --locked --workspace --all-targets --all-features -- -D warnings'));
+  assert.ok(workflow.includes('cargo test --offline --locked -p fabric-cli --all-targets --all-features --no-fail-fast'));
+  assert.ok(workflow.includes('FAB_IDENTITY_TEST_ROOT: ${{ runner.temp }}/rust-cli-preflight'));
+  assert.ok(workflow.includes('FAB_UPDATE_TEST_ROOT: ${{ runner.temp }}/rust-cli-preflight'));
+  assert.ok(workflow.includes('mkdir -p "$FAB_IDENTITY_TEST_ROOT"'));
+  assert.ok(workflow.indexOf('Check bounded engineering cleanup before native compilation') <
+    workflow.indexOf('Preflight every current feature and target under strict native lints'));
+  assert.ok(workflow.indexOf('Preflight every current feature and target under strict native lints') <
+    workflow.indexOf('Exercise complete native CLI targets before the full feature plan'));
+  assert.ok(workflow.indexOf('Exercise complete native CLI targets before the full feature plan') <
+    workflow.indexOf('Execute the shared local and CI validation plan'));
+  const cliPreflight = workflow.slice(
+    workflow.indexOf('      - name: Exercise complete native CLI targets before the full feature plan'),
+    workflow.indexOf('      - name: Execute the shared local and CI validation plan'));
+  const preflightRoot = '${{ runner.temp }}/rust-cli-preflight';
+  for (const name of ['FAB_IDENTITY_TEST_ROOT', 'FAB_UPDATE_TEST_ROOT', 'IMPACT_TEST_ROOT']) {
+    assert.ok(cliPreflight.includes(`${name}: ${preflightRoot}`));
+  }
+  assert.ok(cliPreflight.includes('mkdir -p "$FAB_IDENTITY_TEST_ROOT"'));
+  assert.ok(cliPreflight.indexOf('mkdir -p "$FAB_IDENTITY_TEST_ROOT"') <
+    cliPreflight.indexOf('cargo test --offline --locked'));
+  const retainedArtifacts = workflow.slice(
+    workflow.indexOf('      - name: Retain plan and actual command exits, hashes and coverage'));
+  assert.ok(retainedArtifacts.includes(preflightRoot));
+  assert.ok(workflow.includes('--restore-oracle-deps --execute'));
+  assert.ok(workflow.includes('os: [windows-2025, ubuntu-24.04, macos-15]'));
+  assert.ok(workflow.includes('timeout-minutes: 120'));
+  assert.ok(workflow.includes('contents: read'));
+  assert.ok(!workflow.includes('continue-on-error'));
+});
+
 function withTargetEnvironment(value, action) {
   const previous = process.env.CARGO_TARGET_DIR;
   if (value === undefined) delete process.env.CARGO_TARGET_DIR;
@@ -58,11 +96,11 @@ function withTargetEnvironment(value, action) {
 
 test('all canonical IDs are registered exactly once, including core-profile markers', () => {
   assert.deepEqual([...CHECK_IDS].sort(), [...EXPECTED_IDS].sort());
-  assert.equal(CHECK_IDS.length, 27);
+  assert.equal(CHECK_IDS.length, 29);
   assert.equal(new Set(CHECK_IDS).size, CHECK_IDS.length);
   assert.ok(Object.isFrozen(CHECK_IDS));
   assert.equal(validateRegistry(graph([...EXPECTED_IDS].reverse())), true);
-  for (const id of ['headless', 'certificate', 'updater', 'combined']) {
+  for (const id of ['interactive', 'headless', 'certificate', 'updater', 'combined']) {
     assert.deepEqual(commands(id), [], id);
     assert.throws(() => validateRegistry(graph(EXPECTED_IDS.filter(value => value !== id))),
       /missing:/, id);
@@ -95,16 +133,13 @@ for (const id of EXPECTED_IDS) {
       assert.ok(['command', 'prepare-oracle', 'verify-oracle', 'transport-graphs']
         .includes(command.kind));
       assert.ok(path.isAbsolute(command.cwd));
-      if (command.args.includes('test_assemble_native_release.py')) {
-        assert.equal(command.cwd, artifacts);
-      } else {
-        assert.ok([rust, pinnedRust].includes(command.cwd));
-      }
+      assert.ok([rust, pinnedRust, artifacts].includes(command.cwd));
       assert.equal(command.shell, undefined);
       if (command.stdout) inside(artifacts, command.stdout);
       if (command.program === 'python') {
         assert.equal(command.args[0], '-B');
-        assert.deepEqual(command.env, {PYTHONUTF8: '1', PYTHONDONTWRITEBYTECODE: '1'});
+        assert.deepEqual(command.env, {PYTHONUTF8: '1', PYTHONDONTWRITEBYTECODE: '1',
+          ...(command.cwd === artifacts ? {TMPDIR: artifacts, TEMP: artifacts, TMP: artifacts} : {})});
       }
       if (command.program === 'cargo') {
         assert.equal(command.cwd, rust);
@@ -171,10 +206,9 @@ test('only tooling tests, REPL source tests and integrity helpers use candidate 
   let comparisons = 0;
   for (const id of CHECK_IDS) for (const command of commands(id)) {
     if (command.program !== 'python') continue;
-    if (command.args.includes('test_assemble_native_release.py')) {
-      assert.equal(command.cwd, artifacts);
-      assert.equal(valueAfter(command, '-s'), path.join(rust, 'scripts'));
-    } else if (['oracle-tools', 'repl', 'frozen-verify'].includes(id)) {
+    if (id === 'oracle-tools') {
+      assert.equal(command.cwd, command.kind === 'prepare-oracle' ? rust : artifacts);
+    } else if (['command-inventory', 'repl', 'frozen-verify'].includes(id)) {
       assert.equal(command.cwd, rust);
     } else {
       comparisons++;
@@ -210,27 +244,58 @@ test('default frozen paths are deterministic and unsafe context paths are reject
   assert.throws(() => commandsFor('cli-smoke'), /context is required/);
 });
 
-test('selector tests include all shared planners, runner, registry and legacy tests', () => {
+test('selector tests include coverage tooling with absolute source paths and artifact-only scratch', () => {
   const [command] = commands('selector-tests');
   assert.equal(command.program, 'node');
   assert.deepEqual(command.args, ['--test',
-    path.join('scripts', 'impact-plan.test.cjs'),
-    path.join('scripts', 'validate-impact.test.cjs'),
-    path.join('scripts', 'validation-checks.test.cjs'),
-    path.join('scripts', 'rust-fast-check.test.cjs')]);
+    path.join(rust, 'scripts', 'impact-plan.test.cjs'),
+    path.join(rust, 'scripts', 'validate-impact.test.cjs'),
+    path.join(rust, 'scripts', 'validation-checks.test.cjs'),
+    path.join(rust, 'scripts', 'rust-fast-check.test.cjs'),
+    path.join(rust, 'scripts', 'rust-coverage.test.cjs')]);
+  assert.equal(command.cwd, artifacts);
+  assert.deepEqual(command.env, {IMPACT_TEST_ROOT: artifacts,
+    TMPDIR: artifacts, TEMP: artifacts, TMP: artifacts});
 });
 
-test('oracle preparation runs all seven dependency tests before its captured marker', () => {
+test('command inventory captures actual Cargo metadata before its candidate checker consumes that file', () => {
+  const [metadata, checker, ...extra] = commands('command-inventory');
+  assert.deepEqual(extra, []);
+  assert.equal(metadata.program, 'cargo');
+  assert.deepEqual(metadata.args, ['metadata', '--offline', '--locked',
+    '--no-deps', '--format-version', '1']);
+  assert.equal(metadata.stdout, path.join(artifacts, 'command-inventory-metadata.json'));
+  inside(artifacts, metadata.stdout);
+  assert.equal(checker.program, 'python');
+  assert.deepEqual(checker.args, ['-B', path.join('scripts', 'check_command_acceptance.py'),
+    '--root', root, '--metadata', metadata.stdout]);
+  assert.ok([metadata, checker].every(command => command.cwd === rust && command.kind === 'command'));
+  assert.equal(checker.test, undefined, 'Inventory validation does not execute product tests');
+  assert.deepEqual(checker.env, {PYTHONUTF8: '1', PYTHONDONTWRITEBYTECODE: '1'});
+  assert.ok(!checker.args.includes(pinnedRust));
+  assert.deepEqual(commands('command-inventory', {
+    pinnedRust: path.join(artifacts, 'unused frozen source'), platform: 'windows',
+  }), [metadata, checker]);
+});
+
+test('oracle preparation runs all seven tooling suites before its captured marker', () => {
   const result = commands('oracle-tools');
   assert.equal(result.length, 8);
   assert.deepEqual(result.slice(0, -1).map(command => valueAfter(command, '-p')).sort(), [
-    'test_assemble_native_release.py', 'test_check_report.py',
-    'test_native_acceptance.py', 'test_native_acceptance_pty_cleanup.py',
-    'test_pinned_python_source.py', 'test_release_verify.py',
+    'test_assemble_native_release.py', 'test_check_command_acceptance.py', 'test_check_report.py',
+    'test_native_acceptance*.py', 'test_pinned_python_source.py', 'test_release_verify.py',
     'test_v2_upstream.py',
   ]);
   const identity = result.find(command => command.args.includes('test_check_report.py'));
-  assert.equal(valueAfter(identity, '-s'), path.join('tests', 'acceptance', 'identity'));
+  assert.equal(valueAfter(identity, '-s'), path.join(rust, 'tests', 'acceptance', 'identity'));
+  for (const command of result.slice(0, -1)) {
+    assert.equal(command.cwd, artifacts);
+    assert.equal(command.test, 'unittest');
+    assert.equal(valueAfter(command, '-s'), path.join(rust,
+      ...(command === identity ? ['tests', 'acceptance', 'identity'] : ['scripts'])));
+    assert.deepEqual(command.env, {PYTHONUTF8: '1', PYTHONDONTWRITEBYTECODE: '1',
+      TMPDIR: artifacts, TEMP: artifacts, TMP: artifacts});
+  }
   const marker = result.at(-1);
   assert.equal(marker.kind, 'prepare-oracle');
   assert.equal(marker.pinnedOutput, pinnedOutput);
@@ -248,7 +313,7 @@ test('oracle preparation runs all seven dependency tests before its captured mar
 
 test('release assembly validation honors controller isolation without changing selected tests', () => {
   const result = commands('oracle-tools');
-  const controller = result.filter(command => command.cwd === artifacts);
+  const controller = result.filter(command => command.args.includes('test_assemble_native_release.py'));
   assert.equal(controller.length, 1);
   assert.deepEqual(controller[0].args, ['-B', '-m', 'unittest', 'discover',
     '-s', path.join(rust, 'scripts'), '-p', 'test_assemble_native_release.py', '-v']);
@@ -260,13 +325,12 @@ test('release assembly validation honors controller isolation without changing s
 test('native CI front-loads exact engineering suites without replacing the full gate', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
   assert.ok(workflow.indexOf('Check bounded engineering cleanup before native compilation') <
-    workflow.indexOf('Record actual native toolchain and restore locked dependencies'));
-  assert.ok(workflow.includes('("test_native_acceptance.py", 32)'));
-  assert.ok(workflow.includes('("test_native_acceptance_pty_cleanup.py", 5)'));
+    workflow.indexOf('Preflight every current feature and target under strict native lints'));
+  assert.ok(workflow.includes('pattern, count = "test_native_acceptance*.py", 38'));
   assert.ok(workflow.includes('not result.expectedFailures and skips == expected'));
   assert.ok(workflow.includes('"discovered": discovered, "run": 0'));
   assert.ok(workflow.includes('"passed": False, "reason": "inventory_mismatch"'));
-  assert.ok(workflow.includes('persist()\n                  raise SystemExit(1)'));
+  assert.ok(workflow.includes('persist()\n              raise SystemExit(1)'));
   assert.ok(workflow.includes('report["pty_receipts"].append(captured[0])'));
   assert.ok(workflow.includes('return captured'));
   assert.ok(workflow.includes('Execute the shared local and CI validation plan'));
@@ -284,9 +348,9 @@ test('upstream tracking inputs select the candidate-only offline tooling tests',
   }
   const unit = commands('oracle-tools').find(command => command.args.includes('test_v2_upstream.py'));
   assert.equal(unit.program, 'python');
-  assert.equal(unit.cwd, rust);
+  assert.equal(unit.cwd, artifacts);
   assert.deepEqual(unit.args, ['-B', '-m', 'unittest', 'discover',
-    '-s', 'scripts', '-p', 'test_v2_upstream.py', '-v']);
+    '-s', path.join(rust, 'scripts'), '-p', 'test_v2_upstream.py', '-v']);
 });
 
 test('all six JSON observations feed their exact pinned assertions and unit selectors', () => {
@@ -415,16 +479,15 @@ test('parameter source has finite immutable Git argv before all ten frozen compa
     'parameter_resolution', 'parameter_schema_edges', 'config_extensions_execution'];
   result.slice(4).forEach((command, index) => {
     assert.equal(command.cwd, pinnedRust);
-    assert.deepEqual(command.args, ['-B', path.join('capabilities', 'deployment',
-      'fabric-deploy', 'tests', `${references[index]}_reference.py`),
+    assert.deepEqual(command.args, ['-B', path.join('sdk', 'deployment', 'tests', `${references[index]}_reference.py`),
     '--reference-root', parameterRoot]);
   });
 });
 
 test('remaining frozen source gates preserve batch, definition, import and export selectors', () => {
   assert.deepEqual(commands('batch-oracle')[0].args, ['-B',
-    path.join('hosts', 'cli', 'fabric-cli', 'tests', 'batch_reference.py'),
-    '--check', path.join('hosts', 'cli', 'fabric-cli', 'tests', 'batch_source.json')]);
+    path.join('frontends', 'cli', 'app', 'tests', 'batch_reference.py'),
+    '--check', path.join('frontends', 'cli', 'app', 'tests', 'batch_source.json')]);
   const definitions = commands('definitions-oracle');
   assert.equal(definitions.length, 3);
   assert.equal(valueAfter(definitions[0], '-p'), 'test_run_definition_parity.py');
@@ -432,8 +495,7 @@ test('remaining frozen source gates preserve batch, definition, import and expor
   assert.equal(valueAfter(definitions[1], '--artifacts'), path.join(artifacts, 'definition-parity'));
   assert.deepEqual(definitions[2].args, ['test', '--offline', '--locked', '-p',
     'fabric-deploy', '--test', 'definitions']);
-  assert.equal(script(commands('import-oracle')[0]), path.join('capabilities', 'deployment',
-    'fabric-deploy', 'tests', 'definition_import_reference_checks.py'));
+  assert.equal(script(commands('import-oracle')[0]), path.join('sdk', 'deployment', 'tests', 'definition_import_reference_checks.py'));
   const [exportCommand] = commands('export-oracle');
   assert.equal(script(exportCommand), path.join('tests', 'compatibility', 'run_export_source_parity.py'));
   assert.equal(valueAfter(exportCommand, '--artifacts'),
@@ -603,4 +665,10 @@ test('transport assertions reject absent captures without executing any graph pr
   }
   assert.throws(() => assertTransportGraphs(safeDefaults, undefined), /Missing opt-in/);
   assert.throws(() => assertTransportGraphs(safeDefaults, ''), /is missing hyper/);
+  for (const pkg of Object.keys(safeDefaults)) for (const capture of [
+    '', '\n \r\n', 'unrelated-package v1.0.0', `${pkg}-lookalike v1.0.0`,
+  ]) {
+    assert.throws(() => assertTransportGraphs({...safeDefaults, [pkg]: capture}, optinGraph),
+      /Missing default .* package in captured graph/);
+  }
 });

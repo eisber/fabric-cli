@@ -85,6 +85,11 @@ Read [`rust/docs/compatibility.md`](rust/docs/compatibility.md) before adding co
 porting behavior. Rust public APIs require documentation and must respect the
 workspace lints; the Python-specific standards below still apply to Python.
 
+Rust reusable packages live under `rust/sdk/`, grouped by feature, and CLI-only
+packages under `rust/frontends/cli/`. These are physical source roots, not new
+logical dependency layers. Grouping directories are not Cargo packages; package
+names and credential-injection boundaries remain unchanged.
+
 Keep SDK credentials caller-injected, tests offline, and dependency features
 centralized in `rust/Cargo.toml`. Do not add production authentication, credential
 fallbacks, Python deployment bridges, or new command namespaces as scaffold

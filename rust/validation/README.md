@@ -22,6 +22,11 @@ source-binding, execution and validation-mode usage, see
 [dependency validation](../docs/dependency-validation.md). This document records
 the catalog API and its source-derived contract mapping.
 
+The shared executor retains each complete command ID and literal argv in
+`commands.json`. Long command IDs use a bounded diagnostic filename with a
+digest suffix, so a full-workspace target selection cannot exceed the host's
+filename limit. This does not shorten commands or omit selected targets.
+
 All paths are repository-relative POSIX globs, irrespective of the execution
 platform. A component has an owning Cargo package, input globs, dependency
 component IDs, exact test descriptors, and additional check IDs. A dependency
@@ -36,6 +41,10 @@ engine's coverage set uses the **test packages of selected runtime components**,
 not component owning-package fields or test packages supplied solely by
 structural components. An uncovered reverse Cargo consumer still requires its
 full runtime tests even when its architecture contract is selected.
+
+The shared subprocess profile helper is an input of `cli-shared-test-helpers`.
+Its headless, job, local and endpoint configuration consumers remain explicit
+test targets alongside the existing helper inclusion union.
 
 A test descriptor names its Cargo package and one actual `lib`, `bin:NAME`,
 `test:NAME`, or `example:NAME` target. This catalog deliberately uses no test-name
@@ -106,7 +115,7 @@ for the complete test-target lists.
 
 ### Notebook and Spark examples
 
-A change to `rust/capabilities/deployment/fabric-deploy/src/notebook.rs` selects
+A change to `rust/sdk/deployment/src/notebook.rs` selects
 `deploy-notebook`, `transfer`, `cli-deployment`, `cli-get` and the shared
 `workspace-architecture` contract. Its declared test-target union is:
 
@@ -126,7 +135,7 @@ select CLI help/version smoke, and all mapped leaves select dependency feature
 and duplicate inspection without widening their runtime target set.
 
 A change to
-`rust/capabilities/deployment/fabric-deploy/src/workflow/families/environment.rs`
+`rust/sdk/deployment/src/workflow/families/environment.rs`
 instead selects `deploy-spark-environment`, `transfer`, `cli-deployment`,
 `cli-get` and `workspace-architecture`. Its `fabric-deploy` targets are `lib`, `test:workflow`,
 `test:publisher_source_contract`, `test:deployment_endpoint`, and

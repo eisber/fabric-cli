@@ -2,10 +2,52 @@
 
 # Identity backend decision
 
-**Status: production support unresolved.** The owner-approved experimental
-direct-WAM Windows login is implemented behind an explicit feature; it has not
-been validated with a real account or tenant policy. Direct SDK credential
-injection and default offline builds remain independent.
+**Status: optional implementations exist; production support and native policy
+acceptance remain unresolved.** Windows broker login and remote reads have
+user-reported smoke evidence. This does not certify all accounts, guest tenants,
+MFA, Conditional Access, refresh/logout races or other operating systems.
+Direct SDK credential injection and default offline builds remain independent.
+
+## Current optional implementations
+
+| Backend | Selection and persistence | Acceptance boundary |
+| --- | --- | --- |
+| Windows broker (`windows-broker`) | Windows default; explicit hints or native picker; WAM retains tokens and a non-secret generation-bound binding retains selection | Controlled broker, guest/account, MFA and tenant-policy scenarios |
+| Unattended (`headless`) | Explicit client-secret, renewable assertion, workload-identity or supported managed-host contract; no credential chain | Native host and service-permission matrix |
+| Device code (`interactive`) | Explicit device-code method, first-login public-cloud tenant/client GUIDs; refresh credentials only in an OS protected store | Windows Credential Manager, Linux no-prompt Secret Service and macOS isolated protected-store helper require native acceptance |
+| Windows certificate (`certificate-store-windows`) | Explicit native certificate/private-key selection; no private-key export | Native store policy and enrolled application acceptance |
+| Linux certificate (`certificate-store-pkcs11`) | Explicit direct module digest, slot/token identity, full certificate fingerprint, CKA_ID and PIN callback or protected authentication path | Trusted native module/token policy and enrolled application acceptance |
+| macOS certificate (`certificate-store-macos`) | Explicit Keychain/certificate and independently pinned, root-custodied isolated signer helper | Native extractability/signing attributes, helper installation and enrolled application acceptance |
+
+These features are default-off. Explicit CLI method/provider configuration wins
+over platform defaults; an unavailable explicit provider does not silently
+switch backend. Windows does not choose device code merely because broker
+support was omitted at build time. SDK credential refresh and status never
+start an interactive login.
+
+Device code uses the selected TLS-authenticated Microsoft token endpoint and
+requires all three Fabric, Storage and ARM acquisitions before publishing a
+session. Returned identity metadata is not a claim of local ID-token signature
+verification. This flow is **not broker SSO, device-bound authentication or
+proof that a tenant permits device code**.
+
+No protected-store or certificate operation may invoke an implicit prompt.
+macOS no-UI process-global policy belongs only in an isolated helper, not the
+SDK process. Locked/missing stores, required interaction and uncertain cleanup
+must remain explicit errors; no plaintext cache or alternate credential is a
+fallback. See the [native certificate contract](../../sdk/authentication/credentials/native-certificates.md)
+and [identity guide](../../sdk/authentication/credentials/README.md).
+
+Authentication/core changes still require Fabric CLI team review. Offline
+protocol/lifecycle tests, compiled feature flags and successful login metadata
+do not establish production support, service authorization, signing or native
+three-platform acceptance.
+
+## Historical decision record
+
+The sections below preserve the original scaffold decision and later dated
+approvals. References to an absent adapter or unvalidated implementation describe
+those stages; the table above is the current implementation/acceptance map.
 
 ## Accepted boundary
 

@@ -97,10 +97,13 @@ CLA, required checks, restricted-area review, and authority boundaries still app
 Run the pinned checks from this directory, not the repository root. There is no
 fixed crate count. Prefer focused crates that enable independent ownership,
 implementation, and testing, with explicit interfaces and acyclic dependencies.
-Crates under `capabilities/*/*`, `hosts/*/*`, `infrastructure/*/*`, and `sdk/*`
-are discovered automatically. Group service clients and command adapters by
-capability; keep host composition and shared infrastructure separate. Physical
-grouping does not change architectural layers or permit new dependency edges.
+Reusable packages live under `sdk/`, grouped by feature, and CLI-specific
+packages under `frontends/cli/`. Register only package leaves in `Cargo.toml`;
+grouping directories are not crates. The architecture contract independently
+discovers manifests recursively under both roots and rejects unregistered
+packages and obsolete production roots. Physical grouping does not change
+architectural layers or permit new dependency edges. Authentication providers
+remain optional companion packages; SDK service clients still inject credentials.
 Declare each crate's
 `package.metadata.fabric.layer` and add safe crates to `default-members` as
 described in the architecture guide. The owner-approved optional

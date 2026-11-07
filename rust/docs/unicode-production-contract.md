@@ -134,7 +134,7 @@ exception list and not silent adoption of newer ICU data.
 
 ## Implementation and exact integration requests
 
-`hosts/cli/fabric-cli-output/src/production_unicode.rs` supplies:
+`frontends/cli/output/src/production_unicode.rs` supplies:
 
 - `ProductionUnicode::from_json(reviewed_embedded_data, UnicodeLimits)`:
   immutable, caller-injected data, strict version/shape checks, complete
@@ -251,8 +251,8 @@ Their subsequently completed results are recorded in the final section:
 
 ```powershell
 # From rust\, only after the controller grants the full-scalar CPU slot:
-python -B hosts\cli\fabric-cli-output\tests\production_unicode\generate.py --generate --full-scalar-slot
-python -B hosts\cli\fabric-cli-output\tests\production_unicode\generate.py --verify --full-scalar-slot
+python -B frontends\cli\output\tests\production_unicode\generate.py --generate --full-scalar-slot
+python -B frontends\cli\output\tests\production_unicode\generate.py --verify --full-scalar-slot
 
 # After approved dependency resolution and module export, within the serial build slot:
 cargo test --offline --locked -p fabric-cli-output production_unicode -- --test-threads=1 --nocapture
@@ -373,6 +373,11 @@ source remains `1ff741b5838ca0c7d8c003fd60233804bd6df15f` at the pinned CLI sour
 commit. No old source pin, oracle expectation or hash was repinned.
 
 ### Commands and results
+
+These historical commands retain their original source paths. The current
+generator and guard tests now live under
+[`frontends/cli/output/tests/production_unicode`](../frontends/cli/output/tests/production_unicode/README.md).
+The receipt below does not validate the relocated tree.
 
 All commands below exited **0** on the repaired final source:
 

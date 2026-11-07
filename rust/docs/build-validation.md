@@ -21,6 +21,81 @@ The command registry and executor are identical locally and in CI. The
 historical results below describe their recorded checkpoints, not a pass of a
 newly generated impact plan.
 
+Formatting is checked with one `cargo fmt --package <name> -- --check`
+invocation per selected package. This preserves the formatting gate while
+avoiding Windows' aggregate rustfmt command-line length limit.
+The acceptance inventory is checked against captured, locked/offline Cargo
+metadata, not a hand-maintained target list. Empty/all-skipped test execution
+and empty dependency graphs cannot satisfy a selected check.
+See [current command acceptance](command-parity.md) and
+[stable coverage reporting](test-coverage.md) for scope and denominators;
+neither configured CI nor the historical table below certifies a new candidate.
+
+Subprocess diagnostic contracts distinguish an unconfigured default read host
+from an explicitly selected headless host without `FAB_RUST_AUTH_MODE`.
+Certificate profiles inherit the headless host. Their offline checks retain
+the same exit, stream, sanitization and credential-isolation assertions, with
+the diagnostic expected for the selected feature profile.
+
+The native workflow first runs all 33 existing engineering-harness tests and
+five additional bounded-PTY unit tests with an explicit inventory and the
+original Windows-only POSIX-PTY skip. It then
+preflights every workspace target and feature under strict Clippy and exercises
+all CLI targets with every feature before the
+unchanged full dependency-selected plan. Failure in either preflight remains
+blocking; these early checks do not replace native feature profiles or frozen
+source comparisons. Engineering receipts record the exact source SHA, host,
+case counts and observed PTY cleanup data.
+The CLI preflight keeps executing remaining targets after a failed target to
+expose all failures in one bounded run; its final failure still blocks the plan.
+
+Early CLI tests and the shared validator provide explicit artifact-only identity
+and updater fixture roots. The preflight creates its directory under
+`RUNNER_TEMP`; the full validator injects its existing artifact root. Tests do
+not require a writable ambient profile or fall back to source-tree fixtures.
+Batch authentication expectations follow the actual selected platform/provider:
+on POSIX, the default device-code method either reports missing explicit
+configuration or an unavailable feature, without contacting a provider.
+
+The same test-only profile classifier applies to rootless read, job and endpoint
+subprocess contracts. An interactive non-broker profile with no explicit
+configuration reports `invalid_configuration` before selecting credentials;
+other unconfigured profiles retain `NotConfigured`. On macOS, a batch without
+the required protected-store helper stops at that configuration failure, without
+running later mutations or emitting a completed-command summary. The existing
+handled missing-selection branch remains exercised on its applicable profiles.
+
+The standalone `interactive` feature composes the same private native batch
+binding, home-context and outcome helpers as broker and headless hosts. It does
+not require enabling `headless`, changing SDK dependencies or altering the
+existing helper algorithms. The full matrix checks this isolated feature
+separately; an all-feature build alone cannot establish its compilation.
+
+The private authentication outcome writer and its `Write` import compile for
+their actual Windows-broker and interactive callers. POSIX broker-only builds
+retain their explicit unsupported-provider behavior without an unused
+presentation helper or a lint suppression.
+
+The complete CLI preflight creates its isolated test directory under
+`RUNNER_TEMP` and supplies the identity, updater and impact test-root bindings.
+Its artifacts are retained with the native results; tests never need a fallback
+directory inside the checkout.
+
+PTY cleanup drains already queued output while reaping only the owned child
+within the existing wait budget. A confirmed process-tree cleanup is distinct
+from observing terminal restoration: unavailable terminal state is recorded as
+an observation error with `termios_restored` false. Native terminal acceptance
+still requires an observed restoration; a cleanup unit test cannot establish it.
+
+Certificate feature tests share one test-only declaration of the existing
+public verification vectors. Enabling both PKCS11 and macOS certificate
+features does not load that fixture twice or change its bytes or assertions.
+
+Lexical transfer-path unit tests preserve their Windows inputs on Windows.
+On POSIX they translate only fixture drive prefixes and separators to native
+absolute and relative paths. Every original tilde, named-user and deferred
+validation case remains checked; no production path-selection rule changes.
+
 ## Frozen references alongside current upstream source
 
 The integration branch includes upstream `main` through
@@ -207,7 +282,7 @@ the existing fail-closed native/final gates and do not waive source parity check
 The feature enables explicit platform/additional trust and unauthenticated static
 HTTP proxy support, not general enterprise proxy, broker, live-service or
 installation certification. See the
-[native transport contract](../infrastructure/http/fabric-sdk-transport/README.md).
+[native transport contract](../sdk/http/transport/README.md).
 
 ### Executable source-parity gate
 

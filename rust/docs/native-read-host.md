@@ -168,7 +168,7 @@ provider tests await controller-granted execution and independent review.
 
 Client-certificate authentication remains blocked on an approved OpenSSL/native
 dependency, packaging and explicit input contract; it is not implemented. See the
-[identity adapter contracts and remaining limits](../infrastructure/identity/fabric-identity/README.md).
+[identity adapter contracts and remaining limits](../sdk/authentication/credentials/README.md).
 Offline provider/command tests do not establish live service, tenant-policy or
 cross-platform acceptance. Team identity/core review and live acceptance are
 required before GA.

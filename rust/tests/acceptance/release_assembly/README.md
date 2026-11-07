@@ -5,7 +5,7 @@
 These are synthetic developer-tool contracts, not actual artifact, signing,
 installer, clean-machine or GA evidence. They do not execute fabricated native
 headers or a signing tool. `protocol-v1-fields.json` freezes the existing
-`hosts/update/fabric-cli-update/src/protocol.rs` field set without changing it.
+`frontends/cli/update/src/protocol.rs` field set without changing it.
 No source SHA, OS floor, helper digest or package custody is added to that wire
 protocol. Those bindings belong to the separate signed assembly manifest.
 

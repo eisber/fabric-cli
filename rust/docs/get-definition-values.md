@@ -113,7 +113,7 @@ into the host or establish all item/command leaves or production GA.
 From `rust/`, verify the newly added source receipt without replacing it:
 
 ```text
-python -I -B capabilities\deployment\fabric-deploy\tests\get_definition_value_reference.py
+python -I -B sdk\deployment\tests\get_definition_value_reference.py
 ```
 
 The helper executes complete selected functions directly from the pinned Git

@@ -38,7 +38,7 @@ TIMEOUT_SECONDS = 120
 EXCLUDED_PARTS = {".git", "target", "__pycache__", ".venv", "venv"}
 EVIDENCE_DIRECTORIES = {
     PurePosixPath("rust/crates/fabric-cli-mutations/templates"): PurePosixPath(
-        "rust/capabilities/resources/fabric-cli-mutations/templates"
+        "rust/frontends/cli/commands/resource-mutations/templates"
     ),
 }
 

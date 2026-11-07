@@ -117,7 +117,7 @@ establish integration correctness.
 
 ## Command dependency and ownership ledger
 
-The additive [`fabric-v2-contracts`](../infrastructure/core/fabric-v2-contracts/README.md)
+The additive [`fabric-v2-contracts`](../sdk/contracts/README.md)
 core library supplies deterministic operation descriptors, enumerated
 generation/facet/representation bindings and type-constrained facade discovery.
 It performs no execution or authorization. Conditional and unsupported

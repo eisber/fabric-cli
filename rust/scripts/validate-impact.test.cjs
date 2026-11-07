@@ -96,6 +96,16 @@ test('POSIX formatting retains the combined selected-package check', () => {
   }
 });
 
+test('workspace formatting uses bounded per-package invocations on Windows', () => {
+  const selected = plan();
+  const formatted = coreCommands(selected, 'windows').filter(command => command.args[0] === 'fmt');
+  assert.equal(formatted.length, selected.packages.length);
+  for (const command of formatted) {
+    assert.equal(command.args.filter(argument => argument === '--package').length, 1);
+    assert.deepEqual(command.args.slice(-2), ['--', '--check']);
+  }
+});
+
 test('complete target selection keeps Notebook and downstream contracts, not unrelated suites', () => {
   const commands = coreCommands(plan(), 'windows');
   const tests = commands.filter(command => command.test && command.id !== 'default:doc');
@@ -121,12 +131,64 @@ test('default full packages are grouped but exact target commands remain separat
   assert.deepEqual(commands[1].args.slice(-5), ['--bin', 'demo', '--example', 'probe', '--lib']);
 });
 
+test('full-workspace command ids use bounded diagnostic filenames without losing receipt identity', t => {
+  const root = temporary(t);
+  const context = {root, artifacts: root, commandTimeout: 1000, deadline: Date.now() + 10000, results: []};
+  const id = `default:test:${Array.from({length: 35}, (_, index) =>
+    `fabric-workspace-component-${index}`).join(',')}`;
+  const execute = () => ({status: 0, stdout: 'recorded stdout', stderr: 'recorded stderr'});
+  for (const suffix of ['', ',different-final-component']) {
+    commandResult({id: id + suffix, program: 'cargo', args: ['test', '--all-targets']},
+      context, execute);
+  }
+  assert.deepEqual(context.results.map(record => record.id), [id, `${id},different-final-component`]);
+  for (const record of context.results) {
+    assert.ok(Buffer.byteLength(path.basename(record.stdout)) <= 80);
+    assert.ok(Buffer.byteLength(path.basename(record.stderr)) <= 80);
+    assert.equal(fs.readFileSync(record.stdout, 'utf8'), 'recorded stdout');
+    assert.equal(fs.readFileSync(record.stderr, 'utf8'), 'recorded stderr');
+    assert.deepEqual(record.args, ['test', '--all-targets']);
+  }
+  assert.notEqual(path.basename(context.results[0].stdout).slice(4),
+    path.basename(context.results[1].stdout).slice(4));
+});
+
 test('feature tests use the tested package feature forwarding, never unrelated workspace features', () => {
   const p = plan();
   assert.deepEqual(ownFeatures(p.profiles[0], 'cli'), ['cli/native-read']);
   const command = coreCommands(p, 'linux').find(command => command.id === 'native:test:cli');
   assert.ok(command.args.includes('cli/native-read'));
   assert.ok(!command.args.join(',').includes('identity/windows-broker'));
+});
+
+test('interactive profiles retain explicit provider features and CLI forwarding on every native platform', () => {
+  const p = plan();
+  p.packages = ['cli', 'identity'];
+  p.tests = [{package: 'cli', target: 'all'}, {package: 'identity', target: 'lib'}];
+  p.profiles = [{
+    id: 'interactive', packages: ['cli', 'identity'],
+    features: ['cli/interactive', 'identity/interactive'],
+    platforms: ['windows', 'linux', 'macos'], checks: ['interactive'],
+    tests: p.tests,
+  }];
+  for (const platform of ['windows', 'linux', 'macos']) {
+    const commands = coreCommands(p, platform);
+    for (const kind of ['check', 'clippy']) {
+      const command = commands.find(item => item.id === `interactive:${kind}`);
+      assert.equal(command.args[command.args.indexOf('--features') + 1],
+        'cli/interactive,identity/interactive');
+      assert.ok(command.args.includes('--all-targets'));
+    }
+    for (const name of ['cli', 'identity']) {
+      const command = commands.find(item => item.id === `interactive:test:${name}`);
+      assert.equal(command.args[command.args.indexOf('--features') + 1], `${name}/interactive`);
+      assert.ok(command.args.includes(name === 'cli' ? '--all-targets' : '--lib'));
+    }
+    assert.ok(commands.some(command => command.id === 'default:test:cli' &&
+      command.args.includes('--all-targets') && !command.args.includes('--features')));
+    assert.ok(commands.some(command => command.id === 'default:test:identity' &&
+      command.args.includes('--lib') && !command.args.includes('--features')));
+  }
 });
 
 test('platform-only feature profiles are not passed off as native execution elsewhere', () => {
@@ -267,18 +329,81 @@ test('full-workspace command log names stay bounded while receipts retain exact 
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'commands.json'), 'utf8'))[0].id, id);
 });
 
+test('unittest discovery must execute cases, with real counts and rejected empty or all-skipped suites', t => {
+  const root = temporary(t);
+  const context = {root, artifacts: root, commandTimeout: 1000, deadline: Date.now() + 10000, results: []};
+  const command = {id: 'oracle-tools', program: 'python',
+    args: ['-B', '-m', 'unittest', 'discover'], test: 'unittest'};
+  commandResult(command, context, () => ({
+    status: 0, stdout: '', stderr: 'Ran 4 tests in 0.001s\r\n\r\nOK (skipped=1)\r\n',
+  }));
+  assert.equal(context.results[0].tests_passed, 3);
+  assert.equal(context.results[0].tests_ignored, 1);
+  for (const stderr of ['', 'Ran 0 tests in 0.001s\n\nOK\n',
+    'Ran 1 test in 0.001s\n\nOK (skipped=1)\n',
+    'Ran 1 test in 0.001s\nRan 2 tests in 0.001s\n']) {
+    assert.throws(() => commandResult(command, context, () => ({
+      status: 0, stdout: '', stderr,
+    })), /no executed unittest cases/);
+    assert.equal(fs.readFileSync(context.results.at(-1).stderr, 'utf8'), stderr);
+  }
+  commandResult(command, context, () => ({
+    status: 0, stdout: '', stderr: 'Ran 1 test in 0.001s\n\nOK\n',
+  }));
+  assert.equal(context.results.at(-1).tests_passed, 1);
+});
+
 test('missing full-gate marker profiles fail, rather than passing an empty contract', t => {
   const root = temporary(t);
   fs.mkdirSync(path.join(root, 'rust', 'validation'), {recursive: true});
-  fs.writeFileSync(path.join(root, 'rust', 'validation', 'impact-graph.json'),
-    JSON.stringify({checks: [{id: 'headless'}]}));
-  const context = {root, artifacts: root, platform: 'linux',
-    plan: {checks: ['headless'], profiles: []}};
   const registry = {validateRegistry: () => {}, commandsFor: () => []};
-  assert.throws(() => runContracts(context, registry, () => {}), /No execution profile/);
-  context.plan.tests = [];
-  context.plan.profiles = [{checks: ['headless'], platforms: ['linux'], packages: ['identity']}];
-  assert.throws(() => runContracts(context, registry, () => {}), /with test targets/);
+  for (const id of ['headless', 'interactive']) {
+    fs.writeFileSync(path.join(root, 'rust', 'validation', 'impact-graph.json'),
+      JSON.stringify({checks: [{id}]}));
+    const context = {root, artifacts: root, platform: 'linux',
+      plan: {checks: [id], profiles: []}};
+    assert.throws(() => runContracts(context, registry, () => {}), /No execution profile/);
+    context.plan.tests = [];
+    context.plan.profiles = [{checks: [id], platforms: ['linux'], packages: ['identity']}];
+    assert.throws(() => runContracts(context, registry, () => {}), /with test targets/);
+  }
+});
+
+test('inventory runner passes captured metadata bytes to the checker without oracle preparation', t => {
+  const root = temporary(t);
+  const artifacts = path.join(root, 'artifacts');
+  fs.mkdirSync(artifacts);
+  fs.mkdirSync(path.join(root, 'rust', 'validation'), {recursive: true});
+  const registry = require('./validation-checks.cjs');
+  fs.writeFileSync(path.join(root, 'rust', 'validation', 'impact-graph.json'),
+    JSON.stringify({checks: registry.CHECK_IDS.map(id => ({id}))}));
+  const context = {root, artifacts, platform: 'linux', python: 'python',
+    commandTimeout: 1000, deadline: Date.now() + 10000, results: [],
+    plan: {checks: ['command-inventory'], profiles: []}};
+  const captured = '{"workspace_members":["metadata-stdout"],"packages":[]}\n';
+  let executions = 0;
+  const execute = (program, args, opts) => {
+    assert.equal(opts.cwd, path.join(root, 'rust'));
+    assert.equal(opts.shell, false);
+    executions++;
+    if (executions === 1) {
+      assert.equal(program, 'cargo');
+      assert.deepEqual(args, ['metadata', '--offline', '--locked',
+        '--no-deps', '--format-version', '1']);
+      return {status: 0, stdout: captured, stderr: ''};
+    }
+    assert.equal(executions, 2);
+    assert.equal(program, 'python');
+    assert.deepEqual(args, ['-B', path.join('scripts', 'check_command_acceptance.py'),
+      '--root', root, '--metadata', path.join(artifacts, 'command-inventory-metadata.json')]);
+    assert.equal(fs.readFileSync(args.at(-1), 'utf8'), captured);
+    return {status: 0, stdout: '{"tests_executed":false,"parity_percentage":null}\n', stderr: ''};
+  };
+  runContracts(context, registry, command => commandResult(command, context, execute),
+    () => assert.fail('Inventory validation must not probe or restore oracle dependencies'));
+  assert.equal(executions, 2);
+  assert.equal(context.results.length, 2);
+  assert.ok(context.results.every(result => result.tests_passed === 0));
 });
 
 test('oracle dependencies are restored only for missing modules, before source preparation', t => {
@@ -396,6 +521,22 @@ test('CI comparison binds scopes despite host-specific metadata, and rejects mis
   assert.throws(() => equalSelection(expected, actual), /differs/);
 });
 
+test('CI comparison rejects changed default availability and per-profile executable targets', () => {
+  const expected = plan();
+  expected.profiles[0].tests = [expected.tests[1]];
+  for (const change of [
+    actual => { actual.tests[0].default_available = false; },
+    actual => { actual.tests[0].default_skipped_targets = ['test:notebook']; },
+    actual => { actual.tests[0].profiles = ['native']; },
+    actual => { actual.profiles[0].tests = []; },
+    actual => { actual.profiles[0].tests[0].target = 'test:unrelated'; },
+  ]) {
+    const actual = structuredClone(expected);
+    change(actual);
+    assert.throws(() => equalSelection(expected, actual), /differs/);
+  }
+});
+
 test('the executor refuses unbounded timeouts, in-checkout artifacts and execution platform impersonation', t => {
   const artifact = temporary(t);
   const root = path.resolve(__dirname, '..', '..');
@@ -414,6 +555,7 @@ test('workflow always tests the planner, covers merge groups and periodic full r
   assert.match(workflow, /merge_group:/);
   assert.match(workflow, /schedule:/);
   assert.match(workflow, /node --test rust\/scripts\/impact-plan\.test\.cjs/);
+  assert.match(workflow, /rust\/scripts\/rust-coverage\.test\.cjs/);
   assert.match(workflow, /node rust\/scripts\/impact-ci\.cjs select/);
   assert.match(workflow, /node rust\/scripts\/impact-ci\.cjs native/);
   assert.match(workflow, /node rust\/scripts\/validate-impact\.cjs/);
@@ -422,6 +564,10 @@ test('workflow always tests the planner, covers merge groups and periodic full r
   assert.match(workflow, /needs: \[changes, native\]/);
   assert.match(workflow, /"\$RUN_NATIVE" == true && "\$NATIVE_RESULT" == success/);
   assert.match(workflow, /"\$RUN_NATIVE" == false && "\$NATIVE_RESULT" == skipped/);
+  assert.equal((workflow.match(/fetch-depth: 0/g) || []).length, 2,
+    'Both selection and native checkout need historical Python Git objects');
+  assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 2);
+  assert.match(workflow, /--restore-oracle-deps --execute/);
   assert.ok(!workflow.includes('function select(files'));
 });
 

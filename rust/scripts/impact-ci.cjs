@@ -8,15 +8,23 @@ const {execFileSync} = require('node:child_process');
 
 function selection(plan) {
   const sorted = items => [...items].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  const tests = items => sorted(items.map(test => ({package: test.package, target: test.target,
+    ...(test.filter ? {filter: test.filter} : {}),
+    default_available: test.default_available !== false && test.default !== false &&
+      !test.default_skipped && !test.profile_only,
+    default_skipped_targets: sorted(test.default_skipped_targets || []),
+    profiles: sorted(test.profiles || []),
+  })));
   return {
     mode: plan.mode,
     files: sorted(plan.files),
     packages: sorted(plan.packages),
-    tests: sorted(plan.tests.map(test => ({package: test.package, target: test.target,
-      ...(test.filter ? {filter: test.filter} : {})}))),
+    tests: tests(plan.tests),
     profiles: sorted(plan.profiles.map(profile => ({id: profile.id,
       packages: sorted(profile.packages), features: sorted(profile.features),
-      platforms: sorted(profile.platforms), checks: sorted(profile.checks || [])}))),
+      platforms: sorted(profile.platforms), checks: sorted(profile.checks || []),
+      tests: tests(profile.tests || plan.tests.filter(test => profile.packages.includes(test.package))),
+    }))),
     checks: sorted(plan.checks),
   };
 }
