@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {test} = require('node:test');
 const {packageArgs, ownFeatures, testCommands, coreCommands, commandResult,
-  oracleVersions, restoreOracleDependencies, runContracts, options} =
+  oracleVersions, restoreOracleDependencies, runContracts, options, buildEnvironment} =
   require('./validate-impact.cjs');
 const {selection, equalSelection} = require('./impact-ci.cjs');
 const {plan: impactPlan} = require('./impact-plan.cjs');
@@ -36,6 +36,42 @@ function plan() {
 
 test('Cargo package arguments are sorted, deduplicated and not shell text', () => {
   assert.deepEqual(packageArgs(['z', 'a', 'z']), ['--package', 'a', '--package', 'z']);
+});
+
+test('build receipts retain only explicit Cargo resource settings, not unrelated environment values', () => {
+  assert.deepEqual(buildEnvironment({
+    CARGO_BUILD_JOBS: '2', RUST_TEST_THREADS: '1',
+    CARGO_PROFILE_DEV_DEBUG: '0', CARGO_PROFILE_TEST_DEBUG: '0', CARGO_INCREMENTAL: '0',
+    GITHUB_TOKEN: 'must-not-leak', PATH: 'private-path',
+  }), {
+    CARGO_BUILD_JOBS: '2', RUST_TEST_THREADS: '1',
+    CARGO_PROFILE_DEV_DEBUG: '0', CARGO_PROFILE_TEST_DEBUG: '0', CARGO_INCREMENTAL: '0',
+  });
+  assert.deepEqual(buildEnvironment({}), {});
+  const workflow = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
+  for (const setting of ['CARGO_PROFILE_DEV_DEBUG', 'CARGO_PROFILE_TEST_DEBUG', 'CARGO_INCREMENTAL']) {
+    assert.ok(workflow.includes(`${setting}: "0"`));
+  }
+  assert.ok(!workflow.includes('CARGO_PROFILE_TEST_DEBUG_ASSERTIONS'));
+  assert.ok(!workflow.includes('CARGO_PROFILE_DEV_DEBUG_ASSERTIONS'));
+});
+
+test('command receipts record the actual allowlisted build overrides', t => {
+  const directory = temporary(t);
+  const context = {root: directory, artifacts: directory, results: [],
+    deadline: Date.now() + 10000, commandTimeout: 1000};
+  commandResult({id: 'resource-fixture', program: 'cargo', args: [],
+    env: {CARGO_PROFILE_DEV_DEBUG: '0', CARGO_PROFILE_TEST_DEBUG: '0',
+      CARGO_INCREMENTAL: '0', GITHUB_TOKEN: 'must-not-leak'}}, context,
+  (_, __, options) => {
+    assert.equal(options.env.CARGO_PROFILE_TEST_DEBUG, '0');
+    return {status: 0, stdout: '', stderr: ''};
+  });
+  assert.equal(context.results[0].build_environment.CARGO_PROFILE_DEV_DEBUG, '0');
+  assert.equal(context.results[0].build_environment.CARGO_PROFILE_TEST_DEBUG, '0');
+  assert.equal(context.results[0].build_environment.CARGO_INCREMENTAL, '0');
+  assert.ok(!Object.hasOwn(context.results[0].build_environment, 'GITHUB_TOKEN'));
+  assert.ok(!fs.readFileSync(path.join(directory, 'commands.json'), 'utf8').includes('must-not-leak'));
 });
 
 test('Windows formatting bounds each expanded rustfmt invocation without omitting packages', () => {
