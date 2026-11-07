@@ -50,6 +50,11 @@ export syntax, current consumers, and validation evidence limits.
 
 ## Workspace components
 
+The opt-in [workspace v2 read slice](docs/workspace-v2-reads.md) uses the separate
+`fab-cli-workspace` preview. It preserves both the six-leaf local `fab-cli`
+executable and the native GET `fab-cli-v2` entry point; no preview overwrites
+another's Cargo output or selects a provider implicitly.
+
 The workspace groups service clients and command adapters by capability:
 
 ```text
@@ -83,6 +88,7 @@ front-ends are not implemented by this layout.
 | Component | Responsibility |
 | --- | --- |
 | [Fabric SDK](sdk/fabric-sdk/README.md) | Workspace, item, folder and capacity clients over caller-injected credentials and execution policies |
+| [Artifact-first tables](docs/artifact-first-tables.md) | Parent-owned Lakehouse, KQLDatabase and Warehouse SDK adapters with distinct native loading contracts |
 | [HTTP execution](infrastructure/http/fabric-sdk-http/README.md) | Shared authentication, request limits, retries, paging and operation adapters |
 | [Native transport](infrastructure/http/fabric-sdk-transport/README.md) | Optional `hyper-rustls` backend and asynchronous timers |
 | [Deployment](capabilities/deployment/fabric-deploy/README.md) | Configuration, parameters, repository planning, item publication and orphan removal |

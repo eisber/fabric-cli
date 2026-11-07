@@ -38,12 +38,12 @@ fn common_and_facade_arguments_are_identical_for_each_selected_alias() {
         (Verb::Create, vec!["--input", "source.json", "--wait"]),
         (Verb::Delete, vec!["--permanent", "--recursive"]),
         (Verb::Get, vec!["--max-bytes", "1048576", "--wait"]),
-        (Verb::Link, vec![]),
+        (Verb::Link, vec!["--input", "binding.json"]),
         (
             Verb::List,
             vec!["--limit", "100", "--continuation", "opaque"],
         ),
-        (Verb::Move, vec![]),
+        (Verb::Move, vec!["--input", "rename.json"]),
         (Verb::Update, vec!["--input", "-", "--mode", "patch"]),
     ] {
         let mut common = vec![verb.common_name(), "/explicit-target"];
@@ -182,12 +182,17 @@ fn duration_and_collection_bounds_are_positive_and_bounded() {
 }
 
 #[test]
-fn unresolved_link_and_move_contracts_never_become_parse_success() {
+fn native_link_and_move_require_explicit_input_and_keep_other_facets_unsupported() {
     for verb in [Verb::Link, Verb::Move] {
         assert_eq!(
             parse_common_args(verb, [verb.common_name(), "/target"]),
-            Err(ArgumentError::UnresolvedCommandContract),
+            Err(ArgumentError::InvalidSyntax),
         );
+        let args =
+            parse_common_args(verb, [verb.common_name(), "/target", "--input", "-"]).unwrap();
+        assert_eq!(args.input, Some(InputSource::Stdin));
+        assert_eq!(args.mode, None);
+        assert!(validate_arguments(&args, Target::Docs, "Ontology", Some(2)).is_err());
     }
 }
 

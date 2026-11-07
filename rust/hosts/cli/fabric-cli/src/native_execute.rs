@@ -328,6 +328,7 @@ fn diagnostic(
         "operation": {
             "id": evidence.and_then(|value| value.operation_id.as_deref()),
             "mutationMayHaveOccurred": evidence.is_some_and(|value| value.mutation_may_have_occurred),
+            "httpStatus": evidence.and_then(|value| value.http_status),
             "remoteCancellationRequested": false,
             "serviceError": evidence.and_then(|value| value.raw_service_error.as_deref()),
         }
@@ -650,26 +651,44 @@ pub(super) async fn dispatch(
     let result = match result {
         Ok(result) => result,
         Err(error) => {
-            let (message, evidence) = match &error {
-                ExecutionFailure::Query(error) => (
-                    format!(
-                        "Native Dataflow query failed or is incomplete. Classification: {:?}. No query was replayed.",
-                        error.kind()
-                    ),
-                    error.operation_error().map(ExecutionEvidence::from),
-                ),
+            let (code, message, evidence, exit) = match &error {
+                ExecutionFailure::Query(error) => {
+                    let operation = error.operation_error();
+                    let status = operation.and_then(|error| match &error.kind {
+                        OperationErrorKind::Http { status, .. } => Some(*status),
+                        _ => None,
+                    });
+                    let (code, exit) = match status {
+                        Some(401) => ("Unauthorized", 4),
+                        Some(403) => ("Forbidden", 1),
+                        _ => ("execution_failed", 1),
+                    };
+                    let message = status.map_or_else(
+                        || format!(
+                            "Native Dataflow query failed or is incomplete. Classification: {:?}. No query was replayed.",
+                            error.kind()
+                        ),
+                        |status| format!(
+                            "Native Dataflow query was rejected with HTTP {status}. No query was replayed."
+                        ),
+                    );
+                    (code, message, operation.map(ExecutionEvidence::from), exit)
+                }
                 ExecutionFailure::Result {
                     error, evidence, ..
                 } => (
+                    "execution_failed",
                     format!(
                         "The complete Dataflow result could not be decoded or serialized: {error}. No query was replayed."
                     ),
                     Some(ExecutionEvidence::from(evidence.as_ref())),
+                    1,
                 ),
             };
-            let mut delivery = Delivery::failed("execution_failed", &message, evidence, 1);
+            let mut delivery = Delivery::failed(code, &message, evidence, exit);
             if let ExecutionFailure::Result { error, .. } = &error {
                 delivery = delivery.retain_tabular_evidence(error);
+                delivery.outcome = CommandOutcome::Stop(delivery.plan.exit_code);
             }
             return Ok(get::Delivery::execution(delivery));
         }

@@ -130,6 +130,8 @@ pub enum BodyContract {
     NativeModelReplace,
     /// Strict entity creation; no createOrReplace fallback.
     EntityCreate,
+    /// Typed merge patch of one generation-2 native entity.
+    EntityPatch,
     /// Kind-qualified source and mapping, requiring an accepted native contract.
     SourceBinding,
     /// Exact new name/namespace with stable identity/reference semantics.
@@ -272,6 +274,14 @@ static BINDINGS: &[OntologyBinding] = &[
     binding!(Update, Item, Both, PublicItem, MetadataPatch, Update),
     binding!(
         Update,
+        Entity,
+        Generation2,
+        NativeWorkload,
+        EntityPatch,
+        Update
+    ),
+    binding!(
+        Update,
         Definition,
         Both,
         PublicDefinition,
@@ -349,8 +359,9 @@ impl std::error::Error for SelectionError {}
 ///
 /// This pure check neither resolves names nor proves permission, feature gates,
 /// backend availability or producer readiness. Metadata discovery can obtain
-/// generation before this representation-dispatch check is called. Creation
-/// must obtain generation from its validated typed definition/default contract.
+/// generation before this representation-dispatch check is called. Native
+/// source authoring must obtain generation from its validated typed contract.
+/// Metadata-only item creation deliberately leaves the new generation unknown.
 ///
 /// # Errors
 /// Rejects wrong owners, unknown generations and unsupported combinations.
@@ -362,6 +373,12 @@ pub fn select_binding(
 ) -> Result<&'static OntologyBinding, SelectionError> {
     if owner_type != "Ontology" {
         return Err(SelectionError::WrongOwnerType);
+    }
+    if verb == OntologyVerb::Create && target == OntologyTarget::Item && generation.is_none() {
+        return BINDINGS
+            .iter()
+            .find(|binding| binding.verb == verb && binding.target == target)
+            .ok_or(SelectionError::UnsupportedTarget);
     }
     let generation = match generation {
         Some(value @ (1 | 2)) => value,

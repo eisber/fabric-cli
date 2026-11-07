@@ -85,9 +85,6 @@ pub fn validate_arguments(
     validate_argument_shape(args)?;
     let binding = select_binding(args.verb, target, owner_type, generation)
         .map_err(ValidationError::Selection)?;
-    if matches!(args.verb, OntologyVerb::Link | OntologyVerb::Move) {
-        return Err(ValidationError::UnresolvedCommandContract);
-    }
     if args.if_match.is_some() {
         return Err(ValidationError::UnsupportedCondition);
     }
@@ -105,7 +102,7 @@ pub fn validate_arguments(
         return Err(ValidationError::InputRequired);
     }
     let required_mode = match binding.body {
-        BodyContract::MetadataPatch => Some(UpdateMode::Patch),
+        BodyContract::MetadataPatch | BodyContract::EntityPatch => Some(UpdateMode::Patch),
         BodyContract::DefinitionReplace
         | BodyContract::PublicModelReplace
         | BodyContract::NativeModelReplace => Some(UpdateMode::Replace),
@@ -117,7 +114,11 @@ pub fn validate_arguments(
     let can_observe = matches!(
         binding.backend,
         Backend::PublicDefinition | Backend::PublicModel
-    ) || (args.verb == OntologyVerb::Create && target == OntologyTarget::Item);
+    ) || (binding.backend == Backend::PublicItem
+        && matches!(
+            args.verb,
+            OntologyVerb::Create | OntologyVerb::Update | OntologyVerb::Delete
+        ));
     if args.wait && !can_observe {
         return Err(ValidationError::UnsupportedWait);
     }
@@ -125,7 +126,10 @@ pub fn validate_arguments(
 }
 
 fn validate_argument_shape(args: &OntologyArguments) -> Result<(), ValidationError> {
-    let mutation_input = matches!(args.verb, OntologyVerb::Create | OntologyVerb::Update);
+    let mutation_input = matches!(
+        args.verb,
+        OntologyVerb::Create | OntologyVerb::Update | OntologyVerb::Link | OntologyVerb::Move
+    );
     if args.path.trim().is_empty()
         || (!mutation_input && args.input.is_some())
         || (args.verb != OntologyVerb::Update && args.mode.is_some())

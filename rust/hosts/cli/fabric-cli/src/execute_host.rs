@@ -218,6 +218,8 @@ pub struct ExecutionEvidence {
     pub operation_id: Option<String>,
     /// Submission may have reached the service; local failure is not rollback.
     pub mutation_may_have_occurred: bool,
+    /// Actual failed HTTP status, including failures without a response body.
+    pub http_status: Option<u16>,
     /// Exact structured service failure, when the shared engine retained one.
     pub raw_service_error: Option<Box<serde_json::Value>>,
 }
@@ -227,6 +229,10 @@ impl From<&OperationError> for ExecutionEvidence {
         Self {
             operation_id: error.operation_id.clone(),
             mutation_may_have_occurred: error.mutation_may_have_occurred,
+            http_status: match &error.kind {
+                OperationErrorKind::Http { status, .. } => Some(*status),
+                _ => None,
+            },
             raw_service_error: error.raw_service_error.clone(),
         }
     }

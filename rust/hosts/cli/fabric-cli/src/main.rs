@@ -53,6 +53,23 @@ type UpdateLifetime = ();
 
 fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
     let arguments = std::env::args_os().collect::<Vec<_>>();
+    #[cfg(feature = "v2-preview")]
+    if arguments
+        .get(1)
+        .is_some_and(|argument| argument == "--v2-preview")
+    {
+        let arguments = arguments
+            .iter()
+            .take(1)
+            .chain(arguments.iter().skip(2))
+            .cloned();
+        return fabric_cli::v2_preview::run_unconfigured(
+            arguments,
+            &mut io::stdout().lock(),
+            &mut io::stderr().lock(),
+        )
+        .map(ExitCode::from);
+    }
     #[cfg(feature = "repl")]
     if arguments.len() == 1 {
         return repl_host::run();

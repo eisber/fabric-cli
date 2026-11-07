@@ -1,0 +1,68 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Rust search contracts
+
+on:
+  push:
+    branches: ["dev/**/search-v2-*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  search:
+    name: Focused offline search contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: "2"
+      RUST_TEST_THREADS: "1"
+    defaults:
+      run:
+        shell: bash
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Record source and toolchain
+        run: |
+          mkdir -p "$RUNNER_TEMP/search-results"
+          git rev-parse HEAD | tee "$RUNNER_TEMP/search-results/source.txt"
+          cargo --version | tee "$RUNNER_TEMP/search-results/cargo.txt"
+          rustc --version --verbose | tee "$RUNNER_TEMP/search-results/rustc.txt"
+          sha256sum Cargo.lock | tee "$RUNNER_TEMP/search-results/lock.txt"
+      - name: Restore locked dependencies
+        run: cargo fetch --locked
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Execute foundation and service contracts
+        run: |
+          set -o pipefail
+          cargo test --locked --offline -p fabric-core -p fabric-v2-contracts -p fabric-sdk-api -p fabric-sdk-catalog -p fabric-sdk-relevance -p fabric-sdk-search 2>&1 | tee "$RUNNER_TEMP/search-results/service-tests.log"
+      - name: Execute facade and native head regressions
+        run: |
+          set -o pipefail
+          cargo test --locked --offline -p fabric-sdk --test search_public_surface 2>&1 | tee "$RUNNER_TEMP/search-results/facade-tests.log"
+          cargo test --locked --offline -p fabric-cli-ontology 2>&1 | tee "$RUNNER_TEMP/search-results/ontology-tests.log"
+          cargo test --locked --offline -p fabric-cli --features headless --test search_command --test search_wire --test v2_search_binary --test v2_get_binary 2>&1 | tee "$RUNNER_TEMP/search-results/native-tests.log"
+      - name: Lint changed service families
+        run: |
+          set -o pipefail
+          cargo clippy --locked --offline -p fabric-core -p fabric-v2-contracts -p fabric-sdk-api -p fabric-sdk-catalog -p fabric-sdk-relevance -p fabric-sdk-search --all-targets -- -D warnings 2>&1 | tee "$RUNNER_TEMP/search-results/service-clippy.log"
+      - name: Verify validation did not change source or lock
+        run: git diff --exit-code
+      - name: Retain exact-head results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: search-contracts-${{ github.sha }}
+          path: ${{ runner.temp }}/search-results
+          if-no-files-found: error
+          retention-days: 7

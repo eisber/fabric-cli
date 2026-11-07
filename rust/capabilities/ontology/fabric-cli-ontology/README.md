@@ -4,7 +4,8 @@
 
 This CLI-layer package implements the independently testable local portion of
 the selected seven-alias Ontology facade: create, delete, get, link, list, move
-and update, plus actual public SDK Get and representation-replacement execution
+and update, plus actual public metadata Create/Patch/Delete, SDK Get,
+representation replacement and typed generation-2 native entity execution
 through caller-injected hosts. It does **not** install a global registry, path
 resolver, production host, SDK engine or MCP server, or implement the complete
 Ontology feature.
@@ -24,10 +25,9 @@ explicitly. A metadata discovery read can obtain generation before structured
 representation dispatch. Generation must not be inferred from an item suffix.
 
 Metadata patch, definition replacement and public/internal model authoring are
-different body contracts. Native source binding and rename still need exact
-released SDK types, bounded effects and accepted input contracts: link/move
-parsing explicitly returns `UnresolvedCommandContract`, not executable success.
-Other parser success only establishes valid local arguments, not complete
+different body contracts. Link and Move require explicit input and are admitted
+only for the native entity bindings below; they do not enable other facets.
+Parser success only establishes valid local arguments, not complete
 media/body/representation validation or permission to execute.
 
 `validate_arguments` checks a resolved representation's input requirement,
@@ -81,8 +81,11 @@ and caller runtime are reused. There is no separate auth/runtime/poller.
 The injected host supplies exact resolved IDs and canonical selectors, bounded
 local input, finite deadline/cancellation policy, atomic no-clobber output
 reservation, and approval bound to the immutable request/body/output/effects.
-Optional local-write effects must have been declared by the existing descriptor.
-Required effects cannot be omitted. Replacement records existing-only and
+Input (including stdin) selects local-read, and file output selects local-write.
+Both effects must be declared as required or optional by the existing descriptor;
+undeclared selections fail before input consumption or output reservation.
+Optional selections are approved together, and required effects remain exactly
+once. Replacement records existing-only and
 unguarded concurrency; unsupported revision conditions never disappear.
 
 Only after these phases does the adapter call the released metadata,
@@ -107,10 +110,74 @@ observing an already accepted operation is instead an unknown final outcome,
 retaining the original operation handle and observed HTTP status. Only a
 provider-reported terminal failure establishes that accepted work failed.
 
-Projection, create/delete/metadata-patch execution, schema CRUDL, native
-link/rename, internal models, OWL conversion, docs/context and model-backed
+`bind_metadata_operations` and `execute_metadata` reuse the existing
+`item.metadata.create`, `item.metadata.patch` and `item.delete` descriptors.
+Create uses the real workspace collection, never a fabricated item ID, and
+accepts only display name and optional description. Patch preserves omitted
+fields; generation, native definitions, null values and unsupported revision
+conditions are rejected before approval or credentials. Delete uses the generic
+item SDK route; permanent deletion requires explicit intent and never means a
+definition reset. The caller must enforce destination-name binding.
+
+Metadata mutations share the immutable approval/output preparation and
+`CapabilityReport` receipt pipeline. Waiting is explicit. Provider-confirmed
+terminal cancellation is failed, while interruption of local observation after
+acceptance remains unknown, retaining possible-mutation evidence and the
+original operation handle. Neither condition permits automatic replay.
+
+Projection, other schema-resource families, internal models, OWL conversion, docs/context and model-backed
 execution remain explicit execution gaps, not fallback SDK calls. The local
 catalog is broader source evidence, not an enabled-operation list.
+
+## Native entity execution
+
+`bind_native_operations` binds existing descriptors transactionally. It does not
+register a second alias, framework or MCP tool. Native schema selectors retain
+the exact owning workspace/item and generation 2; members require a child whose
+kind is `entity.lineage`. Names and generation-1 numeric identities are not
+coerced into lineage selectors.
+
+| Verb | Facet / representation | Existing operation ID | Input |
+| --- | --- | --- | --- |
+| Get | schema.entity / native | ontology.entity.get | None |
+| List | schema.entities / native | ontology.entity.list | Opaque optional continuation |
+| Create | schema.entities / native | ontology.entity.create | Complete closed native EntityType DTO |
+| Update, patch | schema.entity / native | ontology.entity.patch | Typed JSON Merge Patch |
+| Delete | schema.entity / native | ontology.entity.delete | Explicit permanent intent |
+| Link | schema.binding / native | ontology.entity.bind | backingTable and optional additionalBackingTables only |
+| Move | schema.entity / native | ontology.entity.rename | name only, preserving the addressed lineage identity |
+
+`execute_native` accepts an injected `NativeHost`, extending the existing
+approval/input/output/deadline host with an explicit `NativeContext`. Context
+contains the existing workload executor, verified feature gates and a
+`NativeBinding` recording account, tenant, native audience and capacity/routing
+binding. No credential lookup, token exchange, public-to-private fallback,
+private URL construction or alternate runtime is installed. Approval sees the
+exact context, body, native target, input/output paths and finite bounds.
+
+Strict SDK DTO, feature, route, body and identity preflight runs without
+dispatch. Create calls native strict collection creation, never upsert. Patch
+preserves absent/null/array semantics; Link and Move restrict its allowed fields
+without client read/modify/write. The host must authorize source dependencies,
+reference effects and any deletion cascade within exact scope. Unsupported
+If-Match, wait, recursion, generation, facet, media or fields fail before native
+dispatch. Ordinary V4 writes declare RemoteWrite (and RemoteDelete for delete),
+not graph publication inferred from a generation-1 recipe. Native discovery
+retains its metered/read effects.
+
+List reads one bounded native page. Remaining continuation or a locally cut
+page produces Partial coverage and non-success command status; a cut service
+page has no fabricated resume token. Oversized data is retained as unpresented
+evidence rather than emitted as clipped source. Private 202 responses without a
+supported scoped observation handle produce Unknown and retain the original
+response; a private Location is not promoted into a public Fabric operation ID.
+Local cancellation distinguishes not-sent from possibly dispatched work, never
+cancels remote work or permits replay. Typed native causes and post-execution
+output failures use the same CapabilityReport pipeline as metadata mutations.
+Possible-mutation evidence is independent of outcome certainty: completed native
+write responses that fail local processing still retain possible effects.
+Uninterpretable completed responses are Unknown; provider HTTP rejection may be
+Failed without falsely claiming that no mutation could have occurred.
 
 ## Source and spec evidence
 

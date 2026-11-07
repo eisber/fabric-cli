@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {test} = require('node:test');
 const {packageArgs, ownFeatures, testCommands, coreCommands, commandResult,
-  oracleVersions, restoreOracleDependencies, runContracts, options} =
+  oracleVersions, restoreOracleDependencies, runContracts, options, buildEnvironment} =
   require('./validate-impact.cjs');
 const {selection, equalSelection} = require('./impact-ci.cjs');
 const {plan: impactPlan} = require('./impact-plan.cjs');
@@ -38,25 +38,40 @@ test('Cargo package arguments are sorted, deduplicated and not shell text', () =
   assert.deepEqual(packageArgs(['z', 'a', 'z']), ['--package', 'a', '--package', 'z']);
 });
 
-test('formatting covers every selected package without changing compile selection', () => {
-  const selected = plan();
-  selected.packages = ['z', 'cli', 'z', 'deploy'];
-  for (const platform of ['windows', 'linux', 'macos']) {
-    const commands = coreCommands(selected, platform);
-    const formatting = commands.filter(command => command.args[0] === 'fmt');
-    assert.deepEqual(formatting.flatMap(command =>
-      command.args.flatMap((arg, index) => arg === '--package' ? [command.args[index + 1]] : [])),
-    ['cli', 'deploy', 'z']);
-    if (platform === 'windows') {
-      assert.deepEqual(formatting.map(command => command.id),
-        ['default:fmt:cli', 'default:fmt:deploy', 'default:fmt:z']);
-    }
-    assert.ok(commands.indexOf(formatting.at(-1)) <
-      commands.findIndex(command => command.id === 'default:check'));
-    assert.deepEqual(commands.find(command => command.id === 'default:check').args,
-      ['check', '--offline', '--locked', '--package', 'cli', '--package', 'deploy',
-        '--package', 'z', '--all-targets']);
+test('build receipts retain only explicit Cargo resource settings, not unrelated environment values', () => {
+  assert.deepEqual(buildEnvironment({
+    CARGO_BUILD_JOBS: '2', RUST_TEST_THREADS: '1',
+    CARGO_PROFILE_DEV_DEBUG: '0', CARGO_PROFILE_TEST_DEBUG: '0', CARGO_INCREMENTAL: '0',
+    GITHUB_TOKEN: 'must-not-leak', PATH: 'private-path',
+  }), {
+    CARGO_BUILD_JOBS: '2', RUST_TEST_THREADS: '1',
+    CARGO_PROFILE_DEV_DEBUG: '0', CARGO_PROFILE_TEST_DEBUG: '0', CARGO_INCREMENTAL: '0',
+  });
+  assert.deepEqual(buildEnvironment({}), {});
+  const workflow = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
+  for (const setting of ['CARGO_PROFILE_DEV_DEBUG', 'CARGO_PROFILE_TEST_DEBUG', 'CARGO_INCREMENTAL']) {
+    assert.ok(workflow.includes(`${setting}: "0"`));
   }
+  assert.ok(!workflow.includes('CARGO_PROFILE_TEST_DEBUG_ASSERTIONS'));
+  assert.ok(!workflow.includes('CARGO_PROFILE_DEV_DEBUG_ASSERTIONS'));
+});
+
+test('command receipts record the actual allowlisted build overrides', t => {
+  const directory = temporary(t);
+  const context = {root: directory, artifacts: directory, results: [],
+    deadline: Date.now() + 10000, commandTimeout: 1000};
+  commandResult({id: 'resource-fixture', program: 'cargo', args: [],
+    env: {CARGO_PROFILE_DEV_DEBUG: '0', CARGO_PROFILE_TEST_DEBUG: '0',
+      CARGO_INCREMENTAL: '0', GITHUB_TOKEN: 'must-not-leak'}}, context,
+  (_, __, options) => {
+    assert.equal(options.env.CARGO_PROFILE_TEST_DEBUG, '0');
+    return {status: 0, stdout: '', stderr: ''};
+  });
+  assert.equal(context.results[0].build_environment.CARGO_PROFILE_DEV_DEBUG, '0');
+  assert.equal(context.results[0].build_environment.CARGO_PROFILE_TEST_DEBUG, '0');
+  assert.equal(context.results[0].build_environment.CARGO_INCREMENTAL, '0');
+  assert.ok(!Object.hasOwn(context.results[0].build_environment, 'GITHUB_TOKEN'));
+  assert.ok(!fs.readFileSync(path.join(directory, 'commands.json'), 'utf8').includes('must-not-leak'));
 });
 
 test('Windows formatting bounds each expanded rustfmt invocation without omitting packages', () => {
@@ -140,27 +155,6 @@ test('no target-name test filters or invalid Cargo selectors can silently run ze
   assert.throws(() => testCommands([{package: 'a', target: 'test:a --ignored'}]), /Unsupported Cargo/);
 });
 
-test('long command identities retain full evidence with bounded collision-resistant log names', t => {
-  const root = temporary(t);
-  const context = {root, artifacts: root, commandTimeout: 1000, deadline: Date.now() + 10000, results: []};
-  const execute = () => ({status: 0, stdout: 'test result: ok. 1 passed; 0 failed; 0 ignored;\n', stderr: ''});
-  for (const suffix of ['first', 'second']) {
-    const id = `default:test:${'fabric-package,'.repeat(80)}${suffix}`;
-    commandResult({id, program: 'cargo', args: ['test', '--all-targets']}, context, execute);
-    const record = context.results.at(-1);
-    assert.equal(record.id, id);
-    assert.equal(record.tests_passed, 1);
-    assert.match(path.basename(record.stdout), /-[a-f0-9]{16}\.stdout\.log$/);
-    for (const key of ['stdout', 'stderr']) {
-      assert.ok(path.basename(record[key]).length <= 128);
-      assert.ok(fs.existsSync(record[key]));
-    }
-  }
-  assert.notEqual(context.results[0].stdout, context.results[1].stdout);
-  const recorded = JSON.parse(fs.readFileSync(path.join(root, 'commands.json'), 'utf8'));
-  assert.deepEqual(recorded.map(item => item.id), context.results.map(item => item.id));
-});
-
 test('recorded command execution retains failures, output hashes, counts and literal arguments', t => {
   const root = temporary(t);
   const context = {root, artifacts: root, commandTimeout: 1000, deadline: Date.now() + 10000, results: []};
@@ -226,6 +220,51 @@ test('full-workspace command log names stay bounded without losing command ident
     assert.ok(fs.existsSync(record.stderr));
   }
   assert.notEqual(context.results[0].stdout, context.results[1].stdout);
+});
+
+test('full-workspace command log names stay bounded without changing scope or receipts', t => {
+  const root = temporary(t);
+  const packages = Array.from({length: 40}, (_, index) =>
+    `fabric-package-with-a-long-name-${String(index).padStart(2, '0')}`);
+  const [command] = testCommands(packages.map(name => ({package: name, target: 'all'})));
+  const run = id => {
+    const context = {root, artifacts: root, commandTimeout: 1000,
+      deadline: Date.now() + 10000, results: []};
+    commandResult({...command, id}, context, (program, args) => {
+      assert.equal(program, command.program);
+      assert.deepEqual(args, command.args);
+      return {status: 0, stdout: 'test result: ok. 1 passed; 0 failed; 0 ignored;\n', stderr: ''};
+    });
+    const [record] = context.results;
+    assert.equal(record.id, id);
+    assert.deepEqual(record.args, command.args);
+    for (const log of [record.stdout, record.stderr]) {
+      assert.ok(path.basename(log).length <= 111);
+      assert.ok(fs.existsSync(log));
+    }
+    return path.basename(record.stdout);
+  };
+  assert.ok(command.id.length > 255);
+  const first = run(command.id);
+  assert.equal(first, run(command.id), 'the same command has a stable log basename');
+  assert.notEqual(first, run(`${command.id}-distinct-tail`));
+});
+
+test('full-workspace command log names stay bounded while receipts retain exact IDs', t => {
+  const root = temporary(t);
+  const context = {root, artifacts: root, commandTimeout: 1000, deadline: Date.now() + 10000, results: []};
+  const id = `default:test:${Array.from({length: 40}, (_, i) => `fabric-package-${i}`).join(',')}`;
+  const command = {id, program: 'cargo', args: ['test', '--workspace']};
+  commandResult(command, context, () => ({status: 0, stdout: 'complete\n', stderr: ''}));
+  const record = context.results[0];
+  assert.equal(record.id, id);
+  assert.deepEqual(record.args, command.args);
+  for (const [file, contents] of [[record.stdout, 'complete\n'], [record.stderr, '']]) {
+    assert.ok(path.basename(file).length <= 131);
+    assert.match(path.basename(file), /-[a-f0-9]{16}\.(stdout|stderr)\.log$/);
+    assert.equal(fs.readFileSync(file, 'utf8'), contents);
+  }
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'commands.json'), 'utf8'))[0].id, id);
 });
 
 test('missing full-gate marker profiles fail, rather than passing an empty contract', t => {

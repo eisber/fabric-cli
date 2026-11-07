@@ -127,13 +127,21 @@ function sourceDigest(root) {
   return hash.digest('hex');
 }
 
+function buildEnvironment(environment = process.env) {
+  const names = ['CARGO_BUILD_JOBS', 'RUST_TEST_THREADS', 'CARGO_PROFILE_DEV_DEBUG',
+    'CARGO_PROFILE_TEST_DEBUG', 'CARGO_INCREMENTAL'];
+  return Object.fromEntries(names.filter(name => environment[name] !== undefined)
+    .map(name => [name, environment[name]]));
+}
+
 function commandResult(command, context, execute = spawnSync) {
   const started = Date.now();
+  const environment = {...process.env, PYTHONUTF8: '1', PYTHONDONTWRITEBYTECODE: '1',
+    FAB_UPDATE_TEST_ROOT: context.artifacts, FAB_CLI_V2_TEST_ROOT: context.artifacts,
+    FAB_IDENTITY_TEST_ROOT: context.artifacts, ...command.env};
   const result = execute(command.program, command.args, {
     cwd: command.cwd || path.join(context.root, 'rust'),
-    env: {...process.env, PYTHONUTF8: '1', PYTHONDONTWRITEBYTECODE: '1',
-      FAB_UPDATE_TEST_ROOT: context.artifacts, FAB_CLI_V2_TEST_ROOT: context.artifacts,
-      FAB_IDENTITY_TEST_ROOT: context.artifacts, ...command.env},
+    env: environment,
     encoding: 'utf8',
     timeout: Math.min(context.commandTimeout,
       Math.max(1, Math.min(context.deadline, command.deadline || context.deadline) - Date.now())),
@@ -141,7 +149,6 @@ function commandResult(command, context, execute = spawnSync) {
     windowsHide: true,
     shell: false,
   });
-  const digest = value => crypto.createHash('sha256').update(value).digest('hex');
   const commandId = String(command.id || 'contract');
   const safeId = commandId.replace(/[^a-zA-Z0-9._-]/g, '_');
   const label = safeId.length > 64 ?
@@ -155,10 +162,12 @@ function commandResult(command, context, execute = spawnSync) {
   fs.writeFileSync(stdoutFile, stdout);
   fs.writeFileSync(stderrFile, stderr);
   if (command.stdout) fs.writeFileSync(command.stdout, stdout);
+  const digest = value => crypto.createHash('sha256').update(value).digest('hex');
   const counts = [...stdout.matchAll(/test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored/g)];
   const record = {
     id: command.id, program: command.program, args: command.args,
     cwd: command.cwd || path.join(context.root, 'rust'), elapsed_ms: Date.now() - started,
+    build_environment: buildEnvironment(environment),
     exit: result.status, signal: result.signal || null, error: result.error?.message || null,
     stdout: stdoutFile, stderr: stderrFile,
     stdout_sha256: digest(stdout), stderr_sha256: digest(stderr),
@@ -359,6 +368,7 @@ function main(argv) {
     schema: 1, plan_fingerprint: plan.fingerprint, platform: opts.platform, stage: opts.stage,
     complete_plan: false,
     toolchain,
+    build_environment: buildEnvironment(),
     source_before: before, started_at: new Date().toISOString(), status: 'running',
     scope: opts.stage !== 'all' ? `Partial ${opts.stage} stage only on this host` :
       plan.mode === 'full' ? 'Full configured offline checks on this host' :
@@ -393,7 +403,7 @@ function main(argv) {
 }
 
 module.exports = {packageArgs, ownFeatures, defaultTests, profileTests, testCommands, coreCommands, commandResult,
-  sourceDigest, oracleVersions, restoreOracleDependencies, runContracts, options};
+  sourceDigest, oracleVersions, restoreOracleDependencies, runContracts, options, buildEnvironment};
 if (require.main === module) {
   try { main(process.argv.slice(2)); }
   catch (error) { console.error(error.message); process.exitCode = 1; }

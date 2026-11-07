@@ -390,8 +390,8 @@ fn executable_navigation_restores_once_and_preserves_its_in_process_state() {
 }
 
 #[test]
-#[cfg(feature = "native-read")]
-fn native_batch_navigation_gap_is_explicit_and_never_uses_an_identity() {
+#[cfg(feature = "native-host")]
+fn native_batch_unconfigured_navigation_is_a_handled_failure_without_identity() {
     let root = Root::new();
     let output = invoke(
         &root.0,
@@ -404,31 +404,73 @@ fn native_batch_navigation_gap_is_explicit_and_never_uses_an_identity() {
             "config set show_hidden true",
         ],
     );
+    success(&output);
+    let stderr = std::str::from_utf8(&output.stderr).unwrap();
+    assert!(stderr.starts_with("------------------------------\n"));
+    let error: Value = serde_json::from_str(stderr.lines().nth(1).unwrap()).unwrap();
+    assert_eq!(error["error"]["code"], "NotConfigured");
+    let settings: Value =
+        serde_json::from_slice(&fs::read(root.0.join("config.json")).unwrap()).unwrap();
+    assert_eq!(settings["show_hidden"], "true");
+    assert!(!root.0.join("context-37.json").exists());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("3 commands executed."));
+    assert_eq!(fs::read_dir(&root.0).unwrap().count(), 1);
+}
+
+#[test]
+#[cfg(feature = "native-host")]
+fn native_batch_unconfigured_navigation_last_retains_failure_without_context_mutation() {
+    let root = Root::new();
+    let output = invoke(&root.0, &["-c", "version", "-c", "cd Demo.Workspace"]);
     assert_eq!(output.status.code(), Some(1));
     let stderr = std::str::from_utf8(&output.stderr).unwrap();
     assert!(stderr.starts_with("------------------------------\n"));
     let error: Value = serde_json::from_str(stderr.lines().nth(1).unwrap()).unwrap();
-    assert_eq!(error["error"]["code"], "NotSupported");
-    assert!(!root.0.join("config.json").exists());
-    assert!(!String::from_utf8_lossy(&output.stdout).contains("commands executed."));
+    assert_eq!(error["error"]["code"], "NotConfigured");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("2 commands executed."));
+    assert_eq!(fs::read_dir(&root.0).unwrap().count(), 0);
 }
 
 #[test]
-#[cfg(feature = "windows-broker")]
-fn batch_auth_cannot_silently_continue_after_an_indistinguishable_cancellation() {
+#[cfg(all(feature = "windows-broker", windows))]
+fn batch_auth_configuration_misuse_stops_before_mutation_and_summary() {
     let root = Root::new();
     let output = invoke(
         &root.0,
         &[
             "-c",
-            "auth status --tenant tenant --account synthetic-account",
+            "auth status --tenant tenant --account synthetic-account --output_format json",
             "-c",
             "config set show_hidden true",
         ],
     );
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(2));
     let error: Value = serde_json::from_slice(&output.stderr).unwrap();
-    assert_eq!(error["error"]["code"], "NotSupported");
+    assert_eq!(error["error"]["code"], "invalid_configuration");
     assert!(!root.0.join("config.json").exists());
     assert!(output.stdout.is_empty());
+}
+
+#[test]
+#[cfg(all(feature = "windows-broker", not(windows)))]
+fn batch_unsupported_broker_is_explicit_and_preserves_handled_failure_semantics() {
+    let root = Root::new();
+    let output = invoke(
+        &root.0,
+        &[
+            "-c",
+            "auth status --tenant tenant --account synthetic-account --output_format json",
+            "-c",
+            "config set show_hidden true",
+        ],
+    );
+    success(&output);
+    let stderr = std::str::from_utf8(&output.stderr).unwrap();
+    let error: Value = serde_json::from_str(stderr.lines().next().unwrap()).unwrap();
+    assert_eq!(error["error"]["code"], "unsupported");
+    let settings: Value =
+        serde_json::from_slice(&fs::read(root.0.join("config.json")).unwrap()).unwrap();
+    assert_eq!(settings["show_hidden"], "true");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("2 commands executed."));
+    assert_eq!(fs::read_dir(&root.0).unwrap().count(), 1);
 }

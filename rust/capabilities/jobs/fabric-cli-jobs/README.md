@@ -34,6 +34,9 @@ rather than silently changing the requested format.
 `JobCommandError` retains command errors or the original `OperationError`,
 including accepted operation IDs and uncertain effects. Writer failures
 propagate and never replay a mutation.
+Conversion from `JobError` uses the same mapping as the command host, including
+nested page-fetch failures. Exported reads retain native authorization codes,
+exit status, cancellation, and original operation evidence.
 
 ## Input and execution policy
 

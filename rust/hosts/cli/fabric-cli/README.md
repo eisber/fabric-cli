@@ -84,6 +84,12 @@ non-ASCII service values use the same complete scalar coverage; ASCII-only
 measurement is not a production default. JSON-only failure diagnostics remain
 independent of width lookup. The immutable Unicode policy is documented by the
 [output component](../fabric-cli-output/README.md#unicode-text).
+`ReadSession::dispatch_with_evidence_and_width` and its source-operation
+counterpart accept an explicit caller-owned character-width capability without
+changing discovery or execution. The frozen `read_session_probe` uses the
+original ASCII-only layout profile to retain its unsupported-character negative
+case; ordinary sessions and mounted native commands still use production
+Unicode, and JSON does not require width lookup.
 
 | Feature | Host capability |
 | --- | --- |
@@ -97,6 +103,219 @@ independent of width lookup. The immutable Unicode policy is documented by the
 See [native host configuration](../../../docs/native-read-host.md) and
 [Windows authentication](../../../README.md#windows-authentication) for selectors,
 platform limits and live-operation requirements.
+
+## Bounded Ontology v2 preview
+
+The separately gated `v2-preview` source mounts the released
+`fabric-cli-ontology` public adapter. It does **not** replace the v1 root parser,
+change ordinary `get`/`ls`, install another global registry, or implement the
+rest of the v2 command groups. Only an outer, first-position `--v2-preview`
+marker selects this grammar; batches and the REPL keep their existing parser.
+Default help and version remain unchanged, including in preview-enabled builds.
+
+The preview remains an opt-in path in `fab-rs`; it does not replace the
+`fab-cli` local host, `fab-cli-v2` native get entry, or `fab-cli-workspace`
+Workspace preview. The impact graph validates both `v2-preview` alone and
+`v2-preview-combined` with the existing Workspace, native, cancellation,
+copy, runtime, discovery, identity, REPL, and update features.
+
+The preview uses these entries in this crate's manifest
+(the shared workspace dependency already exists):
+
+```toml
+[features]
+v2-preview = ["dep:fabric-cli-ontology"]
+
+[dependencies]
+fabric-cli-ontology = { workspace = true, optional = true }
+```
+
+Do not add `v2-preview` to `default`, `native-read` or `headless`. No new binary
+target, direct core dependency, direct Ontology SDK dependency, transport,
+credential backend, runtime or test dependency is needed. The SDK facade already
+reexports the Ontology and neutral contract APIs. The integration owner owns
+manifest/lockfile changes and the serial validator.
+The preview fixture target requires the feature; executable entry tests also
+run without it to verify the default grammar.
+
+The two forms use the same capability argument schemas, operation descriptors,
+SDK execution and receipts:
+
+```text
+fab-rs --v2-preview get /Demo.Workspace/Knowledge.Ontology
+fab-rs --v2-preview artifact ontology get /Demo.Workspace/Knowledge.Ontology
+fab-rs --v2-preview create /Demo.Workspace/Knowledge.Ontology --input metadata.json
+fab-rs --v2-preview artifact ontology update /Demo.Workspace/Knowledge.Ontology --mode patch --input metadata-patch.json
+fab-rs --v2-preview delete /Demo.Workspace/Knowledge.Ontology
+fab-rs --v2-preview get /Demo.Workspace/Knowledge.Ontology/src/definition
+fab-rs --v2-preview artifact ontology get /Demo.Workspace/Knowledge.Ontology/src/model
+fab-rs --v2-preview update /Demo.Workspace/Knowledge.Ontology/src/model/minimized --mode replace --input model.json
+fab-rs --v2-preview artifact ontology update /Demo.Workspace/Knowledge.Ontology/src/definition --mode replace --input definition.json
+```
+
+These are invocation shapes, **not live execution instructions or claims**.
+The standalone binary, including native-read/headless builds, returns exit 1
+with sanitized `NotConfigured` JSON on stderr for a valid preview operation.
+It does so before settings, credential selection, runtime creation, stdin or
+output-file access. Help succeeds without a host; malformed arguments return
+exit 2 without echoing supplied values. A configured native credential is not
+proof of Ontology public endpoint/feature readiness or exact-effect approval.
+No native policy has been invented to turn those conditions into an automatic
+yes. This is the remaining native executable binding blocker.
+
+### Injected root host
+
+`v2_preview::parse_args` parses argv after removing the outer marker, retaining
+the program name. Pass its `PreviewCommand` to `v2_preview::dispatch_command` with:
+
+- The existing `ReadSession` and its same shared executor, SDK context,
+  caller-owned runtime and selected endpoint.
+- The caller's canonical `Registry`, with the five public descriptors and
+  `item.metadata.create`, `item.metadata.patch`, `item.delete` registered, then
+  `fabric_cli_ontology::{bind_public_operations, bind_metadata_operations}`
+  applied. This mount does not define alternate descriptor schemas or identities.
+- A `PreviewHost` that binds one finite total deadline/cancellation policy,
+  approves scoped metadata discovery, reads bounded explicit input, atomically
+  reserves output and verifies the exact prepared operation's conditional
+  prerequisites, effects, identity, input and preconditions.
+- Explicit `AdapterLimits` and a cancellation future observing that same
+  deadline throughout discovery, metadata preflight, dispatch and observation.
+
+`dispatch_command` selects the same operation for generic and facade requests.
+Its `PreviewReport` retains either the original public `ExecutionReport` or
+metadata `CapabilityReport`, including typed failures and output evidence.
+`receipt()` borrows the original receipt and `exit_code()` maps actual outcomes
+without treating acceptance as completion. Existing `dispatch` callers keep
+their public Get/replacement API; `dispatch_metadata` is the metadata-only API.
+
+`dispatch_with_native` additionally accepts a `NativePreviewHost` with an
+explicit private Digital Operations `NativeContext`. Its registry also needs
+the seven `ontology.entity.*` descriptors and `bind_native_operations`.
+This is a distinct injected workload executor, routing, identity and audience
+binding, never a public endpoint override. The ordinary `PreviewHost` and
+`dispatch_command` do not silently acquire this capability.
+
+The read session's existing `Snapshot`/`Resolver` resolves existing owner
+segments. The preview then reads authoritative public Ontology metadata
+for type/generation before invoking the adapter. This metadata preflight is
+explicitly covered by discovery approval, not a hidden source fallback. The
+adapter performs its own approved request, including another metadata request
+for metadata Get; discovery is not presented as the operation's result. The
+deadline is established once and is not reset between these phases.
+Owner discovery retains the existing snapshot's finite SDK list limits;
+`AdapterLimits.operation` bounds the subsequent public operation, not a
+combined discovery-plus-execution request count. The caller's total deadline
+and discovery policy cover both phases.
+
+Metadata Create instead resolves only the actual workspace. Its neutral target
+is a `WorkspaceCollection` with a real workspace ID, no fake item ID, and unknown
+generation. The adapter calls the existing SDK
+`ItemMutations::create_with_completion`; returned item identity/generation stays
+in the actual provider data. The root verifies that input `displayName` equals
+the addressed item name before approval. Fresh-resource create does not promise
+atomic display-name reservation: policy must refuse any stronger unavailable
+namespace compare-and-swap requirement.
+
+Creation input is exactly `{"displayName":"Knowledge","description":"optional"}`.
+Patch accepts supplied `displayName`/`description` strings only, preserving
+omitted fields; explicit null, definition, type, generation and creationPayload
+are rejected, not transformed into defaults. Patch and Delete use the existing
+SDK `ItemMutations::*_with_completion` APIs, not a copied CRUD/LRO engine.
+Delete uses the generic items route with the exact optional `--permanent`
+intent; no native definition reset or permanent fallback is substituted.
+The prepared operation binds body, input/output source, selected SDK context,
+bounds and native conditions to host approval. Metadata mutations require
+RemoteWrite/RemoteDelete, declared LocalRead for input, and LocalWrite for
+explicit file output. The host supplies no blanket approval.
+
+The bounded path grammar is an optional leading slash followed by exact
+`Name.Workspace/Name.Ontology` segments, with no navigation segments, escaped
+slashes, folders or arbitrary subresources:
+
+| Suffix | Representation | Execution |
+| --- | --- | --- |
+| None | Public item metadata JSON | Get, metadata-only Create, explicit Patch, or Delete |
+| `/src/definition` | Public native multipart envelope | Get or explicit replacement |
+| `/src/model` or `/src/model/expanded` | Expanded public model | Get only |
+| `/src/model/minimized` | Authored/minimized public model | Get or explicit replacement |
+| `/src/schema/entities` | Private V4 entity collection | List or strict Create |
+| `/src/schema/entities/<lineage>` | Private V4 entity by stable lineage | Get, explicit Patch, Delete, or Move |
+| `/src/schema/entities/<lineage>/binding` | Existing entity source binding | Link |
+
+Native schema paths require `dispatch_with_native`. A lineage is one opaque
+segment, not an entity display name. This bounded mount does not decode encoded
+IDs or support lineage IDs containing path separators. The SDK's injected
+resolved-target API remains distinct from this limited root path grammar.
+Move is a name-only patch preserving the original lineage identity, not a
+transfer or copy/delete. Link accepts a backing-table patch, never a graph or
+ACL grant. Deletion requires explicit permanent intent and approval of affected
+references. These native writes do not imply graph publication.
+
+Model source requires provider-established generation 2; native definitions
+retain generation 1/2 applicability. Unknown, malformed and future generation
+values are not coerced or defaulted for existing-target dispatch. The current
+capability validation also requires known generation for existing metadata
+execution; unknown-generation existing metadata remains a fail-closed limitation.
+Metadata-only Create deliberately leaves the resulting generation unknown. Type is
+verified from actual metadata, not trusted solely from the path suffix.
+
+Both entry points reject unsupported options through the same adapter. The
+preview additionally rejects `--profile` and `--project` because no root
+profile binding or projection implementation is installed. Get, source replacement
+and metadata-only Create/Patch/Delete execute through injected public hosts.
+The separately injected native entity host supplies all seven selected aliases.
+`/docs`, OWL/RDF, internal stored models, non-entity native schema resources at
+this root, writable graph, context authoring, query/model
+execution and publication are not mounted. Such paths never reach OneLake
+folder resolution. No private transport, token exchange or credential fallback
+is configured.
+
+Successful/accepted receipts go to the reserved stdout/file destination;
+provider failure/unknown receipts go to stderr unchanged. Use
+`PreviewReport::exit_code` for the unified route, or `execution_exit_code` for
+the original public-only API: accepted is exit 0 as submission,
+not completion, while failed/partial/unknown is exit 1. Local typed
+`PreviewError`s expose their exit and a sanitized diagnostic renderer. Preserve
+`AdapterError::Output` or `CapabilityError::Output`'s original report if presentation fails; do not render a
+replacement remote-failure result or replay the request. The host owns cleanup
+of an unused reserved output file after refusal or failure; no rollback or
+transactional local-output publication is promised.
+
+### Offline acceptance and validator handoff
+
+`tests/v2_preview.rs` authors real root parser -> existing owner discovery ->
+actual Ontology adapter -> shared `HttpExecutor` -> injected Azure HTTP fixtures.
+It covers generic/facade metadata equivalence, native definition and both model
+forms, selected endpoint propagation, actual replacement input/output files,
+atomic no-clobber reservation, policy refusal, unsupported facets/options,
+generation/type denial, acceptance versus completion, denied source, accepted
+poll failure, cancellation before/after acceptance, result bounds and writer
+failure with original remote evidence. Metadata root cases exercise real
+workspace-only Create, generic/facade consistency, existing-owner Patch/Delete,
+path/body name binding, explicit permanence, exact-policy refusal and no-clobber
+through the same HTTP fixture and operation engine. Its registry and approval implementations
+are explicitly offline fixture policies, not production defaults.
+
+`tests/v2_preview_entry.rs` authors subprocess contracts for unchanged v1
+help/version/grammar, absence of the marker in default builds, preview help,
+sanitized arguments, and `NotConfigured` before native configuration.
+
+Public metadata/source root fixtures, executable opt-in/opt-out cases, existing
+argv/CLI contracts and architecture fixtures have been executed offline on
+Windows, with strict all-target Clippy. This does not establish other platform
+or live-service acceptance. Native root fixtures additionally cover the seven
+aliases, private-binding refusal, partial/accepted outcomes and writer failure.
+After acceptance, a failed public HTTP poll remains `Unknown` with its original
+handle and possible mutation, not `Failed`. The root keeps a regression for that
+contract without reclassifying or concealing the upstream receipt. The new
+package `tests/metadata_execution.rs` additionally authors metadata-only wire,
+input, receipt, cancellation, acceptance/poll failure and output-error contracts.
+
+Validation must run
+formatting, all-target checks for `fabric-cli` with the preview feature, these
+two integration-test targets, the capability metadata test target, and affected existing root argv/CLI contracts
+in both default and preview/native feature configurations. Preserve the existing
+v1 oracles. No live Fabric/authentication/deployment acceptance is implied.
 
 ## Headless service commands
 
@@ -236,6 +455,9 @@ The execution contract is:
 Invalid arguments use the sanitized error envelope. Unknown batch commands stop
 with exit 1 and a sanitized `UnexpectedError`. Diagnostics and debug formatting
 of batch invocations omit supplied command strings.
+Explicit tabular exports preserve the native command's terminal or cancellation
+disposition; adapting an error to an export receipt does not authorize the next
+batch command. Handled export failures retain the ordinary last-command rule.
 
 `parser::batch::run` takes a `BatchInvocation` and caller-owned `BatchHost`.
 `execute` receives split arguments and returns `CommandOutcome::Returned(u8)` or
@@ -257,6 +479,9 @@ Authentication uses the same explicit broker selection and command engine as a
 single invocation. Its typed outcome distinguishes cancellation from a handled
 provider failure even though both retain exit 1. Cancellation, timeout and
 signal-handler failure stop before the next command and suppress the summary.
+Invalid authentication configuration (exit 2) and failure to initialize its
+runtime also stop before the next command; ordinary handled selection failures
+still preserve the last-command exit rule.
 No new credential backend, acquisition rule or token input is introduced.
 
 Default local execution has no installed Ctrl+C handler. The existing Tokio
@@ -308,6 +533,10 @@ no-clobber output preflight, and preserves real operation evidence on local
 cancellation, timeout or output failure without replay. Noninteractive native
 processes without an approval capability fail closed; embedders inject
 `execute::host::ExecutionApproval`. The default binary returns `NotConfigured`.
+Result decoding or serialization failure stops a batch before subsequent
+commands, even when the query already completed; the query is never replayed.
+Authorization diagnostics retain the actual HTTP status alongside operation
+evidence, including empty HTTP 401 responses with `Unauthorized` exit 4.
 See the [complete execution contract](../../../docs/dataflow-execution.md) for
 finite limits, exact format references, permission/gateway prerequisites,
 unimplemented providers and the detailed refresh-log API gap. Existing v1

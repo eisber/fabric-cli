@@ -111,6 +111,12 @@ impl From<CommandError> for JobCommandError {
     }
 }
 
+impl From<JobError> for JobCommandError {
+    fn from(error: JobError) -> Self {
+        sdk_error(error, None)
+    }
+}
+
 impl JobOutput {
     fn new(data: Option<Value>, message: Option<String>, headers: bool, key_value: bool) -> Self {
         Self {

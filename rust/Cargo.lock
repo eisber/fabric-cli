@@ -735,6 +735,7 @@ dependencies = [
  "fabric-cli-jobs",
  "fabric-cli-local",
  "fabric-cli-mutations",
+ "fabric-cli-ontology",
  "fabric-cli-output",
  "fabric-cli-query",
  "fabric-cli-repl",
@@ -747,6 +748,7 @@ dependencies = [
  "fabric-identity",
  "fabric-sdk",
  "fabric-sdk-api",
+ "fabric-sdk-catalog",
  "fabric-sdk-dataflow",
  "fabric-sdk-discovery",
  "fabric-sdk-http",
@@ -754,6 +756,8 @@ dependencies = [
  "fabric-sdk-onelake",
  "fabric-sdk-onelake-http",
  "fabric-sdk-operations",
+ "fabric-sdk-relevance",
+ "fabric-sdk-search",
  "fabric-sdk-tables",
  "fabric-sdk-tabular",
  "fabric-sdk-transport",
@@ -841,7 +845,9 @@ dependencies = [
  "fabric-sdk",
  "fabric-sdk-items",
  "fabric-sdk-ontology",
+ "fabric-sdk-ontology-workload",
  "fabric-sdk-operations",
+ "fabric-sdk-workspaces",
  "serde",
  "serde_json",
  "tokio",
@@ -1066,7 +1072,9 @@ dependencies = [
  "azure_core",
  "base64 0.22.1",
  "fabric-core",
+ "fabric-sdk-api",
  "fabric-sdk-capacities",
+ "fabric-sdk-catalog",
  "fabric-sdk-dataagent-ontology",
  "fabric-sdk-discovery",
  "fabric-sdk-folders",
@@ -1075,6 +1083,8 @@ dependencies = [
  "fabric-sdk-ontology",
  "fabric-sdk-ontology-workload",
  "fabric-sdk-operations",
+ "fabric-sdk-relevance",
+ "fabric-sdk-search",
  "fabric-sdk-sql-database",
  "fabric-sdk-sql-definition",
  "fabric-sdk-workspaces",
@@ -1303,6 +1313,36 @@ dependencies = [
  "fabric-sdk-workspaces",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "fabric-sdk-relevance"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "azure_core",
+ "fabric-core",
+ "fabric-sdk-api",
+ "fabric-sdk-workspaces",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-sdk-search"
+version = "0.1.0"
+dependencies = [
+ "azure_core",
+ "fabric-sdk-api",
+ "fabric-sdk-catalog",
+ "fabric-sdk-relevance",
+ "fabric-v2-contracts",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

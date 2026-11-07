@@ -17,13 +17,15 @@ pub use receipt::{
     ApprovalPolicy, ApprovedOperation, ChildIdentity, Coverage, ExecutionEvidence,
     ExecutionReceipt, FailureInfo, ItemIdentity, OperationHandle, Outcome, Precondition,
     PreparedOperation, ReceiptBuildError, ReceiptError, ReceiptMetadata, ResolvedTarget,
-    TargetIdentity, WorkspaceIdentity,
+    SourceEvidence, SourceEvidenceError, TargetIdentity, TenantIdentity, WorkspaceIdentity,
 };
 
 /// Identity cardinality required by an explicitly registered target binding.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TargetKind {
+    /// A caller-selected tenant collection, without a synthetic workspace.
+    TenantCollection,
     /// An existing owner item, its subresource or representation.
     Item,
     /// A workspace-owned item collection or not-yet-created destination.
@@ -46,6 +48,8 @@ pub enum Verb {
     List,
     /// Rename or move only where a native capability exists.
     Move,
+    /// Discover bounded candidates within an explicitly selected scope.
+    Search,
     /// Patch or replace an explicitly existing resource.
     Update,
 }

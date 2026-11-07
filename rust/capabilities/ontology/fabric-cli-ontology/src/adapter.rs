@@ -375,6 +375,24 @@ where
             "The registered descriptor does not identify this SDK operation.",
         ));
     }
+    let mut optional_effects = Vec::new();
+    for (selected, effect) in [
+        (args.input.is_some(), Effect::LocalRead),
+        (
+            matches!(args.output, OutputDestination::File(_)),
+            Effect::LocalWrite,
+        ),
+    ] {
+        if !selected || resolution.operation.effects().contains(&effect) {
+            continue;
+        }
+        if !resolution.operation.optional_effects().contains(&effect) {
+            return Err(AdapterError::Invalid(
+                "Registered descriptor omits selected local effects.",
+            ));
+        }
+        optional_effects.push(effect);
+    }
     let mut body = None;
     if let Some(source) = &args.input {
         let bytes = host
@@ -387,7 +405,10 @@ where
     }
     let request = request(args, representation, body.clone(), limits)?;
     let sdk_target = sdk::OntologyTarget::new(
-        resolved.identity().workspace_id(),
+        resolved
+            .identity()
+            .workspace_id()
+            .ok_or(AdapterError::Invalid("Workspace identity required."))?,
         resolved
             .identity()
             .item_id()
@@ -442,11 +463,9 @@ where
             "Registered descriptor omits required effects.",
         ));
     }
-    if matches!(args.output, OutputDestination::File(_)) {
-        prepared = prepared
-            .with_optional_effects(vec![Effect::LocalWrite])
-            .map_err(AdapterError::Preparation)?;
-    }
+    prepared = prepared
+        .with_optional_effects(optional_effects)
+        .map_err(AdapterError::Preparation)?;
     if args.verb == OntologyVerb::Update {
         prepared = prepared
             .with_preconditions(vec![

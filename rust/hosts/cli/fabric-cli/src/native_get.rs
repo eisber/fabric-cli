@@ -222,7 +222,7 @@ impl Delivery {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "headless"))]
     pub(super) fn into_plan_parts(self) -> (TextPlan, CommandOutcome) {
         match self {
             #[cfg(any(windows, feature = "headless"))]
@@ -336,88 +336,6 @@ fn interruption_record(code: &str, message: String, exit: u8) -> RenderPlan {
 
 #[derive(Debug)]
 pub(super) struct DeliveryWriteFailure(pub(super) Box<GetWriteFailure>);
-
-#[cfg(test)]
-mod export_receipt_tests {
-    use super::{CommandOutcome, Delivery};
-    use fabric_cli::tabular_export::{
-        self, ExportRequest, FileSink, ReceiptWriteFailure, TableResult,
-    };
-    use fabric_cli_output::tabular::TabularFormat;
-    use futures_util::FutureExt;
-    use serde_json::{Value, json};
-    use std::{
-        cell::Cell,
-        fs,
-        future::ready,
-        io::{self, Write},
-    };
-
-    struct BrokenWriter;
-
-    impl Write for BrokenWriter {
-        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
-            Err(io::Error::other("broken receipt"))
-        }
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn native_plan_retains_typed_export_evidence_after_stdout_failure() {
-        let parent = std::env::current_dir().unwrap().join("target");
-        fs::create_dir_all(&parent).unwrap();
-        let root = tempfile::Builder::new()
-            .prefix("native-receipt-")
-            .tempdir_in(&parent)
-            .unwrap();
-        let file = root.path().join("data.json");
-        let request = ExportRequest {
-            format: TabularFormat::Json,
-            output: file.clone(),
-        };
-        let calls = Cell::new(0);
-        let export = tabular_export::deliver(
-            &request,
-            "native-boundary-test",
-            Some(1),
-            &mut FileSink::default(),
-            || {
-                calls.set(calls.get() + 1);
-                ready(Ok(TableResult::single(
-                    "native-boundary-test",
-                    vec![json!({"actual":"private-data"})],
-                )))
-            },
-        )
-        .now_or_never()
-        .unwrap();
-        assert_eq!(export.exit_code, 0);
-        let native = Delivery::export(export, CommandOutcome::Returned(0));
-        let mut stderr = Vec::new();
-        let error = native.write_to(&mut BrokenWriter, &mut stderr).unwrap_err();
-        let failure = error
-            .get_ref()
-            .unwrap()
-            .downcast_ref::<ReceiptWriteFailure>()
-            .unwrap();
-        assert_eq!(failure.delivery.receipt["execution"]["status"], "succeeded");
-        assert_eq!(failure.delivery.receipt["delivery"]["status"], "succeeded");
-        assert_eq!(
-            failure.delivery.receipt["delivery"]["file"],
-            file.to_str().unwrap()
-        );
-        assert_eq!(calls.get(), 1);
-        assert!(file.is_file());
-        let diagnostic: Value = serde_json::from_slice(&stderr).unwrap();
-        assert_eq!(
-            diagnostic["retained_export"]["delivery"]["schema"][0]["name"],
-            "actual"
-        );
-        assert!(!String::from_utf8_lossy(&stderr).contains("private-data"));
-    }
-}
 
 impl fmt::Display for DeliveryWriteFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -743,3 +661,85 @@ impl TransferFiles for LocalFiles {
 #[cfg(test)]
 #[path = "native_get_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod export_receipt_tests {
+    use super::{CommandOutcome, Delivery};
+    use fabric_cli::tabular_export::{
+        self, ExportRequest, FileSink, ReceiptWriteFailure, TableResult,
+    };
+    use fabric_cli_output::tabular::TabularFormat;
+    use futures_util::FutureExt;
+    use serde_json::{Value, json};
+    use std::{
+        cell::Cell,
+        fs,
+        future::ready,
+        io::{self, Write},
+    };
+
+    struct BrokenWriter;
+
+    impl Write for BrokenWriter {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::Error::other("broken receipt"))
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn native_plan_retains_typed_export_evidence_after_stdout_failure() {
+        let parent = std::env::current_dir().unwrap().join("target");
+        fs::create_dir_all(&parent).unwrap();
+        let root = tempfile::Builder::new()
+            .prefix("native-receipt-")
+            .tempdir_in(&parent)
+            .unwrap();
+        let file = root.path().join("data.json");
+        let request = ExportRequest {
+            format: TabularFormat::Json,
+            output: file.clone(),
+        };
+        let calls = Cell::new(0);
+        let export = tabular_export::deliver(
+            &request,
+            "native-boundary-test",
+            Some(1),
+            &mut FileSink::default(),
+            || {
+                calls.set(calls.get() + 1);
+                ready(Ok(TableResult::single(
+                    "native-boundary-test",
+                    vec![json!({"actual":"private-data"})],
+                )))
+            },
+        )
+        .now_or_never()
+        .unwrap();
+        assert_eq!(export.exit_code, 0);
+        let native = Delivery::export(export, CommandOutcome::Returned(0));
+        let mut stderr = Vec::new();
+        let error = native.write_to(&mut BrokenWriter, &mut stderr).unwrap_err();
+        let failure = error
+            .get_ref()
+            .unwrap()
+            .downcast_ref::<ReceiptWriteFailure>()
+            .unwrap();
+        assert_eq!(failure.delivery.receipt["execution"]["status"], "succeeded");
+        assert_eq!(failure.delivery.receipt["delivery"]["status"], "succeeded");
+        assert_eq!(
+            failure.delivery.receipt["delivery"]["file"],
+            file.to_str().unwrap()
+        );
+        assert_eq!(calls.get(), 1);
+        assert!(file.is_file());
+        let diagnostic: Value = serde_json::from_slice(&stderr).unwrap();
+        assert_eq!(
+            diagnostic["retained_export"]["delivery"]["schema"][0]["name"],
+            "actual"
+        );
+        assert!(!String::from_utf8_lossy(&stderr).contains("private-data"));
+    }
+}

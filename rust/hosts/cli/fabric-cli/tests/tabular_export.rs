@@ -610,15 +610,19 @@ fn actual_native_job_export_preserves_later_page_columns_and_never_publishes_par
     use fabric_cli_output::Timestamp;
     use folder_support::{Credential, Http, Reply, Timer, complete, executor, reply, sdk};
     use std::sync::Arc;
-    for fail_later in [false, true] {
+    for failure in [
+        None,
+        Some((401, "Unauthorized", 4)),
+        Some((403, "Forbidden", 1)),
+    ] {
         let http = Arc::new(Http::new([
             reply(json!({"value":[{"id":"w","displayName":"Demo","type":"Workspace"}]})),
             reply(json!({"value":[{"id":"n","displayName":"Book","type":"Notebook"}]})),
             reply(json!({"value":[{"id":"first","status":null}],"continuationToken":"next"})),
-            if fail_later {
+            if let Some((status, code, _)) = failure {
                 Reply {
-                    status: 403,
-                    body: json!({"errorCode":"Forbidden","message":"Offline denial"}),
+                    status,
+                    body: json!({"errorCode":code,"message":"Offline denial"}),
                     headers: Default::default(),
                 }
             } else {
@@ -663,9 +667,12 @@ fn actual_native_job_export_preserves_later_page_columns_and_never_publishes_par
             "execution must not repeat"
         );
         http.assert_consumed();
-        if fail_later {
-            assert_ne!(delivery.exit_code, 0);
+        if let Some((_, code, exit)) = failure {
+            assert_eq!(delivery.exit_code, exit);
+            assert_eq!(delivery.receipt["execution"]["status"], "failed");
+            assert_eq!(delivery.receipt["delivery"]["error"]["code"], code);
             assert_eq!(sink.publishes, 0);
+            assert!(sink.bytes.is_empty());
         } else {
             assert_eq!(delivery.exit_code, 0);
             let data: Value = serde_json::from_slice(&sink.bytes).unwrap();

@@ -29,6 +29,22 @@ pub mod workspaces;
 pub mod discovery {
     pub use fabric_sdk_discovery::*;
 }
+/// Bounded, caller-composed catalog and relevance search with source evidence.
+pub mod search {
+    pub use fabric_sdk_search::*;
+}
+/// Caller-injected request execution used by catalog and relevance clients.
+pub mod api {
+    pub use fabric_sdk_api::*;
+}
+/// Native Catalog requests and bounded metadata pages.
+pub mod catalog {
+    pub use fabric_sdk_catalog::*;
+}
+/// Direct Relevance Engine discovery using caller-injected service execution.
+pub mod relevance {
+    pub use fabric_sdk_relevance::*;
+}
 /// DataAgent-owned Ontology attachment and source-guidance workflows.
 pub use fabric_sdk_dataagent_ontology as dataagent_ontology;
 /// Public Ontology metadata/model/native-definition operations.

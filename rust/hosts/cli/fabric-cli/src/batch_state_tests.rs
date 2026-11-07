@@ -426,6 +426,24 @@ mod remote {
         }
     }
 
+    #[cfg(any(windows, feature = "headless"))]
+    struct NoExportPublish;
+
+    #[cfg(any(windows, feature = "headless"))]
+    impl fabric_cli::tabular_export::ExportSink for NoExportPublish {
+        fn preflight(&mut self, _: &fabric_cli::tabular_export::ExportRequest) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn publish(
+            &mut self,
+            _: &fabric_cli::tabular_export::ExportRequest,
+            _: &[u8],
+        ) -> io::Result<()> {
+            panic!("failed native execution must not publish an export")
+        }
+    }
+
     impl BatchHost for Host {
         type Error = io::Error;
         fn execute(&mut self, arguments: &[&str]) -> io::Result<BatchOutcome> {
@@ -442,6 +460,26 @@ mod remote {
                     evidence: fabric_cli::families::FamilyEvidence::Resource(Err(error)),
                 })
                 .into());
+            }
+            #[cfg(any(windows, feature = "headless"))]
+            if arguments == ["export-cancel"] {
+                let request = fabric_cli::tabular_export::ExportRequest {
+                    format: fabric_cli_output::tabular::TabularFormat::Csv,
+                    output: "never-created.csv".into(),
+                };
+                let delivery = fabric_cli::tabular_export::ExportDelivery::host_failed(
+                    "acl ls",
+                    &request,
+                    "OperationCancelled",
+                    "Synthetic cancellation",
+                    0,
+                );
+                let (delivery, outcome) = crate::native_read::retain_export_outcome(
+                    delivery,
+                    Some(CommandOutcome::Cancelled(0)),
+                );
+                self.plans.push(delivery.plan()?);
+                return Ok(outcome.into());
             }
             let invocation =
                 parse_args(std::iter::once("fab-rs").chain(arguments.iter().copied())).unwrap();
@@ -460,25 +498,35 @@ mod remote {
                     .block_on(reads.dispatch(command, pending()))
                     .unwrap()
             } else {
-                let output = self.runtime.block_on(self.state.family(async |navigation| {
-                    FamilySession {
-                        reads: &reads,
-                        http: &self.executor,
-                        store: &self.store,
-                        navigation,
-                        local: &mut Ui,
-                        mutations: &mut Ui,
-                        confirmation: None,
-                        transfer_ui: &Ui,
-                        transfer_files: None,
-                        resource_files: None,
-                    }
-                    .dispatch(&invocation, pending())
-                    .await
-                    .unwrap()
-                }));
-                let outcome = family_outcome(&output);
-                self.plans.push(output.plan);
+                let (plan, outcome) =
+                    self.runtime.block_on(self.state.family(async |navigation| {
+                        let mut families = FamilySession {
+                            reads: &reads,
+                            http: &self.executor,
+                            store: &self.store,
+                            navigation,
+                            local: &mut Ui,
+                            mutations: &mut Ui,
+                            confirmation: None,
+                            transfer_ui: &Ui,
+                            transfer_files: None,
+                            resource_files: None,
+                        };
+                        #[cfg(any(windows, feature = "headless"))]
+                        if let Invocation::Tabular(export) = &invocation {
+                            let (delivery, outcome) = crate::native_read::execute_tabular_family(
+                                export,
+                                &mut families,
+                                &mut NoExportPublish,
+                            )
+                            .await;
+                            return (delivery.plan().unwrap(), outcome);
+                        }
+                        let output = families.dispatch(&invocation, pending()).await.unwrap();
+                        let outcome = family_outcome(&output);
+                        (output.plan, outcome)
+                    }));
+                self.plans.push(plan);
                 return Ok(outcome.into());
             };
             let outcome = BatchOutcome::Returned(plan.exit_code);
@@ -594,6 +642,82 @@ mod remote {
         );
         assert!(!host.summary);
         assert_eq!(host.store.read().unwrap()["show_hidden"], "true");
+    }
+
+    #[test]
+    #[cfg(any(windows, feature = "headless"))]
+    fn malformed_native_acl_exports_stop_before_batch_mutation_without_request_replay() {
+        let root = Root::new();
+        let mut host = Host::new(&root, false);
+        host.workspace();
+        host.http
+            .replies
+            .lock()
+            .unwrap()
+            .push_back(json!({"value": null}));
+        assert_eq!(
+            run(
+                &mut host,
+                &[
+                    "acl ls Demo.Workspace --format csv --output never-created.csv",
+                    "config set show_hidden true",
+                ],
+            ),
+            1
+        );
+        assert!(!host.summary);
+        assert_eq!(host.store.read().unwrap()["show_hidden"], "false");
+        assert_eq!(host.http.requests.lock().unwrap().len(), 2);
+        assert!(host.http.replies.lock().unwrap().is_empty());
+        assert_eq!(host.plans.len(), 1);
+        let receipt: Value = serde_json::from_slice(&host.plans[0].records[0].payload).unwrap();
+        assert_eq!(receipt["execution"]["status"], "failed");
+        assert_eq!(receipt["delivery"]["error"]["code"], "UnexpectedError");
+        assert_eq!(fs::read_dir(&root.0).unwrap().count(), 1);
+    }
+
+    #[test]
+    #[cfg(any(windows, feature = "headless"))]
+    fn handled_native_export_failure_still_continues_to_the_last_command() {
+        let root = Root::new();
+        let mut host = Host::new(&root, false);
+        host.http
+            .replies
+            .lock()
+            .unwrap()
+            .push_back(json!({"value": []}));
+        assert_eq!(
+            run(
+                &mut host,
+                &[
+                    "acl ls Missing.Workspace --format json --output never-created.json",
+                    "config set show_hidden true",
+                ],
+            ),
+            0
+        );
+        assert!(host.summary);
+        assert_eq!(host.store.read().unwrap()["show_hidden"], "true");
+        assert_eq!(host.http.requests.lock().unwrap().len(), 1);
+        assert!(host.http.replies.lock().unwrap().is_empty());
+        let receipt: Value = serde_json::from_slice(&host.plans[0].records[0].payload).unwrap();
+        assert_eq!(receipt["execution"]["status"], "failed");
+        assert_ne!(receipt["delivery"]["error"]["code"], "UnexpectedError");
+    }
+
+    #[test]
+    #[cfg(any(windows, feature = "headless"))]
+    fn zero_exit_export_cancellation_stops_before_mutation_and_summary() {
+        let root = Root::new();
+        let mut host = Host::new(&root, false);
+        assert_eq!(
+            run(&mut host, &["export-cancel", "config set show_hidden true"]),
+            0
+        );
+        assert!(!host.summary);
+        assert_eq!(host.store.read().unwrap()["show_hidden"], "false");
+        assert!(host.http.requests.lock().unwrap().is_empty());
+        assert_eq!(host.plans.len(), 1);
     }
 
     #[test]

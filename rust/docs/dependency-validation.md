@@ -35,17 +35,6 @@ Lexical source-path unit tests retain the same exact cases on every host, using
 native fixture separators and absolute roots rather than interpreting Windows
 drive paths as POSIX-relative filenames.
 
-On Windows, formatting runs one `cargo fmt --package <name> -- --check` per selected package,
-in sorted order, before compilation. This preserves the complete formatting
-gate while avoiding one workspace-wide rustfmt argument list exceeding native
-Windows process limits. Each package retains its own command receipt and any
-failure stops validation. POSIX hosts retain the combined selected-package
-formatting invocation; compile, lint and test package selection is unchanged.
-Command log basenames are bounded and use a SHA-256 identity suffix when
-truncated; `commands.json` retains the full command identity, argv and output
-hashes. Large all-package test selections therefore do not exceed native
-filename-component limits or silently lose their evidence.
-
 Omitting a base plans the local working-tree changes, including staged,
 unstaged and untracked files. Use `--full` for full configured validation.
 `--files-json <absolute-json-array>` is for inspecting a hypothetical change set;
