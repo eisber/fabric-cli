@@ -16,6 +16,8 @@ pub enum Origin {
     Arm,
     /// Power BI v1.0/myorg, explicitly preserving Python's Fabric scope.
     PowerBi,
+    /// Direct Relevance Engine discovery with the explicit Power BI service scope policy.
+    RelevanceEngine,
 }
 
 impl Origin {
@@ -23,7 +25,7 @@ impl Origin {
     /// pinned Python Fabric scope; this is not an inferred token fallback.
     pub const fn audience(self) -> Audience {
         match self {
-            Self::Fabric | Self::PowerBi => Audience::Fabric,
+            Self::Fabric | Self::PowerBi | Self::RelevanceEngine => Audience::Fabric,
             Self::OneLake => Audience::OneLake,
             Self::Arm => Audience::Arm,
         }
@@ -36,6 +38,7 @@ impl Origin {
             Self::OneLake => "https://onelake.dfs.fabric.microsoft.com/",
             Self::Arm => "https://management.azure.com/",
             Self::PowerBi => "https://api.powerbi.com/v1.0/myorg/",
+            Self::RelevanceEngine => "https://api.powerbi.com/relevanceengine/v1/",
         }
     }
 }
@@ -111,6 +114,40 @@ fn quote_plus(value: &str) -> String {
 }
 
 impl Request {
+    /// Binds an already typed relative request to the caller's explicit endpoint.
+    ///
+    /// The service identity, audience, route and opaque query are unchanged.
+    /// This does not discover a host, redirect a response or infer credentials.
+    ///
+    /// # Errors
+    /// Rejects service substitution, unsafe hosts/paths and oversized URLs
+    /// before the request can acquire a credential.
+    pub fn with_endpoint(
+        mut self,
+        endpoint: &fabric_core::EndpointBinding,
+    ) -> Result<Self, ApiError> {
+        let origin = match self.origin {
+            Origin::Fabric => fabric_core::ServiceOrigin::Fabric,
+            Origin::OneLake => fabric_core::ServiceOrigin::OneLake,
+            Origin::Arm => fabric_core::ServiceOrigin::Arm,
+            Origin::PowerBi => fabric_core::ServiceOrigin::PowerBi,
+            Origin::RelevanceEngine => fabric_core::ServiceOrigin::RelevanceEngine,
+        };
+        if endpoint.origin() != origin || endpoint.audience() != self.origin.audience() {
+            return Err(ApiError::InvalidAudience);
+        }
+        let path = match self.url.query() {
+            Some(query) => format!("{}?{query}", self.url.path()),
+            None => self.url.path().to_owned(),
+        };
+        let url = endpoint.url(&path).map_err(|_| ApiError::InvalidInput)?;
+        if url.as_str().len() > RequestBounds::default().max_url_bytes.get() {
+            return Err(ApiError::Limit);
+        }
+        self.url = url;
+        Ok(self)
+    }
+
     /// Adds ordered source query parameters, encoding opaque values exactly once.
     /// Duplicate keys replace their value in place; URLs remain finitely bounded.
     pub fn with_query(mut self, query: &[(String, String)]) -> Result<Self, ApiError> {

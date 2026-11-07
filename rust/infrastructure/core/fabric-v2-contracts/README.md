@@ -16,10 +16,13 @@ generation's schema; generation-independent support must be declared explicitly.
 Overlapping bindings for the same action are rejected instead of using first
 match or fallback routing.
 
-Existing items and workspace-owned item collections have distinct identity
+Existing items, workspace-owned item collections and tenant collections have distinct identity
 kinds. An item-create target retains its actual parent workspace without
 inventing an item UUID before creation. Scope is part of capability selection;
 an item-only binding cannot silently authorize a collection or vice versa.
+Tenant discovery retains an explicitly selected tenant UUID, never a synthetic
+workspace. The common identity's workspace accessor returns `None` for a tenant
+collection; item-specific adapters must require their actual workspace.
 
 `resolve` is discovery, **not execution approval**. Its result retains conditional
 prerequisites and explicit unsupported reasons. An execution adapter must check
