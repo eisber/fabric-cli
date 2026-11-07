@@ -715,6 +715,39 @@ fn retry_plan_is_finite_and_404_protocol_failure_and_all_posts_are_nonretryable(
 }
 
 #[test]
+fn public_transport_conversion_preserves_proven_io_and_never_replays_submission() {
+    let failure = Failure::from(ArrowError::from(NativeError::Transport));
+    assert_eq!(failure, Failure::Transport);
+    let now = Instant::now();
+    let get = handle()
+        .result_request(&ResultSelectors::default())
+        .unwrap();
+    let mut policy = RetryPolicy::new(now, Duration::from_secs(30), 1).unwrap();
+    assert_eq!(
+        policy.on_failure(now, failure, &get),
+        RetryDecision::Reconnect { attempt: 1 }
+    );
+    assert_eq!(
+        policy.on_failure(now, failure, &get),
+        RetryDecision::Stop(StopReason::Exhausted)
+    );
+    let post = SubmitOptions {
+        code: "select 1",
+        kind: "sql",
+        codec: "none",
+        mode: SubmitMode::Handle { sync_wait_ms: None },
+    }
+    .request(&owner(), RESOURCE_ID, 100)
+    .unwrap();
+    let mut policy = RetryPolicy::new(now, Duration::from_secs(30), 1).unwrap();
+    assert_eq!(
+        policy.on_failure(now, failure, &post),
+        RetryDecision::Stop(StopReason::Mutation)
+    );
+    assert_eq!(Failure::from(ArrowError::Protocol), Failure::Protocol);
+}
+
+#[test]
 fn absolute_deadline_survives_reconnects_and_caller_pauses() {
     let now = Instant::now();
     let get = handle()
