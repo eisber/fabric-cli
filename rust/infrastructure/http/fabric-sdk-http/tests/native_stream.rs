@@ -1147,6 +1147,96 @@ async fn malformed_and_overbudget_headers_are_rejected_without_polling_the_body(
     }
 }
 
+#[cfg(feature = "livy-arrow")]
+#[tokio::test]
+async fn composed_arrow_driver_never_recovers_rejected_http_metadata() {
+    use fabric_sdk::livy_arrow::{
+        FramedResultStream, FramedResume, FramedStreamCause, FramedStreamOptions, ResultSelectors,
+        StatementHandle, StatementOwner,
+    };
+
+    for status in [200, 429, 502, 503] {
+        let mut headers: Vec<_> = (0..64)
+            .map(|i| (format!("x-{i}"), "v".to_owned()))
+            .collect();
+        headers.push(("retry-after".into(), "60".into()));
+        let fields: Vec<_> = headers
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect();
+        let (reply, probe) = response(status, &fields, [Chunk::Pending]);
+        let wire = Wire::new([reply]);
+        let native = executor(
+            Arc::new(Credential::default()),
+            wire.clone(),
+            Arc::new(Timer::default()),
+        );
+        let owner = StatementOwner::session(
+            NativeEndpoint::new(
+                format!("{BASE}/lakehouses/lake/livyApi/versions/2024-04-01")
+                    .parse()
+                    .unwrap(),
+            )
+            .unwrap(),
+            "existing",
+            None,
+        )
+        .unwrap();
+        let mut stream = FramedResultStream::new(
+            &native,
+            StatementHandle::new(owner, 7),
+            ResultSelectors::default(),
+            FramedStreamOptions {
+                max_responses: 3,
+                resume: FramedResume::Recoverable {
+                    max_reconnects: 2,
+                    retry_truncated_eof: true,
+                },
+                ..FramedStreamOptions::default()
+            },
+            deadline(),
+        )
+        .unwrap();
+        let error = stream.next_chunk().await.unwrap_err();
+        assert_eq!(error.cause(), FramedStreamCause::Native(NativeError::Limit));
+        assert_eq!(error.progress().reconnects, 0);
+        assert_eq!(error.progress().open_attempts, 1);
+        assert_eq!(wire.requests.lock().unwrap().len(), 1);
+        assert_eq!(probe.polls.load(Ordering::SeqCst), 0);
+        assert_eq!(probe.drops.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[tokio::test]
+async fn invalid_failure_response_metadata_retains_validation_error_instead_of_retryable_status() {
+    for status in [429, 502, 503] {
+        for method in [NativeMethod::Get, NativeMethod::Head, NativeMethod::Post] {
+            let (reply, probe) = response(
+                status,
+                &[("content-type", "bad\r\nmedia")],
+                [Chunk::Pending],
+            );
+            let wire = Wire::new([reply]);
+            let native = executor(
+                Arc::new(Credential::default()),
+                wire.clone(),
+                Arc::new(Timer::default()),
+            );
+            assert_eq!(
+                failure(native.open(&request(method), limits(), &deadline()).await),
+                if method == NativeMethod::Post {
+                    NativeError::Http(status)
+                } else {
+                    NativeError::InvalidResponse
+                },
+            );
+            assert_eq!(wire.requests.lock().unwrap().len(), 1);
+            assert_eq!(probe.polls.load(Ordering::SeqCst), 0);
+            assert_eq!(probe.drops.load(Ordering::SeqCst), 1);
+        }
+    }
+}
+
 #[tokio::test]
 async fn exact_response_header_count_and_metadata_bytes_are_accepted() {
     for headers in [

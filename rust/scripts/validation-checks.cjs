@@ -7,9 +7,9 @@ const path = require('node:path');
 const PARAMETER_SOURCE_COMMIT = '5ca096c00a9a878c646c59fe537b883eba951329';
 const PYTHON_ENV = Object.freeze({PYTHONUTF8: '1', PYTHONDONTWRITEBYTECODE: '1'});
 const DEFAULT_TRANSPORT_FORBIDDEN =
-  /^(hyper|hyper-util|hyper-rustls|rustls|rustls-platform-verifier|reqwest|native-tls|openssl|fabric-identity|fabric-identity-windows|fabric-cli|fabric-deploy) v/m;
+  /^(hyper|hyper-util|hyper-rustls|rustls|rustls-platform-verifier|tokio-tungstenite|tungstenite|reqwest|native-tls|openssl|fabric-identity|fabric-identity-windows|fabric-cli|fabric-deploy) v/m;
 const OPTIN_TRANSPORT_FORBIDDEN =
-  /^(reqwest|native-tls|openssl|fabric-identity|fabric-identity-windows|fabric-cli|fabric-deploy) v/m;
+  /^(tokio-tungstenite|tungstenite|reqwest|native-tls|openssl|fabric-identity|fabric-identity-windows|fabric-cli|fabric-deploy) v/m;
 
 function requireThat(condition, message) {
   if (!condition) throw new Error(message);
