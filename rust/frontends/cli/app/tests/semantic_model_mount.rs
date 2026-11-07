@@ -78,9 +78,9 @@ fn analyze_fixture(evidence: bool, extra: &[&str]) -> std::process::Output {
         .arg("--hostfxr")
         .arg(hostfxr);
     if evidence {
-        command.arg("--evidence").arg(root.join(
-            "frontends/cli/commands/semantic-model/tests/complete-evidence.json",
-        ));
+        command
+            .arg("--evidence")
+            .arg(root.join("frontends/cli/commands/semantic-model/tests/complete-evidence.json"));
     }
     command.args(extra).output().unwrap()
 }
