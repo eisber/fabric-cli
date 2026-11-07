@@ -84,6 +84,12 @@ non-ASCII service values use the same complete scalar coverage; ASCII-only
 measurement is not a production default. JSON-only failure diagnostics remain
 independent of width lookup. The immutable Unicode policy is documented by the
 [output component](../fabric-cli-output/README.md#unicode-text).
+`ReadSession::dispatch_with_evidence_and_width` and its source-operation
+counterpart accept an explicit caller-owned character-width capability without
+changing discovery or execution. The frozen `read_session_probe` uses the
+original ASCII-only layout profile to retain its unsupported-character negative
+case; ordinary sessions and mounted native commands still use production
+Unicode, and JSON does not require width lookup.
 
 | Feature | Host capability |
 | --- | --- |

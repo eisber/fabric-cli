@@ -24,6 +24,154 @@ fn workspaces() -> Reply {
     reply(json!({"value":[{"id":"w","displayName":"Demo","type":"Workspace"}]}))
 }
 
+#[test]
+fn explicit_ascii_layout_rejects_missing_width_without_changing_native_unicode_or_replaying() {
+    for source_operations in [false, true] {
+        for ascii in [false, true] {
+            let http = Arc::new(Http::new([
+                reply(json!({"value":[{"id":"w","displayName":"Caf\u{e9}","type":"Workspace"}]})),
+                reply(json!({"value":[]})),
+            ]));
+            let executor = executor(http.clone(), Arc::new(Timer::default()));
+            let credential = Arc::new(Credential::default());
+            let sdk = sdk(credential.clone());
+            let session = ReadSession {
+                sdk: &sdk,
+                executor: &executor,
+                tenant: Element::tenant("Tenant", "offline-tenant"),
+                current_path: "/",
+                home: HomeContext::Unspecified,
+                timestamp: Timestamp::parse("2000-01-01T00:00:00Z").unwrap(),
+                config: ReadConfig::default(),
+            };
+            let Invocation::Read(command) =
+                parse_args(["fab-rs", "ls", "/", "-l", "--output_format", "text"]).unwrap()
+            else {
+                panic!("read invocation");
+            };
+            let result = complete(async {
+                match (source_operations, ascii) {
+                    (false, false) => session.dispatch_with_evidence(&command, pending()).await,
+                    (true, false) => {
+                        session
+                            .with_source_operations(&executor)
+                            .dispatch_with_evidence(&command, pending())
+                            .await
+                    }
+                    (false, true) => {
+                        session
+                            .dispatch_with_evidence_and_width(
+                                &command,
+                                &fabric_cli_output::text::ascii_width,
+                                pending(),
+                            )
+                            .await
+                    }
+                    (true, true) => {
+                        session
+                            .with_source_operations(&executor)
+                            .dispatch_with_evidence_and_width(
+                                &command,
+                                &fabric_cli_output::text::ascii_width,
+                                pending(),
+                            )
+                            .await
+                    }
+                }
+            });
+            if ascii {
+                assert!(matches!(
+                    result,
+                    Err(fabric_cli_output::text::TextError::MissingWidth(0xe9))
+                ));
+            } else {
+                let output = result.unwrap();
+                assert_eq!(output.plan.exit_code, 0);
+                assert!(output.error.is_none());
+                let mut stdout = Vec::new();
+                let mut stderr = Vec::new();
+                output.plan.write_to(&mut stdout, &mut stderr).unwrap();
+                let text = String::from_utf8(stdout).unwrap();
+                assert!(text.contains("Caf\u{e9}.Workspace"));
+                assert!(!text.contains('\u{fffd}'));
+                assert!(stderr.is_empty());
+            }
+            assert_eq!(http.requests.lock().unwrap().len(), 2);
+            assert_eq!(credential.scopes.lock().unwrap().len(), 2);
+            http.assert_consumed();
+        }
+    }
+}
+
+#[test]
+fn json_and_cancellation_do_not_require_the_explicit_text_width_capability() {
+    for source_operations in [false, true] {
+        for cancelled in [false, true] {
+            let replies = if cancelled {
+                Vec::new()
+            } else {
+                vec![reply(
+                    json!({"value":[{"id":"w","displayName":"Caf\u{e9}","type":"Workspace"}]}),
+                )]
+            };
+            let http = Arc::new(Http::new(replies));
+            let executor = executor(http.clone(), Arc::new(Timer::default()));
+            let credential = Arc::new(Credential::default());
+            let sdk = sdk(credential.clone());
+            let session = ReadSession {
+                sdk: &sdk,
+                executor: &executor,
+                tenant: Element::tenant("Tenant", "offline-tenant"),
+                current_path: "/",
+                home: HomeContext::Unspecified,
+                timestamp: Timestamp::parse("2000-01-01T00:00:00Z").unwrap(),
+                config: ReadConfig::default(),
+            };
+            let Invocation::Read(command) =
+                parse_args(["fab-rs", "ls", "/", "--output_format", "json"]).unwrap()
+            else {
+                panic!("read invocation");
+            };
+            let no_width =
+                |_| -> Option<usize> { panic!("JSON must not request character widths") };
+            let interruption = async {
+                if !cancelled {
+                    pending::<()>().await;
+                }
+            };
+            let output = complete(async {
+                if source_operations {
+                    session
+                        .with_source_operations(&executor)
+                        .dispatch_with_evidence_and_width(&command, &no_width, interruption)
+                        .await
+                } else {
+                    session
+                        .dispatch_with_evidence_and_width(&command, &no_width, interruption)
+                        .await
+                }
+            })
+            .unwrap();
+            if cancelled {
+                assert_eq!(output.plan.exit_code, 1);
+                assert!(output.error.is_some());
+                assert!(http.requests.lock().unwrap().is_empty());
+                assert!(credential.scopes.lock().unwrap().is_empty());
+            } else {
+                assert_eq!(output.plan.exit_code, 0);
+                let mut stdout = Vec::new();
+                let mut stderr = Vec::new();
+                output.plan.write_to(&mut stdout, &mut stderr).unwrap();
+                let data: Value = serde_json::from_slice(&stdout).unwrap();
+                assert_eq!(data["result"]["data"][0]["name"], "Caf\u{e9}.Workspace");
+                assert!(stderr.is_empty());
+                assert_eq!(http.requests.lock().unwrap().len(), 1);
+            }
+            http.assert_consumed();
+        }
+    }
+}
+
 fn run(args: &[&str], replies: Vec<Reply>) -> (u8, Vec<u8>, Vec<u8>, Vec<String>) {
     run_context(args, replies, "/", HomeContext::Unspecified)
 }

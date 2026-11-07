@@ -69,8 +69,14 @@ fn main() {
         let result = support::complete(
             session
                 .with_source_operations(&executor)
-                .dispatch(&command, cancelled),
-        );
+                // The frozen consumer exercises the original ASCII-only layout profile.
+                .dispatch_with_evidence_and_width(
+                    &command,
+                    &fabric_cli_output::text::ascii_width,
+                    cancelled,
+                ),
+        )
+        .map(|output| output.plan);
         let (mut stdout, mut stderr) = (vec![], vec![]);
         let (exit, render_error) = match result {
             Ok(plan) => {
