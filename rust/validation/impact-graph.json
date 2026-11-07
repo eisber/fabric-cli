@@ -936,6 +936,20 @@
   ],
   "profiles": [
     {
+      "id": "v2-preview",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-preview"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-preview-combined",
+      "packages": ["fabric-cli", "fabric-identity", "fabric-identity-windows", "fabric-cli-repl", "fabric-cli-update", "fabric-sdk-transport"],
+      "features": ["fabric-cli/v2-preview", "fabric-cli/workspace-read-v2", "fabric-cli/native-read", "fabric-cli/headless", "fabric-cli/certificate-store-windows", "fabric-cli/repl", "fabric-cli/self-update", "fabric-cli/v2-discovery", "fabric-cli/v2-cancel", "fabric-cli/v2-copy", "fabric-cli/runtime-v2", "fabric-identity/certificate-store-windows", "fabric-identity-windows/certificate-store", "fabric-cli-update/fixture-harness"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["combined"]
+    },
+    {
       "id": "workspace-read-v2",
       "packages": ["fabric-cli"],
       "features": ["fabric-cli/workspace-read-v2"],
