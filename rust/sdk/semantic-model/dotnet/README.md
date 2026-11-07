@@ -63,6 +63,10 @@ build fails before starting dotnet.
 
 The build script confines intermediate files, ordinary build output, publish
 output, package/cache directories, SDK home and scratch files to Cargo `OUT_DIR`.
+Its subprocess also runs from `OUT_DIR/build-root`, using the absolute original
+project path. An exact copy of `managed/global.json` in that working directory
+preserves the SDK selection. This keeps first-use NuGet migration files out of
+the source tree without disabling migrations or changing source-integrity guards.
 The managed projects exclude source-tree `obj`/`bin` files so a later isolated
 build cannot accidentally glob generated sources from an earlier direct build.
 SDK-dependent tests must use the same explicit config, isolated directories and

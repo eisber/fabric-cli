@@ -41,7 +41,11 @@ jobs:
         run: node rust/scripts/source-inventory.cjs "$env:RUNNER_TEMP/source-drift/before.json"
       - name: Execute the smallest optional managed build
         working-directory: rust
-        run: cargo check --offline --locked -p fabric-semantic-model-dotnet --features dotnet --all-targets
+        run: |
+          cargo check --offline --locked -p fabric-semantic-model-dotnet --features dotnet --all-targets
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --offline --locked -p fabric-semantic-model-dotnet --no-default-features --test managed_build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Record exact source differences without waiving the guard
         if: always()
         run: node rust/scripts/source-inventory.cjs "$env:RUNNER_TEMP/source-drift/after.json" "$env:RUNNER_TEMP/source-drift/before.json"

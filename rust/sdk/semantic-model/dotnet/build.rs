@@ -45,17 +45,14 @@ fn main() {
         "scratch",
         "http-cache",
         "plugin-cache",
+        "build-root",
     ] {
         fs::create_dir_all(output.join(directory))
             .expect("create isolated managed build directory");
     }
     let executable = env::var_os("FABRIC_BPA_DOTNET_BUILD_HOST").unwrap_or_else(|| "dotnet".into());
-    let mut command = Command::new(executable);
-    isolate_build_environment(&mut command, &output);
+    let mut command = managed_publish_command(&manifest, &output, executable);
     let status = command
-        .current_dir(manifest.join("managed"))
-        .arg("publish")
-        .arg("Fabric.SemanticModel.Managed.csproj")
         .args([
             "--configuration",
             "Release",
@@ -100,6 +97,24 @@ fn main() {
         "cargo:rustc-env=FABRIC_BPA_COMPONENT_DIR={}",
         component.display()
     );
+}
+
+pub(crate) fn managed_publish_command(
+    manifest: &Path,
+    output: &Path,
+    executable: impl AsRef<std::ffi::OsStr>,
+) -> Command {
+    let working = output.join("build-root");
+    fs::create_dir_all(&working).expect("create isolated managed build working directory");
+    let sdk_pin = fs::read(manifest.join("managed/global.json")).expect("read pinned managed SDK");
+    fs::write(working.join("global.json"), &sdk_pin).expect("copy pinned managed SDK selection");
+    let mut command = Command::new(executable);
+    isolate_build_environment(&mut command, output);
+    command
+        .current_dir(working)
+        .arg("publish")
+        .arg(manifest.join("managed/Fabric.SemanticModel.Managed.csproj"));
+    command
 }
 
 fn isolate_build_environment(command: &mut Command, output: &Path) {
