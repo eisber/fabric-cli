@@ -40,8 +40,8 @@ fn main() {
         "bin",
         "packages",
         "dotnet-home",
-        "appdata",
-        "localappdata",
+        "dotnet-home/AppData/Roaming",
+        "dotnet-home/AppData/Local",
         "scratch",
         "http-cache",
         "plugin-cache",
@@ -50,12 +50,8 @@ fn main() {
             .expect("create isolated managed build directory");
     }
     let executable = env::var_os("FABRIC_BPA_DOTNET_BUILD_HOST").unwrap_or_else(|| "dotnet".into());
-    let mut command = Command::new(executable);
-    isolate_build_environment(&mut command, &output);
+    let mut command = managed_publish_command(&manifest, &output, executable);
     let status = command
-        .current_dir(manifest.join("managed"))
-        .arg("publish")
-        .arg("Fabric.SemanticModel.Managed.csproj")
         .args([
             "--configuration",
             "Release",
@@ -102,6 +98,24 @@ fn main() {
     );
 }
 
+pub(crate) fn managed_publish_command(
+    manifest: &Path,
+    output: &Path,
+    executable: impl AsRef<std::ffi::OsStr>,
+) -> Command {
+    let working = output.join("build-root");
+    fs::create_dir_all(&working).expect("create isolated managed build working directory");
+    let sdk_pin = fs::read(manifest.join("managed/global.json")).expect("read pinned managed SDK");
+    fs::write(working.join("global.json"), &sdk_pin).expect("copy pinned managed SDK selection");
+    let mut command = Command::new(executable);
+    isolate_build_environment(&mut command, output);
+    command
+        .current_dir(working)
+        .arg("publish")
+        .arg(manifest.join("managed/Fabric.SemanticModel.Managed.csproj"));
+    command
+}
+
 fn isolate_build_environment(command: &mut Command, output: &Path) {
     // Do not forward source credentials, credential providers, MSBuild restore
     // overrides or arbitrary SDK startup hooks into the build-only subprocess.
@@ -126,12 +140,16 @@ fn isolate_build_environment(command: &mut Command, output: &Path) {
         }
     }
     let home = output.join("dotnet-home");
+    let appdata = home.join("AppData/Roaming");
+    let localappdata = home.join("AppData/Local");
+    fs::create_dir_all(&appdata).expect("create isolated profile roaming data directory");
+    fs::create_dir_all(&localappdata).expect("create isolated profile local data directory");
     command
         .env("DOTNET_CLI_HOME", &home)
         .env("HOME", &home)
         .env("USERPROFILE", &home)
-        .env("APPDATA", output.join("appdata"))
-        .env("LOCALAPPDATA", output.join("localappdata"))
+        .env("APPDATA", appdata)
+        .env("LOCALAPPDATA", localappdata)
         .env("NUGET_PACKAGES", output.join("packages"))
         .env("NUGET_HTTP_CACHE_PATH", output.join("http-cache"))
         .env("NUGET_PLUGINS_CACHE_PATH", output.join("plugin-cache"))
