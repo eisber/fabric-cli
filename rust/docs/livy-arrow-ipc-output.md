@@ -56,8 +56,9 @@ observed zero-column schema is supported.
 `write_batch` consumes one batch and returns `Result<(), ArrowError>`, so it fits
 the existing typed decoder/stream batch callback. This is also the intended
 small sink boundary for a typed result driver. **No `TypedResultDriver`
-implementation or driver integration exists in this base or is delivered by
-this slice.** The composer does not parse framing, decode IPC, request HTTP,
+implementation exists in the original writer-only base.** The additional
+`ipc::result::write_ipc_result` consumer below now integrates the real framed
+GET driver. The batch-only composer itself does not parse framing, decode IPC, request HTTP,
 manage retries/replay, or duplicate native decoder preflight.
 
 The sink is a borrowed `std::io::Write`, including `dyn Write`; no file is opened
@@ -163,7 +164,7 @@ are not bounded by the output byte counter. Keep decoder limits and host
 input/output memory controls separate; there is no total-process-memory claim.
 
 No CLI command, SDK file access, file naming/publication, async host adapter,
-stream-driver integration, backend operation, authentication or deployment
+backend operation, authentication or deployment
 qualification is provided. The host must coordinate source completion, abort
 on upstream failure, offload blocking work, and implement any partial-output
 cleanup/publication policy.
@@ -190,3 +191,42 @@ required, for example from `rust/`:
 cargo +1.99.1 check -p fabric-sdk --all-targets --features livy-arrow-ipc --locked
 cargo +1.99.1 test -p fabric-sdk --features livy-arrow-ipc --test livy_arrow_ipc --locked
 ```
+
+## Integrated framed GET consumer
+
+`fabric_sdk::livy_arrow::ipc::result::write_ipc_result` consumes a fresh
+`FramedResultStream`, a caller-owned `Write`, `DecodeLimits` and
+`IpcOutputLimits`. It performs actual asynchronous response pulls through the
+stream's injected executor. It uses the existing stream delivery ledger:
+identical acknowledged replays never reach decoding or the output writer.
+There is no second ledger, hidden submission, file open, or new retry engine.
+
+The first real IPC chunk establishes an observed schema, including an empty
+schema-only stream. Subsequent chunks are checked against exact logical schema
+identity before writing their batches. A schema-free framed terminal returns
+`IpcResultCause::MissingSchema` without writing output; it does not invent an
+empty schema. The original source codecs, dictionary replacements, nulls and
+metadata are handled by the bounded native decoder and the single writer.
+
+Every chunk is acknowledged only after all of its IPC batches were successfully
+validated and written. Schema, decode, sink, bound and framing failures close
+local observation without finishing the writer. Errors retain the original
+structured stream/native/Arrow cause, accepted output bytes, owner binding,
+acknowledged cursor and partial progress. The error never substitutes a generic
+sink failure for a schema or protocol error. Dropping the consumer future also
+closes the response and drops unfinished output; no remote cancel or local
+rollback is implied.
+
+Only a valid framed terminal, actual HTTP EOF, valid complete source IPC and
+successful local output finish/flush yield `IpcResultReceipt`. This certifies the
+observed representation, not overall remote workload success, durable storage
+or atomic publication. Flush or deadline failure can occur after EOS bytes were
+accepted. The original absolute observation budget is checked around decoding,
+acknowledgement and finalization; synchronous decoding or `Write` cannot be
+preempted, so blocking sinks still require a caller-owned execution boundary.
+
+Offline regressions exercise fragmented compressed dictionary chunks, one
+standard output stream, recovery with replay suppression, known empty versus
+missing schema, corrupt IPC and framing, schema changes, invalid limits before
+network access, and dropping a pending consumer with partial output. These
+instrumented executor tests are not live backend/identity qualification.

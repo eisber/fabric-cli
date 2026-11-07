@@ -30,6 +30,29 @@ use std::io::{self, Cursor, Write};
 use std::ops::Range;
 use std::sync::Arc;
 
+use fabric_sdk::{
+    livy_arrow::{
+        FramedResultStream, FramedResume, FramedStreamCause, FramedStreamOptions,
+        FramedStreamState, ResultSelectors, StatementHandle, StatementOwner,
+        ipc::result::{IpcResultCause, write_ipc_result},
+    },
+    runtime::{
+        NativeDeadline, NativeEndpoint, NativeError, NativeFuture, NativeRequest, NativeStreamBody,
+        NativeStreamExecutor, NativeStreamLimits, NativeStreamResponse,
+    },
+};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    future::{Future, pending},
+    pin::Pin,
+    sync::{
+        Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
+    task::{Context, Poll, Waker},
+    time::Duration,
+};
+
 const LIMITS: DecodeLimits = DecodeLimits {
     max_message_bytes: 8 * 1024 * 1024,
     max_decoded_bytes: 8 * 1024 * 1024,
@@ -1482,6 +1505,7 @@ fn output_abort_or_drop_without_finish_leaves_partial_bytes_and_redacted_debug()
         ] {
             assert!(!debug.contains(secret));
         }
+
         let before = output.bytes_written();
         if abort {
             output.abort().unwrap();
@@ -1497,4 +1521,536 @@ fn output_abort_or_drop_without_finish_leaves_partial_bytes_and_redacted_debug()
             Err(ArrowError::Truncated),
         );
     }
+}
+
+#[tokio::test]
+async fn result_partial_sink_and_constructor_failure_preserve_bytes_without_replay() {
+    let batch = primitive();
+    let schema_bytes = output_schema_bytes(&output_schema(&batch));
+    for boundary in [1, schema_bytes + 1] {
+        let executor = ResultExecutor::new(vec![vec![ResultStep::Bytes(result_wire([write(
+            std::slice::from_ref(&batch),
+            None,
+        )]))]]);
+        let mut stream = result_stream(&executor);
+        let mut sink = OutputTestSink {
+            fail_after: Some(boundary),
+            max_write: 1,
+            ..OutputTestSink::default()
+        };
+        let error = write_ipc_result(&mut stream, &mut sink, LIMITS, OUTPUT_LIMITS)
+            .await
+            .unwrap_err();
+        if boundary == 1 {
+            assert!(matches!(
+                error.cause(),
+                IpcResultCause::Arrow(ArrowError::SinkFailed)
+            ));
+        } else {
+            let IpcResultCause::Chunk {
+                cause,
+                observation: original,
+            } = error.cause()
+            else {
+                panic!("missing sink failure")
+            };
+            assert_eq!(*cause, ArrowError::SinkFailed);
+            assert_eq!(
+                original.cause(),
+                FramedStreamCause::Arrow(ArrowError::SinkFailed)
+            );
+            assert!(original.progress().sink_may_be_partial);
+        }
+        assert_eq!(error.output_bytes(), boundary);
+        assert_eq!(error.output_bytes(), sink.bytes.len());
+        assert_eq!(sink.flushes, 0);
+        assert_eq!(error.progress().delivered_chunks, 0);
+        assert!(error.cursor().is_none());
+        assert_eq!(executor.trace.opens.load(Ordering::SeqCst), 1);
+        assert_eq!(executor.trace.drops.load(Ordering::SeqCst), 1);
+        assert!(!format!("{error}").contains("top-secret"));
+    }
+}
+
+#[tokio::test]
+async fn result_flush_failure_keeps_acknowledged_progress_without_claiming_completion() {
+    let batch = primitive();
+    let executor = ResultExecutor::new(vec![vec![ResultStep::Bytes(result_wire([write(
+        std::slice::from_ref(&batch),
+        None,
+    )]))]]);
+    let mut stream = result_stream(&executor);
+    let mut sink = OutputTestSink {
+        fail_flush: true,
+        ..OutputTestSink::default()
+    };
+    let error = write_ipc_result(&mut stream, &mut sink, LIMITS, OUTPUT_LIMITS)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error.cause(),
+        IpcResultCause::Arrow(ArrowError::SinkFailed)
+    ));
+    assert_eq!(error.progress().state, FramedStreamState::Complete);
+    assert_eq!(error.progress().delivered_chunks, 1);
+    assert!(error.cursor().is_some());
+    assert_eq!(error.output_bytes(), sink.bytes.len());
+    assert_eq!(sink.flushes, 1);
+    assert_eq!(executor.trace.drops.load(Ordering::SeqCst), 1);
+    assert_single_output(&sink.bytes, &output_schema(&batch), &[batch]);
+}
+
+#[tokio::test]
+async fn result_missing_terminal_and_output_bounds_never_finalize_partial_bytes() {
+    for missing_terminal in [false, true] {
+        let batch = primitive();
+        let payload = write(std::slice::from_ref(&batch), None);
+        let wire = if missing_terminal {
+            result_frame(payload, 0)
+        } else {
+            result_wire([payload])
+        };
+        let executor = ResultExecutor::new(vec![vec![ResultStep::Bytes(wire)]]);
+        let mut stream = result_stream(&executor);
+        // This scenario deliberately disables truncation recovery, not framing validation.
+        if missing_terminal {
+            stream = FramedResultStream::new(
+                &executor,
+                stream.handle().clone(),
+                ResultSelectors::default(),
+                FramedStreamOptions::default(),
+                NativeDeadline::new(Duration::from_secs(30)).unwrap(),
+            )
+            .unwrap();
+        }
+        let mut sink = OutputTestSink::default();
+        let error = write_ipc_result(
+            &mut stream,
+            &mut sink,
+            LIMITS,
+            IpcOutputLimits {
+                max_rows: if missing_terminal { 1000 } else { 1 },
+                ..OUTPUT_LIMITS
+            },
+        )
+        .await
+        .unwrap_err();
+        if missing_terminal {
+            let IpcResultCause::Stream(original) = error.cause() else {
+                panic!("missing truncation failure")
+            };
+            assert_eq!(
+                original.cause(),
+                FramedStreamCause::Arrow(ArrowError::Truncated)
+            );
+        } else {
+            let IpcResultCause::Chunk {
+                cause,
+                observation: original,
+            } = error.cause()
+            else {
+                panic!("missing original output bound")
+            };
+            assert_eq!(*cause, ArrowError::Limit);
+            assert_eq!(
+                original.cause(),
+                FramedStreamCause::Arrow(ArrowError::SinkFailed)
+            );
+        }
+        assert_eq!(error.output_bytes(), sink.bytes.len());
+        assert_eq!(sink.flushes, 0);
+        assert_eq!(executor.trace.opens.load(Ordering::SeqCst), 1);
+        assert_eq!(executor.trace.drops.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            NativeIpcDecoder::new().inspect_schema(&chunk(sink.bytes), LIMITS),
+            Err(ArrowError::Truncated)
+        );
+    }
+}
+
+#[tokio::test]
+async fn result_preserves_local_dictionary_id_remapping_across_chunks() {
+    let batch = dictionary_ordering_fixture(&[false, true], false);
+    let first = write(std::slice::from_ref(&batch), None);
+    let remapped = remap_second_dictionary(&first);
+    let executor = ResultExecutor::new(vec![vec![ResultStep::Bytes(result_wire([
+        first, remapped,
+    ]))]]);
+    let mut stream = result_stream(&executor);
+    let mut bytes = Vec::new();
+    let work = write_ipc_result(&mut stream, &mut bytes, LIMITS, OUTPUT_LIMITS);
+    fn assert_send<T: Send>(value: T) -> T {
+        value
+    }
+    let receipt = assert_send(work).await.unwrap();
+    assert_eq!(receipt.output.rows, 6);
+    assert_eq!(receipt.stream.delivered_chunks, 2);
+    assert_single_output(&bytes, &output_schema(&batch), &[batch.clone(), batch]);
+}
+
+enum ResultStep {
+    Bytes(Vec<u8>),
+    Failure(NativeError),
+    Pending,
+}
+
+#[derive(Default)]
+struct ResultTrace {
+    opens: AtomicUsize,
+    reads: AtomicUsize,
+    drops: AtomicUsize,
+}
+
+struct ResultBody {
+    steps: VecDeque<ResultStep>,
+    trace: Arc<ResultTrace>,
+}
+
+impl Drop for ResultBody {
+    fn drop(&mut self) {
+        self.trace.drops.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+impl NativeStreamBody for ResultBody {
+    fn read<'a>(
+        &'a mut self,
+        max_bytes: usize,
+        deadline: &'a NativeDeadline,
+    ) -> NativeFuture<'a, Result<Option<Vec<u8>>, NativeError>> {
+        Box::pin(async move {
+            deadline.remaining()?;
+            self.trace.reads.fetch_add(1, Ordering::SeqCst);
+            match self.steps.pop_front() {
+                Some(ResultStep::Bytes(mut bytes)) => {
+                    if bytes.len() > max_bytes {
+                        let tail = bytes.split_off(max_bytes);
+                        self.steps.push_front(ResultStep::Bytes(tail));
+                    }
+                    Ok(Some(bytes))
+                }
+                Some(ResultStep::Failure(error)) => Err(error),
+                Some(ResultStep::Pending) => pending().await,
+                None => Ok(None),
+            }
+        })
+    }
+}
+
+struct ResultExecutor {
+    responses: Mutex<VecDeque<Vec<ResultStep>>>,
+    trace: Arc<ResultTrace>,
+}
+
+impl ResultExecutor {
+    fn new(responses: Vec<Vec<ResultStep>>) -> Self {
+        Self {
+            responses: Mutex::new(responses.into()),
+            trace: Arc::new(ResultTrace::default()),
+        }
+    }
+}
+
+impl NativeStreamExecutor for ResultExecutor {
+    fn open<'a>(
+        &'a self,
+        request: &'a NativeRequest,
+        _: NativeStreamLimits,
+        deadline: &'a NativeDeadline,
+    ) -> NativeFuture<'a, Result<NativeStreamResponse, NativeError>> {
+        Box::pin(async move {
+            deadline.remaining()?;
+            assert_eq!(request.method(), fabric_sdk::runtime::NativeMethod::Get);
+            self.trace.opens.fetch_add(1, Ordering::SeqCst);
+            Ok(NativeStreamResponse {
+                status: 200,
+                content_type: Some("application/vnd.livy.arrow-chunks;v=2".into()),
+                headers: BTreeMap::new(),
+                body: Box::new(ResultBody {
+                    steps: self
+                        .responses
+                        .lock()
+                        .unwrap()
+                        .pop_front()
+                        .expect("unexpected reopen")
+                        .into(),
+                    trace: self.trace.clone(),
+                }),
+            })
+        })
+    }
+}
+
+fn result_stream(executor: &ResultExecutor) -> FramedResultStream<'_> {
+    let owner = StatementOwner::session(
+        NativeEndpoint::new("https://example.test/livy/".parse().unwrap()).unwrap(),
+        "private-session",
+        None,
+    )
+    .unwrap();
+    FramedResultStream::new(
+        executor,
+        StatementHandle::new(owner, 7),
+        ResultSelectors::default(),
+        FramedStreamOptions {
+            max_responses: 3,
+            transport: NativeStreamLimits {
+                max_fragment_bytes: 97,
+                max_body_bytes: 8 * 1024 * 1024,
+            },
+            resume: FramedResume::Recoverable {
+                max_reconnects: 2,
+                retry_truncated_eof: true,
+            },
+            ..FramedStreamOptions::default()
+        },
+        NativeDeadline::new(Duration::from_secs(30)).unwrap(),
+    )
+    .unwrap()
+}
+
+fn result_frame(payload: Vec<u8>, ordinal: i32) -> Vec<u8> {
+    let chunk = RawChunk::new(
+        0,
+        ordinal,
+        format!("part-0-{ordinal}"),
+        payload,
+        StreamLimits::default(),
+    )
+    .unwrap();
+    let mut wire = Vec::new();
+    write_frame(&mut wire, &chunk).unwrap();
+    wire
+}
+
+fn result_wire(payloads: impl IntoIterator<Item = Vec<u8>>) -> Vec<u8> {
+    let mut wire = Vec::new();
+    for (index, payload) in payloads.into_iter().enumerate() {
+        wire.extend(result_frame(payload, i32::try_from(index).unwrap()));
+    }
+    write_terminal(&mut wire).unwrap();
+    wire
+}
+
+#[tokio::test]
+async fn result_composes_fragmented_http_into_one_dictionary_preserving_ipc_stream() {
+    let first = fixture();
+    let mut columns = first.columns().to_vec();
+    columns[4] = Arc::new(
+        [Some("green"), None, Some("gold")]
+            .into_iter()
+            .collect::<DictionaryArray<Int32Type>>(),
+    );
+    let second = RecordBatch::try_new(first.schema(), columns).unwrap();
+    let wire = result_wire([
+        write(std::slice::from_ref(&first), Some(CompressionType::ZSTD)),
+        write(
+            std::slice::from_ref(&second),
+            Some(CompressionType::LZ4_FRAME),
+        ),
+    ]);
+    let executor = ResultExecutor::new(vec![vec![ResultStep::Bytes(wire)]]);
+    let mut stream = result_stream(&executor);
+    let mut bytes = Vec::new();
+    let receipt = write_ipc_result(&mut stream, &mut bytes, LIMITS, OUTPUT_LIMITS)
+        .await
+        .unwrap();
+    assert_eq!(receipt.output.rows, 6);
+    assert_eq!(receipt.output.batches, 2);
+    assert_eq!(receipt.output.output_bytes, bytes.len());
+    assert_eq!(receipt.stream.state, FramedStreamState::Complete);
+    assert_eq!(receipt.stream.delivered_chunks, 2);
+    assert!(receipt.stream.eof_received);
+    assert!(executor.trace.reads.load(Ordering::SeqCst) > 2);
+    assert_eq!(executor.trace.drops.load(Ordering::SeqCst), 1);
+    assert_single_output(&bytes, &output_schema(&first), &[first, second]);
+}
+
+#[tokio::test]
+async fn result_recovery_deduplicates_before_decode_and_output_acknowledgement() {
+    let batch = primitive();
+    let payload = write(std::slice::from_ref(&batch), None);
+    let executor = ResultExecutor::new(vec![
+        vec![
+            ResultStep::Bytes(result_frame(payload.clone(), 0)),
+            ResultStep::Failure(NativeError::Transport),
+        ],
+        vec![ResultStep::Bytes(result_wire([payload.clone(), payload]))],
+    ]);
+    let mut stream = result_stream(&executor);
+    let mut bytes = Vec::new();
+    let receipt = write_ipc_result(&mut stream, &mut bytes, LIMITS, OUTPUT_LIMITS)
+        .await
+        .unwrap();
+    assert_eq!(receipt.output.rows, 6);
+    assert_eq!(receipt.stream.delivered_chunks, 2);
+    assert_eq!(receipt.stream.replayed_chunks, 1);
+    assert_eq!(receipt.stream.reconnects, 1);
+    assert_eq!(executor.trace.opens.load(Ordering::SeqCst), 2);
+    assert_eq!(executor.trace.drops.load(Ordering::SeqCst), 2);
+    assert_single_output(&bytes, &output_schema(&batch), &[batch.clone(), batch]);
+}
+
+#[tokio::test]
+async fn result_requires_observed_schema_and_preserves_known_empty_results() {
+    let schema = primitive().schema();
+    for payloads in [vec![], vec![schema_only(schema.as_ref())]] {
+        let empty = payloads.is_empty();
+        let executor = ResultExecutor::new(vec![vec![ResultStep::Bytes(result_wire(payloads))]]);
+        let mut stream = result_stream(&executor);
+        let mut bytes = Vec::new();
+        let result = write_ipc_result(&mut stream, &mut bytes, LIMITS, OUTPUT_LIMITS).await;
+        if empty {
+            let error = result.unwrap_err();
+            assert!(matches!(error.cause(), IpcResultCause::MissingSchema));
+            assert_eq!(error.output_bytes(), 0);
+            assert!(bytes.is_empty());
+        } else {
+            let receipt = result.unwrap();
+            assert_eq!(receipt.output.rows, 0);
+            assert_eq!(receipt.output.batches, 0);
+            assert_single_output(&bytes, &output_schema(&primitive()), &[]);
+        }
+        assert_eq!(executor.trace.drops.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[tokio::test]
+async fn result_never_finishes_after_bad_http_framing_or_ipc() {
+    for bad_ipc in [false, true] {
+        for trailing in [false, true] {
+            let payload = if bad_ipc {
+                b"invalid-ipc".to_vec()
+            } else {
+                write(&[primitive()], None)
+            };
+            let mut wire = result_frame(payload, 0);
+            if trailing {
+                write_terminal(&mut wire).unwrap();
+                wire.push(1);
+            } else {
+                wire.extend_from_slice(&(-1_i64).to_be_bytes());
+            }
+            let executor = ResultExecutor::new(vec![vec![ResultStep::Bytes(wire)]]);
+            let mut stream = result_stream(&executor);
+            let mut bytes = Vec::new();
+            let error = write_ipc_result(&mut stream, &mut bytes, LIMITS, OUTPUT_LIMITS)
+                .await
+                .unwrap_err();
+            assert_eq!(error.output_bytes(), bytes.len());
+            assert_eq!(executor.trace.opens.load(Ordering::SeqCst), 1);
+            assert_eq!(executor.trace.drops.load(Ordering::SeqCst), 1);
+            if !bad_ipc {
+                assert!(matches!(error.cause(), IpcResultCause::Stream(_)));
+                assert_eq!(
+                    NativeIpcDecoder::new().inspect_schema(&chunk(bytes), LIMITS),
+                    Err(ArrowError::Truncated),
+                );
+            } else {
+                assert!(bytes.is_empty());
+                assert!(matches!(error.cause(), IpcResultCause::Arrow(_)));
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn result_schema_conflict_does_not_acknowledge_or_finish_second_chunk() {
+    let first = dictionary_ordering_fixture(&[false], true);
+    let second = dictionary_ordering_fixture(&[true], true);
+    let executor = ResultExecutor::new(vec![vec![ResultStep::Bytes(result_wire([
+        write(&[first], None),
+        write(&[second], None),
+    ]))]]);
+    let mut stream = result_stream(&executor);
+    let mut bytes = Vec::new();
+    let error = write_ipc_result(&mut stream, &mut bytes, LIMITS, OUTPUT_LIMITS)
+        .await
+        .unwrap_err();
+    let IpcResultCause::Chunk { cause, observation } = error.cause() else {
+        panic!("missing original cause")
+    };
+    assert_eq!(*cause, ArrowError::SchemaConflict);
+    assert_eq!(
+        observation.cause(),
+        FramedStreamCause::Arrow(ArrowError::SinkFailed)
+    );
+    assert_eq!(error.progress().delivered_chunks, 1);
+    assert!(error.cursor().is_some());
+    assert_eq!(error.output_bytes(), bytes.len());
+    assert_eq!(executor.trace.opens.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        NativeIpcDecoder::new().inspect_schema(&chunk(bytes), LIMITS),
+        Err(ArrowError::Truncated)
+    );
+    let debug = format!("{error:?}");
+    for secret in ["private-session", "example.test", "dictionary"] {
+        assert!(!debug.contains(secret));
+    }
+}
+
+#[tokio::test]
+async fn result_invalid_limits_reject_before_network_and_schema_writes() {
+    for invalid_decode in [false, true] {
+        let executor = ResultExecutor::new(vec![]);
+        let mut stream = result_stream(&executor);
+        let mut bytes = Vec::new();
+        let error = write_ipc_result(
+            &mut stream,
+            &mut bytes,
+            DecodeLimits {
+                max_message_bytes: if invalid_decode {
+                    0
+                } else {
+                    LIMITS.max_message_bytes
+                },
+                ..LIMITS
+            },
+            IpcOutputLimits {
+                max_output_bytes: if invalid_decode {
+                    OUTPUT_LIMITS.max_output_bytes
+                } else {
+                    0
+                },
+                ..OUTPUT_LIMITS
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            error.cause(),
+            IpcResultCause::Arrow(ArrowError::InvalidInput)
+        ));
+        assert!(bytes.is_empty());
+        assert_eq!(executor.trace.opens.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[tokio::test]
+async fn result_cancelled_future_closes_active_response_and_never_finishes_sink() {
+    let executor = ResultExecutor::new(vec![vec![
+        ResultStep::Bytes(result_frame(write(&[primitive()], None), 0)),
+        ResultStep::Pending,
+    ]]);
+    let mut stream = result_stream(&executor);
+    let mut sink = OutputTestSink::default();
+    let mut work = Box::pin(write_ipc_result(
+        &mut stream,
+        &mut sink,
+        LIMITS,
+        OUTPUT_LIMITS,
+    ));
+    assert!(matches!(
+        Pin::as_mut(&mut work).poll(&mut Context::from_waker(Waker::noop())),
+        Poll::Pending
+    ));
+    drop(work);
+    assert_eq!(stream.progress().state, FramedStreamState::Closed);
+    assert_eq!(stream.progress().delivered_chunks, 1);
+    assert_eq!(executor.trace.drops.load(Ordering::SeqCst), 1);
+    assert_eq!(sink.flushes, 0);
+    assert_eq!(
+        NativeIpcDecoder::new().inspect_schema(&chunk(sink.bytes), LIMITS),
+        Err(ArrowError::Truncated)
+    );
 }

@@ -580,6 +580,10 @@
         {
           "package": "fabric-sdk-http",
           "target": "test:native_runtime"
+        },
+        {
+          "package": "fabric-sdk-http",
+          "target": "test:native_stream"
         }
       ],
       "checks": [
@@ -605,6 +609,10 @@
         {
           "package": "fabric-sdk-transport",
           "target": "example:sdk_consumer"
+        },
+        {
+          "package": "fabric-sdk-transport",
+          "target": "test:notebook_websocket"
         }
       ],
       "checks": [
@@ -2767,6 +2775,40 @@
     }
   ],
   "profiles": [
+    {
+      "id": "notebook-websocket",
+      "packages": [
+        "fabric-sdk-transport"
+      ],
+      "features": [
+        "fabric-sdk-transport/notebook-websocket"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "transport-graphs"
+      ]
+    },
+    {
+      "id": "native-http-arrow",
+      "packages": [
+        "fabric-sdk-http"
+      ],
+      "features": [
+        "fabric-sdk-http/livy-arrow"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "sdk-graph"
+      ]
+    },
     {
       "id": "v2-preview",
       "packages": [

@@ -26,7 +26,7 @@ pub struct IpcOutputLimits {
 }
 
 impl IpcOutputLimits {
-    fn validate(self) -> Result<Self, ArrowError> {
+    pub(super) fn validate(self) -> Result<Self, ArrowError> {
         if self.max_output_bytes == 0 || self.max_rows == 0 || self.max_batches == 0 {
             return Err(ArrowError::InvalidInput);
         }

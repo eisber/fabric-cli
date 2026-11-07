@@ -13,6 +13,10 @@ description = "Shared bounded HTTP execution for handwritten Fabric SDK operatio
 [package.metadata.fabric]
 layer = "sdk"
 
+[features]
+default = []
+livy-arrow = ["fabric-sdk/livy-arrow"]
+
 [dependencies]
 azure_core.workspace = true
 fabric-sdk.workspace = true

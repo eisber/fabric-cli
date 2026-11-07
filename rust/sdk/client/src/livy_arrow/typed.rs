@@ -13,7 +13,7 @@ pub struct DecodeLimits {
 }
 
 impl DecodeLimits {
-    fn validate(self) -> Result<Self, ArrowError> {
+    pub(super) fn validate(self) -> Result<Self, ArrowError> {
         if self.max_message_bytes == 0 || self.max_decoded_bytes == 0 {
             return Err(ArrowError::InvalidInput);
         }

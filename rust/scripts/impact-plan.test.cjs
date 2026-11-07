@@ -841,6 +841,8 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     ['fabric-sdk', 'livy-arrow', 'livy_arrow', 'rust/sdk/client/Cargo.toml'],
     ['fabric-sdk', 'livy-arrow-ipc', 'livy_arrow_ipc', 'rust/sdk/client/Cargo.toml'],
     ['fabric-cli', 'runtime-v2', 'runtime_v2', 'rust/frontends/cli/app/Cargo.toml'],
+    ['fabric-sdk-transport', 'notebook-websocket', 'notebook_websocket',
+      'rust/sdk/http/transport/Cargo.toml'],
   ];
   for (const [pkg, feature, target, manifestPath] of cases) {
     const profile = graph.profiles.find(item =>
@@ -942,4 +944,19 @@ test('Shared unconfigured-profile helper retains every actual subprocess consume
     assert.ok(component.tests.some(item =>
       item.package === 'fabric-cli' && item.target === `test:${target}`), target);
   }
+});
+
+test('real HTTP-to-Arrow recovery boundary is explicitly tested with its forwarded feature', () => {
+  const root = path.resolve(__dirname, '..', '..');
+  const graph = JSON.parse(fs.readFileSync(path.join(root, 'rust/validation/impact-graph.json'), 'utf8'));
+  const profile = graph.profiles.find(item => item.id === 'native-http-arrow');
+  assert.ok(profile);
+  assert.deepEqual(profile.packages, ['fabric-sdk-http']);
+  assert.deepEqual(profile.features, ['fabric-sdk-http/livy-arrow']);
+  assert.deepEqual(profile.platforms, ['windows', 'linux', 'macos']);
+  assert.ok(graph.components.some(component => component.package === 'fabric-sdk-http' &&
+    component.tests.some(test => test.target === 'test:native_stream')));
+  const manifest = fs.readFileSync(path.join(root,
+    'rust/sdk/http/executor/Cargo.toml'), 'utf8');
+  assert.ok(manifest.includes('livy-arrow = ["fabric-sdk/livy-arrow"]'));
 });

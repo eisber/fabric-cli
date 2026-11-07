@@ -218,6 +218,7 @@ pub enum Failure {
 impl From<ArrowError> for Failure {
     fn from(error: ArrowError) -> Self {
         match error {
+            ArrowError::Transport => Self::Transport,
             ArrowError::Truncated => Self::Truncated,
             ArrowError::Http(status) => Self::Http(status),
             ArrowError::ServiceFailure => Self::ServiceFailure,

@@ -61,6 +61,8 @@ pub enum ArrowError {
     InvalidState,
     /// The absolute local deadline expired; no remote cancel is implied.
     TimedOut,
+    /// Proven transport I/O evidence, not permission to replay any operation.
+    Transport,
     /// A sink failed; it may already have produced partial external output.
     SinkFailed,
     /// Typed IPC/schema/decompression needs an external native implementation.
@@ -90,6 +92,7 @@ impl From<crate::runtime::NativeError> for ArrowError {
             NativeError::UnsupportedCapability => Self::UnsupportedCapability,
             NativeError::Limit => Self::Limit,
             NativeError::TimedOut => Self::TimedOut,
+            NativeError::Transport => Self::Transport,
             NativeError::Http(status) => Self::Http(status),
             NativeError::OutcomeUnknown => Self::OutcomeUnknown,
             _ => Self::InvalidInput,
