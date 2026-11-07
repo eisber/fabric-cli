@@ -120,6 +120,9 @@ The independent developer oracle lives in
 ../tests/compatibility/semantic_model_bpa/README.md). It executes verified,
 original upstream expressions against synthetic collaborators; it is not a
 Python product dependency or a substitute for TOM/native tests.
+Its seven BIM fixtures were originally captured with CRLF bytes. Scoped Git
+checkout attributes preserve those exact captured bytes on every platform;
+the capture manifest and its hashes are not regenerated.
 
 Native validation must include the managed 64-rule test runner, managed ABI
 boundary tests, actual Rust hosting/repeated-call tests, SDK/CLI consumers,
