@@ -79,6 +79,10 @@ Selectors containing `.Shortcut` or `.shortcut` are rejected before resolution,
 and resolved table/schema components are checked again before storage access.
 The legacy resolver and Delta reader strip these markers; rejecting them here
 prevents schema discovery from silently reading a different existing table.
+Direct `TableClient::schema_document` callers receive the same protection:
+normalization-sensitive local paths fail `InvalidInput` before credential or
+storage access. The existing v1 `schema` and `schema_string` APIs keep their
+legacy normalization behavior.
 
 The additive data document preserves the native schema and column types.
 Unknown nullability remains null; false is not replaced with a default.

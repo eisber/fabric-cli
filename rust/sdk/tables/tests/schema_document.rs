@@ -114,6 +114,130 @@ fn assert_invalid_response(result: Result<DataSchemaDocument, TableError>) {
     assert_eq!(error.operation_id, None);
 }
 
+#[tokio::test]
+async fn shortcut_markers_fail_before_reading_an_existing_normalized_sdk_target() {
+    for local_path in [
+        "Tables/sales.ShortcutArchive",
+        "Tables/sales.shortcutArchive",
+        "Tables/schema.Shortcut/sales",
+        "Tables/schema.shortcut/sales",
+    ] {
+        let normalized_path = local_path.replace(".Shortcut", "").replace(".shortcut", "");
+        let credential = Arc::new(Credential::default());
+        let network = ScriptedHttp::new([
+            response(
+                200,
+                &json!({
+                    "paths": [{
+                        "name": format!("item/{normalized_path}/_delta_log/00001.json")
+                    }]
+                })
+                .to_string(),
+                &[],
+            ),
+            response(200, &metadata(r#"{"fields":[]}"#), &[]),
+        ]);
+        let storage = storage(network.clone());
+        let executor = TableWithOneLake {
+            tables: &NoLegacyExecution,
+            storage: &storage,
+        };
+        let error = client(credential.clone())
+            .schema_document(
+                &executor,
+                &TablePath::new("ws", "item", local_path).unwrap(),
+                TableLimits::default(),
+                pending(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, TableErrorKind::InvalidInput);
+        assert!(!error.mutation_may_have_occurred);
+        assert_eq!(error.operation_id, None);
+        assert!(credential.0.lock().unwrap().is_empty());
+        assert!(network.requests.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn literal_nonmatching_shortcut_spelling_preserves_the_sdk_target() {
+    let local_path = "Tables/schema.SHORTCUT/sales.ShortCutArchive";
+    let credential = Arc::new(Credential::default());
+    let native = json!({"fields": [{"name": "kept", "type": "long"}]});
+    let network = ScriptedHttp::new([
+        response(
+            200,
+            &json!({
+                "paths": [{"name": format!("item/{local_path}/_delta_log/00001.json")}]
+            })
+            .to_string(),
+            &[],
+        ),
+        response(200, &metadata(&native.to_string()), &[]),
+    ]);
+    let storage = storage(network.clone());
+    let executor = TableWithOneLake {
+        tables: &NoLegacyExecution,
+        storage: &storage,
+    };
+    let document = client(credential.clone())
+        .schema_document(
+            &executor,
+            &TablePath::new("ws", "item", local_path).unwrap(),
+            TableLimits::default(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(document.native_schema, native);
+    let requests = network.requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    let directory = requests[0]
+        .url()
+        .query_pairs()
+        .find(|(name, _)| name == "directory")
+        .unwrap()
+        .1;
+    assert_eq!(directory, format!("item/{local_path}/_delta_log"));
+    assert_eq!(
+        requests[1].url().path(),
+        format!("/ws/item/{local_path}/_delta_log/00001.json")
+    );
+    assert_eq!(credential.0.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn legacy_schema_reader_retains_shortcut_normalization() {
+    let credential = Arc::new(Credential::default());
+    let network = ScriptedHttp::new([
+        response(200, listing(), &[]),
+        response(200, &metadata(r#"{"fields":[]}"#), &[]),
+    ]);
+    let storage = storage(network.clone());
+    let executor = TableWithOneLake {
+        tables: &NoLegacyExecution,
+        storage: &storage,
+    };
+    let schema = client(credential)
+        .schema_string(
+            &executor,
+            &TablePath::new("ws", "item", "Tables/sales.Shortcut").unwrap(),
+            TableLimits::default(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(schema, r#"{"fields":[]}"#);
+    let requests = network.requests.lock().unwrap();
+    let directory = requests[0]
+        .url()
+        .query_pairs()
+        .find(|(name, _)| name == "directory")
+        .unwrap()
+        .1;
+    assert_eq!(directory, "item/Tables/sales/_delta_log");
+}
+
 #[test]
 fn columns_preserve_nullability_native_types_metadata_and_field_order() {
     let native = json!({

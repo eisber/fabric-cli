@@ -108,7 +108,7 @@ Heads that need only verb/facade names can iterate `Operation::ALL` and
 `TargetKind::ALL` and use `as_str()`, without importing CLI builders or copying
 vocabularies. These arrays do not advertise every operation/kind combination;
 exact support remains defined solely by the registration selected by `discover`.
-The separate opt-in `fab-cli` discovery binary can use these APIs without changing
+The separate opt-in `fab-cli-discovery` binary can use these APIs without changing
 v1 `fab-rs` parsing or composing its mutation builders.
 
 `DiscoveryError` provides `InvalidOperation`, `InvalidTarget { reason }`,
