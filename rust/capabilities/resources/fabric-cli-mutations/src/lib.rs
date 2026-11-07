@@ -21,6 +21,8 @@ mod shortcuts;
 mod sql_database;
 mod template_enumeration;
 mod templates;
+pub mod v2_create;
+pub mod v2_link;
 
 use fabric_cli_context::{Element, NodeKind};
 use fabric_cli_output::{OutputInput, OutputStatus};

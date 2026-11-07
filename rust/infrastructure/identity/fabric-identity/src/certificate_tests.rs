@@ -21,7 +21,11 @@ struct Clock(Mutex<VecDeque<i64>>);
 
 impl AssertionClock for Clock {
     fn now(&self) -> i64 {
-        self.0.lock().unwrap().pop_front().expect("unexpected clock read")
+        self.0
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("unexpected clock read")
     }
 }
 
@@ -225,7 +229,10 @@ async fn invalid_signature_size_and_typed_signer_failures_never_publish_an_asser
 fn construction_and_debug_never_read_nonce_sign_or_format_injected_signer() {
     let signer = Signer::new();
     let assertion = make_assertion(Arc::clone(&signer), &[]);
-    assert_eq!(format!("{:?}", assertion.config), "CertificateConfig { .. }");
+    assert_eq!(
+        format!("{:?}", assertion.config),
+        "CertificateConfig { .. }"
+    );
     assert_eq!(format!("{assertion:?}"), "CertificateAssertion { .. }");
     assert_eq!(assertion.config.certificate_sha256(), [0xfb; 32]);
     assert_eq!(signer.nonces.load(Ordering::Acquire), 0);
@@ -492,7 +499,9 @@ async fn public_cloud_override_child() {
         managed_client: None,
     };
     let mut options = provider_options();
-    options.cloud = Some(Arc::new(azure_core::cloud::CloudConfiguration::AzureGovernment));
+    options.cloud = Some(Arc::new(
+        azure_core::cloud::CloudConfiguration::AzureGovernment,
+    ));
     options.transport = Some(azure_core::http::Transport::new(Arc::new(guard)));
     let provider = CertificateConfig::new(signer)
         .provider(ServiceIdentity::new(TENANT, CLIENT).unwrap(), options)

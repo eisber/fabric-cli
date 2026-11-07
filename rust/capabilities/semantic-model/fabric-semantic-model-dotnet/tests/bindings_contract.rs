@@ -3,6 +3,8 @@
 
 #![deny(unnameable_test_items)]
 
+//! Offline protocol and feature-isolation tests.
+
 use fabric_semantic_model_dotnet::{
     BindingError, CancellationToken, MAX_REQUEST_BYTES, validate_request_json,
 };

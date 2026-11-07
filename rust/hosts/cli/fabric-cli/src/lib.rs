@@ -9,21 +9,43 @@
 
 #[cfg(feature = "windows-broker")]
 pub mod auth_commands;
+#[cfg(feature = "v2-cancel")]
+pub mod cancel;
 pub mod console;
+pub mod delete;
 pub mod deploy;
 mod errors;
+pub mod execute;
 #[cfg(feature = "native-host")]
 pub mod families;
 mod folder_reads;
+pub mod get_backend;
+mod get_budget;
+pub mod get_command;
+pub mod get_metadata;
+pub mod get_resolution;
+pub mod get_target;
 pub mod jobs;
 pub mod local_commands;
+pub mod native_tabular;
 pub mod parser;
 mod projection;
 mod reads;
+#[cfg(feature = "runtime-v2")]
+pub mod runtime_v2;
+pub mod search_command;
 pub mod session;
 #[cfg(feature = "native-host")]
 pub mod tables;
+pub mod tabular_export;
+/// Opt-in operation-contract discovery and caller-injected data-schema reads.
+#[cfg(feature = "v2-discovery")]
+pub mod v2_discovery;
+#[cfg(feature = "v2-preview")]
+pub mod v2_preview;
 mod workspace_get;
+#[cfg(feature = "workspace-read-v2")]
+pub mod workspace_v2;
 
 pub use folder_reads::FolderReadHost;
 pub use projection::{NoQuery, Projection, PythonQuery};

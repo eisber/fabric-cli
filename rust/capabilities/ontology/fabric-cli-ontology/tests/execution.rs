@@ -1,0 +1,1175 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+//! Real argv-to-registry-to-injected-SDK-to-stream contracts, entirely offline.
+
+#![deny(unnameable_test_items)]
+
+use async_trait::async_trait;
+use azure_core::{
+    credentials::{AccessToken, TokenRequestOptions},
+    time::OffsetDateTime,
+};
+use fabric_cli_ontology::{
+    AdapterError, AdapterHost, AdapterLimits, HostError, InputSource, OntologyVerb,
+    OutputDestination, bind_public_operations, execute, parse_common_args, parse_facade_args,
+};
+use fabric_sdk::{Audience, CredentialSelection, RequestContext, TokenCredential};
+use fabric_sdk_items::{ItemClient, ItemExecutionError, ItemExecutor, ItemRequest, ItemResponse};
+use fabric_sdk_ontology::{
+    DefinitionLimits,
+    v2::{
+        ApprovalPolicy, Effect, ItemIdentity, OperationDescriptor, Outcome, PreparedOperation,
+        Registry, ResolvedTarget, Target, TargetKind, Verb,
+    },
+};
+use fabric_sdk_operations::{
+    OperationExecutionError, OperationExecutor, OperationLimits, OperationRequest,
+    OperationResponse,
+};
+use serde_json::{Value, json};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    future::{Future, pending, ready},
+    io::{self, Write},
+    num::NonZeroUsize,
+    pin::Pin,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
+
+const WORKSPACE: &str = "11111111-2222-3333-4444-555555555555";
+const ITEM: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+const OPERATION: &str = "99999999-8888-7777-6666-555555555555";
+const PATH: &str = "/w.Workspace/o.Ontology";
+
+#[derive(Debug, Default)]
+struct Credential(AtomicUsize);
+#[async_trait]
+impl TokenCredential for Credential {
+    async fn get_token(
+        &self,
+        _: &[&str],
+        _: Option<TokenRequestOptions<'_>>,
+    ) -> azure_core::Result<AccessToken> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Ok(AccessToken {
+            token: "offline-only".into(),
+            expires_on: OffsetDateTime::UNIX_EPOCH,
+        })
+    }
+}
+
+#[derive(Clone, Default)]
+struct Executor {
+    responses: Arc<Mutex<VecDeque<OperationResponse>>>,
+    seen: Arc<Mutex<Vec<Seen>>>,
+}
+type Seen = (String, String, Vec<u8>);
+impl Executor {
+    fn new(responses: Vec<OperationResponse>) -> Self {
+        Self {
+            responses: Arc::new(Mutex::new(responses.into())),
+            ..Self::default()
+        }
+    }
+    fn take(&self, method: String, url: String, body: Vec<u8>) -> OperationResponse {
+        self.seen.lock().unwrap().push((method, url, body));
+        self.responses
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("expected SDK dispatch")
+    }
+}
+impl OperationExecutor for Executor {
+    fn execute<'a>(
+        &'a self,
+        request: OperationRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<OperationResponse, OperationExecutionError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            Ok(self.take(
+                format!("{:?}", request.method()),
+                request.url().to_string(),
+                request.body().to_vec(),
+            ))
+        })
+    }
+    fn wait(
+        &self,
+        _: Duration,
+    ) -> Pin<Box<dyn Future<Output = Result<(), OperationExecutionError>> + Send + '_>> {
+        Box::pin(ready(Ok(())))
+    }
+}
+impl ItemExecutor for Executor {
+    fn execute<'a>(
+        &'a self,
+        request: ItemRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<ItemResponse, ItemExecutionError>> + Send + 'a>> {
+        Box::pin(async move {
+            let response = self.take(request.method().into(), request.url().to_string(), vec![]);
+            Ok(ItemResponse {
+                status: response.status,
+                headers: response.headers,
+                body: response.body,
+            })
+        })
+    }
+}
+
+struct Writer {
+    bytes: Arc<Mutex<Vec<u8>>>,
+    fail: bool,
+}
+impl Write for Writer {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if self.fail {
+            self.bytes
+                .lock()
+                .unwrap()
+                .extend_from_slice(&bytes[..bytes.len().min(7)]);
+            return Err(io::Error::other("fixture writer failure"));
+        }
+        self.bytes.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+struct Host {
+    target: ResolvedTarget,
+    input: Vec<u8>,
+    input_sources: Vec<InputSource>,
+    output: Arc<Mutex<Vec<u8>>>,
+    output_destinations: Vec<OutputDestination>,
+    stderr: Vec<u8>,
+    approved: Vec<PreparedOperation>,
+    events: Vec<&'static str>,
+    refuse: bool,
+    denied_effect: Option<Effect>,
+    exists: bool,
+    fail_writer: bool,
+}
+impl Host {
+    fn new(facet: &str, representation: &str) -> Self {
+        Self {
+            target: ResolvedTarget::new(
+                PATH,
+                ItemIdentity::new(WORKSPACE, ITEM).unwrap(),
+                Target {
+                    kind: TargetKind::Item,
+                    owner_type: "Ontology".into(),
+                    facet: facet.into(),
+                    representation: representation.into(),
+                    generation: Some(2),
+                },
+                None,
+            )
+            .unwrap(),
+            input: vec![],
+            input_sources: vec![],
+            output: Arc::new(Mutex::new(vec![])),
+            output_destinations: vec![],
+            stderr: vec![],
+            approved: vec![],
+            events: vec![],
+            refuse: false,
+            denied_effect: None,
+            exists: false,
+            fail_writer: false,
+        }
+    }
+}
+impl ApprovalPolicy for Host {
+    type Error = HostError;
+    fn authorize(&mut self, operation: &PreparedOperation) -> Result<(), HostError> {
+        assert!(self.events.contains(&"reserve"));
+        self.events.push("approve");
+        if self.refuse {
+            return Err(HostError("approval refused".into()));
+        }
+        if self
+            .denied_effect
+            .is_some_and(|effect| operation.effects().contains(&effect))
+        {
+            return Err(HostError("effect refused".into()));
+        }
+        self.approved.push(operation.clone());
+        Ok(())
+    }
+}
+impl AdapterHost for Host {
+    fn resolve(&mut self, _: &str) -> Result<ResolvedTarget, HostError> {
+        self.events.push("resolve");
+        Ok(self.target.clone())
+    }
+    fn read_input(
+        &mut self,
+        source: &InputSource,
+        maximum: NonZeroUsize,
+    ) -> Result<Vec<u8>, HostError> {
+        self.events.push("input");
+        self.input_sources.push(source.clone());
+        if self.input.len() > maximum.get() {
+            return Err(HostError("input exceeds bound".into()));
+        }
+        Ok(self.input.clone())
+    }
+    fn reserve_output(
+        &mut self,
+        destination: &OutputDestination,
+    ) -> Result<Box<dyn Write>, HostError> {
+        self.events.push("reserve");
+        self.output_destinations.push(destination.clone());
+        if self.exists {
+            return Err(HostError("OutputExists".into()));
+        }
+        Ok(Box::new(Writer {
+            bytes: self.output.clone(),
+            fail: self.fail_writer,
+        }))
+    }
+    fn diagnostic(&mut self, bytes: &[u8]) -> io::Result<()> {
+        self.stderr.extend_from_slice(bytes);
+        Ok(())
+    }
+    fn deadline(&mut self, _: Option<Duration>) -> Result<(), HostError> {
+        self.events.push("deadline");
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum EffectDeclaration {
+    Required,
+    Optional,
+    Undeclared,
+}
+
+fn registry() -> Registry {
+    registry_with_local_effects(EffectDeclaration::Optional, EffectDeclaration::Optional)
+}
+
+fn registry_with_local_effects(
+    local_read: EffectDeclaration,
+    local_write: EffectDeclaration,
+) -> Registry {
+    let mut registry = Registry::default();
+    for (id, verb, mut effects) in [
+        ("item.metadata.get", Verb::Get, vec![Effect::RemoteRead]),
+        ("item.definition.get", Verb::Get, vec![Effect::RemoteRead]),
+        (
+            "item.definition.replace",
+            Verb::Update,
+            vec![Effect::RemoteRead, Effect::RemoteWrite],
+        ),
+        (
+            "ontology.model.get",
+            Verb::Get,
+            vec![Effect::RemoteRead, Effect::MeteredConsumption],
+        ),
+        (
+            "ontology.model.replace",
+            Verb::Update,
+            vec![
+                Effect::RemoteRead,
+                Effect::RemoteWrite,
+                Effect::MeteredConsumption,
+            ],
+        ),
+    ] {
+        let mut optional_effects = vec![];
+        for (effect, declaration) in [
+            (
+                Effect::LocalRead,
+                if verb == Verb::Update {
+                    local_read
+                } else {
+                    EffectDeclaration::Undeclared
+                },
+            ),
+            (Effect::LocalWrite, local_write),
+        ] {
+            match declaration {
+                EffectDeclaration::Required => effects.push(effect),
+                EffectDeclaration::Optional => optional_effects.push(effect),
+                EffectDeclaration::Undeclared => {}
+            }
+        }
+        registry
+            .register(
+                OperationDescriptor::new(
+                    id,
+                    verb,
+                    json!({"type":"object"}),
+                    json!({"type":"object"}),
+                    effects,
+                )
+                .unwrap()
+                .with_optional_effects(optional_effects)
+                .unwrap(),
+            )
+            .unwrap();
+    }
+    bind_public_operations(&mut registry).unwrap();
+    registry
+}
+fn limits() -> AdapterLimits {
+    AdapterLimits {
+        input_bytes: NonZeroUsize::new(4096).unwrap(),
+        data_bytes: NonZeroUsize::new(4096).unwrap(),
+        definition: DefinitionLimits {
+            max_parts: NonZeroUsize::new(8).unwrap(),
+            max_decoded_bytes: NonZeroUsize::new(4096).unwrap(),
+        },
+        operation: OperationLimits {
+            max_requests: NonZeroUsize::new(10).unwrap(),
+            max_response_bytes: NonZeroUsize::new(8192).unwrap(),
+            max_poll_delay: Duration::from_secs(60),
+        },
+    }
+}
+fn client(credential: Arc<Credential>) -> ItemClient {
+    ItemClient::with_context(RequestContext::new(
+        credential,
+        CredentialSelection::new("offline", "tenant", Audience::Fabric).unwrap(),
+    ))
+}
+fn response(status: u16, body: Value) -> OperationResponse {
+    OperationResponse {
+        status,
+        body: serde_json::to_vec(&body).unwrap(),
+        headers: BTreeMap::new(),
+    }
+}
+fn accepted() -> OperationResponse {
+    let mut response = response(202, Value::Null);
+    response.headers.insert(
+        "Location".into(),
+        format!("https://api.fabric.microsoft.com/v1/operations/{OPERATION}"),
+    );
+    response
+        .headers
+        .insert("x-ms-operation-id".into(), OPERATION.into());
+    response
+}
+fn metadata() -> Value {
+    json!({"id":ITEM,"displayName":"o","type":"Ontology","properties":{"generation":2}})
+}
+fn definition() -> Value {
+    json!({"definition":{"parts":[{"path":"database.tmdl","payload":"YQ==","payloadType":"InlineBase64"}]}})
+}
+
+#[tokio::test]
+async fn actual_generic_and_facade_metadata_share_descriptor_sdk_call_receipt_and_streams() {
+    let registry = registry();
+    let mut receipts = vec![];
+    for facade in [false, true] {
+        let args = if facade {
+            parse_facade_args(["ontology", "get", PATH]).unwrap()
+        } else {
+            parse_common_args(OntologyVerb::Get, ["get", PATH]).unwrap()
+        };
+        let credential = Arc::new(Credential::default());
+        let client = client(credential.clone());
+        let executor = Executor::new(vec![response(200, metadata())]);
+        let mut host = Host::new("metadata", "json");
+        let report = execute(
+            &args,
+            facade,
+            &registry,
+            &mut host,
+            &client,
+            executor.clone(),
+            limits(),
+            pending(),
+        )
+        .await
+        .unwrap();
+        assert!(report.command_succeeded());
+        assert_eq!(host.approved.len(), 1);
+        assert_eq!(host.approved[0].operation_id(), "item.metadata.get");
+        assert_eq!(host.approved[0].input()["context"]["account"], "offline");
+        assert_eq!(host.approved[0].input()["context"]["tenant"], "tenant");
+        assert_eq!(
+            host.approved[0].input()["context"]["audience"],
+            Audience::Fabric.scope()
+        );
+        assert_eq!(host.approved[0].input()["bounds"]["maxRequests"], 10);
+        assert_eq!(credential.0.load(Ordering::SeqCst), 1);
+        let seen = executor.seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].0, "GET");
+        assert!(
+            seen[0]
+                .1
+                .ends_with(&format!("/workspaces/{WORKSPACE}/ontologies/{ITEM}"))
+        );
+        assert!(host.stderr.is_empty());
+        let printed: Value = serde_json::from_slice(&host.output.lock().unwrap()).unwrap();
+        assert_eq!(printed["data"], metadata());
+        receipts.push(printed);
+    }
+    assert_eq!(receipts[0], receipts[1]);
+}
+
+#[tokio::test]
+async fn accepted_definition_output_failure_retains_original_handle_and_never_replays() {
+    let args = parse_facade_args(["ontology", "get", PATH, "--output", "receipt.json"]).unwrap();
+    let credential = Arc::new(Credential::default());
+    let client = client(credential.clone());
+    let executor = Executor::new(vec![accepted()]);
+    let mut host = Host::new("definition", "native");
+    host.fail_writer = true;
+    let error = execute(
+        &args,
+        true,
+        &registry(),
+        &mut host,
+        &client,
+        executor.clone(),
+        limits(),
+        pending(),
+    )
+    .await
+    .unwrap_err();
+    let AdapterError::Output { report, .. } = error else {
+        panic!("expected output evidence")
+    };
+    assert!(matches!(report.receipt.outcome(), Outcome::Accepted));
+    assert_eq!(report.receipt.evidence().handles.len(), 1);
+    let receipt = serde_json::to_value(&report.receipt).unwrap();
+    assert_eq!(receipt["meta"]["evidence"]["handles"][0]["id"], OPERATION);
+    assert!(host.approved[0].effects().contains(&Effect::LocalWrite));
+    assert_eq!(host.approved[0].input()["output"]["path"], "receipt.json");
+    assert_eq!(executor.seen.lock().unwrap().len(), 1);
+    assert_eq!(credential.0.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn invalid_input_target_generation_output_collision_and_denied_approval_precede_credentials()
+{
+    for case in 0..7 {
+        let args = parse_facade_args(["ontology", "get", PATH]).unwrap();
+        let mut host = Host::new("metadata", "json");
+        if case == 0 {
+            host.target = ResolvedTarget::new(
+                PATH,
+                ItemIdentity::new(WORKSPACE, ITEM).unwrap(),
+                Target {
+                    kind: TargetKind::Item,
+                    owner_type: "SemanticModel".into(),
+                    facet: "metadata".into(),
+                    representation: "json".into(),
+                    generation: Some(2),
+                },
+                None,
+            )
+            .unwrap();
+        }
+        if case == 1 {
+            let mut target = host.target.selection().clone();
+            target.generation = Some(99);
+            host.target = ResolvedTarget::new(
+                PATH,
+                ItemIdentity::new(WORKSPACE, ITEM).unwrap(),
+                target,
+                None,
+            )
+            .unwrap();
+        }
+        if case == 2 {
+            host = Host::new("docs", "json");
+        }
+        if case == 3 {
+            host.exists = true;
+        }
+        if case == 4 {
+            host.refuse = true;
+        }
+        let mut args = args;
+        if case == 5 {
+            args.project = Some("broken[".into());
+        }
+        if case == 6 {
+            args.permanent = true;
+        }
+        let credential = Arc::new(Credential::default());
+        let client = client(credential.clone());
+        let executor = Executor::default();
+        assert!(
+            execute(
+                &args,
+                true,
+                &registry(),
+                &mut host,
+                &client,
+                executor.clone(),
+                limits(),
+                pending()
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(credential.0.load(Ordering::SeqCst), 0);
+        assert!(executor.seen.lock().unwrap().is_empty());
+        assert!(host.output.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn definition_reads_preserve_native_envelope_and_model_forms_are_not_interchanged() {
+    for (facet, repr, body, suffix) in [
+        ("definition", "native", definition(), "/getDefinition"),
+        (
+            "model",
+            "minimized",
+            json!({"name":"o","model":{}}),
+            "/model?form=Minimized",
+        ),
+        (
+            "model",
+            "expanded",
+            json!({"name":"o","model":{}}),
+            "/model?form=Expanded",
+        ),
+    ] {
+        let args = parse_facade_args(["ontology", "get", PATH]).unwrap();
+        let executor = Executor::new(vec![response(200, body.clone())]);
+        let mut host = Host::new(facet, repr);
+        let report = execute(
+            &args,
+            true,
+            &registry(),
+            &mut host,
+            &client(Arc::new(Credential::default())),
+            executor.clone(),
+            limits(),
+            pending(),
+        )
+        .await
+        .unwrap();
+        assert!(report.command_succeeded());
+        let output: Value = serde_json::from_slice(&host.output.lock().unwrap()).unwrap();
+        assert_eq!(output["data"], body);
+        assert!(executor.seen.lock().unwrap()[0].1.ends_with(suffix));
+    }
+}
+
+#[tokio::test]
+async fn replacement_body_and_output_are_approved_before_exactly_one_sdk_mutation() {
+    for (facet, repr, body, response_body) in [
+        ("definition", "native", definition(), Value::Null),
+        (
+            "model",
+            "minimized",
+            json!({"model":{},"description":"changed"}),
+            json!({"name":"o","model":{}}),
+        ),
+    ] {
+        let args = parse_facade_args([
+            "ontology",
+            "update",
+            PATH,
+            "--input",
+            "-",
+            "--mode",
+            "replace",
+            "--output",
+            "receipt.json",
+        ])
+        .unwrap();
+        let mut host = Host::new(facet, repr);
+        host.input = serde_json::to_vec(&body).unwrap();
+        let executor = Executor::new(vec![if facet == "definition" {
+            OperationResponse {
+                status: 200,
+                body: vec![],
+                headers: BTreeMap::new(),
+            }
+        } else {
+            response(200, response_body)
+        }]);
+        let report = execute(
+            &args,
+            true,
+            &registry(),
+            &mut host,
+            &client(Arc::new(Credential::default())),
+            executor.clone(),
+            limits(),
+            pending(),
+        )
+        .await
+        .unwrap();
+        assert!(report.command_succeeded());
+        assert_eq!(host.approved[0].input()["body"], body);
+        assert!(host.approved[0].effects().contains(&Effect::RemoteWrite));
+        assert!(host.approved[0].effects().contains(&Effect::LocalRead));
+        assert!(host.approved[0].effects().contains(&Effect::LocalWrite));
+        let seen = executor.seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].0, "Post");
+        assert_eq!(serde_json::from_slice::<Value>(&seen[0].2).unwrap(), body);
+        assert_eq!(
+            host.events,
+            ["resolve", "input", "deadline", "reserve", "approve"]
+        );
+    }
+}
+
+#[tokio::test]
+async fn replacement_local_effect_matrix_preserves_approval_receipt_and_original_mutation() {
+    let mut cases = 0;
+    for (facet, repr, body, response_body) in [
+        ("definition", "native", definition(), Value::Null),
+        (
+            "model",
+            "minimized",
+            json!({"model":{},"description":"changed"}),
+            json!({"name":"o","model":{}}),
+        ),
+    ] {
+        for declaration in [
+            EffectDeclaration::Required,
+            EffectDeclaration::Optional,
+            EffectDeclaration::Undeclared,
+        ] {
+            for input in [InputSource::File("model.json".into()), InputSource::Stdin] {
+                for output in [
+                    OutputDestination::Stdout,
+                    OutputDestination::File("receipt.json".into()),
+                ] {
+                    cases += 1;
+                    let input_arg = match &input {
+                        InputSource::File(path) => path.to_str().unwrap(),
+                        InputSource::Stdin => "-",
+                    };
+                    let mut argv = vec![
+                        "ontology", "update", PATH, "--input", input_arg, "--mode", "replace",
+                    ];
+                    if let OutputDestination::File(path) = &output {
+                        argv.extend(["--output", path.to_str().unwrap()]);
+                    }
+                    let args = parse_facade_args(argv).unwrap();
+                    assert_eq!(args.input.as_ref(), Some(&input));
+                    assert_eq!(args.output, output);
+                    let mut host = Host::new(facet, repr);
+                    host.input = serde_json::to_vec(&body).unwrap();
+                    let credential = Arc::new(Credential::default());
+                    let executor = Executor::new(vec![if facet == "definition" {
+                        OperationResponse {
+                            status: 200,
+                            body: vec![],
+                            headers: BTreeMap::new(),
+                        }
+                    } else {
+                        response(200, response_body.clone())
+                    }]);
+                    let result = execute(
+                        &args,
+                        true,
+                        &registry_with_local_effects(declaration, EffectDeclaration::Optional),
+                        &mut host,
+                        &client(credential.clone()),
+                        executor.clone(),
+                        limits(),
+                        pending(),
+                    )
+                    .await;
+                    if matches!(declaration, EffectDeclaration::Undeclared) {
+                        assert!(matches!(result, Err(AdapterError::Invalid(_))));
+                        assert_eq!(host.events, ["resolve"]);
+                        assert!(host.input_sources.is_empty());
+                        assert!(host.output_destinations.is_empty());
+                        assert!(host.approved.is_empty());
+                        assert_eq!(credential.0.load(Ordering::SeqCst), 0);
+                        assert!(executor.seen.lock().unwrap().is_empty());
+                        assert!(host.output.lock().unwrap().is_empty());
+                        assert!(host.stderr.is_empty());
+                        continue;
+                    }
+                    let report = result.unwrap();
+                    assert!(report.command_succeeded());
+                    assert_eq!(host.input_sources.as_slice(), std::slice::from_ref(&input));
+                    assert_eq!(
+                        host.output_destinations.as_slice(),
+                        std::slice::from_ref(&output)
+                    );
+                    assert_eq!(
+                        host.events,
+                        ["resolve", "input", "deadline", "reserve", "approve"]
+                    );
+                    assert_eq!(host.approved.len(), 1);
+                    let approved = &host.approved[0];
+                    assert_eq!(approved.input()["body"], body);
+                    let mut expected_effects =
+                        vec![Effect::RemoteRead, Effect::RemoteWrite, Effect::LocalRead];
+                    if facet == "model" {
+                        expected_effects.push(Effect::MeteredConsumption);
+                    }
+                    if matches!(output, OutputDestination::File(_)) {
+                        expected_effects.push(Effect::LocalWrite);
+                    }
+                    assert_eq!(approved.effects().len(), expected_effects.len());
+                    for effect in expected_effects {
+                        assert_eq!(
+                            approved
+                                .effects()
+                                .iter()
+                                .filter(|actual| **actual == effect)
+                                .count(),
+                            1,
+                            "{facet} {declaration:?} {input:?} {output:?}: {effect:?}"
+                        );
+                    }
+                    let printed: Value =
+                        serde_json::from_slice(&host.output.lock().unwrap()).unwrap();
+                    let receipt = serde_json::to_value(&report.receipt).unwrap();
+                    assert_eq!(printed, receipt);
+                    assert_eq!(
+                        printed["meta"]["declaredEffects"],
+                        serde_json::to_value(approved.effects()).unwrap()
+                    );
+                    assert!(host.stderr.is_empty());
+                    assert_eq!(credential.0.load(Ordering::SeqCst), 1);
+                    let seen = executor.seen.lock().unwrap();
+                    assert_eq!(seen.len(), 1);
+                    assert_eq!(seen[0].0, "Post");
+                    assert_eq!(serde_json::from_slice::<Value>(&seen[0].2).unwrap(), body);
+                }
+            }
+        }
+    }
+    assert_eq!(cases, 24);
+}
+
+#[tokio::test]
+async fn local_read_approval_refusal_follows_validated_input_without_credentials_or_mutation() {
+    for (facet, repr, body) in [
+        ("definition", "native", definition()),
+        (
+            "model",
+            "minimized",
+            json!({"model":{},"description":"changed"}),
+        ),
+    ] {
+        let args = parse_facade_args([
+            "ontology", "update", PATH, "--input", "-", "--mode", "replace",
+        ])
+        .unwrap();
+        let mut host = Host::new(facet, repr);
+        host.input = serde_json::to_vec(&body).unwrap();
+        host.denied_effect = Some(Effect::LocalRead);
+        let credential = Arc::new(Credential::default());
+        let executor = Executor::default();
+        let error = execute(
+            &args,
+            true,
+            &registry(),
+            &mut host,
+            &client(credential.clone()),
+            executor.clone(),
+            limits(),
+            pending(),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(error, AdapterError::Host(HostError(message)) if message == "effect refused")
+        );
+        assert_eq!(
+            host.events,
+            ["resolve", "input", "deadline", "reserve", "approve"]
+        );
+        assert_eq!(host.input_sources, [InputSource::Stdin]);
+        assert_eq!(host.output_destinations, [OutputDestination::Stdout]);
+        assert!(host.approved.is_empty());
+        assert_eq!(credential.0.load(Ordering::SeqCst), 0);
+        assert!(executor.seen.lock().unwrap().is_empty());
+        assert!(host.output.lock().unwrap().is_empty());
+        assert!(host.stderr.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn required_or_undeclared_local_write_is_checked_before_replacement_input() {
+    for declaration in [EffectDeclaration::Required, EffectDeclaration::Undeclared] {
+        let args = parse_facade_args([
+            "ontology",
+            "update",
+            PATH,
+            "--input",
+            "-",
+            "--mode",
+            "replace",
+            "--output",
+            "receipt.json",
+        ])
+        .unwrap();
+        let mut host = Host::new("definition", "native");
+        host.input = serde_json::to_vec(&definition()).unwrap();
+        let credential = Arc::new(Credential::default());
+        let executor = Executor::new(vec![OperationResponse {
+            status: 200,
+            body: vec![],
+            headers: BTreeMap::new(),
+        }]);
+        let result = execute(
+            &args,
+            true,
+            &registry_with_local_effects(EffectDeclaration::Optional, declaration),
+            &mut host,
+            &client(credential.clone()),
+            executor.clone(),
+            limits(),
+            pending(),
+        )
+        .await;
+        if matches!(declaration, EffectDeclaration::Undeclared) {
+            assert!(matches!(result, Err(AdapterError::Invalid(_))));
+            assert_eq!(host.events, ["resolve"]);
+            assert!(host.input_sources.is_empty());
+            assert!(host.output_destinations.is_empty());
+            assert!(host.approved.is_empty());
+            assert_eq!(credential.0.load(Ordering::SeqCst), 0);
+            assert!(executor.seen.lock().unwrap().is_empty());
+            assert!(host.output.lock().unwrap().is_empty());
+        } else {
+            assert!(result.unwrap().command_succeeded());
+            assert_eq!(
+                host.approved[0]
+                    .effects()
+                    .iter()
+                    .filter(|effect| **effect == Effect::LocalWrite)
+                    .count(),
+                1
+            );
+            assert!(host.approved[0].effects().contains(&Effect::LocalRead));
+            assert_eq!(credential.0.load(Ordering::SeqCst), 1);
+            assert_eq!(executor.seen.lock().unwrap().len(), 1);
+        }
+    }
+}
+
+#[tokio::test]
+async fn malformed_unknown_and_duplicate_replacement_fields_never_reach_approval_or_sdk() {
+    for input in [
+        br#"{"model":{},"unexpected":1}"#.as_slice(),
+        br#"{"model":{},"model":{}}"#.as_slice(),
+        br#"{"model":{"unknownCollection":[]}}"#.as_slice(),
+        b"\xff",
+    ] {
+        let args = parse_facade_args([
+            "ontology", "update", PATH, "--input", "-", "--mode", "replace",
+        ])
+        .unwrap();
+        let mut host = Host::new("model", "minimized");
+        host.input = input.to_vec();
+        let credential = Arc::new(Credential::default());
+        let executor = Executor::default();
+        assert!(
+            execute(
+                &args,
+                true,
+                &registry(),
+                &mut host,
+                &client(credential.clone()),
+                executor.clone(),
+                limits(),
+                pending()
+            )
+            .await
+            .is_err()
+        );
+        assert!(host.approved.is_empty());
+        assert_eq!(credential.0.load(Ordering::SeqCst), 0);
+        assert!(executor.seen.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn provider_denial_and_budget_failure_are_stderr_only_with_original_evidence() {
+    for budget in [false, true] {
+        let args = parse_facade_args(["ontology", "get", PATH]).unwrap();
+        let mut host = Host::new("definition", "native");
+        let executor = Executor::new(vec![if budget {
+            response(200, definition())
+        } else {
+            response(403, json!({"error":{"code":"Forbidden"}}))
+        }]);
+        let mut limits = limits();
+        if budget {
+            limits.data_bytes = NonZeroUsize::new(1).unwrap();
+        }
+        let report = execute(
+            &args,
+            true,
+            &registry(),
+            &mut host,
+            &client(Arc::new(Credential::default())),
+            executor.clone(),
+            limits,
+            pending(),
+        )
+        .await
+        .unwrap();
+        assert!(!report.command_succeeded());
+        assert!(host.output.lock().unwrap().is_empty());
+        let receipt: Value = serde_json::from_slice(&host.stderr).unwrap();
+        assert_eq!(receipt["status"], "failed");
+        if budget {
+            assert_eq!(receipt["error"]["code"], "BudgetExceeded");
+        } else {
+            assert!(report.sdk_error.is_some());
+            assert_eq!(report.receipt.evidence().http_status, Some(403));
+        }
+        assert_eq!(executor.seen.lock().unwrap().len(), 1);
+    }
+}
+
+#[test]
+fn owner_binding_is_transactional_and_does_not_duplicate_caller_descriptors() {
+    let mut empty = Registry::default();
+    assert!(bind_public_operations(&mut empty).is_err());
+    assert!(empty.bindings().is_empty());
+    assert_eq!(empty.operations().count(), 0);
+    let mut registry = registry();
+    let before = serde_json::to_value(registry.bindings()).unwrap();
+    assert!(bind_public_operations(&mut registry).is_err());
+    assert_eq!(serde_json::to_value(registry.bindings()).unwrap(), before);
+    assert_eq!(registry.operations().count(), 5);
+}
+
+#[tokio::test]
+async fn accepted_observation_budget_exhaustion_is_unknown_and_keeps_original_operation() {
+    let args = parse_facade_args(["ontology", "get", PATH, "--wait"]).unwrap();
+    let mut host = Host::new("definition", "native");
+    let executor = Executor::new(vec![accepted()]);
+    let mut limits = limits();
+    limits.operation.max_requests = NonZeroUsize::new(1).unwrap();
+    let report = execute(
+        &args,
+        true,
+        &registry(),
+        &mut host,
+        &client(Arc::new(Credential::default())),
+        executor.clone(),
+        limits,
+        pending(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(report.receipt.outcome(), Outcome::Unknown { .. }));
+    assert!(!report.command_succeeded());
+    assert!(report.sdk_error.is_some());
+    assert!(report.receipt.evidence().mutation_may_have_occurred);
+    let receipt: Value = serde_json::from_slice(&host.stderr).unwrap();
+    assert_eq!(receipt["meta"]["evidence"]["handles"][0]["id"], OPERATION);
+    assert!(host.output.lock().unwrap().is_empty());
+    assert_eq!(executor.seen.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn resultless_definition_wait_retains_handle_without_fetching_result_or_replaying_post() {
+    let args = parse_facade_args([
+        "ontology", "update", PATH, "--input", "-", "--mode", "replace", "--wait",
+    ])
+    .unwrap();
+    let mut host = Host::new("definition", "native");
+    host.input = serde_json::to_vec(&definition()).unwrap();
+    let executor = Executor::new(vec![
+        accepted(),
+        response(200, json!({"status":"Succeeded"})),
+    ]);
+    let report = execute(
+        &args,
+        true,
+        &registry(),
+        &mut host,
+        &client(Arc::new(Credential::default())),
+        executor.clone(),
+        limits(),
+        pending(),
+    )
+    .await
+    .unwrap();
+    assert!(report.command_succeeded());
+    let receipt: Value = serde_json::from_slice(&host.output.lock().unwrap()).unwrap();
+    assert_eq!(receipt["status"], "succeeded");
+    assert_eq!(receipt["meta"]["evidence"]["handles"][0]["id"], OPERATION);
+    let seen = executor.seen.lock().unwrap();
+    assert_eq!(seen.len(), 2);
+    assert_eq!(seen[0].0, "Post");
+    assert_eq!(seen[1].0, "Get");
+    assert!(seen[1].1.ends_with(&format!("/operations/{OPERATION}")));
+    assert!(seen.iter().all(|(_, url, _)| !url.ends_with("/result")));
+}
+
+#[tokio::test]
+async fn serialized_source_and_decoded_native_bounds_are_measured_exactly_without_clipping() {
+    let source = definition();
+    let bytes = serde_json::to_vec(&source).unwrap().len();
+    for (maximum, succeeded) in [(bytes, true), (bytes - 1, false)] {
+        let args = parse_facade_args(["ontology", "get", PATH]).unwrap();
+        let mut host = Host::new("definition", "native");
+        let executor = Executor::new(vec![response(200, source.clone())]);
+        let mut limits = limits();
+        limits.data_bytes = NonZeroUsize::new(maximum).unwrap();
+        limits.definition.max_decoded_bytes = NonZeroUsize::new(1).unwrap();
+        let report = execute(
+            &args,
+            true,
+            &registry(),
+            &mut host,
+            &client(Arc::new(Credential::default())),
+            executor.clone(),
+            limits,
+            pending(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(report.command_succeeded(), succeeded);
+        assert_eq!(executor.seen.lock().unwrap().len(), 1);
+        if succeeded {
+            let receipt: Value = serde_json::from_slice(&host.output.lock().unwrap()).unwrap();
+            assert_eq!(receipt["data"], source);
+        } else {
+            assert!(host.output.lock().unwrap().is_empty());
+            let receipt: Value = serde_json::from_slice(&host.stderr).unwrap();
+            assert_eq!(receipt["error"]["code"], "BudgetExceeded");
+        }
+    }
+    let mut source = source;
+    source["definition"]["parts"][0]["payload"] = json!("YWI=");
+    let args = parse_facade_args(["ontology", "get", PATH]).unwrap();
+    let mut host = Host::new("definition", "native");
+    let mut limits = limits();
+    limits.definition.max_decoded_bytes = NonZeroUsize::new(1).unwrap();
+    let report = execute(
+        &args,
+        true,
+        &registry(),
+        &mut host,
+        &client(Arc::new(Credential::default())),
+        Executor::new(vec![response(200, source)]),
+        limits,
+        pending(),
+    )
+    .await
+    .unwrap();
+    assert!(!report.command_succeeded());
+    assert!(report.sdk_error.is_some());
+    assert!(host.output.lock().unwrap().is_empty());
+    let receipt: Value = serde_json::from_slice(&host.stderr).unwrap();
+    assert_eq!(receipt["error"]["code"], "BudgetExceeded");
+}
+
+#[tokio::test]
+async fn accepted_mutation_poll_http_failure_is_unknown_not_rejection_or_permission_to_replay() {
+    for (status, code) in [
+        (403, "AccessDenied"),
+        (404, "NotFound"),
+        (503, "OperationFailed"),
+    ] {
+        let args = parse_facade_args([
+            "ontology", "update", PATH, "--input", "-", "--mode", "replace", "--wait",
+        ])
+        .unwrap();
+        let mut host = Host::new("definition", "native");
+        host.input = serde_json::to_vec(&definition()).unwrap();
+        let executor = Executor::new(vec![
+            accepted(),
+            response(status, json!({"error":{"code":"ObservationUnavailable"}})),
+        ]);
+        let report = execute(
+            &args,
+            true,
+            &registry(),
+            &mut host,
+            &client(Arc::new(Credential::default())),
+            executor.clone(),
+            limits(),
+            pending(),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(report.receipt.outcome(), Outcome::Unknown { .. }));
+        assert!(!report.command_succeeded());
+        assert!(report.sdk_error.is_some());
+        assert_eq!(report.receipt.evidence().http_status, Some(status));
+        assert!(report.receipt.evidence().mutation_may_have_occurred);
+        assert!(host.output.lock().unwrap().is_empty());
+        let receipt: Value = serde_json::from_slice(&host.stderr).unwrap();
+        assert_eq!(receipt["status"], "unknown");
+        assert_eq!(receipt["error"]["code"], code);
+        assert_eq!(receipt["meta"]["evidence"]["handles"][0]["id"], OPERATION);
+        let seen = executor.seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0].0, "Post");
+        assert_eq!(seen[1].0, "Get");
+        assert!(seen[1].1.ends_with(&format!("/operations/{OPERATION}")));
+    }
+}
+
+#[tokio::test]
+async fn initial_mutation_http_rejection_and_provider_terminal_failure_remain_failed() {
+    for accepted_first in [false, true] {
+        let args = parse_facade_args([
+            "ontology", "update", PATH, "--input", "-", "--mode", "replace", "--wait",
+        ])
+        .unwrap();
+        let mut host = Host::new("definition", "native");
+        host.input = serde_json::to_vec(&definition()).unwrap();
+        let responses = if accepted_first {
+            vec![
+                accepted(),
+                response(
+                    200,
+                    json!({"status":"Failed","error":{"errorCode":"NativeValidation"}}),
+                ),
+            ]
+        } else {
+            vec![response(403, json!({"error":{"code":"Forbidden"}}))]
+        };
+        let executor = Executor::new(responses);
+        let report = execute(
+            &args,
+            true,
+            &registry(),
+            &mut host,
+            &client(Arc::new(Credential::default())),
+            executor.clone(),
+            limits(),
+            pending(),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(report.receipt.outcome(), Outcome::Failed { .. }));
+        assert!(!report.command_succeeded());
+        assert!(report.sdk_error.is_some());
+        let receipt: Value = serde_json::from_slice(&host.stderr).unwrap();
+        assert_eq!(receipt["status"], "failed");
+        assert_eq!(
+            report.receipt.evidence().handles.len(),
+            usize::from(accepted_first)
+        );
+        if accepted_first {
+            assert_eq!(receipt["meta"]["evidence"]["handles"][0]["id"], OPERATION);
+        } else {
+            assert_eq!(receipt["error"]["code"], "AccessDenied");
+            assert_eq!(report.receipt.evidence().http_status, Some(403));
+        }
+        assert_eq!(
+            executor.seen.lock().unwrap().len(),
+            if accepted_first { 2 } else { 1 }
+        );
+    }
+}

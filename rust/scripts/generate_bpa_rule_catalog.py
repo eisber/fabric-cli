@@ -41,6 +41,9 @@ def catalog(source: bytes) -> dict:
             {
                 "id": "labs:" + hashlib.sha256(key.encode("utf-8")).hexdigest(),
                 "name": name,
+                "severity": ast.literal_eval(entry.elts[2]).lower(),
+                "category": ast.literal_eval(entry.elts[0]),
+                "scopes": scopes,
             }
         )
     if len({rule["id"] for rule in rules}) != len(rules):

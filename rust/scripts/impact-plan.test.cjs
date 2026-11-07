@@ -417,6 +417,32 @@ test('Missing required-feature coverage fails planning, never declares clean', (
   }), /no applicable profile/);
 });
 
+test('Discovery binary has an explicit cross-platform profile and combined coverage', () => {
+  const graph = JSON.parse(fs.readFileSync(
+    path.join(__dirname, '..', 'validation', 'impact-graph.json'), 'utf8'));
+  const discovery = graph.profiles.find(item => item.id === 'v2-discovery');
+  assert.ok(discovery);
+  assert.deepEqual(discovery.platforms, ['windows', 'linux', 'macos']);
+  assert.ok(graph.profiles.find(item => item.id === 'combined').features
+    .includes('fabric-cli/v2-discovery'));
+  const input = {
+    root: ROOT,
+    metadata: metadata([pkg('fabric-cli', [], [
+      target('fab-cli', 'bin', 'rust/crates/fabric-cli/src/bin/fab_cli.rs', ['v2-discovery']),
+    ], {default: [], 'v2-discovery': []})]),
+    graph: {schema: 1, profiles: [discovery]},
+    files: ['rust/Cargo.toml'],
+  };
+  const result = plan(input);
+  const binary = result.target_catalog.find(item => item.target === 'bin:fab-cli');
+  assert.equal(binary.default_available, false);
+  assert.deepEqual(binary.profiles, ['v2-discovery']);
+  for (const platform of discovery.platforms) {
+    assert.ok(commands(result, platform).commands.some(item =>
+      item.profile === 'v2-discovery' && item.args.includes('--all-targets')));
+  }
+});
+
 test('Weak dependency features do not activate an otherwise disabled optional dependency', () => {
   const input = fixture();
   const models = pkg('models', [], [target('special', 'test',
@@ -804,4 +830,33 @@ test('Graph cannot execute commands and test filters remain argv values rather t
   assert.equal(command.program, 'cargo');
   assert.deepEqual(command.args.slice(-2), ['--', 'name; echo nope']);
   assert.ok(!Object.hasOwn(command, 'shell'));
+});
+
+test('native runtime feature tests have explicit CI profiles and cannot pass as empty default targets', () => {
+  const root = path.resolve(__dirname, '..', '..');
+  const graph = JSON.parse(fs.readFileSync(path.join(root, 'rust/validation/impact-graph.json'), 'utf8'));
+  const cases = [
+    ['fabric-sdk', 'livy-arrow', 'livy_arrow', 'rust/sdk/fabric-sdk/Cargo.toml'],
+    ['fabric-sdk', 'livy-arrow-ipc', 'livy_arrow_ipc', 'rust/sdk/fabric-sdk/Cargo.toml'],
+    ['fabric-cli', 'runtime-v2', 'runtime_v2', 'rust/hosts/cli/fabric-cli/Cargo.toml'],
+  ];
+  for (const [pkg, feature, target, manifestPath] of cases) {
+    const profile = graph.profiles.find(item =>
+      item.packages.includes(pkg) && item.features.includes(`${pkg}/${feature}`));
+    assert.ok(profile, `Missing explicit profile for ${pkg}/${feature}`);
+    assert.deepEqual(profile.platforms, ['windows', 'linux', 'macos']);
+    assert.ok(graph.components.some(item => item.package === pkg &&
+      item.tests.some(test => test.target === `test:${target}`)));
+    const manifest = fs.readFileSync(path.join(root, manifestPath), 'utf8');
+    const section = manifest.split('[[test]]').find(item => item.includes(`name = "${target}"`));
+    assert.ok(section, `Missing Cargo test declaration for ${target}`);
+    assert.ok(section.includes(`required-features = ["${feature}"]`));
+  }
+  for (const [pkg, target] of [
+    ['fabric-sdk', 'notebook_runtime'], ['fabric-sdk', 'notebook_observability'],
+    ['fabric-sdk', 'livy_native'], ['fabric-sdk-http', 'native_runtime'],
+  ]) {
+    assert.ok(graph.components.some(item => item.package === pkg &&
+      item.tests.some(test => test.target === `test:${target}`)));
+  }
 });

@@ -7,7 +7,7 @@ use azure_core::{
     http::{headers::Headers, response::PinnedStream},
 };
 use futures_util::TryStreamExt;
-use std::{io, pin::Pin};
+use std::{error::Error, fmt, io, pin::Pin};
 use tokio::io::AsyncRead;
 use tokio_util::io::{ReaderStream, StreamReader};
 
@@ -19,7 +19,7 @@ pub(crate) fn decoded(
     has_body: bool,
 ) -> azure_core::Result<PinnedStream> {
     let source = StreamReader::new(
-        stream.map_err(|_| io::Error::other("native HTTP response stream failed")),
+        stream.map_err(|error| io::Error::other(UpstreamKind(sanitized_kind(error.kind())))),
     );
     let encoding = headers
         .get_optional_str(&"content-encoding".into())
@@ -43,11 +43,41 @@ pub(crate) fn decoded(
         ));
     };
     Ok(Box::pin(
-        ReaderStream::with_capacity(reader, CHUNK_BYTES).map_err(|_| {
+        ReaderStream::with_capacity(reader, CHUNK_BYTES).map_err(|error| {
+            let kind = error
+                .get_ref()
+                .and_then(|source| source.downcast_ref::<UpstreamKind>())
+                .map_or(ErrorKind::DataConversion, |source| source.0.clone());
             azure_core::Error::with_message(
-                ErrorKind::Io,
+                kind,
                 "native HTTP response decoding or streaming failed",
             )
         }),
     ))
 }
+
+pub(crate) fn sanitized_kind(kind: &ErrorKind) -> ErrorKind {
+    match kind {
+        ErrorKind::Io => ErrorKind::Io,
+        ErrorKind::DataConversion => ErrorKind::DataConversion,
+        ErrorKind::Connection => ErrorKind::Connection,
+        ErrorKind::Credential => ErrorKind::Credential,
+        _ => ErrorKind::Other,
+    }
+}
+
+struct UpstreamKind(ErrorKind);
+
+impl fmt::Debug for UpstreamKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("UpstreamKind(<redacted>)")
+    }
+}
+
+impl fmt::Display for UpstreamKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("native HTTP upstream stream failed")
+    }
+}
+
+impl Error for UpstreamKind {}

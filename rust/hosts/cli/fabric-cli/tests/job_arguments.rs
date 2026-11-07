@@ -129,3 +129,32 @@ fn legacy_read_probe_explicitly_rejects_job_invocations() {
     assert_eq!(read["parse"]["read"]["kind"], "list");
     assert_eq!(read["parse"]["read"]["path"], serde_json::json!(["/"]));
 }
+
+#[test]
+fn legacy_read_probe_explicitly_rejects_execute_invocations() {
+    let input = serde_json::json!({
+        "id": "execute-is-not-a-read-probe-command",
+        "parse_only": true,
+        "command": [
+            "execute",
+            "/11111111-1111-1111-1111-111111111111.Workspace/22222222-2222-2222-2222-222222222222.Dataflow/queries/Orders",
+            "--wait",
+        ],
+    });
+    let arguments = input["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap());
+    assert!(matches!(
+        parse_args(std::iter::once("fab-rs").chain(arguments)).unwrap(),
+        Invocation::Execute(_)
+    ));
+    assert_eq!(
+        parser_support::observe(&input),
+        Some(serde_json::json!({
+            "id": input["id"],
+            "parse": {"error": true},
+        }))
+    );
+}

@@ -1,0 +1,32 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-sdk-dataagent-ontology"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Caller-scoped DataAgent Ontology attachment and source-guidance workflows"
+
+[dependencies]
+azure_core.workspace = true
+fabric-core.workspace = true
+fabric-sdk-workspaces.workspace = true
+fabric-sdk-operations.workspace = true
+fabric-sdk-paging.workspace = true
+fabric-sdk-ontology-workload.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+tokio.workspace = true
+
+[package.metadata.fabric]
+layer = "sdk"
+
+[lints]
+workspace = true

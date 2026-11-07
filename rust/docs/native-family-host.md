@@ -204,6 +204,11 @@ live-service or all-platform acceptance.
 
 ## Bounded gaps and evidence
 
+The separate opt-in [`v2-copy` slice](v2-copy.md) adds create-only Notebook and
+SemanticModel definition copies with explicit item destinations. Default builds
+retain their compatibility behavior. Definition transfer is not physical data
+copy, and unsupported recursive, table and replacement routes remain explicit.
+
 The generic deployment CLI route, recursive transfer metadata and configuration
 parameter inputs are implemented candidates, not a complete native validation
 or live-service claim. The latest source-matched schema, lifecycle and profile

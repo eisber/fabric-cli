@@ -66,6 +66,7 @@ impl ApiClients<'_> {
             Origin::OneLake => self.onelake,
             Origin::Arm => self.arm,
             Origin::PowerBi => self.powerbi,
+            Origin::RelevanceEngine => None,
         };
         client.ok_or_else(|| CommandError::new("NotConfigured", "API audience is not configured"))
     }

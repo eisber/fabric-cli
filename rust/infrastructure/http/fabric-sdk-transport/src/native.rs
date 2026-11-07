@@ -3,7 +3,8 @@
 
 use crate::{
     ProxyPolicy, RootCertificate, TransportError, TransportOptions, TrustPolicy,
-    connector::Connector, decode::decoded,
+    connector::Connector,
+    decode::{decoded, sanitized_kind},
 };
 use async_trait::async_trait;
 use azure_core::{
@@ -20,7 +21,7 @@ use hyper_util::{
     client::legacy::Client,
     rt::{TokioExecutor, TokioTimer as HyperTimer},
 };
-use std::{fmt, sync::Arc};
+use std::{error::Error as StdError, fmt, io, sync::Arc};
 
 type RequestBody = UnsyncBoxBody<Bytes, azure_core::Error>;
 type NativeClient = Client<TimeoutConnector<HttpsConnector<Connector>>, RequestBody>;
@@ -195,40 +196,34 @@ impl HttpClient for NativeHttpClient {
             Body::Bytes(bytes) => Full::new(bytes)
                 .map_err(|never| match never {})
                 .boxed_unsync(),
-            Body::SeekableStream(stream) => StreamBody::new(
-                stream
-                    .map_ok(Frame::data)
-                    .map_err(|_| failure(ErrorKind::Io, "HTTP request body stream failed")),
-            )
-            .boxed_unsync(),
+            Body::SeekableStream(stream) => {
+                StreamBody::new(stream.map_ok(Frame::data).map_err(|error| {
+                    failure(
+                        transport_error_kind(&error),
+                        "HTTP request body stream failed",
+                    )
+                }))
+                .boxed_unsync()
+            }
         };
         let pending = pending
             .body(body)
             .map_err(|_| failure(ErrorKind::Other, "invalid HTTP request headers or body"))?;
-        let response = self
-            .client
-            .request(pending)
-            .await
-            .map_err(|_| failure(ErrorKind::Io, "native HTTP request failed"))?;
+        let response =
+            self.client.request(pending).await.map_err(|error| {
+                failure(transport_error_kind(&error), "native HTTP request failed")
+            })?;
         let status = response.status();
-        let mut headers = Headers::new();
-        for name in response.headers().keys() {
-            let mut combined = String::new();
-            for (index, value) in response.headers().get_all(name).iter().enumerate() {
-                if index > 0 {
-                    combined.push_str(", ");
-                }
-                // Like Requests, retain repeated fields and HTTP's Latin-1 octets.
-                combined.extend(value.as_bytes().iter().copied().map(char::from));
-            }
-            headers.insert(name.as_str().to_owned(), combined);
-        }
+        let headers = response_headers(request, response.headers())?;
         let has_body = request.method() != Method::Head
             && !matches!(status.as_u16(), 204 | 304)
             && !response.body().is_end_stream();
         let stream = Box::pin(
-            TryStreamExt::map_err(response.into_body().into_stream(), |_| {
-                failure(ErrorKind::Io, "native HTTP response stream failed")
+            TryStreamExt::map_err(response.into_body().into_stream(), |error| {
+                failure(
+                    transport_error_kind(&error),
+                    "native HTTP response stream failed",
+                )
             })
             .and_then(|frame| async move {
                 frame.into_data().map_err(|_| {
@@ -242,6 +237,116 @@ impl HttpClient for NativeHttpClient {
         let body = decoded(stream, &headers, has_body)?;
         Ok(AsyncRawResponse::new(status.as_u16().into(), headers, body))
     }
+}
+
+pub(crate) fn transport_error_kind(error: &(dyn StdError + 'static)) -> ErrorKind {
+    let mut source = Some(error);
+    let mut io_failure = false;
+    let mut conversion = false;
+    let mut user_failure = false;
+    // Error::source is caller-controlled; do not loop forever on a cyclic chain.
+    for _ in 0..32 {
+        let Some(error) = source else { break };
+        if let Some(error) = error.downcast_ref::<azure_core::Error>() {
+            return sanitized_kind(error.kind());
+        }
+        if error.is::<rustls::Error>() {
+            return ErrorKind::Other;
+        }
+        if let Some(error) = error.downcast_ref::<hyper::Error>() {
+            if error.is_parse() {
+                return ErrorKind::DataConversion;
+            }
+            user_failure |= error.is_user();
+            io_failure |= error.is_incomplete_message() || error.is_timeout();
+        }
+        if let Some(error) = error.downcast_ref::<io::Error>() {
+            conversion |= matches!(
+                error.kind(),
+                io::ErrorKind::InvalidData | io::ErrorKind::InvalidInput
+            );
+            io_failure |= matches!(
+                error.kind(),
+                io::ErrorKind::ConnectionRefused
+                    | io::ErrorKind::ConnectionReset
+                    | io::ErrorKind::ConnectionAborted
+                    | io::ErrorKind::NotConnected
+                    | io::ErrorKind::AddrInUse
+                    | io::ErrorKind::AddrNotAvailable
+                    | io::ErrorKind::BrokenPipe
+                    | io::ErrorKind::TimedOut
+                    | io::ErrorKind::UnexpectedEof
+                    | io::ErrorKind::WouldBlock
+                    | io::ErrorKind::Interrupted
+            );
+        }
+        source = if let Some(error) = error.downcast_ref::<io::Error>() {
+            error
+                .get_ref()
+                .map(|source| source as &(dyn StdError + 'static))
+                .or_else(|| error.source())
+        } else {
+            error.source()
+        };
+    }
+    if source.is_some() {
+        ErrorKind::Other
+    } else if conversion {
+        ErrorKind::DataConversion
+    } else if io_failure && !user_failure {
+        ErrorKind::Io
+    } else {
+        ErrorKind::Other
+    }
+}
+
+pub(crate) fn response_headers(
+    request: &Request,
+    raw: &http::HeaderMap,
+) -> azure_core::Result<Headers> {
+    let livy = request.url().path().contains("/livyApi/versions/")
+        || request
+            .headers()
+            .get_optional_str(&"accept".into())
+            .is_some_and(|accept| {
+                accept.split(',').any(|value| {
+                    let media = value.split(';').next().unwrap_or("").trim();
+                    media.eq_ignore_ascii_case("application/vnd.livy.arrow-chunks")
+                        || media.eq_ignore_ascii_case("application/vnd.apache.arrow.stream")
+                })
+            });
+    if livy {
+        for name in [
+            "content-type",
+            "content-encoding",
+            "content-length",
+            "retry-after",
+            "location",
+            "etag",
+            "statementid",
+            "id",
+        ] {
+            if raw.get_all(name).iter().nth(1).is_some() {
+                return Err(failure(
+                    ErrorKind::DataConversion,
+                    "ambiguous native Livy response metadata",
+                ));
+            }
+        }
+    }
+    let mut headers = Headers::new();
+    for name in raw.keys() {
+        let mut combined = String::new();
+        for (index, value) in raw.get_all(name).iter().enumerate() {
+            if index > 0 {
+                combined.push_str(", ");
+            }
+            // Like Requests, retain repeated non-singleton fields and Latin-1 octets.
+            combined.extend(value.as_bytes().iter().copied().map(char::from));
+        }
+        headers.insert(name.as_str().to_owned(), combined);
+    }
+    Ok(headers)
 }
 
 fn failure(kind: ErrorKind, message: &'static str) -> azure_core::Error {

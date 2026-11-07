@@ -9,6 +9,7 @@ mod auth;
 #[cfg(all(windows, feature = "windows-broker"))]
 mod auth_binding;
 mod batch_state;
+mod delete_host;
 #[cfg(feature = "headless")]
 mod headless;
 mod local_host;
@@ -54,11 +55,51 @@ type UpdateLifetime = ();
 
 fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
     let arguments = std::env::args_os().collect::<Vec<_>>();
+    #[cfg(feature = "v2-preview")]
+    if arguments
+        .get(1)
+        .is_some_and(|argument| argument == "--v2-preview")
+    {
+        let arguments = arguments
+            .iter()
+            .take(1)
+            .chain(arguments.iter().skip(2))
+            .cloned();
+        return fabric_cli::v2_preview::run_unconfigured(
+            arguments,
+            &mut io::stdout().lock(),
+            &mut io::stderr().lock(),
+        )
+        .map(ExitCode::from);
+    }
     #[cfg(feature = "repl")]
     if arguments.len() == 1 {
         return repl_host::run();
     }
     let invocation = parse_args(arguments);
+    #[cfg(feature = "semantic-model")]
+    if let Ok(Invocation::SemanticModel(command)) = &invocation {
+        // Offline analysis validates before update policy or navigation setup.
+        return semantic_model::run(command).map(exit_status);
+    }
+    #[cfg(feature = "v2-cancel")]
+    if let Ok(Invocation::Cancel(command)) = &invocation {
+        // ID-only cancellation never restores navigation or runs startup updates.
+        return dispatch_cancel(command, None).map(exit_status);
+    }
+    #[cfg(feature = "v2-cancel")]
+    if let Err(error) = &invocation {
+        return write_error(
+            CommandError {
+                code: "invalid_arguments",
+                message: invalid_arguments_message(error),
+            },
+            2,
+        );
+    }
+    if let Ok(Invocation::NativeTabular(command)) = &invocation {
+        return write_export(fabric_cli::native_tabular::not_configured(command)).map(exit_status);
+    }
     #[cfg(feature = "self-update")]
     if let Ok(invocation) = &invocation {
         if let Invocation::Update(command) = invocation {
@@ -85,6 +126,48 @@ fn dispatch(
     local_state: &mut BatchState,
 ) -> io::Result<CommandOutcome> {
     let (error, exit) = match invocation {
+        Ok(Invocation::NativeTabular(command)) => {
+            return write_export(fabric_cli::native_tabular::not_configured(&command));
+        }
+        Ok(invocation @ Invocation::Tabular(_)) => {
+            let Invocation::Tabular(export) = &invocation else {
+                unreachable!("matched tabular export");
+            };
+            let source =
+                fabric_cli::tabular_export::source(&export.command).unwrap_or("unsupported");
+            if fabric_cli::tabular_export::preflight(&export.request).is_err() {
+                let delivery = fabric_cli::tabular_export::ExportDelivery::preflight_failed(
+                    source,
+                    &export.request,
+                );
+                return write_export(delivery);
+            }
+            if matches!(source, "config ls" | "label list-local") {
+                let store = local_host::store().map_err(io::Error::other)?;
+                let delivery = fabric_cli::tabular_export::dispatch_local(
+                    export,
+                    &store,
+                    &mut fabric_cli::tabular_export::FileSink::default(),
+                )
+                .expect("local export selected");
+                return write_export(delivery);
+            }
+            #[cfg(feature = "native-host")]
+            {
+                return native_read::run_family(&invocation, local_state);
+            }
+            #[cfg(not(feature = "native-host"))]
+            {
+                let delivery = fabric_cli::tabular_export::ExportDelivery::host_failed(
+                    source,
+                    &export.request,
+                    "NotConfigured",
+                    &HostError::NotConfigured.to_string(),
+                    1,
+                );
+                return write_export(delivery);
+            }
+        }
         Ok(Invocation::Batch(invocation)) => {
             return batch::run(&invocation, &mut BatchExecution { local_state })
                 .map(CommandOutcome::Returned);
@@ -95,6 +178,11 @@ fn dispatch(
         }
         #[cfg(feature = "semantic-model")]
         Ok(Invocation::SemanticModel(command)) => return semantic_model::run(&command),
+        #[cfg(feature = "v2-cancel")]
+        Ok(Invocation::Cancel(command)) => {
+            return dispatch_cancel(&command, Some(local_state));
+        }
+        Ok(Invocation::Delete(command)) => return delete_host::run(&command),
         #[cfg(feature = "self-update")]
         Ok(Invocation::Update(_)) => {
             write_error(
@@ -147,6 +235,10 @@ fn dispatch(
         #[cfg(feature = "native-host")]
         Ok(Invocation::Read(command)) => return native_read::run(&command, local_state),
         #[cfg(feature = "native-host")]
+        Ok(Invocation::Execute(command)) => {
+            return native_read::run_execute(&command, local_state);
+        }
+        #[cfg(feature = "native-host")]
         Ok(Invocation::JobRead(command)) => return native_read::run_job(&command, local_state),
         #[cfg(feature = "native-host")]
         Ok(Invocation::JobRun(command)) => {
@@ -159,6 +251,7 @@ fn dispatch(
         #[cfg(not(feature = "native-host"))]
         Ok(
             Invocation::Read(_)
+            | Invocation::Execute(_)
             | Invocation::JobRead(_)
             | Invocation::JobRun(_)
             | Invocation::JobMutation(_),
@@ -185,6 +278,52 @@ fn dispatch(
     } else {
         CommandOutcome::Returned(exit)
     })
+}
+
+#[cfg(feature = "v2-cancel")]
+fn dispatch_cancel(
+    command: &fabric_cli::parser::CancelCommand,
+    state: Option<&mut BatchState>,
+) -> io::Result<CommandOutcome> {
+    #[cfg(feature = "native-host")]
+    {
+        native_read::run_cancel(command, state)
+    }
+    #[cfg(not(feature = "native-host"))]
+    {
+        let _ = state;
+        let delivery = match fabric_cli::cancel::preflight(command) {
+            Ok(target) => fabric_cli::cancel::Dispatch::unavailable(
+                Some(&target),
+                None,
+                "NotConfigured",
+                "Cancellation requires an explicitly configured credential and HTTP host.",
+                1,
+            ),
+            Err(error) => fabric_cli::cancel::Dispatch::unavailable(
+                None,
+                None,
+                error.code(),
+                &error.to_string(),
+                2,
+            ),
+        };
+        let exit = delivery.write_to(&mut io::stdout().lock(), &mut io::stderr().lock());
+        Ok(if exit != delivery.exit_code() || exit == 2 {
+            CommandOutcome::Stop(exit)
+        } else {
+            CommandOutcome::Returned(exit)
+        })
+    }
+}
+
+fn write_export(
+    delivery: fabric_cli::tabular_export::ExportDelivery,
+) -> io::Result<CommandOutcome> {
+    delivery
+        .write_to_streams(&mut io::stdout().lock(), &mut io::stderr().lock())
+        .map(CommandOutcome::Returned)
+        .map_err(fabric_cli::tabular_export::ReceiptWriteFailure::into_io_error)
 }
 
 fn write_error(error: CommandError, exit: u8) -> io::Result<ExitCode> {
@@ -301,7 +440,15 @@ fn main() -> ExitCode {
     match run(&mut update_lifetime) {
         Ok(code) => code,
         Err(error) => {
-            eprintln!("fab-rs: output failed: {error}");
+            if error
+                .get_ref()
+                .and_then(|error| {
+                    error.downcast_ref::<fabric_cli::tabular_export::ReceiptWriteFailure>()
+                })
+                .is_none()
+            {
+                eprintln!("fab-rs: output failed: {error}");
+            }
             ExitCode::FAILURE
         }
     }

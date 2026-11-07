@@ -32,10 +32,10 @@ pub use pipelines::PipelinesConfig;
 #[cfg(feature = "certificate-store-windows")]
 #[path = "certificate.rs"]
 mod certificate;
-#[cfg(feature = "certificate-store-windows")]
-pub use certificate::{CertificateConfig, CertificateError, CertificateSigner};
 #[cfg(all(windows, feature = "certificate-store-windows"))]
 pub use certificate::WindowsStoreSigner;
+#[cfg(feature = "certificate-store-windows")]
+pub use certificate::{CertificateConfig, CertificateError, CertificateSigner};
 #[cfg(all(windows, feature = "certificate-store-windows"))]
 pub use fabric_identity_windows::{
     AllowedCertificateProvider, CertificateSelector, CertificateStore,
@@ -471,6 +471,7 @@ impl TokenCredential for HeadlessCredential {
             ["https://api.fabric.microsoft.com/.default"]
                 | ["https://storage.azure.com/.default"]
                 | ["https://management.azure.com/.default"]
+                | ["https://database.windows.net/.default"]
         ) {
             return Err(credential_error(HeadlessError::Scope));
         }

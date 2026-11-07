@@ -95,7 +95,11 @@ for (const id of EXPECTED_IDS) {
       assert.ok(['command', 'prepare-oracle', 'verify-oracle', 'transport-graphs']
         .includes(command.kind));
       assert.ok(path.isAbsolute(command.cwd));
-      assert.ok([rust, pinnedRust].includes(command.cwd));
+      if (command.args.includes('test_assemble_native_release.py')) {
+        assert.equal(command.cwd, artifacts);
+      } else {
+        assert.ok([rust, pinnedRust].includes(command.cwd));
+      }
       assert.equal(command.shell, undefined);
       if (command.stdout) inside(artifacts, command.stdout);
       if (command.program === 'python') {
@@ -167,7 +171,10 @@ test('only tooling tests, REPL source tests and integrity helpers use candidate 
   let comparisons = 0;
   for (const id of CHECK_IDS) for (const command of commands(id)) {
     if (command.program !== 'python') continue;
-    if (['oracle-tools', 'repl', 'frozen-verify'].includes(id)) {
+    if (command.args.includes('test_assemble_native_release.py')) {
+      assert.equal(command.cwd, artifacts);
+      assert.equal(valueAfter(command, '-s'), path.join(rust, 'scripts'));
+    } else if (['oracle-tools', 'repl', 'frozen-verify'].includes(id)) {
       assert.equal(command.cwd, rust);
     } else {
       comparisons++;
@@ -213,12 +220,13 @@ test('selector tests include all shared planners, runner, registry and legacy te
     path.join('scripts', 'rust-fast-check.test.cjs')]);
 });
 
-test('oracle preparation runs all six dependency tests before its captured marker', () => {
+test('oracle preparation runs all seven dependency tests before its captured marker', () => {
   const result = commands('oracle-tools');
-  assert.equal(result.length, 7);
+  assert.equal(result.length, 8);
   assert.deepEqual(result.slice(0, -1).map(command => valueAfter(command, '-p')).sort(), [
     'test_assemble_native_release.py', 'test_check_report.py',
-    'test_native_acceptance.py', 'test_pinned_python_source.py', 'test_release_verify.py',
+    'test_native_acceptance.py', 'test_native_acceptance_pty_cleanup.py',
+    'test_pinned_python_source.py', 'test_release_verify.py',
     'test_v2_upstream.py',
   ]);
   const identity = result.find(command => command.args.includes('test_check_report.py'));
@@ -236,6 +244,35 @@ test('oracle preparation runs all six dependency tests before its captured marke
   assert.deepEqual(verify.args, ['-B', path.join('scripts', 'pinned_python_source.py'),
     'verify', '--output', pinnedOutput]);
   assert.equal(verify.stdout, undefined);
+});
+
+test('release assembly validation honors controller isolation without changing selected tests', () => {
+  const result = commands('oracle-tools');
+  const controller = result.filter(command => command.cwd === artifacts);
+  assert.equal(controller.length, 1);
+  assert.deepEqual(controller[0].args, ['-B', '-m', 'unittest', 'discover',
+    '-s', path.join(rust, 'scripts'), '-p', 'test_assemble_native_release.py', '-v']);
+  assert.ok(path.isAbsolute(valueAfter(controller[0], '-s')));
+  assert.equal(result.filter(command => command.args.includes('test_assemble_native_release.py')).length, 1);
+  assert.equal(result.length, 8);
+});
+
+test('native CI front-loads exact engineering suites without replacing the full gate', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
+  assert.ok(workflow.indexOf('Check bounded engineering cleanup before native compilation') <
+    workflow.indexOf('Record actual native toolchain and restore locked dependencies'));
+  assert.ok(workflow.includes('("test_native_acceptance.py", 32)'));
+  assert.ok(workflow.includes('("test_native_acceptance_pty_cleanup.py", 5)'));
+  assert.ok(workflow.includes('not result.expectedFailures and skips == expected'));
+  assert.ok(workflow.includes('"discovered": discovered, "run": 0'));
+  assert.ok(workflow.includes('"passed": False, "reason": "inventory_mismatch"'));
+  assert.ok(workflow.includes('persist()\n                  raise SystemExit(1)'));
+  assert.ok(workflow.includes('report["pty_receipts"].append(captured[0])'));
+  assert.ok(workflow.includes('return captured'));
+  assert.ok(workflow.includes('Execute the shared local and CI validation plan'));
+  assert.ok(workflow.includes('--restore-oracle-deps --execute'));
+  assert.ok(workflow.includes('Require successful selection and every selected native check'));
+  assert.ok(workflow.includes('contents: read'));
 });
 
 test('upstream tracking inputs select the candidate-only offline tooling tests', () => {

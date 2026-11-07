@@ -65,7 +65,7 @@ internal sealed class EvaluationContext
 
     internal string ObjectName(string scope, object obj) => obj switch
     {
-        Model => "Model",
+        Model _ => "Model",
         Table t => t.Name,
         Column c => DaxName(c.Table.Name, c.Name),
         Measure m => m.Name,

@@ -27,7 +27,33 @@ For the separate CLI v2 effort, follow the
 implementation starts only after the selected specification and first wave
 are confirmed; this process does not change the existing CLI contract.
 
+The additive [v2 local host](hosts/cli/fabric-cli-v2/README.md) provides the
+six selected `cli` operations through a separate `fab-cli` executable.
+It preserves `fab-rs` and its compatibility fixtures, distinguishes manual
+handoffs from delivered actions, and fails explicitly when an optional
+provider or trusted installation profile is unavailable.
+
+The opt-in [`v2-cancel` slice](docs/v2-cancel.md) requests cancellation of one
+existing Notebook scheduler run using an explicit ID-based path. Its acceptance
+receipt does not claim terminal cancellation or rollback.
+
+The owner-selected [nonrecursive delete preview](docs/nonrecursive-delete.md)
+adds exact Notebook deletion with explicit permanent intent and host approval.
+Its typed operation metadata propagates through SDK results and CLI receipts.
+It does not replace `rm` or promise recoverable deletion or physical erasure.
+
+The opt-in [v2 schema-discovery preview](docs/v2-schema-discovery.md) exposes
+operation contracts through a separate `fab-cli-discovery` binary. It does not execute
+mutations, replace `fab-rs`, or install a live data-schema host.
+See the [shared tabular file output contract](docs/tabular-output.md) for the
+export syntax, current consumers, and validation evidence limits.
+
 ## Workspace components
+
+The opt-in [workspace v2 read slice](docs/workspace-v2-reads.md) uses the separate
+`fab-cli-workspace` preview. It preserves both the six-leaf local `fab-cli`
+executable and the native GET `fab-cli-v2` entry point; no preview overwrites
+another's Cargo output or selects a provider implicitly.
 
 The workspace groups service clients and command adapters by capability:
 
@@ -48,6 +74,7 @@ infrastructure\
   identity\        Credential selection and optional Windows broker
   http\            Shared executor and native transport
   execution\       Paging and operation reconciliation
+  search\          Pure, bounded name-similarity suggestions
 sdk\               Public SDK facade
 ```
 
@@ -61,13 +88,16 @@ front-ends are not implemented by this layout.
 | Component | Responsibility |
 | --- | --- |
 | [Fabric SDK](sdk/fabric-sdk/README.md) | Workspace, item, folder and capacity clients over caller-injected credentials and execution policies |
+| [Artifact-first tables](docs/artifact-first-tables.md) | Parent-owned Lakehouse, KQLDatabase and Warehouse SDK adapters with distinct native loading contracts |
 | [HTTP execution](infrastructure/http/fabric-sdk-http/README.md) | Shared authentication, request limits, retries, paging and operation adapters |
 | [Native transport](infrastructure/http/fabric-sdk-transport/README.md) | Optional `hyper-rustls` backend and asynchronous timers |
 | [Deployment](capabilities/deployment/fabric-deploy/README.md) | Configuration, parameters, repository planning, item publication and orphan removal |
 | [CLI](hosts/cli/fabric-cli/README.md) | Argument parsing, command sessions and native host composition |
+| [V2 local host](hosts/cli/fabric-cli-v2/README.md) | Separate six-leaf `cli` group, explicit effects and bounded optional providers |
 | [Interactive shell](hosts/repl/fabric-cli-repl/README.md) | Optional terminal editor and shell loop, independent of SDK and command implementations |
 | [Release updates](hosts/update/fabric-cli-update/README.md) | Explicit release trust, bounded downloads and installation-custody checks |
 | [Path context](hosts/cli/fabric-cli-context/README.md) | Immutable hierarchy, path resolution and command context |
+| [Name search](infrastructure/search/fabric-name-search/README.md) | Reusable, deterministic typo suggestions over caller-authorized names; never automatic correction |
 | [Output](hosts/cli/fabric-cli-output/README.md) | Structured envelopes, text presentation and stream handling |
 | [Workflow skills](skills/README.md) | Boundaries for workflows that compose CLI commands |
 

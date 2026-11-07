@@ -121,6 +121,62 @@ pub fn project(data: &Value, expression: Option<&str>) -> Result<Value, QueryErr
     expression.map_or_else(|| Ok(data.clone()), |expression| search(data, expression))
 }
 
+/// Evaluate an explicit projection without Python scalar stringification.
+///
+/// Unlike the compatibility [`search`] entry, an empty expression is invalid,
+/// and null, boolean and numeric results retain their JSON types. This does not
+/// perform path discovery or select any remote operation.
+///
+/// # Errors
+/// Returns the existing typed JMESPath parse, domain or evaluation failure.
+pub fn project_value(data: &Value, expression: &str) -> Result<Value, QueryError> {
+    if expression.is_empty() {
+        return Err(QueryError {
+            kind: QueryErrorKind::Syntax,
+        });
+    }
+    if expression == "." {
+        return Ok(data.clone());
+    }
+    evaluate(data, expression)
+}
+
+/// Validate explicit projection syntax and supported AST operations without data.
+///
+/// # Errors
+/// Rejects empty/malformed/unsupported expressions without executing a query.
+pub fn validate_projection(expression: &str) -> Result<(), QueryError> {
+    if expression.is_empty() {
+        return Err(QueryError {
+            kind: QueryErrorKind::Syntax,
+        });
+    }
+    if expression == "." {
+        return Ok(());
+    }
+    validation::literals(expression)?;
+    let ast = jpx_core::parse(expression).map_err(QueryError::from)?;
+    validation::validate(&ast)?;
+    Ok(())
+}
+
+/// Validate explicit JSON projection syntax without querying data or doing I/O.
+///
+/// Unlike the compatibility path inventory, whitespace-only expressions are invalid.
+pub fn validate_json_projection(expression: &str) -> Result<(), QueryError> {
+    if expression.trim().is_empty() {
+        return Err(QueryError {
+            kind: QueryErrorKind::Syntax,
+        });
+    }
+    validate_projection(expression)
+}
+
+/// Project native JSON without converting scalar values to compatibility strings.
+pub fn project_json(data: &Value, expression: &str) -> Result<Value, QueryError> {
+    validate_json_projection(expression)?;
+    project_value(data, expression)
+}
 /// Join argparse-style query tokens using Python `process_nargs` list semantics.
 ///
 /// A caller with an already-normalized single string should pass it directly to
@@ -147,13 +203,7 @@ pub fn search_with_options(
     if expression == "." {
         return Ok(data.clone());
     }
-    validation::literals(expression)?;
-    let mut ast = jpx_core::parse(expression).map_err(QueryError::from)?;
-    let numeric_sensitive = validation::validate(&ast)?;
-    validation::adapt_comparisons(&mut ast);
-    let runtime = functions::runtime(numeric_sensitive);
-    let compiled = jpx_core::Expression::new(expression, ast, &runtime);
-    let result = compiled.search(data).map_err(QueryError::from)?;
+    let result = evaluate(data, expression)?;
     Ok(match result {
         Value::Array(_) | Value::Object(_) | Value::String(_) => result,
         Value::Null => Value::String("None".to_owned()),
@@ -161,6 +211,16 @@ pub fn search_with_options(
         Value::Bool(false) => Value::String("False".to_owned()),
         Value::Number(number) => Value::String(scalar::number(&number)),
     })
+}
+
+fn evaluate(data: &Value, expression: &str) -> Result<Value, QueryError> {
+    validation::literals(expression)?;
+    let mut ast = jpx_core::parse(expression).map_err(QueryError::from)?;
+    let numeric_sensitive = validation::validate(&ast)?;
+    validation::adapt_comparisons(&mut ast);
+    let runtime = functions::runtime(numeric_sensitive);
+    let compiled = jpx_core::Expression::new(expression, ast, &runtime);
+    compiled.search(data).map_err(QueryError::from)
 }
 
 fn paths(data: &Value, deep: bool) -> Value {
@@ -198,6 +258,25 @@ fn paths(data: &Value, deep: bool) -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn explicit_json_projection_preserves_types_without_changing_legacy_search() {
+        let data = json!({"n": 2, "b": false, "nothing": null, "rows": [1, 2]});
+        for (expression, expected, legacy) in [
+            ("n", json!(2), json!("2")),
+            ("b", json!(false), json!("False")),
+            ("nothing", Value::Null, json!("None")),
+            ("length(rows)", json!(2), json!("2")),
+        ] {
+            assert_eq!(project_json(&data, expression).unwrap(), expected);
+            assert_eq!(search(&data, expression).unwrap(), legacy);
+        }
+        assert!(validate_json_projection("").is_err());
+        assert!(validate_json_projection("  ").is_err());
+        assert!(validate_json_projection("[?").is_err());
+        assert_eq!(project_json(&data, ".").unwrap(), data);
+        assert_eq!(project_json(&data, "@").unwrap(), data);
+    }
 
     #[test]
     fn candidate_preserves_order_numbers_and_real_operators() {

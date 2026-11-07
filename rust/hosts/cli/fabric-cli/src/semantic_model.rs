@@ -24,11 +24,7 @@ pub(super) fn run(command: &AnalyzeCommand) -> io::Result<CommandOutcome> {
 }
 
 fn command_failure(error: AnalysisCommandError) -> io::Result<CommandOutcome> {
-    let exit = if matches!(error, AnalysisCommandError::InvalidInput) {
-        2
-    } else {
-        1
-    };
+    let exit = if error.code() == "InvalidInput" { 2 } else { 1 };
     write_error(
         CommandError {
             code: error.code(),

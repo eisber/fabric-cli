@@ -60,12 +60,33 @@ impl ItemMutations {
         collection: ItemCollection,
         payload: Value,
     ) -> Result<ResourceOutcome, ResourceError> {
+        Self::create_with_completion(
+            executor,
+            workspace,
+            collection,
+            payload,
+            CompletionPolicy::PythonSynchronous,
+        )
+        .await
+    }
+
+    /// Create through the same collection using explicit caller observation intent.
+    ///
+    /// # Errors
+    /// Rejects unsafe IDs/payloads and preserves acceptance, failure and uncertainty.
+    pub async fn create_with_completion(
+        executor: &mut dyn ResourceOperations,
+        workspace: &str,
+        collection: ItemCollection,
+        payload: Value,
+        completion: CompletionPolicy,
+    ) -> Result<ResourceOutcome, ResourceError> {
         executor
             .execute(ResourceOperation::new(
                 ResourceMethod::Post,
                 &["workspaces", workspace, collection.as_str()],
                 Some(payload),
-                CompletionPolicy::PythonSynchronous,
+                completion,
             )?)
             .await
     }
@@ -97,12 +118,35 @@ impl ItemMutations {
         item: &str,
         payload: Value,
     ) -> Result<ResourceOutcome, ResourceError> {
+        Self::update_with_completion(
+            executor,
+            workspace,
+            collection,
+            item,
+            payload,
+            CompletionPolicy::PythonSynchronous,
+        )
+        .await
+    }
+
+    /// Patch metadata with explicit observation intent, never a source replacement.
+    ///
+    /// # Errors
+    /// Retains validation, provider failure and accepted-operation evidence.
+    pub async fn update_with_completion(
+        executor: &mut dyn ResourceOperations,
+        workspace: &str,
+        collection: ItemCollection,
+        item: &str,
+        payload: Value,
+        completion: CompletionPolicy,
+    ) -> Result<ResourceOutcome, ResourceError> {
         executor
             .execute(ResourceOperation::new(
                 ResourceMethod::Patch,
                 &["workspaces", workspace, collection.as_str(), item],
                 Some(payload),
-                CompletionPolicy::PythonSynchronous,
+                completion,
             )?)
             .await
     }
@@ -117,11 +161,35 @@ impl ItemMutations {
         item: &str,
         hard: bool,
     ) -> Result<ResourceOutcome, ResourceError> {
+        Self::delete_with_completion(
+            executor,
+            workspace,
+            item,
+            hard,
+            CompletionPolicy::PythonSynchronous,
+        )
+        .await
+    }
+
+    /// Delete through the same generic route with explicit observation intent.
+    ///
+    /// Hard-delete intent is unchanged; no missing soft-delete feature triggers a
+    /// permanent fallback or a second dispatch.
+    ///
+    /// # Errors
+    /// Preserves validation, native rejection and uncertain mutation evidence.
+    pub async fn delete_with_completion(
+        executor: &mut dyn ResourceOperations,
+        workspace: &str,
+        item: &str,
+        hard: bool,
+        completion: CompletionPolicy,
+    ) -> Result<ResourceOutcome, ResourceError> {
         let operation = ResourceOperation::new(
             ResourceMethod::Delete,
             &["workspaces", workspace, "items", item],
             None,
-            CompletionPolicy::PythonSynchronous,
+            completion,
         )?;
         executor
             .execute(if hard {

@@ -26,6 +26,12 @@ neither enables that automation nor grants a build slot, push, merge, or release
 The dated sections below preserve historical evidence, commands, custody, and
 limitations; they are not current assignments or renewed publication authority.
 
+CLI v2 uses the separate common branch
+`dev/marcozo/fab-cli-v2-integration-20261104` in the same fork, not this v1
+trunk. Follow the [v2 central merge pipeline](v2-delivery.md#central-merge-pipeline)
+for current v2 handoffs. Do not merge v2 lanes into `feature/rust` or revive the
+historical family-merger chains below.
+
 ## Read-command, query and folder integration
 
 ### October 27 released endpoint and native-value source union

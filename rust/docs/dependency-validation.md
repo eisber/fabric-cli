@@ -23,9 +23,17 @@ node rust\scripts\validate-impact.cjs --plan C:\validation\impact-plan.json --ar
 The second command prints the planned core commands without executing them.
 Execution requires a new artifact directory. Restore locked Cargo dependencies
 with `cargo fetch --locked` from `rust` if the offline commands report missing
-dependencies. Python is a development-time oracle dependency only. Missing
+dependencies. The executor injects that absolute artifact directory as
+`FAB_CLI_V2_TEST_ROOT`, `FAB_IDENTITY_TEST_ROOT` and `FAB_UPDATE_TEST_ROOT`
+for isolated offline fixtures; local and hosted runs use the same wiring.
+Python is a development-time oracle dependency only. Missing
 oracle modules produce an actionable error; `--restore-oracle-deps` permits
 restoring their existing pinned requirement files after a missing-module probe.
+Frozen-source Git invocations enable long paths without changing repository or
+global Git configuration, so Windows artifact paths retain the full oracle tree.
+Lexical source-path unit tests retain the same exact cases on every host, using
+native fixture separators and absolute roots rather than interpreting Windows
+drive paths as POSIX-relative filenames.
 
 Omitting a base plans the local working-tree changes, including staged,
 unstaged and untracked files. Use `--full` for full configured validation.

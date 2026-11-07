@@ -411,12 +411,16 @@ fn dispatch(delivery: &Delivery) -> &GetDispatch {
     match delivery {
         Delivery::Get { dispatch, .. } => dispatch,
         Delivery::Plan { .. } => panic!("native GET must retain its typed dispatch"),
+        #[cfg(any(windows, feature = "headless"))]
+        Delivery::Execution(_) => panic!("native GET tests cannot consume execution delivery"),
     }
 }
 
 fn outcome(delivery: &Delivery) -> CommandOutcome {
     match delivery {
         Delivery::Get { outcome, .. } | Delivery::Plan { outcome, .. } => *outcome,
+        #[cfg(any(windows, feature = "headless"))]
+        Delivery::Execution(_) => panic!("native GET tests cannot consume execution delivery"),
     }
 }
 

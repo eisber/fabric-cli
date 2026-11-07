@@ -2,6 +2,8 @@
 // Licensed under the MIT License.
 #![deny(unnameable_test_items)]
 
+//! Caller-owned command preflight and cancellation tests.
+
 use clap::Command;
 use fabric_cli_semantic_model::{AnalysisFiles, AnalyzeCommand, CommandError, command, execute};
 use fabric_sdk_semantic_model::{AnalysisBackend, AnalysisError};

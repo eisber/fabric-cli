@@ -16,19 +16,37 @@ layer = "sdk"
 [features]
 default = []
 semantic-model-dotnet = ["fabric-sdk-semantic-model/dotnet"]
+livy-arrow = ["dep:ring"]
+livy-arrow-ipc = ["livy-arrow", "dep:arrow-array", "dep:arrow-schema", "dep:arrow-ipc"]
 
 [dependencies]
 fabric-sdk-semantic-model.workspace = true
 azure_core.workspace = true
 base64.workspace = true
 fabric-core.workspace = true
+fabric-v2-contracts.workspace = true
+fabric-sdk-ontology.workspace = true
+fabric-sdk-ontology-workload.workspace = true
+fabric-sdk-dataagent-ontology.workspace = true
 fabric-sdk-workspaces.workspace = true
 fabric-sdk-items.workspace = true
 fabric-sdk-capacities.workspace = true
 fabric-sdk-folders.workspace = true
+fabric-sdk-sql-database.workspace = true
+fabric-sdk-sql-definition.workspace = true
 fabric-sdk-operations.workspace = true
+fabric-sdk-discovery.workspace = true
+fabric-sdk-search.workspace = true
+fabric-sdk-relevance.workspace = true
+fabric-sdk-catalog.workspace = true
+fabric-sdk-api.workspace = true
+fabric-sdk-onelake.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+ring = { workspace = true, optional = true }
+arrow-array = { workspace = true, optional = true }
+arrow-schema = { workspace = true, optional = true }
+arrow-ipc = { workspace = true, optional = true }
 
 [dev-dependencies]
 async-trait.workspace = true
@@ -37,6 +55,16 @@ tokio.workspace = true
 [[example]]
 name = "injected_credentials"
 test = true
+
+[[test]]
+name = "livy_arrow"
+path = "tests/livy_arrow.rs"
+required-features = ["livy-arrow"]
+
+[[test]]
+name = "livy_arrow_ipc"
+path = "tests/livy_arrow_ipc.rs"
+required-features = ["livy-arrow-ipc"]
 
 [lints]
 workspace = true

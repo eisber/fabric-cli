@@ -7,11 +7,16 @@ work. Its source baseline is `feature/rust` in `eisber/fabric-cli`, initially
 `a9df45501ec53d921c6fc765c726c32979b85931`. This process does not change the
 existing command grammar, release support, or compatibility expectations.
 
-The initial local integration branch is
-`dev/marcozo/fab-cli-v2-integration-20261104`. Creating a local branch does not
-publish it or establish GitHub write access. The original workspace branch is
-preserved. Neither `microsoft/fabric-cli` nor the shared `feature/rust` branch is
-a push destination for this v2 effort.
+The common v2 integration branch is
+`dev/marcozo/fab-cli-v2-integration-20261104` in `eisber/fabric-cli`.
+All v2 lane PRs target this branch, not `feature/rust` or `main`.
+Creating a local branch does not publish it or establish GitHub write access.
+The original workspace branch is preserved. Neither `microsoft/fabric-cli` nor
+the shared `feature/rust` branch is a push destination for this v2 effort.
+
+This v2-specific destination overrides the v1 Rust-trunk destination in the
+general contributor and delivery guides for v2 assignments only. It does not
+retarget existing v1 work.
 
 ## First implementation gate
 
@@ -112,6 +117,15 @@ establish integration correctness.
 
 ## Command dependency and ownership ledger
 
+The additive [`fabric-v2-contracts`](../infrastructure/core/fabric-v2-contracts/README.md)
+core library supplies deterministic operation descriptors, enumerated
+generation/facet/representation bindings and type-constrained facade discovery.
+It performs no execution or authorization. Conditional and unsupported
+capabilities remain explicit in discovery; an operation registration is not
+proof that its provider, CLI handler or MCP host is available. The library takes
+already-resolved targets and does not change the existing v1 path grammar,
+executable or independent oracle.
+
 The coordinator maintains a command-level ledger from the selected live
 specification. Keep private specification exports and coordination artifacts
 outside the public repository unless their publication is explicitly approved.
@@ -169,3 +183,103 @@ Missing specification access, unresolved owner choices, unavailable required
 validation, and absent repository write permission must be reported with the
 exact action needed. Do not claim that a queued worker, local branch, test plan,
 or proposed synchronization is a published or completed feature.
+
+## Central merge pipeline
+
+### Combined candidate checkpoint
+
+The common branch now composes the committed CLI local host, name hints,
+Notebook cancellation, create policy, definition copy, typed delete, relationship
+link, schema discovery, Notebook/Livy protocol, Dataflow execution/result
+formats, SQL database and native get candidates. MLModel SDK contracts were
+already present. Each lane's immutable source head is preserved in merge
+ancestry; uncommitted drafts and unrelated Python preparation history are not
+part of this composition.
+
+This is candidate integration, not feature-completion or production acceptance.
+The local host keeps `fab-cli`, schema discovery uses `fab-cli-discovery`, and
+the explicit get/runtime preview keeps `fab-cli-v2`. Distinct preview executable
+names prevent one candidate from overwriting another Cargo build output.
+Shared feature profiles and acceptance checks are retained. Integration repairs
+reject legacy shortcut normalization in schema selectors, reconcile Cargo
+dependency edges, and preserve every composed adapter and SDK export.
+
+The combined candidate must still pass its recorded dependency-impact,
+native/optional-feature and independent integration-review gates. No lane is
+complete merely because its source head is merged; close a session only after
+its agreed finished scope and publication are verified.
+
+The v2 coordinator is the single writer and merger of the common branch. Lane
+owners continue in their own worktrees and submit small PRs or explicitly
+released immutable commits. Never switch, clean, reset, or merge into a peer's
+worktree. A branch containing new commits, a completed preparation packet, or a
+task status alone is not an integration handoff.
+
+The coordinator maintains one queue in the workstream context, separate from
+private specification exports and public repository code. Each entry records:
+
+- Scope, task, current discussion session, lane branch, exact integration base,
+  released full commit SHA, changed files, and explicit release evidence.
+- Prerequisite interface/producer commits and overlapping ownership. Shared
+  paths, manifests, lockfiles, parser/dispatcher registration, and SDK facades
+  are coordinated centrally; dependent consumers wait for accepted producers.
+- Actual tests and native/feature coverage at the released SHA, both independent
+  review perspectives, outstanding findings, and unexecuted requirements.
+- Queue state: awaiting handoff, blocked on prerequisite, ready for review,
+  validating combined candidate, integrated locally, or published and verified.
+  Keep the resulting integration SHA, PR/check links, and blocker explicit.
+
+For each ready entry, serialize this sequence:
+
+1. Verify the clean common-branch worktree, recorded local and remote heads, the
+   exact source/base commits, and the trusted fork URL. Inspect outstanding
+   upstream drift with the existing helper. Do not silently include all new
+   `feature/rust` work or all commits from a divergent worker branch.
+2. Review the released diff and its prerequisite/ownership records. Obtain the
+   independent reviews required by the delivery contract. Apply only the agreed
+   immutable slice; use a normal merge when its ancestry is intended, or an
+   explicitly agreed cherry-pick when unrelated ancestry must remain separate.
+   Record the source-to-integration SHA mapping. Never copy dirty worker files.
+3. Generate and execute the existing dependency-impact plan for the complete
+   candidate against the last validated checkpoint. Validate affected consumers,
+   optional features and native platforms. A source-only local integration
+   remains unvalidated until this exact combined revision has the required
+   evidence. Do not start a competing heavy build on a shared host.
+4. Publish only to the common v2 branch with a normal non-force push. Verify the
+   provider ref equals the exact intended commit, then check the existing
+   **Rust validation** gate for that revision. A push receipt, queued CI run or
+   an old green result is not a successful combined-candidate check. If the
+   remote advanced unexpectedly, stop and reconcile custody; never force-push.
+5. Mark the entry published only after the actual remote SHA is verified. Record
+   validation separately and notify dependent owners of the exact accepted
+   checkpoint. Resume the next entry only with explicit source and gate state.
+
+### Publication and CI
+
+Inspect the configured remote and actual provider write access before
+publication. The following explicit destination cannot accidentally push to
+the checkout's `origin` if it still points at `microsoft/fabric-cli`:
+
+```text
+git push https://github.com/eisber/fabric-cli.git HEAD:refs/heads/dev/marcozo/fab-cli-v2-integration-20261104
+git ls-remote --heads https://github.com/eisber/fabric-cli.git refs/heads/dev/marcozo/fab-cli-v2-integration-20261104
+```
+
+Compare the returned full SHA with `git rev-parse HEAD`. A missing ref, denied
+push or mismatched head leaves publication blocked. The owner must grant Write
+access to the signed-in GitHub account or renew an authorized owner login; do
+not borrow another session's credentials or publish to a different fork as a
+success-shaped fallback.
+
+The existing Rust scaffold workflow runs on lane PRs, pushes to the common v2
+branch, merge-group candidates, and explicit full-validation dispatch. It keeps
+the dependency-impact selector, frozen source checks, native Windows/Linux/macOS
+matrix, and stable fail-closed **Rust validation** job. Push validation for this
+branch shares a concurrency group and never cancels the running check. GitHub
+can replace a pending run with a newer pending head, so only a successful result
+for the exact current candidate counts; this is not a per-commit FIFO queue.
+
+This setup does not install a privileged automatic merger, enable branch
+protections or GitHub's merge queue, waive reviews, or change the workflow's
+read-only token permissions. Until an independently authorized controller exists,
+the coordinator operates the serial queue above and honors all provider gates.

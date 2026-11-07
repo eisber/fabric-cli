@@ -171,7 +171,27 @@ impl SourceOperationReadSession<'_, '_> {
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<ReadDispatch, text::TextError> {
         self.base
-            .dispatch_with_source_operations(command, Some(self.operations), cancelled)
+            .dispatch_with_source_operations(command, Some(self.operations), cancelled, None)
+            .await
+    }
+
+    /// Execute source operations with caller-selected text character properties.
+    ///
+    /// The provider affects only presentation, not discovery, credentials,
+    /// operation reconciliation, projection, or cancellation.
+    pub async fn dispatch_with_evidence_and_width(
+        &self,
+        command: &ReadCommand,
+        widths: &(impl text::CharacterWidth + Sync),
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<ReadDispatch, text::TextError> {
+        self.base
+            .dispatch_with_source_operations(
+                command,
+                Some(self.operations),
+                cancelled,
+                Some(widths),
+            )
             .await
     }
 }
@@ -194,10 +214,11 @@ impl<'session> ReadSession<'session> {
     /// Execute a parsed read through real discovery, SDK, query and rendering.
     ///
     /// JSON remains the preview default. Explicit text uses the shared pure
-    /// renderer with no colors and ASCII terminal-width properties. GET uses
-    /// source raw-data presentation, not key/value rows. Non-ASCII text requiring
-    /// unavailable Python properties fails explicitly; JSON is unrestricted by
-    /// the terminal-width provider.
+    /// renderer with no colors and the pinned production Unicode provider.
+    /// GET uses source raw-data presentation, not key/value rows. Callers can
+    /// explicitly select character properties with
+    /// [`Self::dispatch_with_evidence_and_width`]; unsupported text remains an
+    /// error, while JSON does not require character widths.
     ///
     /// Ordinary service/path/cancellation failures retain product envelopes and
     /// exit codes. Rendering errors, including partial text, remain errors.
@@ -224,7 +245,21 @@ impl<'session> ReadSession<'session> {
         command: &ReadCommand,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<ReadDispatch, text::TextError> {
-        self.dispatch_with_source_operations(command, None, cancelled)
+        self.dispatch_with_source_operations(command, None, cancelled, None)
+            .await
+    }
+
+    /// Execute with a caller-owned text-width capability and retain failure evidence.
+    ///
+    /// This changes only rendering. Missing character properties fail explicitly
+    /// without a fallback provider or replay; JSON preserves its existing shape.
+    pub async fn dispatch_with_evidence_and_width(
+        &self,
+        command: &ReadCommand,
+        widths: &(impl text::CharacterWidth + Sync),
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<ReadDispatch, text::TextError> {
+        self.dispatch_with_source_operations(command, None, cancelled, Some(widths))
             .await
     }
 
@@ -233,6 +268,7 @@ impl<'session> ReadSession<'session> {
         command: &ReadCommand,
         operations: Option<&dyn OperationExecutor>,
         cancelled: impl Future<Output = ()> + Send,
+        widths: Option<&(dyn text::CharacterWidth + Sync)>,
     ) -> Result<ReadDispatch, text::TextError> {
         let format = OutputFormat::resolve(command.output_format.as_deref(), Some("json"))?;
         let mut cancelled = pin!(cancelled);
@@ -265,6 +301,11 @@ impl<'session> ReadSession<'session> {
                 (envelope, Some(failure.command), failure.operation)
             }
         };
+        let widths = match widths {
+            Some(widths) => widths,
+            None => fabric_cli_output::production_unicode::width_provider()?,
+        };
+        let character_width = |character| widths.width(character);
         let plan = text::render(
             &envelope,
             format,
@@ -272,7 +313,7 @@ impl<'session> ReadSession<'session> {
                 subcommand: Some(&command.name),
                 ..TextOptions::default()
             },
-            fabric_cli_output::production_unicode::width_provider()?,
+            &character_width,
             Presentation::default(),
         )?;
         Ok(ReadDispatch {
@@ -282,12 +323,23 @@ impl<'session> ReadSession<'session> {
         })
     }
 
-    async fn execute(
+    pub(crate) async fn execute(
         &self,
         command: &ReadCommand,
         operations: Option<&dyn OperationExecutor>,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<Option<fabric_cli_output::OutputInput>, ReadFailure> {
+        self.execute_with_target(command, operations, cancelled)
+            .await
+            .map(|(input, _)| input)
+    }
+
+    pub(crate) async fn execute_with_target(
+        &self,
+        command: &ReadCommand,
+        operations: Option<&dyn OperationExecutor>,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<(Option<OutputInput>, Arc<Element>), ReadFailure> {
         if self.tenant.id() != Some(self.sdk.selection().tenant())
             || self.tenant.kind() != fabric_cli_context::NodeKind::Tenant
             || self.sdk.selection().audience() != fabric_sdk::Audience::Fabric
@@ -337,12 +389,14 @@ impl<'session> ReadSession<'session> {
             }
             return host
                 .workspace_get_with_evidence(&target, &normalized, operations, cancelled.as_mut())
-                .await;
+                .await
+                .map(|input| (input, target));
         }
         host.with_folders(self.executor)
             .with_scalar_query()
             .execute_with_source_operations(&normalized, operations, cancelled.as_mut())
             .await
+            .map(|input| (input, target))
             .map_err(Into::into)
     }
 }

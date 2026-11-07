@@ -2,7 +2,8 @@
 // Licensed under the MIT License.
 
 #![deny(unnameable_test_items)]
-#![cfg(feature = "dotnet")]
+
+//! Offline integration checks for the explicitly configured native TOM host.
 
 use fabric_semantic_model_dotnet::{Analyzer, BindingError, CancellationToken, HostOptions};
 use serde_json::json;

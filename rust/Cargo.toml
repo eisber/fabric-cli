@@ -8,12 +8,20 @@ default-members = [
     "hosts/repl/fabric-cli-repl",
     "infrastructure/core/fabric-core",
     "infrastructure/core/fabric-core-json",
+    "infrastructure/search/fabric-name-search",
+    "infrastructure/core/fabric-v2-contracts",
+    "capabilities/ontology/fabric-sdk-ontology-workload",
+    "capabilities/ontology/fabric-sdk-ontology",
+    "capabilities/ontology/fabric-cli-ontology",
+    "capabilities/dataagents/fabric-sdk-dataagent-ontology",
     "infrastructure/identity/fabric-identity",
     "sdk/fabric-sdk",
     "capabilities/resources/fabric-sdk-workspaces",
     "capabilities/resources/fabric-sdk-items",
     "capabilities/resources/fabric-sdk-capacities",
     "capabilities/resources/fabric-sdk-folders",
+    "capabilities/resources/fabric-sdk-sql-database",
+    "capabilities/resources/fabric-sdk-sql-definition",
     "capabilities/storage/fabric-sdk-onelake",
     "capabilities/storage/fabric-sdk-onelake-http",
     "infrastructure/execution/fabric-sdk-operations",
@@ -21,6 +29,7 @@ default-members = [
     "infrastructure/http/fabric-sdk-transport",
     "capabilities/deployment/fabric-deploy",
     "hosts/cli/fabric-cli",
+    "hosts/cli/fabric-cli-v2",
     "hosts/cli/fabric-cli-output",
     "hosts/cli/fabric-cli-context",
     "hosts/cli/fabric-cli-query",
@@ -31,6 +40,9 @@ default-members = [
     "capabilities/resources/fabric-sdk-api",
     "capabilities/resources/fabric-sdk-access",
     "capabilities/resources/fabric-sdk-catalog",
+    "capabilities/resources/fabric-sdk-search",
+    "capabilities/resources/fabric-sdk-relevance",
+    "capabilities/resources/fabric-sdk-discovery",
     "capabilities/resources/fabric-cli-resources",
     "capabilities/storage/fabric-cli-storage-files",
     "capabilities/local/fabric-cli-local",
@@ -39,6 +51,8 @@ default-members = [
     "capabilities/tables/fabric-sdk-tables",
     "capabilities/semantic-model/fabric-sdk-semantic-model",
     "capabilities/semantic-model/fabric-cli-semantic-model",
+    "capabilities/tables/fabric-sdk-tabular",
+    "capabilities/tables/fabric-sdk-dataflow",
 ]
 resolver = "3"
 
@@ -54,12 +68,25 @@ fabric-semantic-model-dotnet = { path = "capabilities/semantic-model/fabric-sema
 fabric-sdk-semantic-model = { path = "capabilities/semantic-model/fabric-sdk-semantic-model", default-features = false }
 fabric-cli-semantic-model = { path = "capabilities/semantic-model/fabric-cli-semantic-model", default-features = false }
 netcorehost = { version = "=0.22.0", default-features = false, features = ["net8_0"] }
+fabric-cli = { path = "hosts/cli/fabric-cli", default-features = false }
+arrow-csv = { version = "=60.1.0", default-features = false }
+bytes = { version = "=1.12.1", default-features = false, features = ["std"] }
+flatbuffers = { version = "=25.12.19", default-features = false }
+parquet = { version = "=60.1.0", default-features = false, features = ["arrow"] }
+fabric-sdk-tabular = { path = "capabilities/tables/fabric-sdk-tabular" }
+fabric-sdk-dataflow = { path = "capabilities/tables/fabric-sdk-dataflow" }
 fabric-cli-repl = { path = "hosts/repl/fabric-cli-repl", default-features = false }
 fabric-cli-update = { path = "hosts/update/fabric-cli-update", default-features = false }
 reedline = { version = "=0.52.1", default-features = false }
 fabric-cli-context = { path = "hosts/cli/fabric-cli-context" }
 fabric-core = { path = "infrastructure/core/fabric-core" }
 fabric-core-json = { path = "infrastructure/core/fabric-core-json" }
+fabric-name-search = { path = "infrastructure/search/fabric-name-search" }
+fabric-v2-contracts = { path = "infrastructure/core/fabric-v2-contracts" }
+fabric-sdk-ontology-workload = { path = "capabilities/ontology/fabric-sdk-ontology-workload" }
+fabric-sdk-ontology = { path = "capabilities/ontology/fabric-sdk-ontology" }
+fabric-cli-ontology = { path = "capabilities/ontology/fabric-cli-ontology" }
+fabric-sdk-dataagent-ontology = { path = "capabilities/dataagents/fabric-sdk-dataagent-ontology" }
 fabric-identity = { path = "infrastructure/identity/fabric-identity" }
 fabric-cli-output = { path = "hosts/cli/fabric-cli-output" }
 fabric-cli-query = { path = "hosts/cli/fabric-cli-query" }
@@ -70,6 +97,9 @@ fabric-cli-mutations = { path = "capabilities/resources/fabric-cli-mutations" }
 fabric-sdk-api = { path = "capabilities/resources/fabric-sdk-api" }
 fabric-sdk-access = { path = "capabilities/resources/fabric-sdk-access" }
 fabric-sdk-catalog = { path = "capabilities/resources/fabric-sdk-catalog" }
+fabric-sdk-search = { path = "capabilities/resources/fabric-sdk-search" }
+fabric-sdk-relevance = { path = "capabilities/resources/fabric-sdk-relevance" }
+fabric-sdk-discovery = { path = "capabilities/resources/fabric-sdk-discovery" }
 fabric-cli-resources = { path = "capabilities/resources/fabric-cli-resources" }
 fabric-cli-storage-files = { path = "capabilities/storage/fabric-cli-storage-files" }
 fabric-cli-local = { path = "capabilities/local/fabric-cli-local" }
@@ -82,6 +112,8 @@ fabric-sdk-workspaces = { path = "capabilities/resources/fabric-sdk-workspaces" 
 fabric-sdk-items = { path = "capabilities/resources/fabric-sdk-items" }
 fabric-sdk-capacities = { path = "capabilities/resources/fabric-sdk-capacities" }
 fabric-sdk-folders = { path = "capabilities/resources/fabric-sdk-folders" }
+fabric-sdk-sql-database = { path = "capabilities/resources/fabric-sdk-sql-database" }
+fabric-sdk-sql-definition = { path = "capabilities/resources/fabric-sdk-sql-definition" }
 fabric-sdk-onelake = { path = "capabilities/storage/fabric-sdk-onelake" }
 fabric-sdk-onelake-http = { path = "capabilities/storage/fabric-sdk-onelake-http" }
 fabric-sdk-operations = { path = "infrastructure/execution/fabric-sdk-operations" }
@@ -92,6 +124,9 @@ azure_core = { version = "1.1.0", default-features = false }
 azure_identity = { version = "=1.0.0", default-features = false }
 chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std"] }
 ring = { version = "=0.17.14", default-features = false, features = ["alloc"] }
+arrow-array = { version = "=60.1.0", default-features = false }
+arrow-schema = { version = "=60.1.0", default-features = false }
+arrow-ipc = { version = "=60.1.0", default-features = false, features = ["lz4", "zstd"] }
 semver = { version = "=1.0.28", default-features = false, features = ["std"] }
 base64 = "0.22.1"
 yaml-rust2 = { version = "=0.10.4", default-features = false }
@@ -106,6 +141,8 @@ serde = { version = "1.0.229", features = ["derive"] }
 # CLI output preserves Python dictionary order and finite-float parsing fidelity.
 # These features intentionally unify across every workspace JSON consumer.
 serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip"] }
+csv = { version = "=1.4.0", default-features = false }
+tempfile = { version = "=3.27.0", default-features = false, features = ["getrandom"] }
 thiserror = "2.0.21"
 jpx-core = { version = "=0.3.1", default-features = false }
 tokio = { version = "1.54.1", default-features = false, features = ["macros", "rt", "time", "net", "io-util", "sync"] }

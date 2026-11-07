@@ -213,6 +213,23 @@ facade/shared-manifest changes through exact commit handoffs, not shared writers
 
 Skills describe workflows using the CLI. They do not contain service logic.
 
+### Reusable name suggestions
+
+`fabric-name-search` is a dependency-free SDK-layer leaf under
+`infrastructure/search/`. It ranks only caller-supplied names, with finite input
+and result limits. SDK, CLI and future MCP consumers can reuse it without a
+service client, credential provider, runtime, CLI dependency or external index.
+The physical infrastructure directory does not make it a core-layer dependency;
+`fabric-cli-context -> fabric-name-search` uses the existing CLI-to-SDK rule,
+not a new CLI-to-core exception.
+
+Name matching and name suggestions are separate contracts. Only exact lookup
+can authorize a target; similarity never changes an identifier, retries a
+command, or performs an effect. Context hints are explicitly opt-in and use
+already-resolved, scope-filtered metadata. Default source-compatible resolver
+behavior is unchanged. No remote variable-delete API or universal variable
+value search is implied by the offline deletion-guard example.
+
 ### Explicit endpoint and authenticated request foundation
 
 Core `EndpointBinding` separates the caller-selected validated hostname from
@@ -226,6 +243,19 @@ edge, HTTP engine, token cache or poller is introduced. Existing constructors
 retain public defaults. See the [endpoint API and migration matrix](endpoint-context.md)
 for the additive interfaces, stricter hostname boundaries and unmigrated
 families. Environment-variable mapping belongs to the CLI, never the SDK.
+
+### Parent-owned table adapters
+
+The additive [artifact-first table adapters](artifact-first-tables.md) are
+exposed through the focused `fabric-sdk-tables` crate's `lakehouses::tables`,
+`kql_databases::tables` and `warehouses::tables` modules. The umbrella SDK does
+not acquire a tables dependency, which would cycle through the shared HTTP test
+consumers. The package remains shared implementation rather than a public
+independent table artifact. Parent-specific source, endpoint,
+authorization and completion contracts are not interchangeable. The modules
+reuse injected execution and do not depend on CLI or identity implementations.
+Kusto/TDS executor interfaces do not install native transports or mount CLI/MCP
+commands. The CLI query projection described below remains a separate concern.
 
 ### Focused CLI query projection
 
@@ -254,6 +284,28 @@ failure/bounds/cancellation gates, and non-goals.
 The SDK's normal dependency closure excludes the CLI and identity implementation.
 SDK consumers supply an `Arc<dyn azure_core::credentials::TokenCredential>`.
 Neither `az`, `azd`, nor Python is required by the Rust workspace.
+
+### Shared tabular results and Dataflow execution
+
+`fabric-sdk-tabular` is an SDK-layer leaf for bounded Arrow result decoding and
+CSV, JSON, and Parquet serialization. It owns no service, credentials, runtime,
+filesystem, or CLI types. Query and execute adapters can reuse its ordered typed
+result contract without depending on the CLI output layer. Native Arrow media
+and requested output serialization remain separate.
+
+`fabric-sdk-dataflow` binds the native Dataflow Execute Query endpoint to the
+existing `OperationSession`. Its finite Arrow `Accept` negotiation is additive:
+the initial execution and result retrieval use the selected Arrow version,
+while operation-state polling retains JSON and existing consumers retain their
+defaults. There is no second HTTP, identity, retry, or polling engine. Accepted
+operations are not complete results, and output decoding must inspect Dataflow
+diagnostic metadata before reporting success.
+
+The CLI owns target/input validation, explicit execution approval, local output
+preflight, total deadlines, and the same native credential/transport composition
+as other commands. This binding does not establish missing SQL/KQL engines or
+turn Dataflow staging storage into a supported data-plane endpoint. See
+[shared tabular results](tabular-results.md) for output and diagnostic boundaries.
 
 ## REST client implementation
 

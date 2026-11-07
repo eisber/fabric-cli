@@ -6,6 +6,7 @@
 //! The executor adapts the existing shared HTTP policy. This crate installs no
 //! transport, retries, identity backend, runtime or table interpretation.
 
+pub mod link;
 mod mutations;
 pub mod shortcuts;
 use azure_core::{credentials::AccessToken, http::Url};

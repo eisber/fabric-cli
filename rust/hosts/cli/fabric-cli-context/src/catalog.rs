@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use crate::{ContextError, Element, ErrorKind, NodeKind};
+use crate::{CandidateNames, ContextError, Element, ErrorKind, ItemType, NodeKind, WorkspaceType};
 
 /// Source lookup operation; service execution and caching belong to the caller.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -38,6 +38,20 @@ pub struct LookupRequest<'a> {
 pub trait Lookup {
     /// Resolve an opaque ID for this canonical name and scope.
     fn lookup(&self, request: LookupRequest<'_>) -> Result<Option<String>, ContextError>;
+
+    /// Opt in to names-only hints from an already supplied immutable snapshot.
+    ///
+    /// Return short names without suffixes, only from the same boundary as
+    /// `lookup`, and only of the requested artifact suffix/type. Do not perform
+    /// I/O, enumerate a service, expose values/notes, or widen the scope. The
+    /// default exposes nothing and preserves existing lookup implementations.
+    /// The shared engine consumes this iterator with fixed search bounds.
+    fn candidate_names(
+        &self,
+        _request: LookupRequest<'_>,
+    ) -> Result<Option<CandidateNames<'_>>, ContextError> {
+        Ok(None)
+    }
 }
 
 impl<F> Lookup for F
@@ -72,20 +86,7 @@ impl Catalog {
 
 impl Lookup for Catalog {
     fn lookup(&self, request: LookupRequest<'_>) -> Result<Option<String>, ContextError> {
-        let valid_scope = match request.kind {
-            LookupKind::Workspace => request.parent.kind() == NodeKind::Tenant,
-            LookupKind::Folder | LookupKind::Item => {
-                matches!(request.parent.kind(), NodeKind::Workspace(_))
-            }
-            LookupKind::NestedFolder => request.parent.kind() == NodeKind::Folder,
-        };
-        if !valid_scope {
-            return Err(ContextError {
-                kind: ErrorKind::InvalidContext,
-                code: "InvalidContext".into(),
-                message: "Invalid Fabric catalog lookup scope".into(),
-            });
-        }
+        validate_scope(request)?;
         let workspace = request.parent.workspace();
         let lookup_name = if request.kind == LookupKind::Workspace {
             request.name
@@ -96,22 +97,83 @@ impl Lookup for Catalog {
             if element.name() != lookup_name {
                 return false;
             }
-            match request.kind {
-                LookupKind::Workspace => {
-                    matches!(element.kind(), NodeKind::Workspace(_))
-                        && element.parent() == Some(request.parent)
-                }
-                LookupKind::Folder => {
-                    element.kind() == NodeKind::Folder && element.workspace() == workspace
-                }
-                LookupKind::NestedFolder => {
-                    element.kind() == NodeKind::Folder && element.parent() == Some(request.parent)
-                }
-                LookupKind::Item => {
-                    matches!(element.kind(), NodeKind::Item(_)) && element.workspace() == workspace
-                }
-            }
+            in_scope(element, request.kind, request.parent, &workspace)
         });
         Ok(found.and_then(|element| element.id().filter(|id| !id.is_empty()).map(str::to_owned)))
+    }
+
+    fn candidate_names(
+        &self,
+        request: LookupRequest<'_>,
+    ) -> Result<Option<CandidateNames<'_>>, ContextError> {
+        validate_scope(request)?;
+        let suffix = request.name.rsplit_once('.').map(|(_, suffix)| suffix);
+        let expected = match (request.kind, suffix) {
+            (LookupKind::Workspace, Some("Workspace")) => {
+                Some(NodeKind::Workspace(WorkspaceType::Workspace))
+            }
+            (LookupKind::Workspace, Some("Personal")) => {
+                Some(NodeKind::Workspace(WorkspaceType::Personal))
+            }
+            (LookupKind::Folder | LookupKind::NestedFolder, Some("Folder")) => {
+                Some(NodeKind::Folder)
+            }
+            (LookupKind::Item, Some(suffix)) => ItemType::parse(suffix).ok().map(NodeKind::Item),
+            _ => None,
+        };
+        let parent = Arc::clone(request.parent);
+        let workspace = request.parent.workspace();
+        let kind = request.kind;
+        Ok(Some(Box::new(
+            self.elements
+                .iter()
+                .filter(move |element| {
+                    Some(element.kind()) == expected
+                        && element.id().is_some_and(|id| !id.is_empty())
+                        && in_scope(element, kind, &parent, &workspace)
+                })
+                .map(|element| element.short_name()),
+        )))
+    }
+}
+
+fn validate_scope(request: LookupRequest<'_>) -> Result<(), ContextError> {
+    let valid = match request.kind {
+        LookupKind::Workspace => request.parent.kind() == NodeKind::Tenant,
+        LookupKind::Folder | LookupKind::Item => {
+            matches!(request.parent.kind(), NodeKind::Workspace(_))
+        }
+        LookupKind::NestedFolder => request.parent.kind() == NodeKind::Folder,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(ContextError {
+            kind: ErrorKind::InvalidContext,
+            code: "InvalidContext".into(),
+            message: "Invalid Fabric catalog lookup scope".into(),
+        })
+    }
+}
+
+fn in_scope(
+    element: &Arc<Element>,
+    kind: LookupKind,
+    parent: &Arc<Element>,
+    workspace: &Option<Arc<Element>>,
+) -> bool {
+    match kind {
+        LookupKind::Workspace => {
+            matches!(element.kind(), NodeKind::Workspace(_)) && element.parent() == Some(parent)
+        }
+        LookupKind::Folder => {
+            element.kind() == NodeKind::Folder && element.workspace() == *workspace
+        }
+        LookupKind::NestedFolder => {
+            element.kind() == NodeKind::Folder && element.parent() == Some(parent)
+        }
+        LookupKind::Item => {
+            matches!(element.kind(), NodeKind::Item(_)) && element.workspace() == *workspace
+        }
     }
 }

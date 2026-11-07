@@ -2,6 +2,8 @@
 // Licensed under the MIT License.
 #![deny(unnameable_test_items)]
 
+//! Public analysis request, evidence and strictness contract tests.
+
 use fabric_sdk_semantic_model::{
     AnalysisBackend, AnalysisError, AnalysisOutcome, AnalysisReport, AnalysisRequest, LABS_COMMIT,
     RULE_COUNT, Severity, analyze, rule_catalog,
@@ -50,7 +52,7 @@ fn incomplete_rule_inputs_never_become_clean_scan() {
 fn strict_findings_are_separate_from_runtime_failure() {
     let mut value = report("succeeded", "evaluated");
     value["findings"] = json!([{
-        "category":"Performance", "ruleName":rule_catalog()[0].name, "severity":"Warning",
+        "category":"Performance", "ruleName":rule_catalog()[0].name, "severity":rule_catalog()[0].severity,
         "objectType":"Column", "objectName":"'Sales'[Amount]",
         "description":null, "url":null,
     }]);
@@ -67,6 +69,25 @@ fn strict_findings_are_separate_from_runtime_failure() {
         report.outcome(Severity::Info, false),
         AnalysisOutcome::Complete
     );
+}
+
+#[test]
+fn downgraded_pinned_error_severity_cannot_bypass_strict_policy() {
+    let error_rule = rule_catalog()
+        .iter()
+        .find(|rule| rule.name == "Data columns must have a source column")
+        .unwrap();
+    assert_eq!(error_rule.severity, Severity::Error);
+    let mut value = report("succeeded", "evaluated");
+    value["findings"] = json!([{
+        "category":error_rule.category, "ruleName":error_rule.name, "severity":"Info",
+        "objectType":error_rule.scopes[0], "objectName":"'Sales'[Amount]",
+        "description":null, "url":null,
+    }]);
+    assert!(matches!(
+        decode(&value),
+        Err(AnalysisError::InvalidResponse)
+    ));
 }
 
 #[test]

@@ -33,6 +33,12 @@ pub struct RuleIdentity {
     pub id: String,
     /// Exact upstream rule name.
     pub name: String,
+    /// Pinned severity, never supplied by an arbitrary report producer.
+    pub severity: Severity,
+    /// Exact upstream category.
+    pub category: String,
+    /// TOM scopes supported by the pinned rule.
+    pub scopes: Vec<String>,
 }
 
 /// Return the shipped complete rule identity catalog.
@@ -347,10 +353,12 @@ impl AnalysisReport {
                 ]
             || report.status != status
             || report.findings.iter().any(|finding| {
-                !report
-                    .rules
-                    .iter()
-                    .any(|rule| rule.rule_name == finding.rule_name)
+                !rule_catalog().iter().any(|rule| {
+                    rule.name == finding.rule_name
+                        && rule.severity == finding.severity
+                        && rule.category == finding.category
+                        && rule.scopes.contains(&finding.object_type)
+                })
             })
         {
             return Err(AnalysisError::InvalidResponse);

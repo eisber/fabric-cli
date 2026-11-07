@@ -16,6 +16,22 @@ pub use fabric_sdk_workspaces::workspaces::{
 use std::future::Future;
 
 impl Client {
+    /// Reads only primary workspace metadata, without optional enrichment reads.
+    ///
+    /// # Errors
+    /// Preserves the focused SDK's typed primary-read failures.
+    pub async fn get_workspace_primary_metadata(
+        &self,
+        executor: &dyn WorkspaceExecutor,
+        workspace_id: &str,
+        limits: WorkspaceListLimits,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<WorkspaceMetadata, WorkspaceMetadataError> {
+        WorkspaceClient::with_context(self.context().clone())
+            .get_workspace_primary_metadata(executor, workspace_id, limits, cancelled)
+            .await
+    }
+
     /// Enrich completed primary metadata through the existing bounded read policy.
     ///
     /// No primary request or operation polling is performed here. The caller must

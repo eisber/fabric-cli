@@ -121,8 +121,34 @@ impl JobSession<'_, '_> {
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<JobDispatch, text::TextError> {
         let format = OutputFormat::resolve(command.output_format.as_deref(), Some("json"))?;
+        let result = self.execute_native(command, cancelled).await;
+        self.render_native(command, format, result)
+    }
+
+    pub(crate) async fn execute_native(
+        &self,
+        command: &JobCommand,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<Option<fabric_cli_jobs::JobOutput>, JobCommandError> {
+        self.execute_native_impl(command, cancelled, false).await
+    }
+
+    pub(crate) async fn execute_tabular_list(
+        &self,
+        command: &JobCommand,
+    ) -> Result<Option<fabric_cli_jobs::JobOutput>, JobCommandError> {
+        self.execute_native_impl(command, std::future::pending(), true)
+            .await
+    }
+
+    async fn execute_native_impl(
+        &self,
+        command: &JobCommand,
+        cancelled: impl Future<Output = ()> + Send,
+        tabular_list: bool,
+    ) -> Result<Option<fabric_cli_jobs::JobOutput>, JobCommandError> {
         let mut cancelled = pin!(cancelled);
-        let result = async {
+        async {
             let reads = self.reads;
             if reads.tenant.id() != Some(reads.sdk.selection().tenant())
                 || reads.tenant.kind() != fabric_cli_context::NodeKind::Tenant
@@ -141,7 +167,7 @@ impl JobSession<'_, '_> {
                 .resolve(reads, &reads.tenant, reads.current_path, cancelled.as_mut())
                 .await?;
             let path = command.path.join(" ");
-            snapshot
+            let context = snapshot
                 .resolve(
                     reads,
                     &current,
@@ -160,6 +186,59 @@ impl JobSession<'_, '_> {
                 jobs,
                 fabric_sdk_operations::OperationLimits::default(),
             );
+            if tabular_list {
+                use fabric_sdk_jobs::{JobOperationReconciler, JobTarget, JobType};
+                let job_type = match context.kind() {
+                    fabric_cli_context::NodeKind::Item(kind) => {
+                        JobType::from_item_type(kind.as_str())
+                    }
+                    _ => None,
+                }
+                .ok_or_else(|| {
+                    errors::unsupported("The selected item does not support job listing")
+                })?;
+                let workspace = context
+                    .workspace()
+                    .ok_or_else(|| errors::error("InvalidInput", "A job workspace is required"))?;
+                let target = JobTarget::new(
+                    crate::reads::required_id(&workspace)?,
+                    crate::reads::required_id(&context)?,
+                    job_type,
+                )
+                .map_err(JobCommandError::from)?;
+                let headers = JobRequestHeaders::with_skill(command.skill.as_deref())
+                    .map_err(JobCommandError::from)?;
+                let sdk = sdk
+                    .with_request_headers(headers.clone())
+                    .map_err(JobCommandError::from)?;
+                let scoped = if headers.is_empty() {
+                    None
+                } else {
+                    Some(
+                        operations
+                            .with_request_headers(&headers)
+                            .map_err(JobCommandError::from)?,
+                    )
+                };
+                let rows = sdk
+                    .list_for_command(
+                        &target,
+                        command.schedule,
+                        scoped.as_deref().or(Some(&operations)),
+                        cancelled.as_mut(),
+                    )
+                    .await
+                    .map_err(JobCommandError::from)?;
+                return Ok(rows.map(|rows| fabric_cli_jobs::JobOutput {
+                    input: fabric_cli_output::OutputInput {
+                        data: Some(serde_json::Value::Array(rows.value)),
+                        ..Default::default()
+                    },
+                    show_headers: true,
+                    show_key_value_list: false,
+                    after_output: Vec::new(),
+                }));
+            }
             JobHost {
                 sdk: &sdk,
                 operations: Some(&operations),
@@ -174,7 +253,15 @@ impl JobSession<'_, '_> {
             .execute(command, cancelled.as_mut())
             .await
         }
-        .await;
+        .await
+    }
+
+    fn render_native(
+        &self,
+        command: &JobCommand,
+        format: OutputFormat,
+        result: Result<Option<fabric_cli_jobs::JobOutput>, JobCommandError>,
+    ) -> Result<JobDispatch, text::TextError> {
         let (envelope, headers, key_value, after, error) = match result {
             Ok(Some(output)) => (
                 OutputEnvelope::new(self.reads.timestamp.clone(), output.input),
@@ -280,7 +367,7 @@ impl JsonInput for SelectedJobFiles {
     }
 }
 
-struct ReadOnlyUi;
+pub(crate) struct ReadOnlyUi;
 
 pub(crate) struct CheckedJobExecutor(pub(crate) Arc<dyn JobExecutor>);
 

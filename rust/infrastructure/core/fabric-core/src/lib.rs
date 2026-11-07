@@ -16,6 +16,8 @@ use thiserror::Error;
 
 /// Explicit service origins and validated endpoint bindings.
 pub mod endpoint;
+/// Host-neutral operation metadata, assessed effects and execution evidence.
+pub mod operation;
 /// Runtime-neutral authentication and cancellation for injected execution.
 pub mod request;
 
@@ -28,6 +30,8 @@ pub enum Audience {
     OneLake,
     /// Azure Resource Manager.
     Arm,
+    /// Native SQL connections, separate from Fabric REST and HTTP origins.
+    Sql,
 }
 
 impl Audience {
@@ -37,6 +41,7 @@ impl Audience {
             Self::Fabric => "https://api.fabric.microsoft.com/.default",
             Self::OneLake => "https://storage.azure.com/.default",
             Self::Arm => "https://management.azure.com/.default",
+            Self::Sql => "https://database.windows.net/.default",
         }
     }
 }
@@ -149,6 +154,10 @@ mod tests {
         assert_eq!(
             Audience::Arm.scope(),
             "https://management.azure.com/.default"
+        );
+        assert_eq!(
+            Audience::Sql.scope(),
+            "https://database.windows.net/.default"
         );
     }
 

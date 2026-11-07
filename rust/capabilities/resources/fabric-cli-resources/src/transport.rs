@@ -33,6 +33,7 @@ impl Executor for ResourceHttpExecutor {
                         Origin::OneLake => PublicOrigin::OneLake,
                         Origin::Arm => PublicOrigin::Arm,
                         Origin::PowerBi => PublicOrigin::PowerBi,
+                        Origin::RelevanceEngine => PublicOrigin::RelevanceEngine,
                     },
                     request.method(),
                     request.url(),

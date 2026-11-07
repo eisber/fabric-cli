@@ -63,9 +63,9 @@ internal static class Program
             """{"dependencies":{"status":"available","rows":[]},"extendedStatistics":{"status":"available","tables":[{"tableName":"Sales","rowCount":0}]}}""");
         Equal("succeeded", result.GetProperty("status").GetString(), "known-empty evidence completes metadata");
         Equal(64, result.GetProperty("coverage").GetProperty("evaluated").GetInt32(), "full rule evaluation");
-        string before = JsonSerializer.Serialize(new { f.Amount.Name, f.Amount.DataType, f.Table.Name });
+        string before = JsonSerializer.Serialize(new { ColumnName = f.Amount.Name, f.Amount.DataType, TableName = f.Table.Name });
         _ = Analyze(f);
-        Equal(before, JsonSerializer.Serialize(new { f.Amount.Name, f.Amount.DataType, f.Table.Name }), "read-only metadata");
+        Equal(before, JsonSerializer.Serialize(new { ColumnName = f.Amount.Name, f.Amount.DataType, TableName = f.Table.Name }), "read-only metadata");
         result = Analyze(f, """{"extended":"true"}""");
         Equal("failed", result.GetProperty("status").GetString(), "malformed option");
         result = Analyze(f, """{"sourceCommit":"not-the-pin"}""");

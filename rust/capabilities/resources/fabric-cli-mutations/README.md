@@ -7,6 +7,10 @@ with explicit metadata, confirmation, execution and output capabilities.
 The [resource adapter](src/frontdoor/README.md) provides root command
 registrations and typed command conversion.
 
+The separate [create v2 contract](../../../docs/create-v2-contract.md) specifies
+the target existence policies and receipt boundaries. It does not describe the
+current v1 `create` alias or establish a v2 executable root or service-host mount.
+
 ## Host composition
 
 `MutationHost` consumes `ResourceOperations`, `MutationUi` and
@@ -95,6 +99,15 @@ Command support depends on the resolved resource and supplied adapter. Hidden
 administrative mutations, recursive storage operations, ARM lifecycle and domain
 assignment are not implied by registering a verb. Resource skill headers
 currently fail explicitly when requested.
+
+## Additive v2 link composition
+
+The separate [`v2_link`](src/v2_link.rs) module exposes one common link operation
+and owner-restricted artifact facades over typed native SDK request builders.
+Resolution, bounded UTF-8 input, approval and operation execution remain
+caller-owned. It does not replace `ln`/`mklink` or mount a new production host.
+See the [native link contract](../../../docs/link-v2-contract.md) for supported
+relationships, explicit gaps, effects, and retained acceptance/error evidence.
 
 The native terminal selection adapter is a separate host integration step;
 without it the selection-dependent branches fail explicitly rather than

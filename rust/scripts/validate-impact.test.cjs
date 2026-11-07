@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {test} = require('node:test');
 const {packageArgs, ownFeatures, testCommands, coreCommands, commandResult,
-  oracleVersions, restoreOracleDependencies, runContracts, options} =
+  oracleVersions, restoreOracleDependencies, runContracts, options, buildEnvironment} =
   require('./validate-impact.cjs');
 const {selection, equalSelection} = require('./impact-ci.cjs');
 const {plan: impactPlan} = require('./impact-plan.cjs');
@@ -36,6 +36,64 @@ function plan() {
 
 test('Cargo package arguments are sorted, deduplicated and not shell text', () => {
   assert.deepEqual(packageArgs(['z', 'a', 'z']), ['--package', 'a', '--package', 'z']);
+});
+
+test('build receipts retain only explicit Cargo resource settings, not unrelated environment values', () => {
+  assert.deepEqual(buildEnvironment({
+    CARGO_BUILD_JOBS: '2', RUST_TEST_THREADS: '1',
+    CARGO_PROFILE_DEV_DEBUG: '0', CARGO_PROFILE_TEST_DEBUG: '0', CARGO_INCREMENTAL: '0',
+    GITHUB_TOKEN: 'must-not-leak', PATH: 'private-path',
+  }), {
+    CARGO_BUILD_JOBS: '2', RUST_TEST_THREADS: '1',
+    CARGO_PROFILE_DEV_DEBUG: '0', CARGO_PROFILE_TEST_DEBUG: '0', CARGO_INCREMENTAL: '0',
+  });
+  assert.deepEqual(buildEnvironment({}), {});
+  const workflow = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
+  for (const setting of ['CARGO_PROFILE_DEV_DEBUG', 'CARGO_PROFILE_TEST_DEBUG', 'CARGO_INCREMENTAL']) {
+    assert.ok(workflow.includes(`${setting}: "0"`));
+  }
+  assert.ok(!workflow.includes('CARGO_PROFILE_TEST_DEBUG_ASSERTIONS'));
+  assert.ok(!workflow.includes('CARGO_PROFILE_DEV_DEBUG_ASSERTIONS'));
+});
+
+test('command receipts record the actual allowlisted build overrides', t => {
+  const directory = temporary(t);
+  const context = {root: directory, artifacts: directory, results: [],
+    deadline: Date.now() + 10000, commandTimeout: 1000};
+  commandResult({id: 'resource-fixture', program: 'cargo', args: [],
+    env: {CARGO_PROFILE_DEV_DEBUG: '0', CARGO_PROFILE_TEST_DEBUG: '0',
+      CARGO_INCREMENTAL: '0', GITHUB_TOKEN: 'must-not-leak'}}, context,
+  (_, __, options) => {
+    assert.equal(options.env.CARGO_PROFILE_TEST_DEBUG, '0');
+    return {status: 0, stdout: '', stderr: ''};
+  });
+  assert.equal(context.results[0].build_environment.CARGO_PROFILE_DEV_DEBUG, '0');
+  assert.equal(context.results[0].build_environment.CARGO_PROFILE_TEST_DEBUG, '0');
+  assert.equal(context.results[0].build_environment.CARGO_INCREMENTAL, '0');
+  assert.ok(!Object.hasOwn(context.results[0].build_environment, 'GITHUB_TOKEN'));
+  assert.ok(!fs.readFileSync(path.join(directory, 'commands.json'), 'utf8').includes('must-not-leak'));
+});
+
+test('Windows formatting bounds each expanded rustfmt invocation without omitting packages', () => {
+  const p = plan();
+  p.packages = Array.from({length: 35}, (_, index) => `component-${String(index).padStart(2, '0')}`);
+  p.packages.push(p.packages[0]);
+  const commands = coreCommands(p, 'windows').filter(command => command.args[0] === 'fmt');
+  assert.equal(commands.length, 35);
+  assert.deepEqual(commands.map(command => command.args[2]), [...new Set(p.packages)].sort());
+  for (const command of commands) {
+    assert.deepEqual(command.args, ['fmt', '--package', command.args[2], '--', '--check']);
+    assert.equal(command.id, `default:fmt:${command.args[2]}`);
+  }
+});
+
+test('POSIX formatting retains the combined selected-package check', () => {
+  for (const platform of ['linux', 'macos']) {
+    const formatting = coreCommands(plan(), platform).filter(command => command.args[0] === 'fmt');
+    assert.equal(formatting.length, 1);
+    assert.equal(formatting[0].id, 'default:fmt');
+    assert.deepEqual(formatting[0].args, ['fmt', '--package', 'cli', '--package', 'deploy', '--', '--check']);
+  }
 });
 
 test('complete target selection keeps Notebook and downstream contracts, not unrelated suites', () => {
@@ -105,17 +163,108 @@ test('recorded command execution retains failures, output hashes, counts and lit
     assert.equal(program, 'cargo');
     assert.deepEqual(args, command.args);
     assert.equal(opts.shell, false);
+    for (const name of ['FAB_UPDATE_TEST_ROOT', 'FAB_CLI_V2_TEST_ROOT', 'FAB_IDENTITY_TEST_ROOT']) {
+      assert.equal(opts.env[name], root);
+      assert.ok(path.isAbsolute(opts.env[name]));
+    }
     return {status: 0, stdout: 'test result: ok. 4 passed; 0 failed; 1 ignored;\n', stderr: ''};
   };
   commandResult(command, context, execute);
   assert.equal(context.results[0].tests_passed, 4);
   assert.equal(context.results[0].tests_ignored, 1);
+  assert.equal(path.basename(context.results[0].stdout), '000-literal_test.stdout.log');
   assert.match(context.results[0].stdout_sha256, /^[a-f0-9]{64}$/);
   assert.throws(() => commandResult(command, context, () => ({
     status: null, error: new Error('deadline exceeded'), stdout: '', stderr: 'partial',
   })), /Validation failed/);
   assert.equal(context.results.length, 2);
   assert.equal(context.results[1].exit, null);
+});
+
+test('full-workspace command ids use bounded diagnostic filenames without losing receipt identity', t => {
+  const root = temporary(t);
+  const context = {root, artifacts: root, commandTimeout: 1000, deadline: Date.now() + 10000, results: []};
+  const id = `default:test:${Array.from({length: 35}, (_, index) =>
+    `fabric-workspace-component-${index}`).join(',')}`;
+  const execute = () => ({status: 0, stdout: 'recorded stdout', stderr: 'recorded stderr'});
+  for (const suffix of ['', ',different-final-component']) {
+    commandResult({id: id + suffix, program: 'cargo', args: ['test', '--all-targets']},
+      context, execute);
+  }
+  assert.deepEqual(context.results.map(record => record.id), [id, `${id},different-final-component`]);
+  for (const record of context.results) {
+    assert.ok(Buffer.byteLength(path.basename(record.stdout)) <= 80);
+    assert.ok(Buffer.byteLength(path.basename(record.stderr)) <= 80);
+    assert.equal(fs.readFileSync(record.stdout, 'utf8'), 'recorded stdout');
+    assert.equal(fs.readFileSync(record.stderr, 'utf8'), 'recorded stderr');
+    assert.deepEqual(record.args, ['test', '--all-targets']);
+  }
+  assert.notEqual(path.basename(context.results[0].stdout).slice(4),
+    path.basename(context.results[1].stdout).slice(4));
+});
+
+test('full-workspace command log names stay bounded without losing command identity', t => {
+  const root = temporary(t);
+  const context = {root, artifacts: root, commandTimeout: 1000, deadline: Date.now() + 10000, results: []};
+  const common = `default:test:${Array.from({length: 40}, (_, i) => `fabric-long-package-${i}`).join(',')}`;
+  for (const suffix of ['a', 'b']) {
+    const id = `${common}:${suffix}`;
+    commandResult({id, program: 'cargo', args: ['test', '--all-targets']}, context,
+      () => ({status: 0, stdout: 'test result: ok. 1 passed; 0 failed; 0 ignored;\n', stderr: ''}));
+    const record = context.results.at(-1);
+    assert.equal(record.id, id);
+    assert.ok(path.basename(record.stdout).length < 128);
+    assert.ok(path.basename(record.stderr).length < 128);
+    assert.equal(fs.readFileSync(record.stdout, 'utf8'),
+      'test result: ok. 1 passed; 0 failed; 0 ignored;\n');
+    assert.ok(fs.existsSync(record.stderr));
+  }
+  assert.notEqual(context.results[0].stdout, context.results[1].stdout);
+});
+
+test('full-workspace command log names stay bounded without changing scope or receipts', t => {
+  const root = temporary(t);
+  const packages = Array.from({length: 40}, (_, index) =>
+    `fabric-package-with-a-long-name-${String(index).padStart(2, '0')}`);
+  const [command] = testCommands(packages.map(name => ({package: name, target: 'all'})));
+  const run = id => {
+    const context = {root, artifacts: root, commandTimeout: 1000,
+      deadline: Date.now() + 10000, results: []};
+    commandResult({...command, id}, context, (program, args) => {
+      assert.equal(program, command.program);
+      assert.deepEqual(args, command.args);
+      return {status: 0, stdout: 'test result: ok. 1 passed; 0 failed; 0 ignored;\n', stderr: ''};
+    });
+    const [record] = context.results;
+    assert.equal(record.id, id);
+    assert.deepEqual(record.args, command.args);
+    for (const log of [record.stdout, record.stderr]) {
+      assert.ok(path.basename(log).length <= 111);
+      assert.ok(fs.existsSync(log));
+    }
+    return path.basename(record.stdout);
+  };
+  assert.ok(command.id.length > 255);
+  const first = run(command.id);
+  assert.equal(first, run(command.id), 'the same command has a stable log basename');
+  assert.notEqual(first, run(`${command.id}-distinct-tail`));
+});
+
+test('full-workspace command log names stay bounded while receipts retain exact IDs', t => {
+  const root = temporary(t);
+  const context = {root, artifacts: root, commandTimeout: 1000, deadline: Date.now() + 10000, results: []};
+  const id = `default:test:${Array.from({length: 40}, (_, i) => `fabric-package-${i}`).join(',')}`;
+  const command = {id, program: 'cargo', args: ['test', '--workspace']};
+  commandResult(command, context, () => ({status: 0, stdout: 'complete\n', stderr: ''}));
+  const record = context.results[0];
+  assert.equal(record.id, id);
+  assert.deepEqual(record.args, command.args);
+  for (const [file, contents] of [[record.stdout, 'complete\n'], [record.stderr, '']]) {
+    assert.ok(path.basename(file).length <= 131);
+    assert.match(path.basename(file), /-[a-f0-9]{16}\.(stdout|stderr)\.log$/);
+    assert.equal(fs.readFileSync(file, 'utf8'), contents);
+  }
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'commands.json'), 'utf8'))[0].id, id);
 });
 
 test('missing full-gate marker profiles fail, rather than passing an empty contract', t => {
@@ -274,4 +423,24 @@ test('workflow always tests the planner, covers merge groups and periodic full r
   assert.match(workflow, /"\$RUN_NATIVE" == true && "\$NATIVE_RESULT" == success/);
   assert.match(workflow, /"\$RUN_NATIVE" == false && "\$NATIVE_RESULT" == skipped/);
   assert.ok(!workflow.includes('function select(files'));
+});
+
+test('the common v2 branch runs the existing combined-candidate gate without privileged merge automation', () => {
+  const workflow = fs.readFileSync(path.resolve(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
+  const branch = 'dev/marcozo/fab-cli-v2-integration-20261104';
+  const push = workflow.slice(workflow.indexOf('\n  push:'), workflow.indexOf('\n  merge_group:'));
+  assert.ok(push.includes(branch));
+  assert.match(push, /\bmain\b/);
+  assert.ok(push.includes('feature/rust'));
+  const concurrency = workflow.slice(workflow.indexOf('\nconcurrency:'), workflow.indexOf('\njobs:'));
+  assert.ok(concurrency.includes(`github.event_name == 'push' && github.ref == 'refs/heads/${branch}' && github.ref`));
+  assert.ok(concurrency.includes('github.event.pull_request.number ||'));
+  assert.ok(concurrency.includes('|| github.run_id'));
+  assert.ok(concurrency.includes("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"));
+  assert.match(workflow, /permissions:\n  contents: read/);
+  assert.ok(!workflow.includes('pull_request_target:'));
+  assert.ok(!workflow.includes('contents: write'));
+  assert.ok(workflow.includes('os: [windows-2025, ubuntu-24.04, macos-15]'));
+  assert.ok(workflow.includes('github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before'));
+  assert.ok(workflow.includes('persist-credentials: false'));
 });

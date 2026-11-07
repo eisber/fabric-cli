@@ -89,10 +89,13 @@ fn main() {
         ])
         .output()
         .expect("dotnet feature requires a .NET 8 SDK; no subprocess is used at analysis time");
-    assert!(
-        status.status.success(),
-        "managed TOM component build failed; validate the managed project with the documented isolated restore/build procedure"
-    );
+    if !status.status.success() {
+        eprintln!("{}", String::from_utf8_lossy(&status.stdout));
+        eprintln!("{}", String::from_utf8_lossy(&status.stderr));
+        panic!(
+            "managed TOM component build failed; validate the managed project with the documented isolated restore/build procedure"
+        );
+    }
     println!(
         "cargo:rustc-env=FABRIC_BPA_COMPONENT_DIR={}",
         component.display()
