@@ -71,10 +71,43 @@ impl WorkspaceIdentity {
     }
 }
 
-/// Existing item or parent collection identity, with no synthetic item IDs.
+/// A real tenant identity for tenant-scoped discovery.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TenantIdentity {
+    tenant_id: String,
+}
+
+impl TenantIdentity {
+    /// Validates a tenant UUID without inventing a workspace or item.
+    ///
+    /// # Errors
+    /// Rejects malformed tenant identifiers.
+    pub fn new(tenant_id: &str) -> Result<Self, ReceiptError> {
+        if !valid_uuid(tenant_id) {
+            return Err(ReceiptError::InvalidIdentity);
+        }
+        Ok(Self {
+            tenant_id: tenant_id.into(),
+        })
+    }
+
+    /// Returns the explicitly selected tenant UUID.
+    pub fn tenant_id(&self) -> &str {
+        &self.tenant_id
+    }
+}
+
+/// Existing resource or collection identity, with no synthetic parent IDs.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum TargetIdentity {
+    /// A tenant collection with no implied workspace.
+    TenantCollection {
+        /// Explicit tenant identity.
+        #[serde(flatten)]
+        identity: TenantIdentity,
+    },
     /// Provider-established existing owner coordinates.
     Item {
         /// Explicit workspace and item identity.
@@ -90,11 +123,20 @@ pub enum TargetIdentity {
 }
 
 impl TargetIdentity {
-    /// Returns the parent workspace for either target kind.
-    pub fn workspace_id(&self) -> &str {
+    /// Returns a workspace only when the target actually has one.
+    pub fn workspace_id(&self) -> Option<&str> {
         match self {
-            Self::Item { identity } => identity.workspace_id(),
-            Self::WorkspaceCollection { identity } => identity.workspace_id(),
+            Self::TenantCollection { .. } => None,
+            Self::Item { identity } => Some(identity.workspace_id()),
+            Self::WorkspaceCollection { identity } => Some(identity.workspace_id()),
+        }
+    }
+
+    /// Returns a tenant only when explicitly retained by this target identity.
+    pub fn tenant_id(&self) -> Option<&str> {
+        match self {
+            Self::TenantCollection { identity } => Some(identity.tenant_id()),
+            Self::Item { .. } | Self::WorkspaceCollection { .. } => None,
         }
     }
 
@@ -102,13 +144,14 @@ impl TargetIdentity {
     pub fn item_id(&self) -> Option<&str> {
         match self {
             Self::Item { identity } => Some(identity.item_id()),
-            Self::WorkspaceCollection { .. } => None,
+            Self::TenantCollection { .. } | Self::WorkspaceCollection { .. } => None,
         }
     }
 
     /// Returns concrete identity cardinality for capability selection.
     pub const fn kind(&self) -> TargetKind {
         match self {
+            Self::TenantCollection { .. } => TargetKind::TenantCollection,
             Self::Item { .. } => TargetKind::Item,
             Self::WorkspaceCollection { .. } => TargetKind::WorkspaceCollection,
         }
@@ -136,6 +179,23 @@ pub struct ResolvedTarget {
 }
 
 impl ResolvedTarget {
+    /// Creates a tenant collection without fabricating a parent workspace.
+    ///
+    /// # Errors
+    /// Rejects mismatched target scope or an invalid canonical path.
+    pub fn tenant_collection(
+        canonical_path: &str,
+        identity: TenantIdentity,
+        selection: Target,
+    ) -> Result<Self, ReceiptError> {
+        Self::from_identity(
+            canonical_path,
+            TargetIdentity::TenantCollection { identity },
+            selection,
+            None,
+        )
+    }
+
     /// Retains the resolver's canonical path and exact identity/selection.
     ///
     /// The caller owns path grammar, escaping, name resolution and child identity
@@ -290,6 +350,14 @@ impl PreparedOperation {
             }
             unique.push(*effect);
         }
+        if self
+            .preconditions
+            .iter()
+            .any(|condition| matches!(condition, Precondition::LocalOutput { .. }))
+            && !effects.contains(&Effect::LocalWrite)
+        {
+            return Err(ReceiptError::InvalidEffects);
+        }
         self.effects
             .retain(|effect| !self.allowed_optional_effects.contains(effect));
         self.effects.extend(effects);
@@ -318,6 +386,13 @@ impl PreparedOperation {
                 if !bounded_text(value, 8192) {
                     return Err(ReceiptError::InvalidPrecondition);
                 }
+            }
+            if let Precondition::LocalOutput { path } = condition
+                && (!bounded_text(path, 32 * 1024)
+                    || path.contains("://")
+                    || !self.effects.contains(&Effect::LocalWrite))
+            {
+                return Err(ReceiptError::InvalidPrecondition);
             }
             seen.push(condition);
         }
@@ -385,6 +460,11 @@ impl PreparedOperation {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Precondition {
+    /// One exact preflighted no-overwrite output, validated by the native host.
+    LocalOutput {
+        /// Absolute native filename, never a Fabric target or provider URL.
+        path: String,
+    },
     /// The addressed resource must not already exist.
     CreateOnly,
     /// The addressed resource must already exist; no upsert.
@@ -507,6 +587,24 @@ pub struct FailureInfo {
     pub message: String,
 }
 
+/// One provider's unprojected observation in a federated operation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceEvidence {
+    /// Stable source identifier, not a user query or a URL.
+    pub source: String,
+    /// Observed response status, absent when no response exists.
+    pub http_status: Option<u16>,
+    /// This source's actual coverage, independent of other providers.
+    pub coverage: Coverage,
+    /// Safe failure retained even when another provider returned useful data.
+    pub error: Option<FailureInfo>,
+    /// Bounded operation-owned source facts, such as measured bytes and native
+    /// cursor coverage. These cannot replace the common outcome or identity.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<Value>,
+}
+
 /// Distinct terminal, nonterminal and uncertain execution outcomes.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
@@ -556,7 +654,26 @@ pub struct ReceiptMetadata {
     declared_effects: Vec<Effect>,
     preconditions: Vec<Precondition>,
     evidence: ExecutionEvidence,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    sources: Vec<SourceEvidence>,
 }
+
+/// Invalid provider evidence retains the original receipt and observations.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SourceEvidenceError<T> {
+    /// The original receipt, including all completed result data.
+    pub receipt: ExecutionReceipt<T>,
+    /// Provider observations rejected as inconsistent.
+    pub sources: Vec<SourceEvidence>,
+}
+
+impl<T> fmt::Display for SourceEvidenceError<T> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("source evidence contradicts the operation receipt")
+    }
+}
+
+impl<T: fmt::Debug> std::error::Error for SourceEvidenceError<T> {}
 
 /// Receipt construction failed without discarding the original execution result.
 #[derive(Clone, Debug, PartialEq)]
@@ -604,8 +721,56 @@ impl<T> ExecutionReceipt<T> {
                 declared_effects: approved.prepared.effects.clone(),
                 preconditions: approved.prepared.preconditions.clone(),
                 evidence,
+                sources: Vec::new(),
             },
         })
+    }
+
+    /// Retains independent provider evidence outside projected result data.
+    ///
+    /// # Errors
+    /// Rejects duplicate/invalid source identities, invalid statuses and a
+    /// successful outcome that conceals a failed or incomplete provider.
+    pub fn with_source_evidence(
+        mut self,
+        sources: Vec<SourceEvidence>,
+    ) -> Result<Self, Box<SourceEvidenceError<T>>> {
+        let invalid = sources.iter().enumerate().any(|(index, source)| {
+            crate::validate_token(&source.source).is_err()
+                || sources[..index]
+                    .iter()
+                    .any(|prior| prior.source == source.source)
+                || source
+                    .http_status
+                    .is_some_and(|status| !(100..=599).contains(&status))
+                || source.details.as_ref().is_some_and(|details| {
+                    !details.is_object()
+                        || serde_json::to_vec(details).is_ok_and(|bytes| bytes.len() > 1024 * 1024)
+                })
+                || source
+                    .http_status
+                    .is_some_and(|status| !(200..300).contains(&status))
+                    && source.error.is_none()
+                || matches!(&source.coverage, Coverage::Incomplete { reasons, .. }
+                    if reasons.is_empty() || reasons.iter().any(|reason| reason.trim().is_empty()))
+                || matches!(self.outcome, Outcome::Succeeded { .. })
+                    && (source.error.is_some()
+                        || source.http_status == Some(202)
+                        || matches!(source.coverage, Coverage::Incomplete { .. }))
+        });
+        if invalid {
+            return Err(Box::new(SourceEvidenceError {
+                receipt: self,
+                sources,
+            }));
+        }
+        self.meta.sources = sources;
+        Ok(self)
+    }
+
+    /// Returns provider observations that presentation must never project away.
+    pub fn sources(&self) -> &[SourceEvidence] {
+        &self.meta.sources
     }
 
     /// Returns the actual outcome, not a boolean success approximation.

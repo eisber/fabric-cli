@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Experimental get-only execution head; the existing fab-rs binary is unchanged.
+//! Experimental explicit resource execution head; the existing fab-rs binary is unchanged.
 
 use fabric_cli::{
     get_backend::SdkGetBackend,
@@ -29,6 +29,7 @@ use std::{
 
 #[path = "headless.rs"]
 mod headless;
+mod v2_search_main;
 
 // Reuse the existing binary-private selector without importing v1 dispatch/state.
 mod native_read {
@@ -115,9 +116,12 @@ fn run() -> Result<(), Failure> {
         return Ok(());
     }
     if args.as_slice() == [std::ffi::OsStr::new("--help")] {
-        writeln!(io::stdout().lock(), "fab-cli-v2: experimental explicit get head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n\nRun fab-cli-v2 get --help for the supported retrieval schema.\nRequires explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.")
+        writeln!(io::stdout().lock(), "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n\nRun a command with --help for its supported schema.\nRequires explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         return Ok(());
+    }
+    if args.first().and_then(|value| value.to_str()) == Some("search") {
+        return v2_search_main::run(args);
     }
     let command = match parse_get(args) {
         Ok(command) => command,
@@ -179,73 +183,13 @@ fn run() -> Result<(), Failure> {
         .build()
         .map_err(|_| failed("RuntimeFailed", "The get runtime could not be created.", 1))?;
     let result = runtime.block_on(async {
-        let transport = transport_options(timeout);
-        let http: Arc<dyn azure_core::http::HttpClient> = match selection.metadata_endpoint() {
-            Some(url) => Arc::new(
-                NativeHttpClient::for_managed_identity(transport.clone(), url).map_err(|_| {
-                    failed(
-                        "InvalidConfiguration",
-                        "Managed identity transport configuration failed.",
-                        2,
-                    )
-                })?,
-            ),
-            None => Arc::new(NativeHttpClient::new(transport.clone()).map_err(|_| {
-                failed(
-                    "InvalidConfiguration",
-                    "Native transport configuration failed.",
-                    2,
-                )
-            })?),
-        };
-        let fabric_selection =
-            CredentialSelection::new(&selection.account, &selection.tenant, Audience::Fabric)
-                .map_err(|_| {
-                    failed(
-                        "InvalidConfiguration",
-                        "Invalid explicit identity selection.",
-                        2,
-                    )
-                })?;
-        let storage_selection =
-            CredentialSelection::new(&selection.account, &selection.tenant, Audience::OneLake)
-                .map_err(|_| {
-                    failed(
-                        "InvalidConfiguration",
-                        "Invalid explicit storage identity selection.",
-                        2,
-                    )
-                })?;
-        let _explicit_provider_binding = (&selection.client, &selection.binding);
-        let credential = selection
-            .credential(http)
-            .map_err(|(code, message, exit)| failed(code, message, exit))?;
-        let service_http: Arc<dyn azure_core::http::HttpClient> =
-            Arc::new(NativeHttpClient::new(transport).map_err(|_| {
-                failed(
-                    "InvalidConfiguration",
-                    "Service transport configuration failed.",
-                    2,
-                )
-            })?);
-        let executor = Arc::new(
-            HttpExecutor::new(
-                service_http,
-                Arc::new(TokioTimer),
-                ExecutionOptions {
-                    timeout,
-                    max_delay: Duration::from_secs(60),
-                },
-            )
-            .map_err(|_| failed("InvalidConfiguration", "Invalid read execution limits.", 2))?
-            .with_endpoint(endpoint.clone()),
+        let session = NativeSession::new(selection, endpoint, timeout)?;
+        let executor = session.executor;
+        let storage_client = OneLakeClient::new(
+            session.context.credential().clone(),
+            session.storage_selection,
         );
-        let client = Client::with_context(RequestContext::with_endpoint(
-            credential.clone(),
-            fabric_selection,
-            endpoint,
-        ));
-        let storage_client = OneLakeClient::new(credential, storage_selection);
+        let client = Client::with_context(session.context);
         let storage_executor = OneLakeHttpExecutor::new(executor.clone());
         let backend = SdkGetBackend {
             client: &client,
@@ -301,6 +245,116 @@ fn run() -> Result<(), Failure> {
             .map_err(command_failure)?;
     }
     Ok(())
+}
+
+struct NativeSession {
+    context: RequestContext,
+    storage_selection: CredentialSelection,
+    executor: Arc<HttpExecutor>,
+    service_http: Arc<dyn azure_core::http::HttpClient>,
+}
+
+impl NativeSession {
+    fn new(
+        selection: headless::Selection,
+        endpoint: EndpointBinding,
+        timeout: Duration,
+    ) -> Result<Self, Failure> {
+        let transport = transport_options(timeout);
+        let identity_http: Arc<dyn azure_core::http::HttpClient> = match selection
+            .metadata_endpoint()
+        {
+            Some(url) => Arc::new(
+                NativeHttpClient::for_managed_identity(transport.clone(), url).map_err(|_| {
+                    failed(
+                        "InvalidConfiguration",
+                        "Managed identity transport configuration failed.",
+                        2,
+                    )
+                })?,
+            ),
+            None => Arc::new(NativeHttpClient::new(transport.clone()).map_err(|_| {
+                failed(
+                    "InvalidConfiguration",
+                    "Native transport configuration failed.",
+                    2,
+                )
+            })?),
+        };
+        let fabric_selection =
+            CredentialSelection::new(&selection.account, &selection.tenant, Audience::Fabric)
+                .map_err(|_| {
+                    failed(
+                        "InvalidConfiguration",
+                        "Invalid explicit identity selection.",
+                        2,
+                    )
+                })?;
+        let storage_selection =
+            CredentialSelection::new(&selection.account, &selection.tenant, Audience::OneLake)
+                .map_err(|_| {
+                    failed(
+                        "InvalidConfiguration",
+                        "Invalid explicit storage identity selection.",
+                        2,
+                    )
+                })?;
+        let _explicit_provider_binding = (&selection.client, &selection.binding);
+        let credential = selection
+            .credential(identity_http)
+            .map_err(|(code, message, exit)| failed(code, message, exit))?;
+        let service_http: Arc<dyn azure_core::http::HttpClient> =
+            Arc::new(NativeHttpClient::new(transport).map_err(|_| {
+                failed(
+                    "InvalidConfiguration",
+                    "Service transport configuration failed.",
+                    2,
+                )
+            })?);
+        let executor = Arc::new(
+            HttpExecutor::new(
+                service_http.clone(),
+                Arc::new(TokioTimer),
+                ExecutionOptions {
+                    timeout,
+                    max_delay: Duration::from_secs(60),
+                },
+            )
+            .map_err(|_| failed("InvalidConfiguration", "Invalid read execution limits.", 2))?
+            .with_endpoint(endpoint.clone()),
+        );
+        Ok(Self {
+            context: RequestContext::with_endpoint(credential, fabric_selection, endpoint),
+            storage_selection,
+            executor,
+            service_http,
+        })
+    }
+
+    fn executor_for(
+        &self,
+        endpoint: EndpointBinding,
+        timeout: Duration,
+    ) -> Result<Arc<HttpExecutor>, Failure> {
+        Ok(Arc::new(
+            HttpExecutor::new(
+                self.service_http.clone(),
+                Arc::new(TokioTimer),
+                ExecutionOptions {
+                    timeout,
+                    max_delay: Duration::from_secs(60),
+                },
+            )
+            .map_err(|_| {
+                failed(
+                    "InvalidConfiguration",
+                    "Invalid explicit service limits.",
+                    2,
+                )
+            })?
+            .with_endpoint(endpoint),
+        ))
+    }
 }
 
 fn transport_options(timeout: Duration) -> TransportOptions {

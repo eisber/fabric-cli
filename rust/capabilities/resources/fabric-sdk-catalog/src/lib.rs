@@ -12,7 +12,12 @@ use serde_json::{Value, json};
 use std::{future::Future, num::NonZeroUsize};
 
 mod metadata;
+mod search_v2;
 pub use metadata::{HiddenMetadata, MetadataOmission};
+pub use search_v2::{
+    CatalogFilter, CatalogInitialRequest, CatalogObservationError, CatalogPageObservation,
+    CatalogRequest, CatalogResumeRequest, DEFAULT_CATALOG_PAGE_SIZE,
+};
 
 fn search_payload(response: &Response) -> Result<Value, ApiError> {
     let value: Value = serde_json::from_slice(&response.body).map_err(|_| {

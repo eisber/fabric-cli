@@ -193,8 +193,12 @@ pub async fn execute_metadata<E: OperationExecutor, H: AdapterHost>(
         selection.generation.map(u64::from),
     )
     .map_err(CapabilityError::Validation)?;
+    let workspace = resolved
+        .identity()
+        .workspace_id()
+        .ok_or(CapabilityError::Invalid("Workspace identity required."))?
+        .to_owned();
     let body = metadata_body(args.verb, support::input(args, host, limits.input_bytes)?)?;
-    let workspace = resolved.identity().workspace_id().to_owned();
     let item = resolved.identity().item_id().map(str::to_owned);
     let mut preconditions = if args.verb == OntologyVerb::Create {
         vec![Precondition::CreateOnly]

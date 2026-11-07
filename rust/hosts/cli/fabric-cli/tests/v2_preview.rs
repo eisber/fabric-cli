@@ -261,7 +261,10 @@ impl ApprovalPolicy for Host {
             return Err(HostError("Synthetic policy refusal.".into()));
         }
         assert_eq!(operation.operation_id(), self.allowed_id);
-        assert_eq!(operation.target().identity().workspace_id(), WORKSPACE);
+        assert_eq!(
+            operation.target().identity().workspace_id(),
+            Some(WORKSPACE)
+        );
         if self.allowed_id.starts_with("ontology.entity.") {
             assert_eq!(operation.target().identity().item_id(), Some(ITEM));
             assert_eq!(operation.target().selection().generation, Some(2));
@@ -1213,7 +1216,7 @@ async fn root_metadata_create_resolves_only_real_workspace_and_generic_facade_sh
         assert_eq!(report.exit_code(), 0, "{report:?}");
         assert_eq!(
             report.receipt().target().identity().workspace_id(),
-            WORKSPACE
+            Some(WORKSPACE)
         );
         assert_eq!(report.receipt().target().identity().item_id(), None);
         assert_eq!(report.receipt().target().selection().generation, None);
