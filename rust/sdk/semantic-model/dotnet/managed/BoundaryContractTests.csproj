@@ -1,0 +1,22 @@
+<!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <RestoreSources>https://api.nuget.org/v3/index.json</RestoreSources>
+    <RestoreConfigFile>$(MSBuildThisFileDirectory)..\..\..\..\NuGet.Config</RestoreConfigFile>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <NuGetLockFilePath>$(MSBuildThisFileDirectory)boundary.dependencies.lock.json</NuGetLockFilePath>
+    <RestoreLockedMode Condition="'$(RestoreLockedMode)' == ''">true</RestoreLockedMode>
+    <NuGetInteractive>false</NuGetInteractive>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="NativeEntryPoint.cs" />
+    <Compile Include="BoundaryContractTests.cs" />
+    <PackageReference Include="Microsoft.AnalysisServices" Version="[19.118.3]" />
+  </ItemGroup>
+</Project>

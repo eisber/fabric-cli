@@ -1,0 +1,82 @@
+# Copyright (c) Microsoft Corporation. Licensed under the MIT License.
+name: Optional semantic-model BPA
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/semantic-model-bpa.yml"
+      - "rust/sdk/semantic-model/**"
+      - "rust/frontends/cli/commands/semantic-model/**"
+      - "rust/frontends/cli/app/**"
+      - "rust/sdk/client/**"
+      - "rust/tests/**/semantic_model_bpa/**"
+      - "rust/scripts/generate_bpa_rule_catalog.py"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - "rust/NuGet.Config"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-tom:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: "2"
+      RUST_TEST_THREADS: "1"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+        with:
+          dotnet-version: "8.0.425"
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.13"
+      - name: Pin Rust and explicit runtime location
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+          $fxr = Get-ChildItem "$env:DOTNET_ROOT/host/fxr" -Directory |
+            Where-Object Name -Like '8.*' | Sort-Object { [version]$_.Name } -Descending |
+            Select-Object -First 1
+          if (-not $fxr) { throw 'The explicitly installed .NET 8 host is missing.' }
+          "FABRIC_BPA_TEST_HOSTFXR=$($fxr.FullName)/hostfxr.dll" >> $env:GITHUB_ENV
+      - name: Independent pinned-source acceptance
+        run: |
+          python -B rust/scripts/generate_bpa_rule_catalog.py --check
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -B -m unittest discover -s rust/tests/compatibility/semantic_model_bpa -p test_oracle.py -q
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Managed rule and ABI acceptance
+        working-directory: rust/sdk/semantic-model/dotnet/managed
+        run: |
+          dotnet run --project Bpa/Tests/Fabric.SemanticModel.Bpa.Tests.csproj --configuration Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet run --project BoundaryContractTests.csproj --configuration Release
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Native default and optional host contracts
+        working-directory: rust
+        run: |
+          cargo fetch --locked
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --offline --locked -p fabric-sdk-semantic-model -p fabric-cli-semantic-model -p fabric-semantic-model-dotnet
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo clippy --offline --locked -p fabric-sdk-semantic-model -p fabric-cli-semantic-model -p fabric-semantic-model-dotnet --all-targets --features fabric-sdk-semantic-model/dotnet,fabric-cli-semantic-model/dotnet,fabric-semantic-model-dotnet/dotnet -- -D warnings
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --offline --locked -p fabric-semantic-model-dotnet --features dotnet --test bindings_contract --test bindings_hosted
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --offline --locked -p fabric-cli --features semantic-model --test semantic_model_mount --test workspace_contract
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --offline --locked -p fabric-cli --features semantic-model-dotnet --test semantic_model_mount
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --offline --locked -p fabric-cli --features semantic-model,self-update --bin fab-rs offline_bpa_is_excluded_before_update_policy_or_transport_setup
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }

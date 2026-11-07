@@ -175,6 +175,8 @@ fn require_major_permission(command: &UpdateCommand, requires_major: bool) -> Re
 fn startup_invocation_allowed(invocation: &Invocation) -> bool {
     match invocation {
         Invocation::Display(_) | Invocation::Batch(_) | Invocation::Update(_) => false,
+        #[cfg(feature = "semantic-model")]
+        Invocation::SemanticModel(_) => false,
         Invocation::Local(local)
             if matches!(&local.command, fabric_cli_local::LocalCommand::Version) =>
         {
@@ -1395,6 +1397,40 @@ mod tests {
             if matches!(&local.command, fabric_cli_local::LocalCommand::Version)));
         let read = fabric_cli::parser::parse_args(["fab-rs", "ls", "/"]).unwrap();
         assert!(startup_invocation_allowed(&read));
+    }
+
+    #[cfg(feature = "semantic-model")]
+    #[test]
+    fn offline_bpa_is_excluded_before_update_policy_or_transport_setup() {
+        for arguments in [
+            vec![
+                "fab-rs",
+                "artifact",
+                "semantic-model",
+                "analyze",
+                "--input",
+                "model.bim",
+            ],
+            vec![
+                "fab-rs",
+                "artifact",
+                "semantic-model",
+                "analyze",
+                "/remote.SemanticModel",
+            ],
+            vec![
+                "fab-rs",
+                "artifact",
+                "semantic-model",
+                "analyze",
+                "--input",
+                "model.bim",
+                "--fix",
+            ],
+        ] {
+            let invocation = fabric_cli::parser::parse_args(arguments).unwrap();
+            assert!(!startup_invocation_allowed(&invocation));
+        }
     }
 
     #[cfg(feature = "windows-broker")]

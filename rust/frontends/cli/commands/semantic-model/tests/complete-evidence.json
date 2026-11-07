@@ -1,0 +1,7 @@
+{
+  "dependencies": {"status": "available", "rows": []},
+  "extendedStatistics": {
+    "status": "available",
+    "tables": [{"tableName": "Sales", "rowCount": 0}]
+  }
+}

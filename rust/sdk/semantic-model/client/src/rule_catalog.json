@@ -1,0 +1,606 @@
+{
+  "copyright": "Copyright (c) Microsoft Corporation. Licensed under the MIT License.",
+  "sourceCommit": "2ddf46109c1209ceffa88149f4631e7b2275f9a1",
+  "sourceSha256": "bd28bf30d9815116defdb5664158f70a0a957dd6904a6ccdb33c4d007c4b648f",
+  "rules": [
+    {
+      "id": "labs:552775a240bc8fb7efd5325de08bae9afcd2607f70aa6cc41d9c726165040b17",
+      "name": "Do not use floating point data types",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Column"
+      ]
+    },
+    {
+      "id": "labs:9be083559df0f1f49c5f24a2cd0188a0fc34e4b263063c6a2a2489a3d96fad41",
+      "name": "Avoid using calculated columns",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Column"
+      ]
+    },
+    {
+      "id": "labs:c6f3573f9ba4db7561641b5ae5fbe924c0d3aea6e9c334c78934f732c5390969",
+      "name": "Check if bi-directional and many-to-many relationships are valid",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Relationship"
+      ]
+    },
+    {
+      "id": "labs:b2427ad3decfe180218ede0fea34aa8e7e3e2ddd1050c4cc65b3d6bdb9afc596",
+      "name": "Check if dynamic row level security (RLS) is necessary",
+      "severity": "info",
+      "category": "Performance",
+      "scopes": [
+        "Row Level Security"
+      ]
+    },
+    {
+      "id": "labs:aabdd839632d7ea0b819e56aa3fbed04f80255ebc92f512d638ccac8048ec240",
+      "name": "Avoid using many-to-many relationships on tables used for dynamic row level security",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Table"
+      ]
+    },
+    {
+      "id": "labs:29384b7e0ee64136585d201780a1f1b0bda18b2fedbda2c8110a9eec8e087d9c",
+      "name": "Many-to-many relationships should be single-direction",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Relationship"
+      ]
+    },
+    {
+      "id": "labs:dc4c3579144b576dcaabfa914d2ac9fbd5b69b59cec5305a02a819207857f4fe",
+      "name": "Set IsAvailableInMdx to false on non-attribute columns",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Column"
+      ]
+    },
+    {
+      "id": "labs:99b0b8666e8d59aa608930f5b6ab8b8c754520769a0b8cb6f73a0b4958f97dfa",
+      "name": "Set 'Data Coverage Definition' property on the DirectQuery partition of a hybrid table",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Partition"
+      ]
+    },
+    {
+      "id": "labs:1d95735eec1192bd13434e03733b690b4264790921aa47afc4f39d0483c0e85b",
+      "name": "Dual mode is only relevant for dimension tables if DirectQuery is used for the corresponding fact table",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Model"
+      ]
+    },
+    {
+      "id": "labs:002069df0ccfba4b590afec5b94538599432bcc72b79db4e80da8b6a3d606bc3",
+      "name": "Set dimensions tables to dual mode instead of import when using DirectQuery on fact tables",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Table"
+      ]
+    },
+    {
+      "id": "labs:0ad15e1561cdb6a9deb8e3c8d51e8b93af9d25f8684f6af22241c1c33d70f0ec",
+      "name": "Minimize Power Query transformations",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Partition"
+      ]
+    },
+    {
+      "id": "labs:958a2232d5cbd04007dba4cb0d780a2207dc59570b4c47586fbd5c81e656b356",
+      "name": "Consider a star-schema instead of a snowflake architecture",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Table"
+      ]
+    },
+    {
+      "id": "labs:3c9c89f4256699fc75b5da175e0200413038826b216fad9804b47826a018c196",
+      "name": "Avoid using views when using Direct Lake mode",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Model"
+      ]
+    },
+    {
+      "id": "labs:67c0b19f1ea47e34cc5ae43b83bed2ccc9684af2ed3b9902ddc624ccfcc12bce",
+      "name": "Ensure Direct Lake tables do not source from a SQL view",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Partition"
+      ]
+    },
+    {
+      "id": "labs:a2399e7e9e294b68fdf51dba9ad1dda3f706f320aa79a3e7108f3dcdb9130bce",
+      "name": "Ensure Direct Lake source tables are V-Ordered",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Partition"
+      ]
+    },
+    {
+      "id": "labs:b2228adeff7c22592f4a0d89c5ca03d7cedd1926b440157a7eaaf15af16a2594",
+      "name": "Avoid adding 0 to a measure",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Measure"
+      ]
+    },
+    {
+      "id": "labs:086c206702bd6d1b2017e33599f15f3aed4808750e2b29c447ac1428e8837fe1",
+      "name": "Reduce usage of calculated tables",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Table"
+      ]
+    },
+    {
+      "id": "labs:e8165a1c70e27926414df04a11a77a8583b25c78286e35ac5b81686fd6d09d28",
+      "name": "Reduce usage of calculated columns that use the RELATED function",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Column"
+      ]
+    },
+    {
+      "id": "labs:635ea35308d277c629853185b9a7a118aebc4e33b1393a718620960241a3fd5f",
+      "name": "Avoid excessive bi-directional or many-to-many relationships",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Model"
+      ]
+    },
+    {
+      "id": "labs:bebb519d74219b35a7817ec19bdbd2ea1c2f483c127a839eb04570442992b0f5",
+      "name": "Remove auto-date table",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Table"
+      ]
+    },
+    {
+      "id": "labs:0e6bbaa8f89ac9b0c5323cbf8ee4c01da229df4182b00fdeddfb690fda83570c",
+      "name": "Date/calendar tables should be marked as a date table",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Table"
+      ]
+    },
+    {
+      "id": "labs:b6685cc8a666ecf1c2eadf8c8edaac483d49867e9230144e4d0a73399923ac42",
+      "name": "Large tables should be partitioned",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Table"
+      ]
+    },
+    {
+      "id": "labs:bd1b32cc411e1813a6021d8bcbe25d324b4065b215585193066a7f9bb3a932dd",
+      "name": "Limit row level security (RLS) logic",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Row Level Security"
+      ]
+    },
+    {
+      "id": "labs:ae76bc3bb5e63be9f37a1a6abec9975a27dfbe52dd03934f26491cdd5e6b1f0a",
+      "name": "Model should have a date table",
+      "severity": "warning",
+      "category": "Performance",
+      "scopes": [
+        "Model"
+      ]
+    },
+    {
+      "id": "labs:deb62e515468abf512b46f151a149da29f8e4fb5221cbf5b539290451e49ebf6",
+      "name": "Calculation items must have an expression",
+      "severity": "error",
+      "category": "Error Prevention",
+      "scopes": [
+        "Calculation Item"
+      ]
+    },
+    {
+      "id": "labs:0b4fd9f4490c5272c815a9660381f75dd6a7c4077f904a16e86a0b631b2c85b8",
+      "name": "Relationship columns should be of the same data type",
+      "severity": "warning",
+      "category": "Error Prevention",
+      "scopes": [
+        "Relationship"
+      ]
+    },
+    {
+      "id": "labs:584cced8bfd394e733b098a1e923f64b166a6e2fd8c82d0ab3fb1a5b0722b0fb",
+      "name": "Data columns must have a source column",
+      "severity": "error",
+      "category": "Error Prevention",
+      "scopes": [
+        "Column"
+      ]
+    },
+    {
+      "id": "labs:e2cf34ad32afc9c9e717f90d7550fa73a28c23bf7896752ddb6ca675df2efa36",
+      "name": "Set IsAvailableInMdx to true on necessary columns",
+      "severity": "warning",
+      "category": "Error Prevention",
+      "scopes": [
+        "Column"
+      ]
+    },
+    {
+      "id": "labs:c0de2b4b4f67db8e9143b604d7c6f1dc00418d6347305adf44ea05b09ce015e8",
+      "name": "Avoid the USERELATIONSHIP function and RLS against the same table",
+      "severity": "error",
+      "category": "Error Prevention",
+      "scopes": [
+        "Table"
+      ]
+    },
+    {
+      "id": "labs:0eb5b58ae8e0a24f7ab4d3916bd058f473354b4f313590ada1243b8cca3e1c45",
+      "name": "Avoid using the IFERROR function",
+      "severity": "warning",
+      "category": "DAX Expressions",
+      "scopes": [
+        "Measure"
+      ]
+    },
+    {
+      "id": "labs:4d7a3dc32a2129ff6a5e19097453c768d13a3da63829cad2d0645ff82f355afa",
+      "name": "Use the TREATAS function instead of INTERSECT for virtual relationships",
+      "severity": "warning",
+      "category": "DAX Expressions",
+      "scopes": [
+        "Measure"
+      ]
+    },
+    {
+      "id": "labs:de83df730e140b6c4f9470136c970a6285fe4b0e36d05096b96a66377b655979",
+      "name": "The EVALUATEANDLOG function should not be used in production models",
+      "severity": "warning",
+      "category": "DAX Expressions",
+      "scopes": [
+        "Measure"
+      ]
+    },
+    {
+      "id": "labs:0567b99cc61b7d73b1ef1ea69440d2beb370c664ce3bfd0ec24be1d475bcbd27",
+      "name": "Measures should not be direct references of other measures",
+      "severity": "warning",
+      "category": "DAX Expressions",
+      "scopes": [
+        "Measure"
+      ]
+    },
+    {
+      "id": "labs:3a626a9ffcad2854668dcd7ca6e07f08e70ad7b8ad89369ca9af913782c35711",
+      "name": "No two measures should have the same definition",
+      "severity": "warning",
+      "category": "DAX Expressions",
+      "scopes": [
+        "Measure"
+      ]
+    },
+    {
+      "id": "labs:53662284e0c64d15bca17c57d0a46d287d9a690404cb590c75cd872bf3e17992",
+      "name": "Avoid addition or subtraction of constant values to results of divisions",
+      "severity": "warning",
+      "category": "DAX Expressions",
+      "scopes": [
+        "Measure"
+      ]
+    },
+    {
+      "id": "labs:e2ed5db645769bc5e2e4a73b9b5fe319c5b457be167f65b5f3356f7002b157e1",
+      "name": "Avoid using '1-(x/y)' syntax",
+      "severity": "warning",
+      "category": "DAX Expressions",
+      "scopes": [
+        "Measure"
+      ]
+    },
+    {
+      "id": "labs:98fcac4996ef5ae0158a816ece70c6c937668ff229a1991ba558628c3bc84324",
+      "name": "Filter measure values by columns, not tables",
+      "severity": "warning",
+      "category": "DAX Expressions",
+      "scopes": [
+        "Measure"
+      ]
+    },
+    {
+      "id": "labs:6a9d6b8fe0f70382f10ae64d7bb6261517fb6b0850642f1357e86746fab64182",
+      "name": "Filter column values with proper syntax",
+      "severity": "warning",
+      "category": "DAX Expressions",
+      "scopes": [
+        "Measure"
+      ]
+    },
+    {
+      "id": "labs:a63b4f5233c330044fd2788e4ce26493b47dca39c53293a6302b8fcb11ce060c",
+      "name": "Use the DIVIDE function for division",
+      "severity": "warning",
+      "category": "DAX Expressions",
+      "scopes": [
+        "Measure"
+      ]
+    },
+    {
+      "id": "labs:8ba8a163ec53c4e67ec7a01ea763f99a8a8fa8c6a41e4da3fa1717d26a80f8b8",
+      "name": "Column references should be fully qualified",
+      "severity": "error",
+      "category": "DAX Expressions",
+      "scopes": [
+        "Measure",
+        "Calculated Table",
+        "Calculated Column",
+        "Calculation Item"
+      ]
+    },
+    {
+      "id": "labs:7036ae92e827235d9a0a97816bc730166d3325c6df6727edaa4e690174f32300",
+      "name": "Measure references should be unqualified",
+      "severity": "error",
+      "category": "DAX Expressions",
+      "scopes": [
+        "Measure",
+        "Calculated Table",
+        "Calculated Column",
+        "Calculation Item"
+      ]
+    },
+    {
+      "id": "labs:e3c9a03dcf7cd9dbb8dee09ecc1a6e8a97fe8462cb0d6775205db017a278c14f",
+      "name": "Avoid using SUM or AVERAGE on a string column",
+      "severity": "error",
+      "category": "DAX Expressions",
+      "scopes": [
+        "Measure",
+        "Calculated Table",
+        "Calculated Column",
+        "Calculation Item"
+      ]
+    },
+    {
+      "id": "labs:0a3547914935abd5bf827b3c642918140a62aa1c3dee8ad4057c5dad472e39ba",
+      "name": "Inactive relationships that are never activated",
+      "severity": "warning",
+      "category": "DAX Expressions",
+      "scopes": [
+        "Relationship"
+      ]
+    },
+    {
+      "id": "labs:f90aa0d481a0e5bc906ec4156c2261a9b50d7a7c2a565622ae79d57e8cdeafb1",
+      "name": "Remove unnecessary columns",
+      "severity": "warning",
+      "category": "Maintenance",
+      "scopes": [
+        "Column"
+      ]
+    },
+    {
+      "id": "labs:1ddcc787519efab4ad24d7b7ca609987775442319ebf83ed683177c23e0891b1",
+      "name": "Remove unnecessary measures",
+      "severity": "warning",
+      "category": "Maintenance",
+      "scopes": [
+        "Measure"
+      ]
+    },
+    {
+      "id": "labs:f5712c7e50e6717308946111355999a559150f3cc92986079efdfa0807d57b5f",
+      "name": "Ensure tables have relationships",
+      "severity": "warning",
+      "category": "Maintenance",
+      "scopes": [
+        "Table"
+      ]
+    },
+    {
+      "id": "labs:5698a41a976f97be3a666243537f302f838caaf8ec7c8cd848132cce07488489",
+      "name": "Calculation groups with no calculation items",
+      "severity": "warning",
+      "category": "Maintenance",
+      "scopes": [
+        "Table"
+      ]
+    },
+    {
+      "id": "labs:17940e9bbe493fe03135f2349b150dfc346ef2ee50e72d212fff97e16d8bdfc8",
+      "name": "Visible objects with no description",
+      "severity": "info",
+      "category": "Maintenance",
+      "scopes": [
+        "Column",
+        "Measure",
+        "Table"
+      ]
+    },
+    {
+      "id": "labs:b19fcd3a3a1d152f149502fcff0640a2f694be5b476ded5d9fe20f8d725b3bcf",
+      "name": "Provide format string for 'Date' columns",
+      "severity": "warning",
+      "category": "Formatting",
+      "scopes": [
+        "Column"
+      ]
+    },
+    {
+      "id": "labs:e6b55dc3376eda2d2a998af6f477f275cdbd51a44b7d8e8da822f3104b205ea6",
+      "name": "Do not summarize numeric columns",
+      "severity": "warning",
+      "category": "Formatting",
+      "scopes": [
+        "Column"
+      ]
+    },
+    {
+      "id": "labs:94b3f4aabe0db98cc80db1a44945e707b8abf5e6432861c6ac16f7d1ad2f96ee",
+      "name": "Provide format string for measures",
+      "severity": "info",
+      "category": "Formatting",
+      "scopes": [
+        "Measure"
+      ]
+    },
+    {
+      "id": "labs:7d432ea1034108a275fd952773cb2fb09150cf9cbaf862c90a2d9e9af2babeff",
+      "name": "Add data category for columns",
+      "severity": "info",
+      "category": "Formatting",
+      "scopes": [
+        "Column"
+      ]
+    },
+    {
+      "id": "labs:989bc8d733436625296cf9fd878e4bcc6194f571110dbf4b02d145a98fd8a715",
+      "name": "Percentages should be formatted with thousands separators and 1 decimal",
+      "severity": "warning",
+      "category": "Formatting",
+      "scopes": [
+        "Measure"
+      ]
+    },
+    {
+      "id": "labs:f56ae3d9608311899bb73e6962b4c42578e2c853ab3830a544e734f52e0d9bce",
+      "name": "Whole numbers should be formatted with thousands separators and no decimals",
+      "severity": "warning",
+      "category": "Formatting",
+      "scopes": [
+        "Measure"
+      ]
+    },
+    {
+      "id": "labs:8883b156c1d8b4961092f79cb0b44e89a0e1389861195057aa017dcde18231af",
+      "name": "Hide foreign keys",
+      "severity": "info",
+      "category": "Formatting",
+      "scopes": [
+        "Column"
+      ]
+    },
+    {
+      "id": "labs:adaf54a463cd0a991043b43cca60cd777ea45523d243f889bed8b279cdf615f1",
+      "name": "Mark primary keys",
+      "severity": "info",
+      "category": "Formatting",
+      "scopes": [
+        "Column"
+      ]
+    },
+    {
+      "id": "labs:e6b3d67650064722e58fcc8599ac27f1b9190a2ff6a1e66c4a589e19f089e629",
+      "name": "Month (as a string) must be sorted",
+      "severity": "info",
+      "category": "Formatting",
+      "scopes": [
+        "Column"
+      ]
+    },
+    {
+      "id": "labs:8b8e81b6b9299cffdf97c892ed52124e4287e9eb1e32694965b1c5dc2a12dead",
+      "name": "Relationship columns should be of integer data type",
+      "severity": "warning",
+      "category": "Formatting",
+      "scopes": [
+        "Relationship"
+      ]
+    },
+    {
+      "id": "labs:29bb592f3b373f68f22ee9f857f6474490ded5f7ee74b63e0cbb7bb145a21452",
+      "name": "Provide format string for 'Month' columns",
+      "severity": "warning",
+      "category": "Formatting",
+      "scopes": [
+        "Column"
+      ]
+    },
+    {
+      "id": "labs:7288cbd6543b5342a2a507eed11e3f9860964bb8d2ad4350675be6fd8e0f3d6c",
+      "name": "Format flag columns as Yes/No value strings",
+      "severity": "info",
+      "category": "Formatting",
+      "scopes": [
+        "Column"
+      ]
+    },
+    {
+      "id": "labs:191a74fed97e51f429faa98e834de2c73dcaa61c4ae8bff1e6bc3a210cfaa831",
+      "name": "Objects should not start or end with a space",
+      "severity": "error",
+      "category": "Formatting",
+      "scopes": [
+        "Table",
+        "Column",
+        "Measure",
+        "Partition",
+        "Hierarchy"
+      ]
+    },
+    {
+      "id": "labs:4d4d490986ad50f8c36b3433c13df844c3a1ec3409fc8ba167737852a49af602",
+      "name": "First letter of objects must be capitalized",
+      "severity": "info",
+      "category": "Formatting",
+      "scopes": [
+        "Table",
+        "Column",
+        "Measure",
+        "Partition",
+        "Hierarchy"
+      ]
+    },
+    {
+      "id": "labs:937ee275c379f57913b3684c8c0561e36d799d6fe5b8b72573c347b35de2bc72",
+      "name": "Object names must not contain special characters",
+      "severity": "warning",
+      "category": "Naming Conventions",
+      "scopes": [
+        "Table",
+        "Column",
+        "Measure",
+        "Partition",
+        "Hierarchy"
+      ]
+    },
+    {
+      "id": "labs:634db4b725a0bb59a622c42fd119633a87653aadf6030d4bb66f1c92b84d1c68",
+      "name": "Partition name should match table name for single partition tables",
+      "severity": "info",
+      "category": "Naming Conventions",
+      "scopes": [
+        "Partition"
+      ]
+    }
+  ]
+}

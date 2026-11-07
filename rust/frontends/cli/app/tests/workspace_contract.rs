@@ -269,7 +269,7 @@ fn workspace_members_and_internal_edges_respect_library_boundaries() {
         .iter()
         .map(|id| id.as_str().unwrap())
         .collect();
-    assert_eq!(defaults.len(), packages.len() - 1);
+    assert_eq!(defaults.len(), packages.len() - 2);
     assert!(
         packages
             .iter()
@@ -280,13 +280,27 @@ fn workspace_members_and_internal_edges_respect_library_boundaries() {
         let manifest = std::fs::read_to_string(package["manifest_path"].as_str().unwrap()).unwrap();
         if matches!(
             name,
-            "fabric-cli" | "fabric-cli-repl" | "fabric-identity" | "fabric-sdk-transport"
+            "fabric-cli"
+                | "fabric-cli-repl"
+                | "fabric-identity"
+                | "fabric-sdk-transport"
+                | "fabric-sdk-semantic-model"
+                | "fabric-cli-semantic-model"
+                | "fabric-semantic-model-dotnet"
         ) {
             assert_eq!(package["features"]["default"], json!([]));
         }
-        if name == "fabric-identity-windows" {
+        if matches!(
+            name,
+            "fabric-identity-windows" | "fabric-semantic-model-dotnet"
+        ) {
             assert!(!defaults.contains(package["id"].as_str().unwrap()));
-            assert_eq!(package["metadata"]["fabric"]["layer"], "identity");
+            let expected_layer = if name == "fabric-identity-windows" {
+                "identity"
+            } else {
+                "sdk"
+            };
+            assert_eq!(package["metadata"]["fabric"]["layer"], expected_layer);
             assert!(manifest.contains("unsafe_code = \"deny\""));
             assert!(manifest.contains("unsafe_op_in_unsafe_fn = \"deny\""));
             assert!(manifest.contains("undocumented_unsafe_blocks = \"deny\""));
@@ -312,6 +326,17 @@ fn workspace_members_and_internal_edges_respect_library_boundaries() {
                 assert_eq!(name, "fabric-identity");
                 assert_eq!(dependency["optional"], true);
                 assert_eq!(dependency["target"], "cfg(windows)");
+            }
+            if target == "fabric-semantic-model-dotnet" {
+                assert_eq!(name, "fabric-sdk-semantic-model");
+                assert_eq!(dependency["optional"], true);
+                assert_eq!(dependency["uses_default_features"], false);
+            }
+            if target == "netcorehost" {
+                assert_eq!(name, "fabric-semantic-model-dotnet");
+                assert_eq!(dependency["optional"], true);
+                assert_eq!(dependency["uses_default_features"], false);
+                assert_eq!(dependency["features"], json!(["net8_0"]));
             }
             if name == "fabric-cli" && target == "fabric-identity" {
                 assert_eq!(dependency["optional"], true);
@@ -568,6 +593,9 @@ fn default_sdk_cli_and_identity_graphs_exclude_native_broker() {
             "fabric-cli-update v",
             "self-replace v",
             "azure_identity v",
+            "fabric-semantic-model-dotnet v",
+            "netcorehost v",
+            "hostfxr-sys v",
         ] {
             assert!(!graph.contains(excluded), "{package}: {graph}");
         }

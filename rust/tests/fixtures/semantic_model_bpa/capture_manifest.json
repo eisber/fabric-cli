@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "commit": "2ddf46109c1209ceffa88149f4631e7b2275f9a1",
+  "files": [
+    {
+      "path": "coverage.json",
+      "sha256": "ef7cead21a145a8386614dcfadb40be03bdc3b149f944bfcbb1bfa4c2649fcf7"
+    },
+    {
+      "path": "evaluation_cases.json",
+      "sha256": "5ad413bd1d0fc843063fdcb087bc1ca057b9112b7dd3de0fc461689c4ff0f0e0"
+    },
+    {
+      "path": "inventory.json",
+      "sha256": "95856fe80fbd772b55706ed307ffc6f44856666aaab367307b3801a0c5534c81"
+    },
+    {
+      "path": "models/decimal.bim",
+      "sha256": "352b320524b9544df65260e9a33856f8f3e69cbbc26b9bb6ba4c936dd0cfa2d0"
+    },
+    {
+      "path": "models/double.bim",
+      "sha256": "db026e5db9f630b4895a092d2fbf3669775699dd5f9ee9d8d36df88cffd9e6fa"
+    },
+    {
+      "path": "models/empty.bim",
+      "sha256": "24c6e5803a3d558c7e5d4d79d90760bc3deb923d2665742a656a8bbc8c2a50d4"
+    },
+    {
+      "path": "models/malformed.bim",
+      "sha256": "d31fae9b2cbae99d8f3c89614d2d00b0662d49696103ab2e607beada898d5fdf"
+    },
+    {
+      "path": "models/missing-source-column.bim",
+      "sha256": "79ac0e8a545d4983154dc9aee6b3a4e591b5c93bccd9ec111ccd1321f9a18a7a"
+    },
+    {
+      "path": "models/naming.bim",
+      "sha256": "bf4d9069880671dd537fb0eb5eb75a1acc54707602b1985b25d11498c58cef83"
+    },
+    {
+      "path": "models/relationships.bim",
+      "sha256": "784e7f73e11e8b27f7cfcd93425e4ba47f66f1fc7c23b485333ecc711e1c4a5e"
+    },
+    {
+      "path": "predicate_cases.json",
+      "sha256": "57ebebdd300985b5af05e44ed8f5740ff630aed17540767c9602818ed6b94d52"
+    },
+    {
+      "path": "upstream/_helper_functions.py",
+      "sha256": "86720495eff69165598a92e018462608f55ab1219f8663f8f848688dc4b0d572"
+    },
+    {
+      "path": "upstream/_model_bpa.py",
+      "sha256": "eb1c9851476e283e244e39437c80e009bbed68fede71fa3f8f2fd2b0519d0a0f"
+    },
+    {
+      "path": "upstream/_model_bpa_rules.py",
+      "sha256": "bd28bf30d9815116defdb5664158f70a0a957dd6904a6ccdb33c4d007c4b648f"
+    },
+    {
+      "path": "upstream/LICENSE",
+      "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+    }
+  ]
+}

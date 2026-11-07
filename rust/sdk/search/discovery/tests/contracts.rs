@@ -187,11 +187,11 @@ fn sdk_provenance_paths_remain_bound_to_their_original_commit_tree() {
         let (target, source_path) = match entry.target_kind() {
             TargetKind::Workspace => (
                 "/Sales.Workspace",
-                "rust/capabilities/resources/fabric-sdk-workspaces/src/mutations.rs",
+                "rust/sdk/workspaces/src/mutations.rs",
             ),
             TargetKind::Notebook => (
                 "/Sales.Workspace/Analysis.Notebook",
-                "rust/capabilities/jobs/fabric-sdk-jobs/src/lib.rs",
+                "rust/sdk/jobs/src/lib.rs",
             ),
         };
         let descriptor = contract(entry.operation(), target).descriptor();

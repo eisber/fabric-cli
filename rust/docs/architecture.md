@@ -28,6 +28,8 @@ unchanged names and logical layers:
 | `sdk/pagination/`, `sdk/operations/` | Shared paging, request completion and polling |
 | `sdk/request-context/`, `sdk/json/` | Shared endpoint/credential contracts and ordered JSON encoding |
 | `sdk/contracts/` | Shared v2 descriptors and capability contracts, retaining the core layer |
+| `sdk/semantic-model/client/`, `sdk/semantic-model/dotnet/` | Runtime-neutral analysis and optional isolated TOM native boundary |
+| `frontends/cli/commands/semantic-model/` | Read-only semantic-model arguments and caller-owned execution |
 | `sdk/sql/database/`, `sdk/sql/definition/` | SQL database and definition service contracts |
 | `sdk/tabular/`, `sdk/dataflow/` | Shared tabular codecs and Dataflow execution/result contracts |
 | `sdk/ontology/client/`, `sdk/ontology/workload/`, `sdk/dataagents/ontology/` | Reusable Ontology and DataAgent operations |
@@ -50,6 +52,15 @@ provide their own input, confirmation and output adapters; they must not launch
 the CLI or depend on CLI-specific types simply to reuse service operations.
 Extracting additional front-end-neutral workflows requires separate interface
 review, not relabeling CLI crates or relaxing the layer rules below.
+
+The optional semantic-model BPA boundary is isolated in
+`sdk/semantic-model/dotnet`. Only its explicit
+`dotnet` feature compiles the managed TOM component or selects hostfxr hosting.
+It is excluded from default members and ordinary SDK/CLI dependency graphs.
+Its private interop module is the only local unsafe-code exception; existing
+crates retain their safety policies. The safe SDK and CLI adapters share the
+same report/evidence contract without a default .NET requirement. See the
+[BPA slice and feature boundaries](semantic-model-bpa.md).
 
 | Layer (initial crate) | Ownership | Allowed dependency layers |
 | --- | --- | --- |
@@ -112,7 +123,8 @@ the architecture contract detects unregistered packages and rejects obsolete
 production source trees. Do not use a blanket `sdk/*` glob: it would also match
 grouping directories without manifests.
 Default members explicitly include safe crates and exclude the
-optional `fabric-identity-windows` native boundary. Add new safe crates to
+optional `fabric-identity-windows` and `fabric-semantic-model-dotnet` native
+boundaries. Add new safe crates to
 `default-members`. Each crate declares its architectural layer in its own manifest:
 
 ```toml
@@ -134,8 +146,8 @@ bypass the checks.
 over isolated desktop WAM interop. Only `fabric-identity/windows-broker` selects
 that optional Windows-target dependency. Architecture checks also preserve its
 exclusion from default SDK/CLI/identity graphs and its narrowly scoped unsafe
-lint policy. The native boundary has no internal workspace dependencies; all
-other workspace crates inherit `unsafe_code = "forbid"`.
+lint policy. Both isolated native boundaries have no internal workspace
+dependencies. All other workspace crates inherit `unsafe_code = "forbid"`.
 
 ### Crate-first parallel development
 

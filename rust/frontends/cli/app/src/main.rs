@@ -22,6 +22,8 @@ mod native_read;
 #[cfg(feature = "repl")]
 mod repl_host;
 mod runtime_config;
+#[cfg(feature = "semantic-model")]
+mod semantic_model;
 #[cfg(feature = "self-update")]
 mod update_host;
 
@@ -79,6 +81,11 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
         return repl_host::run();
     }
     let invocation = parse_args(arguments);
+    #[cfg(feature = "semantic-model")]
+    if let Ok(Invocation::SemanticModel(command)) = &invocation {
+        // Offline analysis validates before update policy or navigation setup.
+        return semantic_model::run(command).map(exit_status);
+    }
     #[cfg(feature = "v2-cancel")]
     if let Ok(Invocation::Cancel(command)) = &invocation {
         // ID-only cancellation never restores navigation or runs startup updates.
@@ -173,6 +180,8 @@ fn dispatch(
             write!(io::stdout().lock(), "{text}")?;
             return Ok(CommandOutcome::Returned(0));
         }
+        #[cfg(feature = "semantic-model")]
+        Ok(Invocation::SemanticModel(command)) => return semantic_model::run(&command),
         #[cfg(feature = "v2-cancel")]
         Ok(Invocation::Cancel(command)) => {
             return dispatch_cancel(&command, Some(local_state));

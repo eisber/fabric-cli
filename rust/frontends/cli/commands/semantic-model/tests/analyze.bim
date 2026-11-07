@@ -1,0 +1,17 @@
+{
+  "name": "OfflineBpaAcceptance",
+  "compatibilityLevel": 1600,
+  "model": {
+    "culture": "en-US",
+    "tables": [{
+      "name": "Sales",
+      "columns": [{"name": "Amount", "dataType": "double", "sourceColumn": "Amount"}],
+      "measures": [{"name": "Total Amount", "expression": "SUM('Sales'[Amount])"}],
+      "partitions": [{
+        "name": "Sales",
+        "mode": "import",
+        "source": {"type": "m", "expression": "#table({\"Amount\"}, {{1}})"}
+      }]
+    }]
+  }
+}

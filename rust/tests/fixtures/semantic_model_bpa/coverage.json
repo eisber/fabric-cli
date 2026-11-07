@@ -1,0 +1,825 @@
+{
+  "schemaVersion": 1,
+  "commit": "2ddf46109c1209ceffa88149f4631e7b2275f9a1",
+  "ruleCount": 64,
+  "predicateCaseCount": 145,
+  "rules": [
+    {
+      "ordinal": 1,
+      "name": "Do not use floating point data types",
+      "caseIds": [
+        "r01-positive",
+        "r01-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 2,
+      "name": "Avoid using calculated columns",
+      "caseIds": [
+        "r02-positive",
+        "r02-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 3,
+      "name": "Check if bi-directional and many-to-many relationships are valid",
+      "caseIds": [
+        "r03-positive",
+        "r03-negative",
+        "r03-bidirectional-one-to-many"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 4,
+      "name": "Check if dynamic row level security (RLS) is necessary",
+      "caseIds": [
+        "r04-positive",
+        "r04-negative",
+        "r04-regex-parentheses-are-not-literal"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 5,
+      "name": "Avoid using many-to-many relationships on tables used for dynamic row level security",
+      "caseIds": [
+        "r05-positive",
+        "r05-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "all_rls",
+        "used_in_relationships"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 6,
+      "name": "Many-to-many relationships should be single-direction",
+      "caseIds": [
+        "r06-positive",
+        "r06-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 7,
+      "name": "Set IsAvailableInMdx to false on non-attribute columns",
+      "caseIds": [
+        "r07-positive",
+        "r07-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "is_direct_lake",
+        "used_in_hierarchies",
+        "used_in_sort_by"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 8,
+      "name": "Set 'Data Coverage Definition' property on the DirectQuery partition of a hybrid table",
+      "caseIds": [
+        "r08-positive",
+        "r08-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "is_hybrid_table"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 9,
+      "name": "Dual mode is only relevant for dimension tables if DirectQuery is used for the corresponding fact table",
+      "caseIds": [
+        "r09-positive",
+        "r09-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "all_partitions"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 10,
+      "name": "Set dimensions tables to dual mode instead of import when using DirectQuery on fact tables",
+      "caseIds": [
+        "r10-positive",
+        "r10-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "has_hybrid_table",
+        "used_in_relationships"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 11,
+      "name": "Minimize Power Query transformations",
+      "caseIds": [
+        "r11-positive",
+        "r11-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 12,
+      "name": "Consider a star-schema instead of a snowflake architecture",
+      "caseIds": [
+        "r12-positive",
+        "r12-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "used_in_relationships"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 13,
+      "name": "Avoid using views when using Direct Lake mode",
+      "caseIds": [
+        "r13-positive",
+        "r13-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "is_direct_lake_using_view"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 14,
+      "name": "Ensure Direct Lake tables do not source from a SQL view",
+      "caseIds": [],
+      "status": "not_executed",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": [
+        "_direct_lake_view_tables"
+      ]
+    },
+    {
+      "ordinal": 15,
+      "name": "Ensure Direct Lake source tables are V-Ordered",
+      "caseIds": [],
+      "status": "not_executed",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": [
+        "_non_vordered_direct_lake_tables"
+      ]
+    },
+    {
+      "ordinal": 16,
+      "name": "Avoid adding 0 to a measure",
+      "caseIds": [
+        "r16-positive",
+        "r16-negative",
+        "r16-literal-space-stripping",
+        "r16-tab-not-stripped"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 17,
+      "name": "Reduce usage of calculated tables",
+      "caseIds": [
+        "r17-positive",
+        "r17-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "is_calculated_table",
+        "is_field_parameter"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 18,
+      "name": "Reduce usage of calculated columns that use the RELATED function",
+      "caseIds": [
+        "r18-positive",
+        "r18-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 19,
+      "name": "Avoid excessive bi-directional or many-to-many relationships",
+      "caseIds": [
+        "r19-positive",
+        "r19-negative",
+        "r19-threshold-exactly-30-percent",
+        "r19-threshold-40-percent",
+        "r19-double-counts-both-and-many",
+        "r19-empty-relationships"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 20,
+      "name": "Remove auto-date table",
+      "caseIds": [
+        "r20-positive",
+        "r20-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "is_calculated_table"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 21,
+      "name": "Date/calendar tables should be marked as a date table",
+      "caseIds": [
+        "r21-positive",
+        "r21-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 22,
+      "name": "Large tables should be partitioned",
+      "caseIds": [
+        "r22-positive",
+        "r22-negative",
+        "r22-fractional-above-threshold",
+        "r22-missing-row-count-is-not-zero"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "is_direct_lake",
+        "row_count"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 23,
+      "name": "Limit row level security (RLS) logic",
+      "caseIds": [
+        "r23-positive",
+        "r23-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 24,
+      "name": "Model should have a date table",
+      "caseIds": [
+        "r24-positive",
+        "r24-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 25,
+      "name": "Calculation items must have an expression",
+      "caseIds": [
+        "r25-positive",
+        "r25-negative",
+        "r25-none-expression-data-error"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 26,
+      "name": "Relationship columns should be of the same data type",
+      "caseIds": [
+        "r26-positive",
+        "r26-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 27,
+      "name": "Data columns must have a source column",
+      "caseIds": [
+        "r27-positive",
+        "r27-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 28,
+      "name": "Set IsAvailableInMdx to true on necessary columns",
+      "caseIds": [
+        "r28-positive",
+        "r28-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "is_direct_lake",
+        "used_in_hierarchies",
+        "used_in_sort_by"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 29,
+      "name": "Avoid the USERELATIONSHIP function and RLS against the same table",
+      "caseIds": [
+        "r29-positive",
+        "r29-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "all_measures",
+        "all_rls"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 30,
+      "name": "Avoid using the IFERROR function",
+      "caseIds": [
+        "r30-positive",
+        "r30-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 31,
+      "name": "Use the TREATAS function instead of INTERSECT for virtual relationships",
+      "caseIds": [
+        "r31-positive",
+        "r31-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 32,
+      "name": "The EVALUATEANDLOG function should not be used in production models",
+      "caseIds": [
+        "r32-positive",
+        "r32-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 33,
+      "name": "Measures should not be direct references of other measures",
+      "caseIds": [
+        "r33-positive",
+        "r33-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "all_measures"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 34,
+      "name": "No two measures should have the same definition",
+      "caseIds": [
+        "r34-positive",
+        "r34-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "all_measures"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 35,
+      "name": "Avoid addition or subtraction of constant values to results of divisions",
+      "caseIds": [
+        "r35-positive",
+        "r35-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 36,
+      "name": "Avoid using '1-(x/y)' syntax",
+      "caseIds": [
+        "r36-positive",
+        "r36-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 37,
+      "name": "Filter measure values by columns, not tables",
+      "caseIds": [
+        "r37-positive",
+        "r37-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 38,
+      "name": "Filter column values with proper syntax",
+      "caseIds": [
+        "r38-positive",
+        "r38-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 39,
+      "name": "Use the DIVIDE function for division",
+      "caseIds": [
+        "r39-positive",
+        "r39-negative",
+        "r39-line-comment-not-division",
+        "r39-block-comment-not-division"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 40,
+      "name": "Column references should be fully qualified",
+      "caseIds": [
+        "r40-positive",
+        "r40-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "unqualified_columns"
+      ],
+      "unverifiedExternalHelpers": [
+        "dependencies"
+      ]
+    },
+    {
+      "ordinal": 41,
+      "name": "Measure references should be unqualified",
+      "caseIds": [
+        "r41-positive",
+        "r41-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "fully_qualified_measures"
+      ],
+      "unverifiedExternalHelpers": [
+        "dependencies"
+      ]
+    },
+    {
+      "ordinal": 42,
+      "name": "Avoid using SUM or AVERAGE on a string column",
+      "caseIds": [
+        "r42-positive",
+        "r42-negative",
+        "r42-average-on-string",
+        "r42-cross-table-name-only-match"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 43,
+      "name": "Inactive relationships that are never activated",
+      "caseIds": [
+        "r43-positive",
+        "r43-negative",
+        "r43-reverse-activation-order"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "all_measures"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 44,
+      "name": "Remove unnecessary columns",
+      "caseIds": [
+        "r44-positive",
+        "r44-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "depends_on",
+        "used_in_hierarchies",
+        "used_in_relationships",
+        "used_in_sort_by"
+      ],
+      "unverifiedExternalHelpers": [
+        "dependencies"
+      ]
+    },
+    {
+      "ordinal": 45,
+      "name": "Remove unnecessary measures",
+      "caseIds": [
+        "r45-positive",
+        "r45-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "referenced_by"
+      ],
+      "unverifiedExternalHelpers": [
+        "dependencies"
+      ]
+    },
+    {
+      "ordinal": 46,
+      "name": "Ensure tables have relationships",
+      "caseIds": [
+        "r46-positive",
+        "r46-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "is_field_parameter",
+        "used_in_relationships"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 47,
+      "name": "Calculation groups with no calculation items",
+      "caseIds": [
+        "r47-positive",
+        "r47-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 48,
+      "name": "Visible objects with no description",
+      "caseIds": [
+        "r48-positive",
+        "r48-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 49,
+      "name": "Provide format string for 'Date' columns",
+      "caseIds": [
+        "r49-positive",
+        "r49-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 50,
+      "name": "Do not summarize numeric columns",
+      "caseIds": [
+        "r50-positive",
+        "r50-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 51,
+      "name": "Provide format string for measures",
+      "caseIds": [
+        "r51-positive",
+        "r51-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 52,
+      "name": "Add data category for columns",
+      "caseIds": [
+        "r52-positive",
+        "r52-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 53,
+      "name": "Percentages should be formatted with thousands separators and 1 decimal",
+      "caseIds": [
+        "r53-positive",
+        "r53-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 54,
+      "name": "Whole numbers should be formatted with thousands separators and no decimals",
+      "caseIds": [
+        "r54-positive",
+        "r54-negative",
+        "r54-currency-symbol-exemption"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 55,
+      "name": "Hide foreign keys",
+      "caseIds": [
+        "r55-positive",
+        "r55-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "used_in_relationships"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 56,
+      "name": "Mark primary keys",
+      "caseIds": [
+        "r56-positive",
+        "r56-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [
+        "used_in_relationships"
+      ],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 57,
+      "name": "Month (as a string) must be sorted",
+      "caseIds": [
+        "r57-positive",
+        "r57-negative",
+        "r57-null-is-not-empty-string"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 58,
+      "name": "Relationship columns should be of integer data type",
+      "caseIds": [
+        "r58-positive",
+        "r58-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 59,
+      "name": "Provide format string for 'Month' columns",
+      "caseIds": [
+        "r59-positive",
+        "r59-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 60,
+      "name": "Format flag columns as Yes/No value strings",
+      "caseIds": [
+        "r60-positive",
+        "r60-negative",
+        "r60-space-flag-suffix"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 61,
+      "name": "Objects should not start or end with a space",
+      "caseIds": [
+        "r61-positive",
+        "r61-negative",
+        "r61-empty-name-data-error"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 62,
+      "name": "First letter of objects must be capitalized",
+      "caseIds": [
+        "r62-positive",
+        "r62-negative",
+        "r62-empty-name-data-error"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 63,
+      "name": "Object names must not contain special characters",
+      "caseIds": [
+        "r63-positive",
+        "r63-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    },
+    {
+      "ordinal": 64,
+      "name": "Partition name should match table name for single partition tables",
+      "caseIds": [
+        "r64-positive",
+        "r64-negative"
+      ],
+      "status": "original_expression_with_synthetic_collaborators",
+      "unverifiedWrapperMethods": [],
+      "unverifiedExternalHelpers": []
+    }
+  ],
+  "notCoveredRules": [
+    {
+      "ordinal": 14,
+      "reason": "Original helper imports Direct Lake fallback-reason provider; real DMV/Fabric evidence not available."
+    },
+    {
+      "ordinal": 15,
+      "reason": "Original helper imports lakehouse V-Order provider and inspects source identity/partitions; no live storage access."
+    }
+  ],
+  "helperExecution": {
+    "originalLocalHelpersExecuted": [
+      "_memoize_on_tom",
+      "_string_column_names",
+      "_uses_sum_or_average_on_string_column"
+    ],
+    "scope": "String-column positive/negative paths only; no real TOM enums, query-error or cache-failure proof.",
+    "dependencyMethods": "unqualified_columns, fully_qualified_measures, depends_on and referenced_by receive explicit synthetic responses; dependency parsing/graph semantics are NOT tested.",
+    "rowCounts": "Explicit synthetic row_count responses test the original threshold only; no DMV or VertiPaq acquisition."
+  },
+  "unexecutedRuntime": [
+    "Full run_model_bpa invocation/import/startup and actual pandas dataframe behavior",
+    "Real TOM package enum/property/null/collection behavior; TOM BIM/TMDL deserialization",
+    "Default full-inventory scan against an actual model (bounded evaluator cases select rules explicitly)",
+    "Connection, authentication, workspace/model resolution, XMLA, Fabric, Spark and notebook rendering",
+    "Dependency acquisition/helper algorithms, real model row counts and extended VertiPaq annotations",
+    "Direct Lake view detection, fallback reason queries, source identities and lakehouse V-Order inspection",
+    "HTML/icons/translation/export, optional .NET host/Rust bridge/CLI, cancellation and native lifecycle"
+  ]
+}

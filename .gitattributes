@@ -7,3 +7,6 @@
 
 *.abf binary
 *.png binary
+
+# Preserve the original byte-pinned BIM capture on every checkout.
+/rust/tests/fixtures/semantic_model_bpa/models/*.bim text eol=crlf

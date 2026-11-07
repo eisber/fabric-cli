@@ -1,0 +1,2208 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/microsoft/semantic-link-labs",
+  "commit": "2ddf46109c1209ceffa88149f4631e7b2275f9a1",
+  "sourceFiles": [
+    {
+      "file": "_model_bpa_rules.py",
+      "sha256": "bd28bf30d9815116defdb5664158f70a0a957dd6904a6ccdb33c4d007c4b648f",
+      "byteLength": 52659,
+      "path": "src/sempy_labs/_model_bpa_rules.py"
+    },
+    {
+      "file": "_model_bpa.py",
+      "sha256": "eb1c9851476e283e244e39437c80e009bbed68fede71fa3f8f2fd2b0519d0a0f",
+      "byteLength": 22512,
+      "path": "src/sempy_labs/_model_bpa.py"
+    },
+    {
+      "file": "_helper_functions.py",
+      "sha256": "86720495eff69165598a92e018462608f55ab1219f8663f8f848688dc4b0d572",
+      "byteLength": 103083,
+      "path": "src/sempy_labs/_helper_functions.py"
+    },
+    {
+      "file": "LICENSE",
+      "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383",
+      "byteLength": 1141,
+      "path": "LICENSE"
+    }
+  ],
+  "ruleCount": 64,
+  "ruleColumns": [
+    "Category",
+    "Scope",
+    "Severity",
+    "Rule Name",
+    "Expression",
+    "Description",
+    "URL"
+  ],
+  "resultColumns": [
+    "Category",
+    "Rule Name",
+    "Severity",
+    "Object Type",
+    "Object Name",
+    "Description",
+    "URL"
+  ],
+  "missingTupleFields": "null in this JSON ledger; pandas pads absent tuple fields with missing values",
+  "helpers": [
+    {
+      "name": "_memoize_on_tom",
+      "location": {
+        "lineno": 8,
+        "col_offset": 0,
+        "end_lineno": 30,
+        "end_col_offset": 21
+      },
+      "astSha256": "6ecf23884289e59efb4a5fa2298a8515952f74bffa25522d11de0add165c52ab",
+      "imports": []
+    },
+    {
+      "name": "_direct_lake_view_tables",
+      "location": {
+        "lineno": 33,
+        "col_offset": 0,
+        "end_lineno": 48,
+        "end_col_offset": 65
+      },
+      "astSha256": "fd21402ab868cb9f0f711515ab90dd20f6838e9f59eacc2f3dfeefee91d6242e",
+      "imports": [
+        "from sempy_labs.directlake._dl_helper import check_fallback_reason"
+      ]
+    },
+    {
+      "name": "_non_vordered_direct_lake_tables",
+      "location": {
+        "lineno": 51,
+        "col_offset": 0,
+        "end_lineno": 92,
+        "end_col_offset": 73
+      },
+      "astSha256": "4ab61131abab3e1372ea5bee7704f934f10964ba2d078195dbdbc85126c34b68",
+      "imports": [
+        "import Microsoft.AnalysisServices.Tabular as TOM",
+        "from sempy_labs.lakehouse._helper import is_v_ordered"
+      ]
+    },
+    {
+      "name": "_string_column_names",
+      "location": {
+        "lineno": 95,
+        "col_offset": 0,
+        "end_lineno": 103,
+        "end_col_offset": 61
+      },
+      "astSha256": "8861239df39f3da155c7f7f876e10a78905ebdca4730b7843c7ed5d947118378",
+      "imports": [
+        "import Microsoft.AnalysisServices.Tabular as TOM"
+      ]
+    },
+    {
+      "name": "_uses_sum_or_average_on_string_column",
+      "location": {
+        "lineno": 106,
+        "col_offset": 0,
+        "end_lineno": 131,
+        "end_col_offset": 5
+      },
+      "astSha256": "9ca6cc667d825a4161ceedcd40e152205f4ebdfd8bc6700a543824d8726283ec",
+      "imports": []
+    }
+  ],
+  "namingHelpers": [
+    {
+      "name": "format_dax_object_name",
+      "location": {
+        "lineno": 136,
+        "col_offset": 0,
+        "end_lineno": 153,
+        "end_col_offset": 44
+      },
+      "astSha256": "b8da2e18174d160a4e57b5d4bf97a6d278649c73500457be43726c097573bc29"
+    },
+    {
+      "name": "create_relationship_name",
+      "location": {
+        "lineno": 157,
+        "col_offset": 0,
+        "end_lineno": 184,
+        "end_col_offset": 5
+      },
+      "astSha256": "41c9fa4ec8c9686231e9e6599d5d5a8ae4c8c1e5effc98608e48f7a3ed161bac"
+    }
+  ],
+  "evaluator": {
+    "defaults": {
+      "rules": null,
+      "workspace": null,
+      "export": false,
+      "return_dataframe": false,
+      "extended": false,
+      "language": null,
+      "check_dependencies": true
+    },
+    "noTables": {
+      "location": {
+        "lineno": 134,
+        "col_offset": 8,
+        "end_lineno": 138,
+        "end_col_offset": 18
+      },
+      "astSha256": "4bbc70666d182c5fc870a16735711f0c8c8e19d1d0647343efa47fa6c9b99ab2"
+    },
+    "coreStatements": [
+      {
+        "kind": "Assign",
+        "location": {
+          "lineno": 263,
+          "col_offset": 8,
+          "end_lineno": 263,
+          "end_col_offset": 80
+        },
+        "astSha256": "39c0f553a56cb78642d33b75753a1a94e0613d53e11dedafc48a3a8e27a9a584"
+      },
+      {
+        "kind": "Assign",
+        "location": {
+          "lineno": 265,
+          "col_offset": 8,
+          "end_lineno": 308,
+          "end_col_offset": 9
+        },
+        "astSha256": "eb5e8de70c47401342cf04df482407f16e163750f8d733571360ce4847558652"
+      },
+      {
+        "kind": "For",
+        "location": {
+          "lineno": 310,
+          "col_offset": 8,
+          "end_lineno": 367,
+          "end_col_offset": 21
+        },
+        "astSha256": "0f0836fdef484c684e3bfbb466d4eb8a3d5a172614a24b6c83e143f7c1898839"
+      },
+      {
+        "kind": "Assign",
+        "location": {
+          "lineno": 369,
+          "col_offset": 8,
+          "end_lineno": 375,
+          "end_col_offset": 9
+        },
+        "astSha256": "c1f5c34d2fac36b14fecf2d8d68715d0d351a8a7d1c0144573dc36f0970b6050"
+      },
+      {
+        "kind": "Expr",
+        "location": {
+          "lineno": 376,
+          "col_offset": 8,
+          "end_lineno": 376,
+          "end_col_offset": 69
+        },
+        "astSha256": "41d6a09797d18aa443aa9a4dfc425f61c83fd91e1ecdd88f84e90d516ecd6c9f"
+      },
+      {
+        "kind": "Assign",
+        "location": {
+          "lineno": 377,
+          "col_offset": 8,
+          "end_lineno": 387,
+          "end_col_offset": 9
+        },
+        "astSha256": "af4480019e4923646495aa5c1595ac99a63771138e5ebc954126f30115e9f685"
+      }
+    ],
+    "executionBoundary": "Original no-tables branch, scope map, predicate dispatch, concat, merge and final column projection only. No imports, connection, dependency acquisition, severity icons, translation, HTML, Spark, export or product startup."
+  },
+  "rules": [
+    {
+      "ordinal": 1,
+      "category": "Performance",
+      "name": "Do not use floating point data types",
+      "severity": "Warning",
+      "scopes": [
+        "Column"
+      ],
+      "sourceScope": "Column",
+      "description": "The \"Double\" floating point data type should be avoided, as it can result in unpredictable roundoff errors and decreased performance in certain scenarios. Use \"Int64\" or \"Decimal\" where appropriate (but note that \"Decimal\" is limited to 4 digits after the decimal sign).",
+      "url": null,
+      "expression": "lambda obj, tom: obj.DataType == TOM.DataType.Double",
+      "expressionAstSha256": "4ece4dc73cff72af9fd1a8c0f3dc32d8ce4c98aec9f7a3988d01a867568ea0b7",
+      "expressionLocation": {
+        "lineno": 162,
+        "col_offset": 16,
+        "end_lineno": 162,
+        "end_col_offset": 68
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L162-L162",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [
+        "TOM.DataType.Double"
+      ],
+      "objectAttributePaths": [
+        "obj.DataType"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 2,
+      "category": "Performance",
+      "name": "Avoid using calculated columns",
+      "severity": "Warning",
+      "scopes": [
+        "Column"
+      ],
+      "sourceScope": "Column",
+      "description": "Calculated columns do not compress as well as data columns so they take up more memory. They also slow down processing times for both the table as well as process recalc. Offload calculated column logic to your data warehouse and turn these calculated columns into data columns.",
+      "url": "https://www.elegantbi.com/post/top10bestpractices",
+      "expression": "lambda obj, tom: obj.Type == TOM.ColumnType.Calculated",
+      "expressionAstSha256": "4c4a1c4ac94e47950112983fe0e21820f2d7211e4bd2f349e604d13f42f9d8bb",
+      "expressionLocation": {
+        "lineno": 170,
+        "col_offset": 16,
+        "end_lineno": 170,
+        "end_col_offset": 70
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L170-L170",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [
+        "TOM.ColumnType.Calculated"
+      ],
+      "objectAttributePaths": [
+        "obj.Type"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 3,
+      "category": "Performance",
+      "name": "Check if bi-directional and many-to-many relationships are valid",
+      "severity": "Warning",
+      "scopes": [
+        "Relationship"
+      ],
+      "sourceScope": "Relationship",
+      "description": "Bi-directional and many-to-many relationships may cause performance degradation or even have unintended consequences. Make sure to check these specific relationships to ensure they are working as designed and are actually necessary.",
+      "url": "https://www.sqlbi.com/articles/bidirectional-relationships-and-ambiguity-in-dax",
+      "expression": "lambda obj, tom: (\n                    obj.FromCardinality == TOM.RelationshipEndCardinality.Many\n                    and obj.ToCardinality == TOM.RelationshipEndCardinality.Many\n                )\n                or str(obj.CrossFilteringBehavior) == \"BothDirections\"",
+      "expressionAstSha256": "ac71c23b17025be13b3fe7990a3963501d85e224e47729107015f74d08eb40d3",
+      "expressionLocation": {
+        "lineno": 179,
+        "col_offset": 16,
+        "end_lineno": 183,
+        "end_col_offset": 70
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L179-L183",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [
+        "TOM.RelationshipEndCardinality.Many"
+      ],
+      "objectAttributePaths": [
+        "obj.CrossFilteringBehavior",
+        "obj.FromCardinality",
+        "obj.ToCardinality"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 4,
+      "category": "Performance",
+      "name": "Check if dynamic row level security (RLS) is necessary",
+      "severity": "Info",
+      "scopes": [
+        "Row Level Security"
+      ],
+      "sourceScope": "Row Level Security",
+      "description": "Usage of dynamic row level security (RLS) can add memory and performance overhead. Please research the pros/cons of using it.",
+      "url": "https://docs.microsoft.com/power-bi/admin/service-admin-rls",
+      "expression": "lambda obj, tom: any(\n                    re.search(pattern, obj.FilterExpression, flags=re.IGNORECASE)\n                    for pattern in [\"USERPRINCIPALNAME()\", \"USERNAME()\"]\n                )",
+      "expressionAstSha256": "f580f0117335be639e03ac2348f6b8c4103144c5d1e01aeaa77d8ae6ddc313f7",
+      "expressionLocation": {
+        "lineno": 192,
+        "col_offset": 16,
+        "end_lineno": 195,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L192-L195",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.FilterExpression"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 5,
+      "category": "Performance",
+      "name": "Avoid using many-to-many relationships on tables used for dynamic row level security",
+      "severity": "Warning",
+      "scopes": [
+        "Table"
+      ],
+      "sourceScope": "Table",
+      "description": "Using many-to-many relationships on tables which use dynamic row level security can cause serious query performance degradation. This pattern's performance problems compound when snowflaking multiple many-to-many relationships against a table which contains row level security. Instead, use one of the patterns shown in the article below where a single dimension table relates many-to-one to a security table.",
+      "url": "https://www.elegantbi.com/post/dynamicrlspatterns",
+      "expression": "lambda obj, tom: any(\n                    r.FromCardinality == TOM.RelationshipEndCardinality.Many\n                    and r.ToCardinality == TOM.RelationshipEndCardinality.Many\n                    for r in tom.used_in_relationships(object=obj)\n                )\n                and any(t.Name == obj.Name for t in tom.all_rls())",
+      "expressionAstSha256": "b13eab3928c90cd8b82086450d4c5f4403db225065329e9cacc7b46152f09d5e",
+      "expressionLocation": {
+        "lineno": 204,
+        "col_offset": 16,
+        "end_lineno": 209,
+        "end_col_offset": 66
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L204-L209",
+      "tomWrapperMethods": [
+        "all_rls",
+        "used_in_relationships"
+      ],
+      "tomEnumMembers": [
+        "TOM.RelationshipEndCardinality.Many"
+      ],
+      "objectAttributePaths": [
+        "obj.Name"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 6,
+      "category": "Performance",
+      "name": "Many-to-many relationships should be single-direction",
+      "severity": "Warning",
+      "scopes": [
+        "Relationship"
+      ],
+      "sourceScope": "Relationship",
+      "description": null,
+      "url": null,
+      "expression": "lambda obj, tom: (\n                    obj.FromCardinality == TOM.RelationshipEndCardinality.Many\n                    and obj.ToCardinality == TOM.RelationshipEndCardinality.Many\n                )\n                and obj.CrossFilteringBehavior\n                == TOM.CrossFilteringBehavior.BothDirections",
+      "expressionAstSha256": "6ee464aae26f16728ac2779d2db27622c43bd0914307c0d3b381c8f98d1ada76",
+      "expressionLocation": {
+        "lineno": 218,
+        "col_offset": 16,
+        "end_lineno": 223,
+        "end_col_offset": 60
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L218-L223",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [
+        "TOM.CrossFilteringBehavior.BothDirections",
+        "TOM.RelationshipEndCardinality.Many"
+      ],
+      "objectAttributePaths": [
+        "obj.CrossFilteringBehavior",
+        "obj.FromCardinality",
+        "obj.ToCardinality"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 7,
+      "category": "Performance",
+      "name": "Set IsAvailableInMdx to false on non-attribute columns",
+      "severity": "Warning",
+      "scopes": [
+        "Column"
+      ],
+      "sourceScope": "Column",
+      "description": "To speed up processing time and conserve memory after processing, attribute hierarchies should not be built for columns that are never used for slicing by MDX clients. In other words, all hidden columns that are not used as a Sort By Column or referenced in user hierarchies should have their IsAvailableInMdx property set to false. The IsAvailableInMdx property is not relevant for Direct Lake models.",
+      "url": "https://blog.crossjoin.co.uk/2018/07/02/isavailableinmdx-ssas-tabular",
+      "expression": "lambda obj, tom: tom.is_direct_lake() is False\n                and obj.IsAvailableInMDX\n                and (obj.IsHidden or obj.Parent.IsHidden)\n                and obj.SortByColumn is None\n                and not any(tom.used_in_sort_by(column=obj))\n                and not any(tom.used_in_hierarchies(column=obj))",
+      "expressionAstSha256": "6fcdd377f2d56023fd62a02427fbd8515d18ff3a4460a4fb9d5ae43a9f058aab",
+      "expressionLocation": {
+        "lineno": 230,
+        "col_offset": 16,
+        "end_lineno": 235,
+        "end_col_offset": 64
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L230-L235",
+      "tomWrapperMethods": [
+        "is_direct_lake",
+        "used_in_hierarchies",
+        "used_in_sort_by"
+      ],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.IsAvailableInMDX",
+        "obj.IsHidden",
+        "obj.Parent",
+        "obj.Parent.IsHidden",
+        "obj.SortByColumn"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 8,
+      "category": "Performance",
+      "name": "Set 'Data Coverage Definition' property on the DirectQuery partition of a hybrid table",
+      "severity": "Warning",
+      "scopes": [
+        "Partition"
+      ],
+      "sourceScope": "Partition",
+      "description": "Setting the 'Data Coverage Definition' property may lead to better performance because the engine knows when it can only query the import-portion of the table and when it needs to query the DirectQuery portion of the table.",
+      "url": "https://learn.microsoft.com/analysis-services/tom/table-partitions?view=asallproducts-allversions",
+      "expression": "lambda obj, tom: tom.is_hybrid_table(table_name=obj.Parent.Name)\n                and obj.Mode == TOM.ModeType.DirectQuery\n                and obj.DataCoverageDefinition is None",
+      "expressionAstSha256": "f87ad853c1d9c83caa0700cfda1c8b676a311f6c91e1b05a1892d9eaa11a73a3",
+      "expressionLocation": {
+        "lineno": 244,
+        "col_offset": 16,
+        "end_lineno": 246,
+        "end_col_offset": 54
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L244-L246",
+      "tomWrapperMethods": [
+        "is_hybrid_table"
+      ],
+      "tomEnumMembers": [
+        "TOM.ModeType.DirectQuery"
+      ],
+      "objectAttributePaths": [
+        "obj.DataCoverageDefinition",
+        "obj.Mode",
+        "obj.Parent",
+        "obj.Parent.Name"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 9,
+      "category": "Performance",
+      "name": "Dual mode is only relevant for dimension tables if DirectQuery is used for the corresponding fact table",
+      "severity": "Warning",
+      "scopes": [
+        "Model"
+      ],
+      "sourceScope": "Model",
+      "description": "Only use Dual mode for dimension tables/partitions where a corresponding fact table is in DirectQuery. Using Dual mode in other circumstances (i.e. rest of the model is in Import mode) may lead to performance issues especially if the number of measures in the model is high.",
+      "url": null,
+      "expression": "lambda obj, tom: not any(\n                    p.Mode == TOM.ModeType.DirectQuery for p in tom.all_partitions()\n                )\n                and any(p.Mode == TOM.ModeType.Dual for p in tom.all_partitions())",
+      "expressionAstSha256": "12382cb41114a26e54f92dd1f11dff7e740f14f7fe5d52d0bfb526bd19b1ded0",
+      "expressionLocation": {
+        "lineno": 255,
+        "col_offset": 16,
+        "end_lineno": 258,
+        "end_col_offset": 82
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L255-L258",
+      "tomWrapperMethods": [
+        "all_partitions"
+      ],
+      "tomEnumMembers": [
+        "TOM.ModeType.DirectQuery",
+        "TOM.ModeType.Dual"
+      ],
+      "objectAttributePaths": [],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 10,
+      "category": "Performance",
+      "name": "Set dimensions tables to dual mode instead of import when using DirectQuery on fact tables",
+      "severity": "Warning",
+      "scopes": [
+        "Table"
+      ],
+      "sourceScope": "Table",
+      "description": "When using DirectQuery, dimension tables should be set to Dual mode in order to improve query performance.",
+      "url": "https://learn.microsoft.com/power-bi/transform-model/desktop-storage-mode#propagation-of-the-dual-setting",
+      "expression": "lambda obj, tom: sum(\n                    1 for p in obj.Partitions if p.Mode == TOM.ModeType.Import\n                )\n                == 1\n                and obj.Partitions.Count == 1\n                and tom.has_hybrid_table()\n                and any(\n                    r.ToCardinality == TOM.RelationshipEndCardinality.One\n                    and r.ToTable.Name == obj.Name\n                    for r in tom.used_in_relationships(object=obj)\n                )",
+      "expressionAstSha256": "850212322215a934a0b8ecd6fb43d654a2a4a1e59a20e1bc33f2d05e67a1342e",
+      "expressionLocation": {
+        "lineno": 266,
+        "col_offset": 16,
+        "end_lineno": 276,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L266-L276",
+      "tomWrapperMethods": [
+        "has_hybrid_table",
+        "used_in_relationships"
+      ],
+      "tomEnumMembers": [
+        "TOM.ModeType.Import",
+        "TOM.RelationshipEndCardinality.One"
+      ],
+      "objectAttributePaths": [
+        "obj.Name",
+        "obj.Partitions",
+        "obj.Partitions.Count"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 11,
+      "category": "Performance",
+      "name": "Minimize Power Query transformations",
+      "severity": "Warning",
+      "scopes": [
+        "Partition"
+      ],
+      "sourceScope": "Partition",
+      "description": "Minimize Power Query transformations in order to improve model processing performance. It is a best practice to offload these transformations to the data warehouse if possible. Also, please check whether query folding is occurring within your model. Please reference the article below for more information on query folding.",
+      "url": "https://docs.microsoft.com/power-query/power-query-folding",
+      "expression": "lambda obj, tom: obj.SourceType == TOM.PartitionSourceType.M\n                and any(\n                    item in obj.Source.Expression\n                    for item in [\n                        'Table.Combine(\"',\n                        'Table.Join(\"',\n                        'Table.NestedJoin(\"',\n                        'Table.AddColumn(\"',\n                        'Table.Group(\"',\n                        'Table.Sort(\"',\n                        'Table.Pivot(\"',\n                        'Table.Unpivot(\"',\n                        'Table.UnpivotOtherColumns(\"',\n                        'Table.Distinct(\"',\n                        '[Query=(\"\"SELECT',\n                        \"Value.NativeQuery\",\n                        \"OleDb.Query\",\n                        \"Odbc.Query\",\n                    ]\n                )",
+      "expressionAstSha256": "f62245c1746f703328ca76cf4bcd6352014b6c2c0eab46343b19afbaeb8c42fb",
+      "expressionLocation": {
+        "lineno": 285,
+        "col_offset": 16,
+        "end_lineno": 304,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L285-L304",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [
+        "TOM.PartitionSourceType.M"
+      ],
+      "objectAttributePaths": [
+        "obj.Source",
+        "obj.Source.Expression",
+        "obj.SourceType"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 12,
+      "category": "Performance",
+      "name": "Consider a star-schema instead of a snowflake architecture",
+      "severity": "Warning",
+      "scopes": [
+        "Table"
+      ],
+      "sourceScope": "Table",
+      "description": "Generally speaking, a star-schema is the optimal architecture for tabular models. That being the case, there are valid cases to use a snowflake approach. Please check your model and consider moving to a star-schema architecture.",
+      "url": "https://docs.microsoft.com/power-bi/guidance/star-schema",
+      "expression": "lambda obj, tom: obj.CalculationGroup is None\n                and (\n                    any(\n                        r.FromTable.Name == obj.Name\n                        for r in tom.used_in_relationships(object=obj)\n                    )\n                    and any(\n                        r.ToTable.Name == obj.Name\n                        for r in tom.used_in_relationships(object=obj)\n                    )\n                )",
+      "expressionAstSha256": "0c1cda61f2d6e3db8349ebab69888bc87a7f1aaafec9d1d5ca5d27591df8f70d",
+      "expressionLocation": {
+        "lineno": 313,
+        "col_offset": 16,
+        "end_lineno": 323,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L313-L323",
+      "tomWrapperMethods": [
+        "used_in_relationships"
+      ],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.CalculationGroup",
+        "obj.Name"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 13,
+      "category": "Performance",
+      "name": "Avoid using views when using Direct Lake mode",
+      "severity": "Warning",
+      "scopes": [
+        "Model"
+      ],
+      "sourceScope": "Model",
+      "description": "In Direct Lake mode, views will always fall back to DirectQuery. Thus, in order to obtain the best performance use lakehouse tables instead of views.",
+      "url": "https://learn.microsoft.com/fabric/get-started/direct-lake-overview#fallback",
+      "expression": "lambda obj, tom: tom.is_direct_lake_using_view()",
+      "expressionAstSha256": "e7503e80f4df5d7c70088c3d3f944b509cf9a1efba494d4c5e3cb70d3ec50b1b",
+      "expressionLocation": {
+        "lineno": 332,
+        "col_offset": 16,
+        "end_lineno": 332,
+        "end_col_offset": 64
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L332-L332",
+      "tomWrapperMethods": [
+        "is_direct_lake_using_view"
+      ],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 14,
+      "category": "Performance",
+      "name": "Ensure Direct Lake tables do not source from a SQL view",
+      "severity": "Warning",
+      "scopes": [
+        "Partition"
+      ],
+      "sourceScope": "Partition",
+      "description": "A Direct Lake table whose source is a SQL view (rather than a table) will always fall back to DirectQuery, which is slower and defeats the purpose of Direct Lake. Point the table at a lakehouse/warehouse table, or materialize the view as a delta table.",
+      "url": "https://learn.microsoft.com/fabric/get-started/direct-lake-overview#fallback",
+      "expression": "lambda obj, tom: obj.Mode == TOM.ModeType.DirectLake\n                and obj.Parent.Name in _direct_lake_view_tables(tom)",
+      "expressionAstSha256": "2b38033cf65b94e05e1380a276a94b825ce9c6b4cc5bc3f975f6ab82d8818f40",
+      "expressionLocation": {
+        "lineno": 341,
+        "col_offset": 16,
+        "end_lineno": 342,
+        "end_col_offset": 68
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L341-L342",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [
+        "TOM.ModeType.DirectLake"
+      ],
+      "objectAttributePaths": [
+        "obj.Mode",
+        "obj.Parent",
+        "obj.Parent.Name"
+      ],
+      "globalDependencies": [
+        "_direct_lake_view_tables"
+      ]
+    },
+    {
+      "ordinal": 15,
+      "category": "Performance",
+      "name": "Ensure Direct Lake source tables are V-Ordered",
+      "severity": "Warning",
+      "scopes": [
+        "Partition"
+      ],
+      "sourceScope": "Partition",
+      "description": "For the best Direct Lake performance, the delta tables a Direct Lake model reads from should be written with V-Order. This rule flags Direct Lake partitions whose lakehouse source table is not V-Ordered; re-write or OPTIMIZE the source table with V-Order enabled.",
+      "url": "https://learn.microsoft.com/fabric/data-engineering/delta-optimization-and-v-order",
+      "expression": "lambda obj, tom: obj.Mode == TOM.ModeType.DirectLake\n                and obj.Parent.Name in _non_vordered_direct_lake_tables(tom)",
+      "expressionAstSha256": "9fdb5d9dcf5bda8f2e48139f5720e625ae0a2558209ab9d5f7f5daca46381e0a",
+      "expressionLocation": {
+        "lineno": 351,
+        "col_offset": 16,
+        "end_lineno": 352,
+        "end_col_offset": 76
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L351-L352",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [
+        "TOM.ModeType.DirectLake"
+      ],
+      "objectAttributePaths": [
+        "obj.Mode",
+        "obj.Parent",
+        "obj.Parent.Name"
+      ],
+      "globalDependencies": [
+        "_non_vordered_direct_lake_tables"
+      ]
+    },
+    {
+      "ordinal": 16,
+      "category": "Performance",
+      "name": "Avoid adding 0 to a measure",
+      "severity": "Warning",
+      "scopes": [
+        "Measure"
+      ],
+      "sourceScope": "Measure",
+      "description": "Adding 0 to a measure in order for it not to show a blank value may negatively impact performance.",
+      "url": null,
+      "expression": "lambda obj, tom: obj.Expression.replace(\" \", \"\").startswith(\"0+\")\n                or obj.Expression.replace(\" \", \"\").endswith(\"+0\")\n                or re.search(\n                    r\"DIVIDE\\s*\\(\\s*[^,]+,\\s*[^,]+,\\s*0\\s*\\)\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )\n                or re.search(\n                    r\"IFERROR\\s*\\(\\s*[^,]+,\\s*0\\s*\\)\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )",
+      "expressionAstSha256": "bbcb3bae5724bdbc540ad18c0d700e79df5e5fc9aa5c8d94dbcfdb4c188f80af",
+      "expressionLocation": {
+        "lineno": 361,
+        "col_offset": 16,
+        "end_lineno": 372,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L361-L372",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Expression",
+        "obj.Expression.replace",
+        "obj.Expression.replace(' ', '').endswith",
+        "obj.Expression.replace(' ', '').startswith"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 17,
+      "category": "Performance",
+      "name": "Reduce usage of calculated tables",
+      "severity": "Warning",
+      "scopes": [
+        "Table"
+      ],
+      "sourceScope": "Table",
+      "description": "Migrate calculated table logic to your data warehouse. Reliance on calculated tables will lead to technical debt and potential misalignments if you have multiple models on your platform.",
+      "url": null,
+      "expression": "lambda obj, tom: tom.is_field_parameter(table_name=obj.Name) is False\n                and tom.is_calculated_table(table_name=obj.Name)",
+      "expressionAstSha256": "4c1ede1ec962ae9f84ea3b87d09cac391bd52ead9c1bcc47a9d00d61ec9b3ffa",
+      "expressionLocation": {
+        "lineno": 380,
+        "col_offset": 16,
+        "end_lineno": 381,
+        "end_col_offset": 64
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L380-L381",
+      "tomWrapperMethods": [
+        "is_calculated_table",
+        "is_field_parameter"
+      ],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Name"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 18,
+      "category": "Performance",
+      "name": "Reduce usage of calculated columns that use the RELATED function",
+      "severity": "Warning",
+      "scopes": [
+        "Column"
+      ],
+      "sourceScope": "Column",
+      "description": "Calculated columns do not compress as well as data columns and may cause longer processing times. As such, calculated columns should be avoided if possible. One scenario where they may be easier to avoid is if they use the RELATED function.",
+      "url": "https://www.sqlbi.com/articles/storage-differences-between-calculated-columns-and-calculated-tables",
+      "expression": "lambda obj, tom: obj.Type == TOM.ColumnType.Calculated\n                and re.search(r\"related\\s*\\(\", obj.Expression, flags=re.IGNORECASE)",
+      "expressionAstSha256": "bcc822e503831618cb92ed7de3e0e1222f5e4144536794e7e0d6e993686af7c2",
+      "expressionLocation": {
+        "lineno": 389,
+        "col_offset": 16,
+        "end_lineno": 390,
+        "end_col_offset": 83
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L389-L390",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [
+        "TOM.ColumnType.Calculated"
+      ],
+      "objectAttributePaths": [
+        "obj.Expression",
+        "obj.Type"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 19,
+      "category": "Performance",
+      "name": "Avoid excessive bi-directional or many-to-many relationships",
+      "severity": "Warning",
+      "scopes": [
+        "Model"
+      ],
+      "sourceScope": "Model",
+      "description": "Limit use of b-di and many-to-many relationships. This rule flags the model if more than 30% of relationships are bi-di or many-to-many.",
+      "url": "https://www.sqlbi.com/articles/bidirectional-relationships-and-ambiguity-in-dax",
+      "expression": "lambda obj, tom: (\n                    (\n                        sum(\n                            1\n                            for r in obj.Relationships\n                            if r.CrossFilteringBehavior\n                            == TOM.CrossFilteringBehavior.BothDirections\n                        )\n                        + sum(\n                            1\n                            for r in obj.Relationships\n                            if (\n                                r.FromCardinality == TOM.RelationshipEndCardinality.Many\n                            )\n                            and (r.ToCardinality == TOM.RelationshipEndCardinality.Many)\n                        )\n                    )\n                    / max(int(obj.Relationships.Count), 1)\n                )\n                > 0.3",
+      "expressionAstSha256": "d2094d9f64fffbe721c6a0fe0d0f3c401f2d8f431dd8517658674f12de3a3faf",
+      "expressionLocation": {
+        "lineno": 399,
+        "col_offset": 16,
+        "end_lineno": 418,
+        "end_col_offset": 21
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L399-L418",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [
+        "TOM.CrossFilteringBehavior.BothDirections",
+        "TOM.RelationshipEndCardinality.Many"
+      ],
+      "objectAttributePaths": [
+        "obj.Relationships",
+        "obj.Relationships.Count"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 20,
+      "category": "Performance",
+      "name": "Remove auto-date table",
+      "severity": "Warning",
+      "scopes": [
+        "Table"
+      ],
+      "sourceScope": "Table",
+      "description": "Avoid using auto-date tables. Make sure to turn off auto-date table in the settings in Power BI Desktop. This will save memory resources.",
+      "url": "https://www.youtube.com/watch?v=xu3uDEHtCrg",
+      "expression": "lambda obj, tom: tom.is_calculated_table(table_name=obj.Name)\n                and (\n                    obj.Name.startswith(\"DateTableTemplate_\")\n                    or obj.Name.startswith(\"LocalDateTable_\")\n                )",
+      "expressionAstSha256": "b66594bf12a6222d2f11c4d5c2b430927a73881f7f0230ae47110d881a40b206",
+      "expressionLocation": {
+        "lineno": 431,
+        "col_offset": 16,
+        "end_lineno": 435,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L431-L435",
+      "tomWrapperMethods": [
+        "is_calculated_table"
+      ],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Name",
+        "obj.Name.startswith"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 21,
+      "category": "Performance",
+      "name": "Date/calendar tables should be marked as a date table",
+      "severity": "Warning",
+      "scopes": [
+        "Table"
+      ],
+      "sourceScope": "Table",
+      "description": "This rule looks for tables that contain the words 'date' or 'calendar' as they should likely be marked as a date table.",
+      "url": "https://docs.microsoft.com/power-bi/transform-model/desktop-date-tables",
+      "expression": "lambda obj, tom: (\n                    re.search(r\"date\", obj.Name, flags=re.IGNORECASE)\n                    or re.search(r\"calendar\", obj.Name, flags=re.IGNORECASE)\n                )\n                and str(obj.DataCategory) != \"Time\"",
+      "expressionAstSha256": "48798bdd4d2140af0cc5fda86d2895d0dee4c9b58dd9780928a14f6a425defe1",
+      "expressionLocation": {
+        "lineno": 444,
+        "col_offset": 16,
+        "end_lineno": 448,
+        "end_col_offset": 51
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L444-L448",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.DataCategory",
+        "obj.Name"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 22,
+      "category": "Performance",
+      "name": "Large tables should be partitioned",
+      "severity": "Warning",
+      "scopes": [
+        "Table"
+      ],
+      "sourceScope": "Table",
+      "description": "Large tables should be partitioned in order to optimize processing. This is not relevant for semantic models in Direct Lake mode as they can only have one partition per table.",
+      "url": null,
+      "expression": "lambda obj, tom: tom.is_direct_lake() is False\n                and int(obj.Partitions.Count) == 1\n                and tom.row_count(object=obj) > 25000000",
+      "expressionAstSha256": "3ee7b6d44343f4b41cb58e578db60ccc00720e737ce84320cc9f76a7430793f8",
+      "expressionLocation": {
+        "lineno": 457,
+        "col_offset": 16,
+        "end_lineno": 459,
+        "end_col_offset": 56
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L457-L459",
+      "tomWrapperMethods": [
+        "is_direct_lake",
+        "row_count"
+      ],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Partitions",
+        "obj.Partitions.Count"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 23,
+      "category": "Performance",
+      "name": "Limit row level security (RLS) logic",
+      "severity": "Warning",
+      "scopes": [
+        "Row Level Security"
+      ],
+      "sourceScope": "Row Level Security",
+      "description": "Try to simplify the DAX used for row level security. Usage of the functions within this rule can likely be offloaded to the upstream systems (data warehouse).",
+      "url": null,
+      "expression": "lambda obj, tom: any(\n                    item in obj.FilterExpression.lower()\n                    for item in [\n                        \"right(\",\n                        \"left(\",\n                        \"filter(\",\n                        \"upper(\",\n                        \"lower(\",\n                        \"find(\",\n                    ]\n                )",
+      "expressionAstSha256": "47f14b1fb2e42773b7a748f8248b9451a45c425bd4df22a37f2824f5a3138406",
+      "expressionLocation": {
+        "lineno": 467,
+        "col_offset": 16,
+        "end_lineno": 477,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L467-L477",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.FilterExpression",
+        "obj.FilterExpression.lower"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 24,
+      "category": "Performance",
+      "name": "Model should have a date table",
+      "severity": "Warning",
+      "scopes": [
+        "Model"
+      ],
+      "sourceScope": "Model",
+      "description": "Generally speaking, models should generally have a date table. Models that do not have a date table generally are not taking advantage of features such as time intelligence or may not have a properly structured architecture.",
+      "url": null,
+      "expression": "lambda obj, tom: not any(\n                    (c.IsKey and c.DataType == TOM.DataType.DateTime)\n                    and str(t.DataCategory) == \"Time\"\n                    for t in obj.Tables\n                    for c in t.Columns\n                )",
+      "expressionAstSha256": "d461efa1b36de2c2143f790f018669ce837c54fb627a2dfe39fadfc63d67097c",
+      "expressionLocation": {
+        "lineno": 485,
+        "col_offset": 16,
+        "end_lineno": 490,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L485-L490",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [
+        "TOM.DataType.DateTime"
+      ],
+      "objectAttributePaths": [
+        "obj.Tables"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 25,
+      "category": "Error Prevention",
+      "name": "Calculation items must have an expression",
+      "severity": "Error",
+      "scopes": [
+        "Calculation Item"
+      ],
+      "sourceScope": "Calculation Item",
+      "description": "Calculation items must have an expression. Without an expression, they will not show any values.",
+      "url": null,
+      "expression": "lambda obj, tom: len(obj.Expression) == 0",
+      "expressionAstSha256": "fceb0c2e82d285f9962fb89c7d0d4f04c3816d3ac5e14d6bad400d0ebc602670",
+      "expressionLocation": {
+        "lineno": 505,
+        "col_offset": 16,
+        "end_lineno": 505,
+        "end_col_offset": 57
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L505-L505",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Expression"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 26,
+      "category": "Error Prevention",
+      "name": "Relationship columns should be of the same data type",
+      "severity": "Warning",
+      "scopes": [
+        "Relationship"
+      ],
+      "sourceScope": "Relationship",
+      "description": "Columns used in a relationship should be of the same data type. Ideally, they will be of integer data type (see the related rule '[Formatting] Relationship columns should be of integer data type'). Having columns within a relationship which are of different data types may lead to various issues.",
+      "url": null,
+      "expression": "lambda obj, tom: obj.FromColumn.DataType != obj.ToColumn.DataType",
+      "expressionAstSha256": "61e6a298568a4efc02166a84b0a41fd0b9dce31eb61787420c481d9bca32b400",
+      "expressionLocation": {
+        "lineno": 521,
+        "col_offset": 16,
+        "end_lineno": 521,
+        "end_col_offset": 81
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L521-L521",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.FromColumn",
+        "obj.FromColumn.DataType",
+        "obj.ToColumn",
+        "obj.ToColumn.DataType"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 27,
+      "category": "Error Prevention",
+      "name": "Data columns must have a source column",
+      "severity": "Error",
+      "scopes": [
+        "Column"
+      ],
+      "sourceScope": "Column",
+      "description": "Data columns must have a source column. A data column without a source column will cause an error when processing the model.",
+      "url": null,
+      "expression": "lambda obj, tom: obj.Type == TOM.ColumnType.Data\n                and len(obj.SourceColumn) == 0",
+      "expressionAstSha256": "fd3e6ee52efc2343baeccc85eb4446ca2e835f9a9d99cee82ea5a81c529215ec",
+      "expressionLocation": {
+        "lineno": 529,
+        "col_offset": 16,
+        "end_lineno": 530,
+        "end_col_offset": 46
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L529-L530",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [
+        "TOM.ColumnType.Data"
+      ],
+      "objectAttributePaths": [
+        "obj.SourceColumn",
+        "obj.Type"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 28,
+      "category": "Error Prevention",
+      "name": "Set IsAvailableInMdx to true on necessary columns",
+      "severity": "Warning",
+      "scopes": [
+        "Column"
+      ],
+      "sourceScope": "Column",
+      "description": "In order to avoid errors, ensure that attribute hierarchies are enabled if a column is used for sorting another column, used in a hierarchy, used in variations, or is sorted by another column. The IsAvailableInMdx property is not relevant for Direct Lake models.",
+      "url": null,
+      "expression": "lambda obj, tom: tom.is_direct_lake() is False\n                and obj.IsAvailableInMDX is False\n                and (\n                    any(tom.used_in_sort_by(column=obj))\n                    or any(tom.used_in_hierarchies(column=obj))\n                    or obj.SortByColumn is not None\n                )",
+      "expressionAstSha256": "c4a72039648ad508a85e2750f7b18a213a9342c3fffd50bcb10e770089b443fd",
+      "expressionLocation": {
+        "lineno": 538,
+        "col_offset": 16,
+        "end_lineno": 544,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L538-L544",
+      "tomWrapperMethods": [
+        "is_direct_lake",
+        "used_in_hierarchies",
+        "used_in_sort_by"
+      ],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.IsAvailableInMDX",
+        "obj.SortByColumn"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 29,
+      "category": "Error Prevention",
+      "name": "Avoid the USERELATIONSHIP function and RLS against the same table",
+      "severity": "Error",
+      "scopes": [
+        "Table"
+      ],
+      "sourceScope": "Table",
+      "description": "The USERELATIONSHIP function may not be used against a table which also leverages row-level security (RLS). This will generate an error when using the particular measure in a visual. This rule will highlight the table which is used in a measure's USERELATIONSHIP function as well as RLS.",
+      "url": "https://blog.crossjoin.co.uk/2013/05/10/userelationship-and-tabular-row-security",
+      "expression": "lambda obj, tom: any(\n                    re.search(\n                        r\"USERELATIONSHIP\\s*\\(\\s*.+?(?=])\\]\\s*,\\s*'*\"\n                        + re.escape(obj.Name)\n                        + r\"'*\\[\",\n                        m.Expression,\n                        flags=re.IGNORECASE,\n                    )\n                    for m in tom.all_measures()\n                )\n                and any(r.Table.Name == obj.Name for r in tom.all_rls())",
+      "expressionAstSha256": "c1fbaa4d3ee15e2db396e3dd486366803619fa957767a1f59f5be8f7b28e6a52",
+      "expressionLocation": {
+        "lineno": 552,
+        "col_offset": 16,
+        "end_lineno": 562,
+        "end_col_offset": 72
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L552-L562",
+      "tomWrapperMethods": [
+        "all_measures",
+        "all_rls"
+      ],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Name"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 30,
+      "category": "DAX Expressions",
+      "name": "Avoid using the IFERROR function",
+      "severity": "Warning",
+      "scopes": [
+        "Measure"
+      ],
+      "sourceScope": "Measure",
+      "description": "Avoid using the IFERROR function as it may cause performance degradation. If you are concerned about a divide-by-zero error, use the DIVIDE function as it naturally resolves such errors as blank (or you can customize what should be shown in case of such an error).",
+      "url": "https://www.elegantbi.com/post/top10bestpractices",
+      "expression": "lambda obj, tom: re.search(\n                    r\"iferror\\s*\\(\", obj.Expression, flags=re.IGNORECASE\n                )",
+      "expressionAstSha256": "f4c10fd33318b89563f6d7df3d061b3ec483678447fc030e13008094039ebdfe",
+      "expressionLocation": {
+        "lineno": 571,
+        "col_offset": 16,
+        "end_lineno": 573,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L571-L573",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Expression"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 31,
+      "category": "DAX Expressions",
+      "name": "Use the TREATAS function instead of INTERSECT for virtual relationships",
+      "severity": "Warning",
+      "scopes": [
+        "Measure"
+      ],
+      "sourceScope": "Measure",
+      "description": "The TREATAS function is more efficient and provides better performance than the INTERSECT function when used in virutal relationships.",
+      "url": "https://www.sqlbi.com/articles/propagate-filters-using-treatas-in-dax",
+      "expression": "lambda obj, tom: re.search(\n                    r\"intersect\\s*\\(\", obj.Expression, flags=re.IGNORECASE\n                )",
+      "expressionAstSha256": "0e9193b40ce041f1a7400ee8f9ef053ea1596ffe16504a04b914f9720c939445",
+      "expressionLocation": {
+        "lineno": 582,
+        "col_offset": 16,
+        "end_lineno": 584,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L582-L584",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Expression"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 32,
+      "category": "DAX Expressions",
+      "name": "The EVALUATEANDLOG function should not be used in production models",
+      "severity": "Warning",
+      "scopes": [
+        "Measure"
+      ],
+      "sourceScope": "Measure",
+      "description": "The EVALUATEANDLOG function is meant to be used only in development/test environments and should not be used in production models.",
+      "url": "https://pbidax.wordpress.com/2022/08/16/introduce-the-dax-evaluateandlog-function",
+      "expression": "lambda obj, tom: re.search(\n                    r\"evaluateandlog\\s*\\(\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )",
+      "expressionAstSha256": "995634f25e91d3091c718848f36b2514db1103e7cdd49d26713b013487d60d34",
+      "expressionLocation": {
+        "lineno": 593,
+        "col_offset": 16,
+        "end_lineno": 597,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L593-L597",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Expression"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 33,
+      "category": "DAX Expressions",
+      "name": "Measures should not be direct references of other measures",
+      "severity": "Warning",
+      "scopes": [
+        "Measure"
+      ],
+      "sourceScope": "Measure",
+      "description": "This rule identifies measures which are simply a reference to another measure. As an example, consider a model with two measures: [MeasureA] and [MeasureB]. This rule would be triggered for MeasureB if MeasureB's DAX was MeasureB:=[MeasureA]. Such duplicative measures should be removed.",
+      "url": null,
+      "expression": "lambda obj, tom: any(\n                    obj.Expression == f\"[{m.Name}]\" for m in tom.all_measures()\n                )",
+      "expressionAstSha256": "3e7a395e6584aa9a5d9c654cafee4d114d9ff0c9dce458673a2da2ebc45e11ea",
+      "expressionLocation": {
+        "lineno": 606,
+        "col_offset": 16,
+        "end_lineno": 608,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L606-L608",
+      "tomWrapperMethods": [
+        "all_measures"
+      ],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Expression"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 34,
+      "category": "DAX Expressions",
+      "name": "No two measures should have the same definition",
+      "severity": "Warning",
+      "scopes": [
+        "Measure"
+      ],
+      "sourceScope": "Measure",
+      "description": "Two measures with different names and defined by the same DAX expression should be avoided to reduce redundancy.",
+      "url": null,
+      "expression": "lambda obj, tom: any(\n                    re.sub(r\"\\s+\", \"\", obj.Expression)\n                    == re.sub(r\"\\s+\", \"\", m.Expression)\n                    and obj.Name != m.Name\n                    for m in tom.all_measures()\n                )",
+      "expressionAstSha256": "9bf3e374223117f8dbe3bfa9a12cd1576bd0a8976879387ac27a26a9c564030f",
+      "expressionLocation": {
+        "lineno": 616,
+        "col_offset": 16,
+        "end_lineno": 621,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L616-L621",
+      "tomWrapperMethods": [
+        "all_measures"
+      ],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Expression",
+        "obj.Name"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 35,
+      "category": "DAX Expressions",
+      "name": "Avoid addition or subtraction of constant values to results of divisions",
+      "severity": "Warning",
+      "scopes": [
+        "Measure"
+      ],
+      "sourceScope": "Measure",
+      "description": "Adding a constant value may lead to performance degradation.",
+      "url": null,
+      "expression": "lambda obj, tom: re.search(\n                    r\"DIVIDE\\s*\\((\\s*.*?)\\)\\s*[+-]\\s*1|\\/\\s*.*(?=[-+]\\s*1)\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )",
+      "expressionAstSha256": "f9a061e707216c99b8d4d08b00a991ab6f7a1329ecdf76b477364df8733c3fd7",
+      "expressionLocation": {
+        "lineno": 629,
+        "col_offset": 16,
+        "end_lineno": 633,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L629-L633",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Expression"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 36,
+      "category": "DAX Expressions",
+      "name": "Avoid using '1-(x/y)' syntax",
+      "severity": "Warning",
+      "scopes": [
+        "Measure"
+      ],
+      "sourceScope": "Measure",
+      "description": "Instead of using the '1-(x/y)' or '1+(x/y)' syntax to achieve a percentage calculation, use the basic DAX functions (as shown below). Using the improved syntax will generally improve the performance. The '1+/-...' syntax always returns a value whereas the solution without the '1+/-...' does not (as the value may be 'blank'). Therefore the '1+/-...' syntax may return more rows/columns which may result in a slower query speed.    Let's clarify with an example:    Avoid this: 1 - SUM ( 'Sales'[CostAmount] ) / SUM( 'Sales'[SalesAmount] )  Better: DIVIDE ( SUM ( 'Sales'[SalesAmount] ) - SUM ( 'Sales'[CostAmount] ), SUM ( 'Sales'[SalesAmount] ) )  Best: VAR x = SUM ( 'Sales'[SalesAmount] ) RETURN DIVIDE ( x - SUM ( 'Sales'[CostAmount] ), x )",
+      "url": null,
+      "expression": "lambda obj, tom: re.search(\n                    r\"[0-9]+\\s*[-+]\\s*[\\(]*\\s*SUM\\s*\\(\\s*\\'*[A-Za-z0-9 _]+\\'*\\s*\\[[A-Za-z0-9 _]+\\]\\s*\\)\\s*/\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )\n                or re.search(\n                    r\"[0-9]+\\s*[-+]\\s*DIVIDE\\s*\\(\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )",
+      "expressionAstSha256": "017ab841a7b5f703354c8909d210df2aad529e912f05aefd89dd1418e19e9eb6",
+      "expressionLocation": {
+        "lineno": 641,
+        "col_offset": 16,
+        "end_lineno": 650,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L641-L650",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Expression"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 37,
+      "category": "DAX Expressions",
+      "name": "Filter measure values by columns, not tables",
+      "severity": "Warning",
+      "scopes": [
+        "Measure"
+      ],
+      "sourceScope": "Measure",
+      "description": "Instead of using this pattern FILTER('Table',[Measure]>Value) for the filter parameters of a CALCULATE or CALCULATETABLE function, use one of the options below (if possible). Filtering on a specific column will produce a smaller table for the engine to process, thereby enabling faster performance. Using the VALUES function or the ALL function depends on the desired measure result.\nOption 1: FILTER(VALUES('Table'[Column]),[Measure] > Value)\nOption 2: FILTER(ALL('Table'[Column]),[Measure] > Value)",
+      "url": "https://docs.microsoft.com/power-bi/guidance/dax-avoid-avoid-filter-as-filter-argument",
+      "expression": "lambda obj, tom: re.search(\n                    r\"CALCULATE\\s*\\(\\s*[^,]+,\\s*FILTER\\s*\\(\\s*\\'*[A-Za-z0-9 _]+\\'*\\s*,\\s*\\[[^\\]]+\\]\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )\n                or re.search(\n                    r\"CALCULATETABLE\\s*\\(\\s*[^,]*,\\s*FILTER\\s*\\(\\s*\\'*[A-Za-z0-9 _]+\\'*\\s*,\\s*\\[\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )",
+      "expressionAstSha256": "400ba9f3014f2c808b4aed83fec5e7e170373881171213c21894e6aa9aa04ffb",
+      "expressionLocation": {
+        "lineno": 658,
+        "col_offset": 16,
+        "end_lineno": 667,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L658-L667",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Expression"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 38,
+      "category": "DAX Expressions",
+      "name": "Filter column values with proper syntax",
+      "severity": "Warning",
+      "scopes": [
+        "Measure"
+      ],
+      "sourceScope": "Measure",
+      "description": "Instead of using this pattern FILTER('Table','Table'[Column]=\"Value\") for the filter parameters of a CALCULATE or CALCULATETABLE function, use one of the options below. As far as whether to use the KEEPFILTERS function, see the second reference link below.\nOption 1: KEEPFILTERS('Table'[Column]=\"Value\")\nOption 2: 'Table'[Column]=\"Value\"",
+      "url": "https://docs.microsoft.com/power-bi/guidance/dax-avoid-avoid-filter-as-filter-argument  Reference: https://www.sqlbi.com/articles/using-keepfilters-in-dax",
+      "expression": "lambda obj, tom: re.search(\n                    r\"CALCULATE\\s*\\(\\s*[^,]+,\\s*FILTER\\s*\\(\\s*'*[A-Za-z0-9 _]+'*\\s*,\\s*'*[A-Za-z0-9 _]+'*\\[[A-Za-z0-9 _]+\\]\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )\n                or re.search(\n                    r\"CALCULATETABLE\\s*\\([^,]*,\\s*FILTER\\s*\\(\\s*'*[A-Za-z0-9 _]+'*\\s*,\\s*'*[A-Za-z0-9 _]+'*\\[[A-Za-z0-9 _]+\\]\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )",
+      "expressionAstSha256": "b0a89c32b66631b13ca1b8dadd9930c1c4ba4276b88e0a57774a2acab7e079c5",
+      "expressionLocation": {
+        "lineno": 676,
+        "col_offset": 16,
+        "end_lineno": 685,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L676-L685",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Expression"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 39,
+      "category": "DAX Expressions",
+      "name": "Use the DIVIDE function for division",
+      "severity": "Warning",
+      "scopes": [
+        "Measure"
+      ],
+      "sourceScope": "Measure",
+      "description": "Use the DIVIDE  function instead of using \"/\". The DIVIDE function resolves divide-by-zero cases. As such, it is recommended to use to avoid errors.",
+      "url": "https://docs.microsoft.com/power-bi/guidance/dax-divide-function-operator",
+      "expression": "lambda obj, tom: re.search(\n                    r\"\\]\\s*\\/(?!\\/)(?!\\*)|\\)\\s*\\/(?!\\/)(?!\\*)\",\n                    obj.Expression,\n                    flags=re.IGNORECASE,\n                )",
+      "expressionAstSha256": "732cbc07fee45a6f306388ed13c51f1390dfe915144da011e14c6a0a80aac2bc",
+      "expressionLocation": {
+        "lineno": 694,
+        "col_offset": 16,
+        "end_lineno": 698,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L694-L698",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Expression"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 40,
+      "category": "DAX Expressions",
+      "name": "Column references should be fully qualified",
+      "severity": "Error",
+      "scopes": [
+        "Measure",
+        "Calculated Table",
+        "Calculated Column",
+        "Calculation Item"
+      ],
+      "sourceScope": [
+        "Measure",
+        "Calculated Table",
+        "Calculated Column",
+        "Calculation Item"
+      ],
+      "description": "Using fully qualified column references makes it easier to distinguish between column and measure references, and also helps avoid certain errors. When referencing a column in DAX, first specify the table name, then specify the column name in square brackets.",
+      "url": "https://www.elegantbi.com/post/top10bestpractices",
+      "expression": "lambda obj, tom: any(\n                    tom.unqualified_columns(object=obj, dependencies=dependencies)\n                )",
+      "expressionAstSha256": "5f78a9a80cf527bd81d4a76fb77c744dfce888b83148dd671ceca640a1f853bf",
+      "expressionLocation": {
+        "lineno": 712,
+        "col_offset": 16,
+        "end_lineno": 714,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L712-L714",
+      "tomWrapperMethods": [
+        "unqualified_columns"
+      ],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [],
+      "globalDependencies": [
+        "dependencies"
+      ]
+    },
+    {
+      "ordinal": 41,
+      "category": "DAX Expressions",
+      "name": "Measure references should be unqualified",
+      "severity": "Error",
+      "scopes": [
+        "Measure",
+        "Calculated Table",
+        "Calculated Column",
+        "Calculation Item"
+      ],
+      "sourceScope": [
+        "Measure",
+        "Calculated Table",
+        "Calculated Column",
+        "Calculation Item"
+      ],
+      "description": "Using unqualified measure references makes it easier to distinguish between column and measure references, and also helps avoid certain errors. When referencing a measure using DAX, do not specify the table name. Use only the measure name in square brackets.",
+      "url": "https://www.elegantbi.com/post/top10bestpractices",
+      "expression": "lambda obj, tom: any(\n                    tom.fully_qualified_measures(object=obj, dependencies=dependencies)\n                )",
+      "expressionAstSha256": "0c5268c7b608dba2aaa7e8374c0e4d3bbd79a0b377696ff01eb360c3dec2fa6e",
+      "expressionLocation": {
+        "lineno": 728,
+        "col_offset": 16,
+        "end_lineno": 730,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L728-L730",
+      "tomWrapperMethods": [
+        "fully_qualified_measures"
+      ],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [],
+      "globalDependencies": [
+        "dependencies"
+      ]
+    },
+    {
+      "ordinal": 42,
+      "category": "DAX Expressions",
+      "name": "Avoid using SUM or AVERAGE on a string column",
+      "severity": "Error",
+      "scopes": [
+        "Measure",
+        "Calculated Table",
+        "Calculated Column",
+        "Calculation Item"
+      ],
+      "sourceScope": [
+        "Measure",
+        "Calculated Table",
+        "Calculated Column",
+        "Calculation Item"
+      ],
+      "description": "The SUM and AVERAGE functions cannot aggregate a text (string) column and will raise an error. Ensure that these functions are applied to numeric columns, or use a different aggregation (for example COUNT or DISTINCTCOUNT) for text columns.",
+      "url": "https://dax.guide/sum",
+      "expression": "lambda obj, tom: _uses_sum_or_average_on_string_column(obj, tom)",
+      "expressionAstSha256": "7bafc6201feec212e2bca7751fac758cc52120c5b870b5b9d2278e6bdd890e6e",
+      "expressionLocation": {
+        "lineno": 744,
+        "col_offset": 16,
+        "end_lineno": 744,
+        "end_col_offset": 80
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L744-L744",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [],
+      "globalDependencies": [
+        "_uses_sum_or_average_on_string_column"
+      ]
+    },
+    {
+      "ordinal": 43,
+      "category": "DAX Expressions",
+      "name": "Inactive relationships that are never activated",
+      "severity": "Warning",
+      "scopes": [
+        "Relationship"
+      ],
+      "sourceScope": "Relationship",
+      "description": "Inactive relationships are activated using the USERELATIONSHIP function. If an inactive relationship is not referenced in any measure via this function, the relationship will not be used. It should be determined whether the relationship is not necessary or to activate the relationship via this method.",
+      "url": "https://dax.guide/userelationship",
+      "expression": "lambda obj, tom: obj.IsActive is False\n                and not any(\n                    re.search(\n                        r\"USERELATIONSHIP\\s*\\(\\s*\\'*\"\n                        + re.escape(obj.FromTable.Name)\n                        + r\"'*\\[\"\n                        + re.escape(obj.FromColumn.Name)\n                        + r\"\\]\\s*,\\s*'*\"\n                        + re.escape(obj.ToTable.Name)\n                        + r\"'*\\[\"\n                        + re.escape(obj.ToColumn.Name)\n                        + r\"\\]\",\n                        m.Expression,\n                        flags=re.IGNORECASE,\n                    )\n                    for m in tom.all_measures()\n                )",
+      "expressionAstSha256": "ff92d4df204ad56adf89522c299367b4cb1f1d5ac8d033e4396f0242ead74db9",
+      "expressionLocation": {
+        "lineno": 753,
+        "col_offset": 16,
+        "end_lineno": 769,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L753-L769",
+      "tomWrapperMethods": [
+        "all_measures"
+      ],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.FromColumn",
+        "obj.FromColumn.Name",
+        "obj.FromTable",
+        "obj.FromTable.Name",
+        "obj.IsActive",
+        "obj.ToColumn",
+        "obj.ToColumn.Name",
+        "obj.ToTable",
+        "obj.ToTable.Name"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 44,
+      "category": "Maintenance",
+      "name": "Remove unnecessary columns",
+      "severity": "Warning",
+      "scopes": [
+        "Column"
+      ],
+      "sourceScope": "Column",
+      "description": "Hidden columns that are not referenced by any DAX expressions, relationships, hierarchy levels or Sort By-properties should be removed.",
+      "url": null,
+      "expression": "lambda obj, tom: (obj.IsHidden or obj.Parent.IsHidden)\n                and not any(tom.used_in_relationships(object=obj))\n                and not any(tom.used_in_hierarchies(column=obj))\n                and not any(tom.used_in_sort_by(column=obj))\n                and any(tom.depends_on(object=obj, dependencies=dependencies))",
+      "expressionAstSha256": "07fd356f868939a56760c93b0503a7196a6b79941640cacb58d6692471a7a38f",
+      "expressionLocation": {
+        "lineno": 778,
+        "col_offset": 16,
+        "end_lineno": 782,
+        "end_col_offset": 78
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L778-L782",
+      "tomWrapperMethods": [
+        "depends_on",
+        "used_in_hierarchies",
+        "used_in_relationships",
+        "used_in_sort_by"
+      ],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.IsHidden",
+        "obj.Parent",
+        "obj.Parent.IsHidden"
+      ],
+      "globalDependencies": [
+        "dependencies"
+      ]
+    },
+    {
+      "ordinal": 45,
+      "category": "Maintenance",
+      "name": "Remove unnecessary measures",
+      "severity": "Warning",
+      "scopes": [
+        "Measure"
+      ],
+      "sourceScope": "Measure",
+      "description": "Hidden measures that are not referenced by any DAX expressions should be removed for maintainability.",
+      "url": null,
+      "expression": "lambda obj, tom: obj.IsHidden\n                and not any(tom.referenced_by(object=obj, dependencies=dependencies))",
+      "expressionAstSha256": "e3a86bb5df6aaf2b366e6cc191017fa32bcb3083c8f0f520c929a7b975ada068",
+      "expressionLocation": {
+        "lineno": 790,
+        "col_offset": 16,
+        "end_lineno": 791,
+        "end_col_offset": 85
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L790-L791",
+      "tomWrapperMethods": [
+        "referenced_by"
+      ],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.IsHidden"
+      ],
+      "globalDependencies": [
+        "dependencies"
+      ]
+    },
+    {
+      "ordinal": 46,
+      "category": "Maintenance",
+      "name": "Ensure tables have relationships",
+      "severity": "Warning",
+      "scopes": [
+        "Table"
+      ],
+      "sourceScope": "Table",
+      "description": "This rule highlights tables which are not connected to any other table in the model with a relationship.",
+      "url": null,
+      "expression": "lambda obj, tom: any(tom.used_in_relationships(object=obj)) is False\n                and obj.CalculationGroup is None\n                and tom.is_field_parameter(table_name=obj.Name) is False",
+      "expressionAstSha256": "71011a0c8e1a24e2bce64a780fca740ab45f404460c5afc4bd760b2c6d0cebe8",
+      "expressionLocation": {
+        "lineno": 799,
+        "col_offset": 16,
+        "end_lineno": 801,
+        "end_col_offset": 72
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L799-L801",
+      "tomWrapperMethods": [
+        "is_field_parameter",
+        "used_in_relationships"
+      ],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.CalculationGroup",
+        "obj.Name"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 47,
+      "category": "Maintenance",
+      "name": "Calculation groups with no calculation items",
+      "severity": "Warning",
+      "scopes": [
+        "Table"
+      ],
+      "sourceScope": "Table",
+      "description": "Calculation groups have no function unless they have calculation items.",
+      "url": null,
+      "expression": "lambda obj, tom: obj.CalculationGroup is not None\n                and not any(obj.CalculationGroup.CalculationItems)",
+      "expressionAstSha256": "e8fd74cb9e0b7b0e8f53050efeb24b8d22fbf0e683b4d89578817f8ffa5da69d",
+      "expressionLocation": {
+        "lineno": 809,
+        "col_offset": 16,
+        "end_lineno": 810,
+        "end_col_offset": 66
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L809-L810",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.CalculationGroup",
+        "obj.CalculationGroup.CalculationItems"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 48,
+      "category": "Maintenance",
+      "name": "Visible objects with no description",
+      "severity": "Info",
+      "scopes": [
+        "Column",
+        "Measure",
+        "Table"
+      ],
+      "sourceScope": [
+        "Column",
+        "Measure",
+        "Table"
+      ],
+      "description": "Add descriptions to objects. These descriptions are shown on hover within the Field List in Power BI Desktop. Additionally, you can leverage these descriptions to create an automated data dictionary.",
+      "url": null,
+      "expression": "lambda obj, tom: obj.IsHidden is False and len(obj.Description) == 0",
+      "expressionAstSha256": "2502a6a73f718e2c62f78688969f2e2e8ea09237f69ed4d92125cda48c60fe37",
+      "expressionLocation": {
+        "lineno": 818,
+        "col_offset": 16,
+        "end_lineno": 818,
+        "end_col_offset": 84
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L818-L818",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Description",
+        "obj.IsHidden"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 49,
+      "category": "Formatting",
+      "name": "Provide format string for 'Date' columns",
+      "severity": "Warning",
+      "scopes": [
+        "Column"
+      ],
+      "sourceScope": "Column",
+      "description": "Columns of type \"DateTime\" that have \"Date\" in their names should be formatted.",
+      "url": null,
+      "expression": "lambda obj, tom: (re.search(r\"date\", obj.Name, flags=re.IGNORECASE))\n                and (obj.DataType == TOM.DataType.DateTime)\n                and (\n                    obj.FormatString.lower()\n                    not in [\n                        \"mm/dd/yyyy\",\n                        \"mm-dd-yyyy\",\n                        \"dd/mm/yyyy\",\n                        \"dd-mm-yyyy\",\n                        \"yyyy-mm-dd\",\n                        \"yyyy/mm/dd\",\n                    ]\n                )",
+      "expressionAstSha256": "e62cea62bd6feae707032e36846a2ecebc201acd83520470df2f96766092596b",
+      "expressionLocation": {
+        "lineno": 826,
+        "col_offset": 16,
+        "end_lineno": 838,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L826-L838",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [
+        "TOM.DataType.DateTime"
+      ],
+      "objectAttributePaths": [
+        "obj.DataType",
+        "obj.FormatString",
+        "obj.FormatString.lower",
+        "obj.Name"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 50,
+      "category": "Formatting",
+      "name": "Do not summarize numeric columns",
+      "severity": "Warning",
+      "scopes": [
+        "Column"
+      ],
+      "sourceScope": "Column",
+      "description": "Numeric columns (integer, decimal, double) should have their SummarizeBy property set to \"None\" to avoid accidental summation in Power BI (create measures instead).",
+      "url": null,
+      "expression": "lambda obj, tom: (\n                    (obj.DataType == TOM.DataType.Int64)\n                    or (obj.DataType == TOM.DataType.Decimal)\n                    or (obj.DataType == TOM.DataType.Double)\n                )\n                and (str(obj.SummarizeBy) != \"None\")\n                and not ((obj.IsHidden) or (obj.Parent.IsHidden))",
+      "expressionAstSha256": "86b78e2163e5a7a12bd3cb7cf8dcda8ca5e59162079f8f72f76ead74f864f390",
+      "expressionLocation": {
+        "lineno": 846,
+        "col_offset": 16,
+        "end_lineno": 852,
+        "end_col_offset": 65
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L846-L852",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [
+        "TOM.DataType.Decimal",
+        "TOM.DataType.Double",
+        "TOM.DataType.Int64"
+      ],
+      "objectAttributePaths": [
+        "obj.DataType",
+        "obj.IsHidden",
+        "obj.Parent",
+        "obj.Parent.IsHidden",
+        "obj.SummarizeBy"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 51,
+      "category": "Formatting",
+      "name": "Provide format string for measures",
+      "severity": "Info",
+      "scopes": [
+        "Measure"
+      ],
+      "sourceScope": "Measure",
+      "description": "Visible measures should have their format string property assigned.",
+      "url": null,
+      "expression": "lambda obj, tom: obj.IsHidden is False\n                and len(obj.FormatString) == 0\n                and not obj.FormatStringDefinition",
+      "expressionAstSha256": "0da96056474faf5213ced17d60dc2ffc07745898617d906a3849ce8bc1a00ad6",
+      "expressionLocation": {
+        "lineno": 860,
+        "col_offset": 16,
+        "end_lineno": 862,
+        "end_col_offset": 50
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L860-L862",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.FormatString",
+        "obj.FormatStringDefinition",
+        "obj.IsHidden"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 52,
+      "category": "Formatting",
+      "name": "Add data category for columns",
+      "severity": "Info",
+      "scopes": [
+        "Column"
+      ],
+      "sourceScope": "Column",
+      "description": "Add Data Category property for appropriate columns.",
+      "url": "https://docs.microsoft.com/power-bi/transform-model/desktop-data-categorization",
+      "expression": "lambda obj, tom: len(obj.DataCategory) == 0\n                and any(\n                    obj.Name.lower().startswith(item.lower())\n                    for item in [\n                        \"country\",\n                        \"city\",\n                        \"continent\",\n                        \"latitude\",\n                        \"longitude\",\n                    ]\n                )",
+      "expressionAstSha256": "3389cf81a53d630740e31617305c615d924571cbdde542a158f0172e43b7ef09",
+      "expressionLocation": {
+        "lineno": 870,
+        "col_offset": 16,
+        "end_lineno": 880,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L870-L880",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.DataCategory",
+        "obj.Name",
+        "obj.Name.lower",
+        "obj.Name.lower().startswith"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 53,
+      "category": "Formatting",
+      "name": "Percentages should be formatted with thousands separators and 1 decimal",
+      "severity": "Warning",
+      "scopes": [
+        "Measure"
+      ],
+      "sourceScope": "Measure",
+      "description": "For a better user experience, percengage measures should be formatted with a '%' sign.",
+      "url": null,
+      "expression": "lambda obj, tom: \"%\" in obj.FormatString\n                and obj.FormatString != \"#,0.0%;-#,0.0%;#,0.0%\"",
+      "expressionAstSha256": "81afd5381eae6d4ae5cdb795f3a746a1b738ee303b0a788c8da0b592cf84a0f9",
+      "expressionLocation": {
+        "lineno": 889,
+        "col_offset": 16,
+        "end_lineno": 890,
+        "end_col_offset": 63
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L889-L890",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.FormatString"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 54,
+      "category": "Formatting",
+      "name": "Whole numbers should be formatted with thousands separators and no decimals",
+      "severity": "Warning",
+      "scopes": [
+        "Measure"
+      ],
+      "sourceScope": "Measure",
+      "description": "For a better user experience, whole numbers should be formatted with commas.",
+      "url": null,
+      "expression": "lambda obj, tom: \"$\" not in obj.FormatString\n                and \"%\" not in obj.FormatString\n                and obj.FormatString not in [\"#,0\", \"#,0.0\"]",
+      "expressionAstSha256": "a630d838dc60bcb4ad81502a2884693316122dffc2dfbade3c7131c71af0ba57",
+      "expressionLocation": {
+        "lineno": 898,
+        "col_offset": 16,
+        "end_lineno": 900,
+        "end_col_offset": 60
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L898-L900",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.FormatString"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 55,
+      "category": "Formatting",
+      "name": "Hide foreign keys",
+      "severity": "Info",
+      "scopes": [
+        "Column"
+      ],
+      "sourceScope": "Column",
+      "description": "Foreign keys should always be hidden as they should not be used by end users.",
+      "url": null,
+      "expression": "lambda obj, tom: obj.IsHidden is False\n                and any(\n                    r.FromColumn.Name == obj.Name\n                    and r.FromCardinality == TOM.RelationshipEndCardinality.Many\n                    for r in tom.used_in_relationships(object=obj)\n                )",
+      "expressionAstSha256": "98e867ec75d1b0a2cf9dd4c34f172ed5f038ce681cc1e0bcc5c1277d0d44f521",
+      "expressionLocation": {
+        "lineno": 908,
+        "col_offset": 16,
+        "end_lineno": 913,
+        "end_col_offset": 17
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L908-L913",
+      "tomWrapperMethods": [
+        "used_in_relationships"
+      ],
+      "tomEnumMembers": [
+        "TOM.RelationshipEndCardinality.Many"
+      ],
+      "objectAttributePaths": [
+        "obj.IsHidden",
+        "obj.Name"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 56,
+      "category": "Formatting",
+      "name": "Mark primary keys",
+      "severity": "Info",
+      "scopes": [
+        "Column"
+      ],
+      "sourceScope": "Column",
+      "description": "Set the 'Key' property to 'True' for primary key columns within the column properties.",
+      "url": null,
+      "expression": "lambda obj, tom: any(\n                    r.ToTable.Name == obj.Table.Name\n                    and r.ToColumn.Name == obj.Name\n                    and r.ToCardinality == TOM.RelationshipEndCardinality.One\n                    for r in tom.used_in_relationships(object=obj)\n                )\n                and obj.IsKey is False\n                and obj.Table.DataCategory != \"Time\"",
+      "expressionAstSha256": "a3d129bedf64956a8ab20fefe0ae741a8f56203a1ebc3f8b85410294c8546869",
+      "expressionLocation": {
+        "lineno": 921,
+        "col_offset": 16,
+        "end_lineno": 928,
+        "end_col_offset": 52
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L921-L928",
+      "tomWrapperMethods": [
+        "used_in_relationships"
+      ],
+      "tomEnumMembers": [
+        "TOM.RelationshipEndCardinality.One"
+      ],
+      "objectAttributePaths": [
+        "obj.IsKey",
+        "obj.Name",
+        "obj.Table",
+        "obj.Table.DataCategory",
+        "obj.Table.Name"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 57,
+      "category": "Formatting",
+      "name": "Month (as a string) must be sorted",
+      "severity": "Info",
+      "scopes": [
+        "Column"
+      ],
+      "sourceScope": "Column",
+      "description": "This rule highlights month columns which are strings and are not sorted. If left unsorted, they will sort alphabetically (i.e. April, August...). Make sure to sort such columns so that they sort properly (January, February, March...).",
+      "url": null,
+      "expression": "lambda obj, tom: (re.search(r\"month\", obj.Name, flags=re.IGNORECASE))\n                and not (re.search(r\"months\", obj.Name, flags=re.IGNORECASE))\n                and (obj.DataType == TOM.DataType.String)\n                and len(str(obj.SortByColumn)) == 0",
+      "expressionAstSha256": "a46e3a14c6b98f1782c3a3404fec75a40413fc74021cb5b31bf822dda306c6ae",
+      "expressionLocation": {
+        "lineno": 936,
+        "col_offset": 16,
+        "end_lineno": 939,
+        "end_col_offset": 51
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L936-L939",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [
+        "TOM.DataType.String"
+      ],
+      "objectAttributePaths": [
+        "obj.DataType",
+        "obj.Name",
+        "obj.SortByColumn"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 58,
+      "category": "Formatting",
+      "name": "Relationship columns should be of integer data type",
+      "severity": "Warning",
+      "scopes": [
+        "Relationship"
+      ],
+      "sourceScope": "Relationship",
+      "description": "It is a best practice for relationship columns to be of integer data type. This applies not only to data warehousing but data modeling as well.",
+      "url": null,
+      "expression": "lambda obj, tom: obj.FromColumn.DataType != TOM.DataType.Int64\n                or obj.ToColumn.DataType != TOM.DataType.Int64",
+      "expressionAstSha256": "f2ff614660604e268174c1a1f3d8f1a1f868617d30fff278b8a13ff060776dc4",
+      "expressionLocation": {
+        "lineno": 947,
+        "col_offset": 16,
+        "end_lineno": 948,
+        "end_col_offset": 62
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L947-L948",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [
+        "TOM.DataType.Int64"
+      ],
+      "objectAttributePaths": [
+        "obj.FromColumn",
+        "obj.FromColumn.DataType",
+        "obj.ToColumn",
+        "obj.ToColumn.DataType"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 59,
+      "category": "Formatting",
+      "name": "Provide format string for 'Month' columns",
+      "severity": "Warning",
+      "scopes": [
+        "Column"
+      ],
+      "sourceScope": "Column",
+      "description": "Columns of type \"DateTime\" that have \"Month\" in their names should be formatted as \"MMMM yyyy\".",
+      "url": null,
+      "expression": "lambda obj, tom: re.search(r\"month\", obj.Name, flags=re.IGNORECASE)\n                and obj.DataType == TOM.DataType.DateTime\n                and obj.FormatString != \"MMMM yyyy\"",
+      "expressionAstSha256": "77ea6d8404e1b8a56283f548a47a8bb5fc88544a6a36874c620eca58dfcfc7fc",
+      "expressionLocation": {
+        "lineno": 956,
+        "col_offset": 16,
+        "end_lineno": 958,
+        "end_col_offset": 51
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L956-L958",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [
+        "TOM.DataType.DateTime"
+      ],
+      "objectAttributePaths": [
+        "obj.DataType",
+        "obj.FormatString",
+        "obj.Name"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 60,
+      "category": "Formatting",
+      "name": "Format flag columns as Yes/No value strings",
+      "severity": "Info",
+      "scopes": [
+        "Column"
+      ],
+      "sourceScope": "Column",
+      "description": "Flags must be properly formatted as Yes/No as this is easier to read than using 0/1 integer values.",
+      "url": null,
+      "expression": "lambda obj, tom: obj.Name.lower().startswith(\"is\")\n                and obj.DataType == TOM.DataType.Int64\n                and not (obj.IsHidden or obj.Parent.IsHidden)\n                or obj.Name.lower().endswith(\" flag\")\n                and obj.DataType != TOM.DataType.String\n                and not (obj.IsHidden or obj.Parent.IsHidden)",
+      "expressionAstSha256": "492e2bda01bdefc5cd86b785a85816b2b830cdcc939078b1c0c42136bf1ab4cd",
+      "expressionLocation": {
+        "lineno": 966,
+        "col_offset": 16,
+        "end_lineno": 971,
+        "end_col_offset": 61
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L966-L971",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [
+        "TOM.DataType.Int64",
+        "TOM.DataType.String"
+      ],
+      "objectAttributePaths": [
+        "obj.DataType",
+        "obj.IsHidden",
+        "obj.Name",
+        "obj.Name.lower",
+        "obj.Name.lower().endswith",
+        "obj.Name.lower().startswith",
+        "obj.Parent",
+        "obj.Parent.IsHidden"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 61,
+      "category": "Formatting",
+      "name": "Objects should not start or end with a space",
+      "severity": "Error",
+      "scopes": [
+        "Table",
+        "Column",
+        "Measure",
+        "Partition",
+        "Hierarchy"
+      ],
+      "sourceScope": [
+        "Table",
+        "Column",
+        "Measure",
+        "Partition",
+        "Hierarchy"
+      ],
+      "description": "Objects should not start or end with a space. This usually happens by accident and is difficult to find.",
+      "url": null,
+      "expression": "lambda obj, tom: obj.Name[0] == \" \" or obj.Name[-1] == \" \"",
+      "expressionAstSha256": "6dad4b019fa1badad5690eabad6682680d88647d500c39a31ed00d915c4c46be",
+      "expressionLocation": {
+        "lineno": 979,
+        "col_offset": 16,
+        "end_lineno": 979,
+        "end_col_offset": 74
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L979-L979",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Name"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 62,
+      "category": "Formatting",
+      "name": "First letter of objects must be capitalized",
+      "severity": "Info",
+      "scopes": [
+        "Table",
+        "Column",
+        "Measure",
+        "Partition",
+        "Hierarchy"
+      ],
+      "sourceScope": [
+        "Table",
+        "Column",
+        "Measure",
+        "Partition",
+        "Hierarchy"
+      ],
+      "description": "The first letter of object names should be capitalized to maintain professional quality.",
+      "url": null,
+      "expression": "lambda obj, tom: obj.Name[0] != obj.Name[0].upper()",
+      "expressionAstSha256": "9fec380a8e0434dc65dca7c68f3e5cca3b0ff770a6d4a8d5c94eba378186af61",
+      "expressionLocation": {
+        "lineno": 987,
+        "col_offset": 16,
+        "end_lineno": 987,
+        "end_col_offset": 67
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L987-L987",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Name",
+        "obj.Name[0].upper"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 63,
+      "category": "Naming Conventions",
+      "name": "Object names must not contain special characters",
+      "severity": "Warning",
+      "scopes": [
+        "Table",
+        "Column",
+        "Measure",
+        "Partition",
+        "Hierarchy"
+      ],
+      "sourceScope": [
+        "Table",
+        "Column",
+        "Measure",
+        "Partition",
+        "Hierarchy"
+      ],
+      "description": "Object names should not include tabs, line breaks, etc.",
+      "url": null,
+      "expression": "lambda obj, tom: re.search(r\"[\\t\\r\\n]\", obj.Name)",
+      "expressionAstSha256": "254ae16caed220209692099f3e130e44ec8dfc48cd16dd0dd42fea96486405ec",
+      "expressionLocation": {
+        "lineno": 995,
+        "col_offset": 16,
+        "end_lineno": 995,
+        "end_col_offset": 65
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L995-L995",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Name"
+      ],
+      "globalDependencies": []
+    },
+    {
+      "ordinal": 64,
+      "category": "Naming Conventions",
+      "name": "Partition name should match table name for single partition tables",
+      "severity": "Info",
+      "scopes": [
+        "Partition"
+      ],
+      "sourceScope": "Partition",
+      "description": "For a table with a single partition, the partition name should match the table name for clarity and consistency.",
+      "url": null,
+      "expression": "lambda obj, tom: obj.Parent.Partitions.Count == 1\n                and obj.Name != obj.Parent.Name",
+      "expressionAstSha256": "962baf94143810078f8c855160f36032a4752880cb0494939048c0baa1fe4b21",
+      "expressionLocation": {
+        "lineno": 1003,
+        "col_offset": 16,
+        "end_lineno": 1004,
+        "end_col_offset": 47
+      },
+      "sourceUrl": "https://github.com/microsoft/semantic-link-labs/blob/2ddf46109c1209ceffa88149f4631e7b2275f9a1/src/sempy_labs/_model_bpa_rules.py#L1003-L1004",
+      "tomWrapperMethods": [],
+      "tomEnumMembers": [],
+      "objectAttributePaths": [
+        "obj.Name",
+        "obj.Parent",
+        "obj.Parent.Name",
+        "obj.Parent.Partitions",
+        "obj.Parent.Partitions.Count"
+      ],
+      "globalDependencies": []
+    }
+  ]
+}

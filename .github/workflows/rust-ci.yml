@@ -94,6 +94,21 @@ jobs:
           cargo fetch --locked
       - name: Recompute and verify the same dependency selection on this host
         run: node rust/scripts/impact-ci.cjs native "$RUNNER_TEMP/rust-impact-selection"
+      - name: Set up optional semantic-model TOM runtime
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+        with:
+          dotnet-version: "8.0.425"
+      - name: Select explicit optional TOM host library
+        shell: pwsh
+        run: |
+          $fxr = Get-ChildItem "$env:DOTNET_ROOT/host/fxr" -Directory |
+            Where-Object Name -Like '8.*' | Sort-Object { [version]$_.Name } -Descending |
+            Select-Object -First 1
+          if (-not $fxr) { throw 'The explicitly installed .NET 8 host is missing.' }
+          $library = if ($IsWindows) { 'hostfxr.dll' } elseif ($IsMacOS) { 'libhostfxr.dylib' } else { 'libhostfxr.so' }
+          $hostfxr = Join-Path $fxr.FullName $library
+          if (-not (Test-Path $hostfxr)) { throw 'The explicitly installed .NET 8 host library is missing.' }
+          "FABRIC_BPA_TEST_HOSTFXR=$hostfxr" >> $env:GITHUB_ENV
       - name: Check bounded engineering cleanup before native compilation
         run: |
           python -I -B - "$GITHUB_WORKSPACE/rust/scripts" "$RUNNER_TEMP/rust-engineering-unit" <<'PY'

@@ -41,6 +41,8 @@ members = [
     "sdk/sql/database",
     "sdk/sql/definition",
     "sdk/tabular",
+    "sdk/semantic-model/client",
+    "sdk/semantic-model/dotnet",
 ]
 default-members = [
     "frontends/cli/update",
@@ -90,6 +92,8 @@ default-members = [
     "sdk/sql/database",
     "sdk/sql/definition",
     "sdk/tabular",
+    "sdk/semantic-model/client",
+    "frontends/cli/commands/semantic-model",
 ]
 resolver = "3"
 
@@ -101,6 +105,10 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+fabric-semantic-model-dotnet = { path = "sdk/semantic-model/dotnet", default-features = false }
+fabric-sdk-semantic-model = { path = "sdk/semantic-model/client", default-features = false }
+fabric-cli-semantic-model = { path = "frontends/cli/commands/semantic-model", default-features = false }
+netcorehost = { version = "=0.22.0", default-features = false, features = ["net8_0"] }
 fabric-cli = { path = "frontends/cli/app", default-features = false }
 arrow-csv = { version = "=60.1.0", default-features = false }
 bytes = { version = "=1.12.1", default-features = false, features = ["std"] }

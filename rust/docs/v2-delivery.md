@@ -19,6 +19,27 @@ merge is not common-branch publication or combined-candidate gate acceptance.
 Notebook follow-up adoption and the coordinator's exact-SHA publication release
 remain separate requirements.
 
+The coordinator-released follow-up sources are Notebook's actual merge
+`25b676dbaaed753e4e90122cc38bb5f9fc1dbfe2`, Schema
+`ac566bff42d01cd55d5cae292fa90647b4a05f3f`, Copy
+`e7cebc7f688799e3b51522ebc0e14a0ad3fee652`, and repaired Semantic
+`f7094c096c96c540dcd79d1834a5cb2dfa891046`. These immutable sources may
+compose an isolated validation branch; a staging merge does not mean that the
+remaining source PRs have merged. Final common publication still requires the
+actual complete merged checkpoint, current combined gates, and the coordinator's
+exact-SHA release.
+
+Semantic analysis uses `sdk/semantic-model/client/`, the optional isolated
+`sdk/semantic-model/dotnet/` native boundary, and
+`frontends/cli/commands/semantic-model/`. The native boundary retains its
+reviewed private unsafe exception and stays outside default members. Empty
+default features keep SDK and CLI consumers .NET-free; explicit runtime builds
+use the existing pinned managed gate. Preserve the original byte-pinned BIM
+checkout attributes, source hashes, catalog and independent oracle when moving
+the packages. Native matrix tooling provisions the pinned SDK on every host for
+explicit all-feature compilation; this is not a default product dependency or
+an additional platform-support claim.
+
 New reusable v2 packages now live under `sdk/sql/`, `sdk/search/`,
 `sdk/ontology/`, `sdk/dataagents/`, `sdk/dataflow/`, and `sdk/tabular/`.
 Shared `sdk/contracts/` retains its core layer. CLI Ontology adapters live in
