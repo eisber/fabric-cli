@@ -1,5 +1,11 @@
 <!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
 
+The optional managed acceptance workflow retains hash-only source inventories
+and an exact changed-file report before and after its managed/native commands.
+Full native validation also retains `source-before.json` and
+`source-after.json`. These diagnostics include tracked and unignored untracked
+inputs; they do not waive source-integrity failures or publish source contents.
+
 # Optional semantic-model BPA
 
 This slice ports the model BPA rules from

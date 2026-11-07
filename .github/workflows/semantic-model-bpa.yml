@@ -55,6 +55,11 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -B -m unittest discover -s rust/tests/compatibility/semantic_model_bpa -p test_oracle.py -q
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Record source hashes before managed acceptance
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/semantic-source-integrity" | Out-Null
+          node -e 'const fs=require("node:fs"),path=require("node:path"),v=require("./rust/scripts/validate-impact.cjs"); fs.writeFileSync(path.join(process.env.RUNNER_TEMP,"semantic-source-integrity","before.json"), JSON.stringify(v.sourceInventory(process.cwd()),null,2));'
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Managed rule and ABI acceptance
         working-directory: rust/capabilities/semantic-model/fabric-semantic-model-dotnet/managed
         run: |
@@ -79,3 +84,16 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cargo test --offline --locked -p fabric-cli --features semantic-model,self-update --bin fab-rs offline_bpa_is_excluded_before_update_policy_or_transport_setup
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Verify source hashes after managed acceptance
+        if: always()
+        run: |
+          node -e 'const fs=require("node:fs"),path=require("node:path"),v=require("./rust/scripts/validate-impact.cjs"); const dir=path.join(process.env.RUNNER_TEMP,"semantic-source-integrity"); fs.mkdirSync(dir,{recursive:true}); const after=v.sourceInventory(process.cwd()); fs.writeFileSync(path.join(dir,"after.json"),JSON.stringify(after,null,2)); const beforePath=path.join(dir,"before.json"); if(!fs.existsSync(beforePath)) throw new Error("Before-source inventory is missing"); const before=JSON.parse(fs.readFileSync(beforePath,"utf8")); const a=new Map(before.files.map(f=>[f.path,f])),b=new Map(after.files.map(f=>[f.path,f])); const changed=[...new Set([...a.keys(),...b.keys()])].sort().filter(p=>JSON.stringify(a.get(p))!==JSON.stringify(b.get(p))).map(p=>({path:p,before:a.get(p)||null,after:b.get(p)||null})); fs.writeFileSync(path.join(dir,"changes.json"),JSON.stringify(changed,null,2)); if(before.digest!==after.digest) throw new Error("Source changed during managed acceptance; inspect changes.json");'
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Retain source-integrity diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: semantic-source-integrity
+          path: ${{ runner.temp }}/semantic-source-integrity
+          if-no-files-found: error
+          retention-days: 7
