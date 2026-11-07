@@ -71,8 +71,11 @@ local files. A metadata-only response after definition access denial cannot be
 copied. Payload and response bounds remain explicit caller inputs.
 
 Creation returns acceptance without implicit observation. A valid HTTP 201
-receipt contains the actual created item ID. HTTP 202 is accepted, not a
-completed copy, and preserves available operation identity. Invalid or missing
+receipt contains the actual created item ID. When the response supplies a name
+or folder ID, it must match the requested destination; malformed or conflicting
+metadata is an uncertain error that retains the original response, not a
+successful copy receipt. Omitted optional metadata remains supported. HTTP 202
+is accepted, not a completed copy, and preserves available operation identity. Invalid or missing
 completion identity, service/transport failure, cancellation and uncertain
 dispatch remain errors with their original evidence. Neither cancellation nor
 output failure causes automatic retry, deletion or rollback.
