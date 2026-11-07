@@ -7,6 +7,10 @@
 #[path = "ipc_output.rs"]
 pub mod output;
 
+/// Consume acknowledged framed GET chunks into one bounded native IPC stream.
+#[path = "ipc_result.rs"]
+pub mod result;
+
 use super::{ArrowError, DecodeLimits, RawChunk, TypedDecoder};
 use arrow_array::RecordBatch;
 use arrow_ipc::reader::StreamReader;

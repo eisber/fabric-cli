@@ -715,6 +715,39 @@ fn retry_plan_is_finite_and_404_protocol_failure_and_all_posts_are_nonretryable(
 }
 
 #[test]
+fn public_transport_conversion_preserves_proven_io_and_never_replays_submission() {
+    let failure = Failure::from(ArrowError::from(NativeError::Transport));
+    assert_eq!(failure, Failure::Transport);
+    let now = Instant::now();
+    let get = handle()
+        .result_request(&ResultSelectors::default())
+        .unwrap();
+    let mut policy = RetryPolicy::new(now, Duration::from_secs(30), 1).unwrap();
+    assert_eq!(
+        policy.on_failure(now, failure, &get),
+        RetryDecision::Reconnect { attempt: 1 }
+    );
+    assert_eq!(
+        policy.on_failure(now, failure, &get),
+        RetryDecision::Stop(StopReason::Exhausted)
+    );
+    let post = SubmitOptions {
+        code: "select 1",
+        kind: "sql",
+        codec: "none",
+        mode: SubmitMode::Handle { sync_wait_ms: None },
+    }
+    .request(&owner(), RESOURCE_ID, 100)
+    .unwrap();
+    let mut policy = RetryPolicy::new(now, Duration::from_secs(30), 1).unwrap();
+    assert_eq!(
+        policy.on_failure(now, failure, &post),
+        RetryDecision::Stop(StopReason::Mutation)
+    );
+    assert_eq!(Failure::from(ArrowError::Protocol), Failure::Protocol);
+}
+
+#[test]
 fn absolute_deadline_survives_reconnects_and_caller_pauses() {
     let now = Instant::now();
     let get = handle()
@@ -1604,7 +1637,7 @@ async fn async_driver_rejects_changed_replay_and_preserves_receipt_after_drop() 
     let executor = TestStreamExecutor::new(vec![
         StreamOpen::Reply(stream_reply(vec![
             BodyStep::Data(frame(0, 0, b"part-0-0", b"first")),
-            BodyStep::Error(NativeError::Http(503)),
+            BodyStep::Error(NativeError::Transport),
         ])),
         StreamOpen::Reply(stream_reply(vec![BodyStep::Data(terminated(frame(
             0,
@@ -1681,8 +1714,8 @@ async fn async_driver_does_not_invent_transport_retries_for_ambiguous_partial_fa
 #[tokio::test]
 async fn async_driver_retry_and_response_limits_preserve_the_actual_http_cause() {
     let executor = TestStreamExecutor::new(vec![
-        StreamOpen::Error(NativeError::Http(503)),
-        StreamOpen::Error(NativeError::Http(503)),
+        StreamOpen::Error(NativeError::Transport),
+        StreamOpen::Error(NativeError::Transport),
     ]);
     let mut options = resumable_options();
     options.resume = FramedResume::Recoverable {
@@ -1701,7 +1734,7 @@ async fn async_driver_retry_and_response_limits_preserve_the_actual_http_cause()
     assert_eq!(error.stop(), FramedStreamStop::RetryLimit);
     assert_eq!(
         error.cause(),
-        FramedStreamCause::Native(NativeError::Http(503))
+        FramedStreamCause::Native(NativeError::Transport)
     );
     assert_eq!(error.progress().open_attempts, 2);
     assert_eq!(error.progress().responses, 0);
@@ -1812,6 +1845,65 @@ async fn async_driver_http_status_recovery_is_explicit_and_opt_in() {
     assert_eq!(
         stream.next_chunk().await.unwrap_err().stop(),
         FramedStreamStop::Fatal
+    );
+}
+
+#[tokio::test]
+async fn async_driver_never_bypasses_throttles_or_advertised_delays() {
+    for status in [429, 503, 502] {
+        for value in [
+            "0",
+            "1",
+            "60",
+            "Fri, 06 Nov 2026 18:00:00 GMT",
+            "invalid",
+            "184467440737095516160",
+        ] {
+            let mut reply = stream_reply(vec![]);
+            reply.status = status;
+            reply.headers.insert("Retry-After".into(), value.into());
+            let executor = TestStreamExecutor::new(vec![StreamOpen::Reply(reply)]);
+            let mut stream = FramedResultStream::new(
+                &executor,
+                handle(),
+                ResultSelectors::default(),
+                resumable_options(),
+                stream_deadline(),
+            )
+            .unwrap();
+            let error = stream.next_chunk().await.unwrap_err();
+            assert_eq!(
+                error.cause(),
+                FramedStreamCause::Arrow(ArrowError::Http(status))
+            );
+            assert_eq!(error.stop(), FramedStreamStop::Fatal);
+            assert_eq!(error.progress().reconnects, 0);
+            assert_eq!(error.progress().open_attempts, 1);
+            assert!(executor.trace.lock().unwrap().read_limits.is_empty());
+            assert_eq!(executor.trace.lock().unwrap().drops, 1);
+        }
+    }
+    for status in [408, 429, 500, 502, 503, 504] {
+        let executor = TestStreamExecutor::new(vec![StreamOpen::Error(NativeError::Http(status))]);
+        let mut stream = FramedResultStream::new(
+            &executor,
+            handle(),
+            ResultSelectors::default(),
+            resumable_options(),
+            stream_deadline(),
+        )
+        .unwrap();
+        let error = stream.next_chunk().await.unwrap_err();
+        assert_eq!(
+            error.cause(),
+            FramedStreamCause::Native(NativeError::Http(status))
+        );
+        assert_eq!(error.progress().open_attempts, 1);
+        assert_eq!(error.progress().reconnects, 0);
+    }
+    assert_eq!(
+        ArrowError::from(NativeError::Transport),
+        ArrowError::Transport
     );
 }
 
@@ -2406,7 +2498,7 @@ async fn async_driver_logical_budget_and_explicit_service_failure_never_recover(
         let executor = TestStreamExecutor::new(vec![
             StreamOpen::Reply(stream_reply(vec![
                 BodyStep::Data(frame(0, 0, b"part-0-0", b"a")),
-                BodyStep::Error(NativeError::Http(503)),
+                BodyStep::Error(NativeError::Transport),
             ])),
             StreamOpen::Reply(stream_reply(vec![BodyStep::Data(second_body)])),
         ]);

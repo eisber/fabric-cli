@@ -56,12 +56,22 @@ POST. Once dispatch is attempted, lost transport, response metadata, streaming
 limits, timeout or aborted reads are `OutcomeUnknown` for non-GET/HEAD methods.
 Read-only errors remain `InvalidResponse`, `Limit`, `TimedOut` or `Cancelled`.
 This conservative method classification also covers a POST declared as a read.
-When a valid non-2xx HTTP status has already been observed, subsequent failure
-retains `Http(status)` rather than replacing that known status with uncertainty.
+When a valid non-2xx HTTP status has already been observed, subsequent transport
+failure retains `Http(status)` rather than replacing that known status with uncertainty.
+Metadata/protocol/input validation failures and local limits retain their actual
+read error even for non-2xx responses. Mutation handling is unchanged: a known
+non-2xx status retains `Http(status)`; otherwise lost observation remains unknown.
+They must not become status-only errors that a consumer could wrongly retry
+after rejected metadata erased a server-directed delay.
 An observed HTTP failure is not a guarantee of mutation rollback; the caller
 still owns any service-specific reconciliation needed for that status.
 Well-formed responses preserve the actual status, optional Content-Type and
 header values. 202 remains acceptance, not service completion.
+
+The optional `livy-arrow` feature forwards the SDK's raw Arrow contracts and
+enables the composed executor/driver regression in `tests/native_stream.rs`.
+Its `native-http-arrow` impact profile runs that test on all native platforms.
+This tests actual adapter-to-driver error propagation, not live Arrow support.
 
 ## Pull bounds and disposal
 

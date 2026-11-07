@@ -22,7 +22,7 @@ pub enum FramedResume {
     Never,
     /// Recover from explicit transport evidence, enumerated HTTP statuses, and
     /// optionally truncated EOF. Evidence alone does not grant replay authority.
-    /// Throttling responses are returned without automatic recovery.
+    /// Throttles or responses advertising a delay are returned without recovery.
     Recoverable {
         /// Maximum reconnects, additionally capped by the response budget.
         max_reconnects: u32,
@@ -405,6 +405,13 @@ impl<'a> FramedResultStream<'a> {
         self.progress
     }
 
+    /// Remaining original observation budget, including caller and sink pauses.
+    ///
+    /// This does not restart the deadline or preempt synchronous caller code.
+    pub fn remaining_budget(&self) -> Result<std::time::Duration, NativeError> {
+        self.deadline.remaining()
+    }
+
     fn receipt(&self, cause: FramedStreamCause, stop: FramedStreamStop) -> FramedStreamError {
         FramedStreamError::new(
             cause,
@@ -462,10 +469,6 @@ impl<'a> FramedResultStream<'a> {
         };
         let recoverable = match (source, cause) {
             (RecoverySource::Io, FramedStreamCause::Native(NativeError::Transport))
-            | (
-                RecoverySource::Io,
-                FramedStreamCause::Native(NativeError::Http(408 | 500 | 502 | 503 | 504)),
-            )
             | (
                 RecoverySource::ResponseStatus,
                 FramedStreamCause::Arrow(ArrowError::Http(408 | 500 | 502 | 503 | 504)),
@@ -569,13 +572,12 @@ impl<'a> FramedResultStream<'a> {
                 Ok(())
             }
             Err(cause) => {
-                let throttled = matches!(cause, FramedStreamCause::Arrow(ArrowError::Http(429)))
-                    || (matches!(cause, FramedStreamCause::Arrow(ArrowError::Http(503)))
-                        && metadata
-                            .headers
-                            .keys()
-                            .any(|name| name.eq_ignore_ascii_case("retry-after")));
-                if throttled {
+                if matches!(cause, FramedStreamCause::Arrow(ArrowError::Http(429)))
+                    || metadata
+                        .headers
+                        .keys()
+                        .any(|name| name.eq_ignore_ascii_case("retry-after"))
+                {
                     return Err(self.fail(cause, FramedStreamStop::Fatal));
                 }
                 self.recover(cause, RecoverySource::ResponseStatus)
