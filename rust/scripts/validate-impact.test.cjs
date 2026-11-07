@@ -8,7 +8,8 @@ const os = require('node:os');
 const path = require('node:path');
 const {test} = require('node:test');
 const {packageArgs, ownFeatures, testCommands, coreCommands, commandResult,
-  oracleVersions, restoreOracleDependencies, runContracts, options, buildEnvironment} =
+  oracleVersions, restoreOracleDependencies, runContracts, options, buildEnvironment,
+  sourceDigest, sourceInventory, sourceDifferences} =
   require('./validate-impact.cjs');
 const {selection, equalSelection} = require('./impact-ci.cjs');
 const {plan: impactPlan} = require('./impact-plan.cjs');
@@ -38,6 +39,32 @@ test('Cargo package arguments are sorted, deduplicated and not shell text', () =
   assert.deepEqual(packageArgs(['z', 'a', 'z']), ['--package', 'a', '--package', 'z']);
 });
 
+test('per-file diagnostics preserve the exact source digest and expose tracked and generated writes', t => {
+  const {execFileSync} = require('node:child_process');
+  const root = temporary(t);
+  const git = args => execFileSync('git', args, {cwd: root, encoding: 'utf8'});
+  git(['init', '--quiet']);
+  fs.writeFileSync(path.join(root, 'tracked.txt'), 'original\r\n');
+  git(['add', 'tracked.txt']);
+  const before = sourceInventory(root);
+  assert.equal(before.digest, sourceDigest(root));
+  assert.deepEqual(sourceDifferences(before, sourceInventory(root)), []);
+  fs.writeFileSync(path.join(root, 'tracked.txt'), 'changed\n');
+  fs.writeFileSync(path.join(root, 'generated.txt'), 'artifact');
+  const after = sourceInventory(root);
+  assert.equal(after.digest, sourceDigest(root));
+  assert.notEqual(after.digest, before.digest);
+  const changes = sourceDifferences(before, after);
+  assert.deepEqual(changes.map(change => change.path), ['generated.txt', 'tracked.txt']);
+  assert.equal(changes[0].before, null);
+  assert.equal(changes[0].after.tracked, false);
+  assert.equal(changes[1].before.tracked, true);
+  assert.match(changes[1].after.sha256, /^[a-f0-9]{64}$/);
+  fs.unlinkSync(path.join(root, 'tracked.txt'));
+  const missing = sourceInventory(root);
+  assert.equal(missing.files.find(file => file.path === 'tracked.txt').state, 'deleted');
+  assert.notEqual(missing.digest, after.digest);
+});
 test('build receipts retain only explicit Cargo resource settings, not unrelated environment values', () => {
   assert.deepEqual(buildEnvironment({
     CARGO_BUILD_JOBS: '2', RUST_TEST_THREADS: '1',

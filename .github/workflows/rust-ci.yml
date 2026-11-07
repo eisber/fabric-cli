@@ -165,7 +165,15 @@ jobs:
       - name: Preflight every current feature and target under strict native lints
         if: success() || failure()
         working-directory: rust
-        run: cargo clippy --offline --locked --workspace --all-targets --all-features -- -D warnings
+        run: |
+          node scripts/source-inventory.cjs "$RUNNER_TEMP/rust-source-inventory/before-preflight.json"
+          cargo clippy --offline --locked --workspace --all-targets --all-features -- -D warnings
+      - name: Verify preflight source integrity with exact per-file evidence
+        if: always()
+        run: >-
+          node rust/scripts/source-inventory.cjs
+          "$RUNNER_TEMP/rust-source-inventory/after-preflight.json"
+          "$RUNNER_TEMP/rust-source-inventory/before-preflight.json"
       - name: Exercise complete native CLI targets before the full feature plan
         env:
           FAB_IDENTITY_TEST_ROOT: ${{ runner.temp }}/rust-cli-preflight
@@ -176,6 +184,12 @@ jobs:
         run: |
           mkdir -p "$FAB_IDENTITY_TEST_ROOT"
           cargo test --offline --locked -p fabric-cli --all-targets --all-features --no-fail-fast
+      - name: Verify CLI preflight source integrity with exact per-file evidence
+        if: always()
+        run: >-
+          node rust/scripts/source-inventory.cjs
+          "$RUNNER_TEMP/rust-source-inventory/after-cli.json"
+          "$RUNNER_TEMP/rust-source-inventory/after-preflight.json"
       - name: Execute the shared local and CI validation plan
         run: >-
           node rust/scripts/validate-impact.cjs
@@ -193,6 +207,7 @@ jobs:
             ${{ runner.temp }}/rust-engineering-unit/*.log
             ${{ runner.temp }}/rust-engineering-unit/receipt.json
             ${{ runner.temp }}/rust-cli-preflight
+            ${{ runner.temp }}/rust-source-inventory
           if-no-files-found: error
 
   validation:

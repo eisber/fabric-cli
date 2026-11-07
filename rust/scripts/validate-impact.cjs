@@ -127,6 +127,48 @@ function sourceDigest(root) {
   return hash.digest('hex');
 }
 
+function sourceInventory(root) {
+  const list = args => {
+    const result = spawnSync('git', ['ls-files', '-z', ...args], {
+      cwd: root, encoding: 'utf8', timeout: 30000, maxBuffer: 32 * 1024 * 1024,
+    });
+    requireThat(!result.error && result.status === 0, 'Unable to inventory source with Git');
+    return result.stdout.split('\0').filter(Boolean);
+  };
+  const tracked = new Set(list(['--cached']));
+  const names = [...new Set([...tracked, ...list(['--others', '--exclude-standard'])])].sort();
+  const hash = crypto.createHash('sha256');
+  const files = names.map(name => {
+    const file = path.resolve(root, name);
+    requireThat(file.startsWith(`${root}${path.sep}`), `Source path escaped checkout: ${name}`);
+    hash.update(name);
+    if (!fs.existsSync(file)) {
+      hash.update('\0deleted\0');
+      hash.update('\0');
+      return {path: name, tracked: tracked.has(name), state: 'deleted'};
+    }
+    const stat = fs.lstatSync(file);
+    requireThat(stat.isFile() && !stat.isSymbolicLink(), `Source must be a regular file: ${name}`);
+    const bytes = fs.readFileSync(file);
+    hash.update('\0');
+    hash.update(bytes);
+    hash.update('\0');
+    return {path: name, tracked: tracked.has(name), state: 'file', mode: stat.mode & 0o777,
+      bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex')};
+  });
+  const digest = hash.digest('hex');
+  requireThat(digest === sourceDigest(root), 'Source changed while recording the per-file inventory');
+  return {schema: 1, digest, files};
+}
+
+function sourceDifferences(before, after) {
+  const previous = new Map(before.files.map(file => [file.path, file]));
+  const current = new Map(after.files.map(file => [file.path, file]));
+  return [...new Set([...previous.keys(), ...current.keys()])].sort()
+    .filter(name => JSON.stringify(previous.get(name)) !== JSON.stringify(current.get(name)))
+    .map(name => ({path: name, before: previous.get(name) || null, after: current.get(name) || null}));
+}
+
 function buildEnvironment(environment = process.env) {
   const names = ['CARGO_BUILD_JOBS', 'RUST_TEST_THREADS', 'CARGO_PROFILE_DEV_DEBUG',
     'CARGO_PROFILE_TEST_DEBUG', 'CARGO_INCREMENTAL'];
@@ -359,6 +401,9 @@ function main(argv) {
     pinnedOutput: path.join(opts.artifacts, 'pinned-python'),
     parameterRoot: path.join(opts.artifacts, 'fabric-cicd-parameter-source')};
   const before = sourceDigest(opts.root);
+  const inventoryBefore = sourceInventory(opts.root);
+  requireThat(before === inventoryBefore.digest, 'Source changed before validation');
+  fs.writeFileSync(path.join(opts.artifacts, 'source-before.json'), `${JSON.stringify(inventoryBefore, null, 2)}\n`);
   const toolchain = {};
   for (const [name, program, args] of [
     ['cargo', 'cargo', ['--version']], ['rustc', 'rustc', ['--version', '--verbose']],
@@ -392,6 +437,10 @@ function main(argv) {
   try {
     if (opts.stage !== 'contracts') for (const command of commands) run(command);
     if (opts.stage !== 'core') runContracts(context, registry, run);
+    const inventoryAfter = sourceInventory(opts.root);
+    fs.writeFileSync(path.join(opts.artifacts, 'source-after.json'), `${JSON.stringify(inventoryAfter, null, 2)}\n`);
+    fs.writeFileSync(path.join(opts.artifacts, 'source-differences.json'),
+      `${JSON.stringify(sourceDifferences(inventoryBefore, inventoryAfter), null, 2)}\n`);
     receipt.source_after = sourceDigest(opts.root);
     requireThat(before === receipt.source_after, 'Source changed during validation');
     planner.verifyPlan(plan, {root: opts.root});
@@ -411,7 +460,7 @@ function main(argv) {
 }
 
 module.exports = {packageArgs, ownFeatures, defaultTests, profileTests, testCommands, coreCommands, commandResult,
-  sourceDigest, oracleVersions, restoreOracleDependencies, runContracts, options, buildEnvironment};
+  sourceDigest, sourceInventory, sourceDifferences, oracleVersions, restoreOracleDependencies, runContracts, options, buildEnvironment};
 if (require.main === module) {
   try { main(process.argv.slice(2)); }
   catch (error) { console.error(error.message); process.exitCode = 1; }

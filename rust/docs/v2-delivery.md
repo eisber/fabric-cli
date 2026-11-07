@@ -125,6 +125,17 @@ Custom `--base-sha` reports do not silently inherit another checkpoint ledger.
 Git invocations enable native long-path support without changing repository or
 global configuration.
 
+Native validation retains `source-before.json`, `source-after.json`, and exact
+per-file differences alongside the existing fail-closed source digest. Each
+entry records its tracked state, mode, byte count, and SHA-256, not file content.
+Preflight inventories also catch generated files before the full plan starts.
+The manual **Diagnose managed source integrity** workflow runs only the smallest
+optional managed build and retains its before/after manifests; it is diagnostic
+evidence, not a replacement for the complete native matrix. Fix the actual
+writer when it changes a source or creates an untracked file. Do not exclude the
+file, reset its bytes after validation, or regenerate a checked-in lock or oracle
+to make a guard pass.
+
 The helper exits 0 for a complete safe report, including ordinary ahead/behind
 divergence; 1 for an operational, lineage, or safety failure with JSON on stderr;
 and 2 for invalid CLI syntax. A dirty checkout, in-progress Git operation,
