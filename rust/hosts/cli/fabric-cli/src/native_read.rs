@@ -15,6 +15,17 @@ use std::io::{self, Write};
 
 pub(crate) type Failure = (&'static str, String, u8);
 
+#[cfg(feature = "workspace-read-v2")]
+#[allow(
+    dead_code,
+    reason = "The separate workspace preview selects this entry point."
+)]
+pub(crate) fn run_workspace_v2(
+    command: &fabric_cli::workspace_v2::WorkspaceCommand,
+) -> io::Result<u8> {
+    workspace_v2_native::run(command)
+}
+
 #[path = "native_get.rs"]
 mod get;
 
@@ -39,6 +50,18 @@ mod headless_host_tests;
 #[cfg(all(test, feature = "v2-cancel", feature = "headless"))]
 #[path = "native_cancel_tests.rs"]
 mod native_cancel_tests;
+
+#[cfg(all(test, feature = "workspace-read-v2"))]
+#[path = "native_workspace_v2_tests.rs"]
+mod workspace_v2_tests;
+
+#[cfg(feature = "workspace-read-v2")]
+#[path = "native_workspace_v2.rs"]
+#[allow(
+    dead_code,
+    reason = "Only the separate workspace preview dispatches these operations."
+)]
+mod workspace_v2_native;
 
 #[cfg(any(windows, feature = "headless"))]
 #[path = "native_settings.rs"]
@@ -616,7 +639,11 @@ async fn execute_cancel_injected(
         Either::Left((Err((code, _, exit)), _)) => return unavailable(code, exit),
         Either::Right(_) => return unavailable("Cancelled", 1),
     };
-    let executor = match native_executor(client, endpoint.clone()) {
+    let executor = match native_executor(
+        client,
+        endpoint.clone(),
+        fabric_sdk_http::ExecutionOptions::default(),
+    ) {
         Ok(executor) => executor,
         Err((code, _, exit)) => return unavailable(code, exit),
     };
@@ -876,10 +903,17 @@ fn native_clients(
     credential: &NativeCredential,
     execution: bool,
 ) -> Result<NativeClients, Failure> {
+    native_clients_with_options(credential, native_transport_options(execution))
+}
+
+#[cfg(any(windows, feature = "headless"))]
+fn native_clients_with_options(
+    credential: &NativeCredential,
+    options: fabric_sdk_transport::TransportOptions,
+) -> Result<NativeClients, Failure> {
     use fabric_sdk_transport::NativeHttpClient;
     use std::sync::Arc;
 
-    let options = native_transport_options(execution);
     let identity_client = credential
         .metadata_endpoint()
         .map(|endpoint| {
@@ -932,11 +966,12 @@ fn native_transport_options(execution: bool) -> fabric_sdk_transport::TransportO
 fn native_executor(
     client: std::sync::Arc<dyn azure_core::http::HttpClient>,
     endpoint: EndpointBinding,
+    options: fabric_sdk_http::ExecutionOptions,
 ) -> Result<fabric_sdk_http::HttpExecutor, Failure> {
     fabric_sdk_http::HttpExecutor::new(
         client,
         std::sync::Arc::new(fabric_sdk_transport::TokioTimer),
-        fabric_sdk_http::ExecutionOptions::default(),
+        options,
     )
     .map(|executor| executor.with_endpoint(endpoint))
     .map_err(|_| failure("transport_failed", "The HTTP executor could not start.", 1))
@@ -989,23 +1024,20 @@ async fn execute_injected_delivery(
     state: &mut BatchState,
     get_inputs: Option<get::Inputs<'_>>,
 ) -> Result<get::Delivery, Failure> {
-    use fabric_sdk::{Audience, Client, CredentialSelection, RequestContext};
-    let selection =
-        CredentialSelection::new(credential.account(), credential.tenant(), Audience::Fabric)
-            .map_err(|_| failure("invalid_configuration", "Invalid credential selection.", 2))?;
     let broker_identity = credential.is_broker();
-    let credential = match command {
-        NativeCommand::Execution(_, deadline) => {
-            execute::before_submission(credential.connect(identity_client), deadline).await?
-        }
-        _ => credential.connect(identity_client).await?,
+    let deadline = match command {
+        NativeCommand::Execution(_, deadline) => Some(deadline),
+        _ => None,
     };
-    let sdk = Client::with_context(RequestContext::with_endpoint(
+    let (sdk, executor) = connect_native(
         credential,
-        selection,
-        endpoint.clone(),
-    ));
-    let executor = native_executor(client, endpoint)?;
+        client,
+        identity_client,
+        endpoint,
+        fabric_sdk_http::ExecutionOptions::default(),
+        deadline,
+    )
+    .await?;
     execute_authenticated_injected(
         command,
         sdk,
@@ -1018,6 +1050,35 @@ async fn execute_injected_delivery(
         get_inputs,
     )
     .await
+}
+
+#[cfg(any(windows, feature = "headless"))]
+async fn connect_native(
+    credential: NativeCredential,
+    client: std::sync::Arc<dyn azure_core::http::HttpClient>,
+    identity_client: std::sync::Arc<dyn azure_core::http::HttpClient>,
+    endpoint: EndpointBinding,
+    options: fabric_sdk_http::ExecutionOptions,
+    deadline: Option<std::time::Instant>,
+) -> Result<(fabric_sdk::Client, fabric_sdk_http::HttpExecutor), Failure> {
+    use fabric_sdk::{Audience, Client, CredentialSelection, RequestContext};
+
+    let selection =
+        CredentialSelection::new(credential.account(), credential.tenant(), Audience::Fabric)
+            .map_err(|_| failure("invalid_configuration", "Invalid credential selection.", 2))?;
+    let credential = match deadline {
+        Some(deadline) => {
+            execute::before_submission(credential.connect(identity_client), deadline).await?
+        }
+        None => credential.connect(identity_client).await?,
+    };
+    let sdk = Client::with_context(RequestContext::with_endpoint(
+        credential,
+        selection,
+        endpoint.clone(),
+    ));
+    let executor = native_executor(client, endpoint, options)?;
+    Ok((sdk, executor))
 }
 
 #[cfg(any(windows, feature = "headless"))]

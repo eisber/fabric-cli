@@ -159,6 +159,24 @@ pub fn validate_projection(expression: &str) -> Result<(), QueryError> {
     validation::validate(&ast)?;
     Ok(())
 }
+
+/// Validate explicit JSON projection syntax without querying data or doing I/O.
+///
+/// Unlike the compatibility path inventory, whitespace-only expressions are invalid.
+pub fn validate_json_projection(expression: &str) -> Result<(), QueryError> {
+    if expression.trim().is_empty() {
+        return Err(QueryError {
+            kind: QueryErrorKind::Syntax,
+        });
+    }
+    validate_projection(expression)
+}
+
+/// Project native JSON without converting scalar values to compatibility strings.
+pub fn project_json(data: &Value, expression: &str) -> Result<Value, QueryError> {
+    validate_json_projection(expression)?;
+    project_value(data, expression)
+}
 /// Join argparse-style query tokens using Python `process_nargs` list semantics.
 ///
 /// A caller with an already-normalized single string should pass it directly to

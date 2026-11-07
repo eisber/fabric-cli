@@ -41,6 +41,8 @@ pub mod tabular_export;
 #[cfg(feature = "v2-discovery")]
 pub mod v2_discovery;
 mod workspace_get;
+#[cfg(feature = "workspace-read-v2")]
+pub mod workspace_v2;
 
 pub use folder_reads::FolderReadHost;
 pub use projection::{NoQuery, Projection, PythonQuery};

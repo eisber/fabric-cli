@@ -254,7 +254,10 @@
       "package": "fabric-sdk-api",
       "inputs": ["rust/capabilities/resources/fabric-sdk-api/src/**", "rust/tests/compatibility/raw_api/cases.json"],
       "depends_on": ["core", "json", "sdk-workspaces", "paging", "operations"],
-      "tests": [{"package": "fabric-sdk-api", "target": "lib"}],
+      "tests": [
+        {"package": "fabric-sdk-api", "target": "lib"},
+        {"package": "fabric-sdk-api", "target": "test:workspace_reads"}
+      ],
       "checks": ["resource-oracle"]
     },
     {
@@ -896,6 +899,18 @@
       "checks": ["dependency-graph"]
     },
     {
+      "id": "workspace-read-v2",
+      "package": "fabric-cli",
+      "inputs": ["rust/hosts/cli/fabric-cli/src/workspace_v2.rs", "rust/hosts/cli/fabric-cli/src/workspace_v2_main.rs", "rust/hosts/cli/fabric-cli/src/native_workspace_v2.rs", "rust/hosts/cli/fabric-cli/src/native_workspace_v2_tests.rs", "rust/docs/workspace-v2-reads.md"],
+      "depends_on": ["sdk-api", "query", "resources", "definitions", "cli-native-shared"],
+      "tests": [
+        {"package": "fabric-cli", "target": "lib"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-workspace"},
+        {"package": "fabric-cli", "target": "test:workspace_v2"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "workspace-architecture",
       "package": "fabric-cli",
       "coverage": "structural",
@@ -913,13 +928,41 @@
         "definitions", "transfer", "cli-deployment", "cli-get", "cli-reads", "cli-runtime-v2", "cli-resources",
         "cli-jobs", "cli-cancel", "cli-tables", "cli-local", "repl", "cli-repl", "updater",
         "cli-updater", "cli-auth", "cli-headless", "cli-native-shared", "cli-shared-test-helpers",
-        "cli-v2"
+        "cli-v2", "workspace-read-v2"
       ],
       "tests": [{"package": "fabric-cli", "target": "test:workspace_contract"}],
       "checks": ["dependency-graph"]
     }
   ],
   "profiles": [
+    {
+      "id": "workspace-read-v2",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/workspace-read-v2"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "workspace-read-v2-native",
+      "packages": ["fabric-cli", "fabric-identity", "fabric-sdk-transport"],
+      "features": ["fabric-cli/workspace-read-v2", "fabric-cli/native-read"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["native-read"]
+    },
+    {
+      "id": "workspace-read-v2-headless",
+      "packages": ["fabric-cli", "fabric-identity", "fabric-sdk-transport"],
+      "features": ["fabric-cli/workspace-read-v2", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["headless"]
+    },
+    {
+      "id": "workspace-read-v2-combined",
+      "packages": ["fabric-cli", "fabric-identity", "fabric-identity-windows", "fabric-cli-repl", "fabric-cli-update", "fabric-sdk-transport"],
+      "features": ["fabric-cli/workspace-read-v2", "fabric-cli/native-read", "fabric-cli/headless", "fabric-cli/certificate-store-windows", "fabric-cli/repl", "fabric-cli/self-update", "fabric-cli/v2-discovery", "fabric-identity/certificate-store-windows", "fabric-identity-windows/certificate-store", "fabric-cli-update/fixture-harness"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["combined"]
+    },
     {
       "id": "cli-v2-broker",
       "packages": ["fabric-cli-v2"],

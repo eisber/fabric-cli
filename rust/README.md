@@ -50,6 +50,11 @@ export syntax, current consumers, and validation evidence limits.
 
 ## Workspace components
 
+The opt-in [workspace v2 read slice](docs/workspace-v2-reads.md) uses the separate
+`fab-cli-workspace` preview. It preserves both the six-leaf local `fab-cli`
+executable and the native GET `fab-cli-v2` entry point; no preview overwrites
+another's Cargo output or selects a provider implicitly.
+
 The workspace groups service clients and command adapters by capability:
 
 ```text

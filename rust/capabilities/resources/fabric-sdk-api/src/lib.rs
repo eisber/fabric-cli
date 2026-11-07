@@ -29,6 +29,7 @@ mod operations;
 mod query_trace;
 pub mod v2_outcome;
 pub mod v2_policy;
+pub mod workspace_reads;
 pub use bound::{Origin, RawRequestOptions, RequestBounds};
 pub use fabric_sdk_operations::{OperationError, OperationErrorKind};
 pub use query_trace::{DispatchedQuery, QueryDispatchTrace};

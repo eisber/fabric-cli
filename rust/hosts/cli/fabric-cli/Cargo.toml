@@ -33,8 +33,19 @@ name = "fab-cli-v2"
 path = "src/v2_main.rs"
 required-features = ["headless"]
 
+[[bin]]
+name = "fab-cli-workspace"
+path = "src/workspace_v2_main.rs"
+required-features = ["workspace-read-v2"]
+
+[[test]]
+name = "workspace_v2"
+path = "tests/workspace_v2.rs"
+required-features = ["workspace-read-v2"]
+
 [features]
 default = []
+workspace-read-v2 = []
 v2-cancel = []
 v2-copy = []
 v2-discovery = ["dep:fabric-sdk-discovery"]
