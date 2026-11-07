@@ -1,5 +1,10 @@
 <!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
 
+Managed publication runs from an isolated artifact working directory with an
+exact copy of the source `global.json` SDK pin and the absolute original project
+path. The isolated Windows profile includes aligned `AppData/Local` and
+`AppData/Roaming` directories so NuGet first-use metadata stays outside source.
+
 # Optional in-process TOM boundary
 
 This SDK-layer leaf contains the only native hosting boundary for offline

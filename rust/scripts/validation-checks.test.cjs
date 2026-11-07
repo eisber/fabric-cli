@@ -252,7 +252,8 @@ test('selector tests include coverage tooling with absolute source paths and art
     path.join(rust, 'scripts', 'validate-impact.test.cjs'),
     path.join(rust, 'scripts', 'validation-checks.test.cjs'),
     path.join(rust, 'scripts', 'rust-fast-check.test.cjs'),
-    path.join(rust, 'scripts', 'rust-coverage.test.cjs')]);
+    path.join(rust, 'scripts', 'rust-coverage.test.cjs'),
+    path.join(rust, 'scripts', 'managed-bpa-acceptance.test.cjs')]);
   assert.equal(command.cwd, artifacts);
   assert.deepEqual(command.env, {IMPACT_TEST_ROOT: artifacts,
     TMPDIR: artifacts, TEMP: artifacts, TMP: artifacts});

@@ -29,6 +29,17 @@ remaining source PRs have merged. Final common publication still requires the
 actual complete merged checkpoint, current combined gates, and the coordinator's
 exact-SHA release.
 
+The complete capped round-two provider checkpoint is
+`ccf9c240d53fd81a9d41be7ddf783d3eb1a196b8`, with tree
+`6492cb12350340b0249431c2776dee2488a72c68`. PRs 16-19 are actually merged in
+its ancestry. Layout adoption uses a normal merge of that immutable checkpoint,
+including the isolated managed acceptance helper, the reviewed Windows profile
+alignment, and strict source-inventory gates. Physical path reconciliation keeps
+the managed helper bound to `sdk/semantic-model/dotnet/managed` and places
+per-project outputs in external artifacts. Both the current native matrix and
+the optional managed gate must pass on the adopted head; prior component results
+or a source-identical ancestry change are not a new execution receipt.
+
 Semantic analysis uses `sdk/semantic-model/client/`, the optional isolated
 `sdk/semantic-model/dotnet/` native boundary, and
 `frontends/cli/commands/semantic-model/`. The native boundary retains its

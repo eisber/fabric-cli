@@ -6,6 +6,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
+const {execFileSync} = require('node:child_process');
 const {test} = require('node:test');
 const {packageArgs, ownFeatures, testCommands, coreCommands, commandResult,
   oracleVersions, restoreOracleDependencies, runContracts, options, buildEnvironment,
@@ -34,6 +36,44 @@ function plan() {
     }],
   };
 }
+
+test('source inventory retains the exact digest and identifies tracked, untracked and deleted input changes', t => {
+  const root = temporary(t);
+  const git = args => execFileSync('git', args, {cwd: root, encoding: 'utf8'});
+  git(['init', '--quiet']);
+  fs.writeFileSync(path.join(root, '.gitignore'), 'ignored/\n');
+  fs.writeFileSync(path.join(root, 'managed.lock.json'), '{"locked":true}\n');
+  git(['add', '.gitignore', 'managed.lock.json']);
+  fs.writeFileSync(path.join(root, 'untracked.cs'), 'class Test {}\n');
+  fs.mkdirSync(path.join(root, 'ignored'));
+  fs.writeFileSync(path.join(root, 'ignored', 'generated.cs'), 'not source\n');
+  const before = sourceInventory(root);
+  const expected = crypto.createHash('sha256');
+  for (const file of before.files) {
+    expected.update(file.path);
+    expected.update('\0');
+    expected.update(fs.readFileSync(path.join(root, file.path)));
+    expected.update('\0');
+  }
+  assert.equal(before.digest, expected.digest('hex'));
+  assert.equal(sourceDigest(root), before.digest);
+  assert.deepEqual(before.files.map(file => file.path), ['.gitignore', 'managed.lock.json', 'untracked.cs']);
+  assert.ok(before.files.every(file => file.sha256.length === 64 && file.state === 'file'));
+  assert.ok(!JSON.stringify(before).includes('class Test'));
+  fs.writeFileSync(path.join(root, 'managed.lock.json'), '{"locked":false}\n');
+  fs.unlinkSync(path.join(root, 'untracked.cs'));
+  fs.writeFileSync(path.join(root, 'generated.cs'), 'class Generated {}\n');
+  const after = sourceInventory(root);
+  assert.notEqual(after.digest, before.digest);
+  assert.notEqual(after.files.find(file => file.path === 'managed.lock.json').sha256,
+    before.files.find(file => file.path === 'managed.lock.json').sha256);
+  assert.ok(after.files.some(file => file.path === 'generated.cs'));
+  fs.unlinkSync(path.join(root, 'managed.lock.json'));
+  const deleted = sourceInventory(root);
+  assert.deepEqual(deleted.files.find(file => file.path === 'managed.lock.json'),
+    {path: 'managed.lock.json', tracked: true, state: 'deleted'});
+  assert.notEqual(deleted.digest, after.digest);
+});
 
 test('Cargo package arguments are sorted, deduplicated and not shell text', () => {
   assert.deepEqual(packageArgs(['z', 'a', 'z']), ['--package', 'a', '--package', 'z']);

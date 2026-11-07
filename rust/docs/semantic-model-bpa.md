@@ -1,5 +1,15 @@
 <!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
 
+The optional managed acceptance workflow retains hash-only source inventories
+and an exact changed-file report before and after its managed/native commands.
+Full native validation also retains `source-before.json` and
+`source-after.json`. These diagnostics include tracked and unignored untracked
+inputs; they do not waive source-integrity failures or publish source contents.
+Managed test projects and their references publish from a fresh artifact working
+directory with per-project intermediate and output paths. The original project
+files, locked NuGet sources, and byte-identical .NET SDK pin remain inputs; the
+same BPA and ABI acceptance executables run from their isolated output paths.
+
 # Optional semantic-model BPA
 
 This slice ports the model BPA rules from

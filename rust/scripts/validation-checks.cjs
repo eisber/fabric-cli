@@ -89,7 +89,8 @@ const REGISTRY = Object.freeze({
       c.file(c.rust, 'scripts', 'validate-impact.test.cjs'),
       c.file(c.rust, 'scripts', 'validation-checks.test.cjs'),
       c.file(c.rust, 'scripts', 'rust-fast-check.test.cjs'),
-      c.file(c.rust, 'scripts', 'rust-coverage.test.cjs')], {
+      c.file(c.rust, 'scripts', 'rust-coverage.test.cjs'),
+      c.file(c.rust, 'scripts', 'managed-bpa-acceptance.test.cjs')], {
       cwd: c.artifacts,
       env: {IMPACT_TEST_ROOT: c.artifacts, TMPDIR: c.artifacts,
         TEMP: c.artifacts, TMP: c.artifacts},
