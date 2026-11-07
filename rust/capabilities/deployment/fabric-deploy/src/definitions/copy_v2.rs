@@ -149,6 +149,8 @@ pub struct PreparedDefinitionCopy {
     body: Vec<u8>,
     workspace_id: String,
     item_type: String,
+    display_name: String,
+    folder_id: Option<String>,
     platform_omitted: bool,
 }
 
@@ -200,7 +202,13 @@ impl PreparedDefinitionCopy {
                 })?;
         let operation_id = session.operation_id().map(str::to_owned);
         let item_id = match response.status {
-            201 => match created_id(&response.body, &self.workspace_id, &self.item_type) {
+            201 => match created_id(
+                &response.body,
+                &self.workspace_id,
+                &self.item_type,
+                &self.display_name,
+                self.folder_id.as_deref(),
+            ) {
                 Some(id) => Some(id),
                 None => {
                     return Err(response_error(
@@ -365,11 +373,19 @@ pub fn prepare_definition_copy(
         body,
         workspace_id: destination.workspace_id.to_owned(),
         item_type: destination.item_type.to_owned(),
+        display_name: name.to_owned(),
+        folder_id: destination.folder_id.map(str::to_owned),
         platform_omitted,
     })
 }
 
-fn created_id(body: &[u8], workspace_id: &str, item_type: &str) -> Option<String> {
+fn created_id(
+    body: &[u8],
+    workspace_id: &str,
+    item_type: &str,
+    display_name: &str,
+    folder_id: Option<&str>,
+) -> Option<String> {
     let value: Value = serde_json::from_slice(body).ok()?;
     let object = value.as_object()?;
     let id = object.get("id")?.as_str()?;
@@ -384,6 +400,23 @@ fn created_id(body: &[u8], workspace_id: &str, item_type: &str) -> Option<String
         validate_id(actual).ok()?;
         if !actual.eq_ignore_ascii_case(workspace_id) {
             return None;
+        }
+    }
+    if let Some(actual) = object.get("displayName")
+        && actual.as_str() != Some(display_name)
+    {
+        return None;
+    }
+    if let Some(actual) = object.get("folderId") {
+        match (actual.as_str(), folder_id) {
+            (Some(actual), Some(expected)) => {
+                validate_id(actual).ok()?;
+                if !actual.eq_ignore_ascii_case(expected) {
+                    return None;
+                }
+            }
+            (None, None) if actual.is_null() => {}
+            _ => return None,
         }
     }
     Some(id.to_owned())

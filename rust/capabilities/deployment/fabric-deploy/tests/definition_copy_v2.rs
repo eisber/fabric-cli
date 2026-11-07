@@ -766,6 +766,91 @@ async fn created_response_requires_valid_consistent_identity_and_retains_respons
 }
 
 #[tokio::test]
+async fn created_response_rejects_destination_metadata_mismatch_without_replay() {
+    for (folder_id, body) in [
+        (
+            Some(FOLDER),
+            json!({"id": NEW_ITEM, "displayName": "Wrong destination"}),
+        ),
+        (Some(FOLDER), json!({"id": NEW_ITEM, "displayName": null})),
+        (Some(FOLDER), json!({"id": NEW_ITEM, "displayName": 42})),
+        (Some(FOLDER), json!({"id": NEW_ITEM, "folderId": ITEM})),
+        (Some(FOLDER), json!({"id": NEW_ITEM, "folderId": null})),
+        (
+            Some(FOLDER),
+            json!({"id": NEW_ITEM, "folderId": "not-a-guid"}),
+        ),
+        (Some(FOLDER), json!({"id": NEW_ITEM, "folderId": 42})),
+        (None, json!({"id": NEW_ITEM, "folderId": FOLDER})),
+    ] {
+        let mut target = destination("Notebook");
+        target.folder_id = folder_id;
+        let prepared = prepare_definition_copy(
+            &source("Notebook"),
+            "Notebook",
+            target,
+            DefinitionLimits::default(),
+        )
+        .unwrap();
+        let original = response(201, body);
+        let harness = Harness::new([Ok(original.clone())]);
+        let error = prepared
+            .execute(&mut harness.session(pending()))
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, Kind::InvalidResponse);
+        let received = error.response.unwrap();
+        assert_eq!(received.status, 201);
+        assert_eq!(received.body, original.body);
+        assert!(error.operation.unwrap().mutation_may_have_occurred);
+        let requests = harness.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method, ResourceMethod::Post);
+        assert_eq!(
+            requests[0].path,
+            format!("/v1/workspaces/{WORKSPACE}/items")
+        );
+    }
+}
+
+#[tokio::test]
+async fn created_response_accepts_matching_destination_metadata() {
+    for (folder_id, body) in [
+        (
+            Some(FOLDER),
+            json!({"id": NEW_ITEM, "displayName": "Copy destination", "folderId": FOLDER}),
+        ),
+        (
+            Some(WORKSPACE),
+            json!({"id": NEW_ITEM, "folderId": WORKSPACE.to_ascii_uppercase()}),
+        ),
+        (
+            None,
+            json!({"id": NEW_ITEM, "displayName": "Copy destination", "folderId": null}),
+        ),
+        (Some(FOLDER), json!({"id": NEW_ITEM})),
+        (None, json!({"id": NEW_ITEM})),
+    ] {
+        let mut target = destination("Notebook");
+        target.folder_id = folder_id;
+        let prepared = prepare_definition_copy(
+            &source("Notebook"),
+            "Notebook",
+            target,
+            DefinitionLimits::default(),
+        )
+        .unwrap();
+        let harness = Harness::new([Ok(response(201, body))]);
+        let receipt = prepared
+            .execute(&mut harness.session(pending()))
+            .await
+            .unwrap();
+        assert_eq!(receipt.item_id.as_deref(), Some(NEW_ITEM));
+        assert_eq!(harness.requests.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
 async fn created_response_accepts_absent_optional_identity_and_case_insensitive_workspace() {
     for body in [
         json!({"id": ITEM}),
