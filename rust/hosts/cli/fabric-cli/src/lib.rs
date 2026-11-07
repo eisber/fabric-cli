@@ -40,6 +40,8 @@ pub mod tabular_export;
 /// Opt-in operation-contract discovery and caller-injected data-schema reads.
 #[cfg(feature = "v2-discovery")]
 pub mod v2_discovery;
+#[cfg(feature = "v2-preview")]
+pub mod v2_preview;
 mod workspace_get;
 #[cfg(feature = "workspace-read-v2")]
 pub mod workspace_v2;

@@ -20,6 +20,8 @@ serde_json.workspace = true
 fabric-sdk-ontology.workspace = true
 fabric-sdk-items.workspace = true
 fabric-sdk-operations.workspace = true
+fabric-sdk-workspaces.workspace = true
+fabric-sdk-ontology-workload.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true

@@ -117,11 +117,14 @@ pub fn operation_command(verb: OntologyVerb) -> Command {
                 .value_parser(parse_duration),
         );
 
-    if matches!(verb, OntologyVerb::Create | OntologyVerb::Update) {
+    if matches!(
+        verb,
+        OntologyVerb::Create | OntologyVerb::Update | OntologyVerb::Link | OntologyVerb::Move
+    ) {
         command = command.arg(
             Arg::new("input")
                 .long("input")
-                .required(verb == OntologyVerb::Update)
+                .required(verb != OntologyVerb::Create)
                 .value_parser(value_parser!(PathBuf)),
         );
     }
@@ -224,9 +227,6 @@ fn from_matches(
     verb: OntologyVerb,
     matches: &ArgMatches,
 ) -> Result<OntologyArguments, ArgumentError> {
-    if matches!(verb, OntologyVerb::Link | OntologyVerb::Move) {
-        return Err(ArgumentError::UnresolvedCommandContract);
-    }
     let path = matches
         .get_one::<String>("path")
         .ok_or(ArgumentError::InvalidSyntax)?;
