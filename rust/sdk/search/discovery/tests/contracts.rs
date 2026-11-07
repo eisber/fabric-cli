@@ -181,6 +181,35 @@ fn exact_operation_kind_matrix_has_only_the_documented_denominator() {
 }
 
 #[test]
+fn sdk_provenance_paths_remain_bound_to_their_original_commit_tree() {
+    const REVISION: &str = "5e1e368e6d977f50c082e3b2f9442d48bd0b2e5b";
+    for entry in registrations() {
+        let (target, source_path) = match entry.target_kind() {
+            TargetKind::Workspace => (
+                "/Sales.Workspace",
+                "rust/capabilities/resources/fabric-sdk-workspaces/src/mutations.rs",
+            ),
+            TargetKind::Notebook => (
+                "/Sales.Workspace/Analysis.Notebook",
+                "rust/capabilities/jobs/fabric-sdk-jobs/src/lib.rs",
+            ),
+        };
+        let descriptor = contract(entry.operation(), target).descriptor();
+        let sdk_sources: Vec<_> = descriptor["sources"]
+            .as_array()
+            .expect("source evidence")
+            .iter()
+            .filter(|source| source["revision"] == REVISION)
+            .collect();
+        assert_eq!(sdk_sources.len(), 1);
+        assert_eq!(
+            sdk_sources[0]["url"],
+            format!("https://github.com/eisber/fabric-cli/blob/{REVISION}/{source_path}")
+        );
+    }
+}
+
+#[test]
 fn catalogue_is_unique_deterministic_and_has_versioned_source_evidence() {
     let catalogue = registrations();
     assert_eq!(catalogue.len(), 4);

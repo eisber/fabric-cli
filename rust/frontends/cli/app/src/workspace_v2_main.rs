@@ -4,7 +4,10 @@
 //! Opt-in workspace v2 executable; existing local and native GET previews are unchanged.
 #![cfg_attr(test, deny(unnameable_test_items))]
 
-#[cfg(all(feature = "native-host", feature = "windows-broker"))]
+#[cfg(all(
+    feature = "native-host",
+    any(feature = "windows-broker", feature = "interactive")
+))]
 #[allow(
     dead_code,
     reason = "Only silent native credential composition is reused."
@@ -34,6 +37,18 @@ mod delete_host;
     reason = "Only explicit native credential selection is reused."
 )]
 mod headless;
+#[cfg(feature = "interactive")]
+#[allow(
+    dead_code,
+    reason = "Only silent native credential composition is reused."
+)]
+mod interactive;
+#[cfg(feature = "interactive")]
+#[allow(
+    dead_code,
+    reason = "Only silent native credential composition is reused."
+)]
+mod interactive_binding;
 #[cfg(feature = "native-host")]
 #[allow(
     dead_code,

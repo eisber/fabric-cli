@@ -385,27 +385,6 @@ fn public_origin(origin: Origin) -> PublicOrigin {
     }
 }
 
-#[cfg(test)]
-mod origin_tests {
-    #![deny(unnameable_test_items)]
-
-    use super::*;
-
-    #[test]
-    fn every_api_origin_retains_its_exact_transport_binding() {
-        for (api, transport) in [
-            (Origin::Fabric, PublicOrigin::Fabric),
-            (Origin::Arm, PublicOrigin::Arm),
-            (Origin::OneLake, PublicOrigin::OneLake),
-            (Origin::PowerBi, PublicOrigin::PowerBi),
-            (Origin::RelevanceEngine, PublicOrigin::RelevanceEngine),
-        ] {
-            assert_eq!(public_origin(api), transport);
-            assert_eq!(api.audience(), transport.audience());
-        }
-    }
-}
-
 impl fabric_sdk_api::Executor for BoundResources {
     fn supports(&self, _: &Request) -> bool {
         true
@@ -1006,4 +985,25 @@ async fn capacity(
     };
     data["fabricId"] = Value::String(fabric_id.into());
     Ok(Some(data))
+}
+
+#[cfg(test)]
+mod origin_tests {
+    #![deny(unnameable_test_items)]
+
+    use super::*;
+
+    #[test]
+    fn every_api_origin_retains_its_exact_transport_binding() {
+        for (api, transport) in [
+            (Origin::Fabric, PublicOrigin::Fabric),
+            (Origin::Arm, PublicOrigin::Arm),
+            (Origin::OneLake, PublicOrigin::OneLake),
+            (Origin::PowerBi, PublicOrigin::PowerBi),
+            (Origin::RelevanceEngine, PublicOrigin::RelevanceEngine),
+        ] {
+            assert_eq!(public_origin(api), transport);
+            assert_eq!(api.audience(), transport.audience());
+        }
+    }
 }

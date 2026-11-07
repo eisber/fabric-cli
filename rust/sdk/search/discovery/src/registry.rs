@@ -92,12 +92,12 @@ const WORKSPACE_DELETE_DOC: Source = Source {
     scope: "Fabric Core v1 DELETE with no body; deletes workspace and contained items; no recovery guarantee established",
 };
 const WORKSPACE_SDK: Source = Source {
-    url: "https://github.com/eisber/fabric-cli/blob/5e1e368e6d977f50c082e3b2f9442d48bd0b2e5b/rust/sdk/workspaces/src/mutations.rs",
+    url: "https://github.com/eisber/fabric-cli/blob/5e1e368e6d977f50c082e3b2f9442d48bd0b2e5b/rust/capabilities/resources/fabric-sdk-workspaces/src/mutations.rs",
     revision: "5e1e368e6d977f50c082e3b2f9442d48bd0b2e5b",
     scope: "WorkspaceMutations create/update/delete routes only; accepting Value is not input-schema evidence",
 };
 const NOTEBOOK_SDK: Source = Source {
-    url: "https://github.com/eisber/fabric-cli/blob/5e1e368e6d977f50c082e3b2f9442d48bd0b2e5b/rust/sdk/jobs/src/lib.rs",
+    url: "https://github.com/eisber/fabric-cli/blob/5e1e368e6d977f50c082e3b2f9442d48bd0b2e5b/rust/capabilities/jobs/fabric-sdk-jobs/src/lib.rs",
     revision: "5e1e368e6d977f50c082e3b2f9442d48bd0b2e5b",
     scope: "JobType::Notebook is RunNotebook; submit(None) omits body; arbitrary Value is not an exact executionData signature",
 };
