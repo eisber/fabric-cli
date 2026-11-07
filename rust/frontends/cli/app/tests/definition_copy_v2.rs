@@ -722,6 +722,57 @@ async fn malformed_created_or_bare_accepted_response_retains_uncertain_create_ev
 }
 
 #[tokio::test]
+async fn conflicting_created_destination_metadata_retains_uncertain_create_evidence() {
+    for body in [
+        json!({"id": CREATED, "displayName": "Wrong destination"}),
+        json!({"id": CREATED, "folderId": SOURCE}),
+    ] {
+        let mut host = Host::new();
+        host.metadata("Notebook", false);
+        host.definition("Notebook");
+        host.reply(201, body.clone());
+        let output = host
+            .execute(&[
+                "cp",
+                "Demo.Workspace/Book.Notebook",
+                "Demo.Workspace/Copied.Notebook",
+                "-f",
+            ])
+            .await;
+        assert_eq!(output.plan.exit_code, 1);
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        assert_eq!(output.write_to(&mut stdout, &mut stderr).unwrap(), 1);
+        let rendered: Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(rendered["result"]["error_code"], "OutcomeUnknown");
+        assert_eq!(
+            rendered["result"]["data"][0]["mutationMayHaveOccurred"],
+            true
+        );
+        assert!(stderr.is_empty());
+        assert!(matches!(
+            &output.evidence,
+            FamilyEvidence::DefinitionCopy(Err(DefinitionCopyFailure::Create(error)))
+                if error.kind == fabric_deploy::definitions::DefinitionCopyErrorKind::InvalidResponse
+                    && error.response.as_ref().is_some_and(|response| {
+                        response.status == 201
+                            && serde_json::from_slice::<Value>(&response.body).unwrap() == body
+                    })
+                    && error.operation.as_ref().is_some_and(|operation| operation.mutation_may_have_occurred)
+        ));
+        let requests = host.requests();
+        assert_eq!(requests.len(), 5);
+        assert_eq!(requests[4]["method"], "POST");
+        assert_eq!(requests[4]["body"]["displayName"], "Copied");
+        assert!(
+            requests[4]["url"]
+                .as_str()
+                .unwrap()
+                .ends_with(&format!("/workspaces/{WORKSPACE}/items"))
+        );
+    }
+}
+
+#[tokio::test]
 async fn cross_workspace_copy_uses_resolved_destination_without_rediscovery() {
     const DESTINATION: &str = "66666666-6666-6666-6666-666666666666";
     let mut host = Host::new();
