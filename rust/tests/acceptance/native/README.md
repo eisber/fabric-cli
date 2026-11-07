@@ -364,5 +364,10 @@ For the synthetic PTY cases it also retains the subprocess's bounded receipt
 without changing its inputs, return value, or captured bytes.
 The complete dependency-impact plan still runs afterward; an early unit pass
 does not establish Rust, full-profile, or complete native acceptance.
+Hosted Rust CI disables development/test debug symbols and incremental artifact
+storage to stay within runner disk capacity. Debug assertions, optimization,
+selectors, features, strict lints, and native gates are unchanged. The shared
+runner records its allowlisted Cargo resource settings in run and command
+receipts; these settings are not a release-artifact quality claim.
 These commands have not been executed for the current source freeze; a fresh
 numbered controller grant is required before any unit/native process starts.
