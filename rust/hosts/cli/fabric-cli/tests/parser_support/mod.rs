@@ -51,6 +51,8 @@ pub fn observe(input: &Value) -> Option<Value> {
             json!({"error": true})
         }
         Ok(Invocation::Delete(_)) => json!({"error": true}),
+        #[cfg(feature = "semantic-model")]
+        Ok(Invocation::SemanticModel(_)) => json!({"error": true}),
         #[cfg(feature = "windows-broker")]
         Ok(Invocation::Auth(_)) => json!({"error": true}),
         #[cfg(feature = "self-update")]

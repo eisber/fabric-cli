@@ -104,6 +104,9 @@ pub enum Invocation {
     Deploy(fabric_cli_transfer::TransferCommand),
     /// Released TABLE handlers over the existing metadata/storage/job session.
     Table(fabric_cli_tables::TableCommand),
+    /// Opt-in, read-only analysis of an explicitly supplied local model.
+    #[cfg(feature = "semantic-model")]
+    SemanticModel(fabric_cli_semantic_model::AnalyzeCommand),
     /// Explicit opt-in broker command; parsing never signs in.
     #[cfg(feature = "windows-broker")]
     Auth(AuthCommand),
@@ -156,6 +159,7 @@ pub fn command() -> Command {
         .subcommands(fabric_cli_transfer::transfer_subcommands());
     let command = delete::register(command)
         .subcommand(crate::execute::command())
+        .subcommands(semantic_model_commands())
         .subcommand(fabric_cli_tables::command())
         .subcommand(jobs::register())
         .subcommand(
@@ -203,6 +207,16 @@ pub fn command() -> Command {
                 ),
         );
     crate::tabular_export::register(crate::native_tabular::register(command))
+}
+
+#[cfg(feature = "semantic-model")]
+fn semantic_model_commands() -> Vec<Command> {
+    vec![fabric_cli_semantic_model::command()]
+}
+
+#[cfg(not(feature = "semantic-model"))]
+fn semantic_model_commands() -> Vec<Command> {
+    Vec::new()
 }
 
 /// Parse arguments including argv[0], without printing or exiting.
@@ -418,6 +432,12 @@ fn root_argument(args: &[OsString]) -> Option<usize> {
 }
 
 fn family_invocation(matches: &clap::ArgMatches) -> Result<Invocation, clap::Error> {
+    #[cfg(feature = "semantic-model")]
+    if matches.subcommand_name() == Some("artifact") {
+        return fabric_cli_semantic_model::AnalyzeCommand::from_matches(matches)
+            .map(Invocation::SemanticModel)
+            .ok_or_else(invalid_arguments);
+    }
     #[cfg(feature = "self-update")]
     if matches.subcommand_name() == Some("update") {
         return update::parse(matches).map(Invocation::Update);

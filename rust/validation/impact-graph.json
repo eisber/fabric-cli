@@ -997,6 +997,27 @@
       "checks": ["sdk-graph"]
     },
     {
+      "id": "semantic-model-arguments",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/semantic-model"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "semantic-model-dotnet",
+      "packages": ["fabric-cli", "fabric-cli-semantic-model", "fabric-sdk", "fabric-sdk-semantic-model", "fabric-semantic-model-dotnet"],
+      "features": ["fabric-cli/semantic-model-dotnet", "fabric-cli-semantic-model/dotnet", "fabric-sdk/semantic-model-dotnet", "fabric-sdk-semantic-model/dotnet", "fabric-semantic-model-dotnet/dotnet"],
+      "platforms": ["windows"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "semantic-model-updater-isolation",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/semantic-model", "fabric-cli/self-update"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "v2-preview",
       "packages": ["fabric-cli"],
       "features": ["fabric-cli/v2-preview"],

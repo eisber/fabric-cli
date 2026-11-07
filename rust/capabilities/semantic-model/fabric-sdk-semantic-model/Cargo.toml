@@ -1,0 +1,27 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-sdk-semantic-model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Runtime-neutral semantic-model best-practice analysis contracts"
+
+[package.metadata.fabric]
+layer = "sdk"
+
+[features]
+default = []
+dotnet = ["dep:fabric-semantic-model-dotnet", "fabric-semantic-model-dotnet/dotnet"]
+
+[dependencies]
+fabric-semantic-model-dotnet = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

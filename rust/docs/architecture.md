@@ -40,6 +40,15 @@ the CLI or depend on CLI-specific types simply to reuse service operations.
 Extracting additional front-end-neutral workflows requires separate interface
 review, not relabeling CLI crates or relaxing the layer rules below.
 
+The optional semantic-model BPA boundary is isolated in
+`capabilities/semantic-model/fabric-semantic-model-dotnet`. Only its explicit
+`dotnet` feature compiles the managed TOM component or selects hostfxr hosting.
+It is excluded from default members and ordinary SDK/CLI dependency graphs.
+Its private interop module is the only local unsafe-code exception; existing
+crates retain their safety policies. The safe SDK and CLI adapters share the
+same report/evidence contract without a default .NET requirement. See the
+[BPA slice and feature boundaries](semantic-model-bpa.md).
+
 | Layer (initial crate) | Ownership | Allowed dependency layers |
 | --- | --- | --- |
 | `core` (`fabric-core`) | Credential interoperability, shared errors; future request context and HTTP policies | `core` |
@@ -98,7 +107,8 @@ The initial five crates are not a fixed count or a maximum. Workspace membership
 uses `capabilities/*/*`, `hosts/*/*`, `infrastructure/*/*`, and `sdk/*`, so
 crates are discovered within their capability or shared ownership group.
 Default members explicitly include safe crates and exclude the
-optional `fabric-identity-windows` native boundary. Add new safe crates to
+optional `fabric-identity-windows` and `fabric-semantic-model-dotnet` native
+boundaries. Add new safe crates to
 `default-members`. Each crate declares its architectural layer in its own manifest:
 
 ```toml
@@ -120,8 +130,8 @@ bypass the checks.
 over isolated desktop WAM interop. Only `fabric-identity/windows-broker` selects
 that optional Windows-target dependency. Architecture checks also preserve its
 exclusion from default SDK/CLI/identity graphs and its narrowly scoped unsafe
-lint policy. The native boundary has no internal workspace dependencies; all
-other workspace crates inherit `unsafe_code = "forbid"`.
+lint policy. Both isolated native boundaries have no internal workspace
+dependencies. All other workspace crates inherit `unsafe_code = "forbid"`.
 
 ### Crate-first parallel development
 

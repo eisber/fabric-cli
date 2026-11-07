@@ -105,26 +105,35 @@ function coreCommands(plan, platform) {
   return commands;
 }
 
-function sourceDigest(root) {
+function sourceInventory(root) {
   const result = spawnSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
     cwd: root, encoding: 'utf8', timeout: 30000, maxBuffer: 32 * 1024 * 1024,
   });
   requireThat(!result.error && result.status === 0, 'Unable to inventory source with Git');
   const hash = crypto.createHash('sha256');
+  const files = [];
   for (const name of [...new Set(result.stdout.split('\0').filter(Boolean))].sort()) {
     const file = path.resolve(root, name);
     requireThat(file.startsWith(`${root}${path.sep}`), `Source path escaped checkout: ${name}`);
     hash.update(name);
     if (!fs.existsSync(file)) {
       hash.update('\0deleted\0');
+      files.push({path: name, state: 'deleted'});
     } else {
       requireThat(!fs.lstatSync(file).isSymbolicLink(), `Source symlink requires review: ${name}`);
+      const bytes = fs.readFileSync(file);
       hash.update('\0');
-      hash.update(fs.readFileSync(file));
+      hash.update(bytes);
+      files.push({path: name, state: 'file', size: bytes.length,
+        sha256: crypto.createHash('sha256').update(bytes).digest('hex')});
     }
     hash.update('\0');
   }
-  return hash.digest('hex');
+  return {schema: 1, digest: hash.digest('hex'), files};
+}
+
+function sourceDigest(root) {
+  return sourceInventory(root).digest;
 }
 
 function buildEnvironment(environment = process.env) {
@@ -350,7 +359,10 @@ function main(argv) {
   const context = {...opts, plan, results: [], deadline: Date.now() + opts.budget,
     pinnedOutput: path.join(opts.artifacts, 'pinned-python'),
     parameterRoot: path.join(opts.artifacts, 'fabric-cicd-parameter-source')};
-  const before = sourceDigest(opts.root);
+  const beforeInventory = sourceInventory(opts.root);
+  fs.writeFileSync(path.join(opts.artifacts, 'source-before.json'),
+    `${JSON.stringify(beforeInventory, null, 2)}\n`);
+  const before = beforeInventory.digest;
   const toolchain = {};
   for (const [name, program, args] of [
     ['cargo', 'cargo', ['--version']], ['rustc', 'rustc', ['--version', '--verbose']],
@@ -384,7 +396,10 @@ function main(argv) {
   try {
     if (opts.stage !== 'contracts') for (const command of commands) run(command);
     if (opts.stage !== 'core') runContracts(context, registry, run);
-    receipt.source_after = sourceDigest(opts.root);
+    const afterInventory = sourceInventory(opts.root);
+    fs.writeFileSync(path.join(opts.artifacts, 'source-after.json'),
+      `${JSON.stringify(afterInventory, null, 2)}\n`);
+    receipt.source_after = afterInventory.digest;
     requireThat(before === receipt.source_after, 'Source changed during validation');
     planner.verifyPlan(plan, {root: opts.root});
     receipt.complete_plan = opts.stage === 'all';
@@ -403,7 +418,7 @@ function main(argv) {
 }
 
 module.exports = {packageArgs, ownFeatures, defaultTests, profileTests, testCommands, coreCommands, commandResult,
-  sourceDigest, oracleVersions, restoreOracleDependencies, runContracts, options, buildEnvironment};
+  sourceDigest, sourceInventory, oracleVersions, restoreOracleDependencies, runContracts, options, buildEnvironment};
 if (require.main === module) {
   try { main(process.argv.slice(2)); }
   catch (error) { console.error(error.message); process.exitCode = 1; }

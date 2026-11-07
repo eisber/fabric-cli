@@ -106,9 +106,11 @@ Declare each crate's
 described in the architecture guide. The owner-approved optional
 `fabric-identity-windows` native boundary stays outside default members.
 Existing crates retain
-`unsafe_code = "forbid"`. Only the native crate's private interop module may allow
-documented unsafe blocks; its public API is safe Rust. Default consumers exclude
-that crate; opting in does not make a binary transitively unsafe-free. Coordinate
+`unsafe_code = "forbid"`. The Windows identity boundary and the owner-authorized
+optional `fabric-semantic-model-dotnet` boundary may allow documented unsafe
+blocks only in their private interop modules; their public APIs are safe Rust.
+Default consumers exclude both crates; opting in does not make a binary
+transitively unsafe-free. Coordinate
 shared interfaces and cross-layer changes with integration; do not add empty
 future modules or runtime loaders as scaffold shortcuts. Default/broker-only `fab-rs` recognizes
 bounded read arguments but still requires a read host. Explicit `native-read`

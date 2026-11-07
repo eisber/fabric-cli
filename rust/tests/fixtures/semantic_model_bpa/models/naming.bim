@@ -1,0 +1,11 @@
+{
+  "name": "SyntheticNames",
+  "compatibilityLevel": 1600,
+  "model": {
+    "culture": "en-US",
+    "tables": [{
+      "name": "sales\t ",
+      "columns": [{"name": "amount\n", "dataType": "decimal", "sourceColumn": "Amount"}]
+    }]
+  }
+}

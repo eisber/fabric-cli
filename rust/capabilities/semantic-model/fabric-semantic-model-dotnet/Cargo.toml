@@ -1,0 +1,39 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-semantic-model-dotnet"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Optional, isolated in-process .NET TOM semantic-model analyzer boundary"
+
+[[test]]
+name = "bindings_hosted"
+path = "tests/bindings_hosted.rs"
+required-features = ["dotnet"]
+
+[package.metadata.fabric]
+layer = "sdk"
+
+[features]
+default = []
+dotnet = ["dep:netcorehost"]
+
+[dependencies]
+netcorehost = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+# Only src/interop.rs may opt in to documented unsafe blocks.
+[lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "deny"
+
+[lints.clippy]
+all = "warn"
+undocumented_unsafe_blocks = "deny"

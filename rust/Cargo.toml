@@ -49,6 +49,8 @@ default-members = [
     "capabilities/deployment/fabric-cli-transfer",
     "capabilities/tables/fabric-cli-tables",
     "capabilities/tables/fabric-sdk-tables",
+    "capabilities/semantic-model/fabric-sdk-semantic-model",
+    "capabilities/semantic-model/fabric-cli-semantic-model",
     "capabilities/tables/fabric-sdk-tabular",
     "capabilities/tables/fabric-sdk-dataflow",
 ]
@@ -62,6 +64,10 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+fabric-semantic-model-dotnet = { path = "capabilities/semantic-model/fabric-semantic-model-dotnet", default-features = false }
+fabric-sdk-semantic-model = { path = "capabilities/semantic-model/fabric-sdk-semantic-model", default-features = false }
+fabric-cli-semantic-model = { path = "capabilities/semantic-model/fabric-cli-semantic-model", default-features = false }
+netcorehost = { version = "=0.22.0", default-features = false, features = ["net8_0"] }
 fabric-cli = { path = "hosts/cli/fabric-cli", default-features = false }
 arrow-csv = { version = "=60.1.0", default-features = false }
 bytes = { version = "=1.12.1", default-features = false, features = ["std"] }

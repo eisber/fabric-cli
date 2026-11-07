@@ -25,6 +25,8 @@ pub mod representations;
 pub mod runtime;
 pub mod workspaces;
 
+/// Read-only model analysis contracts; .NET activation is separately feature-gated.
+pub use fabric_sdk_semantic_model as semantic_model;
 /// Local operation contracts and schema projections, with no identity or service I/O.
 pub mod discovery {
     pub use fabric_sdk_discovery::*;

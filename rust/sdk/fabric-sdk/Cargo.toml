@@ -15,10 +15,12 @@ layer = "sdk"
 
 [features]
 default = []
+semantic-model-dotnet = ["fabric-sdk-semantic-model/dotnet"]
 livy-arrow = ["dep:ring"]
 livy-arrow-ipc = ["livy-arrow", "dep:arrow-array", "dep:arrow-schema", "dep:arrow-ipc"]
 
 [dependencies]
+fabric-sdk-semantic-model.workspace = true
 azure_core.workspace = true
 base64.workspace = true
 fabric-core.workspace = true

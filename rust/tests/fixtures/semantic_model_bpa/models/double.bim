@@ -1,0 +1,11 @@
+{
+  "name": "SyntheticDouble",
+  "compatibilityLevel": 1600,
+  "model": {
+    "culture": "en-US",
+    "tables": [{
+      "name": "Sales",
+      "columns": [{"name": "Amount", "dataType": "double", "sourceColumn": "Amount"}]
+    }]
+  }
+}
