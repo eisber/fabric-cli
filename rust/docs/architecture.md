@@ -234,6 +234,19 @@ retain public defaults. See the [endpoint API and migration matrix](endpoint-con
 for the additive interfaces, stricter hostname boundaries and unmigrated
 families. Environment-variable mapping belongs to the CLI, never the SDK.
 
+### Parent-owned table adapters
+
+The additive [artifact-first table adapters](artifact-first-tables.md) are
+exposed through the focused `fabric-sdk-tables` crate's `lakehouses::tables`,
+`kql_databases::tables` and `warehouses::tables` modules. The umbrella SDK does
+not acquire a tables dependency, which would cycle through the shared HTTP test
+consumers. The package remains shared implementation rather than a public
+independent table artifact. Parent-specific source, endpoint,
+authorization and completion contracts are not interchangeable. The modules
+reuse injected execution and do not depend on CLI or identity implementations.
+Kusto/TDS executor interfaces do not install native transports or mount CLI/MCP
+commands. The CLI query projection described below remains a separate concern.
+
 ### Focused CLI query projection
 
 `fabric-cli-query` is a CLI-layer leaf over `jpx-core` and ordered
