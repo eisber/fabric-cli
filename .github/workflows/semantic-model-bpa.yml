@@ -61,11 +61,8 @@ jobs:
           node -e 'const fs=require("node:fs"),path=require("node:path"),v=require("./rust/scripts/validate-impact.cjs"); fs.writeFileSync(path.join(process.env.RUNNER_TEMP,"semantic-source-integrity","before.json"), JSON.stringify(v.sourceInventory(process.cwd()),null,2));'
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Managed rule and ABI acceptance
-        working-directory: rust/capabilities/semantic-model/fabric-semantic-model-dotnet/managed
         run: |
-          dotnet run --project Bpa/Tests/Fabric.SemanticModel.Bpa.Tests.csproj --configuration Release
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          dotnet run --project BoundaryContractTests.csproj --configuration Release
+          node rust/scripts/managed-bpa-acceptance.cjs "$env:RUNNER_TEMP/semantic-managed-acceptance"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Native default and optional host contracts
         working-directory: rust
@@ -95,5 +92,17 @@ jobs:
         with:
           name: semantic-source-integrity
           path: ${{ runner.temp }}/semantic-source-integrity
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain isolated managed acceptance logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: semantic-managed-acceptance
+          path: |
+            ${{ runner.temp }}/semantic-managed-acceptance/commands.json
+            ${{ runner.temp }}/semantic-managed-acceptance/*.log
+            ${{ runner.temp }}/semantic-managed-acceptance/Directory.Build.props
+            ${{ runner.temp }}/semantic-managed-acceptance/global.json
           if-no-files-found: error
           retention-days: 7
