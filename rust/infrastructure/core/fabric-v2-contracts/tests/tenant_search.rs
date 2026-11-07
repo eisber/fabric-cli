@@ -7,8 +7,9 @@
 
 use fabric_v2_contracts::{
     ApprovalPolicy, Availability, Binding, Coverage, Effect, ExecutionEvidence, ExecutionReceipt,
-    FailureInfo, Generation, OperationDescriptor, Outcome, PreparedOperation, ReceiptError,
-    Registry, ResolvedTarget, SourceEvidence, Target, TargetKind, TenantIdentity, Verb,
+    FailureInfo, Generation, OperationDescriptor, Outcome, Precondition, PreparedOperation,
+    ReceiptError, Registry, ResolvedTarget, SourceEvidence, Target, TargetKind, TenantIdentity,
+    Verb,
 };
 use serde_json::json;
 
@@ -227,5 +228,108 @@ fn tenant_search_registration_cannot_be_substituted_for_workspace_search() {
                 None
             )
             .is_err()
+    );
+}
+
+fn local_output_operation(required_write: bool) -> PreparedOperation {
+    let mut required = vec![Effect::RemoteRead];
+    let mut optional = vec![Effect::LocalRead];
+    if required_write {
+        required.push(Effect::LocalWrite);
+    } else {
+        optional.push(Effect::LocalWrite);
+    }
+    let mut registry = Registry::default();
+    registry
+        .register(
+            OperationDescriptor::new(
+                "catalog.search",
+                Verb::Search,
+                json!({"type":"object"}),
+                json!({"type":"object"}),
+                required,
+            )
+            .unwrap()
+            .with_optional_effects(optional)
+            .unwrap(),
+        )
+        .unwrap();
+    registry
+        .bind(
+            Binding::new(
+                "Tenant",
+                "catalog",
+                "metadata",
+                Generation::Any,
+                "catalog.search",
+                Availability::Available,
+            )
+            .unwrap()
+            .with_target_kind(TargetKind::TenantCollection),
+        )
+        .unwrap();
+    let selected = selection(TargetKind::TenantCollection);
+    let mut prepared = PreparedOperation::new(
+        registry.resolve(Verb::Search, &selected, None).unwrap(),
+        ResolvedTarget::tenant_collection("/", TenantIdentity::new(TENANT).unwrap(), selected)
+            .unwrap(),
+        json!({"mode":"catalog","text":"sales"}),
+    )
+    .unwrap();
+    if !required_write {
+        prepared = prepared
+            .with_optional_effects(vec![Effect::LocalWrite])
+            .unwrap();
+    }
+    prepared
+        .with_preconditions(vec![Precondition::LocalOutput {
+            path: "/tmp/search-receipt.json".into(),
+        }])
+        .unwrap()
+}
+
+#[test]
+fn local_output_keeps_required_write_when_optional_effects_are_replaced() {
+    for selected in [vec![], vec![Effect::LocalRead]] {
+        let prepared = local_output_operation(true)
+            .with_optional_effects(selected.clone())
+            .unwrap();
+        assert_eq!(
+            prepared
+                .effects()
+                .iter()
+                .filter(|effect| **effect == Effect::LocalWrite)
+                .count(),
+            1
+        );
+        assert_eq!(
+            prepared.effects().contains(&Effect::LocalRead),
+            !selected.is_empty()
+        );
+        assert_eq!(
+            prepared.preconditions(),
+            [Precondition::LocalOutput {
+                path: "/tmp/search-receipt.json".into()
+            }]
+        );
+    }
+}
+
+#[test]
+fn local_output_rejects_removal_of_an_optional_write_effect() {
+    for selected in [vec![], vec![Effect::LocalRead]] {
+        assert_eq!(
+            local_output_operation(false)
+                .with_optional_effects(selected)
+                .unwrap_err(),
+            ReceiptError::InvalidEffects
+        );
+    }
+    let prepared = local_output_operation(false)
+        .with_optional_effects(vec![Effect::LocalWrite, Effect::LocalRead])
+        .unwrap();
+    assert_eq!(
+        prepared.effects(),
+        [Effect::RemoteRead, Effect::LocalWrite, Effect::LocalRead]
     );
 }

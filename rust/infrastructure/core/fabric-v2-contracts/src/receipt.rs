@@ -350,17 +350,17 @@ impl PreparedOperation {
             }
             unique.push(*effect);
         }
+        self.effects
+            .retain(|effect| !self.allowed_optional_effects.contains(effect));
+        self.effects.extend(effects);
         if self
             .preconditions
             .iter()
             .any(|condition| matches!(condition, Precondition::LocalOutput { .. }))
-            && !effects.contains(&Effect::LocalWrite)
+            && !self.effects.contains(&Effect::LocalWrite)
         {
             return Err(ReceiptError::InvalidEffects);
         }
-        self.effects
-            .retain(|effect| !self.allowed_optional_effects.contains(effect));
-        self.effects.extend(effects);
         Ok(self)
     }
 

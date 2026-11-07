@@ -123,6 +123,11 @@ remote work and created exclusively, without overwrite or directory creation.
 Writer, flush and raced-create failures are errors; they do not replay search.
 A failed write is not a complete output-file claim.
 
+If the total deadline expires after a receipt has been acquired, delivery stays
+stopped. The timeout diagnostic retains the observed outcome, target, source
+statuses, coverage, and retry facts without emitting result data, creating an
+output file, claiming remote cancellation, or replaying acquisition.
+
 Partial, failed and unknown outcomes are nonzero. Empty successful results are
 distinct from malformed responses, authorization failures or disabled sources.
 Machine-readable source evidence must not be hidden behind a debug flag.

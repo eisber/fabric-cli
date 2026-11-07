@@ -13,7 +13,10 @@ use fabric_sdk::{
         CatalogProvider, Guid, RelevanceProvider, SearchBridgeError, SearchError, SearchMode,
         SearchOperation, SearchRequest, execute_approved_search, prepare_search, schemas,
     },
-    v2::{ApprovalPolicy, Availability, Effect, Outcome, Precondition, PreparedOperation},
+    v2::{
+        ApprovalPolicy, Availability, Effect, ExecutionReceipt, Outcome, Precondition,
+        PreparedOperation,
+    },
 };
 use fabric_sdk_api::ApiClient;
 use fabric_sdk_catalog::CatalogClient;
@@ -254,10 +257,43 @@ pub(super) fn run(args: Vec<OsString>) -> Result<(), Failure> {
             failure
         }
     })?;
-    if started.elapsed() >= timeout {
-        return Err(failed(
+    deliver_receipt(
+        receipt,
+        delivery,
+        started.elapsed(),
+        timeout,
+        &mut io::stdout().lock(),
+    )
+}
+
+fn deliver_receipt<T: serde::Serialize>(
+    receipt: ExecutionReceipt<T>,
+    delivery: SearchDelivery,
+    elapsed: Duration,
+    timeout: Duration,
+    stdout: &mut impl Write,
+) -> Result<(), Failure> {
+    if elapsed >= timeout {
+        let observed_outcome = match receipt.outcome() {
+            Outcome::Succeeded { .. } => json!({"status":"succeeded"}),
+            Outcome::Accepted => json!({"status":"accepted"}),
+            Outcome::Partial { error, .. } => json!({"status":"partial","error":error}),
+            Outcome::Failed { error } => json!({"status":"failed","error":error}),
+            Outcome::Unknown { error } => json!({"status":"unknown","error":error}),
+        };
+        return Err((
             "TimedOut",
-            "The total search deadline elapsed before delivery.",
+            "The total search deadline elapsed before delivery.".into(),
+            json!({
+                "execution":receipt.evidence(),
+                "sources":receipt.sources(),
+                "target":receipt.target(),
+                "preconditions":receipt.preconditions(),
+                "observedOutcome":observed_outcome,
+                "localDeliveryStarted":false,
+                "remoteCancelled":false,
+                "remoteReplayed":false
+            }),
             1,
         ));
     }
@@ -269,30 +305,28 @@ pub(super) fn run(args: Vec<OsString>) -> Result<(), Failure> {
             1,
         )
     })?;
-    delivery
-        .deliver(envelope, &mut io::stdout().lock())
-        .map_err(|error| {
-            let local_output = match &error {
-                SearchDeliveryError::File(failure) => json!({
-                    "pathCreated":failure.path_created,
-                    "bytesWritten":failure.bytes_written,
-                    "rollback":false
-                }),
-                _ => Value::Null,
-            };
-            (
-                "OutputFailed",
-                error.to_string(),
-                json!({
-                    "execution":receipt.evidence(),
-                    "sources":receipt.sources(),
-                    "target":receipt.target(),
-                    "localOutput":local_output,
-                    "remoteReplayed":false
-                }),
-                1,
-            )
-        })?;
+    delivery.deliver(envelope, stdout).map_err(|error| {
+        let local_output = match &error {
+            SearchDeliveryError::File(failure) => json!({
+                "pathCreated":failure.path_created,
+                "bytesWritten":failure.bytes_written,
+                "rollback":false
+            }),
+            _ => Value::Null,
+        };
+        (
+            "OutputFailed",
+            error.to_string(),
+            json!({
+                "execution":receipt.evidence(),
+                "sources":receipt.sources(),
+                "target":receipt.target(),
+                "localOutput":local_output,
+                "remoteReplayed":false
+            }),
+            1,
+        )
+    })?;
     if succeeded {
         Ok(())
     } else {
@@ -383,5 +417,161 @@ impl ApprovalPolicy for SearchPolicy<'_> {
             );
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![deny(unnameable_test_items)]
+
+    use super::*;
+    use fabric_sdk::v2::{Coverage, ExecutionEvidence, FailureInfo, SourceEvidence};
+
+    const TENANT: &str = "11111111-2222-4333-8444-555555555555";
+
+    fn observed_receipt(
+        command: &fabric_cli::search_command::SearchCommand,
+        partial: bool,
+    ) -> ExecutionReceipt<Value> {
+        let request = sdk_request(command, TENANT).unwrap();
+        let mut prepared = prepare_search(&request, "/").unwrap();
+        let output = command.output.as_ref().map(|path| path.to_str().unwrap());
+        if let Some(path) = output {
+            prepared = prepared
+                .with_optional_effects(vec![Effect::LocalWrite])
+                .unwrap()
+                .with_preconditions(vec![Precondition::LocalOutput { path: path.into() }])
+                .unwrap();
+        }
+        let approved = prepared
+            .authorize(&mut SearchPolicy {
+                request: &request,
+                path: "/",
+                output_path: output,
+            })
+            .unwrap();
+        let failure = FailureInfo {
+            code: "AccessDenied".into(),
+            message: "Synthetic source refusal.".into(),
+        };
+        let coverage = if partial {
+            Coverage::Incomplete {
+                reasons: vec!["source_failed".into()],
+                continuation: None,
+            }
+        } else {
+            Coverage::Complete
+        };
+        ExecutionReceipt::new(
+            &approved,
+            if partial {
+                Outcome::Partial {
+                    data: json!([{"id":"retained"}]),
+                    error: failure.clone(),
+                }
+            } else {
+                Outcome::Succeeded { data: json!([]) }
+            },
+            ExecutionEvidence {
+                http_status: Some(if partial { 403 } else { 200 }),
+                handles: vec![],
+                coverage: coverage.clone(),
+                mutation_may_have_occurred: false,
+            },
+        )
+        .unwrap()
+        .with_source_evidence(vec![SourceEvidence {
+            source: "catalog".into(),
+            http_status: Some(if partial { 403 } else { 200 }),
+            coverage,
+            error: partial.then_some(failure),
+            details: Some(json!({"retryAfterSeconds":7,"continuation":"opaque"})),
+        }])
+        .unwrap()
+    }
+
+    #[test]
+    fn acquired_receipt_survives_deadline_without_starting_stdout_or_file_delivery() {
+        let root = tempfile::tempdir().unwrap();
+        let timeout = Duration::from_secs(1);
+        for partial in [false, true] {
+            for file in [false, true] {
+                for elapsed in [timeout, timeout + Duration::from_nanos(1)] {
+                    let mut command = parse_search(["search", "/", "--text", "sales"]).unwrap();
+                    let path = root.path().join("search.json");
+                    if file {
+                        command.output = Some(path.clone());
+                    }
+                    let receipt = observed_receipt(&command, partial);
+                    let delivery = SearchDelivery::preflight(&command, root.path()).unwrap();
+                    let mut stdout = vec![];
+                    let failure =
+                        deliver_receipt(receipt.clone(), delivery, elapsed, timeout, &mut stdout)
+                            .unwrap_err();
+                    assert_eq!(failure.0, "TimedOut");
+                    assert_eq!(failure.3, 1);
+                    assert!(stdout.is_empty());
+                    assert!(!path.exists());
+                    assert_eq!(
+                        failure.2["execution"],
+                        serde_json::to_value(receipt.evidence()).unwrap()
+                    );
+                    assert_eq!(
+                        failure.2["sources"],
+                        serde_json::to_value(receipt.sources()).unwrap()
+                    );
+                    assert_eq!(
+                        failure.2["target"],
+                        serde_json::to_value(receipt.target()).unwrap()
+                    );
+                    assert_eq!(
+                        failure.2["observedOutcome"]["status"],
+                        if partial { "partial" } else { "succeeded" }
+                    );
+                    if partial {
+                        assert_eq!(
+                            failure.2["observedOutcome"]["error"]["code"],
+                            "AccessDenied"
+                        );
+                    }
+                    assert_eq!(failure.2["localDeliveryStarted"], false);
+                    assert_eq!(failure.2["remoteCancelled"], false);
+                    assert_eq!(failure.2["remoteReplayed"], false);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn acquired_receipt_delivers_before_deadline_without_rewriting_evidence() {
+        let root = tempfile::tempdir().unwrap();
+        let timeout = Duration::from_secs(1);
+        for file in [false, true] {
+            let mut command = parse_search(["search", "/", "--text", "sales"]).unwrap();
+            let path = root.path().join("before-deadline.json");
+            if file {
+                command.output = Some(path.clone());
+            }
+            let receipt = observed_receipt(&command, false);
+            let delivery = SearchDelivery::preflight(&command, root.path()).unwrap();
+            let mut stdout = vec![];
+            deliver_receipt(
+                receipt.clone(),
+                delivery,
+                timeout - Duration::from_nanos(1),
+                timeout,
+                &mut stdout,
+            )
+            .unwrap();
+            let actual = if file {
+                std::fs::read(path).unwrap()
+            } else {
+                stdout
+            };
+            assert_eq!(
+                serde_json::from_slice::<Value>(&actual).unwrap(),
+                serde_json::to_value(receipt).unwrap()
+            );
+        }
     }
 }
