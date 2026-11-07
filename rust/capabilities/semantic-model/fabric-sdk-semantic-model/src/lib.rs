@@ -320,6 +320,8 @@ impl AnalysisReport {
             serde_json::from_slice(bytes).map_err(|_| AnalysisError::InvalidResponse)?;
         let mut ids = BTreeSet::new();
         let mut counts = [0usize; 3];
+        let mut object_totals = [0u64; 3];
+        let mut complete_object_counts = [true; 3];
         for rule in &report.rules {
             if !rule_catalog()
                 .iter()
@@ -327,6 +329,18 @@ impl AnalysisReport {
                 || !ids.insert(&rule.id)
             {
                 return Err(AnalysisError::InvalidResponse);
+            }
+            for (index, count) in Self::object_evidence(&rule.detail, rule.status)?
+                .into_iter()
+                .enumerate()
+            {
+                if let Some(count) = count {
+                    object_totals[index] = object_totals[index]
+                        .checked_add(count)
+                        .ok_or(AnalysisError::InvalidResponse)?;
+                } else {
+                    complete_object_counts[index] = false;
+                }
             }
             counts[match rule.status {
                 RuleStatus::Evaluated => 0,
@@ -341,6 +355,22 @@ impl AnalysisReport {
         } else {
             AnalysisStatus::Succeeded
         };
+        let coverage_status = match report.status {
+            AnalysisStatus::Succeeded => RuleStatus::Evaluated,
+            AnalysisStatus::Partial => RuleStatus::Unavailable,
+            AnalysisStatus::Failed => RuleStatus::Failed,
+        };
+        for (index, count) in Self::object_evidence(&report.coverage.detail, coverage_status)?
+            .into_iter()
+            .enumerate()
+        {
+            if let Some(count) = count
+                && (count < object_totals[index]
+                    || (complete_object_counts[index] && count != object_totals[index]))
+            {
+                return Err(AnalysisError::InvalidResponse);
+            }
+        }
         if report.schema_version != SCHEMA_VERSION
             || report.source.commit != LABS_COMMIT
             || report.rules.len() != RULE_COUNT
@@ -364,6 +394,39 @@ impl AnalysisReport {
             return Err(AnalysisError::InvalidResponse);
         }
         Ok(report)
+    }
+
+    fn object_evidence(
+        detail: &BTreeMap<String, Value>,
+        status: RuleStatus,
+    ) -> Result<[Option<u64>; 3], AnalysisError> {
+        let mut counts = [None; 3];
+        for (index, field) in ["evaluatedObjects", "unavailableObjects", "failedObjects"]
+            .into_iter()
+            .enumerate()
+        {
+            if let Some(value) = detail.get(field) {
+                counts[index] = Some(value.as_u64().ok_or(AnalysisError::InvalidResponse)?);
+            }
+        }
+        let mut failed = counts[2].is_some_and(|count| count != 0);
+        let mut unavailable = counts[1].is_some_and(|count| count != 0);
+        if let Some(issues) = detail.get("issues") {
+            for issue in issues.as_array().ok_or(AnalysisError::InvalidResponse)? {
+                match issue.get("status").and_then(Value::as_str) {
+                    Some("failed") => failed = true,
+                    Some("unavailable") => unavailable = true,
+                    Some("evaluated") => {}
+                    _ => return Err(AnalysisError::InvalidResponse),
+                }
+            }
+        }
+        if (failed && status != RuleStatus::Failed)
+            || (unavailable && status == RuleStatus::Evaluated)
+        {
+            return Err(AnalysisError::InvalidResponse);
+        }
+        Ok(counts)
     }
 
     /// Choose an exit policy without discarding missing-input evidence.

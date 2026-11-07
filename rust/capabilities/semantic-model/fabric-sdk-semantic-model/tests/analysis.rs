@@ -49,6 +49,121 @@ fn incomplete_rule_inputs_never_become_clean_scan() {
 }
 
 #[test]
+fn object_failure_evidence_cannot_be_reported_as_a_complete_scan() {
+    for detail in [
+        json!({"failedObjects": 1}),
+        json!({"unavailableObjects": 1}),
+        json!({"issues": [{"status": "failed", "code": "predicate_error"}]}),
+        json!({"issues": [{"status": "unavailable", "code": "evidence_missing"}]}),
+        json!({"failedObjects": -1}),
+        json!({"failedObjects": 0.5}),
+        json!({"failedObjects": "1"}),
+        json!({"unavailableObjects": null}),
+        json!({"issues": {}}),
+        json!({"issues": [null]}),
+        json!({"issues": [{"status": "unknown"}]}),
+    ] {
+        let mut value = report("succeeded", "evaluated");
+        value["rules"][0]
+            .as_object_mut()
+            .unwrap()
+            .extend(detail.as_object().unwrap().clone());
+        assert!(
+            matches!(decode(&value), Err(AnalysisError::InvalidResponse)),
+            "{detail}"
+        );
+    }
+    for field in ["failedObjects", "unavailableObjects"] {
+        let mut value = report("succeeded", "evaluated");
+        value["coverage"][field] = json!(1);
+        assert!(matches!(
+            decode(&value),
+            Err(AnalysisError::InvalidResponse)
+        ));
+    }
+}
+
+#[test]
+fn consistent_object_counts_and_unknown_detail_are_preserved() {
+    let mut value = report("succeeded", "evaluated");
+    for rule in value["rules"].as_array_mut().unwrap() {
+        rule["evaluatedObjects"] = json!(2);
+        rule["unavailableObjects"] = json!(0);
+        rule["failedObjects"] = json!(0);
+        rule["issues"] = json!([]);
+        rule["futureEvidence"] = json!({"retained": true});
+    }
+    value["coverage"]["evaluatedObjects"] = json!(RULE_COUNT * 2);
+    value["coverage"]["unavailableObjects"] = json!(0);
+    value["coverage"]["failedObjects"] = json!(0);
+    let decoded = decode(&value).unwrap();
+    assert_eq!(
+        decoded.outcome(Severity::Info, true),
+        AnalysisOutcome::Complete
+    );
+    assert_eq!(
+        serde_json::to_value(decoded).unwrap()["rules"][0]["futureEvidence"],
+        json!({"retained": true})
+    );
+    value["coverage"]["evaluatedObjects"] = json!(RULE_COUNT * 2 + 1);
+    assert!(matches!(
+        decode(&value),
+        Err(AnalysisError::InvalidResponse)
+    ));
+}
+
+#[test]
+fn explicit_failed_object_details_require_failed_rule_and_coverage_status() {
+    let mut value = report("succeeded", "evaluated");
+    for rule in value["rules"].as_array_mut().unwrap() {
+        rule["evaluatedObjects"] = json!(0);
+        rule["unavailableObjects"] = json!(0);
+        rule["failedObjects"] = json!(0);
+        rule["issues"] = json!([]);
+    }
+    value["rules"][0]["status"] = json!("failed");
+    value["rules"][0]["failedObjects"] = json!(1);
+    value["rules"][0]["issues"] = json!([{"status": "failed", "code": "predicate_error"}]);
+    value["status"] = json!("failed");
+    value["coverage"]["evaluated"] = json!(RULE_COUNT - 1);
+    value["coverage"]["failed"] = json!(1);
+    value["coverage"]["evaluatedObjects"] = json!(0);
+    value["coverage"]["unavailableObjects"] = json!(0);
+    value["coverage"]["failedObjects"] = json!(1);
+    let decoded = decode(&value).unwrap();
+    assert_eq!(
+        decoded.outcome(Severity::Info, false),
+        AnalysisOutcome::Incomplete
+    );
+    assert_eq!(decoded.rules[0].detail["failedObjects"], json!(1));
+    value["coverage"]["failedObjects"] = json!(2);
+    assert!(matches!(
+        decode(&value),
+        Err(AnalysisError::InvalidResponse)
+    ));
+}
+
+#[test]
+fn unavailable_model_issues_remain_incomplete_without_invented_object_counts() {
+    let mut value = report("partial", "unavailable");
+    for rule in value["rules"].as_array_mut().unwrap() {
+        rule["evaluatedObjects"] = json!(0);
+        rule["unavailableObjects"] = json!(0);
+        rule["failedObjects"] = json!(0);
+        rule["issues"] = json!([{"status": "unavailable", "code": "no_tables"}]);
+    }
+    value["coverage"]["evaluatedObjects"] = json!(0);
+    value["coverage"]["unavailableObjects"] = json!(0);
+    value["coverage"]["failedObjects"] = json!(0);
+    let decoded = decode(&value).unwrap();
+    assert_eq!(
+        decoded.outcome(Severity::Info, false),
+        AnalysisOutcome::Incomplete
+    );
+    assert_eq!(decoded.rules[0].detail["unavailableObjects"], json!(0));
+}
+
+#[test]
 fn strict_findings_are_separate_from_runtime_failure() {
     let mut value = report("succeeded", "evaluated");
     value["findings"] = json!([{
