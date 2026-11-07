@@ -74,12 +74,12 @@ fn analyze_fixture(evidence: bool, extra: &[&str]) -> std::process::Output {
     let mut command = binary();
     command
         .args(["artifact", "semantic-model", "analyze", "--input"])
-        .arg(root.join("capabilities/semantic-model/fabric-cli-semantic-model/tests/analyze.bim"))
+        .arg(root.join("frontends/cli/commands/semantic-model/tests/analyze.bim"))
         .arg("--hostfxr")
         .arg(hostfxr);
     if evidence {
         command.arg("--evidence").arg(root.join(
-            "capabilities/semantic-model/fabric-cli-semantic-model/tests/complete-evidence.json",
+            "frontends/cli/commands/semantic-model/tests/complete-evidence.json",
         ));
     }
     command.args(extra).output().unwrap()
