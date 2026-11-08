@@ -103,6 +103,7 @@ impl<T> KqlRequest<T> {
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<T, KqlError> {
         let operation = FabricOperation::from_resource(&self.operation)
+            .and_then(FabricOperation::with_metadata_read_evidence)
             .map_err(|_| KqlError::new(KqlErrorKind::InvalidInput))?;
         let mut session =
             OperationSession::with_context(&self.context, executor, limits, cancelled);

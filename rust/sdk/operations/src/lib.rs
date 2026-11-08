@@ -41,6 +41,7 @@ pub struct FabricOperation {
     body: Vec<u8>,
     completion: CompletionPolicy,
     source_read_operation_ids: bool,
+    metadata_read_evidence: bool,
     accept: Option<OperationAccept>,
 }
 
@@ -104,6 +105,7 @@ impl FabricOperation {
             body,
             completion,
             source_read_operation_ids: false,
+            metadata_read_evidence: false,
             accept: None,
         })
     }
@@ -129,6 +131,7 @@ impl FabricOperation {
             body,
             completion: operation.completion(),
             source_read_operation_ids: false,
+            metadata_read_evidence: false,
             accept: None,
         })
     }
@@ -140,6 +143,24 @@ impl FabricOperation {
     pub const fn with_accept(mut self, accept: OperationAccept) -> Self {
         self.accept = Some(accept);
         self
+    }
+
+    /// Retain strict acceptance evidence for an explicitly nonpolling metadata GET.
+    ///
+    /// HTTP 202 remains rejected, never a completed read or permission to poll.
+    /// Validated operation IDs and bounded raw response data are retained;
+    /// malformed IDs and foreign operation links are explicit validation errors.
+    /// Default observer/result GETs retain their original HTTP error contract.
+    ///
+    /// # Errors
+    /// Rejects every method/completion pair except GET/ReturnAccepted.
+    pub fn with_metadata_read_evidence(mut self) -> Result<Self, OperationErrorKind> {
+        if self.method != ResourceMethod::Get || self.completion != CompletionPolicy::ReturnAccepted
+        {
+            return Err(OperationErrorKind::InvalidInput);
+        }
+        self.metadata_read_evidence = true;
+        Ok(self)
     }
 
     /// Permit bounded opaque operation IDs for an explicit source-synchronous GET.
@@ -580,7 +601,7 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
                     operation.accept,
                 )
                 .await?;
-            if response.status == 202 {
+            if response.status == 202 && operation.metadata_read_evidence {
                 self.raw_service_error = serde_json::from_slice(&response.body).ok().map(Box::new);
                 self.operation_id = accepted_id(&response)?;
                 if let Some(id) = &self.operation_id

@@ -25,7 +25,11 @@ read. An actually executed GET 202 remains a rejected shared operation error
 with HTTP status, validated observed operation ID and raw response evidence,
 not a completed metadata result or a polling request. A directly supplied
 accepted outcome is likewise rejected by the decoder. Invalid acceptance IDs
-and foreign operation links still fail the shared validation. The supported
+and foreign operation links still fail the explicit
+`FabricOperation::with_metadata_read_evidence` validation selected by this
+metadata adapter. Only GET/ReturnAccepted can opt in. Default observer and
+result GETs keep their original observed-HTTP-202 primary error classification
+and do not interpret or follow acceptance headers. The supported
 nonpolling read statuses and completion policy are unchanged.
 Denied/absent/throttled/transport failures retain their shared
 classification, never `exists=false` or empty metadata.

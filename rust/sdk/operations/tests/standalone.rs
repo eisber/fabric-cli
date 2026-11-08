@@ -119,26 +119,28 @@ async fn nonpolling_get_rejects_202_but_retains_observed_operation_evidence() {
             OperationLimits::default(),
             pending(),
         );
-        let error = session
-            .execute(
-                FabricOperation::new(
-                    ResourceMethod::Get,
-                    "/v1/workspaces/ws",
-                    Vec::new(),
-                    completion,
-                )
-                .unwrap(),
-            )
-            .await
-            .unwrap_err();
+        let operation = FabricOperation::new(
+            ResourceMethod::Get,
+            "/v1/workspaces/ws",
+            Vec::new(),
+            completion,
+        )
+        .unwrap();
+        let metadata = completion == CompletionPolicy::ReturnAccepted;
+        let operation = if metadata {
+            operation.with_metadata_read_evidence().unwrap()
+        } else {
+            operation
+        };
+        let error = session.execute(operation).await.unwrap_err();
         assert!(matches!(
             error.kind,
             OperationErrorKind::Http { status: 202, .. }
         ));
-        assert_eq!(error.operation_id.as_deref(), Some(id));
+        assert_eq!(error.operation_id.as_deref(), metadata.then_some(id));
         assert_eq!(
             error.raw_service_error.as_deref(),
-            Some(&json!({"futureAcceptance":true}))
+            metadata.then_some(&json!({"futureAcceptance":true}))
         );
         assert!(!error.mutation_may_have_occurred);
         assert_eq!(*executor.methods.lock().unwrap(), [ResourceMethod::Get]);
@@ -167,6 +169,83 @@ fn source_read_id_builder_rejects_mutations_and_other_completion_policies() {
                 result.is_ok(),
                 method == ResourceMethod::Get && completion == CompletionPolicy::PythonSynchronous
             );
+        }
+    }
+}
+
+#[test]
+fn metadata_read_evidence_requires_explicit_nonpolling_get() {
+    for method in [
+        ResourceMethod::Get,
+        ResourceMethod::Post,
+        ResourceMethod::Patch,
+        ResourceMethod::Delete,
+    ] {
+        for completion in [
+            CompletionPolicy::PythonSynchronous,
+            CompletionPolicy::ReturnAccepted,
+            CompletionPolicy::WaitForCompletion,
+            CompletionPolicy::WaitForResult,
+        ] {
+            let result = FabricOperation::new(method, "/v1/workspaces/ws", Vec::new(), completion)
+                .unwrap()
+                .with_metadata_read_evidence();
+            assert_eq!(
+                result.is_ok(),
+                method == ResourceMethod::Get && completion == CompletionPolicy::ReturnAccepted
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn default_nonpolling_get_keeps_actual_202_error_without_acceptance_interpretation() {
+    for completion in [
+        CompletionPolicy::ReturnAccepted,
+        CompletionPolicy::WaitForResult,
+        CompletionPolicy::WaitForCompletion,
+    ] {
+        for location in [
+            format!("{ROOT}/v1/operations/operation_1/result"),
+            "https://other.fabric.microsoft.com/v1/operations/operation_1".into(),
+        ] {
+            let credential = Credential::default();
+            let selection = selection();
+            let executor = Executor::default();
+            let mut accepted = response(202, r#"{"status":"Succeeded"}"#);
+            accepted.headers.insert("Location".into(), location);
+            accepted
+                .headers
+                .insert("x-ms-operation-id".into(), "opaque_1".into());
+            executor.responses.lock().unwrap().push_back(accepted);
+            let mut session = OperationSession::new(
+                &credential,
+                &selection,
+                executor.clone(),
+                OperationLimits::default(),
+                pending(),
+            );
+            let error = session
+                .execute(
+                    FabricOperation::new(
+                        ResourceMethod::Get,
+                        "/v1/operations/operation_1",
+                        Vec::new(),
+                        completion,
+                    )
+                    .unwrap(),
+                )
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                error.kind,
+                OperationErrorKind::Http { status: 202, .. }
+            ));
+            assert_eq!(error.operation_id, None);
+            assert_eq!(error.raw_service_error, None);
+            assert!(!error.mutation_may_have_occurred);
+            assert_eq!(*executor.methods.lock().unwrap(), [ResourceMethod::Get]);
+            assert_eq!(credential.0.load(Ordering::SeqCst), 1);
         }
     }
 }
@@ -223,6 +302,8 @@ async fn nonpolling_get_202_does_not_relax_identifier_or_operation_origin_guards
                     Vec::new(),
                     CompletionPolicy::ReturnAccepted,
                 )
+                .unwrap()
+                .with_metadata_read_evidence()
                 .unwrap(),
             )
             .await
@@ -263,6 +344,8 @@ async fn nonpolling_get_202_keeps_no_id_response_and_body_budget_failures_distin
                     Vec::new(),
                     CompletionPolicy::ReturnAccepted,
                 )
+                .unwrap()
+                .with_metadata_read_evidence()
                 .unwrap(),
             )
             .await
