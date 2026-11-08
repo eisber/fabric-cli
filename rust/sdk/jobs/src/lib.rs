@@ -10,6 +10,7 @@
 pub mod cancellation;
 mod command;
 mod headers;
+pub mod livy;
 mod numeric;
 mod operations;
 use azure_core::{

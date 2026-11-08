@@ -90,3 +90,41 @@ uncertainty. Dropping local work does not cancel the remote job. Callers must
 request cancellation explicitly and wait for service confirmation when needed.
 UI confirmation and command-level timeout-cancellation defaults belong to
 the application, not this SDK.
+
+## Existing-session Livy statement contract
+
+`livy::StatementInput::from_json` is pure validation of the closed
+`{code, language}` object. Code must be nonblank and is preserved unchanged.
+Explicit languages `pyspark`, `scala`, `sql` and `r` map to native kinds
+`pyspark`, `spark`, `sql` and `sparkr`. `body()` contains exactly `code` and
+`kind`. Unknown fields, missing language, cell input and native-kind overrides
+are rejected without credential, file or network access.
+
+`livy::StatementObservation` retains the native JSON response, including
+statement ID zero, the full media map, errors, traceback and unknown fields.
+Numeric and string IDs remain distinct. Missing IDs never become a session,
+application, attempt or REPL ID. Debug and error diagnostics omit code and
+provider values; native evidence belongs only on protected result surfaces.
+
+Statement success requires `state=available` and `output.status=ok`.
+Waiting/running is not success; idle sessions, unknown states, missing output
+status and contradictory state/status are unverified. Native error and
+cancelled states remain distinct. Explicit truncation/partial evidence is
+separate from execution success and must not become exhaustive delivery.
+Transport bounds and sink errors remain additional common-result evidence.
+
+This module currently provides input/result interpretation, **not a registered
+execution capability**. The released shared run deadline/evidence interfaces
+and LH-12's authoritative route/version/casing and injected identity-context
+descriptor are prerequisites for submit/observe integration. No endpoint or
+audience is guessed. No session creation, newest-idle discovery, replay,
+timeout cancellation, deletion, one-shot, high-concurrency or Notebook
+interactive protocol is implemented.
+
+The source-shaped contract uses the Livy task acceptance selected on
+2026-11-05 and Fabio `557f098ec087c1626c1d892db09360083ff95105`
+(`src/commands/spark_livy.rs`) as documentary provenance, not live service
+evidence. The official guide at documentation revision
+`ab44f2b599ae5d366212f67accb6731d07ad4215` and source route casing/auth
+discrepancies remain LH-12 binding gates. Legacy `JobType::Notebook`,
+RunNotebook wire requests and frozen v1 oracles are unchanged.
