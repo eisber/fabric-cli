@@ -69,6 +69,17 @@ All affected Cargo consumers still receive all-target compile/lint checks and
 documentation tests. A Notebook-only change can therefore avoid unrelated
 runtime suites without skipping compilation of CLI consumers.
 
+Feature profiles retain package-scoped `test_features` in the generated plan.
+Each isolated test command uses its package's explicit profile features, plus
+target-required features that the combined Cargo composition enabled through
+another root's dependency forwarding. For example, a selected transport
+`sdk_consumer` example receives its existing `hyper-rustls` requirement even when
+the profile enabled it through a CLI native-read feature. Already satisfied
+local/default requirements need no extra flag. Unrelated package features are
+not passed to isolated tests; production defaults and target requirements remain
+unchanged. Both planner command descriptors and the validation executor consume
+this same metadata-derived selection.
+
 ## Conservative boundaries
 
 Unclassified package inputs select the package and its transitive Cargo

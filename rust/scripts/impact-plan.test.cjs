@@ -345,6 +345,51 @@ test('Required-feature target is explicitly skipped by default and covered by pl
   assert.deepEqual(windows.checks, ['native-contract']);
 });
 
+test('Separate profile tests retain required features forwarded by another package root', () => {
+  const result = select(['rust/sdk/transport/src/lib.rs'], input => {
+    input.metadata.packages.push(pkg('transport', [], [
+      target('sdk_consumer', 'example', 'rust/sdk/transport/examples/sdk_consumer.rs', ['tls']),
+    ], {default: [], tls: []}));
+    const cli = input.metadata.packages.find(item => item.name === 'cli');
+    cli.dependencies.push({
+      name: 'transport', path: absolute('rust/sdk/transport'), optional: true,
+      kind: null, target: null, rename: null,
+    });
+    cli.features = {default: [], native: ['dep:transport', 'transport/tls']};
+    input.metadata.workspace_members.push('path+transport#0.1.0');
+    input.metadata.workspace_default_members.push('path+transport#0.1.0');
+    input.graph.components.push({
+      id: 'transport', package: 'transport', inputs: ['rust/sdk/transport/src/lib.rs'],
+      tests: [{package: 'transport', target: 'example:sdk_consumer'}, {package: 'transport', target: 'lib'}],
+    });
+    input.graph.profiles.push({
+      id: 'combined', packages: ['cli', 'transport'], features: ['cli/native'],
+      platforms: ['linux', 'macos', 'windows'], checks: [],
+    });
+  });
+  const profile = result.profiles.find(item => item.id === 'combined');
+  assert.deepEqual(profile.features, ['cli/native']);
+  assert.deepEqual(profile.test_features.transport, ['transport/tls']);
+  assert.deepEqual(profile.test_features.cli, ['cli/native']);
+  assert.ok(!result.tests.find(item => item.target === 'example:sdk_consumer').default_available);
+  const {coreCommands} = require('./validate-impact.cjs');
+  for (const platform of ['linux', 'macos', 'windows']) {
+    const tests = commands(result, platform).commands.filter(item =>
+      item.kind === 'test' && item.profile === 'combined' && item.package === 'transport');
+    assert.equal(tests.length, 2);
+    for (const command of tests) {
+      assert.equal(command.args[command.args.indexOf('--features') + 1], 'transport/tls');
+      assert.ok(!command.args.includes('cli/native'));
+    }
+    const actual = coreCommands(result, platform).find(item => item.id === 'combined:test:transport');
+    assert.equal(actual.args[actual.args.indexOf('--features') + 1], 'transport/tls');
+    assert.ok(actual.args.includes('--example') && actual.args.includes('sdk_consumer'));
+    assert.ok(actual.args.includes('--lib'));
+    assert.ok(!coreCommands(result, platform).some(item => item.id.startsWith('default:test:') &&
+      item.args.includes('sdk_consumer')));
+  }
+});
+
 test('Full package tests report required-feature target gaps and include full profiles', () => {
   const result = select(['rust/Cargo.toml'], nativeProfile);
   const cli = result.tests.find(item => item.package === 'cli');
