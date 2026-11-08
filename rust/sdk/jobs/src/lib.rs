@@ -12,6 +12,7 @@ mod command;
 mod headers;
 mod numeric;
 mod operations;
+pub mod run;
 use azure_core::{
     credentials::AccessToken,
     http::{Method, Url},
@@ -96,6 +97,38 @@ impl fmt::Debug for JobRequest<'_> {
 /// Use the shared HTTP engine for deadlines, read retries and response bounds;
 /// never replay mutations, follow redirects, select credentials or create a runtime.
 pub trait JobExecutor: Send + Sync {
+    /// Scope the same injected HTTP engine to a v2 run's remaining total budget.
+    ///
+    /// The returned executor must include streaming and GET retry sleeps in this
+    /// timeout, honor Retry-After minimums, and never replay mutations. It must
+    /// reuse the original client/runtime and not retain a shorter exchange cap.
+    /// Existing v1 executors reject this opt-in before credentials or dispatch.
+    fn with_run_budget(
+        &self,
+        _remaining: Duration,
+    ) -> Result<Arc<dyn JobExecutor>, JobExecutionError> {
+        Err(JobExecutionError::Failed)
+    }
+    /// Execute a v2 request, retaining any observed response on stream failure.
+    ///
+    /// A budget-capable native streaming adapter overrides this to preserve
+    /// actual status/headers/body prefix before interruption. The compatibility
+    /// default retains complete responses only; it invents no partial evidence.
+    fn execute_run<'a>(
+        &'a self,
+        request: JobRequest<'a>,
+        _recorder: &'a run::RunResponseRecorder,
+    ) -> JobFuture<'a, run::RunExchange> {
+        Box::pin(async move {
+            match self.execute(request).await {
+                Ok(response) => run::RunExchange::Complete(response),
+                Err(error) => run::RunExchange::Failed {
+                    error,
+                    observed: None,
+                },
+            }
+        })
+    }
     /// Explicit header capability; existing executors accept only the empty contract.
     ///
     /// An implementation opting in must forward all supported fields through its

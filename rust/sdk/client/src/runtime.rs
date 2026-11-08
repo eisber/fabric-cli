@@ -25,7 +25,7 @@ pub type NativeFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 #[derive(Clone, Debug)]
 pub struct NativeDeadline {
     started: Instant,
-    timeout: Duration,
+    deadline: fabric_sdk_operations::deadline::MonotonicDeadline,
 }
 
 impl NativeDeadline {
@@ -34,12 +34,12 @@ impl NativeDeadline {
     /// # Errors
     /// Rejects zero or excessive durations without starting any operation.
     pub fn new(timeout: Duration) -> Result<Self, NativeError> {
-        if timeout.is_zero() || timeout > Duration::from_secs(24 * 60 * 60) {
-            return Err(NativeError::InvalidInput);
-        }
+        let deadline =
+            fabric_sdk_operations::deadline::MonotonicDeadline::new(Duration::ZERO, timeout)
+                .map_err(|_| NativeError::InvalidInput)?;
         Ok(Self {
             started: Instant::now(),
-            timeout,
+            deadline,
         })
     }
 
@@ -48,10 +48,9 @@ impl NativeDeadline {
     /// # Errors
     /// Returns [`NativeError::TimedOut`] once the local budget expires.
     pub fn remaining(&self) -> Result<Duration, NativeError> {
-        self.timeout
-            .checked_sub(self.started.elapsed())
-            .filter(|remaining| !remaining.is_zero())
-            .ok_or(NativeError::TimedOut)
+        self.deadline
+            .remaining(self.started.elapsed())
+            .map_err(|_| NativeError::TimedOut)
     }
 }
 
@@ -575,7 +574,11 @@ mod stream_contract_tests {
         assert!(deadline.clone().remaining().unwrap() <= before);
         let expired = NativeDeadline {
             started: Instant::now().checked_sub(Duration::from_secs(2)).unwrap(),
-            timeout: Duration::from_secs(1),
+            deadline: fabric_sdk_operations::deadline::MonotonicDeadline::new(
+                Duration::ZERO,
+                Duration::from_secs(1),
+            )
+            .unwrap(),
         };
         assert_eq!(expired.remaining(), Err(NativeError::TimedOut));
     }

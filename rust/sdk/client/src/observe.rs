@@ -8,6 +8,9 @@
 //! HTTP retries and asynchronous timers remain owned by the shared executor.
 
 use crate::{Audience, Client, ServiceOrigin};
+use fabric_sdk_operations::polling::{
+    ObservationDriver, ObservationStep, ObserverFuture, WorkDomain, drive, work_state,
+};
 use fabric_sdk_operations::{
     FabricOperation, OperationError, OperationErrorKind, OperationExecutionError,
     OperationExecutor, OperationLimits, OperationRequest, OperationResponse, OperationSession,
@@ -333,6 +336,58 @@ async fn observe_inner(
     requests: &AtomicUsize,
     last: &mut Option<Observation>,
 ) -> Result<Observation, Failure> {
+    drive(
+        &mut ExistingObserver {
+            client,
+            session,
+            executor,
+            handle,
+            options,
+            requests,
+            last,
+        },
+        None,
+    )
+    .await
+}
+
+struct ExistingObserver<'a, 'context, 'executor> {
+    client: &'a Client,
+    session: &'a mut OperationSession<'context, CountingExecutor<'executor>>,
+    executor: &'a dyn OperationExecutor,
+    handle: &'a ReadHandle,
+    options: ObserveOptions,
+    requests: &'a AtomicUsize,
+    last: &'a mut Option<Observation>,
+}
+
+impl ObservationDriver for ExistingObserver<'_, '_, '_> {
+    type Output = Observation;
+    type Error = Failure;
+
+    fn step(&mut self) -> ObserverFuture<'_, Result<ObservationStep<Observation>, Failure>> {
+        Box::pin(observe_step(
+            self.client,
+            self.session,
+            self.handle,
+            self.options,
+            self.requests,
+            self.last,
+        ))
+    }
+    fn wait(&mut self, delay: Duration) -> ObserverFuture<'_, Result<(), Failure>> {
+        Box::pin(wait(self.session, self.executor, delay))
+    }
+}
+
+async fn observe_step(
+    client: &Client,
+    session: &mut OperationSession<'_, CountingExecutor<'_>>,
+    handle: &ReadHandle,
+    options: ObserveOptions,
+    requests: &AtomicUsize,
+    last: &mut Option<Observation>,
+) -> Result<ObservationStep<Observation>, Failure> {
     let path = handle
         .path()
         .map_err(|kind| failure(session, ObserveErrorKind::Operation, kind))?;
@@ -359,93 +414,88 @@ async fn observe_inner(
             OperationErrorKind::InvalidInput,
         ));
     }
-    loop {
-        let response = get(session, &path).await?;
-        let raw_status: Value = serde_json::from_slice(&response.body).map_err(|_| {
-            failure(
-                session,
-                ObserveErrorKind::InvalidState,
-                OperationErrorKind::InvalidResponse,
-            )
-        })?;
-        let status = raw_status.get("status").and_then(Value::as_str);
-        let state = match (handle, status) {
-            (ReadHandle::Operation { .. }, Some("NotStarted" | "Running"))
-            | (ReadHandle::Job { .. }, Some("NotStarted" | "InProgress")) => Some((false, false)),
-            (ReadHandle::Operation { .. }, Some("Succeeded"))
-            | (ReadHandle::Job { .. }, Some("Completed")) => Some((true, true)),
-            (_, Some("Failed" | "Cancelled")) | (ReadHandle::Job { .. }, Some("Deduped")) => {
-                Some((true, false))
-            }
-            _ => None,
-        };
-        let (terminal, work_succeeded) = state.unwrap_or((false, false));
-        let observation = Observation {
-            handle: handle.clone(),
-            raw_status,
-            terminal,
-            work_succeeded,
-            result: None,
-            requests: requests.load(Ordering::SeqCst),
-        };
-        *last = Some(observation.clone());
-        if state.is_none() {
-            return Err(failure(
-                session,
-                if observation
-                    .raw_status
-                    .get("status")
-                    .and_then(Value::as_str)
-                    .is_some()
-                {
-                    ObserveErrorKind::UnknownState
-                } else {
-                    ObserveErrorKind::InvalidState
-                },
-                OperationErrorKind::InvalidResponse,
-            ));
-        }
-        if terminal {
-            if !work_succeeded && (options.wait || options.result) {
-                let raw_error = observation.raw_status.get("error").cloned();
-                let mut error = session.evidence(OperationErrorKind::OperationFailed {
-                    status: observation.raw_status["status"]
-                        .as_str()
-                        .expect("recognized status is a string")
-                        .to_owned(),
-                    error: raw_error
-                        .clone()
-                        .and_then(|value| serde_json::from_value(value).ok())
-                        .map(Box::new),
-                });
-                error.raw_service_error = raw_error.map(Box::new);
-                return Err(error.into());
-            }
-            if options.result {
-                return result(client, session, &path, &response, observation).await;
-            }
-            return Ok(observation);
-        }
-        if !options.wait {
-            if options.result {
-                return Err(failure(
-                    session,
-                    ObserveErrorKind::ResultNotReady,
-                    OperationErrorKind::InvalidResponse,
-                ));
-            }
-            return Ok(observation);
-        }
-        if requests.load(Ordering::SeqCst) >= options.max_requests.get() {
-            return Err(failure(
-                session,
-                ObserveErrorKind::Operation,
-                OperationErrorKind::Limit,
-            ));
-        }
-        let delay = poll_delay(session, &response, options.max_delay)?;
-        wait(session, executor, delay).await?;
+    let response = get(session, &path).await?;
+    let raw_status: Value = serde_json::from_slice(&response.body).map_err(|_| {
+        failure(
+            session,
+            ObserveErrorKind::InvalidState,
+            OperationErrorKind::InvalidResponse,
+        )
+    })?;
+    let status = raw_status.get("status").and_then(Value::as_str);
+    let domain = match handle {
+        ReadHandle::Operation { .. } => WorkDomain::Operation,
+        ReadHandle::Job { .. } => WorkDomain::Job,
+    };
+    let state = status.and_then(|status| work_state(domain, status));
+    let (terminal, work_succeeded) = state.unwrap_or((false, false));
+    let observation = Observation {
+        handle: handle.clone(),
+        raw_status,
+        terminal,
+        work_succeeded,
+        result: None,
+        requests: requests.load(Ordering::SeqCst),
+    };
+    *last = Some(observation.clone());
+    if state.is_none() {
+        return Err(failure(
+            session,
+            if observation
+                .raw_status
+                .get("status")
+                .and_then(Value::as_str)
+                .is_some()
+            {
+                ObserveErrorKind::UnknownState
+            } else {
+                ObserveErrorKind::InvalidState
+            },
+            OperationErrorKind::InvalidResponse,
+        ));
     }
+    if terminal {
+        if !work_succeeded && (options.wait || options.result) {
+            let raw_error = observation.raw_status.get("error").cloned();
+            let mut error = session.evidence(OperationErrorKind::OperationFailed {
+                status: observation.raw_status["status"]
+                    .as_str()
+                    .expect("recognized status is a string")
+                    .to_owned(),
+                error: raw_error
+                    .clone()
+                    .and_then(|value| serde_json::from_value(value).ok())
+                    .map(Box::new),
+            });
+            error.raw_service_error = raw_error.map(Box::new);
+            return Err(error.into());
+        }
+        if options.result {
+            return result(client, session, &path, &response, observation)
+                .await
+                .map(ObservationStep::Complete);
+        }
+        return Ok(ObservationStep::Complete(observation));
+    }
+    if !options.wait {
+        if options.result {
+            return Err(failure(
+                session,
+                ObserveErrorKind::ResultNotReady,
+                OperationErrorKind::InvalidResponse,
+            ));
+        }
+        return Ok(ObservationStep::Complete(observation));
+    }
+    if requests.load(Ordering::SeqCst) >= options.max_requests.get() {
+        return Err(failure(
+            session,
+            ObserveErrorKind::Operation,
+            OperationErrorKind::Limit,
+        ));
+    }
+    let delay = poll_delay(session, &response, options.max_delay)?;
+    Ok(ObservationStep::Continue(delay))
 }
 
 async fn wait(
@@ -543,28 +593,21 @@ fn poll_delay(
     response: &OperationResponse,
     max_delay: Duration,
 ) -> Result<Duration, Failure> {
-    let value = header(response, "Retry-After")
+    // Preserve the legacy duplicate-header classification before shared parsing.
+    header(response, "Retry-After")
         .map_err(|kind| failure(session, ObserveErrorKind::Operation, kind))?;
-    let invalid = || {
+    let delay = fabric_sdk_operations::polling::retry_after(
+        &response.headers,
+        Duration::from_secs(1),
+        false,
+    )
+    .map_err(|_| {
         failure(
             session,
             ObserveErrorKind::InvalidRetryAfter,
             OperationErrorKind::InvalidResponse,
         )
-    };
-    let delay = match value {
-        None => Duration::from_secs(1),
-        Some(value) => {
-            if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-                return Err(invalid());
-            }
-            let seconds = value.parse::<u64>().map_err(|_| invalid())?;
-            if seconds == 0 {
-                return Err(invalid());
-            }
-            Duration::from_secs(seconds)
-        }
-    };
+    })?;
     if delay > max_delay {
         return Err(failure(
             session,
