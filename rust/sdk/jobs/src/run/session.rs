@@ -224,6 +224,8 @@ pub struct RunEvidence {
     pub last_response_complete: bool,
     /// A received body exceeded the bound and was omitted, not a complete empty body.
     pub response_body_omitted: bool,
+    /// Sanitized failure capturing response evidence, including on future drop.
+    pub response_capture_error: Option<RunError>,
     /// Binding-interpreted native result; false, zero and null remain distinct.
     pub result: Option<Value>,
     /// Whether local output commit succeeded.
@@ -240,6 +242,7 @@ impl fmt::Debug for RunEvidence {
             )
             .field("handle", &self.handle)
             .field("response_body_omitted", &self.response_body_omitted)
+            .field("response_capture_error", &self.response_capture_error)
             .field("output_committed", &self.output_committed)
             .finish_non_exhaustive()
     }
@@ -345,6 +348,7 @@ impl<'a> RunSession<'a> {
                 last_response: None,
                 last_response_complete: false,
                 response_body_omitted: false,
+                response_capture_error: None,
                 result: None,
                 output_committed: false,
             },
@@ -398,7 +402,7 @@ impl<'a> RunSession<'a> {
         url: Url,
         body: Vec<u8>,
     ) -> Result<JobResponse, Box<RunFailure>> {
-        if self.mutation_consumed {
+        if self.mutation_consumed || self.evidence.handle.is_some() {
             return Err(self.failure(RunError::Replay));
         }
         self.mutation_consumed = true;
@@ -437,9 +441,17 @@ impl<'a> RunSession<'a> {
     }
 
     /// Retain a validated native handle without conflating acceptance/completion.
+    ///
+    /// The first execution identity is immutable. Observing another run, even
+    /// on the same owner and endpoint, requires an independent session.
     pub fn bind_handle(&mut self, handle: &RunHandle) -> Result<(), Box<RunFailure>> {
         if handle.target() != self.plan.target()
             || handle.endpoint() != self.client.context.endpoint()
+            || self
+                .evidence
+                .handle
+                .as_ref()
+                .is_some_and(|bound| bound != handle)
         {
             return Err(self.failure(RunError::Context));
         }
@@ -549,10 +561,8 @@ impl<'a> RunSession<'a> {
         if !executor.supports_request_headers(&self.client.headers) {
             return Err(self.failure(RunError::UnsupportedExecutor));
         }
-        let mut attempted = false;
         let client = self.client;
         let limit = client.limits.max_response_bytes;
-        let recorder = RunResponseRecorder::new(limit);
         let scopes = [endpoint.audience().scope()];
         let token = self
             .deadline
@@ -571,10 +581,15 @@ impl<'a> RunSession<'a> {
             .executor
             .with_run_budget(remaining)
             .map_err(|_| self.failure(RunError::UnsupportedExecutor))?;
+        let mut capture = RequestEvidence {
+            evidence: &mut self.evidence,
+            recorder: RunResponseRecorder::new(limit),
+            mutation,
+        };
         let result = self
             .deadline
             .guard(self.clock.as_ref(), self.cancelled.as_mut(), async {
-                attempted = true;
+                capture.dispatched();
                 let exchange = executor
                     .execute_run(
                         JobRequest {
@@ -585,7 +600,7 @@ impl<'a> RunSession<'a> {
                             max_response_bytes: limit,
                             headers: client.headers.clone(),
                         },
-                        &recorder,
+                        &capture.recorder,
                     )
                     .await;
                 let (response, error, complete) = match exchange {
@@ -593,7 +608,7 @@ impl<'a> RunSession<'a> {
                     RunExchange::Failed { error, observed } => (observed, Some(error), false),
                 };
                 if let Some(response) = &response {
-                    recorder.record(response, complete)?;
+                    capture.recorder.record(response, complete)?;
                 }
                 if let Some(error) = error {
                     return Err(execution_error(error));
@@ -602,19 +617,55 @@ impl<'a> RunSession<'a> {
             })
             .await
             .and_then(|result| result);
-        if mutation && attempted {
+        drop(capture);
+        if let Some(source) = self.evidence.response_capture_error {
+            return Err(self.failure(source));
+        }
+        let response = result.map_err(|source| self.failure(source))?;
+        if response.status >= 400 {
+            return Err(self.failure(RunError::Http(response.status)));
+        }
+        if !mutation && response.status != 200 {
+            return Err(self.failure(RunError::Protocol));
+        }
+        Ok(response)
+    }
+}
+
+struct RequestEvidence<'a> {
+    evidence: &'a mut RunEvidence,
+    recorder: RunResponseRecorder,
+    mutation: bool,
+}
+
+impl RequestEvidence<'_> {
+    fn dispatched(&mut self) {
+        if self.mutation {
             self.evidence.mutation_may_have_occurred = true;
             self.evidence.outcome = RunOutcome::Unknown;
         }
-        let received = recorder.snapshot().map_err(|source| self.failure(source))?;
+    }
+}
+
+impl Drop for RequestEvidence<'_> {
+    fn drop(&mut self) {
+        // The enclosing request can itself be dropped while streaming is
+        // pending. Capture progress without polling the losing executor again.
+        let received = match self.recorder.snapshot() {
+            Ok(received) => received,
+            Err(source) => {
+                self.evidence.response_capture_error = Some(source);
+                return;
+            }
+        };
         if let Some(response) = received.response {
             self.evidence.response_body_omitted |= received.body_omitted;
-            if mutation {
+            if self.mutation {
                 if response.status == 202 {
                     self.evidence.outcome = RunOutcome::Accepted;
                     // Headers may establish a native identity even if streaming
                     // subsequently failed or the deadline won this wake.
-                    if self.plan.target().kind() == RunTargetKind::Notebook {
+                    if self.evidence.target.kind() == RunTargetKind::Notebook {
                         let mut locations = response
                             .headers
                             .iter()
@@ -622,12 +673,17 @@ impl<'a> RunSession<'a> {
                         if let Some((_, location)) = locations.next()
                             && locations.next().is_none()
                             && let Ok(handle) = RunHandle::job(
-                                self.plan.target(),
-                                self.client.context.endpoint(),
+                                &self.evidence.target,
+                                &self.evidence.endpoint,
                                 location,
                             )
                         {
-                            self.evidence.handle = Some(handle);
+                            match &self.evidence.handle {
+                                Some(bound) if bound != &handle => {
+                                    self.evidence.response_capture_error = Some(RunError::Context);
+                                }
+                                _ => self.evidence.handle = Some(handle),
+                            }
                         }
                     }
                 }
@@ -638,14 +694,6 @@ impl<'a> RunSession<'a> {
                 self.evidence.last_response_complete = received.complete;
             }
         }
-        let response = result.map_err(|source| self.failure(source))?;
-        if response.status >= 400 {
-            return Err(self.failure(RunError::Http(response.status)));
-        }
-        if !mutation && response.status != 200 {
-            return Err(self.failure(RunError::Protocol));
-        }
-        Ok(response)
     }
 }
 

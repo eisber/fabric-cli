@@ -139,8 +139,11 @@ and enforce the absolute budget at its request boundaries.
 `execute_run` receives an independent bounded `RunResponseRecorder`, and returns
 `RunExchange::Complete` or `Failed { error, observed }`. Streaming-aware adapters
 publish actual status, headers and bounded body progress to the recorder before
-each suspension. The session can therefore snapshot known acceptance after
-dropping a pending losing future, without polling it again to recover evidence.
+each suspension. A drop-safe request guard snapshots known acceptance into the
+surviving session when either the executor or the enclosing submit/observe
+future is dropped, without polling it again to recover evidence. Dispatch
+uncertainty is stored in session evidence before invoking the executor; a
+dropped credential acquisition still retains zero mutation dispatch.
 An immediately returned failure can also carry actual evidence in `observed`.
 The compatibility default cannot recover headers that its underlying executor
 discarded; it does not invent evidence. Native host wiring must implement this
@@ -157,7 +160,9 @@ guess a UDF route, translate parameter dialects or fall back to legacy execution
 `Partial` and `Unknown` from local phase failures. It retains the original target
 and endpoint, conservative dispatch uncertainty, original submit response, last
 observation, response-completeness/omission flags, native handle and interpreted
-result. `RunFailure` snapshots that evidence. HTTP acceptance is not execution
+result. A response-capture failure is retained explicitly in
+`response_capture_error`, including during future drop. `RunFailure` snapshots
+that evidence. HTTP acceptance is not execution
 completion. A synchronous UDF adapter uses `record` and `correlate`; correlation
 IDs never become async get/cancel handles. Use `interpret` for a pure native
 result/verdict decoder inside the original deadline. Already decoded evidence is
@@ -170,7 +175,11 @@ targets. `RunHandle::livy` binds actual session/statement IDs (including zero) t
 an owner-scoped monitor supplied by the verified Lakehouse binding; the binding
 owns version, route casing and audience. Collection, foreign-origin and
 cross-owner Locations cannot become valid job handles. Handles and raw response
-data are not for diagnostics or ambient credential selection.
+data are not for diagnostics or ambient credential selection. Once bound, a
+session's execution identity is immutable: rebinding the same handle is allowed,
+but another run on the same owner/endpoint is rejected before credentials or
+GET. An existing-run session may import its first handle, but cannot submit a
+new mutation; independent executions require independent sessions.
 
 ### Shared observation and output
 

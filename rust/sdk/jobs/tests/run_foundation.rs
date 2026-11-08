@@ -23,7 +23,7 @@ use fabric_sdk_jobs::{
 use serde_json::{Value, json};
 use std::{
     collections::VecDeque,
-    future::{pending, poll_fn, ready},
+    future::{Future, pending, poll_fn, ready},
     num::NonZeroUsize,
     pin::pin,
     sync::{
@@ -77,6 +77,7 @@ struct Credential {
     clock: Option<Arc<Clock>>,
     delay: u64,
     interrupt: Option<Arc<AtomicBool>>,
+    pending: bool,
 }
 #[async_trait]
 impl TokenCredential for Credential {
@@ -87,6 +88,9 @@ impl TokenCredential for Credential {
     ) -> azure_core::Result<AccessToken> {
         assert_eq!(scopes, ["https://api.fabric.microsoft.com/.default"]);
         self.calls.fetch_add(1, Ordering::SeqCst);
+        if self.pending {
+            return pending().await;
+        }
         if let Some(clock) = &self.clock {
             clock.advance(self.delay);
         }
@@ -1104,4 +1108,148 @@ async fn losing_pending_stream_is_dropped_without_discarding_observed_acceptance
         assert_eq!(executor.requests.load(Ordering::SeqCst), 1);
         assert!(executor.dropped.load(Ordering::SeqCst));
     }
+}
+
+#[tokio::test]
+async fn dropping_submit_future_preserves_dispatch_and_recorded_acceptance() {
+    let clock = Arc::new(Clock::default());
+    let executor = PendingStreamExecutor {
+        clock: clock.clone(),
+        interrupt: Arc::new(AtomicBool::new(false)),
+        deadline_case: false,
+        requests: Arc::new(AtomicUsize::new(0)),
+        dropped: Arc::new(AtomicBool::new(false)),
+    };
+    let client = JobClient::new(
+        Arc::new(Credential::default()),
+        CredentialSelection::new("offline", "synthetic", Audience::Fabric).unwrap(),
+        Arc::new(executor.clone()),
+        JobLimits::default(),
+    );
+    let mut session = RunSession::new(&client, plan("5m"), clock, pending()).unwrap();
+    {
+        let mut submitted = Box::pin(session.submit(submit_url(), vec![]));
+        poll_fn(|cx| {
+            assert!(submitted.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+    }
+    assert!(executor.dropped.load(Ordering::SeqCst));
+    assert_eq!(executor.requests.load(Ordering::SeqCst), 1);
+    assert!(session.evidence().mutation_may_have_occurred);
+    assert_eq!(session.evidence().outcome, RunOutcome::Accepted);
+    assert_eq!(
+        session.evidence().initial_response.as_ref().unwrap().body,
+        b"observed-prefix"
+    );
+    assert!(!session.evidence().initial_response_complete);
+    assert_eq!(
+        session.evidence().handle.as_ref().unwrap().kind(),
+        &RunHandleKind::Job(ID.into())
+    );
+    let failure = session.submit(submit_url(), vec![]).await.unwrap_err();
+    assert_eq!(failure.source, RunError::Replay);
+    assert!(failure.evidence.mutation_may_have_occurred);
+    assert_eq!(failure.evidence.outcome, RunOutcome::Accepted);
+    assert_eq!(executor.requests.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn established_handle_cannot_be_replaced_by_another_run_on_the_same_owner() {
+    let clock = Arc::new(Clock::default());
+    let executor = Executor::new(
+        clock.clone(),
+        [
+            response(
+                202,
+                "original-acceptance",
+                &[("Location", &monitor()), ("Retry-After", "0")],
+            ),
+            response(200, r#"{"status":"Completed"}"#, &[]),
+        ],
+    );
+    let credential = Arc::new(Credential::default());
+    let client = client(credential.clone(), &executor);
+    let mut session = RunSession::new(&client, plan("5m"), clock, pending()).unwrap();
+    session.submit(submit_url(), vec![]).await.unwrap();
+    let original = RunHandle::job(&target(), client.context().endpoint(), &monitor()).unwrap();
+    let other = RunHandle::job(
+        &target(),
+        client.context().endpoint(),
+        &monitor().replace(ID, "44444444-4444-4444-4444-444444444444"),
+    )
+    .unwrap();
+    session.bind_handle(&original).unwrap();
+    session.bind_handle(&original).unwrap();
+    let failure = session
+        .observe(&other, &SchedulerObserver)
+        .await
+        .unwrap_err();
+    assert_eq!(failure.source, RunError::Context);
+    assert_eq!(failure.evidence.handle.as_ref(), Some(&original));
+    assert_eq!(failure.evidence.outcome, RunOutcome::Accepted);
+    assert_eq!(credential.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(executor.requests.lock().unwrap().len(), 1);
+    assert_eq!(
+        session
+            .observe(&original, &SchedulerObserver)
+            .await
+            .unwrap(),
+        RunOutcome::Completed
+    );
+    assert_eq!(executor.requests.lock().unwrap().len(), 2);
+
+    let clock = Arc::new(Clock::default());
+    let mut imported = RunSession::new(&client, plan("5m"), clock, pending()).unwrap();
+    imported.bind_handle(&other).unwrap();
+    imported.bind_handle(&other).unwrap();
+    assert_eq!(imported.evidence().handle.as_ref(), Some(&other));
+    assert_eq!(
+        imported.bind_handle(&original).unwrap_err().source,
+        RunError::Context
+    );
+    assert_eq!(
+        imported
+            .submit(submit_url(), vec![])
+            .await
+            .unwrap_err()
+            .source,
+        RunError::Replay
+    );
+    assert!(!imported.evidence().mutation_may_have_occurred);
+}
+
+#[tokio::test]
+async fn dropping_submit_during_credentials_retains_zero_dispatch_evidence() {
+    let clock = Arc::new(Clock::default());
+    let executor = Executor::new(clock.clone(), []);
+    let credential = Arc::new(Credential {
+        pending: true,
+        ..Credential::default()
+    });
+    let client = client(credential.clone(), &executor);
+    let mut session = RunSession::new(&client, plan("5m"), clock, pending()).unwrap();
+    {
+        let mut submitted = Box::pin(session.submit(submit_url(), vec![]));
+        poll_fn(|cx| {
+            assert!(submitted.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+    }
+    assert!(!session.evidence().mutation_may_have_occurred);
+    assert_eq!(session.evidence().outcome, RunOutcome::NotSubmitted);
+    assert!(session.evidence().initial_response.is_none());
+    assert_eq!(credential.calls.load(Ordering::SeqCst), 1);
+    assert!(executor.requests.lock().unwrap().is_empty());
+    assert_eq!(
+        session
+            .submit(submit_url(), vec![])
+            .await
+            .unwrap_err()
+            .source,
+        RunError::Replay
+    );
+    assert_eq!(credential.calls.load(Ordering::SeqCst), 1);
 }
