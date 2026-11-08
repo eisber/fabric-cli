@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Bounded primary workspace metadata and one native page of workspace items.
+//! Bounded primary workspace metadata and one native page of workspaces or items.
 //!
 //! These reads never discover names, enrich metadata, enumerate folders, or
-//! expose a resumable service token. Data budgets measure compact UTF-8 JSON
+//! expose a portable resume cursor. Data budgets measure compact UTF-8 JSON
 //! before any caller-owned projection, separately from transport safety limits.
 
 use crate::{ApiClient, ApiError, ExecutionError, Limits, Paging, Request, Response, cancellable};
@@ -24,15 +24,17 @@ pub enum WorkspaceReadKind {
     Metadata,
     /// One native service page of workspace items, without a folder union.
     Items,
+    /// Accessible workspaces, not an administrator's tenant inventory.
+    Workspaces,
 }
 
-/// A canonical workspace identifier and explicit finite output bounds.
+/// An explicit root collection or canonical workspace and finite output bounds.
 ///
 /// Construction performs no credential acquisition, discovery, or network I/O.
 /// Debug output excludes the identifier.
 #[derive(Clone)]
 pub struct WorkspaceReadRequest {
-    workspace_id: String,
+    workspace_id: Option<String>,
     kind: WorkspaceReadKind,
     max_data_bytes: NonZeroUsize,
     max_records: Option<NonZeroUsize>,
@@ -49,7 +51,7 @@ impl WorkspaceReadRequest {
         max_data_bytes: NonZeroUsize,
     ) -> Result<Self, WorkspaceReadError> {
         Ok(Self {
-            workspace_id: canonical_workspace(workspace)?,
+            workspace_id: Some(canonical_workspace(workspace)?),
             kind: WorkspaceReadKind::Metadata,
             max_data_bytes,
             max_records: None,
@@ -68,7 +70,7 @@ impl WorkspaceReadRequest {
         recursive: bool,
     ) -> Result<Self, WorkspaceReadError> {
         Ok(Self {
-            workspace_id: canonical_workspace(workspace)?,
+            workspace_id: Some(canonical_workspace(workspace)?),
             kind: WorkspaceReadKind::Items,
             max_data_bytes,
             max_records: Some(max_records),
@@ -76,9 +78,25 @@ impl WorkspaceReadRequest {
         })
     }
 
-    /// Borrows the canonical workspace UUID; callers must not log it.
-    pub fn workspace_id(&self) -> &str {
-        &self.workspace_id
+    /// Selects one native page of workspaces accessible to the injected principal.
+    ///
+    /// No workspace discovery, admin fallback, enrichment, role filter or native
+    /// page-size option is inferred. The root collection has no workspace ID.
+    pub fn workspaces(max_records: NonZeroUsize, max_data_bytes: NonZeroUsize) -> Self {
+        Self {
+            workspace_id: None,
+            kind: WorkspaceReadKind::Workspaces,
+            max_data_bytes,
+            max_records: Some(max_records),
+            recursive: false,
+        }
+    }
+
+    /// Borrows the canonical workspace UUID, absent for the root collection.
+    ///
+    /// The root has no invented resource identifier. Callers must not log IDs.
+    pub fn workspace_id(&self) -> Option<&str> {
+        self.workspace_id.as_deref()
     }
 
     /// Returns the explicitly selected read surface.
@@ -180,19 +198,56 @@ impl fmt::Display for WorkspaceReadError {
 
 impl std::error::Error for WorkspaceReadError {}
 
-/// Whole primary metadata or an ordered whole-row items prefix.
+/// Whole primary metadata or an ordered whole-row collection prefix.
 ///
 /// Item truncation is an explicit incomplete success, not evidence that the
 /// workspace has no other items. No raw service token or resumable cursor is
-/// returned. Debug output excludes the service data.
+/// returned as a portable cursor. Debug output excludes the service data.
 #[derive(Clone, PartialEq)]
 pub struct WorkspaceReadResult {
-    /// Unprojected primary metadata object or items array, including unknown fields.
+    /// Unprojected primary metadata object or collection array, including unknown fields.
     pub data: Value,
     /// True only when the entire selected native collection or metadata fits.
     pub complete: bool,
     /// True when native continuation, record or data bounds leave items unread.
     pub truncated: bool,
+    /// Actual native paging and whole-record output measurements.
+    ///
+    /// Absent for singleton metadata. A next token is informational, not a
+    /// portable identity-bound cursor, and is withheld if any native row was
+    /// omitted by output bounds.
+    pub page: Option<WorkspacePageEvidence>,
+}
+
+/// One fully decoded native page, independent of caller projection.
+#[derive(Clone, PartialEq)]
+pub struct WorkspacePageEvidence {
+    /// Fully decoded pages; this slice never requests a second page.
+    pub pages_received: usize,
+    /// Native rows observed before applying output record and data-byte bounds.
+    pub records_observed: usize,
+    /// Whole rows admitted before projection.
+    pub records_returned: usize,
+    /// True when validated native paging indicates another page.
+    pub has_more: bool,
+    /// True when record or data-byte bounds omitted rows in the observed page.
+    pub output_truncated: bool,
+    /// Next native page token, only when every observed row was returned.
+    ///
+    /// Never log this opaque value or treat it as a portable v2 resume cursor.
+    pub native_continuation: Option<String>,
+}
+
+impl fmt::Debug for WorkspacePageEvidence {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WorkspacePageEvidence")
+            .field("pages_received", &self.pages_received)
+            .field("records_observed", &self.records_observed)
+            .field("records_returned", &self.records_returned)
+            .field("has_more", &self.has_more)
+            .field("output_truncated", &self.output_truncated)
+            .finish_non_exhaustive()
+    }
 }
 
 impl fmt::Debug for WorkspaceReadResult {
@@ -221,6 +276,7 @@ pub async fn read_workspace(
     let result = match request.kind {
         WorkspaceReadKind::Metadata => metadata(client, request, cancelled.as_mut()).await,
         WorkspaceReadKind::Items => items(client, request, cancelled.as_mut()).await,
+        WorkspaceReadKind::Workspaces => items(client, request, cancelled.as_mut()).await,
     };
     // The cancellation future may already be complete and must not be repolled.
     if matches!(result, Err(WorkspaceReadError::Cancelled)) {
@@ -251,8 +307,10 @@ async fn metadata(
     request: &WorkspaceReadRequest,
     cancelled: impl Future<Output = ()> + Send,
 ) -> Result<WorkspaceReadResult, WorkspaceReadError> {
-    let route = Request::fabric(Method::Get, &["workspaces", request.workspace_id()])
-        .map_err(read_error)?;
+    let workspace = request
+        .workspace_id()
+        .ok_or(WorkspaceReadError::InvalidInput)?;
+    let route = Request::fabric(Method::Get, &["workspaces", workspace]).map_err(read_error)?;
     let response = client
         .send(&route, Limits::default().max_response_bytes, cancelled)
         .await
@@ -261,7 +319,7 @@ async fn metadata(
     let data: Value =
         serde_json::from_slice(&response.body).map_err(|_| WorkspaceReadError::InvalidResponse)?;
     if !data.is_object()
-        || !matching_workspace(data.get("id"), request.workspace_id())
+        || !matching_workspace(data.get("id"), workspace)
         || data.get("displayName").and_then(Value::as_str).is_none()
     {
         return Err(WorkspaceReadError::InvalidResponse);
@@ -283,6 +341,7 @@ async fn metadata(
         data,
         complete: true,
         truncated: false,
+        page: None,
     })
 }
 
@@ -291,11 +350,18 @@ async fn items(
     request: &WorkspaceReadRequest,
     cancelled: impl Future<Output = ()> + Send,
 ) -> Result<WorkspaceReadResult, WorkspaceReadError> {
-    let route = Request::fabric(
-        Method::Get,
-        &["workspaces", request.workspace_id(), "items"],
-    )
-    .and_then(|route| route.with_query(&[("recursive".into(), request.recursive.to_string())]))
+    let route = match request.kind {
+        WorkspaceReadKind::Items => {
+            let workspace = request
+                .workspace_id()
+                .ok_or(WorkspaceReadError::InvalidInput)?;
+            Request::fabric(Method::Get, &["workspaces", workspace, "items"]).and_then(|route| {
+                route.with_query(&[("recursive".into(), request.recursive.to_string())])
+            })
+        }
+        WorkspaceReadKind::Workspaces => Request::fabric(Method::Get, &["workspaces"]),
+        WorkspaceReadKind::Metadata => return Err(WorkspaceReadError::InvalidInput),
+    }
     .map_err(read_error)?;
     let limits = Limits {
         max_pages: NonZeroUsize::new(1).expect("one page is nonzero"),
@@ -330,9 +396,18 @@ async fn items(
             || ["id", "displayName", "type"]
                 .iter()
                 .any(|field| row.get(*field).and_then(Value::as_str).is_none())
-            || row
-                .get("workspaceId")
-                .is_some_and(|id| !matching_workspace(Some(id), request.workspace_id()))
+            || match request.kind {
+                WorkspaceReadKind::Items => row.get("workspaceId").is_some_and(|id| {
+                    !request
+                        .workspace_id()
+                        .is_some_and(|workspace| matching_workspace(Some(id), workspace))
+                }),
+                WorkspaceReadKind::Workspaces => row
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .is_none_or(|id| canonical_workspace(id).is_err()),
+                WorkspaceReadKind::Metadata => true,
+            }
     }) {
         return Err(WorkspaceReadError::InvalidResponse);
     }
@@ -363,11 +438,26 @@ async fn items(
         bytes = next_bytes;
         rows.push(row);
     }
-    let truncated = rows.len() < native_count || collection.next_token.is_some();
+    let output_truncated = rows.len() < native_count;
+    let has_more = collection.next_token.is_some();
+    let page = WorkspacePageEvidence {
+        pages_received: collection.pages,
+        records_observed: native_count,
+        records_returned: rows.len(),
+        has_more,
+        output_truncated,
+        native_continuation: if output_truncated {
+            None
+        } else {
+            collection.next_token
+        },
+    };
+    let truncated = output_truncated || has_more;
     Ok(WorkspaceReadResult {
         data: Value::Array(rows),
         complete: !truncated,
         truncated,
+        page: Some(page),
     })
 }
 

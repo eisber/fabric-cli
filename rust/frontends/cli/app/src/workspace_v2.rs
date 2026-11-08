@@ -4,7 +4,7 @@
 //! Opt-in workspace read contracts, separate from the Python-compatible host.
 //!
 //! The caller owns identity, HTTP, clocks, cancellation and deadlines. Only exact
-//! UUID-addressed primary metadata and one bounded native items page are exposed.
+//! UUID-addressed primary metadata and bounded native workspace/items pages are exposed.
 
 use clap::{Arg, ArgAction, Command, error::ErrorKind};
 use fabric_cli_output::Timestamp;
@@ -104,7 +104,6 @@ fn read_command(name: &'static str, list: bool) -> Command {
             .arg(
                 Arg::new("recursive")
                     .long("recursive")
-                    .required(true)
                     .action(ArgAction::Set)
                     .value_parser(clap::value_parser!(bool)),
             );
@@ -151,7 +150,8 @@ pub fn parse_args(
     let (verb, matches) = matches
         .subcommand()
         .ok_or(WorkspaceReadError::InvalidInput)?;
-    let (verb, matches) = if verb == "artifact" {
+    let facade = verb == "artifact";
+    let (verb, matches) = if facade {
         matches
             .subcommand_matches("workspace")
             .and_then(clap::ArgMatches::subcommand)
@@ -162,22 +162,30 @@ pub fn parse_args(
     let path = matches
         .get_one::<String>("path")
         .ok_or(WorkspaceReadError::InvalidInput)?;
-    let workspace = addressed_workspace(path, verb == "list")?;
     let bytes = *matches
         .get_one::<NonZeroUsize>("max-bytes")
         .ok_or(WorkspaceReadError::InvalidInput)?;
     let request = match verb {
-        "get" => WorkspaceReadRequest::metadata(workspace, bytes)?,
-        "list" => WorkspaceReadRequest::items(
-            workspace,
-            *matches
+        "get" => WorkspaceReadRequest::metadata(addressed_workspace(path, false)?, bytes)?,
+        "list" => {
+            let records = *matches
                 .get_one::<NonZeroUsize>("limit")
-                .ok_or(WorkspaceReadError::InvalidInput)?,
-            bytes,
-            *matches
-                .get_one::<bool>("recursive")
-                .ok_or(WorkspaceReadError::InvalidInput)?,
-        )?,
+                .ok_or(WorkspaceReadError::InvalidInput)?;
+            let recursive = matches.get_one::<bool>("recursive").copied();
+            if path == "/" {
+                if facade || recursive.is_some() {
+                    return Err(WorkspaceReadError::UnsupportedCapability);
+                }
+                WorkspaceReadRequest::workspaces(records, bytes)
+            } else {
+                WorkspaceReadRequest::items(
+                    addressed_workspace(path, true)?,
+                    records,
+                    bytes,
+                    recursive.ok_or(WorkspaceReadError::InvalidInput)?,
+                )?
+            }
+        }
         _ => return Err(WorkspaceReadError::UnsupportedCapability),
     };
     let timeout = parse_duration(
@@ -294,6 +302,8 @@ struct WorkspaceMeta {
     provenance: &'static str,
     coverage: ReadCoverage,
     #[serde(skip_serializing_if = "Option::is_none")]
+    page: Option<ReadPage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     delivery: Option<ReadDelivery>,
 }
 
@@ -308,7 +318,7 @@ struct ReadDelivery {
 #[derive(Clone, Debug, Serialize)]
 struct ReadTarget {
     path: String,
-    id: String,
+    id: Option<String>,
     #[serde(rename = "type")]
     kind: &'static str,
     scope: &'static str,
@@ -329,6 +339,28 @@ struct ReadCoverage {
     resumable: bool,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReadPage {
+    pages_received: usize,
+    records_observed: usize,
+    records_returned: usize,
+    has_more: bool,
+    output_truncated: bool,
+    native_continuation: Option<String>,
+}
+
+impl std::fmt::Debug for ReadPage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReadPage")
+            .field("records_observed", &self.records_observed)
+            .field("records_returned", &self.records_returned)
+            .field("has_more", &self.has_more)
+            .field("output_truncated", &self.output_truncated)
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 struct ReadDiagnostic {
     code: &'static str,
@@ -343,7 +375,9 @@ fn diagnostic(error: WorkspaceReadError) -> ReadDiagnostic {
         message: error.to_string(),
         retryable: false,
         hints: if error == WorkspaceReadError::BudgetExceeded {
-            vec!["This slice has no resumable cursor; no provider token is returned."]
+            vec![
+                "This slice has no portable resume cursor. A native next-page token is withheld when output bounds omit rows.",
+            ]
         } else {
             Vec::new()
         },
@@ -354,13 +388,21 @@ fn metadata(command: Option<&WorkspaceCommand>, observed_at: Option<&str>) -> Wo
     let target = command.map(|command| {
         let request = command.request();
         let items = request.kind() == WorkspaceReadKind::Items;
+        if request.kind() == WorkspaceReadKind::Workspaces {
+            return ReadTarget {
+                path: "/".into(),
+                id: None,
+                kind: "Workspaces",
+                scope: "accessible-workspaces",
+            };
+        }
         ReadTarget {
             path: format!(
                 "/{}.Workspace{}",
-                request.workspace_id(),
+                request.workspace_id().expect("workspace-owned request"),
                 if items { "/items" } else { "" },
             ),
-            id: request.workspace_id().to_owned(),
+            id: request.workspace_id().map(str::to_owned),
             kind: if items { "WorkspaceItems" } else { "Workspace" },
             scope: "workspace",
         }
@@ -369,12 +411,10 @@ fn metadata(command: Option<&WorkspaceCommand>, observed_at: Option<&str>) -> Wo
         target,
         observed_at: observed_at.map(str::to_owned),
         context: None,
-        representation: if command
-            .is_some_and(|command| command.request().kind() == WorkspaceReadKind::Items)
-        {
-            "items"
-        } else {
-            "primary-metadata"
+        representation: match command.map(|command| command.request().kind()) {
+            Some(WorkspaceReadKind::Items) => "items",
+            Some(WorkspaceReadKind::Workspaces) => "workspaces",
+            Some(WorkspaceReadKind::Metadata) | None => "primary-metadata",
         },
         provenance: "Fabric REST v1; no admin or optional enrichment requests",
         coverage: ReadCoverage {
@@ -383,6 +423,7 @@ fn metadata(command: Option<&WorkspaceCommand>, observed_at: Option<&str>) -> Wo
             continuation: None,
             resumable: false,
         },
+        page: None,
         delivery: None,
     }
 }
@@ -425,7 +466,7 @@ pub async fn execute(
                 .map_err(|_| WorkspaceReadError::InvalidInput)?,
             None => result.data,
         };
-        Ok::<_, WorkspaceReadError>((data, result.complete, result.truncated))
+        Ok::<_, WorkspaceReadError>((data, result.complete, result.truncated, result.page))
     });
     let result = poll_fn(|cx| {
         if cancelled.as_mut().poll(cx).is_ready() {
@@ -449,10 +490,18 @@ pub async fn execute(
     })
     .await;
     let mut envelope = match result {
-        Ok((data, complete, truncated)) => {
+        Ok((data, complete, truncated, page)) => {
             let mut meta = metadata(Some(command), Some(observed_at));
             meta.coverage.complete = Some(complete);
             meta.coverage.truncated = truncated;
+            meta.page = page.map(|page| ReadPage {
+                pages_received: page.pages_received,
+                records_observed: page.records_observed,
+                records_returned: page.records_returned,
+                has_more: page.has_more,
+                output_truncated: page.output_truncated,
+                native_continuation: page.native_continuation,
+            });
             WorkspaceEnvelope {
                 schema_version: "0.1",
                 status: if complete { "succeeded" } else { "partial" },
@@ -710,6 +759,9 @@ fn delivery_failure(
 ) -> WorkspaceEnvelope {
     let mut failed = envelope.clone();
     failed.status = "failed";
+    if let Some(page) = &mut failed.meta.page {
+        page.native_continuation = None;
+    }
     failed.meta.delivery = Some(ReadDelivery {
         published,
         cleanup_complete,

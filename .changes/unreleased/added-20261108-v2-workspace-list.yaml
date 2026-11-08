@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: added
+body: Add experimental bounded root workspace listing and native page evidence without skipping truncated rows
+time: 2026-11-08T07:28:00Z
+custom:
+    Author: marcozo_microsoft
+    AuthorLink: https://github.com/marcozo_microsoft
