@@ -500,7 +500,7 @@ pub async fn execute(
                 records_returned: page.records_returned,
                 has_more: page.has_more,
                 output_truncated: page.output_truncated,
-                native_continuation: page.native_continuation,
+                native_continuation: None,
             });
             WorkspaceEnvelope {
                 schema_version: "0.1",

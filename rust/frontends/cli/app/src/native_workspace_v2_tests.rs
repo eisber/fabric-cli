@@ -276,6 +276,106 @@ mod native {
     }
 
     #[tokio::test]
+    async fn root_and_item_page_rendering_retains_coverage_without_opaque_tokens() {
+        for root in [false, true] {
+            for project in [None, Some("length(@)"), Some("`false`")] {
+                let mut args = vec![
+                    "fab-cli-workspace",
+                    "list",
+                    "/",
+                    "--limit",
+                    "3",
+                    "--max-bytes",
+                    "4096",
+                    "--timeout",
+                    "2s",
+                ];
+                if let Some(expression) = project {
+                    args.extend(["--project", expression]);
+                }
+                let command = if root {
+                    let ParsedWorkspaceInvocation::Read(command) =
+                        parse_args(args.into_iter().map(OsString::from)).unwrap()
+                    else {
+                        panic!("expected root list")
+                    };
+                    command
+                } else {
+                    command(
+                        "list",
+                        "2s",
+                        project
+                            .map_or_else(Vec::new, |expression| vec!["--project", expression])
+                            .as_slice(),
+                    )
+                };
+                let (sdk, executor, credential, wire) = setup(
+                    r#"{"value":[{"id":"22222222-2222-2222-2222-222222222222","displayName":"Offline resource","type":"FutureType"}],"continuationToken":"opaque-workspace-v2-token"}"#,
+                    EndpointBinding::public(ServiceOrigin::Fabric),
+                    command.timeout(),
+                );
+                let envelope = workspace_v2_native::execute_authenticated(
+                    &command,
+                    sdk,
+                    executor,
+                    OBSERVED_AT,
+                )
+                .await
+                .unwrap();
+                let value = serde_json::to_value(&envelope).unwrap();
+                assert_eq!(value["status"], "partial");
+                assert_eq!(value["meta"]["coverage"]["complete"], false);
+                assert_eq!(
+                    value["meta"]["coverage"]["continuation"],
+                    serde_json::Value::Null
+                );
+                assert_eq!(value["meta"]["coverage"]["resumable"], false);
+                assert_eq!(value["meta"]["page"]["recordsObserved"], 1);
+                assert_eq!(value["meta"]["page"]["recordsReturned"], 1);
+                assert_eq!(value["meta"]["page"]["hasMore"], true);
+                assert_eq!(value["meta"]["page"]["outputTruncated"], false);
+                assert_eq!(
+                    value["meta"]["page"]["nativeContinuation"],
+                    serde_json::Value::Null
+                );
+                assert!(!value.to_string().contains("opaque-workspace-v2-token"));
+                let prepared = PreparedWorkspaceResult::new(envelope).unwrap();
+                let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+                let exit = workspace_v2_native::deliver(
+                    &command,
+                    OutputReservation::new(None).unwrap(),
+                    Ok(prepared),
+                    None,
+                    Instant::now,
+                    &mut stdout,
+                    &mut stderr,
+                )
+                .unwrap();
+                assert_eq!(exit, 1);
+                assert!(stderr.is_empty());
+                let delivered: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+                assert_eq!(delivered, value);
+                assert!(
+                    !String::from_utf8(stdout)
+                        .unwrap()
+                        .contains("opaque-workspace-v2-token")
+                );
+                assert_eq!(credential.0.load(Ordering::SeqCst), 1);
+                let requests = wire.requests.lock().unwrap();
+                assert_eq!(requests.len(), 1);
+                assert_eq!(
+                    requests[0].url().path(),
+                    if root {
+                        "/v1/workspaces".to_owned()
+                    } else {
+                        format!("/v1/workspaces/{WORKSPACE}/items")
+                    }
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn nonpublic_binding_is_rejected_before_token_or_http() {
         let command = command("get", "2s", &[]);
         let endpoint =

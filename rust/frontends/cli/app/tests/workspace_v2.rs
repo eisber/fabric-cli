@@ -507,7 +507,7 @@ fn root_list_is_access_filtered_not_admin_and_never_invents_a_workspace_id() {
 }
 
 #[test]
-fn root_projection_does_not_hide_native_continuation_or_partial_coverage() {
+fn root_projection_preserves_native_paging_coverage_without_exposing_a_token() {
     for rows in [
         vec![],
         vec![json!({"id":W,"displayName":"Name","type":"Workspace"})],
@@ -535,14 +535,29 @@ fn root_projection_does_not_hide_native_continuation_or_partial_coverage() {
         assert_eq!(envelope["meta"]["coverage"]["complete"], false);
         assert_eq!(envelope["meta"]["coverage"]["continuation"], Value::Null);
         assert_eq!(envelope["meta"]["coverage"]["resumable"], false);
-        assert_eq!(
-            envelope["meta"]["page"]["nativeContinuation"],
-            "native-page-two"
-        );
+        assert_eq!(envelope["meta"]["page"]["nativeContinuation"], Value::Null);
         assert_eq!(envelope["meta"]["page"]["hasMore"], true);
         assert_eq!(envelope["meta"]["page"]["outputTruncated"], false);
         assert_eq!(http.requests.lock().unwrap().len(), 1);
         assert!(!format!("{result:?}").contains("native-page-two"));
+        assert!(!envelope.to_string().contains("native-page-two"));
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        assert_eq!(
+            write_result(
+                OutputReservation::new(None).unwrap(),
+                &result,
+                &mut stdout,
+                &mut stderr,
+            )
+            .unwrap(),
+            1,
+        );
+        assert!(stderr.is_empty());
+        assert!(
+            !String::from_utf8(stdout)
+                .unwrap()
+                .contains("native-page-two")
+        );
     }
 }
 
@@ -769,8 +784,9 @@ fn output_failure_retains_native_counts_but_does_not_log_opaque_continuation() {
     let result = complete(execute(&client, &command, NOW, pending(), pending()));
     assert_eq!(
         value(&result)["meta"]["page"]["nativeContinuation"],
-        "private-next-page"
+        Value::Null
     );
+    assert!(!value(&result).to_string().contains("private-next-page"));
     let mut stderr = Vec::new();
     assert_eq!(
         write_result(

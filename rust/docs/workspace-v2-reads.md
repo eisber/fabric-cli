@@ -159,10 +159,12 @@ the initial page exhaustive when the service advertises another page.
 List results additionally retain `meta.page`: `pagesReceived`,
 `recordsObserved`, `recordsReturned`, `hasMore`, `outputTruncated` and
 `nativeContinuation`. Counts measure the fully decoded page and admitted rows
-**before projection**. The opaque native next-page token is informational,
-not a portable CLI cursor: it is returned only when every observed row was
-admitted, and is null when record/byte bounds clip the page. Empty pages with
-native continuation still mean more data, not an exhausted collection.
+**before projection**. `nativeContinuation` is always null in CLI output:
+the CLI has no supported identity-bound continuation consumer. The SDK may
+retain the validated next-page token for explicit caller access when all native
+rows fit, but the renderer does not copy it into protected metadata, stdout,
+local output files or diagnostics. Empty pages with native continuation still
+mean more data (`hasMore:true`), not an exhausted collection.
 There is no `--continuation` consumer in this slice; caller-owned identity-bound
 resume and native snapshot guarantees are deferred. Tokens never appear in
 debug output or failure diagnostics.

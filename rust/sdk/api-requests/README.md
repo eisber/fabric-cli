@@ -77,6 +77,11 @@ portable identity-bound v2 cursor or a source snapshot guarantee. More pages
 or omitted rows keep `complete:false` and `truncated:true`; failed/denied/
 malformed requests never become empty successful lists.
 
+The separate experimental CLI has no supported bound continuation consumer;
+it retains page counts and `hasMore` but does not serialize the SDK's opaque
+token into output or diagnostics. SDK evidence is not an advertised public
+CLI cursor.
+
 See [the bounded CLI and SDK contract](../../docs/workspace-v2-reads.md) for
 native API citations, array/projection semantics and deferred resume scope.
 
