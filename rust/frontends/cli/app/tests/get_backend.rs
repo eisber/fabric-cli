@@ -362,6 +362,213 @@ async fn guid_qualified_metadata_reuses_the_authoritative_type_check() {
     assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
 }
 
+fn copyjob_metadata() -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({
+        "id":ITEM,"workspaceId":WS,"type":"CopyJob","displayName":"Copy",
+        "enabled":false,"future":null
+    }))
+    .unwrap()
+}
+
+fn copyjob_definition() -> Vec<u8> {
+    use base64::Engine;
+    serde_json::to_vec(&serde_json::json!({"definition":{"parts":[{
+        "path":"copyjob-content.json","payloadType":"InlineBase64",
+        "payload":base64::engine::general_purpose::STANDARD.encode(
+            br#"{"properties":{"jobMode":"Batch"},"activities":[]}"#
+        )
+    }]}}))
+    .unwrap()
+}
+
+fn copyjob_path(suffix: &str) -> String {
+    format!("/{WS}.Workspace/{ITEM}.CopyJob{suffix}")
+}
+
+#[tokio::test]
+async fn copyjob_root_get_uses_typed_native_metadata_and_shared_projection() {
+    let f = Fixture::new();
+    f.executor.response(
+        "GET",
+        format!("/v1/workspaces/{WS}/copyJobs/{ITEM}"),
+        200,
+        &copyjob_metadata(),
+        &[],
+    );
+    let bytes = stdout(
+        &f,
+        &[
+            "get".into(),
+            copyjob_path(""),
+            "--project".into(),
+            "enabled".into(),
+        ],
+    )
+    .await
+    .unwrap();
+    let result: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(result["data"], false);
+    assert_eq!(result["meta"]["outcome"], "completed");
+    assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn copyjob_definition_uses_native_post_after_authoritative_owner_read() {
+    let f = Fixture::new();
+    f.executor.response(
+        "GET",
+        format!("/v1/workspaces/{WS}/copyJobs/{ITEM}"),
+        200,
+        &copyjob_metadata(),
+        &[],
+    );
+    let definition = copyjob_definition();
+    f.executor.response(
+        "POST",
+        format!("/v1/workspaces/{WS}/copyJobs/{ITEM}/getDefinition"),
+        200,
+        &definition,
+        &[],
+    );
+    let bytes = stdout(&f, &["get".into(), copyjob_path("/src/definition")])
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&bytes).unwrap()["data"],
+        serde_json::from_slice::<Value>(&definition).unwrap()
+    );
+    let calls = f.executor.calls.lock().unwrap();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(
+        calls.iter().filter(|(method, _)| method == "POST").count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn copyjob_unadvertised_runtime_and_file_facets_fail_before_discovery() {
+    for suffix in [
+        "/Files/data.bin",
+        "/docs/schema",
+        &format!("/runs/{OP}"),
+        "/src/definition/formats/unsafe:format",
+    ] {
+        let f = Fixture::new();
+        let result = stdout(&f, &["get".into(), copyjob_path(suffix)]).await;
+        assert!(result.is_err());
+        assert!(f.executor.calls.lock().unwrap().is_empty());
+        assert!(f.credential.0.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn copyjob_denied_or_wrong_owner_never_fetches_source_or_returns_metadata_fallback() {
+    for status in [200, 403] {
+        let f = Fixture::new();
+        let mut metadata: Value = serde_json::from_slice(&copyjob_metadata()).unwrap();
+        metadata["type"] = "Notebook".into();
+        f.executor.response(
+            "GET",
+            format!("/v1/workspaces/{WS}/copyJobs/{ITEM}"),
+            status,
+            &serde_json::to_vec(&metadata).unwrap(),
+            &[],
+        );
+        assert!(
+            stdout(&f, &["get".into(), copyjob_path("/src/definition")])
+                .await
+                .is_err()
+        );
+        assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+    }
+    let f = Fixture::new();
+    f.executor.response(
+        "GET",
+        format!("/v1/workspaces/{WS}/copyJobs/{ITEM}"),
+        200,
+        &copyjob_metadata(),
+        &[],
+    );
+    f.executor.response(
+        "POST",
+        format!("/v1/workspaces/{WS}/copyJobs/{ITEM}/getDefinition"),
+        403,
+        br#"{"errorCode":"AccessDenied"}"#,
+        &[],
+    );
+    assert!(
+        stdout(&f, &["get".into(), copyjob_path("/src/definition")])
+            .await
+            .is_err()
+    );
+    assert_eq!(f.executor.calls.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn copyjob_accepted_definition_reuses_observer_and_validates_completed_source() {
+    for valid in [true, false] {
+        let f = Fixture::new();
+        f.executor.response(
+            "GET",
+            format!("/v1/workspaces/{WS}/copyJobs/{ITEM}"),
+            200,
+            &copyjob_metadata(),
+            &[],
+        );
+        f.executor.response(
+            "POST",
+            format!("/v1/workspaces/{WS}/copyJobs/{ITEM}/getDefinition"),
+            202,
+            b"",
+            &[
+                ("x-ms-operation-id", OP.into()),
+                (
+                    "Location",
+                    format!("https://api.fabric.microsoft.com/v1/operations/{OP}"),
+                ),
+            ],
+        );
+        f.executor.response(
+            "GET",
+            format!("/v1/operations/{OP}"),
+            200,
+            br#"{"status":"Succeeded"}"#,
+            &[(
+                "Location",
+                format!("https://api.fabric.microsoft.com/v1/operations/{OP}/result"),
+            )],
+        );
+        let body = if valid {
+            copyjob_definition()
+        } else {
+            br#"{"definition":{"parts":[]}}"#.to_vec()
+        };
+        f.executor.response(
+            "GET",
+            format!("/v1/operations/{OP}/result"),
+            200,
+            &body,
+            &[],
+        );
+        let result = stdout(
+            &f,
+            &[
+                "get".into(),
+                copyjob_path("/src/definition"),
+                "--wait".into(),
+            ],
+        )
+        .await;
+        assert_eq!(result.is_ok(), valid);
+        let calls = f.executor.calls.lock().unwrap();
+        assert_eq!(calls.len(), 4);
+        assert_eq!(
+            calls.iter().filter(|(method, _)| method == "POST").count(),
+            1
+        );
+    }
+}
+
 #[tokio::test]
 async fn cancelling_guid_owner_verification_never_fetches_its_representation() {
     let f = Fixture::new();

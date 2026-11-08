@@ -9,6 +9,7 @@
 //! runtime is installed.
 
 pub mod capacities;
+pub mod copyjobs;
 pub mod documents;
 pub mod folders;
 pub mod items;
