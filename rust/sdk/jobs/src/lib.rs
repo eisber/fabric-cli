@@ -12,6 +12,7 @@ mod command;
 mod headers;
 mod numeric;
 mod operations;
+pub mod udf;
 use azure_core::{
     credentials::AccessToken,
     http::{Method, Url},

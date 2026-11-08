@@ -26,6 +26,55 @@ runtime, identity backend, cache or logger.
 `response_for_command` is an explicit route-limited raw response policy for
 command consumers. It does not weaken the typed SDK methods.
 
+## Pure published UDF validation
+
+`udf::validate_arguments` validates one direct JSON argument object using a
+caller-supplied `UdfInputSchema` and explicit `UdfJsonLimits`. The schema owner
+must check its entire supported schema before validating values. The consumer
+does not infer required fields, nullability, defaults or a schema dialect from
+metadata, examples or source. Unsupported constructs fail explicitly; no
+remote references are fetched and no source is executed.
+
+The consumer rejects duplicate keys, including escaped and nested duplicates,
+trailing content, integer overflow and caller byte/depth/node limit violations.
+Object member names and values both count toward the node budget. It preserves
+the original request bytes and native JSON types. Omission, JSON null and an
+explicit default value stay distinct; defaults are never inserted.
+
+`udf::UdfResponse::from_received` interprets bounded native response evidence.
+Only HTTP 200 plus a complete, matching
+`{functionName, invocationId, status, output, errors}` envelope with
+`status: "Succeeded"` and empty errors establishes success. False, zero, null,
+arrays and strings are valid outputs. Missing fields, unknown statuses,
+contradictory HTTP/body data and unexpected 202 are not success. HTTP 403 can
+carry `ResponseTooLarge`; it is not automatically a permission failure.
+
+Raw bytes, parsed native fields, status, errors and invocation correlation are
+available through explicit getters, not diagnostic formatting. An oversized
+body is omitted entirely, never truncated into valid JSON. The eventual host
+must enforce byte limits while streaming and preserve observed remote evidence
+when later local output delivery fails. `invocationId` is correlation only, not
+a monitor, cancellation or scheduler handle.
+
+Use `UdfResponse::from_partial` when HTTP EOF was not established. Parseable
+native fields remain available, but a valid JSON prefix saying `Succeeded`
+cannot override incomplete transport evidence.
+
+These are executable **offline consumers**, not a published-function invocation
+adapter, command registration or production capability. Exact approved
+owner/function/endpoint/schema/context binding, the execution audience/identity
+handoff and the released shared run foundation remain integration gates.
+No endpoint is derived and no credentials, HTTP, polling or cancellation are
+performed. The synthetic `udf_validation` target supplies one explicit fixture
+schema; its keyword choices and test byte budgets are not production defaults.
+
+The selected synchronous run contract uses one 120-second client budget with
+or without `--wait`; explicit positive integer `ms`, `s`, `m` or `h` durations
+up to 24 hours replace it. Shared run infrastructure owns duration parsing,
+deadline ties and dispatch/output evidence. The documented 100-second public
+service limit is separate: a longer client budget does not extend that limit
+or establish cancellation, rollback or an asynchronous protocol.
+
 ## Request-scoped headers
 
 `JobRequestHeaders::with_skill` selects only `x-ms-fabric-skill`. Missing or
