@@ -259,6 +259,57 @@ fn invalid_targets_and_tokens_are_rejected_locally() {
     }
 }
 
+#[test]
+fn absent_parameters_preserve_query_absence_on_every_native_read_route() {
+    let target = target();
+    let base = format!("/v1/workspaces/{WS}/dataAgents/{AGENT}");
+    assert_eq!(
+        DataAgentRequests::metadata(&target)
+            .unwrap()
+            .operation()
+            .path(),
+        base
+    );
+    assert_eq!(
+        DataAgentRequests::definition(&target, None)
+            .unwrap()
+            .operation()
+            .path(),
+        format!("{base}/getDefinition")
+    );
+    for (stage, prefix) in [(Stage::Staging, "/staging"), (Stage::Published, "")] {
+        assert_eq!(
+            DataAgentRequests::settings(&target, stage)
+                .unwrap()
+                .operation()
+                .path(),
+            format!("{base}{prefix}/settings")
+        );
+        assert_eq!(
+            DataAgentRequests::datasources_page(&target, stage, None)
+                .unwrap()
+                .operation()
+                .path(),
+            format!("{base}{prefix}/datasources")
+        );
+    }
+    assert_eq!(
+        DataAgentRequests::definition(&target, Some(NativeFormat::Json))
+            .unwrap()
+            .operation()
+            .path(),
+        format!("{base}/getDefinition?format=JSON")
+    );
+    let token = ContinuationToken::new("opaque+/= next").unwrap();
+    assert_eq!(
+        DataAgentRequests::datasources_page(&target, Stage::Staging, Some(&token))
+            .unwrap()
+            .operation()
+            .path(),
+        format!("{base}/staging/datasources?continuationToken=opaque%2B%2F%3D+next")
+    );
+}
+
 #[tokio::test]
 async fn settings_use_one_explicit_stage_and_preserve_inert_instructions() {
     let body = json!({"aiInstructions":"Do not execute this text","future":null});

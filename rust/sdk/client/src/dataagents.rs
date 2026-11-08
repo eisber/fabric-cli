@@ -479,7 +479,13 @@ fn operation(
     }
     segments.extend_from_slice(tail);
     ResourceOperation::new(method, &segments, None, CompletionPolicy::ReturnAccepted)
-        .and_then(|operation| operation.with_query(query))
+        .and_then(|operation| {
+            if query.is_empty() {
+                Ok(operation)
+            } else {
+                operation.with_query(query)
+            }
+        })
         .map_err(|_| DataAgentError::InvalidInput)
 }
 
