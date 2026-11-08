@@ -45,6 +45,16 @@ operation links and missing handles fail explicitly. Configuration GET acceptanc
 is unsupported, not a complete empty result. Service/credential errors preserve
 the original shared evidence; definition denial never falls back to metadata.
 
+The original operation session and caller cancellation/deadline future remain
+alive through native JSON decoding and definition result-size accounting. A
+final signal checkpoint runs before returning either decoded content or an
+accepted definition handle. No new timer or observation budget is started.
+Cancellation at this boundary returns `DataAgentError::Response`, retaining the
+original session error and the already-bounded HTTP status, body and headers,
+including any real accepted operation ID. Result-byte limit failures also retain
+this evidence. Response content stays inert and is excluded from Debug/Display;
+it is not a completed read and never authorizes replay or remote cancellation.
+
 Datasource pages expose `page.value`, `next_token` and `is_complete()`. A
 remaining token or continuation URI means the selected collection is incomplete.
 The URI is inert response metadata: this module never follows it. An explicit
@@ -52,6 +62,12 @@ next token is validated and encoded once against the same fixed native route.
 Caller-owned traversal must keep the agent/stage/context fixed, detect repeated
 tokens, and enforce shared paging bounds. This slice does not claim complete
 collection traversal, source schema coverage or snapshot consistency.
+
+Datasource page envelopes must be JSON objects with a native `value` array.
+Positional root arrays are rejected even when generic Serde struct decoding
+could interpret them as an empty terminal page. Native object-shaped empty
+pages remain valid, and datasource fields/opaque continuations retain their
+existing contracts.
 
 ## Local registration
 

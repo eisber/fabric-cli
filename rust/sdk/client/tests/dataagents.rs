@@ -712,13 +712,89 @@ async fn original_signal_is_observed_after_decode_for_every_public_read() {
             .await
             .map(|_| ()),
         };
-        assert!(
-            result.is_err(),
-            "{kind} returned decoded success after its signal became ready"
-        );
+        let Err(DataAgentError::Response(error)) = result else {
+            panic!("{kind} returned no final-checkpoint response evidence");
+        };
+        assert_eq!(error.error.kind, OperationErrorKind::Cancelled, "{kind}");
+        assert_eq!(error.response.status, 200);
+        assert_eq!(error.response.body, serde_json::to_vec(&body).unwrap());
+        assert_eq!(error.error.operation_id, None);
+        assert_eq!(error.error.mutation_may_have_occurred, kind == "definition");
+        assert!(!format!("{error:?}").contains("inert"));
         assert_eq!(polls.load(Ordering::SeqCst), 3, "{kind}");
         assert_eq!(executor.requests.lock().unwrap().len(), 1, "{kind}");
     }
+}
+
+#[tokio::test]
+async fn final_signal_retains_real_accepted_definition_handle_and_response() {
+    let response_received = Arc::new(AtomicBool::new(false));
+    let polls = Arc::new(AtomicUsize::new(0));
+    let location = format!("{ROOT}/operations/{OP}");
+    let mut executor = Executor::raw(
+        202,
+        vec![],
+        &[
+            ("Location", &location),
+            ("x-ms-operation-id", OP),
+            ("Retry-After", "30"),
+        ],
+    );
+    executor.cancel_after_reply = Some(response_received.clone());
+    let error = DataAgentRequests::definition(&target(), None)
+        .unwrap()
+        .execute(
+            &client(Arc::default(), Audience::Fabric),
+            &executor,
+            limits(),
+            decode_checkpoint_signal(response_received, polls.clone()),
+        )
+        .await
+        .unwrap_err();
+    let DataAgentError::Response(error) = error else {
+        panic!("accepted definition lost post-response evidence");
+    };
+    assert_eq!(error.error.kind, OperationErrorKind::Cancelled);
+    assert_eq!(error.error.operation_id.as_deref(), Some(OP));
+    assert!(error.error.mutation_may_have_occurred);
+    assert_eq!(error.response.status, 202);
+    assert_eq!(error.response.headers["Location"], location);
+    assert_eq!(error.response.headers["x-ms-operation-id"], OP);
+    assert_eq!(polls.load(Ordering::SeqCst), 3);
+    assert_eq!(executor.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn result_accounting_failure_preserves_the_bounded_observed_response() {
+    let body = serde_json::to_vec(&metadata()).unwrap();
+    let executor = Executor::raw(
+        200,
+        body.clone(),
+        &[("x-ms-request-id", "observed-request")],
+    );
+    let mut bounds = limits();
+    bounds.max_result_bytes = NonZeroUsize::new(body.len() - 1).unwrap();
+    let error = DataAgentRequests::metadata(&target())
+        .unwrap()
+        .execute(
+            &client(Arc::default(), Audience::Fabric),
+            &executor,
+            bounds,
+            pending(),
+        )
+        .await
+        .unwrap_err();
+    let DataAgentError::Response(error) = error else {
+        panic!("result budget failure lost bounded response evidence");
+    };
+    assert_eq!(error.error.kind, OperationErrorKind::Limit);
+    assert_eq!(error.response.status, 200);
+    assert_eq!(error.response.body, body);
+    assert_eq!(
+        error.response.headers["x-ms-request-id"],
+        "observed-request"
+    );
+    assert_eq!(executor.requests.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]

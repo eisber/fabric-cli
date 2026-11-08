@@ -283,6 +283,27 @@ pub enum DataAgentError {
     Operation(OperationError),
     /// Original exact-definition decoder failure, without a metadata fallback.
     Definition(RepresentationError),
+    /// Cancellation or a byte limit after a response, preserving its bounded evidence.
+    Response(Box<ReadResponseError>),
+}
+
+/// Observed native response retained when a later read phase cannot complete.
+///
+/// Fields are inert service data. Debug/Display never format headers or content.
+pub struct ReadResponseError {
+    /// Original session error, including accepted handle and dispatch uncertainty.
+    pub error: OperationError,
+    /// Exact already-bounded HTTP response; this is not a completed read result.
+    pub response: OperationResponse,
+}
+
+impl fmt::Debug for ReadResponseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReadResponseError")
+            .field("status", &self.response.status)
+            .field("bytes", &self.response.body.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl fmt::Display for DataAgentError {
@@ -294,6 +315,7 @@ impl fmt::Display for DataAgentError {
             Self::InvalidResponse => "invalid DataAgent read response",
             Self::Operation(_) => "DataAgent read failed or is incomplete",
             Self::Definition(_) => "DataAgent definition is invalid or incomplete",
+            Self::Response(_) => "DataAgent response was observed but the read did not complete",
         })
     }
 }
@@ -303,6 +325,7 @@ impl std::error::Error for DataAgentError {
         match self {
             Self::Operation(error) => Some(error),
             Self::Definition(error) => Some(error),
+            Self::Response(error) => Some(&error.error),
             _ => None,
         }
     }
@@ -339,11 +362,20 @@ impl<T> ReadRequest<T> {
         limits: RepresentationLimits,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<T, DataAgentError> {
-        let (response, _) = dispatch(client, executor, &self.operation, limits, cancelled).await?;
-        if response.status != 200 {
-            return Err(DataAgentError::InvalidResponse);
-        }
-        (self.decoder)(&response.body, &self.target)
+        dispatch(
+            client,
+            executor,
+            &self.operation,
+            limits,
+            cancelled,
+            |response, _| {
+                if response.status != 200 {
+                    return Err(DataAgentError::InvalidResponse);
+                }
+                (self.decoder)(&response.body, &self.target)
+            },
+        )
+        .await
     }
 }
 
@@ -446,18 +478,26 @@ impl DefinitionRequest {
         limits: RepresentationLimits,
         cancelled: impl Future<Output = ()> + Send,
     ) -> Result<DefinitionRead, DataAgentError> {
-        let (response, operation_id) =
-            dispatch(client, executor, &self.operation, limits, cancelled).await?;
-        if response.status == 202 {
-            return Ok(DefinitionRead::Accepted {
-                operation_id: operation_id.ok_or(DataAgentError::InvalidResponse)?,
-            });
-        }
-        if response.status != 200 {
-            return Err(DataAgentError::InvalidResponse);
-        }
-        DefinitionRead::from_completed_result(&response.body, limits)
-            .map_err(DataAgentError::Definition)
+        dispatch(
+            client,
+            executor,
+            &self.operation,
+            limits,
+            cancelled,
+            |response, operation_id| {
+                if response.status == 202 {
+                    return Ok(DefinitionRead::Accepted {
+                        operation_id: operation_id.ok_or(DataAgentError::InvalidResponse)?,
+                    });
+                }
+                if response.status != 200 {
+                    return Err(DataAgentError::InvalidResponse);
+                }
+                DefinitionRead::from_completed_result(&response.body, limits)
+                    .map_err(DataAgentError::Definition)
+            },
+        )
+        .await
     }
 }
 
@@ -512,13 +552,14 @@ fn make_read<T>(
     })
 }
 
-async fn dispatch(
+async fn dispatch<T>(
     client: &Client,
     executor: &dyn OperationExecutor,
     operation: &ResourceOperation,
     limits: RepresentationLimits,
     cancelled: impl Future<Output = ()> + Send,
-) -> Result<(OperationResponse, Option<String>), DataAgentError> {
+    decode: impl FnOnce(&OperationResponse, Option<String>) -> Result<T, DataAgentError>,
+) -> Result<T, DataAgentError> {
     let operation =
         FabricOperation::from_resource(operation).map_err(|_| DataAgentError::InvalidInput)?;
     let mut session = OperationSession::with_context(
@@ -536,15 +577,23 @@ async fn dispatch(
         .await
         .map_err(DataAgentError::Operation)?;
     if response.body.len() > limits.max_result_bytes.get() {
-        return Err(DataAgentError::Operation(
-            session.evidence(OperationErrorKind::Limit),
-        ));
+        return Err(DataAgentError::Response(Box::new(ReadResponseError {
+            error: session.evidence(OperationErrorKind::Limit),
+            response,
+        })));
     }
     session
         .check_cancelled()
         .await
         .map_err(DataAgentError::Operation)?;
-    Ok((response, session.operation_id().map(str::to_owned)))
+    let result = decode(&response, session.operation_id().map(str::to_owned));
+    if let Err(error) = session.check_cancelled().await {
+        return Err(DataAgentError::Response(Box::new(ReadResponseError {
+            error,
+            response,
+        })));
+    }
+    result
 }
 
 fn decode_metadata(
@@ -589,8 +638,12 @@ fn decode_settings(body: &[u8], _: &DataAgentTarget) -> Result<DataAgentSettings
 }
 
 fn decode_datasources(body: &[u8], _: &DataAgentTarget) -> Result<DatasourcePage, DataAgentError> {
+    let value: Value = serde_json::from_slice(body).map_err(|_| DataAgentError::InvalidResponse)?;
+    if !value.is_object() {
+        return Err(DataAgentError::InvalidResponse);
+    }
     let page: Page<DatasourceMetadata> =
-        serde_json::from_slice(body).map_err(|_| DataAgentError::InvalidResponse)?;
+        serde_json::from_value(value).map_err(|_| DataAgentError::InvalidResponse)?;
     let next_token = page
         .continuation_token
         .clone()
