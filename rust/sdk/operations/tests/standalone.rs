@@ -93,6 +93,59 @@ fn response(status: u16, body: &str) -> OperationResponse {
     }
 }
 
+#[tokio::test]
+async fn nonpolling_get_rejects_202_but_retains_observed_operation_evidence() {
+    let id = "44444444-4444-4444-8444-444444444444";
+    for completion in [
+        CompletionPolicy::ReturnAccepted,
+        CompletionPolicy::WaitForResult,
+        CompletionPolicy::WaitForCompletion,
+    ] {
+        let credential = Credential::default();
+        let selection = selection();
+        let executor = Executor::default();
+        let mut accepted = response(202, r#"{"futureAcceptance":true}"#);
+        accepted
+            .headers
+            .insert("x-ms-operation-id".into(), id.into());
+        accepted
+            .headers
+            .insert("Location".into(), format!("{ROOT}/v1/operations/{id}"));
+        executor.responses.lock().unwrap().push_back(accepted);
+        let mut session = OperationSession::new(
+            &credential,
+            &selection,
+            executor.clone(),
+            OperationLimits::default(),
+            pending(),
+        );
+        let error = session
+            .execute(
+                FabricOperation::new(
+                    ResourceMethod::Get,
+                    "/v1/workspaces/ws",
+                    Vec::new(),
+                    completion,
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.kind,
+            OperationErrorKind::Http { status: 202, .. }
+        ));
+        assert_eq!(error.operation_id.as_deref(), Some(id));
+        assert_eq!(
+            error.raw_service_error.as_deref(),
+            Some(&json!({"futureAcceptance":true}))
+        );
+        assert!(!error.mutation_may_have_occurred);
+        assert_eq!(*executor.methods.lock().unwrap(), [ResourceMethod::Get]);
+        assert_eq!(credential.0.load(Ordering::SeqCst), 1);
+    }
+}
+
 #[test]
 fn source_read_id_builder_rejects_mutations_and_other_completion_policies() {
     for method in [
@@ -115,6 +168,118 @@ fn source_read_id_builder_rejects_mutations_and_other_completion_policies() {
                 method == ResourceMethod::Get && completion == CompletionPolicy::PythonSynchronous
             );
         }
+    }
+}
+
+#[tokio::test]
+async fn nonpolling_get_202_does_not_relax_identifier_or_operation_origin_guards() {
+    let id = "44444444-4444-4444-8444-444444444444";
+    for (headers, kind, observed_id) in [
+        (
+            vec![("x-ms-operation-id", "not-a-guid".to_owned())],
+            OperationErrorKind::InvalidResponse,
+            None,
+        ),
+        (
+            vec![
+                ("x-ms-operation-id", id.to_owned()),
+                (
+                    "Location",
+                    format!("https://other.fabric.microsoft.com/v1/operations/{id}"),
+                ),
+            ],
+            OperationErrorKind::InvalidLink,
+            Some(id),
+        ),
+        (
+            vec![
+                ("x-ms-operation-id", id.to_owned()),
+                ("Location", format!("{ROOT}/v1/operations/{id}/result")),
+            ],
+            OperationErrorKind::InvalidLink,
+            Some(id),
+        ),
+    ] {
+        let credential = Credential::default();
+        let selection = selection();
+        let executor = Executor::default();
+        let mut accepted = response(202, "{}");
+        accepted
+            .headers
+            .extend(headers.into_iter().map(|(key, value)| (key.into(), value)));
+        executor.responses.lock().unwrap().push_back(accepted);
+        let mut session = OperationSession::new(
+            &credential,
+            &selection,
+            executor.clone(),
+            OperationLimits::default(),
+            pending(),
+        );
+        let error = session
+            .execute(
+                FabricOperation::new(
+                    ResourceMethod::Get,
+                    "/v1/workspaces/ws",
+                    Vec::new(),
+                    CompletionPolicy::ReturnAccepted,
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, kind);
+        assert_eq!(error.operation_id.as_deref(), observed_id);
+        assert!(!error.mutation_may_have_occurred);
+        assert_eq!(*executor.methods.lock().unwrap(), [ResourceMethod::Get]);
+    }
+}
+
+#[tokio::test]
+async fn nonpolling_get_202_keeps_no_id_response_and_body_budget_failures_distinct() {
+    let credential = Credential::default();
+    let selection = selection();
+    for max_bytes in [1, 1024] {
+        let executor = Executor::default();
+        executor
+            .responses
+            .lock()
+            .unwrap()
+            .push_back(response(202, "{}"));
+        let mut session = OperationSession::new(
+            &credential,
+            &selection,
+            executor.clone(),
+            OperationLimits {
+                max_response_bytes: std::num::NonZeroUsize::new(max_bytes).unwrap(),
+                ..OperationLimits::default()
+            },
+            pending(),
+        );
+        let error = session
+            .execute(
+                FabricOperation::new(
+                    ResourceMethod::Get,
+                    "/v1/workspaces/ws",
+                    Vec::new(),
+                    CompletionPolicy::ReturnAccepted,
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap_err();
+        if max_bytes == 1 {
+            assert_eq!(error.kind, OperationErrorKind::Limit);
+            assert_eq!(error.raw_service_error, None);
+        } else {
+            assert!(matches!(
+                error.kind,
+                OperationErrorKind::Http { status: 202, .. }
+            ));
+            assert_eq!(error.raw_service_error.as_deref(), Some(&json!({})));
+        }
+        assert_eq!(error.operation_id, None);
+        assert!(!error.mutation_may_have_occurred);
+        assert_eq!(*executor.methods.lock().unwrap(), [ResourceMethod::Get]);
     }
 }
 

@@ -3,8 +3,8 @@
 
 use super::{KqlError, KqlErrorKind, Observed, PageCoverage};
 use crate::v2::ItemIdentity;
-use serde::Deserialize;
-use serde_json::Value;
+use serde::{Deserialize, Deserializer, de::DeserializeOwned};
+use serde_json::{Map, Value};
 use std::fmt;
 
 /// Native database type; future values remain unknown rather than read/write.
@@ -29,21 +29,40 @@ impl<'de> Deserialize<'de> for DatabaseKind {
 }
 
 /// Observed metadata, not trusted network destinations or authentication scopes.
-#[derive(Clone, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Eq, PartialEq)]
 pub struct KqlProperties {
     /// Parent Eventhouse ID, independent of the KQLDatabase concrete identity.
-    #[serde(default)]
     pub parent_eventhouse_item_id: Observed<String>,
     /// Native query URI; validation occurs only on explicit context resolution.
-    #[serde(default)]
     pub query_service_uri: Observed<String>,
     /// Native ingestion URI; never derived from the query URI.
-    #[serde(default)]
     pub ingestion_service_uri: Observed<String>,
     /// Native kind, with unknown discriminators preserved.
-    #[serde(default)]
     pub database_type: Observed<DatabaseKind>,
+}
+
+impl<'de> Deserialize<'de> for KqlProperties {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut fields = Map::<String, Value>::deserialize(deserializer)?;
+        Ok(Self {
+            parent_eventhouse_item_id: property(&mut fields, "parentEventhouseItemId")?,
+            query_service_uri: property(&mut fields, "queryServiceUri")?,
+            ingestion_service_uri: property(&mut fields, "ingestionServiceUri")?,
+            database_type: property(&mut fields, "databaseType")?,
+        })
+    }
+}
+
+fn property<T: DeserializeOwned, E: serde::de::Error>(
+    fields: &mut Map<String, Value>,
+    key: &str,
+) -> Result<Observed<T>, E> {
+    match fields.remove(key) {
+        None => Ok(Observed::Missing),
+        Some(value) => {
+            serde_json::from_value(value).map_err(|_| E::custom("invalid KQL database property"))
+        }
+    }
 }
 
 impl fmt::Debug for KqlProperties {
@@ -86,6 +105,9 @@ impl KqlDatabase {
         expected: &ItemIdentity,
         context: &crate::RequestContext,
     ) -> Result<Self, KqlError> {
+        if !data.is_object() {
+            return Err(KqlError::new(KqlErrorKind::InvalidResponse));
+        }
         let fields: Fields = serde_json::from_value(data.clone())
             .map_err(|_| KqlError::new(KqlErrorKind::InvalidResponse))?;
         if fields.owner_type != "KQLDatabase"

@@ -110,32 +110,26 @@ impl<T> KqlRequest<T> {
             .execute(operation)
             .await
             .map_err(KqlError::Operation)?;
-        let outcome = if response.status == 202 {
-            ResourceOutcome::Accepted {
-                operation_id: session.operation_id().map(str::to_owned),
-            }
+        if response.headers.iter().any(|(key, media)| {
+            key.eq_ignore_ascii_case("content-type")
+                && !media
+                    .split(';')
+                    .next()
+                    .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/json"))
+        }) {
+            return Err(KqlError::new(KqlErrorKind::UnsupportedCapability));
+        }
+        let data = if response.body.is_empty() {
+            None
         } else {
-            if response.headers.iter().any(|(key, media)| {
-                key.eq_ignore_ascii_case("content-type")
-                    && !media
-                        .split(';')
-                        .next()
-                        .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/json"))
-            }) {
-                return Err(KqlError::new(KqlErrorKind::UnsupportedCapability));
-            }
-            let data = if response.body.is_empty() {
-                None
-            } else {
-                Some(
-                    serde_json::from_slice(&response.body)
-                        .map_err(|_| KqlError::new(KqlErrorKind::InvalidResponse))?,
-                )
-            };
-            ResourceOutcome::Completed {
-                status: response.status,
-                data,
-            }
+            Some(
+                serde_json::from_slice(&response.body)
+                    .map_err(|_| KqlError::new(KqlErrorKind::InvalidResponse))?,
+            )
+        };
+        let outcome = ResourceOutcome::Completed {
+            status: response.status,
+            data,
         };
         self.decode(outcome)
     }
@@ -281,6 +275,9 @@ fn decode_page(
     expected: &Expected,
     context: &RequestContext,
 ) -> Result<KqlDatabasePage, KqlError> {
+    if !data.is_object() {
+        return Err(KqlError::new(KqlErrorKind::InvalidResponse));
+    }
     let fields: PageFields = serde_json::from_value(data.clone())
         .map_err(|_| KqlError::new(KqlErrorKind::InvalidResponse))?;
     if let Observed::Value(uri) = &fields.continuation_uri

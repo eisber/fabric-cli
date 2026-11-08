@@ -720,3 +720,142 @@ async fn cancellation_before_send_never_acquires_credentials() {
     assert!(credential.0.lock().unwrap().is_empty());
     assert!(executor.calls.lock().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn executed_get_202_retains_actual_id_without_polling_or_success() {
+    let credential = Arc::new(Credential::default());
+    let executor = Executor::default();
+    let mut accepted = response(202, json!({"futureAcceptance":true}), "application/json");
+    accepted
+        .headers
+        .insert("x-ms-operation-id".into(), PARENT.into());
+    accepted.headers.insert(
+        "Location".into(),
+        format!("https://dailyapi.fabric.microsoft.com/v1/operations/{PARENT}"),
+    );
+    executor.responses.lock().unwrap().push_back(accepted);
+    let error = KqlDatabaseRequests::get(
+        &target("KQLDatabase", "metadata"),
+        &context(credential.clone()),
+    )
+    .unwrap()
+    .execute(executor.clone(), OperationLimits::default(), pending())
+    .await
+    .unwrap_err();
+    let KqlError::Operation(evidence) = error else {
+        panic!("the shared GET rejection must remain a typed operation error")
+    };
+    assert!(matches!(
+        evidence.kind,
+        fabric_sdk_operations::OperationErrorKind::Http { status: 202, .. }
+    ));
+    assert_eq!(evidence.operation_id.as_deref(), Some(PARENT));
+    assert_eq!(
+        evidence.raw_service_error.as_deref(),
+        Some(&json!({"futureAcceptance":true}))
+    );
+    assert!(!evidence.mutation_may_have_occurred);
+    assert_eq!(executor.calls.lock().unwrap().len(), 1);
+    assert_eq!(
+        *credential.0.lock().unwrap(),
+        ["https://api.fabric.microsoft.com/.default"]
+    );
+}
+
+#[test]
+fn native_get_requires_object_not_positional_array() {
+    let positional = json!([ITEM, WS, "Native.Name", "KQLDatabase", null, null]);
+    assert_eq!(
+        get(positional).unwrap_err().kind(),
+        Some(KqlErrorKind::InvalidResponse)
+    );
+}
+
+#[test]
+fn native_nonnull_properties_require_objects_not_positional_arrays() {
+    for properties in [
+        json!([]),
+        json!([PARENT, ORIGIN, INGEST, "ReadWrite"]),
+        json!([null, null, null, null]),
+    ] {
+        let mut source = data();
+        source["properties"] = properties.clone();
+        assert_eq!(
+            get(source).unwrap_err().kind(),
+            Some(KqlErrorKind::InvalidResponse)
+        );
+        assert!(serde_json::from_value::<KqlProperties>(properties).is_err());
+    }
+
+    for properties in [json!({}), Value::Null] {
+        let mut source = data();
+        source["properties"] = properties;
+        assert!(get(source).is_ok());
+    }
+}
+
+#[tokio::test]
+async fn executed_metadata_arrays_cannot_become_successful_reads() {
+    let executor = Executor::default();
+    executor.responses.lock().unwrap().push_back(response(
+        200,
+        json!([ITEM, WS, "Native.Name", "KQLDatabase", null, null]),
+        "application/json",
+    ));
+    assert!(
+        KqlDatabaseRequests::get(&target("KQLDatabase", "metadata"), &context(Arc::default()))
+            .unwrap()
+            .execute(executor.clone(), OperationLimits::default(), pending())
+            .await
+            .is_err()
+    );
+    let mut source = data();
+    source["properties"] = json!([PARENT, ORIGIN, INGEST, "ReadWrite"]);
+    executor
+        .responses
+        .lock()
+        .unwrap()
+        .push_back(response(200, source, "application/json"));
+    assert!(
+        KqlDatabaseRequests::get(&target("KQLDatabase", "metadata"), &context(Arc::default()))
+            .unwrap()
+            .execute(executor.clone(), OperationLimits::default(), pending())
+            .await
+            .is_err()
+    );
+    executor.responses.lock().unwrap().push_back(response(
+        200,
+        json!([[], null, null]),
+        "application/json",
+    ));
+    assert!(
+        list_request(None)
+            .execute(executor.clone(), OperationLimits::default(), pending())
+            .await
+            .is_err()
+    );
+    assert_eq!(executor.calls.lock().unwrap().len(), 3);
+}
+
+#[test]
+fn native_list_requires_object_envelope_and_keeps_legitimate_empty_page() {
+    for body in [json!([[], null, null]), json!([[], "", ""]), json!([])] {
+        let error = list_request(None)
+            .decode(ResourceOutcome::Completed {
+                status: 200,
+                data: Some(body),
+            })
+            .unwrap_err();
+        assert_eq!(error.kind(), Some(KqlErrorKind::InvalidResponse));
+    }
+    let page = list_request(None)
+        .decode(ResourceOutcome::Completed {
+            status: 200,
+            data: Some(json!({"value":[],"continuationToken":null,"future":[]})),
+        })
+        .unwrap();
+    assert!(page.value.is_empty());
+    assert_eq!(page.coverage(), PageCoverage::TerminalPage);
+    assert_eq!(page.continuation_token, Observed::Null);
+    assert_eq!(page.data()["future"], json!([]));
+}

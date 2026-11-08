@@ -21,11 +21,18 @@ Requests clone the original `RequestContext` and use the shared
 `OperationSession` and caller-injected executor, cancellation and limits.
 The selected Fabric host is retained with the Fabric audience; no alternate
 credential or endpoint is selected. HTTP 200 with JSON metadata is a completed
-read. Unexpected 202 retains its operation ID but is not success and does not
-start polling. Denied/absent/throttled/transport failures retain their shared
+read. An actually executed GET 202 remains a rejected shared operation error
+with HTTP status, validated observed operation ID and raw response evidence,
+not a completed metadata result or a polling request. A directly supplied
+accepted outcome is likewise rejected by the decoder. Invalid acceptance IDs
+and foreign operation links still fail the shared validation. The supported
+nonpolling read statuses and completion policy are unchanged.
+Denied/absent/throttled/transport failures retain their shared
 classification, never `exists=false` or empty metadata.
 
-Known fields and concrete owner identity are validated. Missing, null and future
+Native GET/LIST roots and provided non-null properties must be JSON objects;
+positional arrays cannot deserialize into native records or an empty successful
+page. Known fields and concrete owner identity are validated. Missing, null and future
 database kinds remain distinct; unknown native JSON fields are retained in the
 raw data projection. Observed endpoint strings are inert metadata until context
 resolution. Non-JSON advertised response media is rejected. The shared executor
@@ -102,5 +109,8 @@ Selected preparation root: `207a140a-9f78-4f31-931d-1bdb9803b376` revision 5.
 synthetic metadata and caller-injected shared execution. Coverage includes exact
 routes/context/aliases, wrong-owner/media/identity rejection, unknown/null
 fields, explicit resource/selector choices, unsafe endpoints, genuine paging,
-unexpected acceptance, denied/throttled errors and cancellation before token/
-send. These offline fixtures do not contact Fabric, Kusto or an identity provider.
+unexpected acceptance through the real injected executor, positional-array
+rejection, denied/throttled errors and cancellation before token/send.
+Shared-operation regressions retain GET 202 evidence without polling or relaxing
+origin, identifier, response-bound or status guards. These offline fixtures do
+not contact Fabric, Kusto or an identity provider.

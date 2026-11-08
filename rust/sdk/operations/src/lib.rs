@@ -580,6 +580,15 @@ impl<'a, E: OperationExecutor> OperationSession<'a, E> {
                     operation.accept,
                 )
                 .await?;
+            if response.status == 202 {
+                self.raw_service_error = serde_json::from_slice(&response.body).ok().map(Box::new);
+                self.operation_id = accepted_id(&response)?;
+                if let Some(id) = &self.operation_id
+                    && let Some(uri) = header(&response, "Location")?
+                {
+                    validate_link(&self.endpoint, uri, &format!("/v1/operations/{id}"))?;
+                }
+            }
             ensure_status(&response, &[200, 201, 204])?;
             return Ok(response);
         } else {
