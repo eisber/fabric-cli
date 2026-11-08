@@ -39,6 +39,15 @@ incomplete: native DACPAC/SQL semantics, decoded `.platform` JSON, permission,
 service acceptance, reference existence, round-trip and runtime correctness
 remain unestablished. Structurally valid opaque bytes need not be a valid DACPAC.
 
+The raw wire-byte limit is enforced before format inspection. A unique string
+`format` in a syntactically complete bare JSON object selects the profile before
+part admission: explicit SQLproj or another unsupported format returns no verdict
+even if its parts are empty, missing, malformed or would fail native admission.
+Format inspection uses the existing JSON deserializer and does not parse native
+payloads or evaluate a second schema. Duplicate/incorrectly typed format fields,
+malformed JSON and trailing input retain the original strict codec's structural
+findings; absent format retains the documented DACPAC default.
+
 SDK callers can reuse this check before an explicitly selected create/update,
 but local validation cannot grant approval, imply an upsert, replace native
 service errors or establish an immutable checked-byte submission on their behalf.

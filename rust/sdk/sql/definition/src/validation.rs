@@ -10,7 +10,7 @@ use crate::{
     DefinitionError, DefinitionErrorKind as Kind, DefinitionLimits, SqlDatabaseDefinitionFormat,
     parse_sql_database_definition,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::fmt;
 
@@ -216,6 +216,19 @@ pub fn validate(
     {
         return Err(ValidationError::Unsupported);
     }
+    if bytes.len() > limits.max_wire_bytes.get() {
+        return Err(ValidationError::Budget(DefinitionError::limit(
+            crate::DefinitionLimitKind::WireBytes,
+            None,
+        )));
+    }
+    // Select the profile independently of part admission. Ignored fields are
+    // still checked by the original strict codec, including duplicate keys.
+    if serde_json::from_slice::<DocumentFormat>(bytes)
+        .is_ok_and(|document| document.format.is_some_and(|format| format != "dacpac"))
+    {
+        return Err(ValidationError::Unsupported);
+    }
     let findings = match parse_sql_database_definition(bytes, limits) {
         Ok(definition) if definition.format() == SqlDatabaseDefinitionFormat::Dacpac => Vec::new(),
         Ok(_) => return Err(ValidationError::Unsupported),
@@ -260,6 +273,11 @@ pub fn validate(
             finding_policy: "first_failure",
         },
     })
+}
+
+#[derive(Deserialize)]
+struct DocumentFormat {
+    format: Option<String>,
 }
 
 fn finding(error: DefinitionError) -> Finding {

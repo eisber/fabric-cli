@@ -57,6 +57,9 @@ completed local check report (`data.valid: false`) on stdout. The envelope's
 Unsupported rules/formats, read/path errors, exhausted budgets, cancellation
 and deadlines have no verdict, use stderr, and exit nonzero. Invalid command
 arguments exit 2. Output failure never repeats the input operation.
+An explicit unsupported document format is rejected before format-dependent
+part admission, including empty or malformed SQLproj part structures. It cannot
+be mislabeled as a completed invalid DACPAC check.
 
 Validate uses explicit result format or JSON and never reads configuration,
 saved identity, environment target defaults, stdin, remote metadata or schemas.

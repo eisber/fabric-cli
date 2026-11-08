@@ -160,9 +160,22 @@ fn unsupported_document_format_precedes_format_dependent_admission_failures() {
         br#"{"parts":[]}"#,
         br#"{"format":"dacpac","parts":[null]}"#,
         br#"{"format":"dacpac","format":"sqlproj","parts":[]}"#,
+        br#"{"format":null,"parts":[]}"#,
+        br#"{"format":123,"parts":[]}"#,
+        br#"{"format":"sqlproj","parts":[]} trailing"#,
+        br#"{"format":"sqlproj","parts":[}"#,
     ] {
         assert!(!report(bytes).valid);
     }
+    let unsupported = br#"{"format":"sqlproj","parts":[]}"#;
+    let budget = fabric_sdk_sql_definition::DefinitionLimits {
+        max_wire_bytes: nz(unsupported.len() - 1),
+        ..limits()
+    };
+    assert!(matches!(
+        validation::validate(unsupported, "application/json", "dacpac", "1.0", budget),
+        Err(ValidationError::Budget(error)) if error.kind == Kind::Limit(Limit::WireBytes)
+    ));
     assert!(report(&body("model.dacpac")).valid);
 }
 
