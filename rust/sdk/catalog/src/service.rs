@@ -199,18 +199,18 @@ pub enum SyncError {
         /// Shared receipt-construction failure, retaining its original outcome.
         cause: Box<ReceiptBuildError<Value>>,
         /// Original bounded native response.
-        response: Option<OperationResponse>,
+        response: Option<Box<OperationResponse>>,
         /// Original execution failure.
-        error: Option<OperationError>,
+        error: Option<Box<OperationError>>,
     },
     /// Source-evidence validation failed without losing the executed receipt.
     Evidence {
         /// Shared validation failure retains the original receipt and facts.
         cause: Box<SourceEvidenceError<Value>>,
         /// Original bounded native response.
-        response: Option<OperationResponse>,
+        response: Option<Box<OperationResponse>>,
         /// Original execution failure.
-        error: Option<OperationError>,
+        error: Option<Box<OperationError>>,
     },
 }
 
@@ -348,15 +348,15 @@ pub async fn synchronize(
     let receipt =
         ExecutionReceipt::new(approved, outcome, evidence).map_err(|cause| SyncError::Receipt {
             cause,
-            response: response.clone(),
-            error: error.clone(),
+            response: response.clone().map(Box::new),
+            error: error.clone().map(Box::new),
         })?;
     let receipt = receipt
         .with_source_evidence(vec![source])
         .map_err(|cause| SyncError::Evidence {
             cause,
-            response: response.clone(),
-            error: error.clone(),
+            response: response.clone().map(Box::new),
+            error: error.clone().map(Box::new),
         })?;
     Ok(SyncReport {
         receipt,
