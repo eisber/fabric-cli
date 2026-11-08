@@ -29,6 +29,7 @@ use std::{
 
 #[path = "headless.rs"]
 mod headless;
+mod v2_exists_main;
 mod v2_search_main;
 
 // Reuse the existing binary-private selector without importing v1 dispatch/state.
@@ -41,6 +42,22 @@ mod native_read {
 }
 
 fn main() -> std::process::ExitCode {
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    if args.first().and_then(|value| value.to_str()) == Some("exists") {
+        return match v2_exists_main::run(args) {
+            Ok(exit) => std::process::ExitCode::from(exit),
+            Err((code, message, evidence, exit)) => {
+                let result = serde_json::to_writer(
+                    io::stderr().lock(),
+                    &json!({"error":{"code":code,"message":message},"evidence":evidence}),
+                );
+                if result.is_err() {
+                    return std::process::ExitCode::from(1);
+                }
+                std::process::ExitCode::from(exit)
+            }
+        };
+    }
     match run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err((code, message, evidence, exit)) => {
@@ -116,7 +133,7 @@ fn run() -> Result<(), Failure> {
         return Ok(());
     }
     if args.as_slice() == [std::ffi::OsStr::new("--help")] {
-        writeln!(io::stdout().lock(), "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n\nRun a command with --help for its supported schema.\nRequires explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.")
+        writeln!(io::stdout().lock(), "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n\nRun a command with --help for its supported schema.\nRequires explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         return Ok(());
     }
