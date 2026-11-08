@@ -689,116 +689,6 @@ async fn approval_decline_and_pre_dispatch_cancellation_make_zero_posts() {
                 receipt: None,
             })
         }
-
-        #[tokio::test]
-        async fn context_substitution_is_rejected_before_credential_or_mutation_work() {
-            let harness = Harness::new([]);
-            let prepared = harness.prepare(0, 1).await.unwrap();
-            let other = RequestContext::new(
-                Arc::new(Credential),
-                CredentialSelection::new("offline", "tenant", Audience::Fabric).unwrap(),
-            );
-            assert_eq!(
-                prepared.require_context(&other).err().unwrap().kind,
-                Kind::TargetMismatch
-            );
-            let failure = prepared
-                .authorize(&mut Approve)
-                .unwrap()
-                .execute(
-                    &other,
-                    &(&harness),
-                    OperationLimits::default(),
-                    false,
-                    pending(),
-                )
-                .await
-                .err()
-                .unwrap();
-            assert_eq!(failure.kind, Kind::TargetMismatch);
-            assert!(failure.receipt.is_none());
-            assert_eq!(harness.post_count(), 0);
-        }
-
-        #[tokio::test]
-        async fn post_acceptance_cancellation_and_request_budget_keep_both_handles() {
-            for cancellation in [true, false] {
-                let harness = Harness::new([Ok(accepted())]);
-                let approved = harness.approved().await;
-                let signal = poll_fn(|_| {
-                    if cancellation && harness.post_count() > 0 {
-                        Poll::Ready(())
-                    } else {
-                        Poll::Pending
-                    }
-                });
-                let limits = if cancellation {
-                    OperationLimits::default()
-                } else {
-                    OperationLimits {
-                        max_requests: NonZeroUsize::new(1).unwrap(),
-                        ..Default::default()
-                    }
-                };
-                let failure = approved
-                    .execute(&harness.context, &(&harness), limits, true, signal)
-                    .await
-                    .err()
-                    .unwrap();
-                assert!(matches!(
-                    failure.operation.unwrap().kind,
-                    OperationErrorKind::Cancelled | OperationErrorKind::Limit
-                ));
-                let receipt = failure.receipt.unwrap();
-                assert_eq!(receipt.operation_id.as_deref(), Some(OPERATION));
-                assert_eq!(receipt.deployment_id.as_deref(), Some(DEPLOYMENT));
-                assert_eq!(receipt.outcome, DeploymentOutcome::Unknown);
-                assert!(receipt.mutation_may_have_occurred);
-                assert_eq!(harness.calls.lock().unwrap().len(), 3);
-                assert_eq!(harness.post_count(), 1);
-            }
-        }
-
-        #[tokio::test]
-        async fn default_step_receipt_preserves_effect_ids_but_omits_raw_service_text() {
-            let mut reply = completed("Failed");
-            let mut value: Value = serde_json::from_slice(&reply.body).unwrap();
-            value["executionPlan"] = json!({"steps":[{
-                "index":0,"status":"Succeeded","description":"private-service-text",
-                "sourceAndTarget":{"sourceItemId":ITEM,"targetItemId":DEPLOYMENT,"itemType":"Notebook","sourceItemDisplayName":"private-service-text"},
-                "error":{"errorCode":"NativeFailure","message":"private-service-text"}
-            }]});
-            reply.body = serde_json::to_vec(&value).unwrap();
-            let harness = Harness::new([Ok(reply)]);
-            let failure = harness
-                .approved()
-                .await
-                .execute(
-                    &harness.context,
-                    &(&harness),
-                    OperationLimits::default(),
-                    false,
-                    pending(),
-                )
-                .await
-                .err()
-                .unwrap();
-            let receipt = failure.receipt.unwrap();
-            assert_eq!(receipt.outcome, DeploymentOutcome::Partial);
-            let safe = receipt.to_value();
-            assert_eq!(
-                safe["evidence"]["executionPlan"]["steps"][0]["sourceAndTarget"]["sourceItemId"],
-                ITEM
-            );
-            assert!(!safe.to_string().contains("private-service-text"));
-            assert!(
-                receipt
-                    .execution_plan
-                    .unwrap()
-                    .to_string()
-                    .contains("private-service-text")
-            );
-        }
     }
     let harness = Harness::new([]);
     assert_eq!(
@@ -827,4 +717,114 @@ async fn approval_decline_and_pre_dispatch_cancellation_make_zero_posts() {
         .unwrap();
     assert!(!failure.receipt.unwrap().mutation_may_have_occurred);
     assert_eq!(harness.post_count(), 0);
+}
+
+#[tokio::test]
+async fn context_substitution_is_rejected_before_credential_or_mutation_work() {
+    let harness = Harness::new([]);
+    let prepared = harness.prepare(0, 1).await.unwrap();
+    let other = RequestContext::new(
+        Arc::new(Credential),
+        CredentialSelection::new("offline", "tenant", Audience::Fabric).unwrap(),
+    );
+    assert_eq!(
+        prepared.require_context(&other).err().unwrap().kind,
+        Kind::TargetMismatch
+    );
+    let failure = prepared
+        .authorize(&mut Approve)
+        .unwrap()
+        .execute(
+            &other,
+            &(&harness),
+            OperationLimits::default(),
+            false,
+            pending(),
+        )
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(failure.kind, Kind::TargetMismatch);
+    assert!(failure.receipt.is_none());
+    assert_eq!(harness.post_count(), 0);
+}
+
+#[tokio::test]
+async fn post_acceptance_cancellation_and_request_budget_keep_both_handles() {
+    for cancellation in [true, false] {
+        let harness = Harness::new([Ok(accepted())]);
+        let approved = harness.approved().await;
+        let signal = poll_fn(|_| {
+            if cancellation && harness.post_count() > 0 {
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        });
+        let limits = if cancellation {
+            OperationLimits::default()
+        } else {
+            OperationLimits {
+                max_requests: NonZeroUsize::new(1).unwrap(),
+                ..Default::default()
+            }
+        };
+        let failure = approved
+            .execute(&harness.context, &(&harness), limits, true, signal)
+            .await
+            .err()
+            .unwrap();
+        assert!(matches!(
+            failure.operation.unwrap().kind,
+            OperationErrorKind::Cancelled | OperationErrorKind::Limit
+        ));
+        let receipt = failure.receipt.unwrap();
+        assert_eq!(receipt.operation_id.as_deref(), Some(OPERATION));
+        assert_eq!(receipt.deployment_id.as_deref(), Some(DEPLOYMENT));
+        assert_eq!(receipt.outcome, DeploymentOutcome::Unknown);
+        assert!(receipt.mutation_may_have_occurred);
+        assert_eq!(harness.calls.lock().unwrap().len(), 3);
+        assert_eq!(harness.post_count(), 1);
+    }
+}
+
+#[tokio::test]
+async fn default_step_receipt_preserves_effect_ids_but_omits_raw_service_text() {
+    let mut reply = completed("Failed");
+    let mut value: Value = serde_json::from_slice(&reply.body).unwrap();
+    value["executionPlan"] = json!({"steps":[{
+        "index":0,"status":"Succeeded","description":"private-service-text",
+        "sourceAndTarget":{"sourceItemId":ITEM,"targetItemId":DEPLOYMENT,"itemType":"Notebook","sourceItemDisplayName":"private-service-text"},
+        "error":{"errorCode":"NativeFailure","message":"private-service-text"}
+    }]});
+    reply.body = serde_json::to_vec(&value).unwrap();
+    let harness = Harness::new([Ok(reply)]);
+    let failure = harness
+        .approved()
+        .await
+        .execute(
+            &harness.context,
+            &(&harness),
+            OperationLimits::default(),
+            false,
+            pending(),
+        )
+        .await
+        .err()
+        .unwrap();
+    let receipt = failure.receipt.unwrap();
+    assert_eq!(receipt.outcome, DeploymentOutcome::Partial);
+    let safe = receipt.to_value();
+    assert_eq!(
+        safe["evidence"]["executionPlan"]["steps"][0]["sourceAndTarget"]["sourceItemId"],
+        ITEM
+    );
+    assert!(!safe.to_string().contains("private-service-text"));
+    assert!(
+        receipt
+            .execution_plan
+            .unwrap()
+            .to_string()
+            .contains("private-service-text")
+    );
 }
