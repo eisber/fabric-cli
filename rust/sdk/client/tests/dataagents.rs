@@ -605,6 +605,123 @@ async fn datasource_invalid_pages_and_unexpected_acceptance_are_not_complete_emp
 }
 
 #[tokio::test]
+async fn datasource_pages_require_native_object_envelopes_not_positional_arrays() {
+    let client = client(Arc::default(), Audience::Fabric);
+    for stage in [Stage::Staging, Stage::Published] {
+        for body in [
+            json!([[], null, null]),
+            json!([[datasource()], null, null]),
+            json!([[], "next", null]),
+            json!(null),
+        ] {
+            let executor = Executor::json(200, &body);
+            assert!(
+                matches!(
+                    DataAgentRequests::datasources_page(&target(), stage, None)
+                        .unwrap()
+                        .execute(&client, &executor, limits(), pending())
+                        .await,
+                    Err(DataAgentError::InvalidResponse)
+                ),
+                "nonobject page was accepted: {body}"
+            );
+            assert_eq!(executor.requests.lock().unwrap().len(), 1);
+        }
+        for body in [
+            json!({"value":[]}),
+            json!({"value":[],"continuationToken":null,"continuationUri":null,"future":42}),
+        ] {
+            let executor = Executor::json(200, &body);
+            assert!(
+                DataAgentRequests::datasources_page(&target(), stage, None)
+                    .unwrap()
+                    .execute(&client, &executor, limits(), pending())
+                    .await
+                    .unwrap()
+                    .is_complete()
+            );
+        }
+    }
+}
+
+fn decode_checkpoint_signal(
+    response_received: Arc<AtomicBool>,
+    after_response_polls: Arc<AtomicUsize>,
+) -> impl Future<Output = ()> + Send {
+    poll_fn(move |_| {
+        if response_received.load(Ordering::SeqCst)
+            && after_response_polls.fetch_add(1, Ordering::SeqCst) >= 2
+        {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    })
+}
+
+#[tokio::test]
+async fn original_signal_is_observed_after_decode_for_every_public_read() {
+    let client = client(Arc::default(), Audience::Fabric);
+    for kind in [
+        "metadata",
+        "settings-staging",
+        "settings-published",
+        "datasources",
+        "definition",
+    ] {
+        let response_received = Arc::new(AtomicBool::new(false));
+        let polls = Arc::new(AtomicUsize::new(0));
+        let body = match kind {
+            "metadata" => metadata(),
+            "definition" => definition(),
+            "datasources" => json!({"value":[datasource()]}),
+            _ => json!({"aiInstructions":"inert stored source"}),
+        };
+        let mut executor = Executor::json(200, &body);
+        executor.cancel_after_reply = Some(response_received.clone());
+        let cancelled = decode_checkpoint_signal(response_received, polls.clone());
+        // The first two post-response checkpoints cover transport and the
+        // existing pre-decode check. The same signal becomes ready at the
+        // final decode/accounting checkpoint, without sleeping or a new timer.
+        let result = match kind {
+            "metadata" => DataAgentRequests::metadata(&target())
+                .unwrap()
+                .execute(&client, &executor, limits(), cancelled)
+                .await
+                .map(|_| ()),
+            "definition" => DataAgentRequests::definition(&target(), None)
+                .unwrap()
+                .execute(&client, &executor, limits(), cancelled)
+                .await
+                .map(|_| ()),
+            "datasources" => DataAgentRequests::datasources_page(&target(), Stage::Staging, None)
+                .unwrap()
+                .execute(&client, &executor, limits(), cancelled)
+                .await
+                .map(|_| ()),
+            _ => DataAgentRequests::settings(
+                &target(),
+                if kind == "settings-staging" {
+                    Stage::Staging
+                } else {
+                    Stage::Published
+                },
+            )
+            .unwrap()
+            .execute(&client, &executor, limits(), cancelled)
+            .await
+            .map(|_| ()),
+        };
+        assert!(
+            result.is_err(),
+            "{kind} returned decoded success after its signal became ready"
+        );
+        assert_eq!(polls.load(Ordering::SeqCst), 3, "{kind}");
+        assert_eq!(executor.requests.lock().unwrap().len(), 1, "{kind}");
+    }
+}
+
+#[tokio::test]
 async fn finite_byte_bounds_fail_at_n_plus_one_without_truncating_metadata() {
     let body = serde_json::to_vec(&metadata()).unwrap();
     for bound in [body.len(), body.len() - 1] {
