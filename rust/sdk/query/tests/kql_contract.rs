@@ -27,6 +27,8 @@ const ROOT: &str = "https://offline.kusto.fabric.microsoft.com/";
 const SCOPE: &str = "https://api.kusto.windows.net/.default";
 const PRIVATE: &str = "private-query-sentinel";
 
+type Fragments = VecDeque<Result<Vec<u8>, NativeError>>;
+
 fn binding(database: &str, scope: &str) -> EngineBinding {
     EngineBinding::kusto(
         "query.kql",
@@ -89,7 +91,7 @@ struct Observation {
 }
 
 struct Body {
-    fragments: VecDeque<Result<Vec<u8>, NativeError>>,
+    fragments: Fragments,
     observation: Arc<Mutex<Observation>>,
     pending_read: bool,
 }
@@ -125,7 +127,7 @@ impl Drop for Body {
 struct Script {
     binding: EngineBinding,
     capability: QueryCapability,
-    fragments: Mutex<Option<VecDeque<Result<Vec<u8>, NativeError>>>>,
+    fragments: Mutex<Option<Fragments>>,
     observation: Arc<Mutex<Observation>>,
     status: u16,
     media: Option<String>,

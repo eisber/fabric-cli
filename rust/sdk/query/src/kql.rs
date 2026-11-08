@@ -119,7 +119,7 @@ impl KqlQuery {
     pub fn with_server_timeout(mut self, timeout: Duration) -> Result<Self, QueryError> {
         if timeout.is_zero()
             || timeout > Duration::from_secs(3600)
-            || timeout.subsec_nanos() % 1_000_000 != 0
+            || !timeout.subsec_nanos().is_multiple_of(1_000_000)
         {
             return Err(QueryError::new(QueryErrorKind::InvalidInput));
         }
