@@ -284,8 +284,10 @@ async fn total_dispatch_and_native_retention_limits_preserve_earlier_evidence() 
         reply(200, json!({"value":[item_data()]})),
         reply(200, item_data()),
     ]);
-    let mut limits = ExistsLimits::default();
-    limits.retention = RetentionLimits::new(1, 4096, 4096, 1024, 8).unwrap();
+    let limits = ExistsLimits {
+        retention: RetentionLimits::new(1, 4096, 4096, 1024, 8).unwrap(),
+        ..ExistsLimits::default()
+    };
     let report = fixture.run(named_item(), limits).await;
     assert_eq!(report.exists(), None);
     assert_eq!(report.reason(), "BudgetExceeded");
@@ -439,8 +441,10 @@ async fn report_byte_limit_returns_original_evidence_and_new_invocations_are_fre
     let request = ExistsRequest::new(TENANT, item_target()).unwrap();
     let prepared = prepare_exists(&request).unwrap();
     let approved = prepared.authorize(&mut ReadPolicy).unwrap();
-    let mut limits = ExistsLimits::default();
-    limits.max_output_bytes = NonZeroUsize::new(1).unwrap();
+    let limits = ExistsLimits {
+        max_output_bytes: NonZeroUsize::new(1).unwrap(),
+        ..ExistsLimits::default()
+    };
     let error = fixture
         .host()
         .execute(&approved, &request, limits, pending())

@@ -7,7 +7,7 @@
 use crate::get_target::{GetRepresentation, GetTarget, is_id};
 use clap::{Arg, Command, error::ErrorKind};
 use fabric_sdk::{
-    api::v2_outcome::RetentionLimits,
+    api::v2_outcome::{RetentionError, RetentionLimits},
     exists::{
         ExistsError, ExistsLimits, ExistsReport, ExistsRequest, ExistsTarget, MetadataSelector,
     },
