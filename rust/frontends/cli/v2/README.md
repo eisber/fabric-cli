@@ -26,6 +26,61 @@ operation and no `client`, `local`, or `tool` group alias. Completion and MCP
 deployment are not commands in this head. Unsupported resource roots fail;
 this package does not emulate other v2 owners' pending resource operations.
 
+## Offline structural validate
+
+The separate root `validate` checks one explicitly supplied SQLDatabase DACPAC
+definition JSON file. It leaves the six `cli` leaves and all v1 roots unchanged.
+It consumes the existing neutral operation registration and strict SQLDatabase
+codec, not another schema catalogue, validator engine or deployment plan.
+
+```text
+fab-cli validate --type SQLDatabase --native-format dacpac --rule-version 1.0 --schema
+fab-cli validate --type SQLDatabase --native-format dacpac --rule-version 1.0 --input ABSOLUTE_FILE --max-bytes 4096 --max-decoded-bytes 4096 --max-part-bytes 4096 --max-parts 16 --max-path-bytes 1024 --max-depth 32
+```
+
+The numeric values above are **example caller budgets**, not defaults or provider
+limits. All six positive limits are required for checking bytes; `--schema`
+instead bypasses input acquisition and cannot be combined with input/budgets.
+The media is explicitly advertised as `application/json` (`--media-type`).
+`--native-format` is distinct from result `--format json|text`.
+
+The input is a bare `{ "format": "dacpac", "parts": [...] }` object, not a wrapped
+service response or the binary package itself. Omitted document format uses the
+codec's documented DACPAC default; unknown formats are not coerced. Paths,
+canonical Base64 and a nonempty primary are checked; package and `.platform`
+semantics are not. The SDK report retains rule version, coverage, severity,
+safe part-ordinal locations and the existing codec's first-failure policy.
+
+Valid documents exit 0. Invalid documents exit 1 while preserving their
+completed local check report (`data.valid: false`) on stdout. The envelope's
+`succeeded` means the check completed, **not** that the document is valid.
+Unsupported rules/formats, read/path errors, exhausted budgets, cancellation
+and deadlines have no verdict, use stderr, and exit nonzero. Invalid command
+arguments exit 2. Output failure never repeats the input operation.
+
+Validate uses explicit result format or JSON and never reads configuration,
+saved identity, environment target defaults, stdin, remote metadata or schemas.
+It never calls authentication, HTTP, a model, SQL, a package builder, or
+create/update. No new rule/schema acquisition is implied by `$schema` in input.
+The existing `fabric-sdk-discovery` operation-input catalogue is unchanged.
+
+Input must be an absolute ordinary local file beneath nonlinked directories.
+Directories, traversal, Windows UNC/device paths, symlinks/reparse points and
+Unix hard-linked files are rejected. Windows directory handles prevent ancestor
+replacement and the file is held without write/delete sharing during reading.
+Unix callers must own a stable directory namespace during acquisition; handle
+identity checks do not attest hostile concurrent ancestor retargeting. The host
+does not attest mount/cloud-placeholder policy: callers must supply materialized
+files on an approved local filesystem. No remote download fallback is attempted.
+A 30-second total host deadline is checked at input-read boundaries and before
+publishing the bounded synchronous codec result; it does not remotely cancel
+anything or preempt a native parser in the middle of an admitted document.
+
+See the [SDK structural profile](../../../sdk/sql/definition/README.md#local-structural-validation)
+for pinned API/source provenance and exact nonclaims. Other types/native grammar,
+SQL project compilation, complete report/model semantics and live probes remain
+unsupported, not successful empty finding lists.
+
 ## Results and host effects
 
 The default is one newline-terminated JSON envelope on stdout. `--format text`

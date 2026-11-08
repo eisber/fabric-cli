@@ -13,6 +13,7 @@ pub mod parser;
 pub mod report;
 pub mod show;
 pub mod upgrade;
+pub mod validate;
 
 use serde::Serialize;
 use serde_json::Value;

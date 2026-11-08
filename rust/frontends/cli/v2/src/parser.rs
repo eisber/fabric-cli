@@ -11,6 +11,7 @@ use crate::{
     auth::{AuthAction, AuthRequest},
     report::{Destination, ReportRequest},
     upgrade::UpgradeRequest,
+    validate::ValidateRequest,
 };
 
 /// Caller-selected result presentation; no setting is read during parsing.
@@ -25,6 +26,8 @@ pub enum Format {
 /// An executable local operation, not a remote Fabric command alias.
 #[derive(Debug)]
 pub enum Operation {
+    /// Check one explicit local native definition without remote resolution.
+    Validate(ValidateRequest),
     /// Write one supported local preference.
     Configure {
         /// Explicit typed configuration target.
@@ -62,6 +65,7 @@ impl Operation {
     /// Canonical selected operation path for result and error evidence.
     pub const fn name(&self) -> &'static str {
         match self {
+            Self::Validate(_) => "validate",
             Self::Configure { .. } => "cli configure",
             Self::Auth {
                 action: AuthAction::Login,
@@ -172,6 +176,7 @@ pub fn command() -> Command {
                 .value_name("ABSOLUTE_DIRECTORY")
                 .help("Explicit isolated v2 preference root; only configure accesses it"),
         )
+        .subcommand(validation_command())
         .subcommand(
             Command::new("cli")
                 .about("Explicit tool, identity, viewer, feedback and installation operations")
@@ -247,6 +252,98 @@ pub fn command() -> Command {
         )
 }
 
+fn validation_command() -> Command {
+    let command = Command::new("validate")
+        .about(
+            "Check a local SQLDatabase DACPAC envelope; not package validity or service acceptance",
+        )
+        .arg(
+            Arg::new("type")
+                .long("type")
+                .required(true)
+                .value_parser(["SQLDatabase"]),
+        )
+        .arg(
+            Arg::new("native-format")
+                .long("native-format")
+                .required(true)
+                .value_parser(["dacpac"]),
+        )
+        .arg(
+            Arg::new("rule-version")
+                .long("rule-version")
+                .required(true)
+                .value_parser(["1.0"]),
+        )
+        .arg(
+            Arg::new("media-type")
+                .long("media-type")
+                .default_value("application/json")
+                .value_parser(["application/json"]),
+        )
+        .arg(
+            Arg::new("schema")
+                .long("schema")
+                .action(ArgAction::SetTrue)
+                .help("Discover the neutral registered structural profile without reading input"),
+        )
+        .arg(
+            Arg::new("input")
+                .long("input")
+                .value_name("ABSOLUTE_FILE")
+                .required_unless_present("schema")
+                .conflicts_with("schema"),
+        );
+    [
+        "max-bytes",
+        "max-decoded-bytes",
+        "max-part-bytes",
+        "max-parts",
+        "max-path-bytes",
+        "max-depth",
+    ]
+    .into_iter()
+    .fold(command, |command, name| {
+        command.arg(
+            Arg::new(name)
+                .long(name)
+                .value_name("POSITIVE_LIMIT")
+                .required_unless_present("schema")
+                .conflicts_with("schema")
+                .value_parser(clap::value_parser!(std::num::NonZeroUsize)),
+        )
+    })
+}
+
+fn validation_request(args: &ArgMatches) -> ValidateRequest {
+    let schema_only = args.get_flag("schema");
+    let bound = |name| {
+        *args
+            .get_one::<std::num::NonZeroUsize>(name)
+            .expect("validation requires explicit positive budgets")
+    };
+    ValidateRequest {
+        item_type: value(args, "type"),
+        native_format: value(args, "native-format"),
+        rule_version: value(args, "rule-version"),
+        media_type: value(args, "media-type"),
+        input: args.get_one::<String>("input").map(PathBuf::from),
+        limits: if schema_only {
+            None
+        } else {
+            Some(fabric_sdk_sql_definition::DefinitionLimits {
+                max_wire_bytes: bound("max-bytes"),
+                max_decoded_bytes: bound("max-decoded-bytes"),
+                max_part_bytes: bound("max-part-bytes"),
+                max_parts: bound("max-parts"),
+                max_path_bytes: bound("max-path-bytes"),
+                max_depth: bound("max-depth"),
+            })
+        },
+        schema_only,
+    }
+}
+
 fn value(matches: &ArgMatches, name: &str) -> String {
     matches
         .get_one::<String>(name)
@@ -299,51 +396,56 @@ where
         }
         Err(error) => return Err(error),
     };
-    let cli = matches
-        .subcommand_matches("cli")
-        .expect("selected cli group");
-    let (name, args) = cli.subcommand().expect("required selected leaf");
-    let operation = match name {
-        "configure" => Operation::Configure {
-            target: value(args, "target"),
-            value: value(args, "value"),
-        },
-        "login" => Operation::Auth {
-            action: AuthAction::Login,
-            request: auth_request(args, AuthAction::Login)?,
-        },
-        "logout" => Operation::Auth {
-            action: AuthAction::Logout,
-            request: auth_request(args, AuthAction::Logout)?,
-        },
-        "show" => Operation::Show {
-            path: value(args, "target"),
-            experience: value(args, "experience"),
-            experience_explicit: args.value_source("experience")
-                == Some(clap::parser::ValueSource::CommandLine),
-            uri_only: args.get_flag("uri-only"),
-            timeout_seconds: *args
-                .get_one::<u64>("timeout-seconds")
-                .expect("default timeout"),
-        },
-        "report" => {
-            if value(args, "target") != "/.support/feedback" {
-                return Err(invalid(
-                    "Feedback requires the explicit /.support/feedback target.",
-                ));
+    let operation = if let Some(args) = matches.subcommand_matches("validate") {
+        Operation::Validate(validation_request(args))
+    } else {
+        let cli = matches
+            .subcommand_matches("cli")
+            .expect("selected cli group");
+        let (name, args) = cli.subcommand().expect("required selected leaf");
+        match name {
+            "configure" => Operation::Configure {
+                target: value(args, "target"),
+                value: value(args, "value"),
+            },
+            "login" => Operation::Auth {
+                action: AuthAction::Login,
+                request: auth_request(args, AuthAction::Login)?,
+            },
+            "logout" => Operation::Auth {
+                action: AuthAction::Logout,
+                request: auth_request(args, AuthAction::Logout)?,
+            },
+            "show" => Operation::Show {
+                path: value(args, "target"),
+                experience: value(args, "experience"),
+                experience_explicit: args.value_source("experience")
+                    == Some(clap::parser::ValueSource::CommandLine),
+                uri_only: args.get_flag("uri-only"),
+                timeout_seconds: *args
+                    .get_one::<u64>("timeout-seconds")
+                    .expect("default timeout"),
+            },
+            "report" => {
+                if value(args, "target") != "/.support/feedback" {
+                    return Err(invalid(
+                        "Feedback requires the explicit /.support/feedback target.",
+                    ));
+                }
+                Operation::Report(ReportRequest {
+                    destination: Destination::parse(&value(args, "destination")).map_err(|_| {
+                        invalid("Select an explicitly supported report destination.")
+                    })?,
+                    title: value(args, "title"),
+                    message: value(args, "message"),
+                    handoff: args.get_flag("handoff"),
+                })
             }
-            Operation::Report(ReportRequest {
-                destination: Destination::parse(&value(args, "destination"))
-                    .map_err(|_| invalid("Select an explicitly supported report destination."))?,
-                title: value(args, "title"),
-                message: value(args, "message"),
-                handoff: args.get_flag("handoff"),
-            })
+            "upgrade" => Operation::Upgrade(UpgradeRequest {
+                target_version: args.get_one::<String>("target-version").cloned(),
+            }),
+            _ => unreachable!("the schema admits only selected leaves"),
         }
-        "upgrade" => Operation::Upgrade(UpgradeRequest {
-            target_version: args.get_one::<String>("target-version").cloned(),
-        }),
-        _ => unreachable!("the schema admits only selected leaves"),
     };
     Ok(Parsed::Execute(Invocation {
         operation,

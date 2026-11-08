@@ -23,6 +23,7 @@ windows-broker = ["dep:fabric-cli", "fabric-cli/windows-broker", "dep:fabric-ide
 self-update = ["dep:fabric-cli-update", "fabric-cli-update/bounded-helper", "dep:fabric-sdk-transport", "fabric-sdk-transport/hyper-rustls", "dep:azure_core", "dep:ring", "dep:tokio", "dep:futures-util"]
 
 [dependencies]
+fabric-sdk-sql-definition.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
