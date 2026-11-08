@@ -117,15 +117,11 @@ pub struct Delivery {
 impl Delivery {
     /// Write and flush once to the correct stream, preserving evidence on failure.
     pub fn write_to(&self, stdout: &mut dyn Write, stderr: &mut dyn Write) -> u8 {
-        let output = if self.exit == 0 {
-            &mut *stdout
+        let result = if self.exit == 0 {
+            write_json(stdout, &self.value)
         } else {
-            &mut *stderr
+            write_json(stderr, &self.value)
         };
-        let result = serde_json::to_writer(&mut *output, &self.value)
-            .map_err(io::Error::other)
-            .and_then(|()| writeln!(output))
-            .and_then(|()| output.flush());
         if result.is_ok() {
             return self.exit;
         }
@@ -137,6 +133,12 @@ impl Delivery {
         let _ = stderr.flush();
         1
     }
+}
+
+fn write_json(output: &mut dyn Write, value: &Value) -> io::Result<()> {
+    serde_json::to_writer(&mut *output, value).map_err(io::Error::other)?;
+    writeln!(output)?;
+    output.flush()
 }
 
 fn receipt(
