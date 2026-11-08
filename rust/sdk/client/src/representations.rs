@@ -435,7 +435,7 @@ fn definition_parts(definition: &Value) -> Result<&[Value], RepresentationError>
     Ok(parts)
 }
 
-struct BorrowedExecutor<'a>(&'a dyn OperationExecutor);
+pub(crate) struct BorrowedExecutor<'a>(pub(crate) &'a dyn OperationExecutor);
 
 impl OperationExecutor for BorrowedExecutor<'_> {
     fn execute<'a>(
