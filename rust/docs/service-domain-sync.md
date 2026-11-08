@@ -81,7 +81,9 @@ Executors must obey the shared no-mutation-replay contract.
 
 ## Results and failures
 
-Documented `200` completes this void action, including an empty body. No affected
+Only the documented `200` with an actually empty body completes this void action.
+Nonempty bytes (including JSON null, objects, arrays, error or pending state)
+are unsupported observations, not silently discarded success. No affected
 subdomain/principal/assignment count is fabricated. The neutral receipt retains
 the canonical target, declared effects, preconditions and actual status; coverage
 of individual assignments remains Unknown. Neutral source evidence retains the
@@ -89,8 +91,10 @@ exact native Domain UUID and Contributor role outside the result projection.
 Original bounded native response
 bytes and shared errors remain beside the receipt for explicit inspection.
 
-Undocumented `201`, `202` or `204` is Unknown, never completed or an invented
-asynchronous job. No monitor is polled. Native rejection is Failed, retaining
+Undocumented `201`, `202`, `204`, `206`, redirects or other protocol statuses are
+Unknown, never completed or an invented asynchronous job. No monitor is polled
+or redirect followed. Native rejection statuses 400, 401, 403, 404, 409, 422,
+429 and 500 are Failed, retaining
 its exact status and structured raw error separately from sanitized output.
 Denied is not absence. Throttling is not success; no POST retry is attempted.
 Transport/deadline/cancellation/response-limit failure after dispatch is Unknown
@@ -100,7 +104,10 @@ response loss cannot establish partial assignment counts.
 The CLI adapter sends success receipts to stdout and failures/uncertainty to
 stderr. Non-completion is nonzero. Writer failure retains the executed report,
 so presentation failure never replays an action. Raw provider messages are not
-implicitly printed. Neither capacity lifecycle/activation, gateway lifecycle,
+implicitly printed. Receipt/source-validation errors additionally retain the full
+approved target/input/effects/preconditions, native Domain/role source facts and
+original observations, even if the provider returned an invalid HTTP status.
+Neither capacity lifecycle/activation, gateway lifecycle,
 tenant policy/restore, root raw API nor MCP hosting is implemented by this slice.
 
 ## Offline evidence

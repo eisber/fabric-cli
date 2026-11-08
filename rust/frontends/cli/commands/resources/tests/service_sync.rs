@@ -2,6 +2,8 @@
 // Licensed under the MIT License.
 #![deny(unnameable_test_items)]
 
+//! Grouped service parsing, approved native execution and receipt output contracts.
+
 use async_trait::async_trait;
 use azure_core::{
     credentials::{AccessToken, TokenCredential, TokenRequestOptions},
@@ -101,25 +103,34 @@ impl ApprovalPolicy for Policy {
     }
 }
 #[derive(Clone)]
-struct Executor(Arc<AtomicUsize>, bool);
+struct Executor {
+    sends: Arc<AtomicUsize>,
+    reply: Result<OperationResponse, OperationExecutionError>,
+}
 impl OperationExecutor for Executor {
     fn execute<'a>(
         &'a self,
         request: OperationRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<OperationResponse, OperationExecutionError>> + Send + 'a>>
     {
-        self.0.fetch_add(1, Ordering::SeqCst);
+        self.sends.fetch_add(1, Ordering::SeqCst);
         assert_eq!(request.body(), br#"{"role":"Contributor"}"#);
         assert!(request.url().path().contains(DOMAIN));
-        Box::pin(future::ready(if self.1 {
-            Err(OperationExecutionError::Failed)
-        } else {
-            Ok(OperationResponse {
-                status: 200,
-                body: vec![],
-                headers: BTreeMap::new(),
-            })
-        }))
+        Box::pin(future::ready(self.reply.clone()))
+    }
+    fn executor(sends: Arc<AtomicUsize>, response_loss: bool) -> Executor {
+        Executor {
+            sends,
+            reply: if response_loss {
+                Err(OperationExecutionError::Failed)
+            } else {
+                Ok(OperationResponse {
+                    status: 200,
+                    body: vec![],
+                    headers: BTreeMap::new(),
+                })
+            },
+        }
     }
     fn wait(
         &self,
@@ -214,7 +225,7 @@ async fn role_resolution_and_approval_denials_never_send() {
             &prepared,
             &mut Policy(false),
             &context(),
-            Executor(sends.clone(), false),
+            executor(sends.clone(), false),
             OperationLimits::default(),
             future::pending()
         )
@@ -254,7 +265,7 @@ async fn grouped_parse_through_native_dispatch_retains_receipt_and_streams() {
             &prepared,
             &mut Policy(true),
             &context(),
-            Executor(sends.clone(), response_loss),
+            executor(sends.clone(), response_loss),
             OperationLimits::default(),
             future::pending(),
         )
@@ -329,7 +340,7 @@ async fn writer_failure_preserves_completed_action_without_replay() {
         &prepared,
         &mut Policy(true),
         &context(),
-        Executor(sends.clone(), false),
+        executor(sends.clone(), false),
         OperationLimits::default(),
         future::pending(),
     )
@@ -438,6 +449,118 @@ async fn actual_shared_http_adapter_preserves_context_and_never_retries_post() {
                     .unwrap(),
                 "application/json"
             );
+        }
+
+        #[tokio::test]
+        async fn contradictory_void_responses_and_protocol_statuses_never_exit_zero() {
+            let mut registry = Registry::default();
+            cli::service::register(&mut registry).unwrap();
+            let prepared = cli::prepare(
+                &cli::SyncCommand {
+                    path: "/.domains/Contoso.Domain".into(),
+                    role: "Contributor".into(),
+                },
+                &registry,
+                &mut Resolver {
+                    calls: 0,
+                    failure: false,
+                },
+            )
+            .await
+            .unwrap();
+            for (status, body) in [
+                (200, b"[]".as_slice()),
+                (200, b"malformed"),
+                (200, br#"{"errorCode":"Denied"}"#),
+                (200, br#"{"status":"Pending"}"#),
+                (206, b""),
+                (302, b""),
+            ] {
+                let sends = Arc::new(AtomicUsize::new(0));
+                let report = cli::execute(
+                    &prepared,
+                    &mut Policy(true),
+                    &context(),
+                    Executor {
+                        sends: sends.clone(),
+                        reply: Ok(OperationResponse {
+                            status,
+                            body: body.to_vec(),
+                            headers: BTreeMap::new(),
+                        }),
+                    },
+                    OperationLimits::default(),
+                    future::pending(),
+                )
+                .await
+                .unwrap();
+                assert_eq!(cli::exit_code(&report), 1);
+                assert!(matches!(report.receipt.outcome(), Outcome::Unknown { .. }));
+                assert!(report.receipt.evidence().mutation_may_have_occurred);
+                let mut stdout = Vec::new();
+                let mut stderr = Vec::new();
+                cli::write_report(report, &mut stdout, &mut stderr).unwrap();
+                assert!(stdout.is_empty());
+                let receipt: serde_json::Value = serde_json::from_slice(&stderr).unwrap();
+                assert_eq!(receipt["meta"]["sources"][0]["details"]["domainId"], DOMAIN);
+                assert_eq!(sends.load(Ordering::SeqCst), 1);
+            }
+        }
+
+        #[tokio::test]
+        async fn receipt_failure_retains_approved_domain_after_native_dispatch() {
+            let mut registry = Registry::default();
+            cli::service::register(&mut registry).unwrap();
+            let prepared = cli::prepare(
+                &cli::SyncCommand {
+                    path: "/.domains/Contoso.Domain".into(),
+                    role: "Contributor".into(),
+                },
+                &registry,
+                &mut Resolver {
+                    calls: 0,
+                    failure: false,
+                },
+            )
+            .await
+            .unwrap();
+            let sends = Arc::new(AtomicUsize::new(0));
+            let failure = cli::execute(
+                &prepared,
+                &mut Policy(true),
+                &context(),
+                Executor {
+                    sends: sends.clone(),
+                    reply: Ok(OperationResponse {
+                        status: 600,
+                        body: vec![],
+                        headers: BTreeMap::new(),
+                    }),
+                },
+                OperationLimits::default(),
+                future::pending(),
+            )
+            .await
+            .unwrap_err();
+            let ExecuteError::Native(cli::service::SyncError::Receipt {
+                prepared: retained,
+                source,
+                cause,
+                ..
+            }) = failure
+            else {
+                panic!("expected receipt-validation failure")
+            };
+            assert_eq!(*retained, prepared);
+            assert_eq!(retained.input()["domainId"], DOMAIN);
+            assert_eq!(retained.input()["role"], "Contributor");
+            assert_eq!(
+                retained.target().canonical_path(),
+                "/.domains/Contoso.Domain"
+            );
+            assert_eq!(source.details.as_ref().unwrap()["domainId"], DOMAIN);
+            assert!(cause.evidence.mutation_may_have_occurred);
+            assert_eq!(sends.load(Ordering::SeqCst), 1);
         }
     }
 }

@@ -2,6 +2,8 @@
 // Licensed under the MIT License.
 #![deny(unnameable_test_items)]
 
+//! Offline native Domain synchronization and exact approval/evidence contracts.
+
 use async_trait::async_trait;
 use azure_core::{
     credentials::{AccessToken, TokenCredential, TokenRequestOptions},
@@ -274,6 +276,12 @@ async fn response_loss_and_undocumented_success_are_unknown_without_polling() {
         Ok(response(204, b"")),
         Ok(response(202, b"")),
         Ok(response(200, b"[]")),
+        Ok(response(200, b"{}")),
+        Ok(response(200, b"not-json")),
+        Ok(response(200, br#"{"errorCode":"DomainNotFound"}"#)),
+        Ok(response(200, br#"{"status":"Running"}"#)),
+        Ok(response(206, b"")),
+        Ok(response(302, b"")),
     ] {
         let executor = executor(reply.clone());
         let prepared = prepared();
@@ -287,17 +295,58 @@ async fn response_loss_and_undocumented_success_are_unknown_without_polling() {
         )
         .await
         .unwrap();
-        // A documented 200 is a void completion; provider body is retained, not decoded as a rowset.
-        let completed = matches!(reply, Ok(OperationResponse { status: 200, .. }));
-        assert_eq!(
-            matches!(report.receipt.outcome(), Outcome::Succeeded { .. }),
-            completed
-        );
-        if !completed {
-            assert!(matches!(report.receipt.outcome(), Outcome::Unknown { .. }));
-        }
+        assert!(matches!(report.receipt.outcome(), Outcome::Unknown { .. }));
         assert!(report.receipt.evidence().mutation_may_have_occurred);
         assert!(report.receipt.evidence().handles.is_empty());
+        assert_eq!(executor.sends.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[tokio::test]
+async fn receipt_construction_failure_retains_domain_input_and_effect_evidence() {
+    for status in [0, 600] {
+        let native = serde_json::json!({"errorCode":"InvalidProviderStatus"});
+        let executor = executor(Ok(response(status, &serde_json::to_vec(&native).unwrap())));
+        let prepared = prepared();
+        let approved = prepared.authorize(&mut Policy).unwrap();
+        let failure = service::synchronize(
+            &context(Arc::new(AtomicUsize::new(0)), TENANT),
+            &approved,
+            executor.clone(),
+            OperationLimits::default(),
+            future::pending(),
+        )
+        .await
+        .unwrap_err();
+        let SyncError::Receipt {
+            cause,
+            prepared: retained,
+            source,
+            error,
+            ..
+        } = failure
+        else {
+            panic!("invalid HTTP evidence must fail receipt validation");
+        };
+        assert_eq!(*retained, prepared);
+        assert_eq!(
+            retained.target().canonical_path(),
+            "/.domains/Contoso.Domain"
+        );
+        assert_eq!(
+            retained.input(),
+            &serde_json::json!({"domainId":DOMAIN,"role":"Contributor"})
+        );
+        assert_eq!(retained.effects(), [Effect::RemoteWrite]);
+        assert_eq!(
+            source.details,
+            Some(serde_json::json!({"domainId":DOMAIN,"role":"Contributor"}))
+        );
+        assert_eq!(source.http_status, Some(status));
+        assert!(matches!(cause.outcome, Outcome::Unknown { .. }));
+        assert!(cause.evidence.mutation_may_have_occurred);
+        assert_eq!(cause.evidence.http_status, Some(status));
+        assert_eq!(error.unwrap().raw_service_error.as_deref(), Some(&native));
         assert_eq!(executor.sends.load(Ordering::SeqCst), 1);
     }
 }

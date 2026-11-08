@@ -4,8 +4,8 @@
 //! One native Domain Contributor sync; no tenant discovery, auth provider or poller.
 //!
 //! The caller resolves the Domain and verifies admin/identity prerequisites through
-//! immediate approval. The service remains the authorization authority. HTTP 200
-//! completes the action, but does not establish a count of affected subdomains.
+//! immediate approval. The service remains the authorization authority. An empty
+//! HTTP 200 completes the action, but establishes no affected-subdomain count.
 
 pub use fabric_core::{Audience, EndpointBinding, RequestContext, ServiceOrigin};
 use fabric_sdk_operations::{
@@ -198,6 +198,10 @@ pub enum SyncError {
     Receipt {
         /// Shared receipt-construction failure, retaining its original outcome.
         cause: Box<ReceiptBuildError<Value>>,
+        /// Exact approved target, input, effects and preconditions; no credentials.
+        prepared: Box<PreparedOperation>,
+        /// Native Domain UUID, role and observation facts outside projection.
+        source: Box<SourceEvidence>,
         /// Original bounded native response.
         response: Option<Box<OperationResponse>>,
         /// Original execution failure.
@@ -207,6 +211,8 @@ pub enum SyncError {
     Evidence {
         /// Shared validation failure retains the original receipt and facts.
         cause: Box<SourceEvidenceError<Value>>,
+        /// Exact approved target, input, effects and preconditions; no credentials.
+        prepared: Box<PreparedOperation>,
         /// Original bounded native response.
         response: Option<Box<OperationResponse>>,
         /// Original execution failure.
@@ -278,13 +284,13 @@ pub async fn synchronize(
     let mut session = OperationSession::with_context(context, executor, limits, cancelled);
     let (outcome, evidence, response, error) = match session.execute(operation).await {
         Ok(response) => {
-            let outcome = if response.status == 200 {
+            let outcome = if response.status == 200 && response.body.is_empty() {
                 Outcome::Succeeded { data: Value::Null }
             } else {
                 Outcome::Unknown {
                     error: failure(
-                        "UnexpectedStatus",
-                        "Domain sync returned an undocumented completion status",
+                        "InvalidObservation",
+                        "Domain sync did not return the documented empty HTTP 200 response",
                     ),
                 }
             };
@@ -317,7 +323,11 @@ pub async fn synchronize(
                 code,
                 "Domain sync failed; native evidence is retained and no replay was attempted",
             );
-            let unknown = status.is_none() && error.mutation_may_have_occurred;
+            let undocumented_status = status.is_some_and(|status| {
+                !matches!(status, 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500)
+            });
+            let unknown =
+                undocumented_status || (status.is_none() && error.mutation_may_have_occurred);
             let outcome = if unknown {
                 Outcome::Unknown { error: failure }
             } else {
@@ -348,6 +358,8 @@ pub async fn synchronize(
     let receipt =
         ExecutionReceipt::new(approved, outcome, evidence).map_err(|cause| SyncError::Receipt {
             cause,
+            prepared: Box::new(prepared.clone()),
+            source: Box::new(source.clone()),
             response: response.clone().map(Box::new),
             error: error.clone().map(Box::new),
         })?;
@@ -355,6 +367,7 @@ pub async fn synchronize(
         .with_source_evidence(vec![source])
         .map_err(|cause| SyncError::Evidence {
             cause,
+            prepared: Box::new(prepared.clone()),
             response: response.clone().map(Box::new),
             error: error.clone().map(Box::new),
         })?;
