@@ -3,6 +3,25 @@
   "schema": 1,
   "components": [
     {
+      "id": "engine-query",
+      "package": "fabric-sdk-query",
+      "inputs": [
+        "rust/sdk/query/src/**",
+        "rust/sdk/query/tests/**",
+        "rust/sdk/query/README.md"
+      ],
+      "depends_on": ["core", "sdk"],
+      "tests": [
+        {
+          "package": "fabric-sdk-query",
+          "target": "test:kql_contract"
+        }
+      ],
+      "checks": [
+        "dependency-graph"
+      ]
+    },
+    {
       "id": "core",
       "package": "fabric-core",
       "inputs": [

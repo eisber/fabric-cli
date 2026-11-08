@@ -1,0 +1,28 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-sdk-query"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Explicit engine bindings and bounded read-intent KQL request/results"
+
+[package.metadata.fabric]
+layer = "sdk"
+
+[dependencies]
+azure_core.workspace = true
+fabric-core.workspace = true
+fabric-sdk.workspace = true
+fabric-v2-contracts.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true
