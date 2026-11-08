@@ -119,6 +119,66 @@ async fn only_documented_item_not_found_is_authoritative_absence() {
 }
 
 #[tokio::test]
+async fn absence_uses_native_code_without_changing_v1_normalized_error_or_read_evidence() {
+    let fixture = Fixture::new(vec![reply(
+        404,
+        json!({"errorCode":"ItemNotFound","message":"missing native item"}),
+    )]);
+    let report = fixture.run(item_target(), ExistsLimits::default()).await;
+    assert_eq!(report.exists(), Some(false));
+    assert_eq!(report.native().state(), State::Completed);
+    assert_eq!(report.native().responses()[0].status(), 404);
+    let cause = report.cause().unwrap().source().unwrap();
+    assert!(matches!(
+        cause.downcast_ref::<fabric_sdk::metadata::MetadataError>(),
+        Some(fabric_sdk::metadata::MetadataError::Item(error))
+            if matches!(&error.kind, fabric_sdk::items::ItemErrorKind::Http { status: 404, code, .. }
+                if code == "NotFound")
+    ));
+    assert_eq!(fixture.executor.requests.lock().unwrap().len(), 1);
+    assert_eq!(fixture.credential.0.load(Ordering::SeqCst), 1);
+    let projection: Value = serde_json::from_slice(report.json_bytes()).unwrap();
+    assert_eq!(projection["exists"], false);
+    assert_eq!(projection["evidence"]["responses"][0]["httpStatus"], 404);
+    assert_eq!(projection["evidence"]["effect"], "remoteRead");
+    assert_eq!(projection["evidence"]["atomicPrecondition"], false);
+}
+
+#[tokio::test]
+async fn native_not_found_requires_exact_item_scope_and_string_code_not_denial_or_bad_json() {
+    for body in [
+        json!(null),
+        json!("ItemNotFound"),
+        json!({"errorCode":null}),
+        json!({"errorCode":404}),
+        json!({"error":{"code":"ItemNotFound"}}),
+        json!({"message":"ItemNotFound"}),
+    ] {
+        let fixture = Fixture::new(vec![reply(404, body)]);
+        let report = fixture.run(item_target(), ExistsLimits::default()).await;
+        assert_eq!(report.exists(), None);
+        assert_eq!(report.reason(), "UnverifiedNotFound");
+        assert_eq!(fixture.executor.requests.lock().unwrap().len(), 1);
+    }
+    let fixture = Fixture::new(vec![reply(403, json!({"errorCode":"ItemNotFound"}))]);
+    let report = fixture.run(item_target(), ExistsLimits::default()).await;
+    assert_eq!(report.observation(), ExistsObservation::Denied);
+    assert_eq!(report.exists(), None);
+
+    let fixture = Fixture::new(vec![reply(404, json!({"errorCode":"ItemNotFound"}))]);
+    let report = fixture
+        .run(
+            ExistsTarget::Workspace {
+                workspace: MetadataSelector::id(WS).unwrap(),
+            },
+            ExistsLimits::default(),
+        )
+        .await;
+    assert_eq!(report.exists(), None);
+    assert_eq!(report.reason(), "UnverifiedNotFound");
+}
+
+#[tokio::test]
 async fn workspace_get_has_no_enrichment_and_bare_not_found_remains_unknown() {
     for (status, data, expected) in [
         (200, workspace_data(), Some(true)),

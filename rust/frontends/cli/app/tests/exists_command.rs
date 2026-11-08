@@ -70,12 +70,24 @@ async fn stdout_is_exact_sdk_json_and_null_is_a_nonzero_result() {
     for (status, data, exists, exit) in [
         (200, item_data(), Some(true), 0),
         (404, json!({"errorCode":"ItemNotFound"}), Some(false), 0),
+        (404, json!(null), None, 1),
         (403, json!({"errorCode":"Forbidden"}), None, 1),
     ] {
         let fixture = Fixture::new(vec![reply(status, data)]);
         let report = fixture.run(item_target(), ExistsLimits::default()).await;
         let mut stdout = Vec::new();
-        assert_eq!(write_exists(&report, &mut stdout).unwrap(), exit);
+        assert_eq!(
+            report.exists(),
+            exists,
+            "HTTP {status}: {}",
+            report.reason(),
+        );
+        assert_eq!(
+            write_exists(&report, &mut stdout).unwrap(),
+            exit,
+            "HTTP {status}: {}",
+            report.reason(),
+        );
         assert_eq!(stdout, report.json_bytes());
         assert_eq!(report.exists(), exists);
         assert_eq!(fixture.executor.requests.lock().unwrap().len(), 1);

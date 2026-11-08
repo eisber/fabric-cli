@@ -22,6 +22,12 @@ use std::{collections::BTreeSet, fmt, future::Future, pin::pin};
 #[derive(Debug)]
 pub(super) enum ProbeError {
     Metadata(MetadataError),
+    ItemMetadata {
+        error: MetadataError,
+        workspace_id: String,
+        item_id: String,
+        selected_by_name: bool,
+    },
     Workspace(WorkspaceListError),
     Item(ItemListError),
     InvalidResponse,
@@ -39,7 +45,7 @@ impl fmt::Display for ProbeError {
 impl std::error::Error for ProbeError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::Metadata(error) => Some(error),
+            Self::Metadata(error) | Self::ItemMetadata { error, .. } => Some(error),
             Self::Workspace(error) => Some(error),
             Self::Item(error) => Some(error),
             _ => None,
@@ -215,18 +221,14 @@ pub(super) async fn probe(
         .await;
     let read = match read {
         Ok(read) => read,
-        Err(MetadataError::Item(error)) if matches!(&error.kind, ItemErrorKind::Http { status: 404, code, .. } if code == "ItemNotFound") =>
-        {
-            if matches!(item, MetadataSelector::Name(_)) {
-                return Err(ProbeError::Changed);
-            }
-            let mut result = conclusion(ExistsObservation::Absent, "AuthoritativeItemNotFound");
-            result.workspace_id = Some(workspace_id);
-            result.item_id = Some(item_id);
-            result.item_type = item_type.clone();
-            return Ok(result);
+        Err(error) => {
+            return Err(ProbeError::ItemMetadata {
+                error,
+                workspace_id,
+                item_id,
+                selected_by_name: matches!(item, MetadataSelector::Name(_)),
+            });
         }
-        Err(error) => return Err(ProbeError::Metadata(error)),
     };
     validate_metadata(
         read.data(),
@@ -303,8 +305,34 @@ pub(super) fn report(
     let (result, cause) = match result {
         Ok(result) => (result, None),
         Err(error) => {
-            let (state, reason) = classify(&error);
-            (conclusion(state, reason), Some(error))
+            let (state, reason) = match &error {
+                ProbeError::ItemMetadata {
+                    selected_by_name,
+                    error,
+                    ..
+                } if documented_item_not_found(error, &native) => {
+                    if *selected_by_name {
+                        (ExistsObservation::Unknown, "ChangedDuringProbe")
+                    } else {
+                        (ExistsObservation::Absent, "AuthoritativeItemNotFound")
+                    }
+                }
+                _ => classify(&error),
+            };
+            let mut result = conclusion(state, reason);
+            if let ProbeError::ItemMetadata {
+                workspace_id,
+                item_id,
+                ..
+            } = &error
+            {
+                result.workspace_id = Some(workspace_id.clone());
+                result.item_id = Some(item_id.clone());
+                if let ExistsTarget::Item { item_type, .. } = request.target() {
+                    result.item_type = item_type.clone();
+                }
+            }
+            (result, Some(error))
         }
     };
     ExistsReport {
@@ -322,10 +350,34 @@ pub(super) fn report(
     }
 }
 
+fn documented_item_not_found(error: &MetadataError, native: &Outcome) -> bool {
+    if !matches!(
+        error,
+        MetadataError::Item(error)
+            if matches!(error.kind, ItemErrorKind::Http { status: 404, .. })
+    ) {
+        return false;
+    }
+    let Some(response) = native.responses().last() else {
+        return false;
+    };
+    // V1 normalizes 404 to NotFound; Exists retains the native endpoint code.
+    response.status() == 404
+        && serde_json::from_slice::<Value>(response.body())
+            .is_ok_and(|body| body.get("errorCode").and_then(Value::as_str) == Some("ItemNotFound"))
+}
+
 fn classify(error: &ProbeError) -> (ExistsObservation, &'static str) {
     use ExistsObservation::{Failed, Incomplete, Unknown};
     match error {
         ProbeError::Metadata(MetadataError::Item(error)) => classify_item(&error.kind),
+        ProbeError::ItemMetadata { error, .. } => match error {
+            MetadataError::Item(error) => classify_item(&error.kind),
+            MetadataError::BudgetExceeded => (Incomplete, "BudgetExceeded"),
+            MetadataError::Encoding => (Failed, "InvalidResponse"),
+            MetadataError::Cancelled => (Unknown, "Cancelled"),
+            MetadataError::Workspace(_) => (Failed, "InvalidResponse"),
+        },
         ProbeError::Metadata(MetadataError::Workspace(error)) => match &error.kind {
             WorkspaceMetadataErrorKind::Read(error) => classify_workspace(error),
             WorkspaceMetadataErrorKind::InvalidIdentifier => (Failed, "InvalidResolvedIdentity"),

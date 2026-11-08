@@ -67,6 +67,13 @@ an empty array. Completed negative observations retain the actual 404 rather
 than synthesizing HTTP success. Existing shared receipt-success validation is
 unchanged.
 
+The existing v1 item SDK normalizes HTTP 404 to `NotFound`. Exists therefore
+reads the documented `ItemNotFound` code from the retained native JSON response,
+only after an exact item Get fails with 404. It preserves the original normalized
+SDK error and native status/body; it does not change v1 error handling. A null,
+malformed or unrelated error code remains unknown, and a named item that vanishes
+between enumeration and Get remains `ChangedDuringProbe`.
+
 ## Bounds, cancellation and freshness
 
 Omitted byte bounds reuse the existing SDK workspace response/report bound;
