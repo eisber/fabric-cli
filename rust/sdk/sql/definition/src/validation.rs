@@ -10,7 +10,10 @@ use crate::{
     DefinitionError, DefinitionErrorKind as Kind, DefinitionLimits, SqlDatabaseDefinitionFormat,
     parse_sql_database_definition,
 };
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Deserializer, Serialize,
+    de::{self, IgnoredAny, MapAccess, Visitor},
+};
 use serde_json::{Value, json};
 use std::fmt;
 
@@ -275,9 +278,41 @@ pub fn validate(
     })
 }
 
-#[derive(Deserialize)]
 struct DocumentFormat {
     format: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for DocumentFormat {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_map(DocumentFormatVisitor)
+    }
+}
+
+struct DocumentFormatVisitor;
+
+impl<'de> Visitor<'de> for DocumentFormatVisitor {
+    type Value = DocumentFormat;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a bare definition object")
+    }
+
+    fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
+        let mut format = None;
+        let mut seen_format = false;
+        while let Some(key) = map.next_key::<String>()? {
+            if key == "format" {
+                if seen_format {
+                    return Err(de::Error::duplicate_field("format"));
+                }
+                seen_format = true;
+                format = map.next_value::<Option<String>>()?;
+            } else {
+                map.next_value::<IgnoredAny>()?;
+            }
+        }
+        Ok(DocumentFormat { format })
+    }
 }
 
 fn finding(error: DefinitionError) -> Finding {

@@ -47,6 +47,8 @@ Format inspection uses the existing JSON deserializer and does not parse native
 payloads or evaluate a second schema. Duplicate/incorrectly typed format fields,
 malformed JSON and trailing input retain the original strict codec's structural
 findings; absent format retains the documented DACPAC default.
+Format inspection is map-only: positional arrays such as `["sqlproj"]` do not
+declare a document format and retain the codec's invalid-envelope report.
 
 SDK callers can reuse this check before an explicitly selected create/update,
 but local validation cannot grant approval, imply an upsert, replace native

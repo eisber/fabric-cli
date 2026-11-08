@@ -170,6 +170,34 @@ fn unsupported_sqlproj_documents_have_no_dacpac_verdict_or_success_stdout() {
 }
 
 #[test]
+fn format_selection_requires_an_object_and_arrays_keep_invalid_reports() {
+    let files = Files::new();
+    for bytes in [
+        &br#"["sqlproj"]"#[..],
+        br#"["sqlproj",[]]"#,
+        br#"["dacpac"]"#,
+        br#"[]"#,
+        br#"null"#,
+        br#""sqlproj""#,
+    ] {
+        let path = files.input(bytes);
+        let output = binary(&args(path.to_str().unwrap()));
+        assert_eq!(output.status.code(), Some(1));
+        assert!(
+            output.stderr.is_empty(),
+            "wrong-shape JSON must retain its check report"
+        );
+        let report = payload(&output.stdout);
+        assert_eq!(report["status"], "succeeded");
+        assert_eq!(report["data"]["valid"], false);
+        assert_eq!(report["data"]["nativeFormat"], "dacpac");
+        assert_eq!(report["data"]["findings"][0]["ruleId"], "invalid_envelope");
+        assert_eq!(report["data"]["findings"][0]["pointer"], "");
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+}
+
+#[test]
 fn unreadable_unsafe_and_over_budget_inputs_are_errors_without_verdicts() {
     let files = Files::new();
     let path = files.input(&vec![b' '; 4097]);

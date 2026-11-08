@@ -180,6 +180,30 @@ fn unsupported_document_format_precedes_format_dependent_admission_failures() {
 }
 
 #[test]
+fn format_selection_requires_an_object_not_a_positional_array() {
+    for bytes in [
+        &br#"["sqlproj"]"#[..],
+        br#"["sqlproj",[]]"#,
+        br#"["dacpac"]"#,
+        br#"[]"#,
+        br#"null"#,
+        br#""sqlproj""#,
+        br#"{"format":"dacpac","format":"sqlproj","parts":[]}"#,
+        br#"{"format":"sqlproj","format":"dacpac","parts":[]}"#,
+    ] {
+        assert_kind(
+            parse_sql_database_definition(bytes, limits()),
+            Kind::InvalidShape,
+        );
+        let report = report(bytes);
+        assert!(!report.valid);
+        assert_eq!(report.native_format, "dacpac");
+        assert_eq!(report.findings[0].rule_id, "invalid_envelope");
+        assert_eq!(report.findings[0].pointer, "");
+    }
+}
+
+#[test]
 fn precise_ordinal_locations_do_not_echo_paths_or_payloads() {
     let bytes = serde_json::to_vec(&json!({"parts":[
         wire_part("model.dacpac", b"x"),
