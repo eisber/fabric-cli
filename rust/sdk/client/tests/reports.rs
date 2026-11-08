@@ -192,6 +192,79 @@ fn inspect(value: Value) -> Result<ReportDefinition, ReportError> {
     ReportDefinition::from_read(DefinitionRead::Completed { definition: value }, None)
 }
 
+#[test]
+fn required_report_and_each_page_json_must_not_be_false_complete() {
+    for path in [
+        "definition/report.json",
+        "definition/pages/page/page.json",
+        "definition/pages/second/page.json",
+    ] {
+        for bytes in [
+            b"null".as_slice(),
+            b"{malformed",
+            b"[]",
+            b"false",
+            b"42",
+            &[0xff],
+        ] {
+            let mut value = source();
+            if path == "definition/pages/second/page.json" {
+                value["definition"]["parts"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(part(path, bytes));
+            } else {
+                let selected = value["definition"]["parts"]
+                    .as_array_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .find(|part| part["path"] == path)
+                    .unwrap();
+                *selected = part(path, bytes);
+            }
+            let read = inspect(value.clone()).unwrap();
+            assert!(
+                !read.complete(),
+                "required {path} must not be complete for {bytes:?}"
+            );
+            assert!(!read.evidence().incomplete.is_empty());
+            assert_eq!(read.data(), &value);
+            assert_eq!(read.part_bytes(path).unwrap(), bytes);
+        }
+    }
+}
+
+fn legacy_nullable_properties() -> Value {
+    json!({
+        "$schema":"https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/1.0.0/schema.json",
+        "version":"4.0",
+        "datasetReference":{"byConnection":{
+            "connectionString":null,
+            "pbiServiceModelId":null,
+            "pbiModelVirtualServerName":"sobe_wowvirtualserver",
+            "pbiModelDatabaseName":MODEL,
+            "name":"EntityDataSource",
+            "connectionType":"pbiServiceXmlaStyleLive"
+        }}
+    })
+}
+
+#[test]
+fn legacy_schema_nullable_connection_is_valid_native_source_not_model_permission() {
+    let mut value = source();
+    let properties = legacy_nullable_properties();
+    value["definition"]["parts"][0] =
+        part("definition.pbir", &serde_json::to_vec(&properties).unwrap());
+    let read = inspect(value.clone()).expect("official schema 1.0.0 permits null connectionString");
+    assert!(read.complete());
+    assert_eq!(read.data(), &value);
+    assert_eq!(
+        read.evidence().model_reference.as_ref(),
+        Some(&properties["datasetReference"])
+    );
+    assert!(!read.evidence().related_model_authorized);
+}
+
 #[tokio::test]
 async fn metadata_is_one_typed_get_with_no_source_or_model_call() {
     let (client, credential) = client();

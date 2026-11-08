@@ -321,6 +321,106 @@ async fn report_metadata_uses_typed_endpoint_without_source_or_model_read() {
 }
 
 #[tokio::test]
+async fn report_malformed_required_json_blocks_complete_and_raw_file_delivery() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    for selected in ["definition/report.json", "definition/pages/p/page.json"] {
+        for bytes in [b"null".as_slice(), b"{malformed"] {
+            for raw in [false, true] {
+                let f = Fixture::new();
+                report_metadata(&f, "Report");
+                let mut source = report_definition("4.0");
+                let part = source["definition"]["parts"]
+                    .as_array_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .find(|part| part["path"] == selected)
+                    .unwrap();
+                part["payload"] = STANDARD.encode(bytes).into();
+                f.executor.response(
+                    "POST",
+                    format!("/v1/workspaces/{WS}/reports/{ITEM}/getDefinition"),
+                    200,
+                    &serde_json::to_vec(&source).unwrap(),
+                    &[],
+                );
+                let suffix = if raw {
+                    "/src/definition/parts/StaticResources/native.bin"
+                } else {
+                    "/src/definition"
+                };
+                let mut args = vec![
+                    "get".into(),
+                    format!("/{WS}.Workspace/{ITEM}.Report{suffix}"),
+                    "--output".into(),
+                    "invalid-source.bin".into(),
+                ];
+                if raw {
+                    args.extend(["--format".into(), "raw".into()]);
+                }
+                assert!(
+                    matches!(
+                        stdout(&f, &args).await,
+                        Err(GetCommandError::Incomplete { .. })
+                    ),
+                    "malformed {selected} must block delivery, raw={raw}"
+                );
+                assert!(!f.root.join("invalid-source.bin").exists());
+                assert_eq!(f.executor.calls.lock().unwrap().len(), 2);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn report_legacy_nullable_connection_keeps_complete_bytes_and_unverified_model() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let f = Fixture::new();
+    report_metadata(&f, "Report");
+    let properties = serde_json::json!({
+        "$schema":"https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/1.0.0/schema.json",
+        "version":"4.0","datasetReference":{"byConnection":{
+            "connectionString":null,"pbiServiceModelId":null,
+            "pbiModelVirtualServerName":"sobe_wowvirtualserver",
+            "pbiModelDatabaseName":ITEM,"name":"EntityDataSource",
+            "connectionType":"pbiServiceXmlaStyleLive"
+        }}
+    });
+    let mut source = report_definition("4.0");
+    source["definition"]["parts"][0]["payload"] = STANDARD
+        .encode(serde_json::to_vec(&properties).unwrap())
+        .into();
+    f.executor.response(
+        "POST",
+        format!("/v1/workspaces/{WS}/reports/{ITEM}/getDefinition"),
+        200,
+        &serde_json::to_vec(&source).unwrap(),
+        &[],
+    );
+    let result = f
+        .prepared(&[
+            "get".into(),
+            format!("/{WS}.Workspace/{ITEM}.Report/src/definition"),
+        ])
+        .acquire(&f.backend(), pending())
+        .await
+        .expect("official legacy nullable connection must not fail acquisition");
+    assert!(result.complete());
+    let mut bytes = Vec::new();
+    result.write_to(&mut bytes).unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["data"], source);
+    assert_eq!(
+        value["meta"]["reportSource"]["relatedModelAuthorized"],
+        false
+    );
+    assert_eq!(
+        value["meta"]["reportSource"]["modelReference"],
+        properties["datasetReference"]
+    );
+    assert_eq!(f.executor.calls.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
 async fn report_native_source_evidence_survives_projection_and_preserves_binary_parts() {
     let f = Fixture::new();
     report_metadata(&f, "Report");
