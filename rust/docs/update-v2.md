@@ -72,6 +72,14 @@ and lost responses are unknown. Unexpected 202 retains an available real
 operation handle as acceptance; without a handle it is unknown, not completed.
 This defensive handling does not advertise an LRO for the metadata APIs.
 412 is PreconditionFailed with no fetch-and-overwrite. 403 is denial, not absence.
+Established input, authentication, authorization, missing-target, precondition,
+and throttle rejections (400/401/403/404/412/429 without an accepted handle) remain
+failed receipts. After dispatch, 500/502/503/504 and other unadvertised statuses
+are unknown when the shared engine retains possible-mutation evidence. A status
+and an error body do not prove the metadata write was rejected before effects.
+The receipt retains the actual HTTP status and uncertainty without inventing a
+handle, replaying, or claiming the resource stayed unchanged. Safe receipt codes
+are independent of raw provider error codes; typed causes retain the originals.
 
 Host-owned caches should invalidate affected metadata and path aliases after a
 dispatched mutation, especially accepted/partial/unknown outcomes. Do not apply
@@ -79,6 +87,12 @@ the requested new name as a confirmed service value or claim cross-process cache
 invalidation. The library applies no speculative cache effects. A local writer
 failure after execution retains the original receipt and handle evidence;
 delivery failure does not undo remote success.
+Implicit `Debug` on Update reports, receipt-build errors, deliveries and host
+errors emits only safe classifications and evidence summaries, not returned
+metadata, raw provider diagnostics or native writer messages. Unconfirmed foreign
+metadata and provider errors remain available through explicit typed inspection,
+including after a writer failure. JSON receipts continue to withhold unconfirmed
+foreign data and raw diagnostics; no shared global error type is changed.
 
 Plans use `meta.executionMode=plan`; declared effects are prospective, not applied.
 No credentials, remote request or approval is needed for local plan delivery.
@@ -107,5 +121,9 @@ Offline contracts live in `sdk/items/tests/update.rs`,
 strict omission/null/duplicate fields, denied/NotFound/412/unknown/partial,
 approval mismatch, pre-dispatch cancellation, no replay, local no-clobber races,
 data-only projection and retained evidence after writer failures.
+Cycle-one counterexamples cover ambiguous server responses and marker-based
+SDK/host JSON and `Debug` redaction while verifying exact retained raw causes and
+one PATCH. The incorrect new-v2 test grouping 500 with established rejections was
+corrected; legacy tests and frozen expectations are unchanged.
 Current full native three-platform/stable and applicable optional-feature gates
 remain required before review-ready; a focused draft is not gate acceptance.

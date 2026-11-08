@@ -342,3 +342,169 @@ async fn typed_scalar_identity_and_null_projection_preserve_json_and_protected_m
     assert_eq!(receipt["data"]["displayName"], "new");
     assert_eq!(receipt["meta"]["target"]["identity"]["itemId"], ITEM);
 }
+
+#[derive(Clone)]
+struct ResponseWire {
+    response: OperationResponse,
+    calls: Arc<Mutex<usize>>,
+}
+impl OperationExecutor for ResponseWire {
+    fn execute<'a>(
+        &'a self,
+        request: OperationRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<OperationResponse, OperationExecutionError>> + Send + 'a>>
+    {
+        *self.calls.lock().unwrap() += 1;
+        assert_eq!(
+            request.url().as_str(),
+            format!("https://api.fabric.microsoft.com/v1/workspaces/{WS}/notebooks/{ITEM}")
+        );
+        Box::pin(std::future::ready(Ok(self.response.clone())))
+    }
+    fn wait(
+        &self,
+        _: Duration,
+    ) -> Pin<Box<dyn Future<Output = Result<(), OperationExecutionError>> + Send + '_>> {
+        panic!("unexpected mutation replay or observation")
+    }
+}
+
+#[tokio::test]
+async fn private_evidence_is_not_implicitly_formatted_through_host_delivery_failures() {
+    struct Broken;
+    impl Write for Broken {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "PRIVATE_WRITER_MARKER",
+            ))
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let mut leaked_wrappers = Vec::new();
+    for (status, raw, marker) in [
+        (
+            200,
+            json!({"id":"bbbbbbbb-cccc-dddd-eeee-ffffffffffff","type":"Notebook","displayName":"foreign","description":"PRIVATE_FOREIGN_HOST_MARKER"}),
+            "PRIVATE_FOREIGN_HOST_MARKER",
+        ),
+        (
+            403,
+            json!({"errorCode":"Forbidden","message":"PRIVATE_DENIED_HOST_MARKER"}),
+            "PRIVATE_DENIED_HOST_MARKER",
+        ),
+    ] {
+        let wire = ResponseWire {
+            response: OperationResponse {
+                status,
+                headers: BTreeMap::new(),
+                body: serde_json::to_vec(&raw).unwrap(),
+            },
+            calls: Arc::new(Mutex::new(0)),
+        };
+        let delivery = preflight(command(&[]), dir.path())
+            .execute(
+                context(),
+                wire.clone(),
+                OperationLimits::default(),
+                &mut Policy(true),
+                pending(),
+            )
+            .await
+            .unwrap();
+        let receipt = serde_json::to_string(&delivery.report().receipt).unwrap();
+        assert!(!receipt.contains(marker));
+        assert!(!matches!(
+            delivery.report().receipt.outcome(),
+            Outcome::Succeeded { .. } | Outcome::Accepted
+        ));
+        let debug = format!("{delivery:?}\n{delivery:#?}");
+        if debug.contains(marker) {
+            leaked_wrappers.push(format!("UpdateDelivery/{status}"));
+        }
+        let error = delivery.deliver(&mut Broken).unwrap_err();
+        let debug = format!("{error:?}\n{error:#?}");
+        if debug.contains(marker) || debug.contains("PRIVATE_WRITER_MARKER") {
+            leaked_wrappers.push(format!("UpdateCommandError/{status}"));
+        }
+        let UpdateCommandError::Delivery { source, report } = error else {
+            panic!("remote report lost")
+        };
+        if status == 200 {
+            assert_eq!(report.unconfirmed_data.as_ref(), Some(&raw));
+        } else {
+            assert_eq!(
+                report.cause.as_ref().unwrap().raw_service_error.as_deref(),
+                Some(&raw)
+            );
+        }
+        let UpdateCommandError::Io(writer) = *source else {
+            panic!("writer evidence lost")
+        };
+        assert_eq!(writer.to_string(), "PRIVATE_WRITER_MARKER");
+        assert_eq!(*wire.calls.lock().unwrap(), 1);
+    }
+    assert!(
+        leaked_wrappers.is_empty(),
+        "private evidence leaked from: {leaked_wrappers:?}"
+    );
+}
+
+#[tokio::test]
+async fn host_server_failure_delivery_preserves_unknown_and_original_sdk_cause() {
+    let dir = tempfile::tempdir().unwrap();
+    for status in [500, 502, 503, 504] {
+        let raw = json!({"errorCode":"InternalFailure","message":"PRIVATE_HOST_SERVER_MARKER"});
+        let wire = ResponseWire {
+            response: OperationResponse {
+                status,
+                headers: BTreeMap::new(),
+                body: serde_json::to_vec(&raw).unwrap(),
+            },
+            calls: Arc::new(Mutex::new(0)),
+        };
+        let delivery = preflight(command(&["--project", "displayName"]), dir.path())
+            .execute(
+                context(),
+                wire.clone(),
+                OperationLimits::default(),
+                &mut Policy(true),
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            delivery.report().receipt.outcome(),
+            Outcome::Unknown { .. }
+        ));
+        assert_eq!(
+            delivery
+                .report()
+                .cause
+                .as_ref()
+                .unwrap()
+                .raw_service_error
+                .as_deref(),
+            Some(&raw)
+        );
+        assert!(!format!("{delivery:#?}").contains("PRIVATE_HOST_SERVER_MARKER"));
+        let mut output = Vec::new();
+        delivery.deliver(&mut output).unwrap();
+        let receipt: Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(receipt["status"], "unknown");
+        assert_eq!(receipt["error"]["code"], "CompletionUnknown");
+        assert_eq!(receipt["meta"]["evidence"]["httpStatus"], status);
+        assert_eq!(receipt["meta"]["evidence"]["mutationMayHaveOccurred"], true);
+        assert_eq!(receipt["meta"]["evidence"]["handles"], json!([]));
+        assert!(receipt.get("data").is_none());
+        assert!(
+            !String::from_utf8(output)
+                .unwrap()
+                .contains("PRIVATE_HOST_SERVER_MARKER")
+        );
+        assert_eq!(*wire.calls.lock().unwrap(), 1);
+    }
+}

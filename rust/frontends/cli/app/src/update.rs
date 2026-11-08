@@ -29,7 +29,6 @@ pub struct PreparedUpdateCommand {
 }
 
 /// Local/host failure preserving any prior remote receipt.
-#[derive(Debug)]
 pub enum UpdateCommandError {
     /// Local file/stdin or writer error; no provider error text is synthesized.
     Io(io::Error),
@@ -55,6 +54,35 @@ impl std::fmt::Display for UpdateCommandError {
     }
 }
 impl std::error::Error for UpdateCommandError {}
+
+impl std::fmt::Debug for UpdateCommandError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(error) => f
+                .debug_tuple("UpdateCommandError::Io")
+                .field(&error.kind())
+                .finish(),
+            Self::File(error) => f
+                .debug_struct("UpdateCommandError::File")
+                .field("kind", &error.kind)
+                .field("stage", &error.stage)
+                .field("path_created", &error.path_created)
+                .field("bytes_written", &error.bytes_written)
+                .finish_non_exhaustive(),
+            Self::Invalid(_) => f.write_str("UpdateCommandError::Invalid"),
+            Self::Approval => f.write_str("UpdateCommandError::Approval"),
+            Self::Sdk(error) => f
+                .debug_tuple("UpdateCommandError::Sdk")
+                .field(error)
+                .finish(),
+            Self::Delivery { source, report } => f
+                .debug_struct("UpdateCommandError::Delivery")
+                .field("source", source)
+                .field("report", report)
+                .finish(),
+        }
+    }
+}
 
 impl PreparedUpdateCommand {
     /// Read bounded input and preflight one exact output in a blocking host.
@@ -177,12 +205,21 @@ impl PreparedUpdateCommand {
 }
 
 /// A remote report awaiting explicit blocking delivery, not rollback custody.
-#[derive(Debug)]
 pub struct UpdateDelivery {
     command: UpdateCommand,
     output: Option<ExactOutputFile>,
     report: sdk::UpdateReport,
 }
+
+impl std::fmt::Debug for UpdateDelivery {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UpdateDelivery")
+            .field("report", &self.report)
+            .field("file_output", &self.output.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
 impl UpdateDelivery {
     /// Retain protected unprojected receipt before any local delivery.
     pub fn report(&self) -> &sdk::UpdateReport {

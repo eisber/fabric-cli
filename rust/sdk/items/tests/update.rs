@@ -402,7 +402,7 @@ async fn cancellation_before_dispatch_is_failed_without_request() {
 
 #[tokio::test]
 async fn denied_not_found_throttle_and_precondition_are_not_success_or_create() {
-    for status in [401, 403, 404, 412, 429, 500] {
+    for status in [400, 401, 403, 404, 412, 429] {
         let plan = plan(
             "Notebook",
             br#"{"description":""}"#,
@@ -651,4 +651,162 @@ async fn real_interruption_of_credential_acquisition_never_dispatches_patch() {
     assert!(!report.receipt.evidence().mutation_may_have_occurred);
     assert_eq!(credential.0.load(Ordering::SeqCst), 1);
     assert_eq!(wire.0.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn ambiguous_server_responses_preserve_unknown_status_and_raw_evidence() {
+    let mut definitive_failures = Vec::new();
+    for status in [500, 502, 503, 504] {
+        let plan = plan(
+            "Notebook",
+            br#"{"description":""}"#,
+            Arc::new(Credential::default()),
+        );
+        let approval = plan.prepared().authorize(&mut Policy(true)).unwrap();
+        let wire = Wire::default();
+        let raw = json!({"errorCode":"InternalFailure","message":"PRIVATE_SERVER_MARKER"});
+        wire.results
+            .lock()
+            .unwrap()
+            .push_back(Ok(response(status, raw.clone())));
+        let report = update::execute(&plan, &approval, wire.clone(), pending())
+            .await
+            .unwrap();
+        assert_eq!(report.receipt.evidence().http_status, Some(status));
+        assert!(report.receipt.evidence().mutation_may_have_occurred);
+        assert!(report.receipt.evidence().handles.is_empty());
+        let cause = report.cause.as_ref().unwrap();
+        assert_eq!(cause.status, Some(status));
+        assert_eq!(cause.raw_service_error.as_deref(), Some(&raw));
+        assert_eq!(wire.calls.lock().unwrap().len(), 1);
+        let receipt = serde_json::to_value(&report.receipt).unwrap();
+        assert!(!matches!(
+            receipt["status"].as_str(),
+            Some("succeeded" | "accepted")
+        ));
+        assert!(!receipt.to_string().contains("PRIVATE_SERVER_MARKER"));
+        if !matches!(report.receipt.outcome(), Outcome::Unknown { .. }) {
+            definitive_failures.push(status);
+        }
+    }
+    assert!(
+        definitive_failures.is_empty(),
+        "ambiguous responses were treated as definitive: {definitive_failures:?}"
+    );
+}
+
+#[tokio::test]
+async fn foreign_metadata_is_explicitly_inspectable_but_not_in_receipt_or_debug() {
+    let plan = plan(
+        "Notebook",
+        br#"{"description":""}"#,
+        Arc::new(Credential::default()),
+    );
+    let approval = plan.prepared().authorize(&mut Policy(true)).unwrap();
+    let wire = Wire::default();
+    let raw = json!({"id":OTHER,"type":"Notebook","displayName":"foreign","description":"PRIVATE_FOREIGN_MARKER"});
+    wire.results
+        .lock()
+        .unwrap()
+        .push_back(Ok(response(200, raw.clone())));
+    let report = update::execute(&plan, &approval, wire.clone(), pending())
+        .await
+        .unwrap();
+    assert!(matches!(report.receipt.outcome(), Outcome::Unknown { .. }));
+    assert_eq!(report.unconfirmed_data.as_ref(), Some(&raw));
+    assert_eq!(wire.calls.lock().unwrap().len(), 1);
+    assert!(
+        !serde_json::to_string(&report.receipt)
+            .unwrap()
+            .contains("PRIVATE_FOREIGN_MARKER")
+    );
+    assert!(!format!("{report:?}").contains("PRIVATE_FOREIGN_MARKER"));
+    assert!(!format!("{report:#?}").contains("PRIVATE_FOREIGN_MARKER"));
+}
+
+#[tokio::test]
+async fn denied_diagnostics_remain_in_typed_cause_but_not_receipt_or_debug() {
+    let plan = plan(
+        "Notebook",
+        br#"{"description":""}"#,
+        Arc::new(Credential::default()),
+    );
+    let approval = plan.prepared().authorize(&mut Policy(true)).unwrap();
+    let wire = Wire::default();
+    let raw = json!({"errorCode":"PRIVATE_DENIED_CODE_MARKER","message":"PRIVATE_DENIED_MARKER"});
+    wire.results
+        .lock()
+        .unwrap()
+        .push_back(Ok(response(403, raw.clone())));
+    let report = update::execute(&plan, &approval, wire.clone(), pending())
+        .await
+        .unwrap();
+    assert!(matches!(report.receipt.outcome(), Outcome::Failed { .. }));
+    assert_eq!(
+        report.cause.as_ref().unwrap().raw_service_error.as_deref(),
+        Some(&raw)
+    );
+    assert_eq!(wire.calls.lock().unwrap().len(), 1);
+    assert_eq!(
+        report.cause.as_ref().unwrap().code,
+        "PRIVATE_DENIED_CODE_MARKER"
+    );
+    assert!(
+        !serde_json::to_string(&report.receipt)
+            .unwrap()
+            .contains("PRIVATE_DENIED_CODE_MARKER")
+    );
+    assert!(
+        !serde_json::to_string(&report.receipt)
+            .unwrap()
+            .contains("PRIVATE_DENIED_MARKER")
+    );
+    assert!(!format!("{report:?}").contains("PRIVATE_DENIED_MARKER"));
+    assert!(!format!("{report:#?}").contains("PRIVATE_DENIED_MARKER"));
+}
+
+#[tokio::test]
+async fn unadvertised_post_dispatch_statuses_are_unknown_not_established_rejections() {
+    for status in [408, 418, 501, 599] {
+        let plan = plan(
+            "Notebook",
+            br#"{"description":""}"#,
+            Arc::new(Credential::default()),
+        );
+        let approval = plan.prepared().authorize(&mut Policy(true)).unwrap();
+        let wire = Wire::default();
+        wire.results.lock().unwrap().push_back(Ok(response(
+            status,
+            json!({"errorCode":"UnexpectedStatus"}),
+        )));
+        let report = update::execute(&plan, &approval, wire.clone(), pending())
+            .await
+            .unwrap();
+        assert!(matches!(report.receipt.outcome(), Outcome::Unknown { .. }));
+        assert_eq!(report.receipt.evidence().http_status, Some(status));
+        assert!(report.receipt.evidence().mutation_may_have_occurred);
+        assert_eq!(wire.calls.lock().unwrap().len(), 1);
+    }
+}
+
+#[test]
+fn receipt_build_error_debug_omits_retained_result_data() {
+    use update::contract::{ExecutionEvidence, ReceiptBuildError, ReceiptError};
+    let data = json!({"description":"PRIVATE_RECEIPT_BUILD_MARKER"});
+    let error = UpdateError::Receipt(Box::new(ReceiptBuildError {
+        kind: ReceiptError::InvalidEvidence,
+        outcome: Outcome::Succeeded { data: data.clone() },
+        evidence: ExecutionEvidence {
+            http_status: Some(200),
+            handles: Vec::new(),
+            coverage: Coverage::Unknown,
+            mutation_may_have_occurred: true,
+        },
+    }));
+    assert!(!format!("{error:?}").contains("PRIVATE_RECEIPT_BUILD_MARKER"));
+    assert!(!format!("{error:#?}").contains("PRIVATE_RECEIPT_BUILD_MARKER"));
+    let UpdateError::Receipt(error) = error else {
+        panic!("result evidence lost")
+    };
+    assert_eq!(error.outcome, Outcome::Succeeded { data });
 }

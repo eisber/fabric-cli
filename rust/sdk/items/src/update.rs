@@ -137,7 +137,6 @@ pub fn register(registry: &mut Registry) -> Result<(), ContractError> {
 }
 
 /// Local, sanitized failure. No request or provider text is formatted implicitly.
-#[derive(Debug)]
 pub enum UpdateError {
     /// Invalid identity, body, options, context or approval.
     InvalidInput,
@@ -170,6 +169,28 @@ impl fmt::Display for UpdateError {
 }
 
 impl std::error::Error for UpdateError {}
+
+impl fmt::Debug for UpdateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Receipt(error) => f
+                .debug_struct("UpdateError::Receipt")
+                .field("kind", &error.kind)
+                .field("http_status", &error.evidence.http_status)
+                .field(
+                    "mutation_may_have_occurred",
+                    &error.evidence.mutation_may_have_occurred,
+                )
+                .finish_non_exhaustive(),
+            Self::Contract(error) => f.debug_tuple("UpdateError::Contract").field(error).finish(),
+            Self::InvalidInput => f.write_str("UpdateError::InvalidInput"),
+            Self::UnsupportedCapability => f.write_str("UpdateError::UnsupportedCapability"),
+            Self::NotConfigured => f.write_str("UpdateError::NotConfigured"),
+            Self::ApprovalMismatch => f.write_str("UpdateError::ApprovalMismatch"),
+            Self::AlreadyExecuted => f.write_str("UpdateError::AlreadyExecuted"),
+        }
+    }
+}
 
 /// Immutable, single-submission update with native conditions and effect evidence.
 ///
@@ -356,7 +377,6 @@ fn prepare(
 }
 
 /// Retained SDK result and unprojected service failure, not a cache mutation.
-#[derive(Debug)]
 pub struct UpdateReport {
     /// Protected neutral receipt for the exact approved item and operation.
     pub receipt: ExecutionReceipt<Value>,
@@ -366,6 +386,30 @@ pub struct UpdateReport {
     pub warnings: Vec<OperationWarning>,
     /// Original returned data withheld when identity/completion was unconfirmed.
     pub unconfirmed_data: Option<Value>,
+}
+
+impl fmt::Debug for UpdateReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let status = match self.receipt.outcome() {
+            Outcome::Succeeded { .. } => "succeeded",
+            Outcome::Accepted => "accepted",
+            Outcome::Partial { .. } => "partial",
+            Outcome::Failed { .. } => "failed",
+            Outcome::Unknown { .. } => "unknown",
+        };
+        f.debug_struct("UpdateReport")
+            .field("status", &status)
+            .field("http_status", &self.receipt.evidence().http_status)
+            .field("handle_count", &self.receipt.evidence().handles.len())
+            .field(
+                "mutation_may_have_occurred",
+                &self.receipt.evidence().mutation_may_have_occurred,
+            )
+            .field("has_cause", &self.cause.is_some())
+            .field("has_unconfirmed_data", &self.unconfirmed_data.is_some())
+            .field("warnings", &self.warnings)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Submit once through existing type-specific metadata PATCH and shared policy.
@@ -497,8 +541,12 @@ pub async fn execute<E: OperationExecutor>(
             )
         }
         Err(error) => {
-            let uncertain = error.operation_id.is_some()
-                || (error.mutation_may_have_occurred && error.status.is_none());
+            // An HTTP error response does not prove a dispatched PATCH had no
+            // effects. Only established input/auth/target/condition/throttle
+            // rejections are definitive; server and unadvertised statuses are not.
+            let rejected = matches!(error.status, Some(400 | 401 | 403 | 404 | 412 | 429));
+            let uncertain =
+                error.operation_id.is_some() || (error.mutation_may_have_occurred && !rejected);
             let failure = if error.status == Some(412) {
                 info(
                     "PreconditionFailed",
@@ -511,7 +559,14 @@ pub async fn execute<E: OperationExecutor>(
                 )
             } else {
                 info(
-                    &error.code,
+                    match error.status {
+                        Some(400) => "InvalidRequest",
+                        Some(401) => "Unauthorized",
+                        Some(403) => "Forbidden",
+                        Some(404) => "NotFound",
+                        Some(429) => "Throttled",
+                        _ => &error.code,
+                    },
                     "Metadata update failed; original typed SDK evidence is retained.",
                 )
             };
