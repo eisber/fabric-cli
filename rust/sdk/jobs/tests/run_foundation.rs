@@ -104,10 +104,17 @@ struct Step {
     response: Result<JobResponse, JobExecutionError>,
     elapsed: u64,
 }
+
+struct RecordedRequest {
+    method: Method,
+    url: String,
+    body: Vec<u8>,
+}
+
 #[derive(Clone)]
 struct Executor {
     steps: Arc<Mutex<VecDeque<Step>>>,
-    requests: Arc<Mutex<Vec<(Method, String, Vec<u8>)>>>,
+    requests: Arc<Mutex<Vec<RecordedRequest>>>,
     budgets: Arc<Mutex<Vec<Duration>>>,
     clock: Arc<Clock>,
     partial: Arc<Mutex<Option<JobResponse>>>,
@@ -140,11 +147,11 @@ impl JobExecutor for Executor {
     ) -> JobFuture<'a, Result<JobResponse, JobExecutionError>> {
         Box::pin(async move {
             self.request_times.lock().unwrap().push(self.clock.now());
-            self.requests.lock().unwrap().push((
-                request.method(),
-                request.url().to_string(),
-                request.body().to_vec(),
-            ));
+            self.requests.lock().unwrap().push(RecordedRequest {
+                method: request.method(),
+                url: request.url().to_string(),
+                body: request.body().to_vec(),
+            });
             let step = self
                 .steps
                 .lock()
@@ -476,7 +483,11 @@ async fn one_mutation_on_auth_http_drop_stream_error_and_replay_guard() {
                 .source,
             RunError::Replay
         );
-        assert_eq!(executor.requests.lock().unwrap().len(), 1);
+        let requests = executor.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method, Method::Post);
+        assert_eq!(requests[0].url, submit_url().as_str());
+        assert!(requests[0].body.is_empty());
         assert_eq!(credential.calls.load(Ordering::SeqCst), 1);
         assert_eq!(
             executor.budgets.lock().unwrap()[0],
@@ -692,7 +703,10 @@ async fn existing_run_observation_terminal_unknown_and_wait_denial_never_submit(
             outcome
         );
         assert!(!session.evidence().mutation_may_have_occurred);
-        assert_eq!(executor.requests.lock().unwrap()[0].0, Method::Get);
+        let requests = executor.requests.lock().unwrap();
+        assert_eq!(requests[0].method, Method::Get);
+        assert_eq!(requests[0].url, monitor());
+        assert!(requests[0].body.is_empty());
     }
     let clock = Arc::new(Clock::default());
     let executor = Executor::new(
@@ -919,7 +933,7 @@ async fn provider_minimum_above_legacy_delay_cap_is_honored_in_shared_driver() {
             .lock()
             .unwrap()
             .iter()
-            .map(|request| request.0)
+            .map(|request| request.method)
             .collect::<Vec<_>>(),
         [Method::Post, Method::Get, Method::Get]
     );
