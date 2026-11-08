@@ -15,8 +15,16 @@ layer = "sdk"
 
 [dependencies]
 azure_core.workspace = true
+fabric-core.workspace = true
 fabric-sdk-api.workspace = true
+fabric-sdk-operations.workspace = true
+fabric-sdk-workspaces.workspace = true
+fabric-v2-contracts.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+tokio.workspace = true
 
 [lints]
 workspace = true

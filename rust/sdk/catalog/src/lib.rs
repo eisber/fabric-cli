@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Fabric catalog search and hidden read routes, not mutations or CLI support policy.
+//! Fabric catalog reads and an explicitly approved Domain role synchronization.
 
 use azure_core::http::Method;
 use fabric_sdk_api::{
@@ -13,6 +13,7 @@ use std::{future::Future, num::NonZeroUsize};
 
 mod metadata;
 mod search_v2;
+pub mod service;
 pub use metadata::{HiddenMetadata, MetadataOmission};
 pub use search_v2::{
     CatalogFilter, CatalogInitialRequest, CatalogObservationError, CatalogPageObservation,

@@ -14,6 +14,7 @@ mod mutations;
 mod projection;
 mod read_targets;
 mod rendering;
+pub mod service;
 mod transport;
 pub use api::{ApiInput, ApiOptions, api, build_api_request, read_api_input};
 pub use export::{AclExportSink, export_acls};
