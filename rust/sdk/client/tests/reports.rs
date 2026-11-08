@@ -228,6 +228,11 @@ fn required_report_and_each_page_json_must_not_be_false_complete() {
                 "required {path} must not be complete for {bytes:?}"
             );
             assert!(!read.evidence().incomplete.is_empty());
+            assert!(
+                read.evidence()
+                    .incomplete
+                    .contains(&IncompleteReason::InvalidReportStructure)
+            );
             assert_eq!(read.data(), &value);
             assert_eq!(read.part_bytes(path).unwrap(), bytes);
         }
@@ -263,6 +268,99 @@ fn legacy_schema_nullable_connection_is_valid_native_source_not_model_permission
         Some(&properties["datasetReference"])
     );
     assert!(!read.evidence().related_model_authorized);
+}
+
+#[test]
+fn legacy_connection_required_fields_use_their_exact_nullable_types() {
+    for nullable in [
+        "connectionString",
+        "pbiServiceModelId",
+        "pbiModelVirtualServerName",
+        "pbiModelDatabaseName",
+        "name",
+        "connectionType",
+    ] {
+        let mut properties = legacy_nullable_properties();
+        properties["datasetReference"]["byConnection"][nullable] = Value::Null;
+        let mut value = source();
+        value["definition"]["parts"][0] =
+            part("definition.pbir", &serde_json::to_vec(&properties).unwrap());
+        assert!(inspect(value).unwrap().complete());
+
+        properties["datasetReference"]["byConnection"]
+            .as_object_mut()
+            .unwrap()
+            .remove(nullable);
+        let mut value = source();
+        value["definition"]["parts"][0] =
+            part("definition.pbir", &serde_json::to_vec(&properties).unwrap());
+        assert!(matches!(inspect(value), Err(ReportError::InvalidResponse)));
+    }
+    for (field, value, valid) in [
+        ("pbiServiceModelId", json!(42), true),
+        ("pbiServiceModelId", json!("42"), false),
+        ("pbiServiceModelId", json!(42.5), false),
+        ("connectionString", json!(false), false),
+        ("pbiModelDatabaseName", json!(42), false),
+        ("connectionType", json!({}), false),
+    ] {
+        let mut properties = legacy_nullable_properties();
+        properties["datasetReference"]["byConnection"][field] = value;
+        let mut value = source();
+        value["definition"]["parts"][0] =
+            part("definition.pbir", &serde_json::to_vec(&properties).unwrap());
+        assert_eq!(inspect(value).is_ok(), valid, "field {field}");
+    }
+}
+
+#[test]
+fn modern_connection_string_remains_strict_and_unknown_schema_is_inert_partial() {
+    for connection in [Value::Null, json!(false), json!(42), json!("")] {
+        let properties = json!({
+            "$schema":"https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
+            "version":"4.0","datasetReference":{"byConnection":{"connectionString":connection}}
+        });
+        let mut value = source();
+        value["definition"]["parts"][0] =
+            part("definition.pbir", &serde_json::to_vec(&properties).unwrap());
+        assert!(matches!(inspect(value), Err(ReportError::InvalidResponse)));
+    }
+    let properties = json!({
+        "$schema":"https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/99.0.0/schema.json",
+        "version":"4.0","datasetReference":{"futureBinding":{"opaque":true}}
+    });
+    let mut value = source();
+    value["definition"]["parts"][0] =
+        part("definition.pbir", &serde_json::to_vec(&properties).unwrap());
+    let read = inspect(value.clone()).unwrap();
+    assert_eq!(read.data(), &value);
+    assert_eq!(
+        read.evidence().model_reference.as_ref(),
+        Some(&properties["datasetReference"])
+    );
+    assert!(
+        read.evidence()
+            .incomplete
+            .contains(&IncompleteReason::UnknownBindingSchema)
+    );
+    assert!(!read.complete());
+    assert!(!read.evidence().related_model_authorized);
+}
+
+#[test]
+fn required_objects_are_checked_without_reinterpreting_unrelated_json_resources() {
+    let mut value = source();
+    value["definition"]["parts"]
+        .as_array_mut()
+        .unwrap()
+        .push(part("StaticResources/user.json", &[0xff, 0, 42]));
+    let read = inspect(value.clone()).unwrap();
+    assert!(read.complete());
+    assert_eq!(read.data(), &value);
+    assert_eq!(
+        read.part_bytes("StaticResources/user.json").unwrap(),
+        [0xff, 0, 42]
+    );
 }
 
 #[tokio::test]

@@ -372,6 +372,48 @@ async fn report_malformed_required_json_blocks_complete_and_raw_file_delivery() 
 }
 
 #[tokio::test]
+async fn report_invalid_required_json_retains_partial_receipt_and_blocks_raw_stdout() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    for raw in [false, true] {
+        let f = Fixture::new();
+        report_metadata(&f, "Report");
+        let mut source = report_definition("4.0");
+        source["definition"]["parts"][2]["payload"] = STANDARD.encode(b"null").into();
+        f.executor.response(
+            "POST",
+            format!("/v1/workspaces/{WS}/reports/{ITEM}/getDefinition"),
+            200,
+            &serde_json::to_vec(&source).unwrap(),
+            &[],
+        );
+        let suffix = if raw {
+            "/src/definition/parts/StaticResources/native.bin"
+        } else {
+            "/src/definition"
+        };
+        let mut args = vec![
+            "get".into(),
+            format!("/{WS}.Workspace/{ITEM}.Report{suffix}"),
+        ];
+        if raw {
+            args.extend(["--format".into(), "raw".into()]);
+            assert!(matches!(
+                stdout(&f, &args).await,
+                Err(GetCommandError::Incomplete { .. })
+            ));
+        } else {
+            let value: Value = serde_json::from_slice(&stdout(&f, &args).await.unwrap()).unwrap();
+            assert_eq!(value["data"], source);
+            assert_eq!(value["meta"]["outcome"], "partial");
+            assert_eq!(
+                value["meta"]["reportSource"]["incomplete"],
+                serde_json::json!(["invalidReportStructure"])
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn report_legacy_nullable_connection_keeps_complete_bytes_and_unverified_model() {
     use base64::{Engine, engine::general_purpose::STANDARD};
     let f = Fixture::new();

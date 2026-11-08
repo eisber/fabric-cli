@@ -26,10 +26,14 @@ pub enum IncompleteReason {
     MissingDefinitionProperties,
     /// Required enhanced/legacy report structure is absent.
     MissingReportStructure,
+    /// A required report/page part is not a syntactically valid JSON object.
+    InvalidReportStructure,
     /// Provider format is not recognized; source remains opaque.
     UnknownFormat,
     /// Definition properties version is absent or unsupported.
     UnknownVersion,
+    /// The model-reference schema generation is unsupported; reference stays inert.
+    UnknownBindingSchema,
     /// A part uses a future encoding; it has not been dropped or guessed.
     UnsupportedPayloadType,
     /// Model reference absent; no related-model identity is synthesized.
@@ -220,6 +224,21 @@ impl ReportDefinition {
         if enhanced && evidence.native_version.as_deref() != Some("2.0.0") {
             mark(&mut evidence, IncompleteReason::UnknownVersion);
         }
+        for part in parts {
+            let path = part["path"].as_str().expect("validated native part path");
+            let required = path == "report.json"
+                || path == "definition/report.json"
+                || (path.starts_with("definition/pages/") && path.ends_with("/page.json"));
+            if required && part["payloadType"] == "InlineBase64" {
+                let bytes = read.part_bytes(path).map_err(ReportError::Representation)?;
+                if !matches!(
+                    serde_json::from_slice::<Value>(&bytes),
+                    Ok(Value::Object(_))
+                ) {
+                    mark(&mut evidence, IncompleteReason::InvalidReportStructure);
+                }
+            }
+        }
         if !paths.contains("definition.pbir") {
             mark(&mut evidence, IncompleteReason::MissingDefinitionProperties);
         } else if let Some(part) = parts.iter().find(|part| part["path"] == "definition.pbir")
@@ -236,8 +255,10 @@ impl ReportDefinition {
             evidence.version = optional_string(properties.get("version"))?;
             evidence.schema = optional_string(properties.get("$schema"))?;
             if let Some(reference) = properties.get("datasetReference") {
-                if matches!(evidence.version.as_deref(), Some("1.0" | "4.0")) {
-                    validate_reference(reference)?;
+                if matches!(evidence.version.as_deref(), Some("1.0" | "4.0"))
+                    && validate_reference(reference, evidence.schema.as_deref())?
+                {
+                    mark(&mut evidence, IncompleteReason::UnknownBindingSchema);
                 }
                 evidence.model_reference = Some(reference.clone());
             }
@@ -309,7 +330,17 @@ fn optional_string(value: Option<&Value>) -> Result<Option<String>, ReportError>
         .transpose()
 }
 
-fn validate_reference(reference: &Value) -> Result<(), ReportError> {
+fn validate_reference(reference: &Value, schema: Option<&str>) -> Result<bool, ReportError> {
+    let legacy = match schema {
+        Some(
+            "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/1.0.0/schema.json",
+        ) => true,
+        None
+        | Some(
+            "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
+        ) => false,
+        Some(_) => return Ok(true),
+    };
     let reference = reference.as_object().ok_or(ReportError::InvalidResponse)?;
     let path = reference.get("byPath").filter(|value| !value.is_null());
     let connection = reference
@@ -320,11 +351,38 @@ fn validate_reference(reference: &Value) -> Result<(), ReportError> {
             optional_string(path.get("path"))?.ok_or(ReportError::InvalidResponse)?;
         }
         (None, Some(connection)) if connection.is_object() => {
-            // Both documented byConnection generations contain connectionString.
-            optional_string(connection.get("connectionString"))?
-                .ok_or(ReportError::InvalidResponse)?;
+            if legacy {
+                validate_legacy_connection(connection)?;
+            } else {
+                optional_string(connection.get("connectionString"))?
+                    .ok_or(ReportError::InvalidResponse)?;
+            }
         }
         _ => return Err(ReportError::InvalidResponse),
+    }
+    Ok(false)
+}
+
+fn validate_legacy_connection(connection: &Value) -> Result<(), ReportError> {
+    for field in [
+        "connectionString",
+        "pbiModelVirtualServerName",
+        "pbiModelDatabaseName",
+        "name",
+        "connectionType",
+    ] {
+        if !connection
+            .get(field)
+            .is_some_and(|value| value.is_string() || value.is_null())
+        {
+            return Err(ReportError::InvalidResponse);
+        }
+    }
+    if !connection
+        .get("pbiServiceModelId")
+        .is_some_and(|value| value.is_i64() || value.is_u64() || value.is_null())
+    {
+        return Err(ReportError::InvalidResponse);
     }
     Ok(())
 }

@@ -41,6 +41,14 @@ Provider-advertised `mediaType` is retained; suffixes do not invent MIME types.
 Duplicate exact paths, malformed encodings/binding JSON, mixed legacy/enhanced
 layouts and conflicting declared/requested formats fail.
 
+Required report JSON (legacy `report.json` or enhanced
+`definition/report.json`) and every enhanced `page.json` must decode as
+syntactically valid JSON objects. Invalid syntax, null, arrays/scalars or
+non-UTF-8 required content sets `invalidReportStructure` partial evidence while
+preserving the original envelope/bytes. It cannot enable complete or raw
+delivery. Unrelated resources remain opaque, even with a `.json` suffix;
+this check is not a comprehensive JSON-schema validator.
+
 Definition JSON carries `meta.reportSource` outside projected data. It records
 declared format versus observed layout, `definition.pbir` version/schema,
 enhanced `definition/version.json` version, native paths/media, model reference
@@ -61,6 +69,15 @@ override the caller's smaller invocation/transport limits.
 ## Related-model prerequisite
 
 The native `datasetReference` is preserved as byPath or byConnection data.
+Binding generation comes from the declared `definitionProperties` schema,
+not the `definition.pbir` version: version `4.0` can use either schema.
+Schema `1.0.0` requires all six legacy connection fields; five allow string/null,
+and `pbiServiceModelId` allows integer/null. In particular, a null
+`connectionString` is valid legacy source. Schema `2.0.0` retains the strict
+nonempty connection-string check. Unrecognized schema generations retain
+`unknownBindingSchema` partial evidence and the untouched inert reference,
+rather than interpreting it using either known generation. Schema-less source
+retains the existing strict binding check; no schema is fetched during reads.
 `relatedModelAuthorized` is always false: this read never resolves or authorizes
 that model. Model navigation requires explicit canonical model coordinates
 (including its real workspace) and separate authorization by a model provider.
@@ -100,5 +117,8 @@ acceptance or three-platform completion is claimed by these tests.
   mutually exclusive PBIR/PBIR-Legacy, required native parts and model reference.
 - [Project report folder](https://learn.microsoft.com/en-us/power-bi/developer/projects/projects-report):
   format/version/schema, byPath versus byConnection and native structure.
+- [Definition properties schema 1.0.0](https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/1.0.0/schema.json)
+  and [schema 2.0.0](https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json):
+  distinct legacy nullable field types and modern connection representation.
 - [Long-running operations](https://learn.microsoft.com/en-us/rest/api/fabric/articles/long-running-operation):
   status/result observation and acceptance headers.
