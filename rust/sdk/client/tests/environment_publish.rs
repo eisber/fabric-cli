@@ -213,8 +213,17 @@ fn target() -> ResolvedTarget {
     .unwrap()
 }
 
-fn prepared(observation: ObservationPolicy) -> PreparedOperation {
-    environment_publish::prepare(target(), PublishSource::ExistingStaging, observation).unwrap()
+fn prepared(
+    client: &Client,
+    observation: ObservationPolicy,
+) -> environment_publish::PreparedPublish {
+    environment_publish::prepare(
+        client,
+        target(),
+        PublishSource::ExistingStaging,
+        observation,
+    )
+    .unwrap()
 }
 
 struct Approval(bool);
@@ -270,9 +279,12 @@ fn only_environment_staging_is_registered_without_auto_save_or_report_support() 
         assert!(registry.resolve(Verb::Publish, &selection, None).is_err());
     }
     assert!(
-        prepared(ObservationPolicy::ReturnAccepted)
-            .authorize(&mut Approval(false))
-            .is_err()
+        prepared(
+            &client(Arc::default(), Audience::Fabric),
+            ObservationPolicy::ReturnAccepted
+        )
+        .authorize(&mut Approval(false))
+        .is_err()
     );
     assert!(ItemIdentity::new(WORKSPACE, "../item").is_err());
     let child = ResolvedTarget::new(
@@ -287,6 +299,7 @@ fn only_environment_staging_is_registered_without_auto_save_or_report_support() 
     .unwrap();
     assert!(
         environment_publish::prepare(
+            &client(Arc::default(), Audience::Fabric),
             child,
             PublishSource::ExistingStaging,
             ObservationPolicy::ReturnAccepted
@@ -299,17 +312,12 @@ fn only_environment_staging_is_registered_without_auto_save_or_report_support() 
 async fn native_success_has_exact_bodyless_release_request_and_source_evidence() {
     let credential = Arc::new(Credential::default());
     let executor = Executor::with(vec![Ok(native("Success"))]);
-    let prepared = prepared(ObservationPolicy::ReturnAccepted);
+    let client = client(credential, Audience::Fabric);
+    let prepared = prepared(&client, ObservationPolicy::ReturnAccepted);
     let approved = prepared.authorize(&mut Approval(true)).unwrap();
-    let result = environment_publish::publish(
-        &client(credential, Audience::Fabric),
-        &executor,
-        &approved,
-        limits(),
-        pending(),
-    )
-    .await
-    .unwrap();
+    let result = environment_publish::publish(&client, &executor, approved, limits(), pending())
+        .await
+        .unwrap();
     let Outcome::Succeeded {
         data: PublishData::Native(data),
     } = result.receipt.outcome()
@@ -342,17 +350,13 @@ async fn native_success_has_exact_bodyless_release_request_and_source_evidence()
 async fn native_active_and_terminal_failure_states_do_not_become_http_success() {
     for state in ["Waiting", "Running", "Cancelling", "Failed", "Cancelled"] {
         let executor = Executor::with(vec![Ok(native(state))]);
-        let prepared = prepared(ObservationPolicy::WaitForOperation);
+        let client = client(Arc::default(), Audience::Fabric);
+        let prepared = prepared(&client, ObservationPolicy::WaitForOperation);
         let approved = prepared.authorize(&mut Approval(true)).unwrap();
-        let result = environment_publish::publish(
-            &client(Arc::default(), Audience::Fabric),
-            &executor,
-            &approved,
-            limits(),
-            pending(),
-        )
-        .await
-        .unwrap();
+        let result =
+            environment_publish::publish(&client, &executor, approved, limits(), pending())
+                .await
+                .unwrap();
         if ["Failed", "Cancelled"].contains(&state) {
             assert!(matches!(result.receipt.outcome(), Outcome::Failed { .. }));
         } else {
@@ -381,17 +385,13 @@ async fn absent_or_null_version_is_preserved_without_fabricating_it() {
         json!({"state":"Running","targetVersion":null}),
     ] {
         let executor = Executor::with(vec![Ok(response(200, json!({"publishDetails":details})))]);
-        let prepared = prepared(ObservationPolicy::ReturnAccepted);
+        let client = client(Arc::default(), Audience::Fabric);
+        let prepared = prepared(&client, ObservationPolicy::ReturnAccepted);
         let approved = prepared.authorize(&mut Approval(true)).unwrap();
-        let result = environment_publish::publish(
-            &client(Arc::default(), Audience::Fabric),
-            &executor,
-            &approved,
-            limits(),
-            pending(),
-        )
-        .await
-        .unwrap();
+        let result =
+            environment_publish::publish(&client, &executor, approved, limits(), pending())
+                .await
+                .unwrap();
         let Outcome::Partial {
             data: PublishData::Native(native),
             ..
@@ -423,17 +423,13 @@ async fn malformed_unknown_and_conflicting_component_states_are_not_complete() {
         conflicting,
     ] {
         let executor = Executor::with(vec![Ok(reply)]);
-        let prepared = prepared(ObservationPolicy::ReturnAccepted);
+        let client = client(Arc::default(), Audience::Fabric);
+        let prepared = prepared(&client, ObservationPolicy::ReturnAccepted);
         let approved = prepared.authorize(&mut Approval(true)).unwrap();
-        let result = environment_publish::publish(
-            &client(Arc::default(), Audience::Fabric),
-            &executor,
-            &approved,
-            limits(),
-            pending(),
-        )
-        .await
-        .unwrap();
+        let result =
+            environment_publish::publish(&client, &executor, approved, limits(), pending())
+                .await
+                .unwrap();
         assert!(matches!(
             result.receipt.outcome(),
             Outcome::Unknown { .. } | Outcome::Partial { .. }
@@ -446,17 +442,12 @@ async fn malformed_unknown_and_conflicting_component_states_are_not_complete() {
 #[tokio::test]
 async fn return_accepted_retains_real_handle_and_never_polls() {
     let executor = Executor::with(vec![Ok(accepted())]);
-    let prepared = prepared(ObservationPolicy::ReturnAccepted);
+    let client = client(Arc::default(), Audience::Fabric);
+    let prepared = prepared(&client, ObservationPolicy::ReturnAccepted);
     let approved = prepared.authorize(&mut Approval(true)).unwrap();
-    let result = environment_publish::publish(
-        &client(Arc::default(), Audience::Fabric),
-        &executor,
-        &approved,
-        limits(),
-        pending(),
-    )
-    .await
-    .unwrap();
+    let result = environment_publish::publish(&client, &executor, approved, limits(), pending())
+        .await
+        .unwrap();
     assert!(matches!(result.receipt.outcome(), Outcome::Accepted));
     assert_eq!(result.receipt.evidence().http_status, Some(202));
     assert_eq!(result.receipt.evidence().handles.len(), 1);
@@ -473,23 +464,23 @@ async fn lro_wait_uses_exact_120_second_delay_and_never_fetches_void_result() {
             json!({"status":"Succeeded","percentComplete":100}),
         )),
     ]);
-    let prepared = prepared(ObservationPolicy::WaitForOperation);
+    let client = client(Arc::default(), Audience::Fabric);
+    let prepared = prepared(&client, ObservationPolicy::WaitForOperation);
     let approved = prepared.authorize(&mut Approval(true)).unwrap();
-    let result = environment_publish::publish(
-        &client(Arc::default(), Audience::Fabric),
-        &executor,
-        &approved,
-        limits(),
-        pending(),
-    )
-    .await
-    .unwrap();
+    let result = environment_publish::publish(&client, &executor, approved, limits(), pending())
+        .await
+        .unwrap();
     assert!(matches!(
         result.receipt.outcome(),
         Outcome::Succeeded {
             data: PublishData::Operation(_)
         }
     ));
+    let initial = result.initial_response.as_ref().unwrap();
+    assert_eq!(initial.status, 202);
+    assert_eq!(initial.headers, accepted().headers);
+    assert!(initial.body.is_empty());
+    assert_eq!(result.response.as_ref().unwrap().status, 200);
     assert_eq!(*executor.waits.lock().unwrap(), [Duration::from_secs(120)]);
     assert_eq!(executor.posts(), 1);
     let requests = executor.requests.lock().unwrap();
@@ -522,17 +513,13 @@ async fn invalid_accepted_headers_never_turn_into_completed_or_replay() {
         },
     ] {
         let executor = Executor::with(vec![Ok(reply)]);
-        let prepared = prepared(ObservationPolicy::ReturnAccepted);
+        let client = client(Arc::default(), Audience::Fabric);
+        let prepared = prepared(&client, ObservationPolicy::ReturnAccepted);
         let approved = prepared.authorize(&mut Approval(true)).unwrap();
-        let result = environment_publish::publish(
-            &client(Arc::default(), Audience::Fabric),
-            &executor,
-            &approved,
-            limits(),
-            pending(),
-        )
-        .await
-        .unwrap();
+        let result =
+            environment_publish::publish(&client, &executor, approved, limits(), pending())
+                .await
+                .unwrap();
         assert!(matches!(result.receipt.outcome(), Outcome::Unknown { .. }));
         assert_eq!(executor.posts(), 1);
     }
@@ -545,12 +532,13 @@ async fn cancellation_drops_inflight_post_and_retains_possible_mutation() {
         block_post: Some(flag.clone()),
         ..Executor::default()
     };
-    let prepared = prepared(ObservationPolicy::ReturnAccepted);
+    let client = client(Arc::default(), Audience::Fabric);
+    let prepared = prepared(&client, ObservationPolicy::ReturnAccepted);
     let approved = prepared.authorize(&mut Approval(true)).unwrap();
     let result = environment_publish::publish(
-        &client(Arc::default(), Audience::Fabric),
+        &client,
         &executor,
-        &approved,
+        approved,
         limits(),
         poll_fn(move |_| {
             if flag.load(Ordering::SeqCst) {
@@ -597,17 +585,13 @@ async fn rejected_publication_and_another_ongoing_publish_keep_provider_error() 
                 "errorCode":"InvalidEnvironmentPublish", "message":"EnvironmentAnotherOngoingPublishProcess"
             }),
         ))]);
-        let prepared = prepared(ObservationPolicy::ReturnAccepted);
+        let client = client(Arc::default(), Audience::Fabric);
+        let prepared = prepared(&client, ObservationPolicy::ReturnAccepted);
         let approved = prepared.authorize(&mut Approval(true)).unwrap();
-        let result = environment_publish::publish(
-            &client(Arc::default(), Audience::Fabric),
-            &executor,
-            &approved,
-            limits(),
-            pending(),
-        )
-        .await
-        .unwrap();
+        let result =
+            environment_publish::publish(&client, &executor, approved, limits(), pending())
+                .await
+                .unwrap();
         assert!(matches!(result.receipt.outcome(), Outcome::Failed { .. }));
         assert_eq!(result.receipt.evidence().http_status, Some(status));
         assert!(result.operation_error.unwrap().raw_service_error.is_some());
@@ -623,17 +607,13 @@ async fn lost_response_timeout_and_local_cancellation_preserve_unknown_effect() 
         OperationExecutionError::Cancelled,
     ] {
         let executor = Executor::with(vec![Err(error)]);
-        let prepared = prepared(ObservationPolicy::ReturnAccepted);
+        let client = client(Arc::default(), Audience::Fabric);
+        let prepared = prepared(&client, ObservationPolicy::ReturnAccepted);
         let approved = prepared.authorize(&mut Approval(true)).unwrap();
-        let result = environment_publish::publish(
-            &client(Arc::default(), Audience::Fabric),
-            &executor,
-            &approved,
-            limits(),
-            pending(),
-        )
-        .await
-        .unwrap();
+        let result =
+            environment_publish::publish(&client, &executor, approved, limits(), pending())
+                .await
+                .unwrap();
         assert!(matches!(result.receipt.outcome(), Outcome::Unknown { .. }));
         assert!(result.receipt.evidence().mutation_may_have_occurred);
         assert_eq!(result.receipt.evidence().http_status, None);
@@ -668,17 +648,12 @@ async fn denied_observation_and_poll_limits_do_not_mean_failed_publication() {
         ),
     ] {
         let executor = Executor::with(replies);
-        let prepared = prepared(ObservationPolicy::WaitForOperation);
+        let client = client(Arc::default(), Audience::Fabric);
+        let prepared = prepared(&client, ObservationPolicy::WaitForOperation);
         let approved = prepared.authorize(&mut Approval(true)).unwrap();
-        let result = environment_publish::publish(
-            &client(Arc::default(), Audience::Fabric),
-            &executor,
-            &approved,
-            limit,
-            pending(),
-        )
-        .await
-        .unwrap();
+        let result = environment_publish::publish(&client, &executor, approved, limit, pending())
+            .await
+            .unwrap();
         assert!(matches!(result.receipt.outcome(), Outcome::Unknown { .. }));
         assert_eq!(result.receipt.evidence().handles.len(), 1);
         assert_eq!(executor.posts(), 1);
@@ -702,18 +677,19 @@ async fn lro_failure_and_cancelled_wait_preserve_handle_without_remote_cancel() 
         if !failed {
             executor.wait_error = Some(OperationExecutionError::Cancelled);
         }
-        let prepared = prepared(ObservationPolicy::WaitForOperation);
+        let client = client(Arc::default(), Audience::Fabric);
+        let prepared = prepared(&client, ObservationPolicy::WaitForOperation);
         let approved = prepared.authorize(&mut Approval(true)).unwrap();
-        let result = environment_publish::publish(
-            &client(Arc::default(), Audience::Fabric),
-            &executor,
-            &approved,
-            limits(),
-            pending(),
-        )
-        .await
-        .unwrap();
+        let result =
+            environment_publish::publish(&client, &executor, approved, limits(), pending())
+                .await
+                .unwrap();
         assert_eq!(result.receipt.evidence().handles.len(), 1);
+        assert_eq!(result.initial_response.as_ref().unwrap().status, 202);
+        assert_eq!(
+            result.initial_response.as_ref().unwrap().headers["Retry-After"],
+            "120"
+        );
         if failed {
             assert!(matches!(result.receipt.outcome(), Outcome::Failed { .. }));
         } else {
@@ -725,37 +701,28 @@ async fn lro_failure_and_cancelled_wait_preserve_handle_without_remote_cancel() 
 
 #[tokio::test]
 async fn predispatch_cancellation_and_wrong_audience_do_not_acquire_or_dispatch() {
-    for cancel in [true, false] {
-        let credential = Arc::new(Credential::default());
-        let executor = Executor::default();
-        let prepared = prepared(ObservationPolicy::ReturnAccepted);
-        let approved = prepared.authorize(&mut Approval(true)).unwrap();
-        let signal: Pin<Box<dyn Future<Output = ()> + Send>> = if cancel {
-            Box::pin(ready(()))
-        } else {
-            Box::pin(pending())
-        };
-        let result = environment_publish::publish(
-            &client(
-                credential.clone(),
-                if cancel {
-                    Audience::Fabric
-                } else {
-                    Audience::Arm
-                },
-            ),
-            &executor,
-            &approved,
-            limits(),
-            signal,
+    let credential = Arc::new(Credential::default());
+    let invalid = client(credential.clone(), Audience::Arm);
+    assert!(
+        environment_publish::prepare(
+            &invalid,
+            target(),
+            PublishSource::ExistingStaging,
+            ObservationPolicy::ReturnAccepted
         )
+        .is_err()
+    );
+    let client = client(credential.clone(), Audience::Fabric);
+    let executor = Executor::default();
+    let prepared = prepared(&client, ObservationPolicy::ReturnAccepted);
+    let approved = prepared.authorize(&mut Approval(true)).unwrap();
+    let result = environment_publish::publish(&client, &executor, approved, limits(), ready(()))
         .await
         .unwrap();
-        assert!(matches!(result.receipt.outcome(), Outcome::Unknown { .. }));
-        assert!(!result.receipt.evidence().mutation_may_have_occurred);
-        assert!(executor.requests.lock().unwrap().is_empty());
-        assert_eq!(credential.0.load(Ordering::SeqCst), 0);
-    }
+    assert!(matches!(result.receipt.outcome(), Outcome::Unknown { .. }));
+    assert!(!result.receipt.evidence().mutation_may_have_occurred);
+    assert!(executor.requests.lock().unwrap().is_empty());
+    assert_eq!(credential.0.load(Ordering::SeqCst), 0);
 }
 
 fn environment(state: &str, version: &str) -> OperationResponse {
@@ -835,18 +802,192 @@ async fn fabricated_approval_input_cannot_bypass_typed_staging_intent() {
         Precondition::UnguardedConcurrency,
     ])
     .unwrap();
-    let approved = tampered.authorize(&mut Approval(true)).unwrap();
-    let executor = Executor::default();
+    let credential = Arc::new(Credential::default());
     assert!(
-        environment_publish::publish(
-            &client(Arc::default(), Audience::Fabric),
-            &executor,
-            &approved,
-            limits(),
-            pending()
+        environment_publish::PreparedPublish::from_operation(
+            &client(credential.clone(), Audience::Fabric),
+            tampered
         )
-        .await
         .is_err()
     );
+    assert_eq!(credential.0.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn review_regression_approval_cannot_use_another_execution_context() {
+    let approved_context = client(Arc::default(), Audience::Fabric);
+    let other_credential = Arc::new(Credential::default());
+    let other_context = client(other_credential.clone(), Audience::Fabric);
+    let client = approved_context.clone();
+    let prepared = prepared(&client, ObservationPolicy::ReturnAccepted);
+    let approved = prepared.authorize(&mut Approval(true)).unwrap();
+    let executor = Executor::with(vec![Ok(native("Success"))]);
+    assert!(
+        environment_publish::publish(&other_context, &executor, approved, limits(), pending())
+            .await
+            .is_err()
+    );
+    assert_eq!(other_credential.0.load(Ordering::SeqCst), 0);
     assert!(executor.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn approval_rejects_each_changed_context_before_credential_or_http() {
+    let provider = Arc::new(Credential::default());
+    let original = client(provider.clone(), Audience::Fabric);
+    let other_provider = Arc::new(Credential::default());
+    let contexts = [
+        RequestContext::with_endpoint(
+            provider.clone(),
+            CredentialSelection::new("other-account", "offline-tenant", Audience::Fabric).unwrap(),
+            original.context().endpoint().clone(),
+        ),
+        RequestContext::with_endpoint(
+            provider.clone(),
+            CredentialSelection::new("offline-account", "other-tenant", Audience::Fabric).unwrap(),
+            original.context().endpoint().clone(),
+        ),
+        RequestContext::with_endpoint(
+            provider.clone(),
+            original.selection().clone(),
+            EndpointBinding::public(ServiceOrigin::Fabric),
+        ),
+        RequestContext::with_endpoint(
+            provider.clone(),
+            original.selection().clone(),
+            EndpointBinding::public(ServiceOrigin::PowerBi),
+        ),
+        RequestContext::with_endpoint(
+            provider.clone(),
+            CredentialSelection::new("offline-account", "offline-tenant", Audience::Arm).unwrap(),
+            original.context().endpoint().clone(),
+        ),
+        RequestContext::with_endpoint(
+            other_provider.clone(),
+            original.selection().clone(),
+            original.context().endpoint().clone(),
+        ),
+    ];
+    for context in contexts {
+        let prepared = prepared(&original, ObservationPolicy::ReturnAccepted);
+        let approved = prepared.authorize(&mut Approval(true)).unwrap();
+        let executor = Executor::with(vec![Ok(native("Success"))]);
+        assert!(
+            environment_publish::publish(
+                &Client::with_context(context),
+                &executor,
+                approved,
+                limits(),
+                pending()
+            )
+            .await
+            .is_err()
+        );
+        assert!(executor.requests.lock().unwrap().is_empty());
+    }
+    assert_eq!(provider.0.load(Ordering::SeqCst), 0);
+    assert_eq!(other_provider.0.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn cloned_matching_context_and_valid_neutral_intent_remain_usable() {
+    let client = client(Arc::default(), Audience::Fabric);
+    let prepared = prepared(&client, ObservationPolicy::ReturnAccepted);
+    let prepared =
+        environment_publish::PreparedPublish::from_operation(&client, prepared.operation().clone())
+            .unwrap();
+    assert_eq!(prepared.context().selection(), client.selection());
+    let approved = prepared.authorize(&mut Approval(true)).unwrap();
+    let executor = Executor::with(vec![Ok(native("Success"))]);
+    let result =
+        environment_publish::publish(&client.clone(), &executor, approved, limits(), pending())
+            .await
+            .unwrap();
+    assert!(matches!(
+        result.receipt.outcome(),
+        Outcome::Succeeded { .. }
+    ));
+    let serialized = serde_json::to_string(&result.receipt).unwrap();
+    assert!(!serialized.contains("offline-account"));
+    assert!(!serialized.contains("offline-tenant"));
+    assert!(!serialized.contains("synthetic-offline-publish"));
+}
+
+#[tokio::test]
+async fn review_regression_unsupported_statuses_are_unknown_not_complete_failures() {
+    for status in [201, 204, 206, 301, 302, 307, 308, 418, 500, 502, 503] {
+        let executor = Executor::with(vec![Ok(response(status, json!({"unexpected":"response"})))]);
+        let client = client(Arc::default(), Audience::Fabric);
+        let prepared = prepared(&client, ObservationPolicy::ReturnAccepted);
+        let approved = prepared.authorize(&mut Approval(true)).unwrap();
+        let result =
+            environment_publish::publish(&client, &executor, approved, limits(), pending())
+                .await
+                .unwrap();
+        assert!(
+            matches!(result.receipt.outcome(), Outcome::Unknown { .. }),
+            "status {status}"
+        );
+        assert!(matches!(
+            result.receipt.evidence().coverage,
+            fabric_sdk::v2::Coverage::Incomplete { .. }
+        ));
+        assert_eq!(result.receipt.evidence().http_status, Some(status));
+        assert!(result.receipt.evidence().mutation_may_have_occurred);
+        assert_eq!(executor.posts(), 1);
+    }
+}
+
+#[tokio::test]
+async fn optional_components_do_not_invent_a_required_native_response_field() {
+    for info in [None, Some(json!({}))] {
+        let mut details = json!({"state":"Success","targetVersion":VERSION});
+        if let Some(info) = info {
+            details["componentPublishInfo"] = info;
+        }
+        let executor = Executor::with(vec![Ok(response(200, json!({"publishDetails":details})))]);
+        let client = client(Arc::default(), Audience::Fabric);
+        let prepared = prepared(&client, ObservationPolicy::ReturnAccepted);
+        let approved = prepared.authorize(&mut Approval(true)).unwrap();
+        let result =
+            environment_publish::publish(&client, &executor, approved, limits(), pending())
+                .await
+                .unwrap();
+        assert!(matches!(
+            result.receipt.outcome(),
+            Outcome::Succeeded { .. }
+        ));
+        assert_eq!(executor.posts(), 1);
+    }
+}
+
+#[tokio::test]
+async fn review_regression_wait_cannot_hide_nonempty_initial_202() {
+    for policy in [
+        ObservationPolicy::ReturnAccepted,
+        ObservationPolicy::WaitForOperation,
+    ] {
+        for body in [b"{malformed-acceptance".as_slice(), b"{}", b" "] {
+            let mut initial = accepted();
+            initial.body = body.to_vec();
+            let executor = Executor::with(vec![
+                Ok(initial),
+                Ok(response(200, json!({"status":"Succeeded"}))),
+            ]);
+            let client = client(Arc::default(), Audience::Fabric);
+            let prepared = prepared(&client, policy);
+            let approved = prepared.authorize(&mut Approval(true)).unwrap();
+            let result =
+                environment_publish::publish(&client, &executor, approved, limits(), pending())
+                    .await
+                    .unwrap();
+            assert!(matches!(result.receipt.outcome(), Outcome::Unknown { .. }));
+            let initial = result.initial_response.as_ref().unwrap();
+            assert_eq!(initial.status, 202);
+            assert_eq!(initial.body, body);
+            assert_eq!(initial.headers, accepted().headers);
+            assert_eq!(executor.requests.lock().unwrap().len(), 1);
+            assert!(executor.waits.lock().unwrap().is_empty());
+        }
+    }
 }

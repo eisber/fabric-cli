@@ -7,7 +7,15 @@ Environment slice on the v2 base `cc183dd43140350eb1f23af0636332150d1f6d50`.
 It does not replace v1 deployment or enable a new executable command. CLI/SDK/MCP
 hosts can register the one operation and use the same prepared request, immediate
 approval and protected receipt. Global CLI grammar and host credential composition
-are not changed.
+are not changed. `prepare` takes the actual SDK client and returns an opaque
+`PreparedPublish`, retaining its immutable request context. Host policy can inspect
+`operation()` and `context()` before approving. `publish` consumes the resulting
+`ApprovedPublish` and rejects a different endpoint, account, tenant, audience or
+credential provider before acquiring a token or dispatching HTTP. Cloned matching
+contexts remain valid. Neutral registry intents must pass
+`PreparedPublish::from_operation` validation before context-bound approval; an
+unbound `ApprovedOperation` cannot authorize publication. Context provenance is
+not serialized into receipts, and no token claims are inferred from metadata.
 
 ## Native contract
 
@@ -48,10 +56,19 @@ deadline/delay limits remain authoritative. The official 202 example requests
 never shorten the service delay.
 
 For 202, the shared operation engine retains and validates the genuine generic
-operation handle. Waiting observes completion without a result GET for this
+operation handle. The adapter first dispatches with ReturnAccepted, validates
+the exact initial 202 (including its required empty body), and retains that
+response separately before shared reconciliation. Malformed/nonempty acceptance
+is Unknown for both observation modes and is never followed by polling.
+Waiting observes completion without a result GET for this
 result-less action. A failed polling GET cannot establish failure of the original
 publication. Timeout/cancellation/response loss retains uncertainty and any known
 handle; no mutation replay, cancellation or rollback follows.
+
+Native documented rejection statuses (400/401/403/404/409/429) and an observed
+terminal LRO failure are classified as Failed. Unsupported statuses, redirects,
+partial HTTP responses, server errors and failed post-acceptance reads are Unknown
+with incomplete coverage and possible-mutation evidence, not certified failure.
 
 For 200, `publishDetails.state` is authoritative, not the HTTP status:
 
@@ -68,6 +85,12 @@ Therefore active native publication uses Partial with retained native state.
 Version and state also remain in unprojected receipt source evidence, while
 the execution result retains the exact response and original operation error.
 Absent versus null native fields remain distinguishable in raw details.
+
+The inspected PublishDetails and ComponentPublishInfo response tables do not mark
+component fields as required. Overall native `Success` remains authoritative when
+component information is absent or empty; supplied contradictory, malformed or
+unknown component states still prevent complete success. This preserves the
+documented optional response contract rather than inventing a mandatory field.
 
 `observe_version` makes exactly one GET of the selected Environment and verifies
 its owner IDs, type and exact original targetVersion. Hosts schedule further

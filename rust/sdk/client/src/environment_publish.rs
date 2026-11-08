@@ -7,20 +7,26 @@
 //! This adapter never saves source, uploads libraries, cancels work, or replays a
 //! mutation. Hosts own approval, credentials, deadlines and presentation.
 
-use crate::{Client, v2};
+use crate::{Audience, Client, RequestContext, ServiceOrigin, v2};
 use fabric_sdk_operations::{
-    FabricOperation, OperationError, OperationErrorKind, OperationExecutor, OperationLimits,
-    OperationResponse, OperationSession,
+    FabricOperation, OperationError, OperationErrorKind, OperationExecutionError,
+    OperationExecutor, OperationLimits, OperationRequest, OperationResponse, OperationSession,
 };
 use fabric_sdk_workspaces::mutations::{CompletionPolicy, ResourceMethod};
 use serde::Serialize;
 use serde_json::{Value, json};
-use std::{fmt, future::Future};
+use std::{
+    fmt,
+    future::Future,
+    pin::{Pin, pin},
+    sync::Arc,
+    time::Duration,
+};
 use v2::{
-    ApprovedOperation, Availability, Binding, ContractError, Coverage, Effect, ExecutionEvidence,
-    ExecutionReceipt, FailureInfo, Generation, OperationDescriptor, OperationHandle, Outcome,
-    Precondition, PreparedOperation, Prerequisite, ReceiptError, Registry, ResolvedTarget,
-    SourceEvidence, TargetIdentity, TargetKind, Verb,
+    ApprovalPolicy, ApprovedOperation, Availability, Binding, ContractError, Coverage, Effect,
+    ExecutionEvidence, ExecutionReceipt, FailureInfo, Generation, OperationDescriptor,
+    OperationHandle, Outcome, Precondition, PreparedOperation, Prerequisite, ReceiptError,
+    Registry, ResolvedTarget, SourceEvidence, TargetIdentity, TargetKind, Verb,
 };
 
 /// Stable operation identity, shared by independent execution heads.
@@ -45,15 +51,6 @@ pub enum ObservationPolicy {
     /// A native HTTP 200 Running response remains incomplete. It has no generic
     /// operation handle; use [`observe_version`] with its actual target version.
     WaitForOperation,
-}
-
-impl ObservationPolicy {
-    fn completion(self) -> CompletionPolicy {
-        match self {
-            Self::ReturnAccepted => CompletionPolicy::ReturnAccepted,
-            Self::WaitForOperation => CompletionPolicy::WaitForCompletion,
-        }
-    }
 }
 
 /// Register only the documented Environment publication binding.
@@ -119,17 +116,23 @@ fn validate_target(target: &ResolvedTarget) -> Result<(), ReceiptError> {
 /// # Errors
 /// Rejects wrong-owner/subresource targets and invalid registry evidence.
 pub fn prepare(
+    client: &Client,
     target: ResolvedTarget,
     source: PublishSource,
     observation: ObservationPolicy,
-) -> Result<PreparedOperation, ReceiptError> {
+) -> Result<PreparedPublish, ReceiptError> {
     validate_target(&target)?;
+    if client.selection().audience() != Audience::Fabric
+        || client.context().endpoint().origin() != ServiceOrigin::Fabric
+    {
+        return Err(ReceiptError::InvalidEvidence);
+    }
     let mut registry = Registry::default();
     register(&mut registry).map_err(ReceiptError::Contract)?;
     let resolution = registry
         .resolve(Verb::Publish, target.selection(), None)
         .map_err(ReceiptError::Contract)?;
-    PreparedOperation::new(
+    let prepared = PreparedOperation::new(
         resolution,
         target,
         json!({"source": source, "observation": observation}),
@@ -137,31 +140,132 @@ pub fn prepare(
     .with_preconditions(vec![
         Precondition::ExistingOnly,
         Precondition::UnguardedConcurrency,
-    ])
+    ])?;
+    Ok(PreparedPublish {
+        prepared,
+        context: client.context().clone(),
+        observation,
+    })
 }
 
-fn policy(approved: &ApprovedOperation<'_>) -> Result<ObservationPolicy, ReceiptError> {
-    let prepared = approved.prepared();
-    validate_target(prepared.target())?;
-    let observation = match prepared.input().get("observation").and_then(Value::as_str) {
-        Some("returnAccepted") => ObservationPolicy::ReturnAccepted,
-        Some("waitForOperation") => ObservationPolicy::WaitForOperation,
-        _ => return Err(ReceiptError::InvalidEvidence),
-    };
-    let expected = prepare(
-        prepared.target().clone(),
-        PublishSource::ExistingStaging,
-        observation,
-    )?;
-    if prepared.operation_id() != expected.operation_id()
-        || prepared.input() != expected.input()
-        || prepared.effects() != expected.effects()
-        || prepared.preconditions() != expected.preconditions()
-        || prepared.availability() != expected.availability()
+/// Immutable publication intent bound to the caller's actual request context.
+///
+/// Its private context retains endpoint, account/tenant/audience and original
+/// credential provider provenance without token acquisition or serialization.
+pub struct PreparedPublish {
+    prepared: PreparedOperation,
+    context: RequestContext,
+    observation: ObservationPolicy,
+}
+
+impl PreparedPublish {
+    /// Returns the neutral request/effects for host policy and presentation.
+    pub fn operation(&self) -> &PreparedOperation {
+        &self.prepared
+    }
+
+    /// Returns the immutable context for policy inspection; never log credentials.
+    pub fn context(&self) -> &RequestContext {
+        &self.context
+    }
+
+    /// Validate a neutral registry-prepared intent and bind its actual context.
+    ///
+    /// # Errors
+    /// Rejects changed schema/input/effects/preconditions or provider requirements.
+    /// Neutral approval alone cannot be converted into publication authority.
+    pub fn from_operation(
+        client: &Client,
+        operation: PreparedOperation,
+    ) -> Result<Self, ReceiptError> {
+        let observation = match operation.input().get("observation").and_then(Value::as_str) {
+            Some("returnAccepted") => ObservationPolicy::ReturnAccepted,
+            Some("waitForOperation") => ObservationPolicy::WaitForOperation,
+            _ => return Err(ReceiptError::InvalidEvidence),
+        };
+        let expected = prepare(
+            client,
+            operation.target().clone(),
+            PublishSource::ExistingStaging,
+            observation,
+        )?;
+        if operation.operation_id() != expected.operation().operation_id()
+            || operation.input() != expected.operation().input()
+            || operation.effects() != expected.operation().effects()
+            || operation.preconditions() != expected.operation().preconditions()
+            || operation.availability() != expected.operation().availability()
+        {
+            return Err(ReceiptError::InvalidEvidence);
+        }
+        Ok(Self {
+            prepared: operation,
+            ..expected
+        })
+    }
+
+    /// Obtain immediate approval bound to this exact intent and context.
+    ///
+    /// # Errors
+    /// Preserves the original host refusal; no credential or service work occurs.
+    pub fn authorize<P: ApprovalPolicy>(
+        &self,
+        policy: &mut P,
+    ) -> Result<ApprovedPublish<'_>, P::Error> {
+        Ok(ApprovedPublish {
+            approved: self.prepared.authorize(policy)?,
+            context: &self.context,
+            observation: self.observation,
+        })
+    }
+}
+
+impl fmt::Debug for PreparedPublish {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("PreparedPublish(<bound intent>)")
+    }
+}
+
+/// Opaque immediate approval, never convertible from an unbound neutral grant.
+pub struct ApprovedPublish<'a> {
+    approved: ApprovedOperation<'a>,
+    context: &'a RequestContext,
+    observation: ObservationPolicy,
+}
+
+impl fmt::Debug for ApprovedPublish<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ApprovedPublish(<bound intent>)")
+    }
+}
+
+fn validate_context(approved: &ApprovedPublish<'_>, client: &Client) -> Result<(), ReceiptError> {
+    let context = client.context();
+    if context.endpoint() != approved.context.endpoint()
+        || context.selection() != approved.context.selection()
+        || !Arc::ptr_eq(context.credential(), approved.context.credential())
     {
         return Err(ReceiptError::InvalidEvidence);
     }
-    Ok(observation)
+    Ok(())
+}
+
+struct BorrowedExecutor<'a, E>(&'a E);
+
+impl<E: OperationExecutor> OperationExecutor for BorrowedExecutor<'_, E> {
+    fn execute<'a>(
+        &'a self,
+        request: OperationRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<OperationResponse, OperationExecutionError>> + Send + 'a>>
+    {
+        self.0.execute(request)
+    }
+
+    fn wait(
+        &self,
+        delay: Duration,
+    ) -> Pin<Box<dyn Future<Output = Result<(), OperationExecutionError>> + Send + '_>> {
+        self.0.wait(delay)
+    }
 }
 
 /// Native Environment state, not the generic operation status domain.
@@ -301,6 +405,8 @@ pub enum PublishData {
 pub struct PublishExecution {
     /// Protected common receipt of the exact approved intent.
     pub receipt: ExecutionReceipt<PublishData>,
+    /// Exact initial publication response, retained before any LRO observation.
+    pub initial_response: Option<OperationResponse>,
     /// Exact final shared-executor response, if available.
     ///
     /// With LRO waiting this is the operation-state response, not the initial 202.
@@ -404,7 +510,13 @@ fn classify_response(
 
 fn failed_outcome(error: &OperationError) -> Outcome<PublishData> {
     if matches!(error.kind, OperationErrorKind::OperationFailed { .. })
-        || (matches!(error.kind, OperationErrorKind::Http { .. }) && error.operation_id.is_none())
+        || (matches!(
+            error.kind,
+            OperationErrorKind::Http {
+                status: 400 | 401 | 403 | 404 | 409 | 429,
+                ..
+            }
+        ) && error.operation_id.is_none())
     {
         Outcome::Failed {
             error: failure("publish_rejected_or_failed"),
@@ -418,6 +530,8 @@ fn failed_outcome(error: &OperationError) -> Outcome<PublishData> {
 
 /// Dispatch one approved bodyless release-version publication.
 ///
+/// Consumes its opaque immediate approval; the same grant cannot be reused.
+/// Endpoint, selection and provider provenance must match the prepared context.
 /// All execution limits are caller supplied, including a delay ceiling compatible
 /// with the service's documented Retry-After: 120 example. The shared session owns
 /// LRO polling and cancellation; neither timeout nor output failure replays/cancels.
@@ -427,30 +541,72 @@ fn failed_outcome(error: &OperationError) -> Outcome<PublishData> {
 /// # Errors
 /// Rejects substituted approval before credentials. Service failures and response
 /// loss return an execution receipt retaining their original typed evidence.
+///
+/// A neutral unbound grant cannot authorize publication:
+/// ```compile_fail
+/// use fabric_sdk::{Client, environment_publish};
+/// use fabric_sdk::v2::ApprovedOperation;
+/// use fabric_sdk_operations::{OperationExecutor, OperationLimits};
+/// async fn unbound<E: OperationExecutor>(
+///     client: &Client, executor: E, grant: ApprovedOperation<'_>, limits: OperationLimits,
+/// ) {
+///     environment_publish::publish(client, executor, grant, limits, std::future::pending()).await;
+/// }
+/// ```
 pub async fn publish<E: OperationExecutor>(
     client: &Client,
     executor: E,
-    approved: &ApprovedOperation<'_>,
+    approved: ApprovedPublish<'_>,
     limits: OperationLimits,
     cancelled: impl Future<Output = ()> + Send,
 ) -> Result<PublishExecution, PublishError> {
-    let observation = policy(approved).map_err(PublishError::Input)?;
-    let path = base_path(approved.prepared().target()).map_err(PublishError::Input)?;
-    let mut session = OperationSession::with_context(client.context(), executor, limits, cancelled);
+    validate_context(&approved, client).map_err(PublishError::Input)?;
+    let path = base_path(approved.approved.prepared().target()).map_err(PublishError::Input)?;
+    let mut cancelled = pin!(cancelled);
+    let mut session = OperationSession::with_context(
+        client.context(),
+        BorrowedExecutor(&executor),
+        limits,
+        cancelled.as_mut(),
+    );
     let operation = FabricOperation::new(
         ResourceMethod::Post,
         &format!("{path}/staging/publish?beta=false"),
         Vec::new(),
-        observation.completion(),
+        CompletionPolicy::ReturnAccepted,
     );
     let result = match operation {
         Ok(operation) => session.execute(operation).await,
         Err(kind) => Err(session.evidence(kind)),
     };
-    let (response, mut operation_error) = match result {
+    let initial_response = result.as_ref().ok().cloned();
+    let (mut response, mut operation_error) = match result {
         Ok(response) => (Some(response), None),
         Err(error) => (None, Some(Box::new(error))),
     };
+    if let Some(initial) = &initial_response
+        && initial.status == 202
+        && classify_response(initial, session.operation_id()).is_ok()
+        && approved.observation == ObservationPolicy::WaitForOperation
+    {
+        drop(session);
+        session = OperationSession::with_context(
+            client.context(),
+            BorrowedExecutor(&executor),
+            limits,
+            cancelled.as_mut(),
+        );
+        match session
+            .reconcile_accepted(initial.clone(), CompletionPolicy::WaitForCompletion)
+            .await
+        {
+            Ok(observed) => response = Some(observed),
+            Err(error) => {
+                response = None;
+                operation_error = Some(Box::new(error));
+            }
+        }
+    }
     let classified = match &response {
         Some(response) => match classify_response(response, session.operation_id()) {
             Ok(classified) => classified,
@@ -514,12 +670,13 @@ pub async fn publish<E: OperationExecutor>(
         },
         details: classified.source_details,
     };
-    let receipt = ExecutionReceipt::new(approved, outcome, evidence)
+    let receipt = ExecutionReceipt::new(&approved.approved, outcome, evidence)
         .map_err(PublishError::Receipt)?
         .with_source_evidence(vec![source])
         .map_err(PublishError::Source)?;
     Ok(PublishExecution {
         receipt,
+        initial_response,
         response,
         operation_error,
     })
