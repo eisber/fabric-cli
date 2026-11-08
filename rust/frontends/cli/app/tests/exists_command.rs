@@ -14,6 +14,7 @@ use serde_json::json;
 use std::{
     ffi::OsString,
     io::{self, Write},
+    sync::atomic::Ordering,
 };
 
 #[test]
@@ -78,6 +79,7 @@ async fn stdout_is_exact_sdk_json_and_null_is_a_nonzero_result() {
         assert_eq!(stdout, report.json_bytes());
         assert_eq!(report.exists(), exists);
         assert_eq!(fixture.executor.requests.lock().unwrap().len(), 1);
+        assert_eq!(fixture.credential.0.load(Ordering::SeqCst), 1);
     }
 }
 
@@ -118,4 +120,33 @@ async fn cli_target_uses_the_same_sdk_scoped_name_operation() {
         .await;
     assert_eq!(report.exists(), Some(true));
     assert_eq!(fixture.executor.requests.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn cli_workspace_and_name_miss_keep_the_same_sdk_evidence() {
+    let command = parse_exists(
+        ["exists", &format!("/workspaces/{WS}")]
+            .into_iter()
+            .map(OsString::from),
+    )
+    .unwrap();
+    let fixture = Fixture::new(vec![reply(200, workspace_data())]);
+    assert_eq!(
+        fixture
+            .run(command.target, ExistsLimits::default())
+            .await
+            .exists(),
+        Some(true)
+    );
+    let mut wrong_type = item_data();
+    wrong_type["id"] = OTHER.into();
+    wrong_type["type"] = "Report".into();
+    let fixture = Fixture::new(vec![reply(200, json!({"value":[wrong_type]}))]);
+    assert_eq!(
+        fixture
+            .run(named_item(), ExistsLimits::default())
+            .await
+            .exists(),
+        None
+    );
 }

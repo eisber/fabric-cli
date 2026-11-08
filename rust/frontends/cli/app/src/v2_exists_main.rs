@@ -104,6 +104,18 @@ pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
     });
     runtime.shutdown_timeout(Duration::from_secs(1));
     let report = result?;
+    if started.elapsed() >= timeout {
+        return Err((
+            "TimedOut",
+            "Exists total deadline elapsed before output delivery.".into(),
+            serde_json::json!({
+                "exists": null,
+                "nativeStatuses": report.native().responses().iter().map(|response| response.status()).collect::<Vec<_>>(),
+                "mutationMayHaveOccurred": false
+            }),
+            1,
+        ));
+    }
     write_exists(&report, &mut io::stdout().lock()).map_err(|_| {
         failed(
             "OutputFailed",
