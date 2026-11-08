@@ -52,7 +52,12 @@ accepted definition handle. No new timer or observation budget is started.
 Cancellation at this boundary returns `DataAgentError::Response`, retaining the
 original session error and the already-bounded HTTP status, body and headers,
 including any real accepted operation ID. Result-byte limit failures also retain
-this evidence. Response content stays inert and is excluded from Debug/Display;
+this evidence, including a decoder's compact-JSON accounting limit when numeric
+serialization expands beyond an otherwise in-budget raw response. Those
+failures retain the shared session's `Limit` classification; a ready original
+cancellation signal still takes precedence at the final checkpoint. Neither
+the raw nor compact byte limit is relaxed. Response content stays inert and is
+excluded from Debug/Display;
 it is not a completed read and never authorizes replay or remote cancellation.
 
 Datasource pages expose `page.value`, `next_token` and `is_complete()`. A

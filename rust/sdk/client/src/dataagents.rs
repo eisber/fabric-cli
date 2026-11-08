@@ -593,6 +593,17 @@ async fn dispatch<T>(
             response,
         })));
     }
+    if matches!(
+        &result,
+        Err(DataAgentError::Definition(
+            RepresentationError::BudgetExceeded
+        ))
+    ) {
+        return Err(DataAgentError::Response(Box::new(ReadResponseError {
+            error: session.evidence(OperationErrorKind::Limit),
+            response,
+        })));
+    }
     result
 }
 

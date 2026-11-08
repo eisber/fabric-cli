@@ -798,6 +798,96 @@ async fn result_accounting_failure_preserves_the_bounded_observed_response() {
 }
 
 #[tokio::test]
+async fn compact_definition_limit_preserves_response_and_session_limit_evidence() {
+    let body = br#"{"definition":{"parts":[]},"n":1e9}"#.to_vec();
+    let value: Value = serde_json::from_slice(&body).unwrap();
+    let compact = serde_json::to_vec(&value).unwrap();
+    assert!(
+        compact.len() > body.len(),
+        "fixture must expand during compact accounting"
+    );
+    let client = client(Arc::default(), Audience::Fabric);
+    for bound in [body.len() - 1, body.len(), compact.len() - 1] {
+        let executor = Executor::raw(
+            200,
+            body.clone(),
+            &[("x-ms-request-id", "compact-limit-request")],
+        );
+        let mut bounds = limits();
+        bounds.max_result_bytes = NonZeroUsize::new(bound).unwrap();
+        let error = DataAgentRequests::definition(&target(), None)
+            .unwrap()
+            .execute(&client, &executor, bounds, pending())
+            .await
+            .unwrap_err();
+        let DataAgentError::Response(error) = error else {
+            panic!("compact result limit lost observed response at bound {bound}");
+        };
+        assert_eq!(error.error.kind, OperationErrorKind::Limit);
+        assert!(error.error.mutation_may_have_occurred);
+        assert_eq!(error.error.operation_id, None);
+        assert_eq!(error.response.status, 200);
+        assert_eq!(error.response.body, body);
+        assert_eq!(
+            error.response.headers["x-ms-request-id"],
+            "compact-limit-request"
+        );
+        assert!(!format!("{error:?}").contains("compact-limit-request"));
+        assert!(!format!("{error:?}").contains("parts"));
+        assert_eq!(executor.requests.lock().unwrap().len(), 1);
+    }
+    let executor = Executor::raw(200, body, &[]);
+    let mut bounds = limits();
+    bounds.max_result_bytes = NonZeroUsize::new(compact.len()).unwrap();
+    assert_eq!(
+        DataAgentRequests::definition(&target(), None)
+            .unwrap()
+            .execute(&client, &executor, bounds, pending())
+            .await
+            .unwrap(),
+        DefinitionRead::Completed { definition: value }
+    );
+    assert_eq!(executor.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn compact_definition_limit_does_not_mask_final_cancellation() {
+    let body = br#"{"definition":{"parts":[]},"n":1e9}"#.to_vec();
+    let response_received = Arc::new(AtomicBool::new(false));
+    let polls = Arc::new(AtomicUsize::new(0));
+    let mut executor = Executor::raw(
+        200,
+        body.clone(),
+        &[("x-ms-request-id", "cancelled-compact")],
+    );
+    executor.cancel_after_reply = Some(response_received.clone());
+    let mut bounds = limits();
+    bounds.max_result_bytes = NonZeroUsize::new(body.len()).unwrap();
+    let error = DataAgentRequests::definition(&target(), None)
+        .unwrap()
+        .execute(
+            &client(Arc::default(), Audience::Fabric),
+            &executor,
+            bounds,
+            decode_checkpoint_signal(response_received, polls.clone()),
+        )
+        .await
+        .unwrap_err();
+    let DataAgentError::Response(error) = error else {
+        panic!("cancelled compact accounting lost observed response");
+    };
+    assert_eq!(error.error.kind, OperationErrorKind::Cancelled);
+    assert_eq!(error.response.status, 200);
+    assert_eq!(error.response.body, body);
+    assert_eq!(
+        error.response.headers["x-ms-request-id"],
+        "cancelled-compact"
+    );
+    assert_eq!(polls.load(Ordering::SeqCst), 3);
+    assert_eq!(executor.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn finite_byte_bounds_fail_at_n_plus_one_without_truncating_metadata() {
     let body = serde_json::to_vec(&metadata()).unwrap();
     for bound in [body.len(), body.len() - 1] {
