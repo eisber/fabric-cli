@@ -10,6 +10,7 @@
 
 pub mod capacities;
 pub mod documents;
+pub mod environment_publish;
 pub mod folders;
 pub mod items;
 pub mod livy;

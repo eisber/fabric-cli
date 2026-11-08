@@ -27,6 +27,7 @@ selected endpoint with the appropriate audience.
 | `representations` | Native multipart definition/part and OneLake file reads |
 | `observe` | Bounded observation of existing operation and item-job handles |
 | `documents` | Injected served-docs provider and bounded, coverage-aware graph |
+| `environment_publish` | Explicit staged Environment publication, protected receipts and version-correlated observation |
 | `folders` | Folder listing and lookup with explicit query options |
 | `capacities` | Fabric capacity listing |
 | `notebooks` | Prepared Notebook definitions and publication |
@@ -56,6 +57,13 @@ available directly from the focused `fabric-sdk-tables` crate under parent-owned
 modules. They are not reexported here: that edge would cycle through the shared
 HTTP test consumers. Their native executors must be supplied by the caller;
 discovery is not proof of a configured CLI/MCP host.
+
+Environment publication uses one bodyless release-version POST and the shared
+operation engine. Immediate host approval and explicit limits are required.
+An HTTP 200 running native state is incomplete, not successful publication;
+`targetVersion` is not a generic operation handle. See
+[Environment native publishing](../../docs/environment-native-publish.md) for
+permissions, concurrency, lifecycle and unsupported boundaries.
 
 The SQL modules reexport the focused SDK leaves. Metadata requests use the
 caller's shared executor; they do not connect to SQL, retrieve definitions
