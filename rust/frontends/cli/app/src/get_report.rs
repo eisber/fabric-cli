@@ -80,7 +80,7 @@ pub(super) async fn retrieve(
     .await
     .map_err(|error| backend_error("ReportDefinitionFailed", error))?;
     let source = match read {
-        ReportDefinitionRead::Completed(source) => source,
+        ReportDefinitionRead::Completed(source) => *source,
         ReportDefinitionRead::Accepted(read) => {
             let DefinitionRead::Accepted { operation_id } = &read else {
                 unreachable!("Report acceptance retains shared acceptance")

@@ -118,7 +118,7 @@ impl fmt::Debug for ReportMetadata {
 #[derive(Debug)]
 pub enum ReportDefinitionRead {
     /// Complete transport envelope with separately classified native coverage.
-    Completed(ReportDefinition),
+    Completed(Box<ReportDefinition>),
     /// Existing shared acceptance evidence, not completed source or replay intent.
     Accepted(DefinitionRead),
 }
@@ -240,9 +240,9 @@ pub async fn read_definition(
     .map_err(ReportError::Representation)?;
     match read {
         DefinitionRead::Accepted { .. } => Ok(ReportDefinitionRead::Accepted(read)),
-        DefinitionRead::Completed { .. } => {
-            ReportDefinition::from_read(read, native_format).map(ReportDefinitionRead::Completed)
-        }
+        DefinitionRead::Completed { .. } => ReportDefinition::from_read(read, native_format)
+            .map(Box::new)
+            .map(ReportDefinitionRead::Completed),
     }
 }
 

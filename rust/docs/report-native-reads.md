@@ -47,8 +47,10 @@ enhanced `definition/version.json` version, native paths/media, model reference
 and incomplete reasons. Known structural versions are definition.pbir `1.0`
 (legacy) and `4.0`, and enhanced definition `2.0.0`. Future versions/encodings
 and missing required report structure remain **partial**, with original data
-retained. This is structural coverage, not validation of every report JSON
-schema or evidence of a complete service-state backup.
+retained. Future definition versions keep their unknown model-reference shape
+as opaque data rather than coercing it into a legacy binding. This is structural
+coverage, not validation of every report JSON schema or evidence of a complete
+service-state backup.
 
 Partial native source can produce only the existing unprojected JSON receipt
 on stdout, never a complete file or raw part delivery. Accepted source also

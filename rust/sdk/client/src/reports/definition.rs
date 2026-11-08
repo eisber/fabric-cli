@@ -236,7 +236,9 @@ impl ReportDefinition {
             evidence.version = optional_string(properties.get("version"))?;
             evidence.schema = optional_string(properties.get("$schema"))?;
             if let Some(reference) = properties.get("datasetReference") {
-                validate_reference(reference)?;
+                if matches!(evidence.version.as_deref(), Some("1.0" | "4.0")) {
+                    validate_reference(reference)?;
+                }
                 evidence.model_reference = Some(reference.clone());
             }
         }

@@ -397,6 +397,25 @@ fn future_format_or_encoding_is_opaque_partial_never_a_conversion() {
 }
 
 #[test]
+fn future_definition_version_preserves_unknown_binding_without_legacy_coercion() {
+    let mut value = source();
+    let reference = json!({"futureBinding":{"modelObject":"opaque","workspace":"not-inferred"}});
+    let properties = json!({"version":"99.0","datasetReference":reference});
+    value["definition"]["parts"][0] =
+        part("definition.pbir", &serde_json::to_vec(&properties).unwrap());
+    let read = inspect(value.clone()).unwrap();
+    assert_eq!(read.data(), &value);
+    assert_eq!(read.evidence().model_reference, Some(reference));
+    assert!(!read.evidence().related_model_authorized);
+    assert!(!read.complete());
+    assert!(
+        read.evidence()
+            .incomplete
+            .contains(&IncompleteReason::UnknownVersion)
+    );
+}
+
+#[test]
 fn legacy_report_is_native_source_not_pbix_or_enhanced_definition() {
     let value = json!({"definition":{"parts":[
         part("definition.pbir",br#"{"version":"1.0","datasetReference":{"byPath":{"path":"../Model.SemanticModel"}}}"#),
