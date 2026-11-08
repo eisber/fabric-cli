@@ -248,10 +248,12 @@ pub(super) async fn probe(
             return Err(ProbeError::Changed);
         }
     }
+    let actual_type = read.data()["type"].as_str().map(str::to_owned);
+    drop(read);
     let mut result = conclusion(ExistsObservation::Present, "MetadataPresent");
     result.workspace_id = Some(workspace_id);
     result.item_id = Some(item_id);
-    result.item_type = read.data()["type"].as_str().map(str::to_owned);
+    result.item_type = actual_type;
     Ok(result)
 }
 
