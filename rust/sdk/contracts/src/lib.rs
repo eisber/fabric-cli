@@ -48,6 +48,8 @@ pub enum Verb {
     List,
     /// Rename or move only where a native capability exists.
     Move,
+    /// Execute a positively bound native refresh, never a generic query fallback.
+    Refresh,
     /// Discover bounded candidates within an explicitly selected scope.
     Search,
     /// Patch or replace an explicitly existing resource.

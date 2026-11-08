@@ -29,6 +29,8 @@ use std::{
 
 #[path = "headless.rs"]
 mod headless;
+#[cfg(feature = "v2-refresh")]
+mod v2_refresh_main;
 mod v2_search_main;
 
 // Reuse the existing binary-private selector without importing v1 dispatch/state.
@@ -122,6 +124,10 @@ fn run() -> Result<(), Failure> {
     }
     if args.first().and_then(|value| value.to_str()) == Some("search") {
         return v2_search_main::run(args);
+    }
+    #[cfg(feature = "v2-refresh")]
+    if args.first().and_then(|value| value.to_str()) == Some("refresh") {
+        return v2_refresh_main::run(args);
     }
     let command = match parse_get(args) {
         Ok(command) => command,

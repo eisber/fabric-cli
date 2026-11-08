@@ -9,6 +9,7 @@ members = [
     "sdk/items",
     "sdk/folders",
     "sdk/jobs",
+    "sdk/graph",
     "sdk/tables",
     "sdk/catalog",
     "sdk/access",
@@ -66,6 +67,7 @@ default-members = [
     "frontends/cli/paths",
     "frontends/cli/query",
     "sdk/jobs",
+    "sdk/graph",
     "frontends/cli/commands/jobs",
     "sdk/pagination",
     "frontends/cli/commands/resource-mutations",
@@ -143,6 +145,7 @@ fabric-cli-output = { path = "frontends/cli/output" }
 fabric-cli-query = { path = "frontends/cli/query" }
 fabric-cli-jobs = { path = "frontends/cli/commands/jobs" }
 fabric-sdk-jobs = { path = "sdk/jobs" }
+fabric-sdk-graph = { path = "sdk/graph" }
 fabric-sdk-paging = { path = "sdk/pagination" }
 fabric-cli-mutations = { path = "frontends/cli/commands/resource-mutations" }
 fabric-sdk-api = { path = "sdk/api-requests" }
