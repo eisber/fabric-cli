@@ -372,7 +372,7 @@ impl HttpClient for Wire {
     async fn execute_request(&self, request: &Request) -> azure_core::Result<AsyncRawResponse> {
         self.requests.lock().unwrap().push(request.clone());
         let mut headers = Headers::new();
-        headers.insert("Retry-After", "1");
+        headers.insert("retry-after", "1");
         Ok(AsyncRawResponse::from_bytes(
             self.status.into(),
             headers,
