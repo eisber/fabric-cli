@@ -206,12 +206,17 @@ fn error(path: &str, error: &GraphRefreshError) -> Delivery {
     if let GraphRefreshErrorKind::Observation(error) = &error.source {
         value["meta"]["statusRequests"] = json!(error.requests);
         if let Some(last) = &error.last_observation {
-            let state = match last.raw_status.get("status").and_then(Value::as_str) {
-                Some(
-                    state @ ("Failed" | "Cancelled" | "Deduped" | "NotStarted" | "InProgress"),
-                ) => state,
-                _ => "unknown",
-            };
+            let state = last
+                .raw_status
+                .get("status")
+                .and_then(Value::as_str)
+                .filter(|state| {
+                    matches!(
+                        *state,
+                        "Failed" | "Cancelled" | "Deduped" | "NotStarted" | "InProgress"
+                    )
+                })
+                .unwrap_or("unknown");
             value["meta"]["lastState"] = json!(state);
             if matches!(state, "Failed" | "Cancelled" | "Deduped") {
                 value["status"] = json!("failed");

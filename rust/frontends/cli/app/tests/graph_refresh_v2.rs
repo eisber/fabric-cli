@@ -110,114 +110,114 @@ fn receipts_use_one_stream_and_one_line() {
         };
         assert_eq!(bytes.iter().filter(|byte| **byte == b'\n').count(), 1);
     }
+}
 
-    #[tokio::test]
-    async fn actual_frontend_dispatch_retains_acceptance_and_failed_observation() {
-        let location = "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/jobs/instances/33333333-3333-3333-3333-333333333333";
-        for state in [
-            None,
-            Some("Completed"),
-            Some("Failed"),
-            Some("Deduped"),
-            Some("FutureState"),
-        ] {
-            let mut responses = vec![response(
-                202,
-                "",
-                &[("location", location), ("retry-after", "60")],
-            )];
-            if let Some(state) = state {
-                responses.push(response(200, &json!({"status":state}).to_string(), &[]));
-            }
-            let http = ScriptedHttp::new(responses);
-            let executor = Arc::new(HttpJobExecutor::new(
-                HttpExecutor::new(
-                    http.clone(),
-                    Arc::new(TestTimer::default()),
-                    ExecutionOptions::default(),
-                )
-                .unwrap(),
-            ));
-            let jobs = JobClient::new(
-                Arc::new(TestCredential::default()),
-                CredentialSelection::new("offline", "tenant", Audience::Fabric).unwrap(),
-                executor.clone(),
-                JobLimits::default(),
-            );
-            let client = Client::with_context(jobs.context().clone());
-            let mut values = vec![
-                "refresh",
-                TARGET,
-                "--timeout",
-                "120",
-                "--approve",
-                "--preview",
-            ];
-            if state.is_some() {
-                values.push("--wait");
-            }
-            let command = refresh_command::parse(args(&values)).unwrap();
-            let delivery =
-                refresh_command::dispatch(&command, &client, &jobs, executor.as_ref(), pending())
-                    .await
-                    .unwrap();
-            assert_eq!(
-                delivery.value["meta"]["handle"]["instanceId"],
-                "33333333-3333-3333-3333-333333333333"
-            );
-            assert_eq!(delivery.value["meta"]["accepted"], true);
-            assert_eq!(delivery.value["meta"]["remoteCancelled"], false);
-            assert_eq!(delivery.value["meta"]["remoteReplayed"], false);
-            match state {
-                None => {
-                    assert_eq!(delivery.exit, 0);
-                    assert_eq!(delivery.value["status"], "accepted");
-                }
-                Some("Completed") => {
-                    assert_eq!(delivery.exit, 0);
-                    assert_eq!(delivery.value["status"], "completed");
-                }
-                Some("Failed" | "Deduped") => {
-                    assert_eq!(delivery.exit, 1);
-                    assert_eq!(delivery.value["status"], "failed");
-                }
-                _ => {
-                    assert_eq!(delivery.exit, 1);
-                    assert_eq!(delivery.value["status"], "unknown");
-                }
-            }
-            let requests = http.requests.lock().unwrap();
-            assert_eq!(
-                requests
-                    .iter()
-                    .filter(|request| request.method() == azure_core::http::Method::Post)
-                    .count(),
-                1
-            );
+#[tokio::test]
+async fn actual_frontend_dispatch_retains_acceptance_and_failed_observation() {
+    let location = "https://api.fabric.microsoft.com/v1/workspaces/11111111-1111-1111-1111-111111111111/items/22222222-2222-2222-2222-222222222222/jobs/instances/33333333-3333-3333-3333-333333333333";
+    for state in [
+        None,
+        Some("Completed"),
+        Some("Failed"),
+        Some("Deduped"),
+        Some("FutureState"),
+    ] {
+        let mut responses = vec![response(
+            202,
+            "",
+            &[("location", location), ("retry-after", "60")],
+        )];
+        if let Some(state) = state {
+            responses.push(response(200, &json!({"status":state}).to_string(), &[]));
         }
+        let http = ScriptedHttp::new(responses);
+        let executor = Arc::new(HttpJobExecutor::new(
+            HttpExecutor::new(
+                http.clone(),
+                Arc::new(TestTimer::default()),
+                ExecutionOptions::default(),
+            )
+            .unwrap(),
+        ));
+        let jobs = JobClient::new(
+            Arc::new(TestCredential::default()),
+            CredentialSelection::new("offline", "tenant", Audience::Fabric).unwrap(),
+            executor.clone(),
+            JobLimits::default(),
+        );
+        let client = Client::with_context(jobs.context().clone());
+        let mut values = vec![
+            "refresh",
+            TARGET,
+            "--timeout",
+            "120",
+            "--approve",
+            "--preview",
+        ];
+        if state.is_some() {
+            values.push("--wait");
+        }
+        let command = refresh_command::parse(args(&values)).unwrap();
+        let delivery =
+            refresh_command::dispatch(&command, &client, &jobs, executor.as_ref(), pending())
+                .await
+                .unwrap();
+        assert_eq!(
+            delivery.value["meta"]["handle"]["instanceId"],
+            "33333333-3333-3333-3333-333333333333"
+        );
+        assert_eq!(delivery.value["meta"]["accepted"], true);
+        assert_eq!(delivery.value["meta"]["remoteCancelled"], false);
+        assert_eq!(delivery.value["meta"]["remoteReplayed"], false);
+        match state {
+            None => {
+                assert_eq!(delivery.exit, 0);
+                assert_eq!(delivery.value["status"], "accepted");
+            }
+            Some("Completed") => {
+                assert_eq!(delivery.exit, 0);
+                assert_eq!(delivery.value["status"], "completed");
+            }
+            Some("Failed" | "Deduped") => {
+                assert_eq!(delivery.exit, 1);
+                assert_eq!(delivery.value["status"], "failed");
+            }
+            _ => {
+                assert_eq!(delivery.exit, 1);
+                assert_eq!(delivery.value["status"], "unknown");
+            }
+        }
+        let requests = http.requests.lock().unwrap();
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request.method() == azure_core::http::Method::Post)
+                .count(),
+            1
+        );
     }
+}
 
-    #[cfg(feature = "headless")]
-    #[test]
-    fn native_executable_graph_route_is_local_for_schema_and_refuses_missing_approval() {
-        let binary = env!("CARGO_BIN_EXE_fab-cli-v2");
-        let schema = std::process::Command::new(binary)
-            .args(["refresh", "--schema"])
-            .env_remove("FAB_RUST_AUTH_MODE")
-            .output()
-            .unwrap();
-        assert!(schema.status.success());
-        let value: serde_json::Value = serde_json::from_slice(&schema.stdout).unwrap();
-        assert_eq!(value["operation"]["id"], refresh::OPERATION_ID);
-        assert!(schema.stderr.is_empty());
-        let refused = std::process::Command::new(binary)
-            .args(["refresh", TARGET, "--timeout", "10"])
-            .env_remove("FAB_RUST_AUTH_MODE")
-            .output()
-            .unwrap();
-        assert_eq!(refused.status.code(), Some(1));
-        assert!(refused.stdout.is_empty());
-        let value: serde_json::Value = serde_json::from_slice(&refused.stderr).unwrap();
-        assert_eq!(value["error"]["code"], "ApprovalRequired");
-    }
+#[cfg(feature = "headless")]
+#[test]
+fn native_executable_graph_route_is_local_for_schema_and_refuses_missing_approval() {
+    let binary = env!("CARGO_BIN_EXE_fab-cli-v2");
+    let schema = std::process::Command::new(binary)
+        .args(["refresh", "--schema"])
+        .env_remove("FAB_RUST_AUTH_MODE")
+        .output()
+        .unwrap();
+    assert!(schema.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&schema.stdout).unwrap();
+    assert_eq!(value["operation"]["id"], refresh::OPERATION_ID);
+    assert!(schema.stderr.is_empty());
+    let refused = std::process::Command::new(binary)
+        .args(["refresh", TARGET, "--timeout", "10"])
+        .env_remove("FAB_RUST_AUTH_MODE")
+        .output()
+        .unwrap();
+    assert_eq!(refused.status.code(), Some(1));
+    assert!(refused.stdout.is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&refused.stderr).unwrap();
+    assert_eq!(value["error"]["code"], "ApprovalRequired");
 }
