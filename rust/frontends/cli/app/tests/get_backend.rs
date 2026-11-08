@@ -277,6 +277,233 @@ async fn stdout(fixture: &Fixture, args: &[String]) -> Result<Vec<u8>, GetComman
     Ok(bytes)
 }
 
+fn report_metadata(fixture: &Fixture, owner: &str) {
+    fixture.executor.response(
+        "GET",
+        format!("/v1/workspaces/{WS}/reports/{ITEM}"),
+        200,
+        &serde_json::to_vec(&serde_json::json!({
+            "id":ITEM,"type":owner,"workspaceId":WS,"displayName":"Report","unknown":{"keep":false}
+        }))
+        .unwrap(),
+        &[],
+    );
+}
+
+fn report_definition(version: &str) -> Value {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let part = |path: &str, bytes: &[u8]| serde_json::json!({"path":path,"payload":STANDARD.encode(bytes),"payloadType":"InlineBase64"});
+    let properties = serde_json::json!({
+        "version":version,"datasetReference":{"byConnection":{"connectionString":"semanticmodelid=unresolved-model"}}
+    });
+    serde_json::json!({"definition":{"format":"PBIR","parts":[
+        part("definition.pbir",&serde_json::to_vec(&properties).unwrap()),
+        part("definition/version.json",br#"{"version":"2.0.0"}"#),
+        part("definition/report.json",b"{}"),
+        part("definition/pages/p/page.json",br#"{"name":"p"}"#),
+        part("StaticResources/native.bin",&[0,255,128,0])
+    ]},"unknown":"preserved"})
+}
+
+#[tokio::test]
+async fn report_metadata_uses_typed_endpoint_without_source_or_model_read() {
+    let f = Fixture::new();
+    report_metadata(&f, "Report");
+    let bytes = stdout(
+        &f,
+        &["get".into(), format!("/{WS}.Workspace/{ITEM}.Report")],
+    )
+    .await
+    .unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["data"]["unknown"]["keep"], false);
+    assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn report_native_source_evidence_survives_projection_and_preserves_binary_parts() {
+    let f = Fixture::new();
+    report_metadata(&f, "Report");
+    let source = report_definition("4.0");
+    f.executor.response(
+        "POST",
+        format!("/v1/workspaces/{WS}/reports/{ITEM}/getDefinition"),
+        200,
+        &serde_json::to_vec(&source).unwrap(),
+        &[],
+    );
+    let bytes = stdout(
+        &f,
+        &[
+            "get".into(),
+            format!("/{WS}.Workspace/{ITEM}.Report/src/definition"),
+            "--project".into(),
+            "unknown".into(),
+        ],
+    )
+    .await
+    .unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["data"], "preserved");
+    assert_eq!(value["meta"]["reportSource"]["version"], "4.0");
+    assert_eq!(value["meta"]["reportSource"]["nativeVersion"], "2.0.0");
+    assert_eq!(
+        value["meta"]["reportSource"]["relatedModelAuthorized"],
+        false
+    );
+    assert_eq!(
+        value["meta"]["reportSource"]["incomplete"],
+        serde_json::json!([])
+    );
+    assert_eq!(f.executor.calls.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn report_native_part_delivers_exact_bytes_not_pbix_or_text_conversion() {
+    let f = Fixture::new();
+    report_metadata(&f, "Report");
+    f.executor.response(
+        "POST",
+        format!("/v1/workspaces/{WS}/reports/{ITEM}/getDefinition"),
+        200,
+        &serde_json::to_vec(&report_definition("4.0")).unwrap(),
+        &[],
+    );
+    let bytes = stdout(
+        &f,
+        &[
+            "get".into(),
+            format!(
+                "/{WS}.Workspace/{ITEM}.Report/src/definition/parts/StaticResources/native.bin"
+            ),
+            "--format".into(),
+            "raw".into(),
+        ],
+    )
+    .await
+    .unwrap();
+    assert_eq!(bytes, [0, 255, 128, 0]);
+}
+
+#[tokio::test]
+async fn report_unknown_version_is_partial_and_cannot_be_projected_or_written_as_complete() {
+    for file in [false, true] {
+        let f = Fixture::new();
+        report_metadata(&f, "Report");
+        f.executor.response(
+            "POST",
+            format!("/v1/workspaces/{WS}/reports/{ITEM}/getDefinition"),
+            200,
+            &serde_json::to_vec(&report_definition("99.0")).unwrap(),
+            &[],
+        );
+        let mut args = vec![
+            "get".into(),
+            format!("/{WS}.Workspace/{ITEM}.Report/src/definition"),
+        ];
+        if file {
+            args.extend(["--output".into(), "not-complete.json".into()]);
+            assert!(matches!(
+                stdout(&f, &args).await,
+                Err(GetCommandError::Incomplete { .. })
+            ));
+            assert!(!f.root.join("not-complete.json").exists());
+        } else {
+            let value: Value = serde_json::from_slice(&stdout(&f, &args).await.unwrap()).unwrap();
+            assert_eq!(value["meta"]["outcome"], "partial");
+            assert_eq!(value["meta"]["reportSource"]["version"], "99.0");
+        }
+    }
+}
+
+#[tokio::test]
+async fn report_wrong_owner_and_unadvertised_native_selector_have_no_definition_effect() {
+    let f = Fixture::new();
+    report_metadata(&f, "PaginatedReport");
+    assert!(
+        stdout(
+            &f,
+            &[
+                "get".into(),
+                format!("/{WS}.Workspace/{ITEM}.Report/src/definition")
+            ]
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+    let f = Fixture::new();
+    assert!(
+        stdout(
+            &f,
+            &[
+                "get".into(),
+                format!("/{WS}.Workspace/{ITEM}.Report/src/definition/formats/PBIX")
+            ]
+        )
+        .await
+        .is_err()
+    );
+    assert!(f.executor.calls.lock().unwrap().is_empty());
+    assert!(f.credential.0.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn report_accepted_source_uses_shared_observer_once_and_keeps_native_evidence() {
+    let f = Fixture::new();
+    report_metadata(&f, "Report");
+    f.executor.response(
+        "POST",
+        format!("/v1/workspaces/{WS}/reports/{ITEM}/getDefinition"),
+        202,
+        b"",
+        &[
+            ("x-ms-operation-id", OP.into()),
+            (
+                "Location",
+                format!("https://api.fabric.microsoft.com/v1/operations/{OP}"),
+            ),
+        ],
+    );
+    f.executor.response(
+        "GET",
+        format!("/v1/operations/{OP}"),
+        200,
+        br#"{"status":"Succeeded"}"#,
+        &[(
+            "Location",
+            format!("https://api.fabric.microsoft.com/v1/operations/{OP}/result"),
+        )],
+    );
+    f.executor.response(
+        "GET",
+        format!("/v1/operations/{OP}/result"),
+        200,
+        &serde_json::to_vec(&report_definition("4.0")).unwrap(),
+        &[],
+    );
+    let value: Value = serde_json::from_slice(
+        &stdout(
+            &f,
+            &[
+                "get".into(),
+                format!("/{WS}.Workspace/{ITEM}.Report/src/definition"),
+                "--wait".into(),
+            ],
+        )
+        .await
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(value["meta"]["reportSource"]["version"], "4.0");
+    let calls = f.executor.calls.lock().unwrap();
+    assert_eq!(calls.len(), 4);
+    assert_eq!(
+        calls.iter().filter(|(method, _)| method == "POST").count(),
+        1
+    );
+}
+
 #[tokio::test]
 async fn metadata_projection_keeps_json_types_and_never_fetches_source() {
     let f = Fixture::new();

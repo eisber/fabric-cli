@@ -23,6 +23,7 @@ pub mod get_backend;
 mod get_budget;
 pub mod get_command;
 pub mod get_metadata;
+mod get_report;
 pub mod get_resolution;
 pub mod get_target;
 pub mod jobs;

@@ -21,6 +21,7 @@ pub mod notebook_observability;
 pub mod notebook_runtime;
 pub mod notebooks;
 pub mod observe;
+pub mod reports;
 pub mod representations;
 pub mod runtime;
 pub mod workspaces;
