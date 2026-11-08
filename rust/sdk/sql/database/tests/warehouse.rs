@@ -220,6 +220,53 @@ fn page_descriptors_encode_native_continuation_and_explicit_folder_choices() {
 }
 
 #[test]
+fn opaque_restore_keys_use_shared_segment_encoding_without_relaxing_guid_routes() {
+    for (key, encoded) in [
+        ("1726617378000", "1726617378000"),
+        ("future-key", "future-key"),
+        ("a?b#c%2F+", "a%3Fb%23c%252F+"),
+        ("native key", "native%20key"),
+        ("\u{65e5}", "%E6%97%A5"),
+        ("%2e%2e", "%252e%252e"),
+    ] {
+        let point = RestorePointId::new(key).unwrap();
+        let request = WarehouseRequests::restore_point(&target(), &point).unwrap();
+        assert_eq!(
+            request.operation().path(),
+            format!("/v1/workspaces/{WORKSPACE}/warehouses/{WAREHOUSE}/restorePoints/{encoded}")
+        );
+        assert_eq!(request.operation().method(), ResourceMethod::Get);
+        assert!(request.operation().body().is_none());
+        assert_eq!(
+            request.operation().completion(),
+            CompletionPolicy::ReturnAccepted
+        );
+        let result = request.decode(completed(json!({"id":key}))).unwrap();
+        assert_eq!(result.owner, target());
+        assert_eq!(result.data.id, point);
+    }
+    for invalid in [
+        "https://foreign.invalid",
+        "//foreign",
+        "..",
+        "a/b",
+        "a\\b",
+        "\n",
+    ] {
+        assert!(RestorePointId::new(invalid).is_err());
+    }
+    assert!(
+        fabric_sdk_workspaces::mutations::ResourceOperation::new(
+            ResourceMethod::Get,
+            &["workspaces", WORKSPACE, "warehouses", "not a guid"],
+            None,
+            CompletionPolicy::ReturnAccepted,
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn metadata_checks_required_fields_native_shapes_and_foreign_owners() {
     let request = WarehouseRequests::get(&target()).unwrap();
     for field in ["id", "workspaceId", "displayName", "type"] {
@@ -530,6 +577,36 @@ async fn connection_read_uses_shared_policy_one_fabric_get_and_no_foreign_monito
         *executor.requests.lock().unwrap(),
         [format!(
             "https://api.fabric.microsoft.com/v1/workspaces/{WORKSPACE}/warehouses/{WAREHOUSE}/connectionString"
+        )]
+    );
+    assert_eq!(credential.calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn opaque_restore_key_executes_one_encoded_get_on_the_selected_owner() {
+    let credential = Credential::default();
+    let selection =
+        CredentialSelection::new("offline-account", "offline-tenant", Audience::Fabric).unwrap();
+    let executor = executor(200, json!({"id":"a?b#c%2F+"}));
+    let mut session = OperationSession::new(
+        &credential,
+        &selection,
+        executor.clone(),
+        limits(),
+        pending(),
+    );
+    let point = RestorePointId::new("a?b#c%2F+").unwrap();
+    let result = WarehouseRequests::restore_point(&target(), &point)
+        .unwrap()
+        .execute(&mut session)
+        .await
+        .unwrap();
+    assert_eq!(result.owner, target());
+    assert_eq!(result.data.id, point);
+    assert_eq!(
+        *executor.requests.lock().unwrap(),
+        [format!(
+            "https://api.fabric.microsoft.com/v1/workspaces/{WORKSPACE}/warehouses/{WAREHOUSE}/restorePoints/a%3Fb%23c%252F+"
         )]
     );
     assert_eq!(credential.calls.load(Ordering::SeqCst), 1);

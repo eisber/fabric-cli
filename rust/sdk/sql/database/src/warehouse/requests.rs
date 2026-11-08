@@ -385,8 +385,19 @@ fn item_request<T>(
     let warehouse = target.warehouse_id().to_string();
     let mut segments = vec!["workspaces", &workspace, "warehouses", &warehouse];
     segments.extend_from_slice(children);
+    let operation = if restore_point.is_some() {
+        ResourceOperation::encoded(
+            ResourceMethod::Get,
+            &segments,
+            None,
+            CompletionPolicy::ReturnAccepted,
+        )
+        .map_err(|_| WarehouseError::InvalidInput)?
+    } else {
+        get_operation(&segments)?
+    };
     Ok(WarehouseRequest {
-        operation: get_operation(&segments)?,
+        operation,
         read,
         expected: Expected {
             workspace: target.workspace_id(),

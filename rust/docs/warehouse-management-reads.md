@@ -34,6 +34,10 @@ rejects SQLDatabase, Lakehouse, SQLEndpoint and WarehouseSnapshot owners before
 descriptor construction. Returned Warehouse workspace/item/type fields must
 match the request; a logical ID never substitutes for the concrete item.
 Restore-point keys are opaque strings, encoded once as one native path segment.
+Only the exact restore-point GET uses the shared encoded-segment constructor;
+GUID-only metadata/connection/list routes retain the strict identifier
+constructor. Percent-looking keys are encoded as literal data, not pre-decoded,
+and native keys with separators, controls or dot traversal remain rejected.
 They are never parsed as UUIDs/timestamps, numerically sorted or selected by
 newest/nearest time.
 
