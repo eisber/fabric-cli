@@ -2568,6 +2568,49 @@
       ]
     },
     {
+      "id": "sdk-update-v2",
+      "package": "fabric-sdk-items",
+      "inputs": [
+        "rust/sdk/items/src/update.rs",
+        "rust/sdk/items/tests/update.rs"
+      ],
+      "depends_on": ["sdk-items", "operations"],
+      "tests": [
+        {"package": "fabric-sdk-items", "target": "test:update"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "resource-update-v2",
+      "package": "fabric-cli-mutations",
+      "inputs": [
+        "rust/frontends/cli/commands/resource-mutations/src/v2_update.rs",
+        "rust/frontends/cli/commands/resource-mutations/tests/v2_update.rs"
+      ],
+      "depends_on": ["sdk-update-v2", "mutations", "query"],
+      "tests": [
+        {"package": "fabric-cli-mutations", "target": "test:v2_update"},
+        {"package": "fabric-cli-mutations", "target": "test:public_set"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "cli-update-v2",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/frontends/cli/app/src/update.rs",
+        "rust/frontends/cli/app/src/v2_main.rs",
+        "rust/frontends/cli/app/tests/update_v2.rs",
+        "rust/docs/update-v2.md"
+      ],
+      "depends_on": ["resource-update-v2", "sdk", "storage-files", "cli-headless"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:update_v2"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "cli-search-v2",
       "package": "fabric-cli",
       "inputs": [

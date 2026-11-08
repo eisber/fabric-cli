@@ -38,6 +38,7 @@ pub mod session;
 #[cfg(feature = "native-host")]
 pub mod tables;
 pub mod tabular_export;
+pub mod update;
 /// Opt-in operation-contract discovery and caller-injected data-schema reads.
 #[cfg(feature = "v2-discovery")]
 pub mod v2_discovery;
