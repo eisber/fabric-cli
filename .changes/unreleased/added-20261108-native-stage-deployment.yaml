@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: added
+body: Add an opt-in native pipeline-stage deployment SDK and CLI consumer with explicit scope, approval, operation evidence, and offline contracts.
+time: 2026-11-08T07:00:00Z
+custom:
+  Author: marcozo_microsoft
+  AuthorLink: https://github.com/marcozo_microsoft

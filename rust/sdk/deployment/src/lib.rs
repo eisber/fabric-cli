@@ -20,6 +20,7 @@ pub mod planner;
 pub mod processors;
 pub mod publish;
 pub mod repository;
+pub mod stage;
 pub mod transforms;
 pub mod workflow;
 pub mod yaml;

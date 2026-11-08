@@ -35,6 +35,8 @@ mod reads;
 pub mod runtime_v2;
 pub mod search_command;
 pub mod session;
+#[cfg(feature = "v2-deploy")]
+pub mod stage_deploy;
 #[cfg(feature = "native-host")]
 pub mod tables;
 pub mod tabular_export;

@@ -23,6 +23,11 @@ name = "definition_copy_v2"
 path = "tests/definition_copy_v2.rs"
 required-features = ["native-host", "v2-copy"]
 
+[[test]]
+name = "stage_deploy"
+path = "tests/stage_deploy.rs"
+required-features = ["v2-deploy"]
+
 [[bin]]
 name = "fab-cli-discovery"
 path = "src/bin/fab_cli.rs"
@@ -63,6 +68,7 @@ semantic-model-dotnet = ["semantic-model", "fabric-cli-semantic-model/dotnet"]
 workspace-read-v2 = []
 v2-cancel = []
 v2-copy = []
+v2-deploy = []
 v2-discovery = ["dep:fabric-sdk-discovery"]
 runtime-v2 = []
 v2-preview = ["dep:fabric-cli-ontology"]
