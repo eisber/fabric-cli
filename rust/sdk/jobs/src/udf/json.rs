@@ -30,6 +30,7 @@ enum ArrayState {
 }
 
 pub(super) fn parse(bytes: &[u8], limits: UdfJsonLimits) -> Result<Value, UdfValidationError> {
+    let limits = limits.validate()?;
     if bytes.len() > limits.max_bytes.get() {
         return Err(UdfValidationError::JsonLimit);
     }

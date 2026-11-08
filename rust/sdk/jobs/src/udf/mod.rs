@@ -15,20 +15,46 @@ pub use response::{UdfProtocolIssue, UdfResponse, UdfResponseKind};
 use serde_json::Value;
 use std::{fmt, num::NonZeroUsize};
 
+/// Largest supported container depth with the pinned decoder's recursion guard.
+///
+/// `serde_json` 1.0.154 starts at 128 and rejects entry when decrementing to zero,
+/// so at most 127 simultaneously nested objects/arrays can be decoded safely.
+/// This is a local decoder capability, not a service limit or production default.
+pub const MAX_UDF_JSON_DEPTH: usize = 127;
+
 /// Caller-selected finite JSON budgets, not public-service MB conversions.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct UdfJsonLimits {
     /// Maximum input or complete response body bytes.
     pub max_bytes: NonZeroUsize,
-    /// Maximum simultaneously nested JSON containers.
+    /// Maximum simultaneously nested JSON containers, including the root.
+    ///
+    /// Supported values are 1 through [`MAX_UDF_JSON_DEPTH`], inclusive.
+    /// Larger configurations are unsupported even for shallow input.
     pub max_depth: NonZeroUsize,
     /// Maximum JSON values plus object member names.
     pub max_nodes: NonZeroUsize,
 }
 
+impl UdfJsonLimits {
+    /// Check decoder support without inspecting input or calling the schema.
+    ///
+    /// # Errors
+    /// Returns [`UdfValidationError::UnsupportedLimits`] for an excessive depth
+    /// configuration. Byte/node budgets remain caller-selected and positive.
+    pub fn validate(self) -> Result<Self, UdfValidationError> {
+        if self.max_depth.get() > MAX_UDF_JSON_DEPTH {
+            return Err(UdfValidationError::UnsupportedLimits);
+        }
+        Ok(self)
+    }
+}
+
 /// Bounded validation diagnostics; no argument, source or provider text is echoed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UdfValidationError {
+    /// The caller's depth configuration exceeds the supported decoder capability.
+    UnsupportedLimits,
     /// The selected schema cannot be validated by the supplied producer.
     UnsupportedSchema,
     /// Input does not satisfy the actual selected function schema.
@@ -48,6 +74,9 @@ pub enum UdfValidationError {
 impl fmt::Display for UdfValidationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::UnsupportedLimits => {
+                "JSON depth configuration exceeds the supported maximum of 127"
+            }
             Self::UnsupportedSchema => "selected function schema is unsupported",
             Self::SchemaViolation => "arguments do not satisfy the selected function schema",
             Self::InvalidJson => "expected one complete JSON value",
@@ -113,12 +142,14 @@ impl fmt::Debug for UdfArguments {
 /// preserves the original bytes and every native JSON argument type.
 ///
 /// # Errors
-/// Returns a sanitized schema, JSON, shape or caller-budget diagnostic.
+/// Returns a sanitized schema, JSON, shape or caller-budget diagnostic. An
+/// unsupported depth configuration fails before schema callbacks or parsing.
 pub fn validate_arguments(
     bytes: &[u8],
     schema: &dyn UdfInputSchema,
     limits: UdfJsonLimits,
 ) -> Result<UdfArguments, UdfValidationError> {
+    let limits = limits.validate()?;
     schema.preflight()?;
     let value = json::parse(bytes, limits)?;
     if !value.is_object() {

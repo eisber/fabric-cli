@@ -8,6 +8,8 @@ use std::fmt;
 /// Why received data cannot establish a complete synchronous native outcome.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UdfProtocolIssue {
+    /// The caller's depth configuration exceeds the supported decoder capability.
+    UnsupportedLimits,
     /// The observed HTTP status is outside its protocol range.
     InvalidHttpStatus,
     /// The native JSON could not be decoded without ambiguity or type loss.
@@ -70,12 +72,22 @@ impl UdfResponse {
     /// unlimited body. This second check protects consumers from faulty injected
     /// transports. An oversized body is omitted entirely, never clipped into JSON.
     /// Native HTTP status is retained even when the body cannot be interpreted.
+    /// Unsupported depth configurations retain only status, before body parsing
+    /// or copying, with [`UdfProtocolIssue::UnsupportedLimits`].
     pub fn from_received(
         function_name: &str,
         status: u16,
         body: &[u8],
         limits: UdfJsonLimits,
     ) -> Self {
+        if limits.validate().is_err() {
+            return Self {
+                status,
+                body: None,
+                native: None,
+                kind: UdfResponseKind::ProtocolFailure(UdfProtocolIssue::UnsupportedLimits),
+            };
+        }
         if body.len() > limits.max_bytes.get() {
             return Self {
                 status,

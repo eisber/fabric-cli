@@ -6,8 +6,8 @@
 #![deny(unnameable_test_items)]
 
 use fabric_sdk_jobs::udf::{
-    UdfInputSchema, UdfJsonLimits, UdfProtocolIssue, UdfResponse, UdfResponseKind,
-    UdfValidationError, validate_arguments,
+    MAX_UDF_JSON_DEPTH, UdfInputSchema, UdfJsonLimits, UdfProtocolIssue, UdfResponse,
+    UdfResponseKind, UdfValidationError, validate_arguments,
 };
 use serde_json::{Value, json};
 use std::{cell::Cell, num::NonZeroUsize};
@@ -349,6 +349,164 @@ fn deeply_nested_input_is_iteratively_bounded_before_value_allocation() {
 }
 
 #[test]
+fn valid_130_depth_input_is_not_misreported_as_invalid_json() {
+    let text = format!(r#"{{"x":{}0{}}}"#, "[".repeat(129), "]".repeat(129));
+    assert_ne!(
+        validate_arguments(text.as_bytes(), &AnyObject, limits(4096, 130, 512)).err(),
+        Some(UdfValidationError::InvalidJson)
+    );
+    assert_eq!(
+        validate_arguments(text.as_bytes(), &AnyObject, limits(4096, 130, 512)).err(),
+        Some(UdfValidationError::UnsupportedLimits)
+    );
+}
+
+#[test]
+fn pinned_decoder_accepts_127_containers_and_rejects_128() {
+    assert_eq!(MAX_UDF_JSON_DEPTH, 127);
+    for depth in [126, 127, 128] {
+        let text = format!(
+            r#"{{"x":{}0{}}}"#,
+            "[".repeat(depth - 1),
+            "]".repeat(depth - 1)
+        );
+        let decoded = serde_json::from_slice::<Value>(text.as_bytes());
+        if depth <= 127 {
+            assert!(decoded.is_ok(), "decoder rejected depth {depth}");
+        } else {
+            assert!(
+                decoded
+                    .unwrap_err()
+                    .to_string()
+                    .contains("recursion limit exceeded"),
+                "decoder rejection must establish its recursion boundary"
+            );
+        }
+    }
+}
+
+#[test]
+fn depth_configuration_boundary_is_validated_before_input_and_schema_callbacks() {
+    for depth in [
+        MAX_UDF_JSON_DEPTH - 1,
+        MAX_UDF_JSON_DEPTH,
+        MAX_UDF_JSON_DEPTH + 1,
+    ] {
+        let configured = limits(4096, depth, 512);
+        let schema = FixtureSchema::new();
+        let bytes = serde_json::to_vec(&arguments()).unwrap();
+        if depth <= MAX_UDF_JSON_DEPTH {
+            assert_eq!(configured.validate(), Ok(configured));
+            assert!(validate_arguments(&bytes, &schema, configured).is_ok());
+            assert_eq!(schema.preflights.get(), 1);
+            assert_eq!(schema.validations.get(), 1);
+        } else {
+            assert_eq!(
+                configured.validate(),
+                Err(UdfValidationError::UnsupportedLimits)
+            );
+            for input in [bytes.as_slice(), b"{}", b"not JSON", b""] {
+                assert_eq!(
+                    validate_arguments(input, &schema, configured).err(),
+                    Some(UdfValidationError::UnsupportedLimits)
+                );
+            }
+            assert_eq!(schema.preflights.get(), 0);
+            assert_eq!(schema.validations.get(), 0);
+        }
+    }
+    for depth in [130, usize::MAX] {
+        assert_eq!(
+            limits(1, depth, 1).validate(),
+            Err(UdfValidationError::UnsupportedLimits)
+        );
+    }
+}
+
+#[test]
+fn supported_depth_input_boundary_counts_root_arrays_objects_and_mixed_containers() {
+    for shape in ["arrays", "objects", "mixed"] {
+        for depth in [
+            MAX_UDF_JSON_DEPTH - 1,
+            MAX_UDF_JSON_DEPTH,
+            MAX_UDF_JSON_DEPTH + 1,
+        ] {
+            let mut text = "0".to_owned();
+            for level in 1..depth {
+                if shape == "objects" || (shape == "mixed" && level % 2 == 0) {
+                    text = format!(r#"{{"child":{text}}}"#);
+                } else {
+                    text = format!("[{text}]");
+                }
+            }
+            text = format!(r#"{{"x":{text}}}"#);
+            let result = validate_arguments(
+                text.as_bytes(),
+                &AnyObject,
+                limits(4096, MAX_UDF_JSON_DEPTH, 512),
+            );
+            if depth <= MAX_UDF_JSON_DEPTH {
+                assert_eq!(result.unwrap().bytes(), text.as_bytes());
+            } else {
+                assert_eq!(result.err(), Some(UdfValidationError::JsonLimit));
+            }
+        }
+    }
+}
+
+#[test]
+fn response_depth_boundaries_and_unsupported_configuration_preserve_status_not_success() {
+    for depth in [
+        MAX_UDF_JSON_DEPTH - 1,
+        MAX_UDF_JSON_DEPTH,
+        MAX_UDF_JSON_DEPTH + 1,
+    ] {
+        let text = format!(
+            r#"{{"functionName":"calculate","invocationId":"offline-depth","status":"Succeeded","output":{}0{},"errors":[]}}"#,
+            "[".repeat(depth - 1),
+            "]".repeat(depth - 1)
+        );
+        let supported = limits(4096, MAX_UDF_JSON_DEPTH, 512);
+        let response = UdfResponse::from_received("calculate", 200, text.as_bytes(), supported);
+        if depth <= MAX_UDF_JSON_DEPTH {
+            assert!(response.succeeded());
+            assert_eq!(response.invocation_id(), Some("offline-depth"));
+        } else {
+            assert_eq!(
+                response.kind(),
+                UdfResponseKind::ProtocolFailure(UdfProtocolIssue::InvalidJson(
+                    UdfValidationError::JsonLimit
+                ))
+            );
+        }
+        let partial = UdfResponse::from_partial("calculate", 200, text.as_bytes(), supported);
+        assert!(!partial.succeeded());
+        assert_eq!(
+            partial.kind(),
+            UdfResponseKind::ProtocolFailure(UdfProtocolIssue::IncompleteBody)
+        );
+    }
+    let bytes = serde_json::to_vec(&native(json!(false))).unwrap();
+    for depth in [MAX_UDF_JSON_DEPTH + 1, 130, usize::MAX] {
+        for body in [bytes.as_slice(), b"not JSON", b""] {
+            for response in [
+                UdfResponse::from_received("calculate", 403, body, limits(1, depth, 512)),
+                UdfResponse::from_partial("calculate", 403, body, limits(1, depth, 512)),
+            ] {
+                assert_eq!(response.http_status(), 403);
+                assert!(!response.succeeded());
+                assert!(response.body().is_none());
+                assert!(response.native().is_none());
+                assert_eq!(
+                    response.kind(),
+                    UdfResponseKind::ProtocolFailure(UdfProtocolIssue::UnsupportedLimits)
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn complete_matching_success_preserves_every_output_shape_and_extra_fields() {
     for output in [
         json!(false),
@@ -556,6 +714,7 @@ fn response_limits_never_clip_an_envelope_into_valid_success() {
 #[test]
 fn diagnostics_never_echo_argument_source_or_provider_details() {
     for error in [
+        UdfValidationError::UnsupportedLimits,
         UdfValidationError::UnsupportedSchema,
         UdfValidationError::SchemaViolation,
         UdfValidationError::InvalidJson,

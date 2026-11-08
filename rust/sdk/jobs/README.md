@@ -41,6 +41,18 @@ Object member names and values both count toward the node budget. It preserves
 the original request bytes and native JSON types. Omission, JSON null and an
 explicit default value stay distinct; defaults are never inserted.
 
+Depth counts simultaneously nested objects and arrays, including the root
+container. `UdfJsonLimits::validate` supports depth configurations from 1 through
+`MAX_UDF_JSON_DEPTH` (127), inclusive. The pinned `serde_json` 1.0.154 decoder
+starts its guarded recursion budget at 128 and rejects the container that would
+decrement it to zero. The consumer therefore rejects larger configurations with
+`UdfValidationError::UnsupportedLimits` **before input parsing or schema
+callbacks**, even for shallow or malformed input. It does not silently label
+otherwise valid deep JSON as `InvalidJson` or disable the decoder's guard.
+Input deeper than a supported caller limit remains `JsonLimit`. This ceiling
+is a local decoder capability, not a function-schema or service limit and not
+a production default; byte and node budgets remain explicitly caller-selected.
+
 `udf::UdfResponse::from_received` interprets bounded native response evidence.
 Only HTTP 200 plus a complete, matching
 `{functionName, invocationId, status, output, errors}` envelope with
@@ -59,6 +71,12 @@ a monitor, cancellation or scheduler handle.
 Use `UdfResponse::from_partial` when HTTP EOF was not established. Parseable
 native fields remain available, but a valid JSON prefix saying `Succeeded`
 cannot override incomplete transport evidence.
+
+Complete and partial response consumers also reject unsupported depth
+configurations before parsing or copying the body. They retain the actual HTTP
+status with `UdfProtocolIssue::UnsupportedLimits`, no body/native fields, and no
+success claim. This configuration error takes precedence over malformed or
+oversized body data.
 
 These are executable **offline consumers**, not a published-function invocation
 adapter, command registration or production capability. Exact approved
