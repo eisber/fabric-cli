@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Offline root/facade arguments and strict SDK metadata preparation.
+
 #![deny(unnameable_test_items)]
 
 use fabric_cli_mutations::v2_update::{

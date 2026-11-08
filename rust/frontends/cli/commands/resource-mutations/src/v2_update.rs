@@ -9,7 +9,6 @@
 use crate::MutationError;
 use clap::{Arg, ArgAction, Command, builder::OsStringValueParser, error::ErrorKind};
 pub use fabric_sdk_items::update;
-use serde_json::Value;
 use std::{
     ffi::OsString,
     io::{self, Write},
