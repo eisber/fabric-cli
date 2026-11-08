@@ -222,6 +222,8 @@ pub enum QueryErrorKind {
     Http,
     /// Terminal native frame reports errors, including partial query failure.
     BackendFailure,
+    /// Native completion status reports warnings; not a clean complete result.
+    BackendWarning,
     /// Service reports actual query cancellation.
     BackendCancelled,
     /// Local retained-row cap dropped rows; native scan cost was not limited.
@@ -238,7 +240,8 @@ pub struct QueryError {
     pub evidence: Option<Box<QueryEvidence>>,
     /// Validated partial native tables/diagnostics, never successful completion.
     pub partial: Option<Box<QueryResult>>,
-    /// Bounded non-success provider bytes; sensitive, never formatted/logged.
+    /// Bounded provider bytes on failure, including malformed HTTP-200 payloads.
+    /// Sensitive, never formatted/logged; a stream failure retains received bytes.
     pub provider_body: Option<Vec<u8>>,
 }
 
@@ -263,6 +266,10 @@ impl QueryError {
             partial: Some(Box::new(result)),
             ..Self::new(kind)
         }
+    }
+    pub(crate) fn with_provider_body(mut self, bytes: Vec<u8>) -> Self {
+        self.provider_body = Some(bytes);
+        self
     }
 }
 
@@ -330,6 +337,7 @@ pub async fn query_kql(
         completed: false,
         locally_truncated: false,
     };
+    let mut bytes = Vec::new();
     let exchange = async {
         let stream_limits = NativeStreamLimits {
             max_fragment_bytes: limits.max_response_bytes().min(64 * 1024),
@@ -362,7 +370,6 @@ pub async fn query_kql(
         {
             return Err(QueryErrorKind::InvalidResponse);
         }
-        let mut bytes = Vec::new();
         loop {
             deadline.remaining().map_err(QueryErrorKind::Native)?;
             let fragment = response
@@ -383,31 +390,27 @@ pub async fn query_kql(
             }
             bytes.extend_from_slice(&fragment);
         }
-        Ok(bytes)
+        Ok(())
     };
-    let bytes = match cancel_with(exchange, pin!(cancelled)).await {
-        Ok(Ok(bytes)) => bytes,
-        Ok(Err(kind)) => return Err(QueryError::observed(kind, evidence)),
+    match cancel_with(exchange, pin!(cancelled)).await {
+        Ok(Ok(())) => {}
+        Ok(Err(kind)) => {
+            return Err(QueryError::observed(kind, evidence).with_provider_body(bytes));
+        }
         Err(_) => {
             return Err(QueryError::observed(
                 QueryErrorKind::Native(NativeError::Cancelled),
                 evidence,
-            ));
+            )
+            .with_provider_body(bytes));
         }
-    };
+    }
     if evidence.http_status != Some(200) {
         let mut error = QueryError::observed(QueryErrorKind::Http, evidence);
         error.provider_body = Some(bytes);
         return Err(error);
     }
-    deadline
-        .remaining()
-        .map_err(|error| QueryError::observed(QueryErrorKind::Native(error), evidence.clone()))?;
-    let result = result::decode(&bytes, limits, evidence.clone());
-    deadline
-        .remaining()
-        .map_err(|error| QueryError::observed(QueryErrorKind::Native(error), evidence))?;
-    result
+    result::decode(bytes, limits, evidence, deadline)
 }
 
 fn valid_json_media(value: Option<&str>) -> bool {

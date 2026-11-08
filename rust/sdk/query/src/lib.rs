@@ -14,4 +14,6 @@ mod result;
 
 pub use binding::{EngineBinding, EngineExecutor, QueryCapability};
 pub use kql::{KqlQuery, QueryError, QueryErrorKind, QueryLimits, query_kql};
-pub use result::{QueryColumn, QueryDataset, QueryEvidence, QueryResult};
+pub use result::{
+    QueryColumn, QueryDataset, QueryDiagnostic, QueryDiagnosticKind, QueryEvidence, QueryResult,
+};

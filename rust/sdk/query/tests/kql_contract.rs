@@ -11,8 +11,8 @@ use fabric_sdk::runtime::{
     NativeStreamBody, NativeStreamExecutor, NativeStreamLimits, NativeStreamResponse,
 };
 use fabric_sdk_query::{
-    EngineBinding, EngineExecutor, KqlQuery, QueryCapability, QueryErrorKind, QueryLimits,
-    query_kql,
+    EngineBinding, EngineExecutor, KqlQuery, QueryCapability, QueryDiagnosticKind, QueryErrorKind,
+    QueryLimits, query_kql,
 };
 use fabric_v2_contracts::ItemIdentity;
 use serde_json::{Value, json};
@@ -514,7 +514,7 @@ async fn errors_after_primary_rows_and_backend_cancellation_keep_partial_non_suc
 async fn row_cap_is_total_across_tables_and_metadata_is_not_data() {
     let binding = binding("db", SCOPE);
     let mut metadata = table(8, json!([[0,{"warning":PRIVATE}]]));
-    metadata["TableKind"] = json!("QueryCompletionInformation");
+    metadata["TableKind"] = json!("QueryProperties");
     let value = json!([
         header(),
         table(0, json!([[1, null], [2, null]])),
@@ -747,4 +747,441 @@ async fn local_cancellation_before_open_and_during_body_releases_only_local_work
     assert_eq!(script.observation.lock().unwrap().requests.len(), 1);
     assert_eq!(script.observation.lock().unwrap().drops, 1);
     assert!(!error.evidence.unwrap().completed);
+}
+
+// Native v2 shapes from azure-kusto-python at
+// 3f53425f7ff8d02de8fc0ea250d02dde30c7d258, tests/input/deft.json and
+// query_partial_results_defer_is_{false,true}.json. Values are synthetic.
+fn native_inline_error() -> Value {
+    json!({"OneApiErrors":[{"error":{"code":"LimitsExceeded","message":PRIVATE,
+        "@type":"Kusto.Data.Exceptions.KustoServicePartialQueryFailureLimitsExceededException",
+        "@message":PRIVATE,"@permanent":false}}]})
+}
+
+fn completion_information(id: u64, levels: &[i32]) -> Value {
+    let rows: Vec<Value> = levels
+        .iter()
+        .map(|level| {
+            json!([
+                "2026-11-08T09:00:00Z",
+                "query;offline-1",
+                "11111111-1111-1111-1111-111111111111",
+                "22222222-2222-2222-2222-222222222222",
+                "33333333-3333-3333-3333-333333333333",
+                level,
+                match level {
+                    0..=2 => "Error",
+                    3 => "Warning",
+                    4 => "Info",
+                    _ => "Stats",
+                },
+                if *level <= 3 { -2133196797_i32 } else { 0 },
+                if *level <= 3 {
+                    "E_QUERY_RESULT_SET_TOO_LARGE"
+                } else {
+                    "S_OK"
+                },
+                if *level <= 3 { 1 } else { 4 },
+                if *level <= 3 {
+                    "QueryLimitsExceeded"
+                } else {
+                    "QueryInfo"
+                },
+                format!("{{\"Count\":1,\"Text\":\"{PRIVATE}\"}}")
+            ])
+        })
+        .collect();
+    json!({"FrameType":"DataTable","TableId":id,"TableName":"QueryCompletionInformation",
+        "TableKind":"QueryCompletionInformation","Columns":[
+            {"ColumnName":"Timestamp","ColumnType":"datetime"},
+            {"ColumnName":"ClientRequestId","ColumnType":"string"},
+            {"ColumnName":"ActivityId","ColumnType":"guid"},
+            {"ColumnName":"SubActivityId","ColumnType":"guid"},
+            {"ColumnName":"ParentActivityId","ColumnType":"guid"},
+            {"ColumnName":"Level","ColumnType":"int"},
+            {"ColumnName":"LevelName","ColumnType":"string"},
+            {"ColumnName":"StatusCode","ColumnType":"int"},
+            {"ColumnName":"StatusCodeName","ColumnType":"string"},
+            {"ColumnName":"EventType","ColumnType":"int"},
+            {"ColumnName":"EventTypeName","ColumnType":"string"},
+            {"ColumnName":"Payload","ColumnType":"string"}
+        ],"Rows":rows})
+}
+
+#[tokio::test]
+async fn native_inline_failure_keeps_prior_rows_terminal_and_raw_evidence() {
+    let binding = binding("db", SCOPE);
+    for terminal_errors in [true, false] {
+        let value = json!([
+            header(),
+            table(0, json!([[1, null], [2, null], native_inline_error()])),
+            completion(terminal_errors, false)
+        ]);
+        let script = Script::new(binding.clone(), &value);
+        let error = query_kql(
+            &binding,
+            &script,
+            &KqlQuery::new("T", "id").unwrap(),
+            limits(100),
+            &deadline(),
+            pending(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.kind, QueryErrorKind::BackendFailure);
+        assert!(!format!("{error:?} {error}").contains(PRIVATE));
+        let partial = error
+            .partial
+            .as_ref()
+            .expect("validated observations retained");
+        assert_eq!(
+            partial.datasets[0].rows,
+            vec![vec![json!(1), Value::Null], vec![json!(2), Value::Null]]
+        );
+        assert_eq!(partial.completion, value[2]);
+        assert_eq!(partial.diagnostics.len(), 1);
+        assert_eq!(
+            partial.diagnostics[0].kind,
+            QueryDiagnosticKind::InlineError
+        );
+        assert_eq!(partial.diagnostics[0].table_id, 0);
+        assert_eq!(partial.diagnostics[0].row_index, 2);
+        assert_eq!(partial.diagnostics[0].record, native_inline_error());
+        assert!(!partial.evidence.completed);
+        assert_eq!(
+            serde_json::from_slice::<Value>(error.provider_body.as_ref().unwrap()).unwrap(),
+            value
+        );
+        assert_eq!(script.observation.lock().unwrap().requests.len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn native_completion_errors_and_warnings_prevent_clean_terminal_success() {
+    let binding = binding("db", SCOPE);
+    for level in [0, 1, 2, 3] {
+        let metadata = completion_information(1, &[level, 6]);
+        let value = json!([
+            header(),
+            table(0, json!([[1, null]])),
+            metadata,
+            completion(false, false)
+        ]);
+        let script = Script::new(binding.clone(), &value);
+        let error = query_kql(
+            &binding,
+            &script,
+            &KqlQuery::new("T", "id").unwrap(),
+            limits(100),
+            &deadline(),
+            pending(),
+        )
+        .await
+        .expect_err("metadata is not clean success");
+        let partial = error.partial.as_ref().unwrap();
+        assert_eq!(
+            error.kind,
+            if level <= 2 {
+                QueryErrorKind::BackendFailure
+            } else {
+                QueryErrorKind::BackendWarning
+            }
+        );
+        assert_eq!(partial.diagnostics.len(), 1);
+        assert_eq!(partial.diagnostics[0].record, metadata["Rows"][0]);
+        assert_eq!(partial.datasets[0].rows, vec![vec![json!(1), Value::Null]]);
+        assert_eq!(partial.metadata[0], metadata);
+        assert_eq!(partial.completion["HasErrors"], false);
+        assert!(!partial.evidence.completed);
+        assert_eq!(
+            serde_json::from_slice::<Value>(error.provider_body.as_ref().unwrap()).unwrap(),
+            value
+        );
+    }
+}
+
+#[tokio::test]
+async fn native_completion_info_and_stats_remain_complete_without_warnings() {
+    let binding = binding("db", SCOPE);
+    let metadata = completion_information(1, &[4, 5, 6]);
+    let value = json!([
+        header(),
+        table(0, json!([[1, null]])),
+        metadata,
+        completion(false, false)
+    ]);
+    let script = Script::new(binding.clone(), &value);
+    let result = query_kql(
+        &binding,
+        &script,
+        &KqlQuery::new("T", "id").unwrap(),
+        limits(100),
+        &deadline(),
+        pending(),
+    )
+    .await
+    .unwrap();
+    assert!(result.evidence.completed);
+    assert_eq!(result.metadata, vec![metadata]);
+    assert!(result.diagnostics.is_empty());
+    assert!(!format!("{result:?}").contains(PRIVATE));
+}
+
+#[tokio::test]
+async fn status_column_order_is_native_and_nested_error_shaped_data_stays_data() {
+    let binding = binding("db", SCOPE);
+    let mut metadata = completion_information(1, &[3]);
+    metadata["Columns"].as_array_mut().unwrap().reverse();
+    metadata["Rows"][0].as_array_mut().unwrap().reverse();
+    let value = json!([
+        header(),
+        table(0, json!([[1, native_inline_error()]])),
+        metadata,
+        completion(false, false)
+    ]);
+    let script = Script::new(binding.clone(), &value);
+    let error = query_kql(
+        &binding,
+        &script,
+        &KqlQuery::new("T", "id").unwrap(),
+        limits(100),
+        &deadline(),
+        pending(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.kind, QueryErrorKind::BackendWarning);
+    let partial = error.partial.unwrap();
+    assert_eq!(partial.datasets[0].rows[0][1], native_inline_error());
+    assert_eq!(
+        partial.diagnostics[0].kind,
+        QueryDiagnosticKind::CompletionWarning
+    );
+    assert_eq!(partial.diagnostics[0].record, metadata["Rows"][0]);
+}
+
+#[tokio::test]
+async fn invalid_json_and_stream_interruption_retain_only_received_bounded_bytes() {
+    let binding = binding("db", SCOPE);
+    let script = Script::new(binding.clone(), &frames());
+    let bytes = format!("{{malformed {PRIVATE}");
+    *script.fragments.lock().unwrap() = Some(VecDeque::from([Ok(bytes.as_bytes().to_vec())]));
+    let error = query_kql(
+        &binding,
+        &script,
+        &KqlQuery::new("T", "id").unwrap(),
+        limits(100),
+        &deadline(),
+        pending(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.kind, QueryErrorKind::InvalidResponse);
+    assert_eq!(error.provider_body.as_deref(), Some(bytes.as_bytes()));
+    assert!(error.partial.is_none());
+    assert!(!format!("{error:?} {error}").contains(PRIVATE));
+
+    for failure in [NativeError::Transport, NativeError::TimedOut] {
+        let script = Script::new(binding.clone(), &frames());
+        *script.fragments.lock().unwrap() = Some(VecDeque::from([
+            Ok(b"[{\"FrameType\":\"DataSetHeader\"".to_vec()),
+            Err(failure),
+        ]));
+        let error = query_kql(
+            &binding,
+            &script,
+            &KqlQuery::new("T", "id").unwrap(),
+            limits(100),
+            &deadline(),
+            pending(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.kind, QueryErrorKind::Native(failure));
+        assert_eq!(
+            error.provider_body.unwrap(),
+            b"[{\"FrameType\":\"DataSetHeader\""
+        );
+        assert_eq!(script.observation.lock().unwrap().drops, 1);
+        assert_eq!(script.observation.lock().unwrap().requests.len(), 1);
+    }
+    let script = Script::new(binding.clone(), &frames());
+    *script.fragments.lock().unwrap() =
+        Some(VecDeque::from([Ok(b"[{".to_vec()), Ok(vec![b'x'; 99])]));
+    let cap = QueryLimits::new(1024 * 1024, 100, 100, 16, 128, 64).unwrap();
+    let error = query_kql(
+        &binding,
+        &script,
+        &KqlQuery::new("T", "id").unwrap(),
+        cap,
+        &deadline(),
+        pending(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.kind, QueryErrorKind::ResponseLimit);
+    assert_eq!(error.provider_body.unwrap(), b"[{");
+}
+
+#[tokio::test]
+async fn malformed_rows_after_valid_data_remain_inspectable_without_fake_success() {
+    let binding = binding("db", SCOPE);
+    for row in [
+        json!({"unexpected":PRIVATE}),
+        json!({"OneApiErrors":[]}),
+        json!({"OneApiErrors":[{"unexpected":PRIVATE}]}),
+        json!([1]),
+        json!(PRIVATE),
+    ] {
+        let value = json!([
+            header(),
+            table(0, json!([[1, null], row])),
+            completion(false, false)
+        ]);
+        let script = Script::new(binding.clone(), &value);
+        let error = query_kql(
+            &binding,
+            &script,
+            &KqlQuery::new("T", "id").unwrap(),
+            limits(100),
+            &deadline(),
+            pending(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.kind, QueryErrorKind::InvalidResponse);
+        let partial = error.partial.as_ref().expect("valid prefix retained");
+        assert_eq!(partial.datasets[0].rows, vec![vec![json!(1), Value::Null]]);
+        assert!(!partial.evidence.completed);
+        assert_eq!(
+            serde_json::from_slice::<Value>(error.provider_body.as_ref().unwrap()).unwrap(),
+            value
+        );
+        assert!(!format!("{error:?} {error}").contains(PRIVATE));
+    }
+}
+
+#[tokio::test]
+async fn unknown_or_malformed_completion_metadata_keeps_data_and_raw_status() {
+    let binding = binding("db", SCOPE);
+    let mut missing_level = completion_information(1, &[4]);
+    missing_level["Columns"][5]["ColumnName"] = json!("FutureSeverity");
+    let mut bad_level = completion_information(1, &[3]);
+    bad_level["Rows"][0][5] = json!("Warning");
+    let mut duplicate = completion_information(1, &[4]);
+    duplicate["Columns"][6] = duplicate["Columns"][5].clone();
+    let mut wrong_type = completion_information(1, &[3]);
+    wrong_type["Columns"][5]["ColumnType"] = json!("string");
+    for metadata in [missing_level, bad_level, duplicate, wrong_type] {
+        let value = json!([
+            header(),
+            table(0, json!([[1, null]])),
+            metadata,
+            completion(false, false)
+        ]);
+        let script = Script::new(binding.clone(), &value);
+        let error = query_kql(
+            &binding,
+            &script,
+            &KqlQuery::new("T", "id").unwrap(),
+            limits(100),
+            &deadline(),
+            pending(),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            error.kind,
+            QueryErrorKind::InvalidResponse | QueryErrorKind::UnsupportedResponse
+        ));
+        let partial = error.partial.as_ref().unwrap();
+        assert_eq!(partial.datasets[0].rows.len(), 1);
+        assert_eq!(partial.metadata[0], metadata);
+        assert!(!partial.evidence.completed);
+        assert_eq!(
+            serde_json::from_slice::<Value>(error.provider_body.as_ref().unwrap()).unwrap(),
+            value
+        );
+    }
+}
+
+#[tokio::test]
+async fn missing_or_malformed_terminal_retains_validated_table_observations() {
+    let binding = binding("db", SCOPE);
+    for value in [
+        json!([header(), table(0, json!([[1, null]]))]),
+        json!([header(),table(0,json!([[1,null]])),{"FrameType":"DataSetCompletion","HasErrors":"false","Cancelled":false}]),
+    ] {
+        let script = Script::new(binding.clone(), &value);
+        let error = query_kql(
+            &binding,
+            &script,
+            &KqlQuery::new("T", "id").unwrap(),
+            limits(100),
+            &deadline(),
+            pending(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.kind, QueryErrorKind::InvalidResponse);
+        assert_eq!(error.partial.as_ref().unwrap().datasets[0].rows.len(), 1);
+        assert!(!error.partial.as_ref().unwrap().evidence.completed);
+        assert_eq!(
+            serde_json::from_slice::<Value>(error.provider_body.as_ref().unwrap()).unwrap(),
+            value
+        );
+    }
+}
+
+#[tokio::test]
+async fn inline_failure_after_local_row_cap_and_later_shape_limit_retains_evidence() {
+    let binding = binding("db", SCOPE);
+    let value = json!([
+        header(),
+        table(0, json!([[1, null], [2, null], native_inline_error()])),
+        completion(true, false)
+    ]);
+    let script = Script::new(binding.clone(), &value);
+    let error = query_kql(
+        &binding,
+        &script,
+        &KqlQuery::new("T", "id").unwrap(),
+        limits(1),
+        &deadline(),
+        pending(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.kind, QueryErrorKind::BackendFailure);
+    assert!(error.partial.as_ref().unwrap().evidence.locally_truncated);
+    assert_eq!(error.partial.as_ref().unwrap().datasets[0].rows.len(), 1);
+    assert_eq!(
+        serde_json::from_slice::<Value>(error.provider_body.as_ref().unwrap()).unwrap(),
+        value
+    );
+    let limited = QueryLimits::new(1024 * 1024, 1024 * 1024, 100, 1, 128, 64).unwrap();
+    let value = json!([
+        header(),
+        table(0, json!([[1, null]])),
+        table(1, json!([[2, null]])),
+        completion(false, false)
+    ]);
+    let script = Script::new(binding.clone(), &value);
+    let error = query_kql(
+        &binding,
+        &script,
+        &KqlQuery::new("T", "id").unwrap(),
+        limited,
+        &deadline(),
+        pending(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.kind, QueryErrorKind::ResponseLimit);
+    assert_eq!(error.partial.as_ref().unwrap().datasets[0].rows.len(), 1);
+    assert!(!error.partial.as_ref().unwrap().evidence.completed);
+    assert_eq!(
+        serde_json::from_slice::<Value>(error.provider_body.as_ref().unwrap()).unwrap(),
+        value
+    );
 }
