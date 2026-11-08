@@ -481,6 +481,11 @@ pub struct DeploymentReceipt {
     pub mutation_may_have_occurred: bool,
     /// Native execution plan when observed; absence is not an empty effects claim.
     pub execution_plan: Option<Value>,
+    /// Bounded original POST response, retained separately from sanitized output.
+    ///
+    /// This can contain private service data and must not be logged or serialized
+    /// as a default receipt. It survives local cancellation after response capture.
+    pub initial_response: Option<OperationResponse>,
 }
 
 impl fmt::Debug for DeploymentReceipt {
@@ -600,8 +605,8 @@ impl ApprovedDeployment {
     /// Submit exactly once using the existing caller-bound operation engine.
     ///
     /// Waiting uses that same session/request budget and caller cancellation future
-    /// (which must include the original total deadline). The observer only retains
-    /// initial native headers; it installs no transport, runtime or polling loop.
+    /// (which must include the original total deadline). The observer retains the
+    /// bounded initial native response; it installs no transport, runtime or polling loop.
     ///
     /// # Errors
     /// Preserves permission/identity/transport/deadline failures, both known handles
@@ -627,6 +632,7 @@ impl ApprovedDeployment {
             outcome: DeploymentOutcome::Unknown,
             mutation_may_have_occurred: false,
             execution_plan: None,
+            initial_response: None,
         };
         let submitted = Mutex::new(None);
         let observer = ObservedExecutor {
@@ -674,6 +680,18 @@ fn finish(
     initial: Option<&OperationResponse>,
     mut receipt: DeploymentReceipt,
 ) -> Result<DeploymentReceipt, DeploymentError> {
+    receipt.initial_response = initial.cloned();
+    if result.is_err()
+        && let Some(initial) = initial.filter(|response| response.status == 200)
+        && let Ok(value) = serde_json::from_slice::<Value>(&initial.body)
+        && record_immediate_identity(&value, &mut receipt).is_ok()
+    {
+        // Retain observed effects without replacing the primary engine failure.
+        receipt.execution_plan = value
+            .get("executionPlan")
+            .filter(|plan| !plan.is_null())
+            .cloned();
+    }
     let response = result.map_err(|cause| {
         if matches!(&cause.kind, OperationErrorKind::OperationFailed { status, .. } if status == "Failed") {
             receipt.outcome = DeploymentOutcome::Failed;
@@ -704,57 +722,40 @@ fn finish(
         receipt: Some(Box::new(receipt.clone())),
     })?;
     if initial.is_some_and(|response| response.status != 202) {
-        if value.get("type").and_then(Value::as_str) != Some("Deploy")
-            || !value
-                .get("sourceStageId")
-                .and_then(Value::as_str)
-                .is_some_and(|id| same_id(id, &receipt.source_stage_id))
-            || !value
-                .get("targetStageId")
-                .and_then(Value::as_str)
-                .is_some_and(|id| same_id(id, &receipt.target_stage_id))
-        {
-            return Err(DeploymentError {
-                kind: DeploymentErrorKind::TargetMismatch,
-                operation: None,
-                receipt: Some(Box::new(receipt)),
-            });
-        }
-        receipt.deployment_id = value
-            .get("id")
-            .and_then(Value::as_str)
-            .filter(|id| uuid(id))
-            .map(str::to_owned);
-        if receipt.deployment_id.is_none() {
-            return Err(DeploymentError {
-                kind: DeploymentErrorKind::InvalidResponse,
-                operation: None,
-                receipt: Some(Box::new(receipt)),
-            });
-        }
+        record_immediate_identity(&value, &mut receipt).map_err(|kind| DeploymentError {
+            kind,
+            operation: None,
+            receipt: Some(Box::new(receipt.clone())),
+        })?;
     }
     receipt.execution_plan = value
         .get("executionPlan")
         .filter(|plan| !plan.is_null())
         .cloned();
-    if receipt.execution_plan.as_ref().is_some_and(|plan| {
-        !plan
-            .get("steps")
-            .and_then(Value::as_array)
-            .is_some_and(|steps| {
-                steps.iter().all(|step| {
-                    step.is_object()
-                        && step.get("index").and_then(Value::as_u64).is_some()
-                        && step.get("status").and_then(Value::as_str).is_some()
+    let steps = match receipt.execution_plan.as_ref() {
+        Some(plan) => Some(validated_steps(plan).ok_or_else(|| DeploymentError {
+            kind: DeploymentErrorKind::InvalidResponse,
+            operation: None,
+            receipt: Some(Box::new(receipt.clone())),
+        })?),
+        None => None,
+    };
+    if value.get("status").and_then(Value::as_str) == Some("Succeeded")
+        && (value.get("error").is_some_and(|error| !error.is_null())
+            || steps.is_some_and(|steps| {
+                steps.iter().any(|step| {
+                    step.get("status").and_then(Value::as_str) != Some("Succeeded")
+                        || step.get("error").is_some_and(|error| !error.is_null())
                 })
-            })
-    }) {
+            }))
+    {
         return Err(DeploymentError {
             kind: DeploymentErrorKind::InvalidResponse,
             operation: None,
             receipt: Some(Box::new(receipt)),
         });
     }
+
     receipt.outcome = match value.get("status").and_then(Value::as_str) {
         Some("Succeeded") => DeploymentOutcome::Succeeded,
         Some("NotStarted" | "Running") => DeploymentOutcome::Accepted,
@@ -791,4 +792,44 @@ fn finish(
             receipt: Some(Box::new(receipt)),
         })
     }
+}
+
+fn record_immediate_identity(
+    value: &Value,
+    receipt: &mut DeploymentReceipt,
+) -> Result<(), DeploymentErrorKind> {
+    if value.get("type").and_then(Value::as_str) != Some("Deploy")
+        || !value
+            .get("sourceStageId")
+            .and_then(Value::as_str)
+            .is_some_and(|id| same_id(id, &receipt.source_stage_id))
+        || !value
+            .get("targetStageId")
+            .and_then(Value::as_str)
+            .is_some_and(|id| same_id(id, &receipt.target_stage_id))
+    {
+        return Err(DeploymentErrorKind::TargetMismatch);
+    }
+    let deployment_id = value
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| uuid(id))
+        .ok_or(DeploymentErrorKind::InvalidResponse)?;
+    receipt.deployment_id = Some(deployment_id.to_owned());
+    Ok(())
+}
+
+fn validated_steps(plan: &Value) -> Option<&[Value]> {
+    let steps = plan.get("steps")?.as_array()?;
+    steps
+        .iter()
+        .all(|step| {
+            step.is_object()
+                && step.get("index").and_then(Value::as_u64).is_some()
+                && matches!(
+                    step.get("status").and_then(Value::as_str),
+                    Some("NotStarted" | "Running" | "Succeeded" | "Failed")
+                )
+        })
+        .then_some(steps.as_slice())
 }

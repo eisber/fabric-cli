@@ -98,7 +98,10 @@ link validation prevents cross-origin/route substitution.
 
 The receipt's HTTP status is the submission status, not a later 200 state-read
 status. A 202 receipt is `accepted`, not completed. Explicit native `Succeeded`
-is required for success. Native failure retains the execution plan when supplied;
+is required for success, and every supplied execution-plan step must corroborate
+it. Failed, pending, unknown or error-bearing steps cannot be reported as a
+completed successful deployment. An absent optional execution plan does not
+invent a step inventory. Native failure retains the execution plan when supplied;
 it is `partial` only when a native step explicitly succeeded. Missing plan
 evidence is not an assertion of zero retained effects. Unknown native status,
 malformed response, permission denial, cancellation and transport/deadline
@@ -109,6 +112,13 @@ published, credentials/permissions copied or every downstream data plane ready.
 No transaction, service atomicity, compensation, cancellation API or rollback
 is invented. No failed request, lost response, timeout, cancellation or failed
 local output authorizes a second POST.
+
+Cancellation after an immediate response remains the primary failure, but the
+receipt retains the bounded original POST response, valid deployment ID and
+observed plan effects. Foreign or malformed response identity is not adopted.
+The raw response is available only as unprojected evidence: default JSON and
+Debug output do not include its private service data. Retaining a completed
+response does not turn interrupted local execution into a successful result.
 
 The CLI output interface preflights before approval/submission, then delivers
 one receipt. Output failure retains the original accepted/completed/failed

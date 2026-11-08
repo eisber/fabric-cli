@@ -828,3 +828,152 @@ async fn default_step_receipt_preserves_effect_ids_but_omits_raw_service_text() 
             .contains("private-service-text")
     );
 }
+
+#[tokio::test]
+async fn supplied_execution_steps_must_corroborate_success() {
+    for step in [
+        json!({"index":0,"status":"Failed","error":{"errorCode":"NativeFailure"}}),
+        json!({"index":0,"status":"Running"}),
+        json!({"index":0,"status":"NotStarted"}),
+        json!({"index":0,"status":"Unexpected"}),
+        json!({"index":0,"status":"Succeeded","error":{"errorCode":"NativeFailure"}}),
+    ] {
+        let mut reply = completed("Succeeded");
+        let mut value: Value = serde_json::from_slice(&reply.body).unwrap();
+        value["executionPlan"] = json!({"steps":[step]});
+        reply.body = serde_json::to_vec(&value).unwrap();
+        let harness = Harness::new([Ok(reply)]);
+        let failure = harness
+            .approved()
+            .await
+            .execute(
+                &harness.context,
+                &(&harness),
+                OperationLimits::default(),
+                false,
+                pending(),
+            )
+            .await
+            .expect_err("contradictory plan cannot establish success");
+        let receipt = failure.receipt.unwrap();
+        assert_eq!(receipt.outcome, DeploymentOutcome::Unknown);
+        assert_eq!(receipt.deployment_id.as_deref(), Some(DEPLOYMENT));
+        assert!(receipt.execution_plan.is_some());
+        assert!(receipt.mutation_may_have_occurred);
+        assert_eq!(harness.post_count(), 1);
+    }
+
+    for plan in [
+        Value::Null,
+        json!({"steps":[]}),
+        json!({"steps":[{"index":0,"status":"Succeeded","error":null}]}),
+    ] {
+        let mut reply = completed("Succeeded");
+        let mut value: Value = serde_json::from_slice(&reply.body).unwrap();
+        value["executionPlan"] = plan;
+        reply.body = serde_json::to_vec(&value).unwrap();
+        let harness = Harness::new([Ok(reply)]);
+        let receipt = harness
+            .approved()
+            .await
+            .execute(
+                &harness.context,
+                &(&harness),
+                OperationLimits::default(),
+                false,
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(receipt.outcome, DeploymentOutcome::Succeeded);
+        assert_eq!(harness.post_count(), 1);
+    }
+}
+
+#[tokio::test]
+async fn cancellation_after_immediate_response_retains_native_identity_and_effects() {
+    for status in ["Succeeded", "Failed"] {
+        let mut reply = completed(status);
+        let mut value: Value = serde_json::from_slice(&reply.body).unwrap();
+        value["executionPlan"] = json!({"steps":[{"index":0,"status":"Succeeded","description":"private-service-text"}]});
+        reply.body = serde_json::to_vec(&value).unwrap();
+        let harness = Harness::new([Ok(reply)]);
+        let approved = harness.approved().await;
+        let signal = poll_fn(|_| {
+            if harness.post_count() > 0 {
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        });
+        let failure = approved
+            .execute(
+                &harness.context,
+                &(&harness),
+                OperationLimits::default(),
+                false,
+                signal,
+            )
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(failure.kind, Kind::Cancelled);
+        let receipt = failure.receipt.unwrap();
+        assert_eq!(receipt.outcome, DeploymentOutcome::Unknown);
+        assert_eq!(receipt.http_status, Some(200));
+        assert_eq!(receipt.deployment_id.as_deref(), Some(DEPLOYMENT));
+        assert_eq!(receipt.execution_plan, Some(value["executionPlan"].clone()));
+        assert_eq!(
+            serde_json::from_slice::<Value>(&receipt.initial_response.as_ref().unwrap().body)
+                .unwrap(),
+            value
+        );
+        assert!(receipt.mutation_may_have_occurred);
+        assert!(
+            !receipt
+                .to_value()
+                .to_string()
+                .contains("private-service-text")
+        );
+        assert!(!format!("{receipt:?}").contains("private-service-text"));
+        assert_eq!(harness.post_count(), 1);
+    }
+}
+
+#[tokio::test]
+async fn interrupted_foreign_or_malformed_responses_do_not_invent_effect_identity() {
+    for value in [
+        json!({"id":DEPLOYMENT,"type":"Deploy","sourceStageId":ITEM,"targetStageId":TARGET,"status":"Succeeded"}),
+        json!({"id":"invalid","type":"Deploy","sourceStageId":SOURCE,"targetStageId":TARGET,"status":"Succeeded"}),
+        Value::Null,
+    ] {
+        let harness = Harness::new([Ok(response(200, value))]);
+        let approved = harness.approved().await;
+        let signal = poll_fn(|_| {
+            if harness.post_count() > 0 {
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        });
+        let failure = approved
+            .execute(
+                &harness.context,
+                &(&harness),
+                OperationLimits::default(),
+                false,
+                signal,
+            )
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(failure.kind, Kind::Cancelled);
+        let receipt = failure.receipt.unwrap();
+        assert_eq!(receipt.outcome, DeploymentOutcome::Unknown);
+        assert!(receipt.deployment_id.is_none());
+        assert!(receipt.execution_plan.is_none());
+        assert!(receipt.initial_response.is_some());
+        assert!(receipt.mutation_may_have_occurred);
+        assert_eq!(harness.post_count(), 1);
+    }
+}

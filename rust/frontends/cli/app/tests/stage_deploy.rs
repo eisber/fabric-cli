@@ -12,7 +12,7 @@ use azure_core::{
 };
 use fabric_cli::stage_deploy::{
     StageDeployCommand, StageDeployError, StageDeployHead, StageDeployInvocation,
-    StageDeployOutput, parse_args,
+    StageDeployOutput, execution_exit_code, parse_args,
 };
 use fabric_deploy::stage::{
     DeploymentApproval, DeploymentError, DeploymentOutcome, PreparedDeployment, SelectionIntent,
@@ -28,10 +28,11 @@ use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, VecDeque},
     ffi::OsString,
-    future::{Future, pending, ready},
+    future::{Future, pending, poll_fn, ready},
     io,
     pin::Pin,
     sync::{Arc, Mutex},
+    task::Poll,
     time::Duration,
 };
 
@@ -305,4 +306,99 @@ async fn output_preflight_stops_approval_and_mutation() {
     ));
     assert!(harness.posts.lock().unwrap().is_empty());
     assert_eq!(policy.0, 0);
+}
+
+#[tokio::test]
+async fn interrupted_or_contradictory_outcomes_survive_cli_and_delivery_failure() {
+    for cancel_after_response in [false, true] {
+        for fail_write in [false, true] {
+            let harness = Harness::new();
+            let value = json!({
+                "id":DEPLOYMENT,"type":"Deploy","sourceStageId":SOURCE,
+                "targetStageId":TARGET,"status":"Succeeded",
+                "executionPlan":{"steps":[{
+                    "index":0,
+                    "status":if cancel_after_response {"Succeeded"} else {"Failed"},
+                    "description":"private-service-text"
+                }]}
+            });
+            *harness.replies.lock().unwrap().back_mut().unwrap() = OperationResponse {
+                status: 200,
+                body: serde_json::to_vec(&value).unwrap(),
+                headers: BTreeMap::new(),
+            };
+            let executor = &harness;
+            let context = RequestContext::new(
+                Arc::new(Credential),
+                CredentialSelection::new("offline", "tenant", Audience::Fabric).unwrap(),
+            );
+            let reader = StageReader {
+                context: &context,
+                executor: &executor,
+                limits: OperationLimits::default(),
+            };
+            let stages = (
+                reader
+                    .read_stage(PIPELINE, SOURCE, pending())
+                    .await
+                    .unwrap(),
+                reader
+                    .read_stage(PIPELINE, TARGET, pending())
+                    .await
+                    .unwrap(),
+            );
+            let mut policy = Policy(0);
+            let mut output = Output {
+                fail_write,
+                ..Default::default()
+            };
+            let mut head = StageDeployHead {
+                context: &context,
+                executor: &executor,
+                limits: OperationLimits::default(),
+                policy: &mut policy,
+            };
+            let signal = poll_fn(|_| {
+                if cancel_after_response && !harness.posts.lock().unwrap().is_empty() {
+                    Poll::Ready(())
+                } else {
+                    Poll::Pending
+                }
+            });
+            let failure = head
+                .run(&command(), &body(), stages, &mut output, signal)
+                .await
+                .err()
+                .unwrap();
+            assert!(!format!("{failure:?}").contains("private-service-text"));
+            let native = match (fail_write, failure) {
+                (false, StageDeployError::Deployment(error)) => error,
+                (true, StageDeployError::Delivery { execution, .. }) => execution.err().unwrap(),
+                _ => panic!("expected native failure preserved across delivery"),
+            };
+            assert_eq!(
+                native.kind,
+                if cancel_after_response {
+                    fabric_deploy::stage::DeploymentErrorKind::Cancelled
+                } else {
+                    fabric_deploy::stage::DeploymentErrorKind::InvalidResponse
+                }
+            );
+            let receipt = native.receipt.unwrap();
+            assert_eq!(receipt.outcome, DeploymentOutcome::Unknown);
+            assert_eq!(execution_exit_code(&receipt), 1);
+            assert_eq!(receipt.deployment_id.as_deref(), Some(DEPLOYMENT));
+            assert_eq!(receipt.execution_plan, Some(value["executionPlan"].clone()));
+            assert!(receipt.initial_response.is_some());
+            assert_eq!(output.values.len(), 1);
+            assert_eq!(output.values[0]["status"], "unknown");
+            assert!(
+                !output.values[0]
+                    .to_string()
+                    .contains("private-service-text")
+            );
+            assert_eq!(harness.posts.lock().unwrap().len(), 1);
+            assert_eq!(policy.0, 1);
+        }
+    }
 }
