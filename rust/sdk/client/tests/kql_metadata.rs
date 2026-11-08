@@ -594,10 +594,12 @@ fn acceptance_and_wrong_statuses_are_not_complete_metadata() {
     }
 }
 
+type RecordedRequest = (ResourceMethod, String, Vec<u8>);
+
 #[derive(Clone, Default)]
 struct Executor {
     responses: Arc<Mutex<VecDeque<OperationResponse>>>,
-    calls: Arc<Mutex<Vec<(ResourceMethod, String, Vec<u8>)>>>,
+    calls: Arc<Mutex<Vec<RecordedRequest>>>,
 }
 
 impl OperationExecutor for Executor {
