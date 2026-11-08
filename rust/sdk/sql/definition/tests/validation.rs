@@ -7,11 +7,12 @@
 mod support;
 
 use fabric_sdk_sql_definition::{
-    DefinitionErrorKind as Kind, DefinitionLimitKind as Limit,
+    DefinitionErrorKind as Kind, DefinitionLimitKind as Limit, SqlDatabaseDefinitionFormat,
+    parse_sql_database_definition, sql_database_definition_from_parts,
     validation::{self, Severity, ValidationError, v2},
 };
 use serde_json::json;
-use support::{limits, nz, wire_part};
+use support::{assert_kind, limits, nz, part, wire_part};
 
 fn body(path: &str) -> Vec<u8> {
     serde_json::to_vec(&json!({
@@ -29,6 +30,13 @@ fn report(bytes: &[u8]) -> validation::ValidationReport {
 fn structural_validity_explicitly_excludes_native_package_and_live_acceptance() {
     let bytes = body("model.dacpac");
     let original = bytes.clone();
+    let constructed = sql_database_definition_from_parts(
+        SqlDatabaseDefinitionFormat::Dacpac,
+        vec![part("model.dacpac", b"opaque-not-a-real-package")],
+        limits(),
+    )
+    .unwrap();
+    assert_eq!(serde_json::to_vec(&constructed).unwrap(), bytes);
     let report = report(&bytes);
     assert!(report.valid);
     assert!(report.findings.is_empty());
@@ -142,7 +150,12 @@ fn precise_ordinal_locations_do_not_echo_paths_or_payloads() {
             .unwrap()
             .contains("do-not-echo")
     );
-    let result = report(&body("../private.dacpac"));
+    let unsafe_input = body("../private.dacpac");
+    assert_kind(
+        parse_sql_database_definition(&unsafe_input, limits()),
+        Kind::UnsafePath,
+    );
+    let result = report(&unsafe_input);
     assert_eq!(result.findings[0].pointer, "/parts/0/path");
     assert_eq!(result.findings[0].rule_id, "unsafe_path");
     assert!(

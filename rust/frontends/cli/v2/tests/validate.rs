@@ -344,26 +344,26 @@ fn network_and_device_paths_are_rejected_before_acquisition() {
             "UnsafePath"
         );
     }
+}
 
-    #[cfg(windows)]
-    #[test]
-    fn junction_parent_is_rejected_before_reading_target_bytes() {
-        let files = Files::new();
-        let original = files.input(BODY);
-        let link = files.0.join("junction");
-        let output = Command::new("cmd.exe")
-            .args(["/d", "/c", "mklink", "/J"])
-            .arg(&link)
-            .arg(&files.0)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "isolated junction fixture must be created"
-        );
-        let error = validate::run(&request(link.join("input.json")), &Proceed).unwrap_err();
-        fs::remove_dir(&link).unwrap();
-        assert_eq!(error.code, "UnsafePath");
-        assert_eq!(fs::read(original).unwrap(), BODY);
-    }
+#[cfg(windows)]
+#[test]
+fn junction_parent_is_rejected_before_reading_target_bytes() {
+    let files = Files::new();
+    let original = files.input(BODY);
+    let link = files.0.join("junction");
+    let output = Command::new("cmd.exe")
+        .args(["/d", "/c", "mklink", "/J"])
+        .arg(&link)
+        .arg(&files.0)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "isolated junction fixture must be created"
+    );
+    let error = validate::run(&request(link.join("input.json")), &Proceed).unwrap_err();
+    fs::remove_dir(&link).unwrap();
+    assert_eq!(error.code, "UnsafePath");
+    assert_eq!(fs::read(original).unwrap(), BODY);
 }
