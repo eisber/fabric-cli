@@ -43,17 +43,31 @@ mod native_read {
 }
 
 fn main() -> std::process::ExitCode {
-    match run() {
-        Ok(()) => std::process::ExitCode::SUCCESS,
+    #[cfg(feature = "v2-refresh")]
+    {
+        let args: Vec<_> = std::env::args_os().skip(1).collect();
+        if args.first().and_then(|value| value.to_str()) == Some("refresh") {
+            return std::process::ExitCode::from(finish(
+                v2_refresh_main::run(args),
+                &mut io::stderr().lock(),
+            ));
+        }
+    }
+    std::process::ExitCode::from(finish(run().map(|()| 0), &mut io::stderr().lock()))
+}
+
+fn finish(result: Result<u8, Failure>, stderr: &mut dyn Write) -> u8 {
+    match result {
+        Ok(exit) => exit,
         Err((code, message, evidence, exit)) => {
             let result = serde_json::to_writer(
-                io::stderr().lock(),
+                stderr,
                 &json!({"error":{"code":code,"message":message},"evidence":evidence}),
             );
             if result.is_err() {
-                return std::process::ExitCode::from(1);
+                return 1;
             }
-            std::process::ExitCode::from(exit)
+            exit
         }
     }
 }
@@ -124,10 +138,6 @@ fn run() -> Result<(), Failure> {
     }
     if args.first().and_then(|value| value.to_str()) == Some("search") {
         return v2_search_main::run(args);
-    }
-    #[cfg(feature = "v2-refresh")]
-    if args.first().and_then(|value| value.to_str()) == Some("refresh") {
-        return v2_refresh_main::run(args);
     }
     let command = match parse_get(args) {
         Ok(command) => command,

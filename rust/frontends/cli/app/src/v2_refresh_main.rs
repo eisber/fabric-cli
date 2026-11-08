@@ -19,14 +19,18 @@ use std::{
     time::Duration,
 };
 
-pub(super) fn run(args: Vec<OsString>) -> Result<(), Failure> {
+#[cfg(test)]
+#[path = "v2_refresh_main_tests.rs"]
+mod tests;
+
+pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
     let command = match refresh_command::parse(args) {
         Ok(command) => command,
         Err(error) if error.kind() == clap::error::ErrorKind::DisplayHelp => {
             refresh_command::command()
                 .write_long_help(&mut io::stdout().lock())
                 .map_err(|_| failed("OutputFailed", "Refresh help delivery failed.", 1))?;
-            return Ok(());
+            return Ok(0);
         }
         Err(_) => {
             return Err(failed(
@@ -40,6 +44,7 @@ pub(super) fn run(args: Vec<OsString>) -> Result<(), Failure> {
         let schema = refresh::schemas()
             .map_err(|_| failed("SchemaFailed", "Refresh schema registration failed.", 1))?;
         return write_value(&schema)
+            .map(|()| 0)
             .map_err(|_| failed("OutputFailed", "Refresh schema delivery failed.", 1));
     }
     let prepared = refresh::prepare(
@@ -116,29 +121,34 @@ pub(super) fn run(args: Vec<OsString>) -> Result<(), Failure> {
             .map_err(|message| failed("RefreshPreflightFailed", message, 1))
     });
     runtime.shutdown_timeout(Duration::from_secs(1));
-    let mut delivery = result?;
-    match interruption.load(Ordering::SeqCst) {
+    Ok(finish_delivery(
+        result?,
+        interruption.load(Ordering::SeqCst),
+        &mut io::stdout().lock(),
+        &mut io::stderr().lock(),
+    ))
+}
+
+fn finish_delivery(
+    mut delivery: refresh_command::Delivery,
+    interruption: u8,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> u8 {
+    match interruption {
         1 => delivery.value["meta"]["interruption"] = serde_json::json!("TimedOut"),
         2 => delivery.value["meta"]["interruption"] = serde_json::json!("Cancelled"),
         _ => (),
     }
-    if delivery.exit != 0 {
-        return Err(("RefreshIncomplete","Graph refresh did not establish successful completion; no replay or remote cancel was attempted.".into(), delivery.value, delivery.exit));
-    }
-    if write_value(&delivery.value).is_err() {
-        return Err((
-            "OutputFailed",
-            "Graph refresh receipt delivery failed; do not replay.".into(),
-            delivery.value,
-            1,
-        ));
-    }
-    Ok(())
+    delivery.write_to(stdout, stderr)
 }
 
 fn write_value(value: &serde_json::Value) -> io::Result<()> {
-    let mut stdout = io::stdout().lock();
-    serde_json::to_writer(&mut stdout, value).map_err(io::Error::other)?;
+    write_value_to(value, &mut io::stdout().lock())
+}
+
+fn write_value_to(value: &serde_json::Value, stdout: &mut dyn Write) -> io::Result<()> {
+    serde_json::to_writer(&mut *stdout, value).map_err(io::Error::other)?;
     writeln!(stdout)?;
     stdout.flush()
 }

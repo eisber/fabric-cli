@@ -127,7 +127,12 @@ impl Delivery {
         }
         let mut value = self.value.clone();
         value["status"] = json!("unknown");
-        value["error"] = json!({"code":"OutputFailure","message":"Receipt delivery failed; do not replay graph refresh."});
+        value["error"] = json!({
+            "code":"OutputFailure",
+            "message":"Receipt delivery failed; do not replay graph refresh.",
+            "source":self.value["error"],
+            "outcomeStatus":self.value["status"]
+        });
         let _ = serde_json::to_writer(&mut *stderr, &value);
         let _ = writeln!(stderr);
         let _ = stderr.flush();

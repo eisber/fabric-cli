@@ -90,6 +90,14 @@ An accepted response is a successful submission exit, not a completion claim.
 Failed/incomplete observation is a nonzero exit with retained acceptance.
 Output errors do not resubmit work.
 
+The native executable writes received successful, failed, and interrupted
+outcomes through that same root receipt contract. A nonzero exit does not wrap
+the receipt under a generic `evidence` field. Genuine pre-dispatch argument,
+approval, or host-configuration failures still use the generic error envelope.
+If receipt writing or flushing fails, the best-effort root diagnostic preserves
+the native handle, mutation flags, and original outcome status and error under
+the `OutputFailure` cause. It never dispatches another refresh.
+
 The facade's registry is one operation, not a duplicated root/tool handler.
 Future hosts must apply the same target constraint and injected approval policy.
 It does not advertise a universal artifact refresh or an implemented MCP host.
@@ -99,6 +107,11 @@ Offline tests cover exact requests, body absence, selected audience/endpoint,
 wrong-target links, malformed headers, response limits, credential failure,
 response loss, dispatch/cancellation races, approval, and once-only output.
 No live refresh or platform/authentication proof is implied by these tests.
+
+Native-entry tests also exercise the scripted POST-to-observer-to-executable
+delivery path for failure, timeout/Ctrl-C after acceptance, synchronous completion,
+asynchronous acceptance, observed completion, writer/flush failure, and
+pre-dispatch error exits. These tests use no production identity or service.
 
 ## Source provenance
 
