@@ -139,3 +139,14 @@ cargo +1.99.1 clippy --offline --locked -p fabric-sdk --all-targets -- -D warnin
 No live Fabric/model/identity acceptance is claimed. Current complete native
 three-platform/stable and applicable optional gates are still required before
 review-ready integration.
+
+The native CI job has a finite 150-minute Windows budget; Linux and macOS
+retain 120 minutes. Run `42465174525` on DataAgent head `4c0dadff` exceeded the
+previous two-hour Windows job envelope after 241 successful completed commands
+(108 minutes 32 seconds) plus about 11 minutes of preflight. Its final complete-
+plan receipt and after-source guard were missing, so that run was not a pass.
+The Windows-only headroom accommodates the same full plan and final source
+proof. It changes no application deadline, command/profile/test inventory,
+parallelism, feature/default graph, locked dependency or oracle/source gate.
+The existing workflow guard verifies the three exact finite platform budgets;
+current-head CI must still finish every required proof before readiness.
