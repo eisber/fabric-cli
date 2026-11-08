@@ -60,6 +60,42 @@ registered contract fail explicitly; there is no generic passthrough JSON.
 MCP projection is inert metadata for an embedding host, not a registered or
 executable MCP tool. The host still owns dispatch, permissions and approval.
 
+## Local human help
+
+The separate preview also renders help for one exact lexical target:
+
+```text
+fab-cli-discovery help /Prospective.Workspace
+fab-cli-discovery help /Sales.Workspace --verb delete
+fab-cli-discovery help /Sales.Workspace/Analysis.Notebook --verb run
+```
+
+`help` uses the existing neutral operation registrations, in canonical-ID order.
+An optional `--verb` narrows to an exact registered pair; an unsupported pair is
+a nonzero capability error with local help guidance, not a successful empty
+list. The current denominator is the four resource contracts listed above.
+Definitions, `docs/schema`, function facets and other unregistered targets
+cannot borrow a parent contract.
+
+Human output includes effects, prerequisites and input limitations from the same
+registration as the SDK and MCP schemas. It reports lexical/unverified target
+selection, unevaluated authorization and unconfigured mutation execution.
+Command-corpus coverage is explicitly limited to the local registry. Docs are
+not indexed or searched by this projection; it does not fetch source links.
+Keyword/docs search is outside this slice.
+
+`fabric_sdk::discovery::help::TargetHelp` exposes the same selected operation
+contracts to independent consumers. Its `render()` text is for people, not a
+machine parsing interface: use the retained contracts, schemas and inert MCP
+projection for structured discovery.
+
+Local help is immediately ready without an async runtime and never consults an
+injected data-schema provider, settings, identity, HTTP, updater, stdin or files.
+Caller cancellation prevents success output. The existing 4 MiB output bound
+also applies to human help; writer failures propagate rather than claiming
+success or replaying any described operation. `fab-rs` help and grammar remain
+unchanged.
+
 ## Data schema is a different capability
 
 Bare `schema <target>` requests backend data metadata rather than an operation

@@ -111,6 +111,21 @@ exact support remains defined solely by the registration selected by `discover`.
 The separate opt-in `fab-cli-discovery` binary can use these APIs without changing
 v1 `fab-rs` parsing or composing its mutation builders.
 
+### Exact-target human help
+
+`help::TargetHelp::new(&TargetSelector, Option<Operation>)` selects existing
+contracts in canonical-ID order. An absent verb lists only registered pairs for
+that exact resource kind; a supplied unsupported verb returns the existing
+capability error. No payload, service resolution or authorization is required.
+`target()` retains the lexical selector and `operations()` returns the original
+structured contracts, including their unchanged input schemas and MCP projection.
+
+`render()` explains those contracts for people and states the local registry's
+finite coverage, unverified identity, unevaluated permission and unconfigured
+execution. Docs are explicitly not indexed, searched or fetched. Unregistered
+facets and representations still fail `TargetSelector::parse` rather than using a
+parent's help. Human text is not a machine protocol or an execution permission.
+
 `DiscoveryError` provides `InvalidOperation`, `InvalidTarget { reason }`,
 `UnsupportedCapability { reason }`, and `InvalidInput { field, reason }`.
 `DiscoveryError::code(&self) -> &'static str` returns stable snake-case machine

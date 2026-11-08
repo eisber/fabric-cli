@@ -18,6 +18,7 @@
 use clap::{Arg, ArgAction, ArgMatches, Command, error::ErrorKind};
 use fabric_cli_output::CommandError;
 use fabric_cli_tables::TableResolver;
+use fabric_sdk_discovery::help::TargetHelp;
 use fabric_sdk_discovery::{
     DiscoveryError, MAX_TARGET_BYTES, Operation, OperationContract, TargetKind, TargetSelector,
     discover, discover_for_facade, registrations,
@@ -37,6 +38,8 @@ use std::{
     pin::{Pin, pin},
     task::Poll,
 };
+
+mod help;
 
 /// Maximum serialized JSON bytes, including newline, for a local descriptor.
 ///
@@ -80,6 +83,8 @@ pub enum DiscoveryFailure {
     Serialization,
     /// Original neutral registry failure.
     Registry(DiscoveryError),
+    /// Exact local human-help capability failure, without a schema fallback.
+    Help(DiscoveryError),
     /// Original context/resolution failure, not an empty schema.
     Resolver(CommandError),
     /// Original TABLE failure, including nested OneLake classifications.
@@ -97,7 +102,7 @@ impl DiscoveryFailure {
             Self::Cancelled => "cancelled",
             Self::OutputLimit => "output_limit_exceeded",
             Self::Serialization => "serialization_failed",
-            Self::Registry(error) => error.code(),
+            Self::Registry(error) | Self::Help(error) => error.code(),
             Self::Resolver(_) => "resolution_failed",
             Self::Table(error) => table_error_code(&error.kind),
         }
@@ -129,9 +134,15 @@ impl fmt::Display for DiscoveryFailure {
                 "Unsupported schema backend, target type or facet in this discovery preview."
             }
             Self::Cancelled => "Discovery cancelled; no successful result is available.",
-            Self::OutputLimit => "Schema output exceeds the configured byte bound.",
+            Self::OutputLimit => "Discovery output exceeds the configured byte bound.",
             Self::Serialization => "Schema serialization failed.",
             Self::Registry(_) => "Operation schema is unavailable for this exact target and operation.",
+            Self::Help(error) => {
+                return write!(
+                    formatter,
+                    "{error} Run fab-cli-discovery help --help for supported selectors, or help <path> to list registered operations. Unregistered representations do not use a parent contract."
+                );
+            }
             Self::Resolver(_) => "Data-schema target resolution failed; no schema is available.",
             Self::Table(_) => "Backend schema read failed or is incomplete; no schema is available.",
         })
@@ -258,6 +269,8 @@ pub enum DiscoveryRequest {
 pub enum ParsedDiscovery {
     /// Human help or version text from this preview's own parser.
     Text(String),
+    /// Exact-target human help, retaining the SDK contracts instead of parsing text.
+    Help(TargetHelp),
     /// Schema request ready for [`DiscoveryHost::execute`].
     Request(DiscoveryRequest),
 }
@@ -292,7 +305,9 @@ pub fn command() -> Command {
         }
         artifact = artifact.subcommand(facade);
     }
-    root.subcommand(artifact).subcommand(
+    root.subcommand(help::command())
+        .subcommand(artifact)
+        .subcommand(
         Command::new("schema")
             .about(
                 "Backend data schema, not operation input or docs/schema; injected host required",
@@ -365,6 +380,9 @@ where
     let (name, values) = matches
         .subcommand()
         .ok_or(DiscoveryFailure::InvalidArguments)?;
+    if name == "help" {
+        return help::parse(values).map(ParsedDiscovery::Help);
+    }
     if name == "schema" {
         let path = values
             .get_one::<String>("path")
@@ -561,6 +579,18 @@ impl DiscoveryHost<'_> {
     {
         let request = match parse_from(args) {
             Ok(ParsedDiscovery::Text(text)) => {
+                stdout.write_all(text.as_bytes())?;
+                stdout.flush()?;
+                return Ok(0);
+            }
+            Ok(ParsedDiscovery::Help(help)) => {
+                let text = match cancel_first(cancelled, async { Ok(help.render()) }).await {
+                    Ok(text) => text,
+                    Err(error) => return write_failure(&error, stderr),
+                };
+                if text.len() > MAX_DOCUMENT_BYTES {
+                    return write_failure(&DiscoveryFailure::OutputLimit, stderr);
+                }
                 stdout.write_all(text.as_bytes())?;
                 stdout.flush()?;
                 return Ok(0);

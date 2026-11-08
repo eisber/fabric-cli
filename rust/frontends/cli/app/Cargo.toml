@@ -28,6 +28,11 @@ name = "fab-cli-discovery"
 path = "src/bin/fab_cli.rs"
 required-features = ["v2-discovery"]
 
+[[test]]
+name = "v2_help"
+path = "tests/v2_help.rs"
+required-features = ["v2-discovery"]
+
 [[bin]]
 name = "fab-cli-v2"
 path = "src/v2_main.rs"
