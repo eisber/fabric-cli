@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Offline executable isolation for the opt-in native stage deployment head.
+
 #![deny(unnameable_test_items)]
 
 use std::process::Command;
