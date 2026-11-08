@@ -139,6 +139,37 @@ fn valid_and_invalid_documents_keep_structural_reports_with_distinct_exits() {
 }
 
 #[test]
+fn unsupported_sqlproj_documents_have_no_dacpac_verdict_or_success_stdout() {
+    let files = Files::new();
+    for bytes in [
+        &br#"{"format":"sqlproj","parts":[]}"#[..],
+        br#"{"parts":[null],"format":"sqlproj"}"#,
+        br#"{"format":"sqlproj","parts":null}"#,
+        br#"{"format":"sqlproj","parts":[{"path":"a.sqlproj","payload":"eA==","payloadType":"InlineBase64"}]}"#,
+    ] {
+        let path = files.input(bytes);
+        let output = binary(&args(path.to_str().unwrap()));
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty(), "unsupported input must not publish a check report");
+        let failure = payload(&output.stderr);
+        assert_eq!(failure["status"], "failed");
+        assert_eq!(failure["error"]["code"], "Unsupported");
+        assert!(failure["data"].is_null());
+        assert_eq!(failure["effects"], serde_json::json!([]));
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
+    let path = files.input(BODY);
+    let output = binary(&args(path.to_str().unwrap()));
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(payload(&output.stdout)["data"]["valid"], true);
+    let path = files.input(br#"{"format":"dacpac","parts":[]}"#);
+    let output = binary(&args(path.to_str().unwrap()));
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stderr.is_empty());
+    assert_eq!(payload(&output.stdout)["data"]["valid"], false);
+}
+
+#[test]
 fn unreadable_unsafe_and_over_budget_inputs_are_errors_without_verdicts() {
     let files = Files::new();
     let path = files.input(&vec![b' '; 4097]);

@@ -136,6 +136,37 @@ fn unsupported_profiles_never_return_valid_or_invalid_reports() {
 }
 
 #[test]
+fn unsupported_document_format_precedes_format_dependent_admission_failures() {
+    for bytes in [
+        &br#"{"format":"sqlproj","parts":[]}"#[..],
+        br#"{"parts":[],"format":"sqlproj"}"#,
+        br#"{"format":"sqlproj","parts":null}"#,
+        br#"{"format":"sqlproj","parts":[null]}"#,
+        br#"{"format":"sqlproj"}"#,
+        br#"{"format":"sqlproj","parts":[{"path":"a.sqlproj","payload":"bad-base64","payloadType":"InlineBase64"}]}"#,
+        br#"{"format":"sqlproj","parts":[{"path":"../a.sqlproj","payload":"eA==","payloadType":"InlineBase64"}]}"#,
+        br#"{"format":"sqlproj","parts":[{"path":"a.sqlproj","payload":"eA==","payloadType":"InlineBase64"}]}"#,
+        br#"{"f\u006frmat":"sqlpr\u006fj","parts":[]}"#,
+        br#"{"format":"future","parts":[null]}"#,
+    ] {
+        assert_eq!(
+            validation::validate(bytes, "application/json", "dacpac", "1.0", limits()),
+            Err(ValidationError::Unsupported),
+            "unsupported native format must not produce a DACPAC report"
+        );
+    }
+    for bytes in [
+        &br#"{"format":"dacpac","parts":[]}"#[..],
+        br#"{"parts":[]}"#,
+        br#"{"format":"dacpac","parts":[null]}"#,
+        br#"{"format":"dacpac","format":"sqlproj","parts":[]}"#,
+    ] {
+        assert!(!report(bytes).valid);
+    }
+    assert!(report(&body("model.dacpac")).valid);
+}
+
+#[test]
 fn precise_ordinal_locations_do_not_echo_paths_or_payloads() {
     let bytes = serde_json::to_vec(&json!({"parts":[
         wire_part("model.dacpac", b"x"),
