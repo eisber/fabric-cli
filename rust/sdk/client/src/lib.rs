@@ -12,6 +12,7 @@ pub mod capacities;
 pub mod documents;
 pub mod folders;
 pub mod items;
+pub mod kql_databases;
 pub mod livy;
 #[cfg(feature = "livy-arrow")]
 pub mod livy_arrow;

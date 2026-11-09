@@ -509,6 +509,10 @@
         },
         {
           "package": "fabric-sdk",
+          "target": "test:kql_metadata"
+        },
+        {
+          "package": "fabric-sdk",
           "target": "test:folder_facade"
         },
         {
