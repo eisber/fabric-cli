@@ -41,6 +41,7 @@ members = [
     "sdk/sql/database",
     "sdk/sql/definition",
     "sdk/tabular",
+    "sdk/query",
     "sdk/semantic-model/client",
     "sdk/semantic-model/dotnet",
 ]
@@ -92,6 +93,7 @@ default-members = [
     "sdk/sql/database",
     "sdk/sql/definition",
     "sdk/tabular",
+    "sdk/query",
     "sdk/semantic-model/client",
     "frontends/cli/commands/semantic-model",
 ]
@@ -115,6 +117,7 @@ bytes = { version = "=1.12.1", default-features = false, features = ["std"] }
 flatbuffers = { version = "=25.12.19", default-features = false }
 parquet = { version = "=60.1.0", default-features = false, features = ["arrow"] }
 fabric-sdk-tabular = { path = "sdk/tabular" }
+fabric-sdk-query = { path = "sdk/query" }
 fabric-sdk-dataflow = { path = "sdk/dataflow" }
 fabric-name-search = { path = "sdk/search/names" }
 fabric-v2-contracts = { path = "sdk/contracts" }

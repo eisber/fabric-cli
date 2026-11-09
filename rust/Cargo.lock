@@ -1730,6 +1730,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-sdk-query"
+version = "0.1.0"
+dependencies = [
+ "azure_core",
+ "fabric-core",
+ "fabric-sdk",
+ "fabric-v2-contracts",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "fabric-sdk-relevance"
 version = "0.1.0"
 dependencies = [
