@@ -75,6 +75,40 @@ pub enum ExistsTarget {
         /// Exact declared service type; required for a name, optional for IDs.
         item_type: Option<String>,
     },
+    /// One one-level OneLake catalog namespace in a Lakehouse.
+    CatalogNamespace {
+        /// Parent workspace, resolved with the existing metadata policy.
+        workspace: MetadataSelector,
+        /// Parent Lakehouse, resolved with exact type/root scoping.
+        lakehouse: MetadataSelector,
+        /// Exact catalog schema spelling, including synthetic `dbo`.
+        namespace: String,
+    },
+    /// One table in the configured Lakehouse Iceberg catalog view, not a DFS path.
+    CatalogTable {
+        /// Parent workspace selector.
+        workspace: MetadataSelector,
+        /// Parent Lakehouse selector.
+        lakehouse: MetadataSelector,
+        /// Exact one-level catalog schema.
+        namespace: String,
+        /// Exact catalog table name.
+        table: String,
+    },
+}
+
+impl ExistsTarget {
+    /// Whether this target needs the separately injected Storage catalog backend.
+    pub fn is_catalog(&self) -> bool {
+        matches!(
+            self,
+            Self::CatalogNamespace { .. } | Self::CatalogTable { .. }
+        )
+    }
+}
+
+pub(super) fn catalog_segment(value: &str) -> Result<(), ExistsError> {
+    MetadataSelector::name(value).map(|_| ())
 }
 
 /// Immutable caller-bound request; construction has no identity-provider effects.
@@ -91,6 +125,24 @@ impl ExistsRequest {
         TenantIdentity::new(tenant_id).map_err(|_| ExistsError::InvalidTarget)?;
         let workspace = match &target {
             ExistsTarget::Workspace { workspace } => workspace,
+            ExistsTarget::CatalogNamespace {
+                workspace,
+                lakehouse,
+                namespace,
+            }
+            | ExistsTarget::CatalogTable {
+                workspace,
+                lakehouse,
+                namespace,
+                ..
+            } => {
+                lakehouse.validate()?;
+                catalog_segment(namespace)?;
+                if let ExistsTarget::CatalogTable { table, .. } = &target {
+                    catalog_segment(table)?;
+                }
+                workspace
+            }
             ExistsTarget::Item {
                 workspace,
                 item,
@@ -158,7 +210,13 @@ pub fn exists_descriptor() -> Result<OperationDescriptor, ContractError> {
                     "properties":{"kind":{"const":"workspace"},"workspace":selector}},
                 {"type":"object","required":["kind","workspace","item","itemType"],"additionalProperties":false,
                     "properties":{"kind":{"const":"item"},"workspace":selector,"item":selector,
-                        "itemType":{"type":["string","null"],"description":"Required exact type for names; optional for IDs; non-item types are rejected"}}}
+                        "itemType":{"type":["string","null"],"description":"Required exact type for names; optional for IDs; non-item types are rejected"}}},
+                {"type":"object","required":["kind","workspace","lakehouse","namespace"],"additionalProperties":false,
+                    "properties":{"kind":{"const":"catalogNamespace"},"workspace":selector,"lakehouse":selector,
+                        "namespace":{"type":"string","minLength":1}}},
+                {"type":"object","required":["kind","workspace","lakehouse","namespace","table"],"additionalProperties":false,
+                    "properties":{"kind":{"const":"catalogTable"},"workspace":selector,"lakehouse":selector,
+                        "namespace":{"type":"string","minLength":1},"table":{"type":"string","minLength":1}}}
             ]}
         }}),
         json!({"type":"object","required":["operationId","request","observation","exists","evidence"],

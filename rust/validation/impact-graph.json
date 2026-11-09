@@ -2831,17 +2831,23 @@
       "inputs": [
         "rust/engine/sdk/src/exists/**",
         "rust/engine/sdk/tests/exists.rs",
+        "rust/engine/sdk/tests/exists_catalog.rs",
+        "rust/engine/sdk/tests/exists_catalog_support/**",
         "rust/engine/sdk/tests/exists_support/**",
         "rust/clients/cli/app/src/exists_command.rs",
         "rust/clients/cli/app/src/v2_exists_main.rs",
         "rust/clients/cli/app/tests/exists_command.rs",
+        "rust/clients/cli/app/tests/exists_catalog.rs",
         "rust/clients/cli/app/tests/v2_exists_binary.rs",
-        "rust/authoring-docs/exists-v2.md"
+        "rust/authoring-docs/exists-v2.md",
+        "rust/authoring-docs/exists-catalog-v2.md"
       ],
       "depends_on": ["sdk", "sdk-api", "cli-get", "cli-headless"],
       "tests": [
         {"package": "fabric-sdk", "target": "test:exists"},
+        {"package": "fabric-sdk", "target": "test:exists_catalog"},
         {"package": "fabric-cli", "target": "test:exists_command"},
+        {"package": "fabric-cli", "target": "test:exists_catalog"},
         {"package": "fabric-cli", "target": "test:v2_exists_binary"},
         {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
       ],

@@ -35,6 +35,7 @@ pub(super) enum ProbeError {
     TypeMismatch,
     Cancelled,
     TimedOut,
+    Catalog(crate::api::ApiError),
 }
 
 impl fmt::Display for ProbeError {
@@ -48,20 +49,21 @@ impl std::error::Error for ProbeError {
             Self::Metadata(error) | Self::ItemMetadata { error, .. } => Some(error),
             Self::Workspace(error) => Some(error),
             Self::Item(error) => Some(error),
+            Self::Catalog(error) => Some(error),
             _ => None,
         }
     }
 }
 
 pub(super) struct Conclusion {
-    state: ExistsObservation,
-    reason: &'static str,
-    workspace_id: Option<String>,
-    item_id: Option<String>,
-    item_type: Option<String>,
+    pub(super) state: ExistsObservation,
+    pub(super) reason: &'static str,
+    pub(super) workspace_id: Option<String>,
+    pub(super) item_id: Option<String>,
+    pub(super) item_type: Option<String>,
 }
 
-fn conclusion(state: ExistsObservation, reason: &'static str) -> Conclusion {
+pub(super) fn conclusion(state: ExistsObservation, reason: &'static str) -> Conclusion {
     Conclusion {
         state,
         reason,
@@ -98,6 +100,9 @@ pub(super) async fn probe(
     let mut cancelled = pin!(cancelled);
     let workspace = match request.target() {
         ExistsTarget::Workspace { workspace } | ExistsTarget::Item { workspace, .. } => workspace,
+        ExistsTarget::CatalogNamespace { .. } | ExistsTarget::CatalogTable { .. } => {
+            unreachable!("catalog dispatch resolves a metadata parent request")
+        }
     };
     let workspace_id = match workspace {
         MetadataSelector::Id(id) => id.clone(),
@@ -311,7 +316,9 @@ pub(super) fn report(
                     error,
                     ..
                 } if documented_item_not_found(error, &native) => {
-                    if *selected_by_name {
+                    if request.target().is_catalog() {
+                        (ExistsObservation::Unknown, "CatalogParentNotEstablished")
+                    } else if *selected_by_name {
                         (ExistsObservation::Unknown, "ChangedDuringProbe")
                     } else {
                         (ExistsObservation::Absent, "AuthoritativeItemNotFound")
@@ -393,6 +400,20 @@ fn classify(error: &ProbeError) -> (ExistsObservation, &'static str) {
         ProbeError::InvalidResponse => (Failed, "InvalidResponse"),
         ProbeError::Changed => (Unknown, "ChangedDuringProbe"),
         ProbeError::TypeMismatch => (Failed, "TypeMismatch"),
+        ProbeError::Catalog(error) => match error {
+            crate::api::ApiError::Cancelled => (Unknown, "Cancelled"),
+            crate::api::ApiError::Limit
+            | crate::api::ApiError::Execution(crate::api::ExecutionError::ResponseLimit) => {
+                (Incomplete, "BudgetExceeded")
+            }
+            crate::api::ApiError::Execution(crate::api::ExecutionError::TimedOut) => {
+                (Unknown, "TimedOut")
+            }
+            crate::api::ApiError::Credential => (Failed, "CredentialFailed"),
+            crate::api::ApiError::UnsupportedRequest => (Unknown, "CatalogBackendUnsupported"),
+            crate::api::ApiError::Execution(_) => (Unknown, "ExecutionFailed"),
+            _ => (Failed, "InvalidCatalogResponse"),
+        },
     }
 }
 
