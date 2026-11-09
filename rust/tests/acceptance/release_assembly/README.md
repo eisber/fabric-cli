@@ -5,7 +5,7 @@
 These are synthetic developer-tool contracts, not actual artifact, signing,
 installer, clean-machine or GA evidence. They do not execute fabricated native
 headers or a signing tool. `protocol-v1-fields.json` freezes the existing
-`frontends/cli/update/src/protocol.rs` field set without changing it.
+`clients/cli/update/src/protocol.rs` field set without changing it.
 No source SHA, OS floor, helper digest or package custody is added to that wire
 protocol. Those bindings belong to the separate signed assembly manifest.
 
@@ -32,5 +32,5 @@ execution is part of this selector. A host that cannot create symbolic links
 records a skip; reparse-attribute refusal has a separate synthetic test. Native
 filesystem/reparse/ACL behavior still needs independent Windows acceptance.
 
-See [release assembly](../../../docs/release-assembly.md) for all closed input
+See [release assembly](../../../authoring-docs/release-assembly.md) for all closed input
 records, commands, signature gates, custody limits and publisher inputs.

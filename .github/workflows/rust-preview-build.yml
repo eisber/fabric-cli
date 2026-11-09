@@ -249,7 +249,7 @@ jobs:
             };
             fs.writeFileSync(path.join(bundle, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
             fs.copyFileSync(path.join(root, 'LICENSE'), path.join(bundle, 'LICENSE'));
-            const guide = fs.readFileSync(path.join(root, 'rust', 'docs', 'preview-builds.md'), 'utf8');
+            const guide = fs.readFileSync(path.join(root, 'rust', 'authoring-docs', 'preview-builds.md'), 'utf8');
             fs.writeFileSync(path.join(bundle, 'README.md'),
               `# ${identity.artifact}\n\n` +
               `Binary: ${filename}\nSource: ${identity.sha}\nTarget: ${identity.host}\n` +

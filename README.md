@@ -16,10 +16,10 @@ authentication, service operations, and native deployment are not implemented.
 
 With [Rustup](https://rustup.rs/) installed, change into `rust/` and run
 `cargo run --locked -p fabric-cli -- --help`. Rustup uses
-the pinned Rust 1.99.1 toolchain. See the [architecture](rust/docs/architecture.md),
-[migration guidance](rust/docs/migration-guidance.md),
-[compatibility backlog](rust/docs/compatibility.md), and
-[unresolved identity backend](rust/docs/decisions/identity-backend.md) before contributing.
+the pinned Rust 1.99.1 toolchain. See the [architecture](rust/authoring-docs/architecture.md),
+[migration guidance](rust/authoring-docs/migration-guidance.md),
+[compatibility backlog](rust/authoring-docs/compatibility.md), and
+[unresolved identity backend](rust/authoring-docs/decisions/identity-backend.md) before contributing.
 No Azure CLI, Azure Developer CLI, or Python is required for this Rust scaffold.
 
 ## 🚀 Quick Start

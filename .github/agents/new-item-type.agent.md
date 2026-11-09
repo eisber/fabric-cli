@@ -11,7 +11,7 @@ tools: ['runInTerminal', 'terminalLastCommand', 'search', 'fetch', 'read_file']
 > authoritative Fabric REST documentation first. Do not invent API routes,
 > capabilities, or product requirements. Escalate only details that remain
 > unresolved or require authority outside the assignment. For authorized Rust
-> migration tasks, follow `rust/docs/agentic-delivery.md`, including independent
+> migration tasks, follow `rust/authoring-docs/agentic-delivery.md`, including independent
 > stage reviews and bounded repair; the Python-specific implementation steps
 > below are not Rust instructions.
 

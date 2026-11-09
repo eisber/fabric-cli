@@ -31,7 +31,7 @@ class DefinitionParityPathTests(unittest.TestCase):
     def test_released_capture_directory_tracks_capability_layout(self) -> None:
         self.assertEqual(
             RUNNER.TESTS,
-            RUNNER.WORKSPACE / "sdk" / "deployment" / "tests",
+            RUNNER.WORKSPACE / "engine" / "control-plane" / "deployment" / "tests",
         )
         for family, fixture, _ in RUNNER.COMPARISONS:
             self.assertTrue((RUNNER.TESTS / f"definition_{family}_reference.py").is_file())

@@ -28,7 +28,7 @@ We welcome several types of contributions:
 The issue-approval and team-merge process below applies to upstream
 `microsoft/fabric-cli` contributions. Explicitly authorized experimental Rust
 migration tasks in the owner's `eisber/fabric-cli` fork use the
-[agent-operated delivery instructions](rust/docs/agentic-delivery.md) instead of
+[agent-operated delivery instructions](rust/authoring-docs/agentic-delivery.md) instead of
 routine kickoff acknowledgment and manual review handoffs. Those tasks may
 proceed within their assigned scope, with independent stage reviews, actual
 validation evidence, and bounded repair. Link relevant existing issues; an issue
@@ -90,7 +90,7 @@ Before submitting the pull request please verify that:
 For Rust migration PRs, also record acceptance criteria, affected crates and
 consumers, source baseline, compatibility impact, actual validation results and
 remaining gaps. Independent review must cover the perspectives for the current
-stage in [agent-operated delivery](rust/docs/agentic-delivery.md#stage-reviews).
+stage in [agent-operated delivery](rust/authoring-docs/agentic-delivery.md#stage-reviews).
 Author-written checkboxes do not replace verified checks or review evidence.
 
 Before your PR can be merged, make sure to address and resolve all review comments. PR will be labeled as "need author feedback" when there are comments to resolve. Approved PRs will be merged by the Fabric CLI team.

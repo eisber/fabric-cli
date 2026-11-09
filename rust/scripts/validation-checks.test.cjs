@@ -436,15 +436,15 @@ test('parameter source has finite immutable Git argv before all ten frozen compa
     'parameter_resolution', 'parameter_schema_edges', 'config_extensions_execution'];
   result.slice(4).forEach((command, index) => {
     assert.equal(command.cwd, pinnedRust);
-    assert.deepEqual(command.args, ['-B', path.join('sdk', 'deployment', 'tests', `${references[index]}_reference.py`),
+    assert.deepEqual(command.args, ['-B', path.join('engine', 'control-plane', 'deployment', 'tests', `${references[index]}_reference.py`),
     '--reference-root', parameterRoot]);
   });
 });
 
 test('remaining frozen source gates preserve batch, definition, import and export selectors', () => {
   assert.deepEqual(commands('batch-oracle')[0].args, ['-B',
-    path.join('frontends', 'cli', 'app', 'tests', 'batch_reference.py'),
-    '--check', path.join('frontends', 'cli', 'app', 'tests', 'batch_source.json')]);
+    path.join('clients', 'cli', 'app', 'tests', 'batch_reference.py'),
+    '--check', path.join('clients', 'cli', 'app', 'tests', 'batch_source.json')]);
   const definitions = commands('definitions-oracle');
   assert.equal(definitions.length, 3);
   assert.equal(valueAfter(definitions[0], '-p'), 'test_run_definition_parity.py');
@@ -452,7 +452,7 @@ test('remaining frozen source gates preserve batch, definition, import and expor
   assert.equal(valueAfter(definitions[1], '--artifacts'), path.join(artifacts, 'definition-parity'));
   assert.deepEqual(definitions[2].args, ['test', '--offline', '--locked', '-p',
     'fabric-deploy', '--test', 'definitions']);
-  assert.equal(script(commands('import-oracle')[0]), path.join('sdk', 'deployment', 'tests', 'definition_import_reference_checks.py'));
+  assert.equal(script(commands('import-oracle')[0]), path.join('engine', 'control-plane', 'deployment', 'tests', 'definition_import_reference_checks.py'));
   const [exportCommand] = commands('export-oracle');
   assert.equal(script(exportCommand), path.join('tests', 'compatibility', 'run_export_source_parity.py'));
   assert.equal(valueAfter(exportCommand, '--artifacts'),

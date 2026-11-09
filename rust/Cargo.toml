@@ -3,66 +3,75 @@
 
 [workspace]
 members = [
-    "sdk/client",
-    "sdk/capacities",
-    "sdk/workspaces",
-    "sdk/items",
-    "sdk/folders",
-    "sdk/jobs",
-    "sdk/tables",
-    "sdk/catalog",
-    "sdk/access",
-    "sdk/api-requests",
-    "sdk/storage/*",
-    "sdk/authentication/*",
-    "sdk/deployment",
-    "sdk/http/*",
-    "sdk/pagination",
-    "sdk/operations",
-    "sdk/request-context",
-    "sdk/json",
-    "frontends/cli/app",
-    "frontends/cli/commands/*",
-    "frontends/cli/paths",
-    "frontends/cli/query",
-    "frontends/cli/output",
-    "frontends/cli/shell",
-    "frontends/cli/update",
+    "clients/cli/app",
+    "clients/cli/commands/jobs",
+    "clients/cli/commands/local",
+    "clients/cli/commands/mutations",
+    "clients/cli/commands/resources",
+    "clients/cli/commands/storage",
+    "clients/cli/commands/tables",
+    "clients/cli/commands/transfer",
+    "clients/cli/output",
+    "clients/cli/query",
+    "clients/cli/repl",
+    "clients/cli/state",
+    "clients/cli/update",
+    "engine/control-plane/acl",
+    "engine/control-plane/catalog",
+    "engine/control-plane/deployment",
+    "engine/control-plane/jobs",
+    "engine/control-plane/resources/capacities",
+    "engine/control-plane/resources/folders",
+    "engine/control-plane/resources/items",
+    "engine/control-plane/resources/workspaces",
+    "engine/core/auth/provider",
+    "engine/core/auth/windows",
+    "engine/core/contracts",
+    "engine/core/http/executor",
+    "engine/core/http/requests",
+    "engine/core/http/transport",
+    "engine/core/json",
+    "engine/core/lro",
+    "engine/core/pagination",
+    "engine/data-plane/onelake/client",
+    "engine/data-plane/onelake/http",
+    "engine/data-plane/tables",
+    "engine/sdk",
 ]
 default-members = [
-    "frontends/cli/update",
-    "frontends/cli/shell",
-    "sdk/request-context",
-    "sdk/json",
-    "sdk/authentication/credentials",
-    "sdk/client",
-    "sdk/workspaces",
-    "sdk/items",
-    "sdk/capacities",
-    "sdk/folders",
-    "sdk/storage/onelake",
-    "sdk/storage/http",
-    "sdk/operations",
-    "sdk/http/executor",
-    "sdk/http/transport",
-    "sdk/deployment",
-    "frontends/cli/app",
-    "frontends/cli/output",
-    "frontends/cli/paths",
-    "frontends/cli/query",
-    "sdk/jobs",
-    "frontends/cli/commands/jobs",
-    "sdk/pagination",
-    "frontends/cli/commands/resource-mutations",
-    "sdk/api-requests",
-    "sdk/access",
-    "sdk/catalog",
-    "frontends/cli/commands/resources",
-    "frontends/cli/commands/files",
-    "frontends/cli/commands/local",
-    "frontends/cli/commands/transfer",
-    "frontends/cli/commands/tables",
-    "sdk/tables",
+    "clients/cli/update",
+    "clients/cli/repl",
+    "engine/core/contracts",
+    "engine/core/json",
+    "engine/core/auth/provider",
+    "engine/sdk",
+    "engine/control-plane/resources/workspaces",
+    "engine/control-plane/resources/items",
+    "engine/control-plane/resources/capacities",
+    "engine/control-plane/resources/folders",
+    "engine/data-plane/onelake/client",
+    "engine/data-plane/onelake/http",
+    "engine/core/lro",
+    "engine/core/http/executor",
+    "engine/core/http/transport",
+    "engine/control-plane/deployment",
+    "clients/cli/app",
+    "clients/cli/output",
+    "clients/cli/state",
+    "clients/cli/query",
+    "engine/control-plane/jobs",
+    "clients/cli/commands/jobs",
+    "engine/core/pagination",
+    "clients/cli/commands/mutations",
+    "engine/core/http/requests",
+    "engine/control-plane/acl",
+    "engine/control-plane/catalog",
+    "clients/cli/commands/resources",
+    "clients/cli/commands/storage",
+    "clients/cli/commands/local",
+    "clients/cli/commands/transfer",
+    "clients/cli/commands/tables",
+    "engine/data-plane/tables",
 ]
 resolver = "3"
 
@@ -74,40 +83,40 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
-fabric-cli-repl = { path = "frontends/cli/shell", default-features = false }
-fabric-cli-update = { path = "frontends/cli/update", default-features = false }
+fabric-cli-repl = { path = "clients/cli/repl", default-features = false }
+fabric-cli-update = { path = "clients/cli/update", default-features = false }
 reedline = { version = "=0.52.1", default-features = false }
-fabric-cli-context = { path = "frontends/cli/paths" }
-fabric-core = { path = "sdk/request-context" }
-fabric-core-json = { path = "sdk/json" }
-fabric-identity = { path = "sdk/authentication/credentials" }
-fabric-cli-output = { path = "frontends/cli/output" }
-fabric-cli-query = { path = "frontends/cli/query" }
-fabric-cli-jobs = { path = "frontends/cli/commands/jobs" }
-fabric-sdk-jobs = { path = "sdk/jobs" }
-fabric-sdk-paging = { path = "sdk/pagination" }
-fabric-cli-mutations = { path = "frontends/cli/commands/resource-mutations" }
-fabric-sdk-api = { path = "sdk/api-requests" }
-fabric-sdk-access = { path = "sdk/access" }
-fabric-sdk-catalog = { path = "sdk/catalog" }
-fabric-cli-resources = { path = "frontends/cli/commands/resources" }
-fabric-cli-storage-files = { path = "frontends/cli/commands/files" }
-fabric-cli-local = { path = "frontends/cli/commands/local" }
-fabric-cli-transfer = { path = "frontends/cli/commands/transfer" }
-fabric-cli-tables = { path = "frontends/cli/commands/tables" }
-fabric-sdk-tables = { path = "sdk/tables" }
-fabric-deploy = { path = "sdk/deployment" }
-fabric-sdk = { path = "sdk/client" }
-fabric-sdk-workspaces = { path = "sdk/workspaces" }
-fabric-sdk-items = { path = "sdk/items" }
-fabric-sdk-capacities = { path = "sdk/capacities" }
-fabric-sdk-folders = { path = "sdk/folders" }
-fabric-sdk-onelake = { path = "sdk/storage/onelake" }
-fabric-sdk-onelake-http = { path = "sdk/storage/http" }
-fabric-sdk-operations = { path = "sdk/operations" }
-fabric-sdk-http = { path = "sdk/http/executor" }
-fabric-sdk-transport = { path = "sdk/http/transport", default-features = false }
-fabric-identity-windows = { path = "sdk/authentication/windows" }
+fabric-cli-context = { path = "clients/cli/state" }
+fabric-core = { path = "engine/core/contracts" }
+fabric-core-json = { path = "engine/core/json" }
+fabric-identity = { path = "engine/core/auth/provider" }
+fabric-cli-output = { path = "clients/cli/output" }
+fabric-cli-query = { path = "clients/cli/query" }
+fabric-cli-jobs = { path = "clients/cli/commands/jobs" }
+fabric-sdk-jobs = { path = "engine/control-plane/jobs" }
+fabric-sdk-paging = { path = "engine/core/pagination" }
+fabric-cli-mutations = { path = "clients/cli/commands/mutations" }
+fabric-sdk-api = { path = "engine/core/http/requests" }
+fabric-sdk-access = { path = "engine/control-plane/acl" }
+fabric-sdk-catalog = { path = "engine/control-plane/catalog" }
+fabric-cli-resources = { path = "clients/cli/commands/resources" }
+fabric-cli-storage-files = { path = "clients/cli/commands/storage" }
+fabric-cli-local = { path = "clients/cli/commands/local" }
+fabric-cli-transfer = { path = "clients/cli/commands/transfer" }
+fabric-cli-tables = { path = "clients/cli/commands/tables" }
+fabric-sdk-tables = { path = "engine/data-plane/tables" }
+fabric-deploy = { path = "engine/control-plane/deployment" }
+fabric-sdk = { path = "engine/sdk" }
+fabric-sdk-workspaces = { path = "engine/control-plane/resources/workspaces" }
+fabric-sdk-items = { path = "engine/control-plane/resources/items" }
+fabric-sdk-capacities = { path = "engine/control-plane/resources/capacities" }
+fabric-sdk-folders = { path = "engine/control-plane/resources/folders" }
+fabric-sdk-onelake = { path = "engine/data-plane/onelake/client" }
+fabric-sdk-onelake-http = { path = "engine/data-plane/onelake/http" }
+fabric-sdk-operations = { path = "engine/core/lro" }
+fabric-sdk-http = { path = "engine/core/http/executor" }
+fabric-sdk-transport = { path = "engine/core/http/transport", default-features = false }
+fabric-identity-windows = { path = "engine/core/auth/windows" }
 azure_core = { version = "1.1.0", default-features = false }
 azure_identity = { version = "=1.0.0", default-features = false }
 chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std"] }

@@ -310,7 +310,7 @@ Before delivering, inspect related pages and navigation to determine the
 cross-reference impact. Resolve technical uncertainty from repository evidence;
 do not interrupt an authorized task for routine confirmation or document
 unverified behavior. Escalate unresolved intent or authority. Authorized Rust
-migration tasks follow `rust/docs/agentic-delivery.md` for independent stage
+migration tasks follow `rust/authoring-docs/agentic-delivery.md` for independent stage
 reviews, evidence, and bounded repair; this does not expand this agent's scope.
 
 **When adding a new page:**

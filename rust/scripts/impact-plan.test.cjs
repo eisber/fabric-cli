@@ -17,8 +17,8 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const target = (name, kind, src, features = []) => ({
   name, kind: [kind], src_path: absolute(src), test: true, 'required-features': features,
 });
-const packageDirectory = name => ({deploy: 'rust/sdk/deployment',
-  adapter: 'rust/frontends/cli/commands/transfer', cli: 'rust/frontends/cli/app'}[name] || `rust/sdk/${name}`);
+const packageDirectory = name => ({deploy: 'rust/engine/control-plane/deployment',
+  adapter: 'rust/clients/cli/commands/transfer', cli: 'rust/clients/cli/app'}[name] || `rust/engine/${name}`);
 function pkg(name, dependencies = [], targets = [], features = {default: []}) {
   const directory = packageDirectory(name);
   return {id: `path+${name}#0.1.0`, name, manifest_path: absolute(`${directory}/Cargo.toml`),
@@ -36,20 +36,20 @@ function fixture() {
   const packages = [
     pkg('models'),
     pkg('deploy', ['models'], [
-      target('notebook', 'test', 'rust/sdk/deployment/tests/notebook.rs'),
-      target('spark', 'test', 'rust/sdk/deployment/tests/spark.rs'),
-      target('shared', 'test', 'rust/sdk/deployment/tests/shared.rs'),
+      target('notebook', 'test', 'rust/engine/control-plane/deployment/tests/notebook.rs'),
+      target('spark', 'test', 'rust/engine/control-plane/deployment/tests/spark.rs'),
+      target('shared', 'test', 'rust/engine/control-plane/deployment/tests/shared.rs'),
     ]),
-    pkg('adapter', ['deploy'], [target('publish', 'test', 'rust/frontends/cli/commands/transfer/tests/publish.rs')]),
-    pkg('cli', ['adapter'], [target('mount', 'test', 'rust/frontends/cli/app/tests/mount.rs')]),
+    pkg('adapter', ['deploy'], [target('publish', 'test', 'rust/clients/cli/commands/transfer/tests/publish.rs')]),
+    pkg('cli', ['adapter'], [target('mount', 'test', 'rust/clients/cli/app/tests/mount.rs')]),
     pkg('unrelated'),
   ];
   const graph = {schema: 1, components: [
-    {id: 'notebook', package: 'deploy', inputs: ['rust/sdk/deployment/src/notebook.rs'],
+    {id: 'notebook', package: 'deploy', inputs: ['rust/engine/control-plane/deployment/src/notebook.rs'],
       tests: [{package: 'deploy', target: 'test:notebook'}], checks: ['notebook-oracle']},
-    {id: 'spark', package: 'deploy', inputs: ['rust/sdk/deployment/src/spark.rs'],
+    {id: 'spark', package: 'deploy', inputs: ['rust/engine/control-plane/deployment/src/spark.rs'],
       tests: [{package: 'deploy', target: 'test:spark'}], checks: ['spark-oracle']},
-    {id: 'shared', package: 'deploy', inputs: ['rust/sdk/deployment/src/shared.rs'],
+    {id: 'shared', package: 'deploy', inputs: ['rust/engine/control-plane/deployment/src/shared.rs'],
       tests: [{package: 'deploy', target: 'test:shared'}]},
     {id: 'notebook-adapter', package: 'adapter', depends_on: ['notebook', 'shared'],
       tests: [{package: 'adapter', target: 'test:publish'}]},
@@ -76,7 +76,7 @@ const select = (files, change = () => {}) => {
 const testKeys = result => result.tests.map(item => `${item.package}/${item.target}`);
 
 test('Notebook selects component consumers, not Spark or broad CLI oracles', () => {
-  const result = select(['rust/sdk/deployment/src/notebook.rs']);
+  const result = select(['rust/engine/control-plane/deployment/src/notebook.rs']);
   assert.equal(result.mode, 'affected');
   assert.deepEqual(result.changed_packages, ['deploy']);
   assert.deepEqual(result.packages, ['adapter', 'cli', 'deploy']);
@@ -92,7 +92,7 @@ test('Notebook selects component consumers, not Spark or broad CLI oracles', () 
 });
 
 test('Spark excludes Notebook and safely covers the unmapped Cargo adapter', () => {
-  const result = select(['rust/sdk/deployment/src/spark.rs']);
+  const result = select(['rust/engine/control-plane/deployment/src/spark.rs']);
   assert.ok(testKeys(result).includes('deploy/test:spark'));
   assert.ok(testKeys(result).includes('adapter/all'));
   assert.ok(!testKeys(result).some(key => /notebook|publish|mount/.test(key)));
@@ -101,13 +101,13 @@ test('Spark excludes Notebook and safely covers the unmapped Cargo adapter', () 
 });
 
 test('Shared component propagates a diamond without duplicate test targets', () => {
-  const result = select(['rust/sdk/deployment/src/shared.rs']);
+  const result = select(['rust/engine/control-plane/deployment/src/shared.rs']);
   assert.deepEqual(result.components, ['notebook-adapter', 'notebook-mount', 'shared', 'spark-mount']);
   assert.deepEqual(testKeys(result), ['adapter/test:publish', 'cli/lib', 'cli/test:mount', 'deploy/test:shared']);
 });
 
 test('New Cargo consumer absent from component graph always receives full tests', () => {
-  const result = select(['rust/sdk/deployment/src/notebook.rs'], input => {
+  const result = select(['rust/engine/control-plane/deployment/src/notebook.rs'], input => {
     const consumer = pkg('new-consumer', ['deploy']);
     input.metadata.packages.push(consumer);
     input.metadata.workspace_members.push(consumer.id);
@@ -118,15 +118,15 @@ test('New Cargo consumer absent from component graph always receives full tests'
 
 function structuralContract(input, dependsOn = []) {
   input.metadata.packages.find(item => item.name === 'cli').targets.push(
-    target('workspace_contract', 'test', 'rust/frontends/cli/app/tests/workspace_contract.rs'));
+    target('workspace_contract', 'test', 'rust/clients/cli/app/tests/workspace_contract.rs'));
   input.graph.components.push({id: 'workspace-architecture', package: 'cli', coverage: 'structural',
     depends_on: dependsOn, tests: [{package: 'cli', target: 'test:workspace_contract'}]});
 }
 
 test('Structural CLI workspace contracts cannot claim runtime coverage of changed SDK Cargo consumers', () => {
-  const result = select(['rust/sdk/models/src/lib.rs'], input => {
+  const result = select(['rust/engine/models/src/lib.rs'], input => {
     input.graph.components.push({id: 'models-api', package: 'models',
-      inputs: ['rust/sdk/models/src/lib.rs'], tests: [{package: 'models', target: 'lib'}]});
+      inputs: ['rust/engine/models/src/lib.rs'], tests: [{package: 'models', target: 'lib'}]});
     structuralContract(input, ['models-api']);
   });
   assert.ok(result.components.includes('workspace-architecture'));
@@ -136,7 +136,7 @@ test('Structural CLI workspace contracts cannot claim runtime coverage of change
 });
 
 test('Structural contracts also run for new unmapped Cargo packages without inventing CLI runtime/auth suites', () => {
-  const result = select(['rust/sdk/isolated/src/lib.rs'], input => {
+  const result = select(['rust/engine/isolated/src/lib.rs'], input => {
     const isolated = pkg('isolated');
     input.metadata.packages.push(isolated);
     input.metadata.workspace_members.push(isolated.id);
@@ -160,24 +160,24 @@ test('Structural contracts also run for new unmapped Cargo packages without inve
 });
 
 test('Structural-only source mappings cannot suppress the actual source owner fallback', () => {
-  const result = select(['rust/sdk/unrelated/src/lib.rs'], input => {
+  const result = select(['rust/engine/unrelated/src/lib.rs'], input => {
     structuralContract(input);
-    input.graph.components.at(-1).inputs = ['rust/sdk/unrelated/src/lib.rs'];
+    input.graph.components.at(-1).inputs = ['rust/engine/unrelated/src/lib.rs'];
   });
   assert.deepEqual(result.changed_packages, ['unrelated']);
   assert.deepEqual(testKeys(result), ['cli/test:workspace_contract', 'unrelated/all']);
 });
 
 test('Structural contracts augment rather than broaden explicitly covered runtime targets', () => {
-  const result = select(['rust/sdk/deployment/src/notebook.rs'], input => structuralContract(input, ['notebook']));
+  const result = select(['rust/engine/control-plane/deployment/src/notebook.rs'], input => structuralContract(input, ['notebook']));
   assert.deepEqual(testKeys(result), ['adapter/test:publish', 'cli/test:mount',
     'cli/test:workspace_contract', 'deploy/test:notebook']);
   assert.ok(!testKeys(result).includes('cli/all'));
 });
 
 test('Unmapped library source and shared test helpers select owner plus Cargo reverse closure', () => {
-  for (const file of ['rust/sdk/deployment/src/new.rs', 'rust/sdk/deployment/tests/common/mod.rs',
-    'rust/sdk/deployment/README.md', 'rust/sdk/deployment/data/schema.json']) {
+  for (const file of ['rust/engine/control-plane/deployment/src/new.rs', 'rust/engine/control-plane/deployment/tests/common/mod.rs',
+    'rust/engine/control-plane/deployment/README.md', 'rust/engine/control-plane/deployment/data/schema.json']) {
     const result = select([file]);
     assert.deepEqual(testKeys(result), ['adapter/all', 'cli/all', 'deploy/all']);
     assert.deepEqual(result.checks, ['all-cli-oracles', 'notebook-oracle', 'spark-oracle']);
@@ -185,26 +185,26 @@ test('Unmapped library source and shared test helpers select owner plus Cargo re
 });
 
 test('Direct integration/bin/example targets stay exact, but consumers do not disappear', () => {
-  const result = select(['rust/sdk/deployment/tests/notebook.rs']);
+  const result = select(['rust/engine/control-plane/deployment/tests/notebook.rs']);
   assert.deepEqual(testKeys(result), ['adapter/all', 'cli/all', 'deploy/test:notebook']);
-  const bin = select(['rust/frontends/cli/app/src/main.rs'], input => input.metadata.packages
-    .find(item => item.name === 'cli').targets.push(target('fab', 'bin', 'rust/frontends/cli/app/src/main.rs')));
+  const bin = select(['rust/clients/cli/app/src/main.rs'], input => input.metadata.packages
+    .find(item => item.name === 'cli').targets.push(target('fab', 'bin', 'rust/clients/cli/app/src/main.rs')));
   assert.deepEqual(testKeys(bin), ['cli/bin:fab']);
-  const example = select(['rust/frontends/cli/app/examples/demo.rs'], input => input.metadata.packages
-    .find(item => item.name === 'cli').targets.push(target('demo', 'example', 'rust/frontends/cli/app/examples/demo.rs')));
+  const example = select(['rust/clients/cli/app/examples/demo.rs'], input => input.metadata.packages
+    .find(item => item.name === 'cli').targets.push(target('demo', 'example', 'rust/clients/cli/app/examples/demo.rs')));
   assert.deepEqual(testKeys(example), ['cli/example:demo']);
 });
 
 test('Unmapped files override exact target narrowing and scoped coverage in the same package', () => {
-  const result = select(['rust/sdk/deployment/tests/notebook.rs', 'rust/sdk/deployment/tests/common.rs',
-    'rust/sdk/deployment/src/notebook.rs']);
+  const result = select(['rust/engine/control-plane/deployment/tests/notebook.rs', 'rust/engine/control-plane/deployment/tests/common.rs',
+    'rust/engine/control-plane/deployment/src/notebook.rs']);
   assert.deepEqual(testKeys(result), ['adapter/all', 'cli/all', 'deploy/all']);
 });
 
 test('Deleted and renamed old/new paths remain impact inputs', () => {
-  const deleted = select(['rust/sdk/deployment/src/deleted.rs']);
+  const deleted = select(['rust/engine/control-plane/deployment/src/deleted.rs']);
   assert.deepEqual(deleted.packages, ['adapter', 'cli', 'deploy']);
-  const rename = select(['rust/sdk/deployment/src/notebook.rs', 'rust/sdk/deployment/src/spark.rs']);
+  const rename = select(['rust/engine/control-plane/deployment/src/notebook.rs', 'rust/engine/control-plane/deployment/src/spark.rs']);
   assert.ok(testKeys(rename).includes('deploy/test:notebook'));
   assert.ok(testKeys(rename).includes('deploy/test:spark'));
 });
@@ -212,12 +212,12 @@ test('Deleted and renamed old/new paths remain impact inputs', () => {
 test('Renamed normal, dev, build, target-conditional and optional path dependencies are all edges', () => {
   const input = fixture();
   const declarations = ['normal', 'dev', 'build', 'conditional', 'optional'].map((name, i) =>
-    pkg(name, [{name: 'models', rename: `alias_${i}`, path: absolute('rust/sdk/models'),
+    pkg(name, [{name: 'models', rename: `alias_${i}`, path: absolute('rust/engine/models'),
       kind: i === 1 ? 'dev' : i === 2 ? 'build' : null,
       target: i === 3 ? 'cfg(windows)' : null, optional: i === 4}]));
   input.metadata = metadata([pkg('models'), ...declarations]);
   input.graph = {schema: 1};
-  input.files = ['rust/sdk/models/src/lib.rs'];
+  input.files = ['rust/engine/models/src/lib.rs'];
   assert.deepEqual(plan(input).packages, ['build', 'conditional', 'dev', 'models', 'normal', 'optional']);
 });
 
@@ -225,26 +225,26 @@ test('Platform metadata documents union edges without resolving registry crates'
   const base = metadata([pkg('models'), pkg('app')]);
   const other = clone(base);
   other.packages.find(item => item.name === 'app').dependencies.push({
-    name: 'models', rename: 'renamed', path: absolute('rust/sdk/models'), target: 'cfg(windows)',
+    name: 'models', rename: 'renamed', path: absolute('rust/engine/models'), target: 'cfg(windows)',
   });
   const result = plan({root: ROOT, metadata: [base, other], graph: {schema: 1},
-    files: ['rust/sdk/models/src/lib.rs']});
+    files: ['rust/engine/models/src/lib.rs']});
   assert.deepEqual(result.packages, ['app', 'models']);
   assert.deepEqual(plan({root: ROOT, metadata: [other, base], graph: {schema: 1},
-    files: ['rust/sdk/models/src/lib.rs']}).fingerprint, result.fingerprint);
+    files: ['rust/engine/models/src/lib.rs']}).fingerprint, result.fingerprint);
 });
 
 test('Registry dependencies with a workspace-like name are not mistaken for path edges', () => {
   const input = fixture();
   input.metadata = metadata([pkg('models'), pkg('external-user', [{name: 'models', source: 'registry+x'}])]);
   input.graph = {schema: 1};
-  input.files = ['rust/sdk/models/src/lib.rs'];
+  input.files = ['rust/engine/models/src/lib.rs'];
   assert.deepEqual(plan(input).packages, ['models']);
 });
 
 test('Shared reverseConsumers supports renamed path dependencies and every Cargo dependency kind', () => {
   const packages = [pkg('root'), ...['normal', 'dev', 'build', 'optional'].map((name, index) =>
-    pkg(name, [{name: 'root', rename: `alias_${index}`, path: absolute('rust/sdk/root'),
+    pkg(name, [{name: 'root', rename: `alias_${index}`, path: absolute('rust/engine/root'),
       kind: index === 1 ? 'dev' : index === 2 ? 'build' : null,
       target: 'cfg(windows)', optional: index === 3}]))];
   assert.deepEqual(reverseConsumers(packages, ['root']), ['build', 'dev', 'normal', 'optional', 'root']);
@@ -269,13 +269,13 @@ test('Shared reverseConsumers rejects cycles, duplicates, unknown seeds and path
   assert.throws(() => reverseConsumers([pkg('core'), pkg('core')], []), /Duplicate consumer/);
   assert.throws(() => reverseConsumers([pkg('core')], ['missing']), /Unknown consumer seed/);
   assert.throws(() => reverseConsumers([pkg('core'), pkg('consumer', [{
-    name: 'wrong', path: absolute('rust/sdk/core'),
+    name: 'wrong', path: absolute('rust/engine/core'),
   }])], ['core']), /path dependency name mismatch/);
 });
 
 test('Workspace/root/any nested Cargo, toolchain, workflow and planner changes require full', () => {
   for (const file of ['rust/Cargo.toml', 'rust/Cargo.lock', 'Cargo.toml',
-    'rust/sdk/deployment/Cargo.toml', 'rust/rust-toolchain.toml', '.cargo/config.toml',
+    'rust/engine/control-plane/deployment/Cargo.toml', 'rust/rust-toolchain.toml', '.cargo/config.toml',
     '.github/workflows/check.yml', 'rust/validation/impact-graph.json',
     'rust/scripts/impact-plan.test.cjs', 'rust/scripts/rust-fast-check.cjs']) {
     const result = select([file]);
@@ -288,7 +288,8 @@ test('Workspace/root/any nested Cargo, toolchain, workflow and planner changes r
 
 test('Unknown source, fixtures, templates, scripts and even non-Rust shared inputs fail closed', () => {
   for (const file of ['rust/new-crate/src/lib.rs', 'rust/tests/new.rs', 'rust/fixtures/unknown.json',
-    'rust/templates/example.txt', 'rust/scripts/unknown.py', 'src/fabric_cli/new.py']) {
+    'rust/templates/example.txt', 'rust/scripts/unknown.py', 'src/fabric_cli/new.py',
+    'rust/authoring-docs/ledger.json']) {
     const result = select([file]);
     assert.equal(result.mode, 'full', file);
     assert.match(result.reason, /Unknown shared input/);
@@ -297,7 +298,15 @@ test('Unknown source, fixtures, templates, scripts and even non-Rust shared inpu
 
 test('Documentation-only changes produce no commands, profiles or checks', () => {
   const result = select(['README.md', 'AGENTS.md', 'rust/README.md', 'rust/AGENTS.md',
-    'rust/docs/architecture.md', 'rust/docs/decisions/new.md']);
+    'rust/authoring-docs/architecture.md', 'rust/authoring-docs/decisions/new.md']);
+  assert.equal(result.mode, 'none');
+  assert.deepEqual(result.packages, []);
+  assert.deepEqual(commands(result, 'win32'), {commands: [], checks: [], skipped: []});
+});
+
+test('Documentation directory renames classify both deleted and added Markdown paths', () => {
+  const result = select(['rust/docs/architecture.md', 'rust/docs/decisions/new.md',
+    'rust/authoring-docs/architecture.md', 'rust/authoring-docs/decisions/new.md']);
   assert.equal(result.mode, 'none');
   assert.deepEqual(result.packages, []);
   assert.deepEqual(commands(result, 'win32'), {commands: [], checks: [], skipped: []});
@@ -320,8 +329,8 @@ test('Declared noncode inputs run component closures; check inputs run their own
 function nativeProfile(input) {
   const cli = input.metadata.packages.find(item => item.name === 'cli');
   cli.features = {default: [], native: [], combined: ['native']};
-  cli.targets.push(target('native', 'test', 'rust/frontends/cli/app/tests/native.rs', ['native']));
-  input.graph.components.push({id: 'native', package: 'cli', inputs: ['rust/frontends/cli/app/src/native.rs'],
+  cli.targets.push(target('native', 'test', 'rust/clients/cli/app/tests/native.rs', ['native']));
+  input.graph.components.push({id: 'native', package: 'cli', inputs: ['rust/clients/cli/app/src/native.rs'],
     tests: [{package: 'cli', target: 'test:native'}]});
   input.graph.profiles.push({id: 'native-windows', packages: ['cli'], features: ['cli/combined'],
     platforms: ['windows'], checks: ['native-contract']});
@@ -329,7 +338,7 @@ function nativeProfile(input) {
 }
 
 test('Required-feature target is explicitly skipped by default and covered by platform profile', () => {
-  const result = select(['rust/frontends/cli/app/src/native.rs'], nativeProfile);
+  const result = select(['rust/clients/cli/app/src/native.rs'], nativeProfile);
   assert.equal(result.tests[0].default_available, false);
   assert.deepEqual(result.tests[0].profiles, ['native-windows']);
   const catalog = result.target_catalog.find(item => item.target === 'test:native');
@@ -354,7 +363,7 @@ test('Full package tests report required-feature target gaps and include full pr
 });
 
 test('Exact targets whose required features are enabled by defaults execute without feature arguments', () => {
-  const result = select(['rust/frontends/cli/app/tests/native.rs'], input => {
+  const result = select(['rust/clients/cli/app/tests/native.rs'], input => {
     nativeProfile(input);
     input.metadata.packages.find(item => item.name === 'cli').features.default = ['combined'];
     input.graph.profiles = [];
@@ -373,7 +382,7 @@ test('Exact targets whose required features are enabled by defaults execute with
 test('Full all-target plans retain default execution and catalog feature-gated non-test fixture binaries', () => {
   const result = select(['rust/Cargo.toml'], input => {
     nativeProfile(input);
-    const fixture = target('fixture', 'bin', 'rust/frontends/cli/app/src/bin/fixture.rs', ['native']);
+    const fixture = target('fixture', 'bin', 'rust/clients/cli/app/src/bin/fixture.rs', ['native']);
     fixture.test = false;
     input.metadata.packages.find(item => item.name === 'cli').targets.push(fixture);
   });
@@ -392,7 +401,7 @@ test('Full all-target plans retain default execution and catalog feature-gated n
 });
 
 test('Feature profiles are relevant by compile intersection, but tests stay in explicitly modeled packages', () => {
-  const result = select(['rust/sdk/deployment/src/notebook.rs'], input => {
+  const result = select(['rust/engine/control-plane/deployment/src/notebook.rs'], input => {
     input.metadata.packages.find(item => item.name === 'cli').features.native = [];
     input.graph.profiles = [{id: 'cli-native', packages: ['cli'], features: ['cli/native']}];
   });
@@ -405,15 +414,15 @@ test('Feature defaults are scoped to test invocation, not every workspace consum
   const input = fixture();
   const models = input.metadata.packages.find(item => item.name === 'models');
   models.features.special = [];
-  models.targets.push(target('special', 'test', 'rust/sdk/models/tests/special.rs', ['special']));
+  models.targets.push(target('special', 'test', 'rust/engine/models/tests/special.rs', ['special']));
   const deploy = input.metadata.packages.find(item => item.name === 'deploy');
   deploy.features.default = ['models/special'];
-  input.files = ['rust/sdk/models/tests/special.rs'];
+  input.files = ['rust/engine/models/tests/special.rs'];
   assert.throws(() => plan(input), /no applicable profile/);
 });
 
 test('Missing required-feature coverage fails planning, never declares clean', () => {
-  assert.throws(() => select(['rust/frontends/cli/app/src/native.rs'], input => {
+  assert.throws(() => select(['rust/clients/cli/app/src/native.rs'], input => {
     nativeProfile(input);
     input.graph.profiles = [];
   }), /no applicable profile/);
@@ -422,14 +431,14 @@ test('Missing required-feature coverage fails planning, never declares clean', (
 test('Weak dependency features do not activate an otherwise disabled optional dependency', () => {
   const input = fixture();
   const models = pkg('models', [], [target('special', 'test',
-    'rust/sdk/models/tests/special.rs', ['special'])], {default: [], special: []});
+    'rust/engine/models/tests/special.rs', ['special'])], {default: [], special: []});
   const consumer = pkg('consumer', [{name: 'models', rename: 'renamed',
-    path: absolute('rust/sdk/models'), optional: true}],
+    path: absolute('rust/engine/models'), optional: true}],
   [], {default: ['renamed?/special'], enable: ['dep:renamed']});
   input.metadata = metadata([models, consumer]);
   input.graph = {schema: 1, profiles: [{id: 'weak', packages: ['models', 'consumer'],
     features: ['consumer/default']}]};
-  input.files = ['rust/sdk/models/tests/special.rs'];
+  input.files = ['rust/engine/models/tests/special.rs'];
   assert.throws(() => plan(input), /no applicable profile/);
   input.graph.profiles[0].features.push('consumer/enable');
   const result = plan(input);
@@ -466,7 +475,7 @@ test('Invalid graph schemas/fields, duplicates, dangling references and cycles a
 });
 
 test('Graph JSON accepts an optional Microsoft copyright string without JSON comments', () => {
-  const result = select(['rust/sdk/deployment/src/notebook.rs'], input => {
+  const result = select(['rust/engine/control-plane/deployment/src/notebook.rs'], input => {
     input.graph.copyright = 'Copyright (c) Microsoft Corporation. Licensed under the MIT License.';
   });
   assert.equal(result.mode, 'affected');
@@ -492,7 +501,7 @@ test('External/dangling/mismatched path dependencies, invalid ownership and Carg
     [input => input.metadata.packages[1].dependencies[0].path = path.resolve(ROOT, '..', 'escape'), /Noncanonical/],
     [input => input.metadata.packages[1].dependencies[0].path = absolute('rust/missing'), /Dangling workspace/],
     [input => input.metadata.packages[1].dependencies[0].name = 'alias-not-actual', /name mismatch/],
-    [input => input.metadata.packages[0].dependencies.push({name: 'cli', path: absolute('rust/frontends/cli/app')}), /Cargo dependency cycle/],
+    [input => input.metadata.packages[0].dependencies.push({name: 'cli', path: absolute('rust/clients/cli/app')}), /Cargo dependency cycle/],
     [input => input.metadata.packages.push(clone(input.metadata.packages[0])), /Duplicate metadata/],
     [input => input.metadata.workspace_members.push('missing'), /Missing workspace member/],
     [input => input.metadata.packages[0].manifest_path = path.resolve(ROOT, '..', 'Cargo.toml'), /Noncanonical/],
@@ -513,13 +522,13 @@ test('Literal Git filename metacharacters are data, not graph globs or shell exp
   const result = select([file]);
   assert.equal(result.mode, 'full');
   assert.deepEqual(result.files, [file]);
-  const wildcard = select(['rust/sdk/deployment/tests/literal[*?].rs']);
+  const wildcard = select(['rust/engine/control-plane/deployment/tests/literal[*?].rs']);
   assert.deepEqual(testKeys(wildcard), ['adapter/all', 'cli/all', 'deploy/all']);
 });
 
 test('Fingerprints are stable under input/package ordering and change with graph/data', () => {
   const input = fixture();
-  input.files = ['rust/sdk/deployment/src/notebook.rs', 'README.md'];
+  input.files = ['rust/engine/control-plane/deployment/src/notebook.rs', 'README.md'];
   const first = plan(input);
   input.files.reverse();
   input.metadata.packages.reverse();
@@ -534,7 +543,7 @@ test('Canonical selections do not depend on host locale collation', () => {
   const original = String.prototype.localeCompare;
   try {
     String.prototype.localeCompare = () => { throw new Error('Locale collation must not select validation'); };
-    const result = select(['rust/sdk/deployment/src/notebook.rs']);
+    const result = select(['rust/engine/control-plane/deployment/src/notebook.rs']);
     assert.deepEqual(testKeys(result), ['adapter/test:publish', 'cli/test:mount', 'deploy/test:notebook']);
   } finally { String.prototype.localeCompare = original; }
 });
@@ -570,8 +579,8 @@ test('File content snapshots prevent unchanged-HEAD fingerprints from hiding dir
   assert.equal(first.metadata_input_digest, modified.metadata_input_digest);
 });
 
-function cliFixture({files = ['rust/sdk/deployment/src/notebook.rs'], dirty = [], untracked = [],
-  tracked = ['rust/sdk/deployment/tests/common/mod.rs'],
+function cliFixture({files = ['rust/engine/control-plane/deployment/src/notebook.rs'], dirty = [], untracked = [],
+  tracked = ['rust/engine/control-plane/deployment/tests/common/mod.rs'],
   unavailable = false, env = {}} = {}) {
   const input = fixture(), calls = [], writes = new Map();
   const base = '1'.repeat(40), head = '2'.repeat(40);
@@ -636,10 +645,10 @@ test('CLI PR and local dirty discovery use one shared planner and agree with exp
 });
 
 test('CLI local discovery includes staged/unstaged tracked and untracked names with NUL separators', () => {
-  const fixture = cliFixture({dirty: ['rust/sdk/deployment/src/notebook.rs'],
-    untracked: ['rust/sdk/deployment/src/spark.rs']});
+  const fixture = cliFixture({dirty: ['rust/engine/control-plane/deployment/src/notebook.rs'],
+    untracked: ['rust/engine/control-plane/deployment/src/spark.rs']});
   const result = main(fixture.args, fixture.hooks);
-  assert.deepEqual(result.files, ['rust/sdk/deployment/src/notebook.rs', 'rust/sdk/deployment/src/spark.rs']);
+  assert.deepEqual(result.files, ['rust/engine/control-plane/deployment/src/notebook.rs', 'rust/engine/control-plane/deployment/src/spark.rs']);
   assert.deepEqual(result.dirty_files, result.files);
   assert.deepEqual(result.dirty_snapshot.map(item => item.path), result.files);
   assert.equal(result.dirty, true);
@@ -675,10 +684,10 @@ test('CLI explicit full preserves all checks and local clean checkout remains no
 });
 
 test('CLI inventory freezes tracked helpers and all untracked sources, not only changed-file paths', () => {
-  const fixture = cliFixture({untracked: ['rust/sdk/deployment/src/new.rs']});
+  const fixture = cliFixture({untracked: ['rust/engine/control-plane/deployment/src/new.rs']});
   const result = main(fixture.args, fixture.hooks);
   assert.deepEqual(result.inputs.inventory.files.map(item => item.path),
-    ['rust/sdk/deployment/src/new.rs', 'rust/sdk/deployment/tests/common/mod.rs']);
+    ['rust/engine/control-plane/deployment/src/new.rs', 'rust/engine/control-plane/deployment/tests/common/mod.rs']);
   assert.equal(result.inputs.inventory.scope, 'git-tracked-and-untracked');
   assert.equal(result.inputs.schema, 1);
   assert.equal(result.inputs.root, ROOT);
@@ -716,7 +725,7 @@ test('verifyPlan validates CLI receipt integrity, HEAD, graph, metadata and sour
 test('verifyPlan rejects newly added untracked candidate inputs', () => {
   const untracked = [], fixture = cliFixture({untracked});
   const result = main(fixture.args, fixture.hooks);
-  untracked.push('rust/sdk/deployment/tests/new_helper.rs');
+  untracked.push('rust/engine/control-plane/deployment/tests/new_helper.rs');
   assert.throws(() => verifyPlan(result, {root: ROOT, exec: fixture.hooks.exec,
     read: fixture.hooks.read}), /source inventory changed/);
 });
@@ -748,7 +757,7 @@ test('verifyPlan rejects changed dirty file bytes without a HEAD change', () => 
 });
 
 test('Synthetic API plans and their verifier never invoke Git or claim HEAD-complete evidence', () => {
-  const result = select(['rust/sdk/deployment/src/notebook.rs']);
+  const result = select(['rust/engine/control-plane/deployment/src/notebook.rs']);
   const verified = verifyPlan(result, {root: ROOT, exec: () => { throw new Error('Must not execute'); }});
   assert.equal(verified.valid, true);
   assert.equal(verified.synthetic_scope, true);
@@ -773,10 +782,10 @@ test('CLI rejects a requested head different from the actual checkout', () => {
 });
 
 test('Explicit file inputs cannot hide dirty changes or committed PR inputs', () => {
-  const fixture = cliFixture({files: ['rust/sdk/deployment/src/notebook.rs'],
-    dirty: ['rust/sdk/deployment/src/spark.rs']});
+  const fixture = cliFixture({files: ['rust/engine/control-plane/deployment/src/notebook.rs'],
+    dirty: ['rust/engine/control-plane/deployment/src/spark.rs']});
   const result = main([...fixture.args, '--base', fixture.base, '--files-json', fixture.paths.files], fixture.hooks);
-  assert.deepEqual(result.files, ['rust/sdk/deployment/src/notebook.rs', 'rust/sdk/deployment/src/spark.rs']);
+  assert.deepEqual(result.files, ['rust/engine/control-plane/deployment/src/notebook.rs', 'rust/engine/control-plane/deployment/src/spark.rs']);
 });
 
 test('Check dependencies execute before dependents and reject impossible platform setups', () => {
@@ -798,7 +807,7 @@ test('CLI rejects unknown/duplicate options, abbreviated/injected SHAs and relat
 });
 
 test('Graph cannot execute commands and test filters remain argv values rather than shell code', () => {
-  const result = select(['rust/sdk/deployment/src/notebook.rs'], input => {
+  const result = select(['rust/engine/control-plane/deployment/src/notebook.rs'], input => {
     input.graph.components[0].tests[0].filter = 'name; echo nope';
   });
   const command = commands(result, 'linux').commands.find(item =>
@@ -810,11 +819,11 @@ test('Graph cannot execute commands and test filters remain argv values rather t
 
 function relocatedCatalogFixture(files) {
   const locations = [
-    ['sdk-capacities', 'rust/sdk/capacities'],
-    ['sdk-jobs', 'rust/sdk/jobs'],
-    ['deploy-notebook', 'rust/sdk/deployment'],
-    ['jobs', 'rust/frontends/cli/commands/jobs'],
-    ['core', 'rust/sdk/request-context'],
+    ['sdk-capacities', 'rust/engine/control-plane/resources/capacities'],
+    ['sdk-jobs', 'rust/engine/control-plane/jobs'],
+    ['deploy-notebook', 'rust/engine/control-plane/deployment'],
+    ['jobs', 'rust/clients/cli/commands/jobs'],
+    ['core', 'rust/engine/core/contracts'],
   ];
   const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '../validation/impact-graph.json')));
   const components = locations.map(([id]) => {
@@ -834,11 +843,11 @@ function relocatedCatalogFixture(files) {
 
 test('Relocated catalog inputs select capacity, job, deployment, CLI and request-context components', () => {
   for (const [file, component, name] of [
-    ['rust/sdk/capacities/src/lib.rs', 'sdk-capacities', 'fabric-sdk-capacities'],
-    ['rust/sdk/jobs/src/lib.rs', 'sdk-jobs', 'fabric-sdk-jobs'],
-    ['rust/sdk/deployment/src/notebook.rs', 'deploy-notebook', 'fabric-deploy'],
-    ['rust/frontends/cli/commands/jobs/src/lib.rs', 'jobs', 'fabric-cli-jobs'],
-    ['rust/sdk/request-context/src/lib.rs', 'core', 'fabric-core'],
+    ['rust/engine/control-plane/resources/capacities/src/lib.rs', 'sdk-capacities', 'fabric-sdk-capacities'],
+    ['rust/engine/control-plane/jobs/src/lib.rs', 'sdk-jobs', 'fabric-sdk-jobs'],
+    ['rust/engine/control-plane/deployment/src/notebook.rs', 'deploy-notebook', 'fabric-deploy'],
+    ['rust/clients/cli/commands/jobs/src/lib.rs', 'jobs', 'fabric-cli-jobs'],
+    ['rust/engine/core/contracts/src/lib.rs', 'core', 'fabric-core'],
   ]) {
     const result = plan(relocatedCatalogFixture([file]));
     assert.equal(result.mode, 'affected', file);
@@ -849,12 +858,12 @@ test('Relocated catalog inputs select capacity, job, deployment, CLI and request
 });
 
 test('Old-path deletion and relocated addition retain both inputs and widen conservatively', () => {
-  const files = ['rust/capabilities/jobs/fabric-sdk-jobs/src/lib.rs', 'rust/sdk/jobs/src/lib.rs'];
+  const files = ['rust/capabilities/jobs/fabric-sdk-jobs/src/lib.rs', 'rust/engine/control-plane/jobs/src/lib.rs'];
   const result = plan(relocatedCatalogFixture(files));
   assert.equal(result.mode, 'full');
   assert.deepEqual(result.files, files);
   assert.ok(result.packages.includes('fabric-sdk-jobs'));
-  const unknown = plan(relocatedCatalogFixture(['rust/sdk/unclassified/input.json']));
+  const unknown = plan(relocatedCatalogFixture(['rust/engine/unclassified/input.json']));
   assert.equal(unknown.mode, 'full');
   assert.match(unknown.reason, /Unknown shared input/);
 });
@@ -867,9 +876,9 @@ test('Advanced identity and CLI catalog inputs use the current package roots', (
     }
   }
   for (const [id, input] of [
-    ['identity-interactive', 'rust/sdk/authentication/credentials/src/interactive*.rs'],
-    ['identity-macos-helper', 'rust/sdk/authentication/credentials/src/macos_helper.rs'],
-    ['identity-native-certificates', 'rust/sdk/authentication/credentials/src/certificate_macos*.rs'],
+    ['identity-interactive', 'rust/engine/core/auth/provider/src/interactive*.rs'],
+    ['identity-macos-helper', 'rust/engine/core/auth/provider/src/macos_helper.rs'],
+    ['identity-native-certificates', 'rust/engine/core/auth/provider/src/certificate_macos*.rs'],
   ]) {
     const component = catalog.components.find(item => item.id === id);
     assert.ok(component, id);
@@ -881,7 +890,7 @@ test('Advanced identity and CLI catalog inputs use the current package roots', (
 test('Shared unconfigured-profile helper retains every actual subprocess consumer', () => {
   const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '../validation/impact-graph.json')));
   const component = catalog.components.find(item => item.id === 'cli-shared-test-helpers');
-  assert.ok(component.inputs.includes('rust/frontends/cli/app/tests/support/**'));
+  assert.ok(component.inputs.includes('rust/clients/cli/app/tests/support/**'));
   for (const target of ['headless_configuration', 'job_cli_contract',
     'local_mounted', 'native_endpoint_configuration']) {
     assert.ok(component.tests.some(item =>

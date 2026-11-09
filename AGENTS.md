@@ -65,7 +65,7 @@ For upstream contributions, follow the process in
 5. **Add changie entry** — Run `changie new` and select the appropriate change type
 
 Explicitly authorized Rust migration work in the owner's fork follows the
-[agent-operated delivery instructions](rust/docs/agentic-delivery.md). Research,
+[agent-operated delivery instructions](rust/authoring-docs/agentic-delivery.md). Research,
 implement, review, validate, and repair within the assigned scope without another
 routine human acknowledgment. Link a relevant existing issue when available;
 do not create one solely for fork publication. This exception does not waive
@@ -77,23 +77,24 @@ required evidence, or the bounded repair budget prevents progress.
 
 The additive workspace under `rust/` does not replace the Python CLI. Read
 [`rust/AGENTS.md`](rust/AGENTS.md) and
-[`rust/docs/migration-guidance.md`](rust/docs/migration-guidance.md) before porting.
+[`rust/authoring-docs/migration-guidance.md`](rust/authoring-docs/migration-guidance.md) before porting.
 Translate behavior first; propose improvements separately. Read
-[`rust/docs/architecture.md`](rust/docs/architecture.md) for crate ownership, allowed
+[`rust/authoring-docs/architecture.md`](rust/authoring-docs/architecture.md) for crate ownership, allowed
 dependency directions, runtime rules, and the pinned Cargo validation commands.
-Read [`rust/docs/compatibility.md`](rust/docs/compatibility.md) before adding commands or
+Read [`rust/authoring-docs/compatibility.md`](rust/authoring-docs/compatibility.md) before adding commands or
 porting behavior. Rust public APIs require documentation and must respect the
 workspace lints; the Python-specific standards below still apply to Python.
 
-Rust reusable packages live under `rust/sdk/`, grouped by feature, and CLI-only
-packages under `rust/frontends/cli/`. These are physical source roots, not new
-logical dependency layers. Grouping directories are not Cargo packages; package
-names and credential-injection boundaries remain unchanged.
+Rust reusable packages live under `rust/engine/`, grouped into `core/`
+foundations and control/data-plane capabilities, and CLI-only packages under
+`rust/clients/cli/`. These are physical source roots, not new logical dependency
+layers. Grouping directories are not Cargo packages; package names and
+credential-injection boundaries remain unchanged.
 
 Keep SDK credentials caller-injected, tests offline, and dependency features
 centralized in `rust/Cargo.toml`. Do not add production authentication, credential
 fallbacks, Python deployment bridges, or new command namespaces as scaffold
-shortcuts. The [identity backend decision](rust/docs/decisions/identity-backend.md)
+shortcuts. The [identity backend decision](rust/authoring-docs/decisions/identity-backend.md)
 remains unresolved and authentication/core changes still require team review.
 
 The shared Rust integration branch is `feature/rust` in the owner's existing
@@ -103,8 +104,8 @@ branches. The assigned integration owner remains the only writer until separatel
 authorized automation replaces that role; these instructions do not enable it.
 Lane work stays on separate branches and adopts an exact validated checkpoint
 without resetting or force-pushing. See the
-[integration handoff](rust/docs/integration-handoff.md) for safe synchronization
-and [agent-operated delivery](rust/docs/agentic-delivery.md) for stage-specific
+[integration handoff](rust/authoring-docs/integration-handoff.md) for safe synchronization
+and [agent-operated delivery](rust/authoring-docs/agentic-delivery.md) for stage-specific
 independent reviews, revision-bound evidence, repair limits, and escalation.
 
 ### Code Standards to Enforce

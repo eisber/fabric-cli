@@ -11,7 +11,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[3]
-CASES = ROOT / "rust" / "sdk" / "deployment" / "tests"
+CASES = ROOT / "rust" / "engine" / "control-plane" / "deployment" / "tests"
 
 
 def main() -> None:

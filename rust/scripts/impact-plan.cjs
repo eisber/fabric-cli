@@ -444,8 +444,10 @@ function fullInput(file) {
       'rust/rustfmt.toml', 'rust/clippy.toml', 'rust/.clippy.toml'].includes(file);
 }
 function documentation(file) {
+  // Deleted legacy paths must remain documentation-only during directory renames.
   return /^(README(?:\.[^/]+)?|AGENTS\.md)$/i.test(file) ||
-    /^rust\/docs\/.+\.md$/i.test(file) || file === 'rust/AGENTS.md' || file === 'rust/README.md';
+    /^rust\/(?:authoring-docs|docs)\/.+\.md$/i.test(file) ||
+    file === 'rust/AGENTS.md' || file === 'rust/README.md';
 }
 
 /**
