@@ -9,8 +9,8 @@ use crate::{
 };
 use fabric_sdk::{
     Client,
-    observe::observe,
-    sql_definitions::DefinitionLimits,
+    observe::{Observation, observe},
+    sql_definitions::{DefinitionError, DefinitionLimits},
     warehouse::{
         NativeMediaType, WarehouseDefinition, WarehouseDefinitionFormat, WarehouseDefinitionRead,
         WarehouseRequests, WarehouseTarget, read_definition,
@@ -18,7 +18,44 @@ use fabric_sdk::{
 };
 use fabric_sdk_operations::OperationExecutor;
 use serde_json::json;
-use std::{future::pending, num::NonZeroUsize};
+use std::{fmt, future::pending, num::NonZeroUsize};
+
+/// Rejected Warehouse content after the shared observer established success.
+///
+/// The complete bounded native result and original operation/status are retained
+/// without cloning response bytes. Debug/Display never disclose service data.
+pub struct WarehouseDefinitionResultError {
+    /// Stable content/limit classification and optional part ordinal.
+    pub error: DefinitionError,
+    observation: Observation,
+}
+
+impl WarehouseDefinitionResultError {
+    /// Explicit access to the original observation, including protected raw data.
+    pub fn observation(&self) -> &Observation {
+        &self.observation
+    }
+}
+
+impl fmt::Debug for WarehouseDefinitionResultError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WarehouseDefinitionResultError")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+impl fmt::Display for WarehouseDefinitionResultError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Warehouse definition operation succeeded but its result was rejected; inspect typed evidence")
+    }
+}
+
+impl std::error::Error for WarehouseDefinitionResultError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.error)
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
@@ -91,13 +128,21 @@ pub(crate) async fn retrieve(
             if !observed.work_succeeded {
                 return Err(selection_error("Warehouse definition work did not succeed"));
             }
-            let result = observed.result.ok_or_else(|| {
+            let result = observed.result.as_ref().ok_or_else(|| {
                 selection_error("Warehouse definition operation did not return its native result")
             })?;
-            request
-                .decode_completed_result(&result.bytes)
-                .map_err(|error| backend_error("DefinitionResultInvalid", error))?
-                .data
+            match request.decode_completed_result(&result.bytes) {
+                Ok(definition) => definition.data,
+                Err(error) => {
+                    return Err(backend_error(
+                        "DefinitionResultInvalid",
+                        WarehouseDefinitionResultError {
+                            error,
+                            observation: observed,
+                        },
+                    ));
+                }
+            }
         }
     };
     content_payload(&definition, target, part)

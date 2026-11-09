@@ -3,6 +3,8 @@
 
 //! Concrete get composition over the shared SDK's native read capabilities.
 
+pub use crate::get_warehouse_definition::WarehouseDefinitionResultError;
+
 use crate::{
     get_budget::GetReadBudget,
     get_command::{

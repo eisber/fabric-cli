@@ -151,6 +151,19 @@ known native operation ID. Content errors carry the shared codec classification
 and part ordinal where available. No complete source succeeds from partial data.
 Implicit Debug/Display omit content, paths, media, provider text and handles.
 
+For the CLI's common `get .../src/definition --wait` composition, a successful
+operation whose native result fails content admission returns
+`fabric_cli::get_backend::WarehouseDefinitionResultError` inside
+`GetCommandError::Backend` with code `DefinitionResultInvalid`. Its `error`
+retains the codec classification; explicit `observation()` access retains the
+same accepted handle, successful native status and complete bounded result
+bytes/media type. The observation is moved, not cloned, into the error. This
+does not admit an oversized response or change the shared observer's bounds.
+Debug/Display remain redacted. The executable's error envelope projects only
+`evidence.handle` and canonical `evidence.status: "Succeeded"`; it never
+implicitly prints raw result or status fields. Operation success does not make
+malformed or unsupported source content a successful GET.
+
 There is no denial-to-metadata fallback, generic `/items` fallback, SQL endpoint
 fallback, consent/login discovery, automatic POST retry or remote cancellation.
 Local cancellation and timeouts do not prove rollback or remote completion.
