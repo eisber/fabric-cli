@@ -7,6 +7,28 @@ planning, item publication, orphan removal and definition transfer APIs.
 Applications supply credentials, SDK clients, execution, filesystem capabilities
 and cancellation; the library does not invoke the CLI.
 
+## Native pipeline-stage deployment
+
+`stage` implements a separate GA-only pipeline-stage operation. It does not use
+the repository/configuration workflow below. `StageReader` acquires exact
+native stage metadata with the caller's existing request context and shared
+operation executor. `DeploymentRequest` requires explicit selected-items or
+all-supported-items intent. `PreparedDeployment` checks pipeline, stage,
+credential/endpoint scope, assigned workspaces and consecutive forward order
+before immediate host approval.
+
+`ApprovedDeployment::execute` consumes approval once, submits one native POST,
+and optionally observes completion through the existing `OperationSession`.
+Receipts preserve distinct generic LRO and deployment-history IDs, actual
+submission HTTP status and partial/unknown effects. No mutation is replayed.
+Beta plans, backward deployment, implicit workspace creation and arbitrary
+per-item options are unsupported in this first slice.
+
+The CLI consumer is opt-in and requires an injected host; enabling a credential
+feature alone does not install pipeline resolution or exact-effect approval.
+See [native stage deployment](../../docs/native-stage-deployment.md) for
+supported input, native prerequisites, source citations and offline contracts.
+
 ## Deployment workflow
 
 `workflow::deploy_repository` accepts a complete `DeploymentRepository`,

@@ -1376,6 +1376,19 @@
       ]
     },
     {
+      "id": "deploy-stage",
+      "package": "fabric-deploy",
+      "inputs": [
+        "rust/sdk/deployment/src/stage.rs",
+        "rust/docs/native-stage-deployment.md"
+      ],
+      "depends_on": ["operations"],
+      "tests": [
+        {"package": "fabric-deploy", "target": "test:stage"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "deploy-shared",
       "package": "fabric-deploy",
       "inputs": [
@@ -1951,6 +1964,19 @@
         "export-oracle",
         "native-read"
       ]
+    },
+    {
+      "id": "cli-deploy-stage",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/frontends/cli/app/src/stage_deploy.rs"
+      ],
+      "depends_on": ["deploy-stage"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:stage_deploy"},
+        {"package": "fabric-cli", "target": "test:stage_deploy_entry"}
+      ],
+      "checks": ["dependency-graph"]
     },
     {
       "id": "cli-copy-v2",
@@ -3078,6 +3104,7 @@
         "fabric-cli/v2-discovery",
         "fabric-cli/v2-cancel",
         "fabric-cli/v2-copy",
+        "fabric-cli/v2-deploy",
         "fabric-cli/runtime-v2",
         "fabric-identity/certificate-store-windows",
         "fabric-identity-windows/certificate-store",
@@ -3452,6 +3479,13 @@
       "checks": [
         "native-read"
       ]
+    },
+    {
+      "id": "v2-deploy",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-deploy"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
     },
     {
       "id": "v2-copy",
