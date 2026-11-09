@@ -544,6 +544,10 @@
         },
         {
           "package": "fabric-sdk",
+          "target": "test:environment_publish"
+        },
+        {
+          "package": "fabric-sdk",
           "target": "test:notebook_observability"
         },
         {

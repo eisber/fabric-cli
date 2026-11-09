@@ -50,6 +50,8 @@ pub enum Verb {
     List,
     /// Rename or move only where a native capability exists.
     Move,
+    /// Promote explicitly staged service state through a native publish binding.
+    Publish,
     /// Execute a positively bound native refresh, never a generic query fallback.
     Refresh,
     /// Discover bounded candidates within an explicitly selected scope.

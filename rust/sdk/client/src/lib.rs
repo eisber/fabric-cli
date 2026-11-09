@@ -11,6 +11,7 @@
 pub mod capacities;
 pub mod copyjobs;
 pub mod documents;
+pub mod environment_publish;
 pub mod exists;
 pub mod folders;
 pub mod items;
