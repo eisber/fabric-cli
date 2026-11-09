@@ -1392,6 +1392,7 @@ dependencies = [
  "fabric-cli-output",
  "fabric-cli-update",
  "fabric-identity",
+ "fabric-sdk-sql-definition",
  "fabric-sdk-transport",
  "futures-util",
  "ring",
@@ -1823,6 +1824,7 @@ name = "fabric-sdk-sql-definition"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "fabric-v2-contracts",
  "serde",
  "serde_json",
 ]

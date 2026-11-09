@@ -13,7 +13,7 @@ use std::{
 use fabric_cli_v2::{
     CliError, Control, auth, configure, output,
     parser::{self, Operation, Parsed},
-    report, show, upgrade,
+    report, show, upgrade, validate,
 };
 
 struct Deadline {
@@ -117,8 +117,10 @@ fn run() -> u8 {
             && !cfg!(all(windows, feature = "windows-broker")))
             || (matches!(&invocation.operation, Operation::Upgrade(_))
                 && !cfg!(feature = "self-update"));
-        let needs_preferences = !matches!(&invocation.operation, Operation::Configure { .. })
-            && !unavailable
+        let needs_preferences = !matches!(
+            &invocation.operation,
+            Operation::Configure { .. } | Operation::Validate(_)
+        ) && !unavailable
             && (!invocation.format_explicit
                 || matches!(
                     &invocation.operation,
@@ -151,6 +153,7 @@ fn run() -> u8 {
             };
         }
         match &invocation.operation {
+            Operation::Validate(request) => validate::run(request, &control),
             Operation::Configure { target, value } => {
                 preference_root(invocation.config_root.as_deref())
                     .and_then(|root| configure::set(&root, target, value, &control))
@@ -180,6 +183,10 @@ fn run() -> u8 {
             Operation::Upgrade(request) => installation.run(request),
         }
     })();
+    let invalid_document = matches!(&invocation.operation, Operation::Validate(_))
+        && result
+            .as_ref()
+            .is_ok_and(|report| report.data["valid"] == false);
     match output::write_outcome(
         name,
         result,
@@ -187,6 +194,7 @@ fn run() -> u8 {
         io::stdout().lock(),
         io::stderr().lock(),
     ) {
+        Ok(0) if invalid_document => 1,
         Ok(exit) => exit,
         Err(_) => {
             let _diagnostic = writeln!(

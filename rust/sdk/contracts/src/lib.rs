@@ -56,6 +56,8 @@ pub enum Verb {
     Search,
     /// Patch or replace an explicitly existing resource.
     Update,
+    /// Check explicit local input without resolving or executing a resource.
+    Validate,
 }
 
 /// Declared effects, not permission to perform them.

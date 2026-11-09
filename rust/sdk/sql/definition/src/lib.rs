@@ -15,6 +15,7 @@ mod codec;
 mod error;
 mod model;
 mod paths;
+pub mod validation;
 mod wire;
 
 pub use codec::{

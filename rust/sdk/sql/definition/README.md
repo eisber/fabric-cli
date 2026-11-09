@@ -8,6 +8,52 @@ and definition-only copy orchestration. It has no deploy, CLI, HTTP, identity,
 runtime, filesystem or process dependency. There is no operation request wrapper,
 approval policy, LRO engine, local writer or implicit credential selection here.
 
+## Local structural validation
+
+`validation::register` adds the DACPAC validation operation and exact
+`SQLDatabase/src/definition.dacpac` binding to the existing
+`fabric-v2-contracts::Registry`. It does not create another schema registry or
+engine. Registration is atomic and preserves existing entries on conflict.
+The inert input/output schema projection carries rule version `1.0`, its source
+revision and coverage limits; it is not a general JSON Schema evaluator.
+
+`validation::validate` consumes original JSON bytes and delegates to the same
+strict native codec above, with explicit media, format, rule version and all six
+inclusive caller budgets. The first profile accepts a **bare** DACPAC definition
+only. It does not unwrap a response, read a directory or execute/build a package.
+The codec also supports SQL projects, but this validation profile deliberately
+does not advertise them yet.
+
+A completed report contains `operationId`, `ruleVersion`, `mediaType`,
+`nativeFormat`, `valid`, `findings` and `coverage`. Malformed/duplicate envelope
+JSON and invalid structure yield one error finding, with a safe RFC 6901 part
+ordinal pointer where available. Empty pointer means root or unavailable finer
+location; line/column and native filenames are not fabricated. Original native
+Base64 strings and input bytes are not normalized or written.
+
+Unsupported media, format, payload/part kinds or rule versions and exhausted
+budgets return an error **without a validity verdict**. No network schema/ref
+resolution occurs. The existing codec is fail-fast, so `findingPolicy` is
+`first_failure`, not complete finding enumeration. Coverage is always explicitly
+incomplete: native DACPAC/SQL semantics, decoded `.platform` JSON, permission,
+service acceptance, reference existence, round-trip and runtime correctness
+remain unestablished. Structurally valid opaque bytes need not be a valid DACPAC.
+
+The raw wire-byte limit is enforced before format inspection. A unique string
+`format` in a syntactically complete bare JSON object selects the profile before
+part admission: explicit SQLproj or another unsupported format returns no verdict
+even if its parts are empty, missing, malformed or would fail native admission.
+Format inspection uses the existing JSON deserializer and does not parse native
+payloads or evaluate a second schema. Duplicate/incorrectly typed format fields,
+malformed JSON and trailing input retain the original strict codec's structural
+findings; absent format retains the documented DACPAC default.
+Format inspection is map-only: positional arrays such as `["sqlproj"]` do not
+declare a document format and retain the codec's invalid-envelope report.
+
+SDK callers can reuse this check before an explicitly selected create/update,
+but local validation cannot grant approval, imply an upsert, replace native
+service errors or establish an immutable checked-byte submission on their behalf.
+
 ## Public boundary
 
 - `SqlDatabaseDefinitionFormat::{Dacpac, Sqlproj}` uses exact lowercase service
