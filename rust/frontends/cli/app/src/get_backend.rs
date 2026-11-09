@@ -55,7 +55,7 @@ pub struct SdkGetTarget<'a> {
     budget: GetReadBudget<'a>,
 }
 
-fn backend_error(
+pub(super) fn backend_error(
     code: &'static str,
     source: impl std::error::Error + Send + Sync + 'static,
 ) -> GetCommandError {
@@ -261,6 +261,22 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                     item_type,
                     representation,
                 } => {
+                    if item_type.as_deref() == Some("Report")
+                        && matches!(
+                            representation,
+                            GetRepresentation::Metadata | GetRepresentation::Definition { .. }
+                        )
+                    {
+                        return crate::get_report::retrieve(
+                            self.client,
+                            budget,
+                            workspace_id,
+                            item_id,
+                            representation,
+                            options,
+                        )
+                        .await;
+                    }
                     let declared_metadata = if let Some(item_type) = item_type {
                         let data = if item_type == "CopyJob" {
                             let target =
@@ -625,7 +641,11 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
     }
 }
 
-fn observer_options(options: GetAcquireOptions, result: bool, cap: NonZeroUsize) -> ObserveOptions {
+pub(super) fn observer_options(
+    options: GetAcquireOptions,
+    result: bool,
+    cap: NonZeroUsize,
+) -> ObserveOptions {
     ObserveOptions {
         wait: options.wait,
         result,
@@ -635,7 +655,7 @@ fn observer_options(options: GetAcquireOptions, result: bool, cap: NonZeroUsize)
     }
 }
 
-fn json_payload(data: Value) -> GetPayload {
+pub(super) fn json_payload(data: Value) -> GetPayload {
     GetPayload {
         data: json!({"data":data,"meta":{"outcome":"completed"}}),
         raw: None,
@@ -645,7 +665,7 @@ fn json_payload(data: Value) -> GetPayload {
     }
 }
 
-fn byte_payload(bytes: Vec<u8>, media_type: Option<String>) -> GetPayload {
+pub(super) fn byte_payload(bytes: Vec<u8>, media_type: Option<String>) -> GetPayload {
     let data = json!({
         "data":{"content":STANDARD.encode(&bytes),"mediaType":media_type,"encoding":"base64"},
         "meta":{"outcome":"completed"}

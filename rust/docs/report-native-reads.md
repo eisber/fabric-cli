@@ -1,0 +1,124 @@
+<!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
+
+# Report native reads
+
+The additive `fabric_sdk::reports` module binds typed Report metadata and
+native definition parts to the existing item/representation clients. The
+experimental `fab-cli-v2 get` backend selects this binding for an explicitly
+typed `.Report` owner. Untyped item paths retain generic behavior; the existing
+Python CLI and `fab-rs` compatibility handler are unchanged.
+
+```text
+fab-cli-v2 get /<workspace-id>.Workspace/<report-id>.Report
+fab-cli-v2 get /<workspace-id>.Workspace/<report-id>.Report/src/definition
+fab-cli-v2 get /<workspace-id>.Workspace/<report-id>.Report/src/definition/formats/PBIR
+fab-cli-v2 get /<workspace-id>.Workspace/<report-id>.Report/src/definition/parts/StaticResources/logo.jpg --format raw
+```
+
+Names use the existing bounded resolver; IDs are canonical UUIDs. Native format
+is selected by the definition path, not `--format`, which remains presentation.
+Only explicit `PBIR` and `PBIR-Legacy` native selectors are advertised. An
+unsupported selector fails without source or credential dispatch.
+
+## Native boundaries
+
+| Read | Public Fabric v1 request | Boundary |
+| --- | --- | --- |
+| Metadata | `GET /workspaces/{workspace}/reports/{report}` | Report read rights; one response, no definition or model query |
+| Definition | `POST /workspaces/{workspace}/reports/{report}/getDefinition` | Report read **and write** rights; encrypted-label usage restrictions; label excluded |
+| Accepted definition | Existing `/operations/{id}` and advertised `/result` | Shared observer only when `--wait`; no replay or new poller |
+
+The caller injects credentials, endpoint, transport, cancellation and total
+deadline. `ReportMetadata` checks owner type and actual item/workspace identity;
+it does not establish model access or freshness. An absent `workspaceId` remains
+absent rather than a fabricated source field. Denial and malformed/mismatched
+metadata/source fail explicitly; metadata is not a definition fallback.
+
+The raw multipart envelope preserves unknown fields, part order, exact paths,
+payload type and binary resources. Selected InlineBase64 parts decode exactly;
+no UTF-8 coercion, schema migration, output cleanup or filesystem extraction runs.
+Provider-advertised `mediaType` is retained; suffixes do not invent MIME types.
+Duplicate exact paths, malformed encodings/binding JSON, mixed legacy/enhanced
+layouts and conflicting declared/requested formats fail.
+
+Required report JSON (legacy `report.json` or enhanced
+`definition/report.json`) and every enhanced `page.json` must decode as
+syntactically valid JSON objects. Invalid syntax, null, arrays/scalars or
+non-UTF-8 required content sets `invalidReportStructure` partial evidence while
+preserving the original envelope/bytes. It cannot enable complete or raw
+delivery. Unrelated resources remain opaque, even with a `.json` suffix;
+this check is not a comprehensive JSON-schema validator.
+
+Definition JSON carries `meta.reportSource` outside projected data. It records
+declared format versus observed layout, `definition.pbir` version/schema,
+enhanced `definition/version.json` version, native paths/media, model reference
+and incomplete reasons. Known structural versions are definition.pbir `1.0`
+(legacy) and `4.0`, and enhanced definition `2.0.0`. Future versions/encodings
+and missing required report structure remain **partial**, with original data
+retained. Future definition versions keep their unknown model-reference shape
+as opaque data rather than coercing it into a legacy binding. This is structural
+coverage, not validation of every report JSON schema or evidence of a complete
+service-state backup.
+
+Partial native source can produce only the existing unprojected JSON receipt
+on stdout, never a complete file or raw part delivery. Accepted source also
+cannot produce a source file. Complete delivery reuses the existing byte budget,
+no-clobber output and local-write failure evidence. Service ceilings do not
+override the caller's smaller invocation/transport limits.
+
+## Related-model prerequisite
+
+The native `datasetReference` is preserved as byPath or byConnection data.
+Binding generation comes from the declared `definitionProperties` schema,
+not the `definition.pbir` version: version `4.0` can use either schema.
+Schema `1.0.0` requires all six legacy connection fields; five allow string/null,
+and `pbiServiceModelId` allows integer/null. In particular, a null
+`connectionString` is valid legacy source. Schema `2.0.0` retains the strict
+nonempty connection-string check. Unrecognized schema generations retain
+`unknownBindingSchema` partial evidence and the untouched inert reference,
+rather than interpreting it using either known generation. Schema-less source
+retains the existing strict binding check; no schema is fetched during reads.
+`relatedModelAuthorized` is always false: this read never resolves or authorizes
+that model. Model navigation requires explicit canonical model coordinates
+(including its real workspace) and separate authorization by a model provider.
+A report's workspace is not inferred as the model's workspace. No model creation,
+refresh, query, served-document read or permission fallback occurs.
+
+PBIR-Legacy `report.json` is **not PBIX**; `definition.pbir` alone is not a
+complete report. Native definitions do not include model rows, labels, ACLs,
+credentials or complete runtime/service state. Served metadata/SOFe documents
+are neither this writable representation nor source-completeness evidence.
+RDL is owned by `PaginatedReport`, not this Report binding. PBIX/RDL downloads,
+rendered exports, rebind, authoring, clone, publish and public sharing remain
+outside the slice.
+
+## Registration and validation
+
+`reports::register` adds metadata/native read entries and a type-constrained
+`report` alias to a caller-owned neutral registry. Entries disclose definition
+read/write and encrypted-label prerequisites and declare only `RemoteRead`.
+Registration is not authorization or installation of a CLI/MCP host; the get
+head uses the same SDK binding without a second runtime.
+
+Offline `fabric-sdk --test reports` and `fabric-cli --test get_backend`
+contracts cover exact routes/owner checks, parts/media, unknown versions,
+malformed and denied source, partial receipts, projection-preserved evidence,
+binary bytes, predispatch rejection and accepted-source observation. Existing
+generic representation/get tests remain independent. No live API/credential
+acceptance or three-platform completion is claimed by these tests.
+
+## API references
+
+- [Get Report](https://learn.microsoft.com/en-us/rest/api/fabric/report/items/get-report):
+  metadata only and read scopes/rights.
+- [Get Report Definition](https://learn.microsoft.com/en-us/rest/api/fabric/report/items/get-report-definition):
+  POST, read/write permissions, labels and LRO.
+- [Report definition](https://learn.microsoft.com/en-us/rest/api/fabric/articles/item-management/definitions/report-definition):
+  mutually exclusive PBIR/PBIR-Legacy, required native parts and model reference.
+- [Project report folder](https://learn.microsoft.com/en-us/power-bi/developer/projects/projects-report):
+  format/version/schema, byPath versus byConnection and native structure.
+- [Definition properties schema 1.0.0](https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/1.0.0/schema.json)
+  and [schema 2.0.0](https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json):
+  distinct legacy nullable field types and modern connection representation.
+- [Long-running operations](https://learn.microsoft.com/en-us/rest/api/fabric/articles/long-running-operation):
+  status/result observation and acceptance headers.

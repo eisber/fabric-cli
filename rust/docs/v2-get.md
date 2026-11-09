@@ -72,6 +72,12 @@ are different capabilities. PBIX/render/bulk/OWL, source-context private routes,
 schema YAML, agents.md, notebook cells, secret settings and unbound facets remain
 explicitly unsupported in this head.
 
+Explicitly typed `.Report` metadata and definitions use the
+[Report-native binding](report-native-reads.md). It preserves binary/native
+parts and retains format/version and related-model prerequisite evidence outside
+projected data. Unknown native versions or missing report structure are partial,
+not complete authoring exports. Untyped item paths retain the generic binding.
+
 ## Options, data and local delivery
 
 `--format json|markdown|raw` chooses an advertised serialization, not the native

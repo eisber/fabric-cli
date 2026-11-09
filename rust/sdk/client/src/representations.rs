@@ -268,7 +268,18 @@ pub async fn read_definition(
     limits: RepresentationLimits,
     cancelled: impl Future<Output = ()> + Send,
 ) -> Result<DefinitionRead, RepresentationError> {
-    let operation = definition_operation(client, target)?;
+    read_definition_from_collection(client, executor, target, None, limits, cancelled).await
+}
+
+pub(crate) async fn read_definition_from_collection(
+    client: &Client,
+    executor: &dyn OperationExecutor,
+    target: &DefinitionTarget,
+    collection: Option<crate::items::ItemCollection>,
+    limits: RepresentationLimits,
+    cancelled: impl Future<Output = ()> + Send,
+) -> Result<DefinitionRead, RepresentationError> {
+    let operation = definition_operation(client, target, collection)?;
     execute_definition(client, executor, operation, limits, cancelled).await
 }
 
@@ -371,6 +382,7 @@ pub async fn read_file(
 fn definition_operation(
     client: &Client,
     target: &DefinitionTarget,
+    collection: Option<crate::items::ItemCollection>,
 ) -> Result<FabricOperation, RepresentationError> {
     let identifier = |value: &str| {
         !value.is_empty()
@@ -392,8 +404,10 @@ fn definition_operation(
         return Err(RepresentationError::InvalidInput);
     }
     let mut path = format!(
-        "/v1/workspaces/{}/items/{}/getDefinition",
-        target.workspace_id, target.item_id
+        "/v1/workspaces/{}/{}/{}/getDefinition",
+        target.workspace_id,
+        collection.map_or("items", |collection| collection.as_str()),
+        target.item_id
     );
     let mut url = client
         .context()

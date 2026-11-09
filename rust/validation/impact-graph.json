@@ -605,6 +605,58 @@
       "checks": ["dependency-graph"]
     },
     {
+      "id": "report-native-reads",
+      "package": "fabric-sdk",
+      "inputs": [
+        "rust/sdk/client/src/reports/**",
+        "rust/sdk/client/tests/reports.rs",
+        "rust/docs/report-native-reads.md"
+      ],
+      "depends_on": [
+        "sdk"
+      ],
+      "tests": [
+        {
+          "package": "fabric-sdk",
+          "target": "test:reports"
+        },
+        {
+          "package": "fabric-sdk",
+          "target": "test:representations"
+        }
+      ],
+      "checks": [
+        "sdk-graph"
+      ]
+    },
+    {
+      "id": "report-read-cli",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/frontends/cli/app/src/get_report.rs",
+        "rust/frontends/cli/app/src/get_backend.rs",
+        "rust/frontends/cli/app/tests/get_backend.rs",
+        "rust/docs/report-native-reads.md",
+        "rust/docs/v2-get.md"
+      ],
+      "depends_on": [
+        "report-native-reads"
+      ],
+      "tests": [
+        {
+          "package": "fabric-cli",
+          "target": "test:get_backend"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:get_command"
+        }
+      ],
+      "checks": [
+        "sdk-graph"
+      ]
+    },
+    {
       "id": "http",
       "package": "fabric-sdk-http",
       "inputs": [
