@@ -269,6 +269,16 @@ pub async fn read_definition(
     cancelled: impl Future<Output = ()> + Send,
 ) -> Result<DefinitionRead, RepresentationError> {
     let operation = definition_operation(client, target)?;
+    execute_definition(client, executor, operation, limits, cancelled).await
+}
+
+pub(crate) async fn execute_definition(
+    client: &Client,
+    executor: &dyn OperationExecutor,
+    operation: FabricOperation,
+    limits: RepresentationLimits,
+    cancelled: impl Future<Output = ()> + Send,
+) -> Result<DefinitionRead, RepresentationError> {
     let mut session = OperationSession::with_context(
         client.context(),
         BorrowedExecutor(executor),

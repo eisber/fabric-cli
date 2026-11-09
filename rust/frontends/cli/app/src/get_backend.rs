@@ -84,6 +84,26 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
         Box::pin(async move {
             let parsed =
                 GetTarget::parse(path).map_err(|error| backend_error("InvalidTarget", error))?;
+            if let GetTarget::Item {
+                item_type: Some(kind),
+                representation,
+                ..
+            } = &parsed
+                && kind == "CopyJob"
+            {
+                match representation {
+                    GetRepresentation::Metadata => {}
+                    GetRepresentation::Definition { native_format, .. } => {
+                        fabric_sdk::copyjobs::validate_native_format(native_format.as_deref())
+                            .map_err(|error| backend_error("InvalidTarget", error))?;
+                    }
+                    _ => {
+                        return Err(unsupported(
+                            "CopyJob supports only metadata and native source in this slice",
+                        ));
+                    }
+                }
+            }
             let (kind, formats, default_format, recursive, wait) = match &parsed {
                 GetTarget::Workspace { .. }
                 | GetTarget::Item {
@@ -242,34 +262,55 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                     representation,
                 } => {
                     let declared_metadata = if let Some(item_type) = item_type {
-                        let read = metadata
-                            .read(
-                                MetadataTarget::Item {
-                                    workspace_id,
-                                    item_id,
-                                },
-                                MetadataLimits {
-                                    max_response_bytes: remaining,
-                                    max_result_bytes: cap,
-                                },
+                        let data = if item_type == "CopyJob" {
+                            let target =
+                                fabric_sdk::copyjobs::CopyJobTarget::new(workspace_id, item_id)
+                                    .map_err(|error| {
+                                        backend_error("TargetResolutionFailed", error)
+                                    })?;
+                            fabric_sdk::copyjobs::get_metadata(
+                                self.client,
+                                budget,
+                                &target,
+                                remaining,
                                 pending(),
                             )
                             .await
-                            .map_err(|error| backend_error("MetadataReadFailed", error))?;
-                        if read.data()["type"].as_str() != Some(item_type.as_str()) {
+                            .map_err(|error| backend_error("MetadataReadFailed", error))?
+                            .as_value()
+                            .clone()
+                        } else {
+                            metadata
+                                .read(
+                                    MetadataTarget::Item {
+                                        workspace_id,
+                                        item_id,
+                                    },
+                                    MetadataLimits {
+                                        max_response_bytes: remaining,
+                                        max_result_bytes: cap,
+                                    },
+                                    pending(),
+                                )
+                                .await
+                                .map_err(|error| backend_error("MetadataReadFailed", error))?
+                                .data()
+                                .clone()
+                        };
+                        if data["type"].as_str() != Some(item_type.as_str()) {
                             return Err(backend_error(
                                 "TargetResolutionFailed",
                                 crate::get_resolution::GetResolutionError::NotFound,
                             ));
                         }
-                        Some(read)
+                        Some(data)
                     } else {
                         None
                     };
                     if matches!(representation, GetRepresentation::Metadata)
                         && let Some(read) = declared_metadata
                     {
-                        return Ok(json_payload(read.data().clone()));
+                        return Ok(json_payload(read));
                     }
                     let remaining = NonZeroUsize::new(budget.remaining_bytes()).ok_or(
                         GetCommandError::ByteLimit {
@@ -319,19 +360,36 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                             native_format,
                             part,
                         } => {
-                            let mut read = fabric_sdk::representations::read_definition(
-                                self.client,
-                                budget,
-                                &DefinitionTarget {
-                                    workspace_id: workspace_id.clone(),
-                                    item_id: item_id.clone(),
-                                    native_format: native_format.clone(),
-                                },
-                                source_limits,
-                                pending(),
-                            )
-                            .await
-                            .map_err(|error| backend_error("DefinitionReadFailed", error))?;
+                            let copyjob = item_type.as_deref() == Some("CopyJob");
+                            let mut read = if copyjob {
+                                let target =
+                                    fabric_sdk::copyjobs::CopyJobTarget::new(workspace_id, item_id)
+                                        .map_err(|error| backend_error("InvalidTarget", error))?;
+                                fabric_sdk::copyjobs::get_definition(
+                                    self.client,
+                                    budget,
+                                    &target,
+                                    native_format.as_deref(),
+                                    source_limits,
+                                    pending(),
+                                )
+                                .await
+                                .map_err(|error| backend_error("DefinitionReadFailed", error))?
+                            } else {
+                                fabric_sdk::representations::read_definition(
+                                    self.client,
+                                    budget,
+                                    &DefinitionTarget {
+                                        workspace_id: workspace_id.clone(),
+                                        item_id: item_id.clone(),
+                                        native_format: native_format.clone(),
+                                    },
+                                    source_limits,
+                                    pending(),
+                                )
+                                .await
+                                .map_err(|error| backend_error("DefinitionReadFailed", error))?
+                            };
                             if let DefinitionRead::Accepted { operation_id } = &read {
                                 if !options.wait {
                                     let mut receipt = json_payload(json!({
@@ -363,6 +421,11 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                                     source_limits,
                                 )
                                 .map_err(|error| backend_error("DefinitionResultInvalid", error))?;
+                                if copyjob {
+                                    fabric_sdk::copyjobs::validate_definition(&read).map_err(
+                                        |error| backend_error("DefinitionResultInvalid", error),
+                                    )?;
+                                }
                             }
                             match part {
                                 Some(path) => {
