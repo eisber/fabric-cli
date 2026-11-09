@@ -726,10 +726,13 @@
       "package": "fabric-sdk-catalog",
       "inputs": [
         "rust/sdk/catalog/src/**",
+        "rust/sdk/catalog/tests/service_sync.rs",
         "rust/tests/compatibility/catalog/*.json"
       ],
       "depends_on": [
-        "sdk-api"
+        "sdk-api",
+        "core",
+        "operations"
       ],
       "tests": [
         {
@@ -739,6 +742,10 @@
         {
           "package": "fabric-sdk-catalog",
           "target": "test:search_v2"
+        },
+        {
+          "package": "fabric-sdk-catalog",
+          "target": "test:service_sync"
         }
       ],
       "checks": [
@@ -813,7 +820,8 @@
       "id": "resources",
       "package": "fabric-cli-resources",
       "inputs": [
-        "rust/frontends/cli/commands/resources/src/**"
+        "rust/frontends/cli/commands/resources/src/**",
+        "rust/frontends/cli/commands/resources/tests/service_sync.rs"
       ],
       "depends_on": [
         "context",
@@ -832,6 +840,10 @@
         {
           "package": "fabric-cli-resources",
           "target": "test:access_contract"
+        },
+        {
+          "package": "fabric-cli-resources",
+          "target": "test:service_sync"
         }
       ],
       "checks": [

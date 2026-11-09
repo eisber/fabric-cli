@@ -68,3 +68,10 @@ automatically carrying query state between commands.
 
 The crate installs no HTTP backend, CLI, runtime, global configuration or
 identity implementation.
+
+## Domain Contributor synchronization
+
+The additive [`service`](src/service.rs) module binds one documented admin action
+to caller-resolved Domain/tenant identity, immediate approval and shared native
+execution. It performs no catalog discovery. See [the service contract](../../docs/service-domain-sync.md)
+for grouped syntax, permissions, receipt semantics and explicit unsupported scope.

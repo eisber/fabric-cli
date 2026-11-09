@@ -46,3 +46,13 @@ and do not replay requests.
 No credential, runtime, browser, terminal or global configuration discovery is
 performed by this library. Resource-specific support checks and missing
 capabilities fail explicitly.
+
+## Grouped v2 service adapter
+
+The additive `service` module exposes `service domain sync PATH --role Contributor`
+through `service_command()`, `parse_args`, caller-owned `DomainResolver`, neutral
+operation preparation and immediate `ApprovalPolicy`. `execute` uses the SDK's
+single native POST; `write_report` retains its receipt on output failure.
+It does not mount this action in the existing v1 front door or install a production
+resolver, credential provider or default approval.
+See [the service contract](../../../../docs/service-domain-sync.md).

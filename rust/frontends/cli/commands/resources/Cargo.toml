@@ -28,6 +28,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true
+fabric-sdk-operations.workspace = true
 tokio.workspace = true
 
 [lints]
