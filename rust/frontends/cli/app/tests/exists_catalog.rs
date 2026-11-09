@@ -126,6 +126,7 @@ async fn catalog_sdk_and_root_share_boolean_null_evidence_bytes_and_exit_contrac
             assert_eq!(data["evidence"]["scope"], "selectedCatalogTarget");
             assert_eq!(data["evidence"]["responses"][2]["httpStatus"], status);
             assert_eq!(fixture.executor.requests.lock().unwrap().len(), 2);
+            assert_eq!(fixture.metadata.credential.0.load(Ordering::SeqCst), 1);
             assert_eq!(fixture.storage.0.load(Ordering::SeqCst), 2);
         }
     }
