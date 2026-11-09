@@ -1815,6 +1815,7 @@ dependencies = [
  "azure_core",
  "fabric-core",
  "fabric-sdk-operations",
+ "fabric-sdk-sql-definition",
  "fabric-sdk-workspaces",
  "serde",
  "serde_json",

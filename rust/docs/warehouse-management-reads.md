@@ -15,6 +15,11 @@ not a configured host, permission grant or live capability. Common and
 artifact-facade hosts can consume the same descriptors without duplicating
 handlers; standalone native host registration remains separate work.
 
+The separate [native definition retrieval](warehouse-definitions.md) slice adds
+`WarehouseRequests::get_definition` and the facade's
+`fabric_sdk::warehouse::read_definition`. Its POST/read-write/LRO contract is not
+part of this five-GET inventory and must not inherit ordinary metadata permissions.
+
 | Descriptor | Relative path under `https://api.fabric.microsoft.com/v1` | Required permission / delegated alternatives |
 |---|---|---|
 | `get` | `/workspaces/{workspaceId}/warehouses/{warehouseId}` | Read item; Warehouse or Item Read/ReadWrite |

@@ -8,6 +8,13 @@ and definition-only copy orchestration. It has no deploy, CLI, HTTP, identity,
 runtime, filesystem or process dependency. There is no operation request wrapper,
 approval policy, LRO engine, local writer or implicit credential selection here.
 
+The additive `warehouse` module reuses multipart/Base64/path/primary admission
+with Warehouse's **sqlproj** default. Its immutable `WarehouseDefinition`
+retains the complete original response, native media (missing/null/exact string)
+and unknown fields instead of applying SQLDatabase's strict unknown-field
+profile. Existing SQLDatabase entry points/defaults/validation remain unchanged.
+See [native Warehouse retrieval](../../../docs/warehouse-definitions.md).
+
 ## Local structural validation
 
 `validation::register` adds the DACPAC validation operation and exact
