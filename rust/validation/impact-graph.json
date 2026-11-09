@@ -538,6 +538,10 @@
         {
           "package": "fabric-sdk",
           "target": "test:search_public_surface"
+        },
+        {
+          "package": "fabric-sdk",
+          "target": "test:variable_libraries"
         }
       ],
       "checks": [

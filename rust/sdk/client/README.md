@@ -25,6 +25,7 @@ selected endpoint with the appropriate audience.
 | `items` | Item listing, generic lookup and finite collection-specific metadata |
 | `metadata` | Explicit primary workspace or generic item metadata, without enrichment |
 | `representations` | Native multipart definition/part and OneLake file reads |
+| `variable_libraries` | Metadata-first VariableLibrary reads and explicitly disclosed native source/value-set shapes |
 | `observe` | Bounded observation of existing operation and item-job handles |
 | `documents` | Injected served-docs provider and bounded, coverage-aware graph |
 | `folders` | Folder listing and lookup with explicit query options |
@@ -62,6 +63,52 @@ caller's shared executor; they do not connect to SQL, retrieve definitions
 implicitly, or register a CLI command. Definition validation preserves native
 parts and bytes without granting filesystem or deployment authority. These
 modules do not implement database mutations, TDS queries, or a full backup.
+
+### Variable Library reads
+
+`variable_libraries::read_metadata` is the metadata-only entry: one generic item
+GET, strict selected workspace/item UUID and `VariableLibrary` response checks,
+and no source or reference enrichment. An absent active-set property stays absent;
+the SDK does not invent a default name or infer effective consumer values.
+
+`read_source` requires `SourceDisclosure::ExplicitlyRequested`. Even value-set
+shape inspection retrieves the whole native definition, including default and
+inactive values. It reuses `representations::read_definition` with the exact
+`VariableLibraryV1` format, generic item `getDefinition` route and caller-owned
+HTTP/credential/cancellation policies. HTTP 202 returns an accepted handle, not
+an empty definition, and no new poller or metadata fallback runs. Complete
+operation-result bytes use `SourceRead::from_completed_result` under the same
+explicit disclosure and byte/part bounds.
+
+The completed source keeps original parsed multipart data, part order and
+encoded payload bytes behind `native_definition()`. `shape()` exposes variable
+names/types/default presence, alternate-set names/override counts and explicit
+display ordering, without values, notes or descriptions. Shapes are source
+structure, not a resolved runtime snapshot. Omitted versus explicitly empty
+ordering/override lists remain distinct. Incidental Debug/errors redact
+source, service diagnostics, IDs and names. Raw source has no implicit Serialize
+implementation; hosts must explicitly select and protect any source output.
+
+Required `variables.json` and `settings.json`, optional `.platform`, and exact
+`valueSets/<name>.json` parts are checked before returning shapes. Malformed,
+duplicate, unsupported or over-budget data fails rather than becoming zero
+overrides. Unknown native type tokens and extra JSON fields remain source data;
+missing defaults are reported as absent, not repaired. This is structural read
+validation, not complete authoring/type/schema validation. The documented
+255/256 naming and default-value requiredness discrepancies are not claims of
+service acceptance. No schema URLs or item/connection references are followed.
+
+The [native definition contract](https://learn.microsoft.com/en-us/rest/api/fabric/articles/item-management/definitions/variable-library-definition)
+and [generic definition API](https://learn.microsoft.com/en-us/rest/api/fabric/core/items/get-item-definition)
+are the source binding. [VariableLibrary metadata](https://learn.microsoft.com/en-us/rest/api/fabric/variablelibrary/items/get-variable-library)
+requires item Read, while [source retrieval](https://learn.microsoft.com/en-us/rest/api/fabric/variablelibrary/items/get-variable-library-definition)
+requires Read and Write (`VariableLibrary.ReadWrite.All` or `Item.ReadWrite.All`)
+and appropriate encrypted-label usage rights. The generic item route follows its
+own documented delegated Item scopes; the SDK does not grant or request consent.
+The [CI/CD contract](https://learn.microsoft.com/en-us/fabric/cicd/variable-library/variable-library-cicd)
+keeps active selection outside source. These reads do not activate, publish,
+fetch live consumer values, manage secrets, list all workspace libraries, or
+register an executable CLI/MCP command. Existing v1 behavior/defaults are unchanged.
 
 ## Execution and safety
 

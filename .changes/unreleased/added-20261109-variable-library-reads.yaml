@@ -1,0 +1,6 @@
+kind: added
+body: Add experimental Rust SDK metadata-only Variable Library reads and explicitly disclosed native source and value-set shapes, without activation or live value resolution.
+time: 2026-11-09T08:38:00+01:00
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot
