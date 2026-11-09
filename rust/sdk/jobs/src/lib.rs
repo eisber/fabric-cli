@@ -10,6 +10,7 @@
 pub mod cancellation;
 mod command;
 mod headers;
+pub mod livy;
 pub mod notebook;
 mod numeric;
 mod operations;
