@@ -573,6 +573,10 @@
         {
           "package": "fabric-sdk",
           "target": "test:representations"
+        },
+        {
+          "package": "fabric-sdk",
+          "target": "test:variable_libraries"
         }
       ],
       "checks": [
