@@ -569,6 +569,38 @@
       ]
     },
     {
+      "id": "sdk-graph-refresh",
+      "package": "fabric-sdk-graph",
+      "inputs": [
+        "rust/sdk/graph/src/**",
+        "rust/sdk/graph/tests/graph_refresh.rs",
+        "rust/sdk/jobs/src/graph_refresh.rs",
+        "rust/docs/graph-refresh-v2.md"
+      ],
+      "depends_on": ["sdk", "sdk-jobs"],
+      "tests": [
+        {"package": "fabric-sdk-graph", "target": "test:graph_refresh"},
+        {"package": "fabric-sdk", "target": "test:observe"}
+      ],
+      "checks": ["sdk-graph"]
+    },
+    {
+      "id": "cli-graph-refresh",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/frontends/cli/app/src/refresh_command.rs",
+        "rust/frontends/cli/app/src/v2_refresh_main.rs",
+        "rust/frontends/cli/app/src/v2_refresh_main_tests.rs",
+        "rust/frontends/cli/app/tests/graph_refresh_v2.rs"
+      ],
+      "depends_on": ["sdk-graph-refresh", "jobs"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:graph_refresh_v2"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "http",
       "package": "fabric-sdk-http",
       "inputs": [
@@ -2810,6 +2842,20 @@
     }
   ],
   "profiles": [
+    {
+      "id": "v2-graph-refresh",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-refresh"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-graph-refresh-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-refresh", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
     {
       "id": "notebook-websocket",
       "packages": [

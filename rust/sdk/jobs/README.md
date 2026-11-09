@@ -6,6 +6,12 @@
 schedules. Definition publication and Fabric operation reconciliation are
 separate APIs.
 
+The additive `graph_refresh` module implements the documented GraphModel-specific
+refresh POST with no body, synchronous 200 versus scoped 202 acceptance, and
+dispatch-bound uncertainty. It does not alter legacy job routes or wait policy.
+The [graph refresh preview](../../docs/graph-refresh-v2.md) uses the existing
+neutral SDK observer instead of graph metadata or query polling.
+
 Inject a credential, explicit selection and `Arc<dyn JobExecutor>`.
 `with_context` retains a caller-selected endpoint across pages, run handles,
 status polls and operation results. Construction creates no HTTP client,

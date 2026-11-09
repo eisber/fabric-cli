@@ -1144,6 +1144,7 @@ dependencies = [
  "fabric-sdk-catalog",
  "fabric-sdk-dataflow",
  "fabric-sdk-discovery",
+ "fabric-sdk-graph",
  "fabric-sdk-http",
  "fabric-sdk-jobs",
  "fabric-sdk-onelake",
@@ -1612,6 +1613,20 @@ dependencies = [
  "fabric-sdk-items",
  "fabric-sdk-workspaces",
  "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fabric-sdk-graph"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "azure_core",
+ "fabric-sdk",
+ "fabric-sdk-jobs",
+ "fabric-sdk-operations",
+ "fabric-sdk-workspaces",
  "serde_json",
  "tokio",
 ]

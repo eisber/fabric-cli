@@ -26,6 +26,7 @@ unchanged names and logical layers:
 | `sdk/deployment/` | Reusable configuration, transforms, planning, publication and definition operations |
 | `sdk/http/executor/`, `sdk/http/transport/` | Shared HTTP execution and optional native transport |
 | `sdk/pagination/`, `sdk/operations/` | Shared paging, request completion and polling |
+| `sdk/graph/` | Graph-only refresh composition over existing job submission and neutral SDK observation |
 | `sdk/request-context/`, `sdk/json/` | Shared endpoint/credential contracts and ordered JSON encoding |
 | `sdk/contracts/` | Shared v2 descriptors and capability contracts, retaining the core layer |
 | `sdk/semantic-model/client/`, `sdk/semantic-model/dotnet/` | Runtime-neutral analysis and optional isolated TOM native boundary |
