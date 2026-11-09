@@ -6,10 +6,12 @@
 //! Existing metadata clients/pagers and caller-owned HTTP are reused. Inaccessible
 //! inventories, malformed responses and failures never become successful absence.
 
+mod catalog;
 mod evidence;
 mod probe;
 mod request;
 
+pub use catalog::{CatalogBackend, CatalogExistsHost};
 pub use request::{
     EXISTS_OPERATION_ID, ExistsRequest, ExistsTarget, MetadataSelector, exists_descriptor,
     prepare_exists,
@@ -70,7 +72,7 @@ impl<F: Future<Output = ExistsInterruption>> Future for Control<F> {
 pub enum ExistsObservation {
     /// Valid exact metadata response established presence.
     Present,
-    /// Exact item Get reported its documented ItemNotFound.
+    /// Exact item Get reported ItemNotFound, or an advertised catalog HEAD returned 404.
     Absent,
     /// Provider returned access denied; this does not prove presence.
     Denied,
@@ -228,7 +230,11 @@ impl Serialize for ExistsReport {
                 },
                 effect: "remoteRead",
                 coverage: self.native.coverage().complete(),
-                scope: "selectedMetadataTarget",
+                scope: if self.request.target().is_catalog() {
+                    "selectedCatalogTarget"
+                } else {
+                    "selectedMetadataTarget"
+                },
                 attempts: self.attempts,
                 responses: self
                     .native
@@ -310,7 +316,15 @@ pub struct ExistsHost<'a> {
     pub workspaces: &'a dyn WorkspaceExecutor,
 }
 
-impl ExistsHost<'_> {
+impl<'a> ExistsHost<'a> {
+    /// Inject an explicit Storage catalog backend without changing metadata reads.
+    pub fn with_catalog(self, catalog: &'a CatalogBackend) -> CatalogExistsHost<'a> {
+        CatalogExistsHost {
+            metadata: self,
+            catalog,
+        }
+    }
+
     /// Execute exactly the immutable approved metadata request.
     ///
     /// Service/discovery errors return null with retained native evidence. Only
@@ -339,8 +353,20 @@ impl ExistsHost<'_> {
         &self,
         approved: &ApprovedOperation<'_>,
         request: &ExistsRequest,
+        limits: ExistsLimits,
+        interrupted: impl Future<Output = ExistsInterruption> + Send,
+    ) -> Result<ExistsReport, ExistsError> {
+        self.execute_inner(approved, request, limits, interrupted, None)
+            .await
+    }
+
+    async fn execute_inner(
+        &self,
+        approved: &ApprovedOperation<'_>,
+        request: &ExistsRequest,
         mut limits: ExistsLimits,
         interrupted: impl Future<Output = ExistsInterruption> + Send,
+        catalog: Option<&CatalogBackend>,
     ) -> Result<ExistsReport, ExistsError> {
         let expected = prepare_exists(request)?;
         let prepared = approved.prepared();
@@ -356,6 +382,8 @@ impl ExistsHost<'_> {
             || prepared.effects() != expected.effects()
             || prepared.availability() != expected.availability()
             || !prepared.preconditions().is_empty()
+            || request.target().is_catalog()
+                && catalog.is_some_and(|backend| !backend.matches(self))
         {
             return Err(ExistsError::ContextMismatch);
         }
@@ -368,8 +396,31 @@ impl ExistsHost<'_> {
             future: Box::pin(interrupted),
             interruption: None,
         });
-        let result =
-            probe::probe(self.client, &evidence, request, limits, cancelled.as_mut()).await;
+        let result = if request.target().is_catalog() {
+            if let Some(catalog) = catalog {
+                let parent = catalog::parent_request(request)?;
+                match probe::probe(self.client, &evidence, &parent, limits, cancelled.as_mut())
+                    .await
+                {
+                    Ok(parent) if parent.state == ExistsObservation::Present => {
+                        catalog
+                            .probe(
+                                &evidence,
+                                request.target(),
+                                parent,
+                                response,
+                                cancelled.as_mut(),
+                            )
+                            .await
+                    }
+                    result => result,
+                }
+            } else {
+                Ok(catalog::unavailable())
+            }
+        } else {
+            probe::probe(self.client, &evidence, request, limits, cancelled.as_mut()).await
+        };
         let interrupted = poll_fn(|cx| Poll::Ready(cancelled.as_mut().poll(cx).is_ready())).await;
         let (native, attempts, retention_failure) = evidence.finish()?;
         let result = if interrupted {
@@ -395,6 +446,10 @@ impl ExistsHost<'_> {
                 .enumerate()
                 .any(|(index, response)| {
                     response.status() != 200
+                        && !(request.target().is_catalog()
+                            && report.observation == ExistsObservation::Present
+                            && index + 1 == report.native.responses().len()
+                            && response.status() == 204)
                         && !(report.observation == ExistsObservation::Absent
                             && index + 1 == report.native.responses().len()
                             && response.status() == 404)

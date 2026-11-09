@@ -12,8 +12,11 @@ fab-cli-v2 exists /workspaces/<workspace-uuid>/items/<item-uuid>
 fab-cli-v2 exists /workspaces/<workspace-uuid>
 ```
 
-This slice observes workspace and generic item **metadata only**. Physical
-OneLake files/directories, catalog namespaces/tables, Fabric folders, definition
+This slice observes workspace and generic item **metadata**. The additive
+[OneLake catalog slice](exists-catalog-v2.md) supports ID-bound Lakehouse
+namespace/table selectors through a separately injected Storage backend; its
+catalog observations are not physical-path checks. Physical
+OneLake files/directories, Fabric folders, definition
 parts, `docs/` representations, jobs and hidden/admin resources are deferred.
 Generic item request support is not proof that every provider type supports
 that endpoint. An unsupported provider response is an error, never absence.

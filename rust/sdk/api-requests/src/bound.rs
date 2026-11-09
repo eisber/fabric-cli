@@ -114,6 +114,23 @@ fn quote_plus(value: &str) -> String {
 }
 
 impl Request {
+    /// Constructs a bodyless HEAD using the same finite route validation as GET.
+    ///
+    /// This additive SDK surface does not change the raw command's method grammar.
+    pub fn head(origin: Origin, endpoint: &str) -> Result<Self, ApiError> {
+        let mut request = Self::raw(RawRequestOptions {
+            origin,
+            method: Method::Get,
+            endpoint: endpoint.into(),
+            query: Vec::new(),
+            headers: Vec::new(),
+            body: Vec::new(),
+            bounds: RequestBounds::default(),
+        })?;
+        request.method = Method::Head;
+        Ok(request)
+    }
+
     /// Binds an already typed relative request to the caller's explicit endpoint.
     ///
     /// The service identity, audience, route and opaque query are unchanged.
@@ -391,6 +408,40 @@ mod tests {
             assert_eq!(request.origin(), origin);
         }
         assert_eq!(Origin::PowerBi.audience(), Audience::Fabric);
+    }
+
+    #[test]
+    fn bodyless_sdk_head_reuses_route_bounds_without_expanding_raw_method_grammar() {
+        let endpoint = fabric_core::EndpointBinding::with_host(
+            fabric_core::ServiceOrigin::OneLake,
+            "onelake.table.fabric.microsoft.com",
+        )
+        .unwrap();
+        let request = Request::head(Origin::OneLake, "iceberg/v1/prefix/namespaces/dbo")
+            .unwrap()
+            .with_endpoint(&endpoint)
+            .unwrap();
+        assert_eq!(request.method(), Method::Head);
+        assert_eq!(request.origin().audience(), Audience::OneLake);
+        assert_eq!(
+            request.url().as_str(),
+            "https://onelake.table.fabric.microsoft.com/iceberg/v1/prefix/namespaces/dbo"
+        );
+        assert!(request.body().is_empty());
+        assert!(request.headers().is_empty());
+        for path in [
+            "https://evil.invalid/",
+            "//evil.invalid/",
+            "../x",
+            "%2e%2e/x",
+            "a\\b",
+            "a#frag",
+        ] {
+            assert!(Request::head(Origin::OneLake, path).is_err());
+        }
+        let mut raw = options(Origin::OneLake);
+        raw.method = Method::Head;
+        assert_eq!(Request::raw(raw).unwrap_err(), ApiError::InvalidInput);
     }
 
     #[test]

@@ -38,7 +38,7 @@ pub enum ExistsArgumentError {
     Syntax(ErrorKind),
     /// No metadata target binding exists for this spelling.
     #[error(
-        "Exists requires an absolute Workspace/root-item metadata target; physical paths are deferred"
+        "Exists requires an absolute metadata target or ID-bound Lakehouse catalog selector; physical paths are deferred"
     )]
     Target,
 }
@@ -49,7 +49,7 @@ pub fn exists_command() -> Command {
         .infer_long_args(false)
         .args_override_self(false)
         .about("Observe scoped metadata existence; unknown/denied never become false")
-        .after_help("Workspace/root-item metadata only. Names use the current case-insensitive scoped resolution policy; incomplete or visibility-limited misses remain unknown. JSON true/false results exit 0; null observations exit 1. No physical OneLake probes, mutations, atomic preconditions, persistent existence cache or implicit sign-in.")
+        .after_help("Workspace/root-item metadata and ID-bound Lakehouse catalog only. Catalog: /workspaces/<uuid>/items/<uuid>/catalog/namespaces/<schema>[/tables/<table>]. Metadata names use the current case-insensitive scoped resolution policy; catalog names retain exact spelling. Incomplete or visibility-limited misses remain unknown. JSON true/false results exit 0; null observations exit 1. No physical OneLake probes, mutations, atomic preconditions, persistent existence cache or implicit sign-in.")
         .arg(Arg::new("path").required(true).num_args(1))
         .arg(Arg::new("max-bytes").long("max-bytes").num_args(1)
             .value_parser(clap::value_parser!(NonZeroUsize)))
@@ -84,21 +84,60 @@ pub fn parse_exists(
     if path.len() > fabric_sdk::discovery::MAX_TARGET_BYTES {
         return Err(ExistsArgumentError::Target);
     }
-    let target = match GetTarget::parse(path).map_err(|_| ExistsArgumentError::Target)? {
-        GetTarget::Workspace { workspace } => ExistsTarget::Workspace {
-            workspace: selector(&workspace)?,
-        },
-        GetTarget::Item {
+    let segments: Vec<_> = path.split('/').collect();
+    let catalog = match segments.as_slice() {
+        [
+            "",
+            "workspaces",
             workspace,
-            item,
-            item_type,
-            representation: GetRepresentation::Metadata,
-        } => ExistsTarget::Item {
-            workspace: selector(&workspace)?,
-            item: selector(&item)?,
-            item_type,
-        },
-        _ => return Err(ExistsArgumentError::Target),
+            "items",
+            lakehouse,
+            "catalog",
+            "namespaces",
+            namespace,
+        ] if is_id(workspace) && is_id(lakehouse) => Some(ExistsTarget::CatalogNamespace {
+            workspace: MetadataSelector::id(workspace).map_err(|_| ExistsArgumentError::Target)?,
+            lakehouse: MetadataSelector::id(lakehouse).map_err(|_| ExistsArgumentError::Target)?,
+            namespace: (*namespace).into(),
+        }),
+        [
+            "",
+            "workspaces",
+            workspace,
+            "items",
+            lakehouse,
+            "catalog",
+            "namespaces",
+            namespace,
+            "tables",
+            table,
+        ] if is_id(workspace) && is_id(lakehouse) => Some(ExistsTarget::CatalogTable {
+            workspace: MetadataSelector::id(workspace).map_err(|_| ExistsArgumentError::Target)?,
+            lakehouse: MetadataSelector::id(lakehouse).map_err(|_| ExistsArgumentError::Target)?,
+            namespace: (*namespace).into(),
+            table: (*table).into(),
+        }),
+        _ => None,
+    };
+    let target = if let Some(target) = catalog {
+        target
+    } else {
+        match GetTarget::parse(path).map_err(|_| ExistsArgumentError::Target)? {
+            GetTarget::Workspace { workspace } => ExistsTarget::Workspace {
+                workspace: selector(&workspace)?,
+            },
+            GetTarget::Item {
+                workspace,
+                item,
+                item_type,
+                representation: GetRepresentation::Metadata,
+            } => ExistsTarget::Item {
+                workspace: selector(&workspace)?,
+                item: selector(&item)?,
+                item_type,
+            },
+            _ => return Err(ExistsArgumentError::Target),
+        }
     };
     // Validate type/selector invariants now, before an identity host is selected.
     ExistsRequest::new("00000000-0000-0000-0000-000000000000", target.clone())
