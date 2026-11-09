@@ -138,28 +138,8 @@ impl<T> SqlRequest<T> {
     /// Rejects acceptance, undocumented statuses, malformed known fields and
     /// identities different from the selected workspace/item.
     pub fn decode(&self, outcome: ResourceOutcome) -> Result<T, SqlManagementError> {
-        let (status, data) = match outcome {
-            ResourceOutcome::Accepted { operation_id } => {
-                return Err(SqlManagementError::Response(SqlResponseError {
-                    kind: SqlResponseErrorKind::UnexpectedAcceptance,
-                    http_status: 202,
-                    operation_id,
-                }));
-            }
-            ResourceOutcome::Completed { status, data } => (status, data),
-        };
-        let reject = |kind| {
-            SqlManagementError::Response(SqlResponseError {
-                kind,
-                http_status: status,
-                operation_id: None,
-            })
-        };
-        if status != 200 {
-            return Err(reject(SqlResponseErrorKind::UnexpectedStatus));
-        }
-        let data = data.ok_or_else(|| reject(SqlResponseErrorKind::MissingBody))?;
-        (self.decoder)(data, &self.expected).map_err(reject)
+        decode_metadata_response(outcome, |data| (self.decoder)(data, &self.expected))
+            .map_err(SqlManagementError::Response)
     }
 
     /// Delegates exactly once to the caller's existing shared operation policy.
@@ -177,6 +157,32 @@ impl<T> SqlRequest<T> {
             .map_err(SqlManagementError::Operation)?;
         self.decode(outcome)
     }
+}
+
+pub(crate) fn decode_metadata_response<T>(
+    outcome: ResourceOutcome,
+    decode: impl FnOnce(Value) -> Result<T, SqlResponseErrorKind>,
+) -> Result<T, SqlResponseError> {
+    let (status, data) = match outcome {
+        ResourceOutcome::Accepted { operation_id } => {
+            return Err(SqlResponseError {
+                kind: SqlResponseErrorKind::UnexpectedAcceptance,
+                http_status: 202,
+                operation_id,
+            });
+        }
+        ResourceOutcome::Completed { status, data } => (status, data),
+    };
+    let reject = |kind| SqlResponseError {
+        kind,
+        http_status: status,
+        operation_id: None,
+    };
+    if status != 200 {
+        return Err(reject(SqlResponseErrorKind::UnexpectedStatus));
+    }
+    let data = data.ok_or_else(|| reject(SqlResponseErrorKind::MissingBody))?;
+    decode(data).map_err(reject)
 }
 
 /// Native metadata descriptors; no mutation or unsupported endpoint stubs.

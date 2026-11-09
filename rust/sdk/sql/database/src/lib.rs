@@ -12,6 +12,9 @@ mod ids;
 mod models;
 mod requests;
 
+/// Warehouse-owned management metadata, connections and restore-point reads.
+pub mod warehouse;
+
 pub use errors::{SqlInputError, SqlManagementError, SqlResponseError, SqlResponseErrorKind};
 pub use ids::{FolderId, Guid, SqlDatabaseId, SqlDatabaseTarget, WorkspaceId};
 pub use models::{
