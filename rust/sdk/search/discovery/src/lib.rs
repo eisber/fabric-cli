@@ -11,6 +11,7 @@
 #![cfg_attr(test, deny(unnameable_test_items))]
 
 mod constraints;
+pub mod help;
 mod registry;
 mod target;
 
