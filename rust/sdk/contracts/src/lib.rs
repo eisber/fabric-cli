@@ -38,6 +38,8 @@ pub enum TargetKind {
 pub enum Verb {
     /// Create a new resource, never an implicit replacement.
     Create,
+    /// Observe scoped existence without establishing mutation preconditions.
+    Exists,
     /// Remove one explicitly addressed supported resource.
     Delete,
     /// Retrieve the selected metadata or representation.
