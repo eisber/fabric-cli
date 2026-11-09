@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 APPROVED_BASE_SHA = "a9df45501ec53d921c6fc765c726c32979b85931"
-ACCEPTED_UPSTREAM_SHA = "19cf15ae3e5fdcd7b4f90d47cc21e1c2ead4980a"
+ACCEPTED_UPSTREAM_SHA = "93876fec32f2aef068441c8e76259bfc9d9a9d88"
 REMOTE = "rust-upstream"
 UPSTREAM_URL = "https://github.com/eisber/fabric-cli.git"
 UPSTREAM_BRANCH = "refs/heads/feature/rust"

@@ -76,12 +76,14 @@ default exclusions, lockfiles, independent oracle and v2 behavior remain intact.
 the optional semantic-model boundary moves to
 `engine/data-plane/semantic-model/dotnet/`, outside default members.
 
-This is an isolated synchronization candidate, not an accepted-upstream ledger
-advance, common-branch release or platform acceptance. The tracking helper
-therefore retains `19cf15ae3e5fdcd7b4f90d47cc21e1c2ead4980a` as the previously
-accepted source until coordinator review and exact-head validation complete.
-No later follow-up source is part of this adoption. Independent review and the
-complete current native/stable/optional gates still precede baseline release.
+The source merge is `1f2db3a28b3eee3e9af2eecb203e367b25ed971a` (tree
+`ba9e64416948cd2bbdf802e1f3d4d3efcf5d7995`). Its separate release-ledger update
+records `93876fec32f2aef068441c8e76259bfc9d9a9d88` in the tracking helper;
+the original bootstrap pin remains unchanged. Preparing either commit does not
+release a baseline. The coordinator must verify the combined native/stable/
+optional gates and independent reviews before publishing the ledger to the
+common branch, retaining exact evidence for the source merge and any subsequent
+tooling-only delta. No later feature follow-up is part of this adoption.
 
 Round-two lanes start only from the coordinator's published checkpoint and
 locate packages by Cargo manifest identity, not historical capability paths.
