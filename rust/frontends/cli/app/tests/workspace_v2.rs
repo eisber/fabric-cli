@@ -334,10 +334,12 @@ fn warehouse_actual_head_preflight_rejects_wrong_facade_facets_and_missing_limit
         let failed: Value = serde_json::from_slice(&output.stderr).unwrap();
         assert_eq!(
             failed["error"]["code"],
-            if cfg!(feature = "native-host") {
+            if !cfg!(feature = "native-host") {
+                "NotConfigured"
+            } else if cfg!(any(windows, feature = "headless")) {
                 "InvalidInput"
             } else {
-                "NotConfigured"
+                "UnsupportedCapability"
             }
         );
         assert_ne!(failed["status"], "succeeded");

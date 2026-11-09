@@ -89,6 +89,20 @@ remain unchanged. No binary, global flag or v1 behavior is added. Select the
 existing `workspace-read-v2` feature, plus an existing native host feature for
 service execution. Without an injected/configured host, reads fail explicitly.
 
+The executable preflight contract distinguishes a compiled host from an available
+native credential adapter. With an explicitly invalid provider selection, the
+offline Warehouse GET and LIST fixtures expect these exact outcomes:
+
+| Build/platform scope | Error code | Exit code |
+|---|---|---|
+| No `native-host` feature | `NotConfigured` | 1 |
+| `native-host` on Windows, or with `headless` | `InvalidInput` | 2 |
+| `native-host` off Windows without `headless` | `UnsupportedCapability` | 2 |
+
+The unsupported adapter fails before provider selection; it does not attempt
+authentication. Every case retains an empty stdout, failed status and Warehouse
+target evidence. Windows fixture results do not establish the off-Windows branch.
+
 The following Warehouse-only mapping was selected for this implementation.
 It is not a universal facet grammar for other item types. Here `W` and `I` mean
 concrete native UUIDs, not names or literal placeholder strings.
