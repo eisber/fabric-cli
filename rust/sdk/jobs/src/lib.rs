@@ -14,6 +14,7 @@ pub mod notebook;
 mod numeric;
 mod operations;
 pub mod run;
+pub mod udf;
 use azure_core::{
     credentials::AccessToken,
     http::{Method, Url},
