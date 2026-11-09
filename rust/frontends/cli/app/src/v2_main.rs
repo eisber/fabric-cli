@@ -139,12 +139,19 @@ fn run() -> Result<(), Failure> {
         return Ok(());
     }
     if args.as_slice() == [std::ffi::OsStr::new("--help")] {
-        writeln!(io::stdout().lock(), "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n\nRun a command with --help for its supported schema.\nRequires explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.")
+        writeln!(io::stdout().lock(), "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 update <path> --input FILE|- --mode patch --plan\n\nRun a command with --help for its supported schema.\nUpdate plans are local; mutation execution requires a caller-injected approval host.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         return Ok(());
     }
     if args.first().and_then(|value| value.to_str()) == Some("search") {
         return v2_search_main::run(args);
+    }
+    if args
+        .first()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| value == "update" || value == "artifact")
+    {
+        return run_update(args);
     }
     let command = match parse_get(args) {
         Ok(command) => command,
@@ -159,6 +166,7 @@ fn run() -> Result<(), Failure> {
                 .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
             return Ok(());
         }
+
         Err(error) => return Err(failed("InvalidArguments", error.to_string(), 2)),
     };
     GetTarget::parse(&command.path)
@@ -392,4 +400,39 @@ fn transport_options(timeout: Duration) -> TransportOptions {
         },
         proxy: ProxyPolicy::None,
     }
+}
+
+fn run_update(args: Vec<std::ffi::OsString>) -> Result<(), Failure> {
+    use fabric_cli::update::{self, ArgumentError, PreparedUpdateCommand};
+    let command =
+        match update::parse(std::iter::once(std::ffi::OsString::from("fab-cli-v2")).chain(args)) {
+            Ok(command) => command,
+            Err(ArgumentError::Syntax(clap::error::ErrorKind::DisplayHelp)) => {
+                update::command()
+                    .write_long_help(&mut io::stdout().lock())
+                    .map_err(|_| failed("OutputFailed", "Update help output failed.", 1))?;
+                return Ok(());
+            }
+            Err(error) => return Err(failed("InvalidArguments", error.to_string(), 2)),
+        };
+    if !command.plan {
+        return Err(failed(
+            "ApprovalHostRequired",
+            "Metadata mutation requires a caller-injected approval host; no automatic approval or credential fallback is installed.",
+            1,
+        ));
+    }
+    let cwd = std::env::current_dir().map_err(|_| {
+        failed(
+            "InvalidWorkingDirectory",
+            "Update working directory is unavailable.",
+            2,
+        )
+    })?;
+    let prepared = PreparedUpdateCommand::preflight(command, &cwd, &mut io::stdin().lock())
+        .map_err(|error| failed("UpdatePreflightFailed", error.to_string(), 1))?;
+    prepared
+        .deliver_plan(&mut io::stdout().lock())
+        .map_err(|error| failed("OutputFailed", error.to_string(), 1))?;
+    Ok(())
 }

@@ -15,6 +15,7 @@ pub mod links;
 pub mod ml_models;
 pub mod models;
 pub mod mutations;
+pub mod update;
 
 pub use collections::ItemCollection;
 pub use fabric_core::{CredentialSelection, RequestContext, TokenCredential};
