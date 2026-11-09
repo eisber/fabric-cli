@@ -92,11 +92,20 @@ implementation; hosts must explicitly select and protect any source output.
 Required `variables.json` and `settings.json`, optional `.platform`, and exact
 `valueSets/<name>.json` parts are checked before returning shapes. Malformed,
 duplicate, unsupported or over-budget data fails rather than becoming zero
-overrides. Unknown native type tokens and extra JSON fields remain source data;
+overrides. The three recognized variables/settings/value-set JSON parts must
+declare their exact respective published `1.0.0` `$schema` URI; missing,
+non-string, mismatched and future-version markers return `UnsupportedSource`.
+No schema URI is fetched. This version guard is not a general schema engine or
+blanket unknown-field rejection. Unknown native type tokens and extra JSON fields remain source data;
 missing defaults are reported as absent, not repaired. This is structural read
-validation, not complete authoring/type/schema validation. The documented
-255/256 naming and default-value requiredness discrepancies are not claims of
-service acceptance. No schema URLs or item/connection references are followed.
+validation, not complete authoring/type/schema validation. Names follow the
+published common `1.0.0` grammar: variable names exclude spaces; value-set
+containers permit internal ASCII spaces but no leading/trailing spaces. Both
+are bounded at 255 ASCII characters, without trimming or spelling normalization.
+The conceptual prose's 256-character limit is not silently substituted for that
+schema version. Optional defaults/override lists/ordering remain optional, and
+neither structural validity nor schema-version recognition proves service
+acceptance. No schema URLs or item/connection references are followed.
 
 The [native definition contract](https://learn.microsoft.com/en-us/rest/api/fabric/articles/item-management/definitions/variable-library-definition)
 and [generic definition API](https://learn.microsoft.com/en-us/rest/api/fabric/core/items/get-item-definition)

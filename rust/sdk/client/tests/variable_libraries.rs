@@ -43,6 +43,11 @@ const ITEM: &str = "bbbbbbbb-1111-2222-3333-cccccccccccc";
 const OPERATION: &str = "cccccccc-2222-3333-4444-dddddddddddd";
 const PRIVATE: &str = "private-value-never-in-incidental-output";
 const DISCLOSURE: SourceDisclosure = SourceDisclosure::ExplicitlyRequested;
+const SCHEMAS: [&str; 3] = [
+    "https://developer.microsoft.com/json-schemas/fabric/item/variableLibrary/definition/variables/1.0.0/schema.json",
+    "https://developer.microsoft.com/json-schemas/fabric/item/variableLibrary/definition/settings/1.0.0/schema.json",
+    "https://developer.microsoft.com/json-schemas/fabric/item/variableLibrary/definition/valueSet/1.0.0/schema.json",
+];
 
 #[derive(Debug, Default)]
 struct Credential(AtomicUsize);
@@ -175,6 +180,7 @@ fn source() -> Value {
             "format": "VariableLibraryV1",
             "parts": [
                 part("variables.json", json!({
+                    "$schema": SCHEMAS[0],
                     "variables": [
                         {"name":"Text", "type":"String", "value":PRIVATE, "note":PRIVATE},
                         {"name":"Flag", "type":"Boolean", "value":true},
@@ -182,8 +188,9 @@ fn source() -> Value {
                         {"name":"Future", "type":"FutureReference", "value":{"inert": PRIVATE}}
                     ]
                 })),
-                part("settings.json", json!({"valueSetsOrder":["ExampleSet"], "future":PRIVATE})),
+                part("settings.json", json!({"$schema":SCHEMAS[1], "valueSetsOrder":["ExampleSet"], "future":PRIVATE})),
                 part("valueSets/ExampleSet.json", json!({
+                    "$schema": SCHEMAS[2],
                     "name":"ExampleSet", "description":PRIVATE,
                     "variableOverrides":[
                         {"name":"Text", "value":PRIVATE},
@@ -541,7 +548,8 @@ fn null_malformed_and_ambiguous_shape_data_is_not_a_success_shaped_empty_set() {
             json!({"name":"ExampleSet","variableOverrides":[{"name":"Text","value":1},{"name":"text","value":2}]}),
         ),
     ];
-    for (index, replacement) in edits {
+    for (index, mut replacement) in edits {
+        replacement["$schema"] = json!(SCHEMAS[index]);
         let mut native = source();
         edit_part(&mut native, index, |value| *value = replacement);
         assert!(decode(&native, limits()).is_err());
@@ -582,10 +590,14 @@ fn source_retains_absent_null_and_false_defaults_without_resolving_values() {
 #[test]
 fn empty_library_and_sparse_sets_are_native_shapes_not_synthesized_default_names() {
     let mut native = source();
-    edit_part(&mut native, 0, |value| *value = json!({"variables":[]}));
-    edit_part(&mut native, 1, |value| *value = json!({}));
+    edit_part(&mut native, 0, |value| {
+        *value = json!({"$schema":SCHEMAS[0], "variables":[]})
+    });
+    edit_part(&mut native, 1, |value| {
+        *value = json!({"$schema":SCHEMAS[1]})
+    });
     edit_part(&mut native, 2, |value| {
-        *value = json!({"name":"ExampleSet"})
+        *value = json!({"$schema":SCHEMAS[2], "name":"ExampleSet"})
     });
     let SourceRead::Completed(result) = decode(&native, limits()).unwrap() else {
         panic!()
@@ -605,17 +617,150 @@ fn empty_library_and_sparse_sets_are_native_shapes_not_synthesized_default_names
 fn omitted_and_empty_source_lists_remain_distinct() {
     let mut native = source();
     edit_part(&mut native, 1, |value| {
-        *value = json!({"valueSetsOrder":[]})
+        *value = json!({"$schema":SCHEMAS[1], "valueSetsOrder":[]})
     });
-    edit_part(&mut native, 2, |value| {
-        *value = json!({"name":"ExampleSet","variableOverrides":[]})
-    });
+    edit_part(
+        &mut native,
+        2,
+        |value| *value = json!({"$schema":SCHEMAS[2], "name":"ExampleSet","variableOverrides":[]}),
+    );
     let SourceRead::Completed(result) = decode(&native, limits()).unwrap() else {
         panic!()
     };
     assert_eq!(result.shape().value_sets_order, Some(vec![]));
     assert!(result.shape().value_sets[0].has_override_list);
     assert_eq!(result.shape().value_sets[0].override_count, 0);
+}
+
+#[tokio::test]
+async fn public_source_accepts_exact_spaced_container_name_without_rewriting() {
+    let (client, _) = client(Audience::Fabric);
+    let mut native = source();
+    native["definition"]["parts"][2]["path"] = json!("valueSets/Test environment.json");
+    edit_part(&mut native, 2, |value| {
+        value["name"] = json!("Test environment")
+    });
+    edit_part(&mut native, 1, |value| {
+        value["valueSetsOrder"] = json!(["Test environment"])
+    });
+    let executor = Executor::response(200, native.clone());
+    let result = read_source(
+        &client,
+        &executor,
+        &target(),
+        DISCLOSURE,
+        limits(),
+        pending(),
+    )
+    .await
+    .unwrap();
+    let SourceRead::Completed(result) = result else {
+        panic!("expected completion")
+    };
+    assert_eq!(result.native_definition(), &native);
+    assert_eq!(result.shape().value_sets[0].name, "Test environment");
+    assert_eq!(
+        result.shape().value_sets_order.as_deref(),
+        Some(&["Test environment".into()][..])
+    );
+    assert_eq!(executor.requests.lock().unwrap().len(), 1);
+}
+
+async fn public_source_rejects_bad_schema(index: usize) {
+    let (client, _) = client(Audience::Fabric);
+    for schema in [
+        None,
+        Some(Value::Null),
+        Some(json!(false)),
+        Some(json!(7)),
+        Some(json!("https://example.invalid/unsupported/schema.json")),
+        Some(json!(SCHEMAS[(index + 1) % SCHEMAS.len()])),
+        Some(json!(SCHEMAS[index].replace("/1.0.0/", "/2.0.0/"))),
+    ] {
+        let mut native = source();
+        edit_part(&mut native, index, |value| {
+            if let Some(schema) = schema {
+                value["$schema"] = schema;
+            } else {
+                value.as_object_mut().unwrap().remove("$schema");
+            }
+        });
+        let executor = Executor::response(200, native);
+        let error = read_source(
+            &client,
+            &executor,
+            &target(),
+            DISCLOSURE,
+            limits(),
+            pending(),
+        )
+        .await
+        .expect_err("unverified native schema must not claim a supported shape");
+        assert!(matches!(error, Error::UnsupportedSource));
+        assert_eq!(executor.requests.lock().unwrap().len(), 1);
+        assert!(!format!("{error:?} {error}").contains(PRIVATE));
+    }
+}
+
+#[tokio::test]
+async fn public_source_requires_exact_variables_schema() {
+    public_source_rejects_bad_schema(0).await;
+}
+
+#[tokio::test]
+async fn public_source_requires_exact_settings_schema() {
+    public_source_rejects_bad_schema(1).await;
+}
+
+#[tokio::test]
+async fn public_source_requires_exact_value_set_schema() {
+    public_source_rejects_bad_schema(2).await;
+}
+
+#[test]
+fn container_and_variable_names_keep_distinct_native_boundaries() {
+    for (name, supported) in [
+        ("Test environment".to_owned(), true),
+        ("Test  environment".to_owned(), true),
+        ("_".to_owned(), true),
+        ("A".repeat(255), true),
+        ("A".repeat(256), false),
+        (" leading".to_owned(), false),
+        ("trailing ".to_owned(), false),
+        ("9prefix".to_owned(), false),
+        ("Test\tenvironment".to_owned(), false),
+        ("Test/environment".to_owned(), false),
+        ("Test\\environment".to_owned(), false),
+        ("Test:environment".to_owned(), false),
+        ("".to_owned(), false),
+    ] {
+        let mut native = source();
+        native["definition"]["parts"][2]["path"] = json!(format!("valueSets/{name}.json"));
+        edit_part(&mut native, 2, |value| value["name"] = json!(name));
+        edit_part(&mut native, 1, |value| {
+            value["valueSetsOrder"] = json!([name])
+        });
+        assert_eq!(decode(&native, limits()).is_ok(), supported, "{name:?}");
+    }
+    for (name, supported) in [
+        ("Variable".to_owned(), true),
+        ("_".to_owned(), true),
+        ("V".repeat(255), true),
+        ("V".repeat(256), false),
+        ("Variable name".to_owned(), false),
+        (" leading".to_owned(), false),
+        ("trailing ".to_owned(), false),
+        ("9prefix".to_owned(), false),
+    ] {
+        let mut native = source();
+        edit_part(&mut native, 0, |value| {
+            value["variables"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"name":name, "type":"String"}));
+        });
+        assert_eq!(decode(&native, limits()).is_ok(), supported, "{name:?}");
+    }
 }
 
 #[tokio::test]

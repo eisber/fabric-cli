@@ -7,6 +7,10 @@ use serde::Serialize;
 use serde_json::Value;
 use std::{collections::BTreeSet, fmt, num::NonZeroUsize};
 
+const VARIABLES_SCHEMA: &str = "https://developer.microsoft.com/json-schemas/fabric/item/variableLibrary/definition/variables/1.0.0/schema.json";
+const SETTINGS_SCHEMA: &str = "https://developer.microsoft.com/json-schemas/fabric/item/variableLibrary/definition/settings/1.0.0/schema.json";
+const VALUE_SET_SCHEMA: &str = "https://developer.microsoft.com/json-schemas/fabric/item/variableLibrary/definition/valueSet/1.0.0/schema.json";
+
 /// Caller-owned finite bounds, distinct from service authoring limits.
 #[derive(Clone, Copy, Debug)]
 pub struct SourceLimits {
@@ -181,7 +185,7 @@ fn decode_shape(native: &DefinitionRead, limits: SourceLimits) -> Result<SourceS
             _ => Some(
                 path.strip_prefix("valueSets/")
                     .and_then(|path| path.strip_suffix(".json"))
-                    .filter(|name| valid_name(name))
+                    .filter(|name| valid_container_name(name))
                     .ok_or(Error::UnsupportedSource)?,
             ),
         };
@@ -196,6 +200,15 @@ fn decode_shape(native: &DefinitionRead, limits: SourceLimits) -> Result<SourceS
         let value: Value = serde_json::from_slice(&bytes).map_err(|_| Error::InvalidSource)?;
         if !value.is_object() {
             return Err(Error::InvalidSource);
+        }
+        let schema = match path {
+            "variables.json" => Some(VARIABLES_SCHEMA),
+            "settings.json" => Some(SETTINGS_SCHEMA),
+            ".platform" => None,
+            _ => Some(VALUE_SET_SCHEMA),
+        };
+        if schema.is_some_and(|schema| value["$schema"].as_str() != Some(schema)) {
+            return Err(Error::UnsupportedSource);
         }
         match path {
             "variables.json" => variables = Some(value),
@@ -236,7 +249,7 @@ fn decode_shape(native: &DefinitionRead, limits: SourceLimits) -> Result<SourceS
     }
     let mut set_names = BTreeSet::new();
     for (stem, value) in sets {
-        let set_name = name(&value["name"])?;
+        let set_name = container_name(&value["name"])?;
         if stem != set_name
             || !set_names.insert(set_name.to_owned())
             || value
@@ -270,7 +283,7 @@ fn decode_shape(native: &DefinitionRead, limits: SourceLimits) -> Result<SourceS
         let mut ordered = BTreeSet::new();
         let mut order_names = Vec::new();
         for value in order.as_array().ok_or(Error::InvalidSource)? {
-            let value = name(value)?;
+            let value = container_name(value)?;
             if !set_names.contains(value) || !ordered.insert(value) {
                 return Err(Error::InvalidSource);
             }
@@ -284,15 +297,29 @@ fn decode_shape(native: &DefinitionRead, limits: SourceLimits) -> Result<SourceS
 fn name(value: &Value) -> Result<&str, Error> {
     value
         .as_str()
-        .filter(|value| valid_name(value))
+        .filter(|value| valid_name(value, false))
         .ok_or(Error::InvalidSource)
 }
 
-fn valid_name(value: &str) -> bool {
+fn container_name(value: &Value) -> Result<&str, Error> {
+    value
+        .as_str()
+        .filter(|value| valid_container_name(value))
+        .ok_or(Error::InvalidSource)
+}
+
+fn valid_container_name(value: &str) -> bool {
+    valid_name(value, true)
+}
+
+fn valid_name(value: &str, allow_spaces: bool) -> bool {
     !value.is_empty()
-        && value.len() <= 256
+        && value.len() <= 255
         && (value.as_bytes()[0].is_ascii_alphabetic() || value.starts_with('_'))
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        && !value.ends_with(' ')
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(byte, b'_' | b'-')
+                || (allow_spaces && byte == b' ')
+        })
 }
