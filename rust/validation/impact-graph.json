@@ -6,9 +6,9 @@
       "id": "engine-query",
       "package": "fabric-sdk-query",
       "inputs": [
-        "rust/sdk/query/src/**",
-        "rust/sdk/query/tests/**",
-        "rust/sdk/query/README.md"
+        "rust/engine/data-plane/query/src/**",
+        "rust/engine/data-plane/query/tests/**",
+        "rust/engine/data-plane/query/README.md"
       ],
       "depends_on": ["core", "sdk"],
       "tests": [
@@ -25,7 +25,7 @@
       "id": "core",
       "package": "fabric-core",
       "inputs": [
-        "rust/sdk/request-context/src/**"
+        "rust/engine/core/contracts/src/**"
       ],
       "depends_on": [],
       "tests": [
@@ -42,7 +42,7 @@
       "id": "json",
       "package": "fabric-core-json",
       "inputs": [
-        "rust/sdk/json/src/**",
+        "rust/engine/core/json/src/**",
         "rust/tests/compatibility/output/definition-cases.json",
         "rust/tests/compatibility/output/native-cases.json",
         "rust/tests/compatibility/output/unicode-json-cases.json"
@@ -74,7 +74,7 @@
       "id": "name-search",
       "package": "fabric-name-search",
       "inputs": [
-        "rust/sdk/search/names/src/**"
+        "rust/engine/control-plane/search/names/src/**"
       ],
       "depends_on": [],
       "tests": [
@@ -95,7 +95,7 @@
       "id": "context",
       "package": "fabric-cli-context",
       "inputs": [
-        "rust/frontends/cli/paths/src/**",
+        "rust/clients/cli/state/src/**",
         "rust/tests/compatibility/context/cases.json",
         "rust/tests/compatibility/context/extended_cases.json"
       ],
@@ -136,7 +136,7 @@
       "id": "output",
       "package": "fabric-cli-output",
       "inputs": [
-        "rust/frontends/cli/output/src/**",
+        "rust/clients/cli/output/src/**",
         "rust/tests/compatibility/output/cases.json",
         "rust/tests/compatibility/output/text-cases.json"
       ],
@@ -174,7 +174,7 @@
       "id": "query",
       "package": "fabric-cli-query",
       "inputs": [
-        "rust/frontends/cli/query/src/**",
+        "rust/clients/cli/query/src/**",
         "rust/tests/compatibility/query/cases.json",
         "rust/tests/compatibility/query_arguments/cases.json",
         "rust/tests/compatibility/query_arguments/consumers.json"
@@ -201,7 +201,7 @@
       "id": "identity-policy",
       "package": "fabric-identity",
       "inputs": [
-        "rust/sdk/authentication/credentials/src/lib.rs"
+        "rust/engine/core/auth/provider/src/lib.rs"
       ],
       "depends_on": [
         "core"
@@ -231,7 +231,7 @@
       "id": "identity-broker",
       "package": "fabric-identity",
       "inputs": [
-        "rust/sdk/authentication/credentials/src/windows.rs"
+        "rust/engine/core/auth/provider/src/windows.rs"
       ],
       "depends_on": [
         "identity-policy",
@@ -256,12 +256,12 @@
       "id": "identity-headless",
       "package": "fabric-identity",
       "inputs": [
-        "rust/sdk/authentication/credentials/src/headless.rs",
-        "rust/sdk/authentication/credentials/src/headless_tests.rs",
-        "rust/sdk/authentication/credentials/src/assertion_file.rs",
-        "rust/sdk/authentication/credentials/src/pipelines.rs",
-        "rust/sdk/authentication/credentials/src/pipelines_tests.rs",
-        "rust/sdk/authentication/credentials/tests/headless/**"
+        "rust/engine/core/auth/provider/src/headless.rs",
+        "rust/engine/core/auth/provider/src/headless_tests.rs",
+        "rust/engine/core/auth/provider/src/assertion_file.rs",
+        "rust/engine/core/auth/provider/src/pipelines.rs",
+        "rust/engine/core/auth/provider/src/pipelines_tests.rs",
+        "rust/engine/core/auth/provider/tests/headless/**"
       ],
       "depends_on": [
         "identity-policy"
@@ -285,8 +285,8 @@
       "id": "identity-certificate",
       "package": "fabric-identity",
       "inputs": [
-        "rust/sdk/authentication/credentials/src/certificate.rs",
-        "rust/sdk/authentication/credentials/src/certificate_tests.rs"
+        "rust/engine/core/auth/provider/src/certificate.rs",
+        "rust/engine/core/auth/provider/src/certificate_tests.rs"
       ],
       "depends_on": [
         "identity-headless",
@@ -311,12 +311,12 @@
       "id": "windows-broker",
       "package": "fabric-identity-windows",
       "inputs": [
-        "rust/sdk/authentication/windows/src/lib.rs",
-        "rust/sdk/authentication/windows/src/native.rs",
-        "rust/sdk/authentication/windows/src/request.rs",
-        "rust/sdk/authentication/windows/src/entra.rs",
-        "rust/sdk/authentication/windows/src/entra_contract.rs",
-        "rust/sdk/authentication/windows/src/selection.rs"
+        "rust/engine/core/auth/windows/src/lib.rs",
+        "rust/engine/core/auth/windows/src/native.rs",
+        "rust/engine/core/auth/windows/src/request.rs",
+        "rust/engine/core/auth/windows/src/entra.rs",
+        "rust/engine/core/auth/windows/src/entra_contract.rs",
+        "rust/engine/core/auth/windows/src/selection.rs"
       ],
       "depends_on": [],
       "tests": [
@@ -335,10 +335,10 @@
       "id": "windows-certificate",
       "package": "fabric-identity-windows",
       "inputs": [
-        "rust/sdk/authentication/windows/src/certificate.rs",
-        "rust/sdk/authentication/windows/src/certificate_tests.rs",
-        "rust/sdk/authentication/windows/src/certificate_vectors.rs",
-        "rust/sdk/authentication/windows/src/native_certificate.rs"
+        "rust/engine/core/auth/windows/src/certificate.rs",
+        "rust/engine/core/auth/windows/src/certificate_tests.rs",
+        "rust/engine/core/auth/windows/src/certificate_vectors.rs",
+        "rust/engine/core/auth/windows/src/native_certificate.rs"
       ],
       "depends_on": [
         "windows-broker"
@@ -358,7 +358,7 @@
       "id": "sdk-workspaces",
       "package": "fabric-sdk-workspaces",
       "inputs": [
-        "rust/sdk/workspaces/src/**",
+        "rust/engine/control-plane/resources/workspaces/src/**",
         "rust/tests/compatibility/workspaces/cases.json",
         "rust/tests/compatibility/workspace_get/*.json"
       ],
@@ -392,7 +392,7 @@
       "id": "sdk-items",
       "package": "fabric-sdk-items",
       "inputs": [
-        "rust/sdk/items/src/**",
+        "rust/engine/control-plane/resources/items/src/**",
         "rust/tests/compatibility/items/*.json",
         "rust/tests/compatibility/items/*.rs"
       ],
@@ -419,7 +419,7 @@
       "id": "sdk-folders",
       "package": "fabric-sdk-folders",
       "inputs": [
-        "rust/sdk/folders/src/**",
+        "rust/engine/control-plane/resources/folders/src/**",
         "rust/tests/compatibility/folders/cases.json"
       ],
       "depends_on": [
@@ -446,7 +446,7 @@
       "id": "sdk-capacities",
       "package": "fabric-sdk-capacities",
       "inputs": [
-        "rust/sdk/capacities/src/**",
+        "rust/engine/control-plane/resources/capacities/src/**",
         "rust/tests/compatibility/capacities/cases.json"
       ],
       "depends_on": [
@@ -471,7 +471,7 @@
       "id": "operations",
       "package": "fabric-sdk-operations",
       "inputs": [
-        "rust/sdk/operations/src/**"
+        "rust/engine/core/lro/src/**"
       ],
       "depends_on": [
         "core",
@@ -503,7 +503,7 @@
       "id": "sdk",
       "package": "fabric-sdk",
       "inputs": [
-        "rust/sdk/client/src/**"
+        "rust/engine/sdk/src/**"
       ],
       "depends_on": [
         "core",
@@ -588,10 +588,10 @@
       "id": "sdk-graph-refresh",
       "package": "fabric-sdk-graph",
       "inputs": [
-        "rust/sdk/graph/src/**",
-        "rust/sdk/graph/tests/graph_refresh.rs",
-        "rust/sdk/jobs/src/graph_refresh.rs",
-        "rust/docs/graph-refresh-v2.md"
+        "rust/engine/control-plane/graph/src/**",
+        "rust/engine/control-plane/graph/tests/graph_refresh.rs",
+        "rust/engine/control-plane/jobs/src/graph_refresh.rs",
+        "rust/authoring-docs/graph-refresh-v2.md"
       ],
       "depends_on": ["sdk", "sdk-jobs"],
       "tests": [
@@ -604,10 +604,10 @@
       "id": "cli-graph-refresh",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/refresh_command.rs",
-        "rust/frontends/cli/app/src/v2_refresh_main.rs",
-        "rust/frontends/cli/app/src/v2_refresh_main_tests.rs",
-        "rust/frontends/cli/app/tests/graph_refresh_v2.rs"
+        "rust/clients/cli/app/src/refresh_command.rs",
+        "rust/clients/cli/app/src/v2_refresh_main.rs",
+        "rust/clients/cli/app/src/v2_refresh_main_tests.rs",
+        "rust/clients/cli/app/tests/graph_refresh_v2.rs"
       ],
       "depends_on": ["sdk-graph-refresh", "jobs"],
       "tests": [
@@ -620,9 +620,9 @@
       "id": "report-native-reads",
       "package": "fabric-sdk",
       "inputs": [
-        "rust/sdk/client/src/reports/**",
-        "rust/sdk/client/tests/reports.rs",
-        "rust/docs/report-native-reads.md"
+        "rust/engine/sdk/src/reports/**",
+        "rust/engine/sdk/tests/reports.rs",
+        "rust/authoring-docs/report-native-reads.md"
       ],
       "depends_on": [
         "sdk"
@@ -645,11 +645,11 @@
       "id": "report-read-cli",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/get_report.rs",
-        "rust/frontends/cli/app/src/get_backend.rs",
-        "rust/frontends/cli/app/tests/get_backend.rs",
-        "rust/docs/report-native-reads.md",
-        "rust/docs/v2-get.md"
+        "rust/clients/cli/app/src/get_report.rs",
+        "rust/clients/cli/app/src/get_backend.rs",
+        "rust/clients/cli/app/tests/get_backend.rs",
+        "rust/authoring-docs/report-native-reads.md",
+        "rust/authoring-docs/v2-get.md"
       ],
       "depends_on": [
         "report-native-reads"
@@ -672,7 +672,7 @@
       "id": "http",
       "package": "fabric-sdk-http",
       "inputs": [
-        "rust/sdk/http/executor/src/**",
+        "rust/engine/core/http/executor/src/**",
         "rust/tests/compatibility/http/retry-cases.json"
       ],
       "depends_on": [
@@ -717,7 +717,7 @@
       "id": "transport",
       "package": "fabric-sdk-transport",
       "inputs": [
-        "rust/sdk/http/transport/src/**"
+        "rust/engine/core/http/transport/src/**"
       ],
       "depends_on": [
         "core",
@@ -750,7 +750,7 @@
       "id": "paging",
       "package": "fabric-sdk-paging",
       "inputs": [
-        "rust/sdk/pagination/src/**"
+        "rust/engine/core/pagination/src/**"
       ],
       "depends_on": [
         "sdk-workspaces"
@@ -773,7 +773,7 @@
       "id": "sdk-api",
       "package": "fabric-sdk-api",
       "inputs": [
-        "rust/sdk/api-requests/src/**",
+        "rust/engine/core/http/requests/src/**",
         "rust/tests/compatibility/raw_api/cases.json"
       ],
       "depends_on": [
@@ -805,7 +805,7 @@
       "id": "sdk-access",
       "package": "fabric-sdk-access",
       "inputs": [
-        "rust/sdk/access/src/**",
+        "rust/engine/control-plane/acl/src/**",
         "rust/tests/compatibility/access/*.json"
       ],
       "depends_on": [
@@ -825,8 +825,8 @@
       "id": "sdk-catalog",
       "package": "fabric-sdk-catalog",
       "inputs": [
-        "rust/sdk/catalog/src/**",
-        "rust/sdk/catalog/tests/service_sync.rs",
+        "rust/engine/control-plane/catalog/src/**",
+        "rust/engine/control-plane/catalog/tests/service_sync.rs",
         "rust/tests/compatibility/catalog/*.json"
       ],
       "depends_on": [
@@ -856,8 +856,8 @@
       "id": "sdk-relevance",
       "package": "fabric-sdk-relevance",
       "inputs": [
-        "rust/sdk/search/relevance/src/**",
-        "rust/sdk/search/relevance/tests/**"
+        "rust/engine/control-plane/search/relevance/src/**",
+        "rust/engine/control-plane/search/relevance/tests/**"
       ],
       "depends_on": [
         "core",
@@ -886,8 +886,8 @@
       "id": "sdk-search",
       "package": "fabric-sdk-search",
       "inputs": [
-        "rust/sdk/search/client/src/**",
-        "rust/sdk/search/client/tests/**"
+        "rust/engine/control-plane/search/client/src/**",
+        "rust/engine/control-plane/search/client/tests/**"
       ],
       "depends_on": [
         "sdk-api",
@@ -920,8 +920,8 @@
       "id": "resources",
       "package": "fabric-cli-resources",
       "inputs": [
-        "rust/frontends/cli/commands/resources/src/**",
-        "rust/frontends/cli/commands/resources/tests/service_sync.rs"
+        "rust/clients/cli/commands/resources/src/**",
+        "rust/clients/cli/commands/resources/tests/service_sync.rs"
       ],
       "depends_on": [
         "context",
@@ -954,7 +954,7 @@
       "id": "onelake",
       "package": "fabric-sdk-onelake",
       "inputs": [
-        "rust/sdk/storage/onelake/src/**"
+        "rust/engine/data-plane/onelake/client/src/**"
       ],
       "depends_on": [
         "core",
@@ -978,7 +978,7 @@
       "id": "onelake-http",
       "package": "fabric-sdk-onelake-http",
       "inputs": [
-        "rust/sdk/storage/http/src/**"
+        "rust/engine/data-plane/onelake/http/src/**"
       ],
       "depends_on": [
         "core",
@@ -1003,22 +1003,22 @@
       "id": "mutations",
       "package": "fabric-cli-mutations",
       "inputs": [
-        "rust/frontends/cli/commands/resource-mutations/src/lib.rs",
-        "rust/frontends/cli/commands/resource-mutations/src/create.rs",
-        "rust/frontends/cli/commands/resource-mutations/src/errors.rs",
-        "rust/frontends/cli/commands/resource-mutations/src/execution.rs",
-        "rust/frontends/cli/commands/resource-mutations/src/frontdoor/**",
-        "rust/frontends/cli/commands/resource-mutations/src/lifecycle.rs",
-        "rust/frontends/cli/commands/resource-mutations/src/moves.rs",
-        "rust/frontends/cli/commands/resource-mutations/src/onelake_read.rs",
-        "rust/frontends/cli/commands/resource-mutations/src/onelake_write.rs",
-        "rust/frontends/cli/commands/resource-mutations/src/removal.rs",
-        "rust/frontends/cli/commands/resource-mutations/src/shortcuts.rs",
-        "rust/frontends/cli/commands/resource-mutations/src/sql_database.rs",
-        "rust/frontends/cli/commands/resource-mutations/src/template_enumeration.rs",
-        "rust/frontends/cli/commands/resource-mutations/src/templates.rs",
-        "rust/frontends/cli/commands/resource-mutations/templates/**",
-        "rust/frontends/cli/commands/resource-mutations/tests/fallible_ui/**"
+        "rust/clients/cli/commands/mutations/src/lib.rs",
+        "rust/clients/cli/commands/mutations/src/create.rs",
+        "rust/clients/cli/commands/mutations/src/errors.rs",
+        "rust/clients/cli/commands/mutations/src/execution.rs",
+        "rust/clients/cli/commands/mutations/src/frontdoor/**",
+        "rust/clients/cli/commands/mutations/src/lifecycle.rs",
+        "rust/clients/cli/commands/mutations/src/moves.rs",
+        "rust/clients/cli/commands/mutations/src/onelake_read.rs",
+        "rust/clients/cli/commands/mutations/src/onelake_write.rs",
+        "rust/clients/cli/commands/mutations/src/removal.rs",
+        "rust/clients/cli/commands/mutations/src/shortcuts.rs",
+        "rust/clients/cli/commands/mutations/src/sql_database.rs",
+        "rust/clients/cli/commands/mutations/src/template_enumeration.rs",
+        "rust/clients/cli/commands/mutations/src/templates.rs",
+        "rust/clients/cli/commands/mutations/templates/**",
+        "rust/clients/cli/commands/mutations/tests/fallible_ui/**"
       ],
       "depends_on": [
         "context",
@@ -1086,7 +1086,7 @@
       "id": "resource-set",
       "package": "fabric-cli-mutations",
       "inputs": [
-        "rust/frontends/cli/commands/resource-mutations/src/set.rs"
+        "rust/clients/cli/commands/mutations/src/set.rs"
       ],
       "depends_on": [
         "mutations"
@@ -1121,7 +1121,7 @@
       "id": "storage-files",
       "package": "fabric-cli-storage-files",
       "inputs": [
-        "rust/frontends/cli/commands/files/src/**"
+        "rust/clients/cli/commands/storage/src/**"
       ],
       "depends_on": [
         "context",
@@ -1166,7 +1166,7 @@
       "id": "sdk-jobs",
       "package": "fabric-sdk-jobs",
       "inputs": [
-        "rust/sdk/jobs/src/**",
+        "rust/engine/control-plane/jobs/src/**",
         "rust/tests/compatibility/jobs/*.json",
         "rust/tests/compatibility/jobs/support.rs",
         "rust/tests/compatibility/job_reads/cases.json"
@@ -1220,7 +1220,7 @@
       "id": "jobs",
       "package": "fabric-cli-jobs",
       "inputs": [
-        "rust/frontends/cli/commands/jobs/src/**"
+        "rust/clients/cli/commands/jobs/src/**"
       ],
       "depends_on": [
         "context",
@@ -1261,7 +1261,7 @@
       "id": "sdk-tables",
       "package": "fabric-sdk-tables",
       "inputs": [
-        "rust/sdk/tables/src/**",
+        "rust/engine/data-plane/tables/src/**",
         "rust/tests/compatibility/tables/*.json"
       ],
       "depends_on": [
@@ -1300,7 +1300,7 @@
       "id": "tables",
       "package": "fabric-cli-tables",
       "inputs": [
-        "rust/frontends/cli/commands/tables/src/**"
+        "rust/clients/cli/commands/tables/src/**"
       ],
       "depends_on": [
         "context",
@@ -1353,8 +1353,8 @@
       "id": "local",
       "package": "fabric-cli-local",
       "inputs": [
-        "rust/frontends/cli/commands/local/src/**",
-        "rust/frontends/cli/commands/local/tests/fixtures/**"
+        "rust/clients/cli/commands/local/src/**",
+        "rust/clients/cli/commands/local/tests/fixtures/**"
       ],
       "depends_on": [
         "context",
@@ -1383,8 +1383,8 @@
       "id": "deploy-stage",
       "package": "fabric-deploy",
       "inputs": [
-        "rust/sdk/deployment/src/stage.rs",
-        "rust/docs/native-stage-deployment.md"
+        "rust/engine/control-plane/deployment/src/stage.rs",
+        "rust/authoring-docs/native-stage-deployment.md"
       ],
       "depends_on": ["operations"],
       "tests": [
@@ -1396,30 +1396,30 @@
       "id": "deploy-shared",
       "package": "fabric-deploy",
       "inputs": [
-        "rust/sdk/deployment/src/config.rs",
-        "rust/sdk/deployment/src/deployment_config.rs",
-        "rust/sdk/deployment/src/deployment_config/**",
-        "rust/sdk/deployment/src/model.rs",
-        "rust/sdk/deployment/src/parameters.rs",
-        "rust/sdk/deployment/src/parameter_transforms.rs",
-        "rust/sdk/deployment/src/parameter_transforms/**",
-        "rust/sdk/deployment/src/planner.rs",
-        "rust/sdk/deployment/src/processors.rs",
-        "rust/sdk/deployment/src/repository.rs",
-        "rust/sdk/deployment/src/transforms.rs",
-        "rust/sdk/deployment/src/yaml.rs",
-        "rust/sdk/deployment/src/workflow/parameters.rs",
-        "rust/sdk/deployment/src/workflow/parameter_context.rs",
-        "rust/sdk/deployment/src/workflow/text.rs",
-        "rust/sdk/deployment/tests/config*_source.json",
-        "rust/sdk/deployment/tests/flag_protocol_source.json",
-        "rust/sdk/deployment/tests/literal_parameter*_source.json",
-        "rust/sdk/deployment/tests/operation_*_source.json",
-        "rust/sdk/deployment/tests/parameter*_source.json",
-        "rust/sdk/deployment/tests/path_filter*_source.json",
-        "rust/sdk/deployment/tests/selected_constants_source.json",
-        "rust/sdk/deployment/tests/transform*_source.json",
-        "rust/sdk/deployment/tests/yaml_scalar_source.json",
+        "rust/engine/control-plane/deployment/src/config.rs",
+        "rust/engine/control-plane/deployment/src/deployment_config.rs",
+        "rust/engine/control-plane/deployment/src/deployment_config/**",
+        "rust/engine/control-plane/deployment/src/model.rs",
+        "rust/engine/control-plane/deployment/src/parameters.rs",
+        "rust/engine/control-plane/deployment/src/parameter_transforms.rs",
+        "rust/engine/control-plane/deployment/src/parameter_transforms/**",
+        "rust/engine/control-plane/deployment/src/planner.rs",
+        "rust/engine/control-plane/deployment/src/processors.rs",
+        "rust/engine/control-plane/deployment/src/repository.rs",
+        "rust/engine/control-plane/deployment/src/transforms.rs",
+        "rust/engine/control-plane/deployment/src/yaml.rs",
+        "rust/engine/control-plane/deployment/src/workflow/parameters.rs",
+        "rust/engine/control-plane/deployment/src/workflow/parameter_context.rs",
+        "rust/engine/control-plane/deployment/src/workflow/text.rs",
+        "rust/engine/control-plane/deployment/tests/config*_source.json",
+        "rust/engine/control-plane/deployment/tests/flag_protocol_source.json",
+        "rust/engine/control-plane/deployment/tests/literal_parameter*_source.json",
+        "rust/engine/control-plane/deployment/tests/operation_*_source.json",
+        "rust/engine/control-plane/deployment/tests/parameter*_source.json",
+        "rust/engine/control-plane/deployment/tests/path_filter*_source.json",
+        "rust/engine/control-plane/deployment/tests/selected_constants_source.json",
+        "rust/engine/control-plane/deployment/tests/transform*_source.json",
+        "rust/engine/control-plane/deployment/tests/yaml_scalar_source.json",
         "rust/tests/fixtures/deploy/config.json",
         "rust/tests/fixtures/deploy/ids.json",
         "rust/tests/fixtures/deploy/transforms.json",
@@ -1479,16 +1479,16 @@
       "id": "deploy-workflow",
       "package": "fabric-deploy",
       "inputs": [
-        "rust/sdk/deployment/src/workflow.rs",
-        "rust/sdk/deployment/src/workflow/families.rs",
-        "rust/sdk/deployment/src/workflow/families/bulk.rs",
-        "rust/sdk/deployment/src/workflow/families/dataflow.rs",
-        "rust/sdk/deployment/src/workflow/families/kql.rs",
-        "rust/sdk/deployment/src/workflow/families/lakehouse.rs",
-        "rust/sdk/deployment/src/workflow/families/report.rs",
-        "rust/sdk/deployment/src/workflow/families/semanticmodel.rs",
-        "rust/sdk/deployment/src/workflow/unpublish.rs",
-        "rust/sdk/deployment/tests/workflow_support/additional.rs",
+        "rust/engine/control-plane/deployment/src/workflow.rs",
+        "rust/engine/control-plane/deployment/src/workflow/families.rs",
+        "rust/engine/control-plane/deployment/src/workflow/families/bulk.rs",
+        "rust/engine/control-plane/deployment/src/workflow/families/dataflow.rs",
+        "rust/engine/control-plane/deployment/src/workflow/families/kql.rs",
+        "rust/engine/control-plane/deployment/src/workflow/families/lakehouse.rs",
+        "rust/engine/control-plane/deployment/src/workflow/families/report.rs",
+        "rust/engine/control-plane/deployment/src/workflow/families/semanticmodel.rs",
+        "rust/engine/control-plane/deployment/src/workflow/unpublish.rs",
+        "rust/engine/control-plane/deployment/tests/workflow_support/additional.rs",
         "rust/tests/compatibility/deploy_workflow/*.json"
       ],
       "depends_on": [
@@ -1528,8 +1528,8 @@
       "id": "deploy-notebook",
       "package": "fabric-deploy",
       "inputs": [
-        "rust/sdk/deployment/src/notebook.rs",
-        "rust/sdk/deployment/src/publish.rs"
+        "rust/engine/control-plane/deployment/src/notebook.rs",
+        "rust/engine/control-plane/deployment/src/publish.rs"
       ],
       "depends_on": [
         "deploy-shared",
@@ -1576,8 +1576,8 @@
       "id": "deploy-spark-environment",
       "package": "fabric-deploy",
       "inputs": [
-        "rust/sdk/deployment/src/workflow/families/environment.rs",
-        "rust/sdk/deployment/tests/workflow_support/environment_scalars.rs"
+        "rust/engine/control-plane/deployment/src/workflow/families/environment.rs",
+        "rust/engine/control-plane/deployment/tests/workflow_support/environment_scalars.rs"
       ],
       "depends_on": [
         "deploy-shared",
@@ -1614,10 +1614,10 @@
       "id": "definitions",
       "package": "fabric-deploy",
       "inputs": [
-        "rust/sdk/deployment/src/definitions/**",
-        "rust/sdk/deployment/tests/definition*_source.json",
-        "rust/sdk/deployment/tests/definition_export_windows.json",
-        "rust/sdk/deployment/tests/get_definition_value_reference.json"
+        "rust/engine/control-plane/deployment/src/definitions/**",
+        "rust/engine/control-plane/deployment/tests/definition*_source.json",
+        "rust/engine/control-plane/deployment/tests/definition_export_windows.json",
+        "rust/engine/control-plane/deployment/tests/get_definition_value_reference.json"
       ],
       "depends_on": [
         "json",
@@ -1662,8 +1662,8 @@
       "id": "transfer",
       "package": "fabric-cli-transfer",
       "inputs": [
-        "rust/frontends/cli/commands/transfer/src/**",
-        "rust/frontends/cli/commands/transfer/tests/source_receipt.json"
+        "rust/clients/cli/commands/transfer/src/**",
+        "rust/clients/cli/commands/transfer/tests/source_receipt.json"
       ],
       "depends_on": [
         "context",
@@ -1696,16 +1696,16 @@
       "id": "cli-deployment",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/deploy.rs",
-        "rust/frontends/cli/app/src/native_deploy_inputs.rs",
-        "rust/frontends/cli/app/src/native_transfer_paths.rs",
-        "rust/frontends/cli/app/src/families/deploy_http.rs",
-        "rust/frontends/cli/app/src/families/transfer_files.rs",
-        "rust/frontends/cli/app/src/families/transfer_files/**",
-        "rust/frontends/cli/app/src/families/export_files.rs",
-        "rust/frontends/cli/app/tests/deploy_support/**",
-        "rust/frontends/cli/app/tests/export_support/**",
-        "rust/frontends/cli/app/tests/deploy_wrapper_source.json"
+        "rust/clients/cli/app/src/deploy.rs",
+        "rust/clients/cli/app/src/native_deploy_inputs.rs",
+        "rust/clients/cli/app/src/native_transfer_paths.rs",
+        "rust/clients/cli/app/src/families/deploy_http.rs",
+        "rust/clients/cli/app/src/families/transfer_files.rs",
+        "rust/clients/cli/app/src/families/transfer_files/**",
+        "rust/clients/cli/app/src/families/export_files.rs",
+        "rust/clients/cli/app/tests/deploy_support/**",
+        "rust/clients/cli/app/tests/export_support/**",
+        "rust/clients/cli/app/tests/deploy_wrapper_source.json"
       ],
       "depends_on": [
         "deploy-shared",
@@ -1768,11 +1768,11 @@
       "id": "cli-get",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/get_host.rs",
-        "rust/frontends/cli/app/src/get_options.rs",
-        "rust/frontends/cli/app/src/get_output.rs",
-        "rust/frontends/cli/app/src/native_get.rs",
-        "rust/frontends/cli/app/src/native_get_tests.rs"
+        "rust/clients/cli/app/src/get_host.rs",
+        "rust/clients/cli/app/src/get_options.rs",
+        "rust/clients/cli/app/src/get_output.rs",
+        "rust/clients/cli/app/src/native_get.rs",
+        "rust/clients/cli/app/src/native_get_tests.rs"
       ],
       "depends_on": [
         "definitions",
@@ -1819,10 +1819,10 @@
       "id": "cli-reads",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/reads.rs",
-        "rust/frontends/cli/app/src/folder_reads.rs",
-        "rust/frontends/cli/app/src/workspace_get.rs",
-        "rust/frontends/cli/app/src/projection.rs"
+        "rust/clients/cli/app/src/reads.rs",
+        "rust/clients/cli/app/src/folder_reads.rs",
+        "rust/clients/cli/app/src/workspace_get.rs",
+        "rust/clients/cli/app/src/projection.rs"
       ],
       "depends_on": [
         "context",
@@ -1878,7 +1878,7 @@
       "id": "cli-runtime-v2",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/runtime_v2/**"
+        "rust/clients/cli/app/src/runtime_v2/**"
       ],
       "depends_on": [
         "sdk",
@@ -1900,10 +1900,10 @@
       "id": "cli-resources",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/families.rs",
-        "rust/frontends/cli/app/src/families/context.rs",
-        "rust/frontends/cli/app/src/families/resource_files.rs",
-        "rust/frontends/cli/app/src/families/native_resource_files.rs"
+        "rust/clients/cli/app/src/families.rs",
+        "rust/clients/cli/app/src/families/context.rs",
+        "rust/clients/cli/app/src/families/resource_files.rs",
+        "rust/clients/cli/app/src/families/native_resource_files.rs"
       ],
       "depends_on": [
         "resources",
@@ -1973,7 +1973,7 @@
       "id": "cli-deploy-stage",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/stage_deploy.rs"
+        "rust/clients/cli/app/src/stage_deploy.rs"
       ],
       "depends_on": ["deploy-stage"],
       "tests": [
@@ -1986,7 +1986,7 @@
       "id": "cli-copy-v2",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/families/copy_v2.rs"
+        "rust/clients/cli/app/src/families/copy_v2.rs"
       ],
       "depends_on": [
         "definitions",
@@ -2010,10 +2010,10 @@
       "id": "cli-jobs",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/jobs.rs",
-        "rust/frontends/cli/app/src/parser/jobs.rs",
-        "rust/frontends/cli/app/tests/job_execution_support/**",
-        "rust/frontends/cli/app/tests/parser_support/**"
+        "rust/clients/cli/app/src/jobs.rs",
+        "rust/clients/cli/app/src/parser/jobs.rs",
+        "rust/clients/cli/app/tests/job_execution_support/**",
+        "rust/clients/cli/app/tests/parser_support/**"
       ],
       "depends_on": [
         "jobs",
@@ -2078,7 +2078,7 @@
       "id": "cli-tables",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/tables.rs"
+        "rust/clients/cli/app/src/tables.rs"
       ],
       "depends_on": [
         "tables",
@@ -2107,9 +2107,9 @@
       "id": "cli-local",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/local_commands.rs",
-        "rust/frontends/cli/app/src/local_host.rs",
-        "rust/frontends/cli/app/src/runtime_config.rs"
+        "rust/clients/cli/app/src/local_commands.rs",
+        "rust/clients/cli/app/src/local_host.rs",
+        "rust/clients/cli/app/src/runtime_config.rs"
       ],
       "depends_on": [
         "local",
@@ -2151,8 +2151,8 @@
       "id": "repl",
       "package": "fabric-cli-repl",
       "inputs": [
-        "rust/frontends/cli/shell/src/**",
-        "rust/frontends/cli/shell/tests/contract.json"
+        "rust/clients/cli/repl/src/**",
+        "rust/clients/cli/repl/tests/contract.json"
       ],
       "depends_on": [],
       "tests": [
@@ -2181,7 +2181,7 @@
       "id": "cli-repl",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/repl_host.rs"
+        "rust/clients/cli/app/src/repl_host.rs"
       ],
       "depends_on": [
         "repl",
@@ -2214,8 +2214,8 @@
       "id": "updater",
       "package": "fabric-cli-update",
       "inputs": [
-        "rust/frontends/cli/update/src/**",
-        "rust/frontends/cli/update/tests/fixtures/**"
+        "rust/clients/cli/update/src/**",
+        "rust/clients/cli/update/tests/fixtures/**"
       ],
       "depends_on": [],
       "tests": [
@@ -2252,8 +2252,8 @@
       "id": "cli-updater",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/update_host.rs",
-        "rust/frontends/cli/app/src/parser/update.rs"
+        "rust/clients/cli/app/src/update_host.rs",
+        "rust/clients/cli/app/src/parser/update.rs"
       ],
       "depends_on": [
         "updater",
@@ -2294,13 +2294,13 @@
       "id": "cli-auth",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/auth.rs",
-        "rust/frontends/cli/app/src/auth_binding.rs",
-        "rust/frontends/cli/app/src/runtime_config.rs",
-        "rust/frontends/cli/app/src/auth_commands.rs",
-        "rust/frontends/cli/app/src/parser/auth.rs",
-        "rust/frontends/cli/app/src/interactive.rs",
-        "rust/frontends/cli/app/src/interactive_binding.rs"
+        "rust/clients/cli/app/src/auth.rs",
+        "rust/clients/cli/app/src/auth_binding.rs",
+        "rust/clients/cli/app/src/runtime_config.rs",
+        "rust/clients/cli/app/src/auth_commands.rs",
+        "rust/clients/cli/app/src/parser/auth.rs",
+        "rust/clients/cli/app/src/interactive.rs",
+        "rust/clients/cli/app/src/interactive_binding.rs"
       ],
       "depends_on": [
         "identity-broker",
@@ -2355,10 +2355,10 @@
       "id": "cli-cancel",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/cancel.rs",
-        "rust/frontends/cli/app/src/native_cancel_tests.rs",
-        "rust/frontends/cli/app/src/parser/cancel.rs",
-        "rust/frontends/cli/app/tests/cancel.rs"
+        "rust/clients/cli/app/src/cancel.rs",
+        "rust/clients/cli/app/src/native_cancel_tests.rs",
+        "rust/clients/cli/app/src/parser/cancel.rs",
+        "rust/clients/cli/app/tests/cancel.rs"
       ],
       "depends_on": [
         "sdk-jobs",
@@ -2388,8 +2388,8 @@
       "id": "cli-headless",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/headless.rs",
-        "rust/frontends/cli/app/src/headless_host_tests.rs"
+        "rust/clients/cli/app/src/headless.rs",
+        "rust/clients/cli/app/src/headless_host_tests.rs"
       ],
       "depends_on": [
         "identity-headless",
@@ -2429,11 +2429,11 @@
       "id": "cli-native-shared",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/native_read.rs",
-        "rust/frontends/cli/app/src/runtime_config.rs",
-        "rust/frontends/cli/app/src/native_settings.rs",
-        "rust/frontends/cli/app/src/native_terminal_ui.rs",
-        "rust/frontends/cli/app/src/console.rs"
+        "rust/clients/cli/app/src/native_read.rs",
+        "rust/clients/cli/app/src/runtime_config.rs",
+        "rust/clients/cli/app/src/native_settings.rs",
+        "rust/clients/cli/app/src/native_terminal_ui.rs",
+        "rust/clients/cli/app/src/console.rs"
       ],
       "depends_on": [
         "identity-broker",
@@ -2532,9 +2532,9 @@
       "id": "cli-shared-test-helpers",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/tests/family_support/**",
-        "rust/frontends/cli/app/tests/folder_support/**",
-        "rust/frontends/cli/app/tests/support/**"
+        "rust/clients/cli/app/tests/family_support/**",
+        "rust/clients/cli/app/tests/folder_support/**",
+        "rust/clients/cli/app/tests/support/**"
       ],
       "depends_on": [],
       "tests": [
@@ -2642,8 +2642,8 @@
       "id": "cli-v2",
       "package": "fabric-cli-v2",
       "inputs": [
-        "rust/frontends/cli/v2/src/**",
-        "rust/frontends/cli/v2/tests/**"
+        "rust/clients/cli/v2/src/**",
+        "rust/clients/cli/v2/tests/**"
       ],
       "depends_on": [
         "output",
@@ -2697,11 +2697,11 @@
       "id": "workspace-read-v2",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/workspace_v2.rs",
-        "rust/frontends/cli/app/src/workspace_v2_main.rs",
-        "rust/frontends/cli/app/src/native_workspace_v2.rs",
-        "rust/frontends/cli/app/src/native_workspace_v2_tests.rs",
-        "rust/docs/workspace-v2-reads.md"
+        "rust/clients/cli/app/src/workspace_v2.rs",
+        "rust/clients/cli/app/src/workspace_v2_main.rs",
+        "rust/clients/cli/app/src/native_workspace_v2.rs",
+        "rust/clients/cli/app/src/native_workspace_v2_tests.rs",
+        "rust/authoring-docs/workspace-v2-reads.md"
       ],
       "depends_on": [
         "sdk-api",
@@ -2732,8 +2732,8 @@
       "id": "sdk-update-v2",
       "package": "fabric-sdk-items",
       "inputs": [
-        "rust/sdk/items/src/update.rs",
-        "rust/sdk/items/tests/update.rs"
+        "rust/engine/control-plane/resources/items/src/update.rs",
+        "rust/engine/control-plane/resources/items/tests/update.rs"
       ],
       "depends_on": ["sdk-items", "operations"],
       "tests": [
@@ -2745,8 +2745,8 @@
       "id": "resource-update-v2",
       "package": "fabric-cli-mutations",
       "inputs": [
-        "rust/frontends/cli/commands/resource-mutations/src/v2_update.rs",
-        "rust/frontends/cli/commands/resource-mutations/tests/v2_update.rs"
+        "rust/clients/cli/commands/mutations/src/v2_update.rs",
+        "rust/clients/cli/commands/mutations/tests/v2_update.rs"
       ],
       "depends_on": ["sdk-update-v2", "mutations", "query"],
       "tests": [
@@ -2759,10 +2759,10 @@
       "id": "cli-update-v2",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/update.rs",
-        "rust/frontends/cli/app/src/v2_main.rs",
-        "rust/frontends/cli/app/tests/update_v2.rs",
-        "rust/docs/update-v2.md"
+        "rust/clients/cli/app/src/update.rs",
+        "rust/clients/cli/app/src/v2_main.rs",
+        "rust/clients/cli/app/tests/update_v2.rs",
+        "rust/authoring-docs/update-v2.md"
       ],
       "depends_on": ["resource-update-v2", "sdk", "storage-files", "cli-headless"],
       "tests": [
@@ -2775,13 +2775,13 @@
       "id": "cli-search-v2",
       "package": "fabric-cli",
       "inputs": [
-        "rust/frontends/cli/app/src/search_command.rs",
-        "rust/frontends/cli/app/src/v2_search_main.rs",
-        "rust/frontends/cli/app/src/v2_main.rs",
-        "rust/frontends/cli/app/tests/search_command.rs",
-        "rust/frontends/cli/app/tests/search_wire.rs",
-        "rust/frontends/cli/app/tests/v2_search_binary.rs",
-        "rust/docs/search-v2.md"
+        "rust/clients/cli/app/src/search_command.rs",
+        "rust/clients/cli/app/src/v2_search_main.rs",
+        "rust/clients/cli/app/src/v2_main.rs",
+        "rust/clients/cli/app/tests/search_command.rs",
+        "rust/clients/cli/app/tests/search_wire.rs",
+        "rust/clients/cli/app/tests/v2_search_binary.rs",
+        "rust/authoring-docs/search-v2.md"
       ],
       "depends_on": [
         "sdk-search",
@@ -2826,14 +2826,14 @@
       "id": "metadata-exists-v2",
       "package": "fabric-cli",
       "inputs": [
-        "rust/sdk/client/src/exists/**",
-        "rust/sdk/client/tests/exists.rs",
-        "rust/sdk/client/tests/exists_support/**",
-        "rust/frontends/cli/app/src/exists_command.rs",
-        "rust/frontends/cli/app/src/v2_exists_main.rs",
-        "rust/frontends/cli/app/tests/exists_command.rs",
-        "rust/frontends/cli/app/tests/v2_exists_binary.rs",
-        "rust/docs/exists-v2.md"
+        "rust/engine/sdk/src/exists/**",
+        "rust/engine/sdk/tests/exists.rs",
+        "rust/engine/sdk/tests/exists_support/**",
+        "rust/clients/cli/app/src/exists_command.rs",
+        "rust/clients/cli/app/src/v2_exists_main.rs",
+        "rust/clients/cli/app/tests/exists_command.rs",
+        "rust/clients/cli/app/tests/v2_exists_binary.rs",
+        "rust/authoring-docs/exists-v2.md"
       ],
       "depends_on": ["sdk", "sdk-api", "cli-get", "cli-headless"],
       "tests": [
@@ -2928,9 +2928,9 @@
       "id": "identity-interactive",
       "package": "fabric-identity",
       "inputs": [
-        "rust/sdk/authentication/credentials/src/interactive*.rs",
-        "rust/sdk/authentication/credentials/src/bin/protected_store_helper.rs",
-        "rust/sdk/authentication/credentials/tests/protected_store_helper.rs"
+        "rust/engine/core/auth/provider/src/interactive*.rs",
+        "rust/engine/core/auth/provider/src/bin/protected_store_helper.rs",
+        "rust/engine/core/auth/provider/tests/protected_store_helper.rs"
       ],
       "depends_on": [
         "identity-policy",
@@ -2959,7 +2959,7 @@
       "id": "identity-macos-helper",
       "package": "fabric-identity",
       "inputs": [
-        "rust/sdk/authentication/credentials/src/macos_helper.rs"
+        "rust/engine/core/auth/provider/src/macos_helper.rs"
       ],
       "depends_on": [
         "identity-policy"
@@ -2980,9 +2980,9 @@
       "id": "identity-native-certificates",
       "package": "fabric-identity",
       "inputs": [
-        "rust/sdk/authentication/credentials/src/certificate_pkcs11.rs",
-        "rust/sdk/authentication/credentials/src/certificate_macos*.rs",
-        "rust/sdk/authentication/credentials/src/bin/keychain_helper.rs"
+        "rust/engine/core/auth/provider/src/certificate_pkcs11.rs",
+        "rust/engine/core/auth/provider/src/certificate_macos*.rs",
+        "rust/engine/core/auth/provider/src/bin/keychain_helper.rs"
       ],
       "depends_on": [
         "identity-headless",
@@ -3751,8 +3751,8 @@
       ],
       "components": [],
       "inputs": [
-        "rust/frontends/cli/app/tests/batch_reference.py",
-        "rust/frontends/cli/app/tests/batch_source.json"
+        "rust/clients/cli/app/tests/batch_reference.py",
+        "rust/clients/cli/app/tests/batch_source.json"
       ],
       "platforms": [
         "windows",
@@ -3825,8 +3825,8 @@
         "rust/tests/compatibility/folders/**",
         "rust/tests/compatibility/folder_commands/**",
         "rust/tests/compatibility/argv_review/**",
-        "rust/frontends/cli/app/tests/test_get_host_source.py",
-        "rust/frontends/cli/app/tests/test_get_options_source.py"
+        "rust/clients/cli/app/tests/test_get_host_source.py",
+        "rust/clients/cli/app/tests/test_get_options_source.py"
       ],
       "platforms": [
         "windows",
@@ -3895,7 +3895,7 @@
         "cli-repl"
       ],
       "inputs": [
-        "rust/frontends/cli/shell/tests/test_source_oracle.py"
+        "rust/clients/cli/repl/tests/test_source_oracle.py"
       ],
       "platforms": [
         "windows",
@@ -4039,9 +4039,9 @@
       "inputs": [
         "rust/tests/compatibility/run_definition_parity.py",
         "rust/tests/compatibility/test_run_definition_parity.py",
-        "rust/sdk/deployment/tests/definition-reference.md",
-        "rust/sdk/deployment/tests/definition*_reference.py",
-        "rust/sdk/deployment/tests/get_definition_value_reference.py"
+        "rust/engine/control-plane/deployment/tests/definition-reference.md",
+        "rust/engine/control-plane/deployment/tests/definition*_reference.py",
+        "rust/engine/control-plane/deployment/tests/get_definition_value_reference.py"
       ],
       "platforms": [
         "windows",
@@ -4067,10 +4067,10 @@
         "deploy-spark-environment"
       ],
       "inputs": [
-        "rust/sdk/deployment/tests/definition_import*_reference.py",
-        "rust/sdk/deployment/tests/definition_import_reference_checks.py",
-        "rust/frontends/cli/commands/transfer/tests/source_reference.py",
-        "rust/frontends/cli/commands/transfer/tests/test_source_reference.py"
+        "rust/engine/control-plane/deployment/tests/definition_import*_reference.py",
+        "rust/engine/control-plane/deployment/tests/definition_import_reference_checks.py",
+        "rust/clients/cli/commands/transfer/tests/source_reference.py",
+        "rust/clients/cli/commands/transfer/tests/test_source_reference.py"
       ],
       "platforms": [
         "windows",
@@ -4094,18 +4094,18 @@
         "deploy-spark-environment"
       ],
       "inputs": [
-        "rust/sdk/deployment/tests/config*_reference.py",
-        "rust/sdk/deployment/tests/flag_protocol_reference.py",
-        "rust/sdk/deployment/tests/literal_parameter*_reference.py",
-        "rust/sdk/deployment/tests/operation_*_reference.py",
-        "rust/sdk/deployment/tests/orchestration_reference.py",
-        "rust/sdk/deployment/tests/parameter*_reference.py",
-        "rust/sdk/deployment/tests/path_filter_reference.py",
-        "rust/sdk/deployment/tests/publish_reference.py",
-        "rust/sdk/deployment/tests/selected_constants_reference.py",
-        "rust/sdk/deployment/tests/transform*_reference.py",
-        "rust/sdk/deployment/tests/yaml_scalar_reference.py",
-        "rust/frontends/cli/app/tests/deploy_wrapper_reference.py",
+        "rust/engine/control-plane/deployment/tests/config*_reference.py",
+        "rust/engine/control-plane/deployment/tests/flag_protocol_reference.py",
+        "rust/engine/control-plane/deployment/tests/literal_parameter*_reference.py",
+        "rust/engine/control-plane/deployment/tests/operation_*_reference.py",
+        "rust/engine/control-plane/deployment/tests/orchestration_reference.py",
+        "rust/engine/control-plane/deployment/tests/parameter*_reference.py",
+        "rust/engine/control-plane/deployment/tests/path_filter_reference.py",
+        "rust/engine/control-plane/deployment/tests/publish_reference.py",
+        "rust/engine/control-plane/deployment/tests/selected_constants_reference.py",
+        "rust/engine/control-plane/deployment/tests/transform*_reference.py",
+        "rust/engine/control-plane/deployment/tests/yaml_scalar_reference.py",
+        "rust/clients/cli/app/tests/deploy_wrapper_reference.py",
         "rust/tests/compatibility/deploy_workflow/**",
         "rust/tests/fixtures/deploy/reference_oracle.py"
       ],
@@ -4133,8 +4133,8 @@
       ],
       "inputs": [
         "rust/tests/compatibility/run_export_source_parity.py",
-        "rust/sdk/deployment/tests/definition_export*_reference.py",
-        "rust/sdk/deployment/tests/definition_transfer_input_reference.py"
+        "rust/engine/control-plane/deployment/tests/definition_export*_reference.py",
+        "rust/engine/control-plane/deployment/tests/definition_transfer_input_reference.py"
       ],
       "platforms": [
         "windows",
@@ -4232,7 +4232,7 @@
         "sdk"
       ],
       "inputs": [
-        "rust/sdk/client/examples/injected_credentials.rs"
+        "rust/engine/sdk/examples/injected_credentials.rs"
       ],
       "platforms": [
         "windows",

@@ -5,10 +5,10 @@ on:
   pull_request:
     paths:
       - ".github/workflows/semantic-model-bpa.yml"
-      - "rust/sdk/semantic-model/**"
-      - "rust/frontends/cli/commands/semantic-model/**"
-      - "rust/frontends/cli/app/**"
-      - "rust/sdk/client/**"
+      - "rust/engine/data-plane/semantic-model/**"
+      - "rust/clients/cli/commands/semantic-model/**"
+      - "rust/clients/cli/app/**"
+      - "rust/engine/sdk/**"
       - "rust/tests/**/semantic_model_bpa/**"
       - "rust/scripts/generate_bpa_rule_catalog.py"
       - "rust/Cargo.toml"

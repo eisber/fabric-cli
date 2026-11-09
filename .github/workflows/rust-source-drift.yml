@@ -8,7 +8,7 @@ on:
       - ".github/workflows/rust-source-drift.yml"
       - "rust/scripts/source-inventory.cjs"
       - "rust/scripts/validate-impact.cjs"
-      - "rust/sdk/semantic-model/dotnet/**"
+      - "rust/engine/data-plane/semantic-model/dotnet/**"
   workflow_dispatch:
 
 permissions:

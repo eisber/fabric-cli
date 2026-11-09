@@ -16,5 +16,5 @@ operations without treating them as successful completion.
 
 Skills are not executable plugins. This directory does not enable external
 command discovery or a runtime loader. See the
-[extension boundaries](../docs/extensions-and-skills.md) for the applicable
+[extension boundaries](../authoring-docs/extensions-and-skills.md) for the applicable
 design constraints.

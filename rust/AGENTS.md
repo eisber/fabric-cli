@@ -2,9 +2,9 @@
 
 # Rust migration contributor instructions
 
-Read [migration guidance](docs/migration-guidance.md),
-[architecture](docs/architecture.md), and [compatibility](docs/compatibility.md).
-Follow [agent-operated delivery](docs/agentic-delivery.md) for authorized task
+Read [migration guidance](authoring-docs/migration-guidance.md),
+[architecture](authoring-docs/architecture.md), and [compatibility](authoring-docs/compatibility.md).
+Follow [agent-operated delivery](authoring-docs/agentic-delivery.md) for authorized task
 execution, independent stage reviews, repair, and integration. Repository-wide
 CLA, required checks, restricted-area review, and authority boundaries still apply.
 
@@ -15,7 +15,7 @@ CLA, required checks, restricted-area review, and authority boundaries still app
   implementation, independent review, validation, and repair without routine
   human handoffs. Do not invent missing product requirements or permission.
 - At every stage, use the two distinct review perspectives in
-  [stage reviews](docs/agentic-delivery.md#stage-reviews). Reviewers examine the
+  [stage reviews](authoring-docs/agentic-delivery.md#stage-reviews). Reviewers examine the
   actual change and evidence independently of the authoring context. Required
   review must be real, not a self-review presented as independent approval.
 - Bind findings and actual check results to the full tested revision and
@@ -40,7 +40,7 @@ CLA, required checks, restricted-area review, and authority boundaries still app
   reproduction, impact, current parity treatment, and a separate proposal.
   Link existing discussions rather than duplicating them. A proposal is not
   approval to change behavior or the oracle; nonblocking ideas do not stop the
-  port. See [discussion guidance](docs/migration-guidance.md#record-oddities-and-improvement-ideas).
+  port. See [discussion guidance](authoring-docs/migration-guidance.md#record-oddities-and-improvement-ideas).
 - Record the Python/upstream source commit and complete behavior covered by each
   slice. Do not declare a port complete while omitting I/O, orchestration, failure
   paths, or consumers that belong to that approved slice.
@@ -55,12 +55,12 @@ CLA, required checks, restricted-area review, and authority boundaries still app
   on their own branches and target that trunk directly with small changes.
   Exception: CLI v2 lanes target
   `dev/marcozo/fab-cli-v2-integration-20261104` in `eisber/fabric-cli` and follow
-  the [v2 central merge pipeline](docs/v2-delivery.md#central-merge-pipeline).
+  the [v2 central merge pipeline](authoring-docs/v2-delivery.md#central-merge-pipeline).
   V1 work remains on its existing trunk.
   Do not add permanent family-merger chains. Only the assigned integration owner
   advances the shared branch until separately authorized automation takes over.
   Pushes, PRs, releases, and live operations require their own authorization.
-  Follow the [safe synchronization handoff](docs/integration-handoff.md); never
+  Follow the [safe synchronization handoff](authoring-docs/integration-handoff.md); never
   reset, force-push, or switch a peer worktree to adopt a checkpoint.
 - On a shared host, coordinate one heavy build/test job at a time. Do not infer
   an active lease from this file. Get an explicit grant from the integration
@@ -87,7 +87,7 @@ CLA, required checks, restricted-area review, and authority boundaries still app
 - Implement typed REST endpoints by hand over shared transport and behavioral
   policies; do not duplicate HTTP, paging, or LRO machinery per endpoint or adopt
   the generator PoCs. Keep Swagger as a contract/reference input. See the
-  [REST client decision](docs/decisions/rest-client-implementation.md).
+  [REST client decision](authoring-docs/decisions/rest-client-implementation.md).
 - Tests stay offline and secret-free. Do not discover ambient credentials,
   implement static-token production fallback, persist plaintext credentials, or
   add a Python/az/azd runtime requirement. The `windows-broker` feature now includes
@@ -97,8 +97,9 @@ CLA, required checks, restricted-area review, and authority boundaries still app
 Run the pinned checks from this directory, not the repository root. There is no
 fixed crate count. Prefer focused crates that enable independent ownership,
 implementation, and testing, with explicit interfaces and acyclic dependencies.
-Reusable packages live under `sdk/`, grouped by feature, and CLI-specific
-packages under `frontends/cli/`. Register only package leaves in `Cargo.toml`;
+Reusable packages live under `engine/`, grouped by control/data-plane
+capabilities and shared `core/` foundations, and CLI-specific packages under
+`clients/cli/`. Register package leaves in the explicit workspace `members`;
 grouping directories are not crates. The architecture contract independently
 discovers manifests recursively under both roots and rejects unregistered
 packages and obsolete production roots. Physical grouping does not change
@@ -117,6 +118,6 @@ transitively unsafe-free. Coordinate
 shared interfaces and cross-layer changes with integration; do not add empty
 future modules or runtime loaders as scaffold shortcuts. Default/broker-only `fab-rs` recognizes
 bounded read arguments but still requires a read host. Explicit `native-read`
-builds provide the bounded Windows host described in `docs/native-read-host.md`;
+builds provide the bounded Windows host described in `authoring-docs/native-read-host.md`;
 its preview
 help/version/error contracts are not proof of parity with Python `fab`.

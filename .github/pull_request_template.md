@@ -47,7 +47,7 @@ and whether this changes governance, workflows, permissions, or test oracles. --
 evidence links, independent review perspectives and finding dispositions.
 State missing checks and remaining gaps. Component checks do not prove a
 combined candidate; checked boxes or prose claims are not merge authority.
-Rust tasks follow rust/docs/agentic-delivery.md. -->
+Rust tasks follow rust/authoring-docs/agentic-delivery.md. -->
 
 ## Change documentation
 

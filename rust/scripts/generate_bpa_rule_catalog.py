@@ -63,7 +63,7 @@ def main() -> None:
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     source = root / "tests/fixtures/semantic_model_bpa/upstream/_model_bpa_rules.py"
-    output = root / "sdk/semantic-model/client/src/rule_catalog.json"
+    output = root / "engine/data-plane/semantic-model/client/src/rule_catalog.json"
     content = json.dumps(catalog(source.read_bytes()), ensure_ascii=True, indent=2) + "\n"
     if args.check:
         if output.read_text(encoding="utf-8") != content:

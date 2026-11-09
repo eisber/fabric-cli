@@ -19,7 +19,7 @@ function prepare(root, artifacts) {
     throw new Error('Managed artifacts must be outside the checkout');
   }
   if (fs.existsSync(artifacts)) throw new Error('Managed acceptance needs a fresh artifact directory');
-  const managed = path.join(root, 'rust/sdk/semantic-model/dotnet/managed');
+  const managed = path.join(root, 'rust/engine/data-plane/semantic-model/dotnet/managed');
   const projects = [
     ['Bpa/Tests/Fabric.SemanticModel.Bpa.Tests.csproj', 'Fabric.SemanticModel.Bpa.Tests.dll'],
     ['BoundaryContractTests.csproj', 'BoundaryContractTests.dll'],

@@ -19,38 +19,38 @@ cargo run --locked -p fabric-sdk --example injected_credentials
 The SDK example uses synthetic credentials and performs no service requests.
 Default builds support local commands and argument validation without connecting
 to an account. Remote command execution requires an explicitly configured host.
-See the [CLI guide](frontends/cli/app/README.md) for command composition and
-[native host configuration](docs/native-read-host.md) for service execution.
+See the [CLI guide](clients/cli/app/README.md) for command composition and
+[native host configuration](authoring-docs/native-read-host.md) for service execution.
 
 For the separate CLI v2 effort, follow the
-[delivery and upstream synchronization process](docs/v2-delivery.md). Command
+[delivery and upstream synchronization process](authoring-docs/v2-delivery.md). Command
 implementation starts only after the selected specification and first wave
 are confirmed; this process does not change the existing CLI contract.
 
-The additive [v2 local host](frontends/cli/v2/README.md) provides the
+The additive [v2 local host](clients/cli/v2/README.md) provides the
 six selected `cli` operations through a separate `fab-cli` executable.
 It preserves `fab-rs` and its compatibility fixtures, distinguishes manual
 handoffs from delivered actions, and fails explicitly when an optional
 provider or trusted installation profile is unavailable.
 
-The opt-in [`v2-cancel` slice](docs/v2-cancel.md) requests cancellation of one
+The opt-in [`v2-cancel` slice](authoring-docs/v2-cancel.md) requests cancellation of one
 existing Notebook scheduler run using an explicit ID-based path. Its acceptance
 receipt does not claim terminal cancellation or rollback.
 
-The owner-selected [nonrecursive delete preview](docs/nonrecursive-delete.md)
+The owner-selected [nonrecursive delete preview](authoring-docs/nonrecursive-delete.md)
 adds exact Notebook deletion with explicit permanent intent and host approval.
 Its typed operation metadata propagates through SDK results and CLI receipts.
 It does not replace `rm` or promise recoverable deletion or physical erasure.
 
-The opt-in [v2 schema-discovery preview](docs/v2-schema-discovery.md) exposes
+The opt-in [v2 schema-discovery preview](authoring-docs/v2-schema-discovery.md) exposes
 operation contracts through a separate `fab-cli-discovery` binary. It does not execute
 mutations, replace `fab-rs`, or install a live data-schema host.
-See the [shared tabular file output contract](docs/tabular-output.md) for the
+See the [shared tabular file output contract](authoring-docs/tabular-output.md) for the
 export syntax, current consumers, and validation evidence limits.
 
 ## Workspace components
 
-The opt-in [workspace v2 read slice](docs/workspace-v2-reads.md) uses the separate
+The opt-in [workspace v2 read slice](authoring-docs/workspace-v2-reads.md) uses the separate
 `fab-cli-workspace` preview. It preserves both the six-leaf local `fab-cli`
 executable and the native GET `fab-cli-v2` entry point; no preview overwrites
 another's Cargo output or selects a provider implicitly.
@@ -60,67 +60,77 @@ Paths below are relative to this directory; each package leaf retains its own
 manifest, source, tests, examples and assets:
 
 ```text
-sdk/
-  client/          Combined public SDK client
-  capacities/      Capacity APIs
-  workspaces/      Workspace APIs
-  items/           Item APIs
-  folders/         Folder APIs
-  jobs/            Job APIs
-  tables/          Table APIs
-  tabular/         Shared data codecs and bounded tabular delivery
-  dataflow/        Dataflow execution and result contracts
-  sql/             database/ and definition/ service clients
-  ontology/        client/ and workload/ service clients
-  dataagents/      ontology/ attachment and navigation contracts
-  search/          client/, relevance/, discovery/ and names/
-  contracts/       Shared v2 operation contracts (core layer)
-  catalog/         Metadata discovery
-  access/          Access APIs
-  api-requests/    Explicit API requests
-  storage/         onelake/ models and http/ adapter
-  authentication/  credentials/ providers and isolated windows/ interop
-  deployment/      Reusable deployment workflows
-  http/            executor/ and optional transport/
-  pagination/      Shared paging
-  operations/      Request completion and polling
-  request-context/ Endpoint and credential contracts
-  json/            Shared ordered JSON encoding
-frontends/cli/
+engine/
+  sdk/             Reusable convenience SDK entry point
+  core/
+    contracts/     Endpoint and credential contracts
+    v2-contracts/  Host-neutral v2 operation and capability contracts
+    json/          Shared ordered JSON encoding
+    auth/          provider/ credentials and isolated windows/ interop
+    http/          requests/, executor/ and optional transport/
+    pagination/    Shared paging
+    lro/           Request completion and polling
+  control-plane/
+    resources/     capacities/, workspaces/, folders/ and items/
+    jobs/          Job APIs
+    graph/         Graph refresh composition
+    acl/           Access APIs
+    catalog/       Metadata discovery
+    deployment/    Reusable deployment workflows
+    sql/           database/ metadata and definition/ service contracts
+    ontology/      client/ and workload/ service contracts
+    dataagents/    ontology/ attachment and navigation contracts
+    search/        client/, relevance/, discovery/ and names/
+  data-plane/
+    onelake/       client/ models and http/ adapter
+    tables/        Table capabilities and maintenance orchestration
+    tabular/       Shared data codecs and bounded tabular delivery
+    dataflow/      Dataflow execution and result contracts
+    query/         Bounded engine query contracts
+    semantic-model/ Runtime-neutral client/ and optional dotnet/ analysis
+clients/cli/
   app/             fab-rs executable and central composition
   v2/              Separate six-leaf local fab-cli executable
-  commands/        resources/, resource-mutations/, jobs/, files/,
-                   tables/, local/ and transfer/ adapters
-  paths/           Path resolution and command context
+  commands/        resources/, mutations/, jobs/, storage/, tables/,
+                   local/, transfer/, ontology/ and semantic-model/ adapters
+  state/           Path resolution and command context
   query/           CLI query projection
   output/          Presentation and streams
-  shell/           Optional terminal editor and shell loop
+  repl/            Optional terminal editor and shell loop
   update/          Pinned-trust release verification and updates
+authoring-docs/     Architecture, migration, compatibility and validation guides
 ```
 
 Each leaf crate retains its package name and dependency boundaries. Grouping
-directories are not additional packages. Physical placement under `sdk/` does
+directories are not additional packages. Physical placement under `engine/` does
 not change logical layers or make authentication providers dependencies of SDK
-service clients. CLI deployment handling stays in `frontends/cli/app/src/deploy.rs`;
-the reusable workflow library is `sdk/deployment/`. Additional front-ends,
+service clients. CLI deployment handling stays in `clients/cli/app/src/deploy.rs`;
+the reusable workflow library is `engine/control-plane/deployment/`. Additional front-ends,
 such as MCP servers or Azure DevOps tasks, can add host composition and
 capability-specific adapters without invoking the CLI executable. Those
 front-ends are not implemented by this layout.
 
+Control/data-plane groups describe capability ownership, not every network
+request: table capabilities also orchestrate load and maintenance jobs.
+`engine/sdk/` retains existing item-type implementations and is not a complete
+umbrella for every capability. Focused crates remain directly usable.
+See [architecture](authoring-docs/architecture.md#physical-organization) for directory
+responsibilities and unchanged dependency-layer rules.
+
 | Component | Responsibility |
 | --- | --- |
-| [Fabric SDK](sdk/client/README.md) | Workspace, item, folder and capacity clients over caller-injected credentials and execution policies |
-| [Artifact-first tables](docs/artifact-first-tables.md) | Parent-owned Lakehouse, KQLDatabase and Warehouse SDK adapters with distinct native loading contracts |
-| [HTTP execution](sdk/http/executor/README.md) | Shared authentication, request limits, retries, paging and operation adapters |
-| [Native transport](sdk/http/transport/README.md) | Optional `hyper-rustls` backend and asynchronous timers |
-| [Deployment](sdk/deployment/README.md) | Configuration, parameters, repository planning, item publication and orphan removal |
-| [CLI](frontends/cli/app/README.md) | Argument parsing, command sessions and native host composition |
-| [V2 local host](frontends/cli/v2/README.md) | Separate six-leaf `cli` group, explicit effects and bounded optional providers |
-| [Interactive shell](frontends/cli/shell/README.md) | Optional terminal editor and shell loop, independent of SDK and command implementations |
-| [Release updates](frontends/cli/update/README.md) | Explicit release trust, bounded downloads and installation-custody checks |
-| [Path context](frontends/cli/paths/README.md) | Immutable hierarchy, path resolution and command context |
-| [Name search](sdk/search/names/README.md) | Reusable, deterministic typo suggestions over caller-authorized names; never automatic correction |
-| [Output](frontends/cli/output/README.md) | Structured envelopes, text presentation and stream handling |
+| [Fabric SDK](engine/sdk/README.md) | Workspace, item, folder and capacity clients over caller-injected credentials and execution policies |
+| [Artifact-first tables](authoring-docs/artifact-first-tables.md) | Parent-owned Lakehouse, KQLDatabase and Warehouse SDK adapters with distinct native loading contracts |
+| [HTTP execution](engine/core/http/executor/README.md) | Shared authentication, request limits, retries, paging and operation adapters |
+| [Native transport](engine/core/http/transport/README.md) | Optional `hyper-rustls` backend and asynchronous timers |
+| [Deployment](engine/control-plane/deployment/README.md) | Configuration, parameters, repository planning, item publication and orphan removal |
+| [CLI](clients/cli/app/README.md) | Argument parsing, command sessions and native host composition |
+| [V2 local host](clients/cli/v2/README.md) | Separate six-leaf `cli` group, explicit effects and bounded optional providers |
+| [Interactive shell](clients/cli/repl/README.md) | Optional terminal editor and shell loop, independent of SDK and command implementations |
+| [Release updates](clients/cli/update/README.md) | Explicit release trust, bounded downloads and installation-custody checks |
+| [Path context](clients/cli/state/README.md) | Immutable hierarchy, path resolution and command context |
+| [Name search](engine/control-plane/search/names/README.md) | Reusable, deterministic typo suggestions over caller-authorized names; never automatic correction |
+| [Output](clients/cli/output/README.md) | Structured envelopes, text presentation and stream handling |
 | [Workflow skills](skills/README.md) | Boundaries for workflows that compose CLI commands |
 
 Focused SDK crates provide additional service APIs, including jobs, OneLake,
@@ -128,8 +138,8 @@ access, catalog, tables and raw requests. Each crate documents its own public
 interface and supported operations.
 
 For current implementation boundaries, use the
-[command/resource acceptance inventory](docs/command-parity.md), not historical
-scaffold tables. [Coverage reporting](docs/test-coverage.md) distinguishes actual
+[command/resource acceptance inventory](authoring-docs/command-parity.md), not historical
+scaffold tables. [Coverage reporting](authoring-docs/test-coverage.md) distinguishes actual
 line/function/region measurements from registered commands and test counts.
 
 Service and deployment libraries do not discover credentials, prompt users, create a runtime, initialize
@@ -152,7 +162,7 @@ authentication tool, or persist a local token cache.
 Headless service commands acquire tokens when needed; they do not require a
 desktop `auth login`. Identity inputs and service permissions must be configured
 for the selected environment. Never supply secrets as command-line arguments.
-See the [identity guide](sdk/authentication/credentials/README.md) for
+See the [identity guide](engine/core/auth/provider/README.md) for
 provider inputs, assertion renewal and managed-host limits.
 
 The SDK continues to accept caller-injected credentials independently of these
@@ -187,7 +197,7 @@ registration. The host uses silent Windows credentials; it does not select an
 arbitrary first account or fall back to another authentication tool.
 
 Optional settings cover the configuration root, command context and Fabric
-endpoint. Read the [native host guide](docs/native-read-host.md) before choosing
+endpoint. Read the [native host guide](authoring-docs/native-read-host.md) before choosing
 these settings. An accepted mutation is not necessarily complete, and stopping
 local waiting does not roll back remote or filesystem effects.
 
@@ -259,8 +269,8 @@ cargo run --locked -p fabric-cli --features windows-broker -- auth login --help
 cargo run --locked -p fabric-cli --features native-read -- deploy --help
 ```
 
-See [architecture and validation commands](docs/architecture.md) and
-[build validation](docs/build-validation.md) for platform checks, dependency
+See [architecture and validation commands](authoring-docs/architecture.md) and
+[build validation](authoring-docs/build-validation.md) for platform checks, dependency
 boundaries and shared-host execution limits.
 
 ## Support boundaries
@@ -279,12 +289,12 @@ operations fail rather than returning successful-looking results.
 ## Contributing
 
 - [Agent and contributor instructions](AGENTS.md)
-- [Architecture](docs/architecture.md)
-- [Delivery and review requirements](docs/agentic-delivery.md)
-- [Integration handoff](docs/integration-handoff.md)
-- [Authentication requirements](docs/identity-requirements.md)
-- [Deployment behavior and limits](docs/deployment-compatibility.md)
-- [Extension boundaries](docs/extensions-and-skills.md)
+- [Architecture](authoring-docs/architecture.md)
+- [Delivery and review requirements](authoring-docs/agentic-delivery.md)
+- [Integration handoff](authoring-docs/integration-handoff.md)
+- [Authentication requirements](authoring-docs/identity-requirements.md)
+- [Deployment behavior and limits](authoring-docs/deployment-compatibility.md)
+- [Extension boundaries](authoring-docs/extensions-and-skills.md)
 
 The repository's Microsoft copyright, MIT license and applicable attribution
 apply to this workspace and must be retained in redistributed artifacts.

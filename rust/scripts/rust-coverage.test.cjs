@@ -13,7 +13,7 @@ const metrics = (count, covered) => Object.fromEntries(
   ['lines', 'functions', 'regions'].map(name => [name, {count, covered, percent: 99.99}]),
 );
 function fixture() {
-  const directory = path.join(root, 'rust', 'sdk', 'sample');
+  const directory = path.join(root, 'rust', 'engine', 'sample');
   return {
     metadata: {
       workspace_members: ['sample'],
@@ -76,7 +76,7 @@ test('unmeasured platform/package sources are not reported as zero-covered measu
   const {metadata, report} = fixture();
   metadata.workspace_members.push('other');
   metadata.packages.push({id: 'other', name: 'other',
-    manifest_path: path.join(root, 'rust', 'sdk', 'other', 'Cargo.toml')});
+    manifest_path: path.join(root, 'rust', 'engine', 'other', 'Cargo.toml')});
   const summary = summarize(report, metadata, root, 'packages');
   assert.deepEqual(summary.unmeasured_packages, ['other']);
   assert.equal(summary.totals.lines.count, 40);
@@ -110,6 +110,6 @@ test('standalone tests, examples and generated target files are excluded on both
     'a\\target\\debug\\generated.rs']) assert.ok(pattern.test(value), value);
   for (const value of ['a/src/lib.rs', 'a\\src\\tests.rs']) assert.ok(!pattern.test(value), value);
   const {metadata, report} = fixture();
-  report.data[0].files[0].filename = path.join(root, 'rust', 'sdk', 'sample', 'tests', 'test.rs');
+  report.data[0].files[0].filename = path.join(root, 'rust', 'engine', 'sample', 'tests', 'test.rs');
   assert.throws(() => summarize(report, metadata, root, 'full'), /Unexpected/);
 });

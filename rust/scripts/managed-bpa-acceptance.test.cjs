@@ -13,7 +13,7 @@ function fixture(t) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-managed-acceptance-'));
   t.after(() => fs.rmSync(directory, {recursive: true, force: true}));
   const root = path.join(directory, 'source');
-  const managed = path.join(root, 'rust/sdk/semantic-model/dotnet/managed');
+  const managed = path.join(root, 'rust/engine/data-plane/semantic-model/dotnet/managed');
   fs.mkdirSync(path.join(managed, 'Bpa/Tests'), {recursive: true});
   for (const project of ['BoundaryContractTests.csproj', 'Bpa/Tests/Fabric.SemanticModel.Bpa.Tests.csproj']) {
     fs.writeFileSync(path.join(managed, project), '<Project/>');

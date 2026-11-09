@@ -125,8 +125,8 @@ const REGISTRY = Object.freeze({
   },
   'batch-oracle': {
     step: 'Verify independent pinned batch observations',
-    commands: c => [c.reference(['frontends', 'cli', 'app', 'tests', 'batch_reference.py'],
-      '--check', c.file('frontends', 'cli', 'app', 'tests', 'batch_source.json'))],
+    commands: c => [c.reference(['clients', 'cli', 'app', 'tests', 'batch_reference.py'],
+      '--check', c.file('clients', 'cli', 'app', 'tests', 'batch_source.json'))],
   },
   transport: {
     step: 'Validate the explicitly selected native transport',
@@ -204,7 +204,7 @@ const REGISTRY = Object.freeze({
   repl: {
     step: 'Check optional removable terminal host without terminal or identity access',
     // Core: fabric-cli + fabric-cli-repl, feature fabric-cli/repl.
-    commands: c => [c.unit(['frontends', 'cli', 'shell', 'tests'],
+    commands: c => [c.unit(['clients', 'cli', 'repl', 'tests'],
       'test_source_oracle.py', false)],
   },
   interactive: {
@@ -271,7 +271,7 @@ const REGISTRY = Object.freeze({
   },
   'import-oracle': {
     step: 'Require immutable import input and Environment lifecycle source receipts',
-    commands: c => [c.reference(['sdk', 'deployment',
+    commands: c => [c.reference(['engine', 'control-plane', 'deployment',
       'tests', 'definition_import_reference_checks.py'])],
   },
   'parameters-oracle': {
@@ -286,7 +286,7 @@ const REGISTRY = Object.freeze({
       ...['configured_flags', 'flag_protocol', 'config_value_edges', 'parameter_context',
         'parameter_pipeline', 'path_filter', 'selected_constants', 'parameter_resolution',
         'parameter_schema_edges', 'config_extensions_execution'].map(name =>
-        c.reference(['sdk', 'deployment', 'tests',
+        c.reference(['engine', 'control-plane', 'deployment', 'tests',
           `${name}_reference.py`], '--reference-root', c.parameterRoot)),
     ],
   },
