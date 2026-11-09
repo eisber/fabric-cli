@@ -33,6 +33,16 @@ fn actual_exists_help_is_local_and_valid_execution_requires_explicit_identity() 
     assert!(result.stdout.is_empty());
     let error: Value = serde_json::from_slice(&result.stderr).unwrap();
     assert_eq!(error["error"]["code"], "NotConfigured");
+    for suffix in ["", "/tables/Orders"] {
+        let path = format!(
+            "/workspaces/bbbbbbbb-1111-2222-3333-cccccccccccc/items/cccccccc-2222-3333-4444-dddddddddddd/catalog/namespaces/dbo{suffix}"
+        );
+        let result = run(&["exists", &path]);
+        assert_eq!(result.status.code(), Some(1));
+        assert!(result.stdout.is_empty());
+        let error: Value = serde_json::from_slice(&result.stderr).unwrap();
+        assert_eq!(error["error"]["code"], "NotConfigured");
+    }
 }
 
 #[test]

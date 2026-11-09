@@ -45,7 +45,7 @@ impl<'a> Evidence<'a> {
         })
     }
 
-    fn before(&self) -> Result<(), ()> {
+    pub(super) fn before(&self) -> Result<(), ()> {
         let mut ledger = self.ledger.lock().map_err(|_| ())?;
         if ledger.failure.is_some()
             || ledger.attempts >= ledger.outcome.limits().max_responses()
@@ -57,7 +57,7 @@ impl<'a> Evidence<'a> {
         Ok(())
     }
 
-    fn capture(
+    pub(super) fn capture(
         &self,
         url: &str,
         status: u16,

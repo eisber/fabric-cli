@@ -5,12 +5,13 @@ use super::{Failure, NativeSession, failed, headless};
 use fabric_cli::exists_command::{ExistsArgumentError, exists_command, parse_exists, write_exists};
 use fabric_sdk::{
     Client, EndpointBinding, ServiceOrigin,
-    exists::{ExistsHost, ExistsInterruption, prepare_exists},
+    exists::{CatalogBackend, ExistsHost, ExistsInterruption, prepare_exists},
     v2::{ApprovalPolicy, Effect, PreparedOperation},
 };
 use std::{
     ffi::OsString,
     io,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -68,6 +69,30 @@ pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
         )
     })?;
     let timeout = command.timeout;
+    let catalog_endpoint = if command.target.is_catalog() {
+        let host = match std::env::var("FAB_RUST_ONELAKE_TABLE_HOST") {
+            Ok(host) => host,
+            Err(std::env::VarError::NotPresent) => "onelake.table.fabric.microsoft.com".into(),
+            Err(_) => {
+                return Err(failed(
+                    "InvalidConfiguration",
+                    "Invalid explicit catalog endpoint.",
+                    2,
+                ));
+            }
+        };
+        Some(
+            EndpointBinding::with_host(ServiceOrigin::OneLake, &host).map_err(|_| {
+                failed(
+                    "InvalidConfiguration",
+                    "Invalid explicit catalog endpoint.",
+                    2,
+                )
+            })?,
+        )
+    } else {
+        None
+    };
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .max_blocking_threads(2)
@@ -79,7 +104,7 @@ pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
             .filter(|value| !value.is_zero())
             .ok_or_else(|| failed("TimedOut", "Exists deadline elapsed before dispatch.", 1))?;
         let session = NativeSession::new(selection, endpoint, remaining)?;
-        let client = Client::with_context(session.context);
+        let client = Client::with_context(session.context.clone());
         let host = ExistsHost {
             client: &client,
             items: session.executor.as_ref(),
@@ -92,15 +117,35 @@ pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
                 _ = tokio::signal::ctrl_c() => ExistsInterruption::Cancelled,
             }
         };
-        host.execute_until(&approved, &request, limits, interrupted)
-            .await
-            .map_err(|_| {
+        let result = if let Some(endpoint) = catalog_endpoint {
+            let api = fabric_sdk::api::ApiClient::new(
+                session.context.credential().clone(),
+                session.storage_selection.clone(),
+                Arc::new(fabric_cli_resources::ResourceHttpExecutor(
+                    session.executor_for(endpoint.clone(), deadline)?,
+                )),
+            );
+            let catalog = CatalogBackend::new(api, endpoint).map_err(|_| {
                 failed(
-                    "ExistsFailed",
-                    "Exists could not produce a bounded report; no mutation was attempted.",
-                    1,
+                    "InvalidConfiguration",
+                    "Invalid explicit catalog binding.",
+                    2,
                 )
-            })
+            })?;
+            host.with_catalog(&catalog)
+                .execute_until(&approved, &request, limits, interrupted)
+                .await
+        } else {
+            host.execute_until(&approved, &request, limits, interrupted)
+                .await
+        };
+        result.map_err(|_| {
+            failed(
+                "ExistsFailed",
+                "Exists could not produce a bounded report; no mutation was attempted.",
+                1,
+            )
+        })
     });
     runtime.shutdown_timeout(Duration::from_secs(1));
     let report = result?;
