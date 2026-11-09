@@ -191,6 +191,10 @@ fn request(kind: Kind, records: usize, bytes: usize) -> WorkspaceReadRequest {
         Kind::Items => {
             WorkspaceReadRequest::items(WORKSPACE, nonzero(records), nonzero(bytes), false)
         }
+        Kind::Workspaces => Ok(WorkspaceReadRequest::workspaces(
+            nonzero(records),
+            nonzero(bytes),
+        )),
     }
     .unwrap()
 }
@@ -199,6 +203,9 @@ fn payload(kind: Kind) -> Value {
     match kind {
         Kind::Metadata => metadata(),
         Kind::Items => json!({"value":[item("one")]}),
+        Kind::Workspaces => {
+            json!({"value":[{"id":WORKSPACE,"displayName":"Viewer space","type":"Workspace"}]})
+        }
     }
 }
 
@@ -255,11 +262,11 @@ fn assert_invalid_continuation(kind: Kind, reply: Response) {
 fn uuid_constructors_canonicalize_only_exact_ascii_hex_layout() {
     let uppercase = WORKSPACE.to_ascii_uppercase();
     let metadata = WorkspaceReadRequest::metadata(&uppercase, nonzero(300)).unwrap();
-    assert_eq!(metadata.workspace_id(), WORKSPACE);
+    assert_eq!(metadata.workspace_id(), Some(WORKSPACE));
     assert_eq!(metadata.kind(), Kind::Metadata);
     assert_eq!(metadata.max_data_bytes(), nonzero(300));
     let items = WorkspaceReadRequest::items(&uppercase, nonzero(2), nonzero(400), true).unwrap();
-    assert_eq!(items.workspace_id(), WORKSPACE);
+    assert_eq!(items.workspace_id(), Some(WORKSPACE));
     assert_eq!(items.kind(), Kind::Items);
     assert_eq!(items.max_data_bytes(), nonzero(400));
     assert!(!format!("{metadata:?}").contains(WORKSPACE));
@@ -287,6 +294,119 @@ fn uuid_constructors_canonicalize_only_exact_ascii_hex_layout() {
             WorkspaceReadRequest::items(invalid, nonzero(1), nonzero(1), false).unwrap_err(),
             ReadError::InvalidInput
         );
+    }
+}
+
+#[test]
+fn root_workspaces_preserve_native_identity_order_unknown_types_and_exact_bounds() {
+    let first = json!({"id":WORKSPACE,"displayName":"Same name","type":"FutureWorkspace",
+        "capacityId":null,"future":{"n":1}});
+    let second = json!({"id":OTHER_WORKSPACE,"displayName":"Same name","type":"Personal"});
+    for rows in [
+        vec![],
+        vec![first.clone()],
+        vec![second, first.clone(), first],
+    ] {
+        let bytes = serde_json::to_vec(&rows).unwrap().len();
+        let request = WorkspaceReadRequest::workspaces(nonzero(3), nonzero(bytes));
+        assert_eq!(request.workspace_id(), None);
+        assert_eq!(request.kind(), Kind::Workspaces);
+        let credential = Arc::new(Credential::default());
+        let backend = Arc::new(Backend::new([response(200, json!({"value":rows}))]));
+        let client = client(credential.clone(), backend.clone());
+        let result = run(read_workspace(&client, &request, pending())).unwrap();
+        assert_eq!(result.data, json!(rows));
+        assert!(result.complete);
+        let page = result.page.unwrap();
+        assert_eq!(page.pages_received, 1);
+        assert_eq!(page.records_observed, rows.len());
+        assert_eq!(page.records_returned, rows.len());
+        assert!(!page.has_more);
+        assert!(!page.output_truncated);
+        assert_eq!(page.native_continuation, None);
+        assert_eq!(
+            *backend.requests.lock().unwrap(),
+            [Observed {
+                url: "https://api.fabric.microsoft.com/v1/workspaces".into(),
+                limit: RESPONSE_BYTES,
+            }]
+        );
+        assert_eq!(credential.scopes.lock().unwrap().len(), 1);
+    }
+}
+
+#[test]
+fn native_next_page_is_evidence_only_and_never_skips_clipped_rows() {
+    for kind in [Kind::Items, Kind::Workspaces] {
+        let row = if kind == Kind::Items {
+            item("one")
+        } else {
+            json!({"id":WORKSPACE,"displayName":"First","type":"Workspace"})
+        };
+        let second = if kind == Kind::Items {
+            item("two")
+        } else {
+            json!({"id":OTHER_WORKSPACE,"displayName":"Second","type":"Workspace"})
+        };
+        for (rows, records, bytes, omitted) in [
+            (vec![], 2, 4096, false),
+            (vec![row.clone()], 1, 4096, false),
+            (vec![row.clone(), second.clone()], 1, 4096, true),
+            (
+                vec![row.clone(), second],
+                2,
+                serde_json::to_vec(&vec![row.clone()]).unwrap().len(),
+                true,
+            ),
+        ] {
+            let mut reply = response(200, json!({"value":rows}));
+            reply
+                .headers
+                .insert("X-Ms-Continuation".into(), "private-next-page".into());
+            let backend = Arc::new(Backend::new([reply, response(200, payload(kind))]));
+            let client = client(Arc::new(Credential::default()), backend.clone());
+            let result = run(read_workspace(
+                &client,
+                &request(kind, records, bytes),
+                pending(),
+            ))
+            .unwrap();
+            assert!(!result.complete);
+            assert!(result.truncated);
+            let page = result.page.unwrap();
+            assert_eq!(page.records_observed, rows.len());
+            assert_eq!(page.records_returned, if omitted { 1 } else { rows.len() });
+            assert!(page.has_more);
+            assert_eq!(page.output_truncated, omitted);
+            assert_eq!(
+                page.native_continuation.as_deref(),
+                if omitted {
+                    None
+                } else {
+                    Some("private-next-page")
+                }
+            );
+            assert!(!format!("{page:?}").contains("private-next-page"));
+            assert_eq!(backend.requests.lock().unwrap().len(), 1);
+            assert_eq!(backend.replies.lock().unwrap().len(), 1);
+        }
+    }
+}
+
+#[test]
+fn root_missing_or_wrong_native_identity_and_unsafe_next_are_not_empty_lists() {
+    for page in [
+        json!({}),
+        json!({"value":null}),
+        json!({"value":{}}),
+        json!({"value":[{"id":"not-a-uuid","displayName":"Name","type":"Workspace"}]}),
+        json!({"value":[{"id":WORKSPACE,"displayName":"Name"}]}),
+        json!({"value":[{"id":WORKSPACE,"type":"Workspace"}]}),
+        json!({"value":[],"continuationUri":"https://api.fabric.microsoft.com/v1/workspaces?continuationToken=next"}),
+        json!({"value":[],"continuationToken":"next","continuationUri":"https://untrusted.invalid/v1/workspaces"}),
+        json!({"value":[],"continuationToken":"next","continuationUri":format!("https://api.fabric.microsoft.com/v1/workspaces/{WORKSPACE}/items")}),
+    ] {
+        assert_invalid_continuation(Kind::Workspaces, response(200, page));
     }
 }
 
@@ -865,7 +985,7 @@ fn every_native_item_is_validated_including_rows_outside_the_selected_prefix() {
 
 #[test]
 fn statuses_service_failures_and_malformed_json_never_become_empty_success() {
-    for kind in [Kind::Metadata, Kind::Items] {
+    for kind in [Kind::Metadata, Kind::Items, Kind::Workspaces] {
         for (status, expected) in [
             (201, ReadError::InvalidResponse),
             (202, ReadError::InvalidResponse),
@@ -906,7 +1026,7 @@ fn statuses_service_failures_and_malformed_json_never_become_empty_success() {
 
 #[test]
 fn shared_response_safety_limit_is_finite_separate_and_exact() {
-    for kind in [Kind::Metadata, Kind::Items] {
+    for kind in [Kind::Metadata, Kind::Items, Kind::Workspaces] {
         for extra in [0, 1] {
             let mut body = serde_json::to_vec(&payload(kind)).unwrap();
             body.resize(RESPONSE_BYTES + extra, b' ');
@@ -925,7 +1045,7 @@ fn shared_response_safety_limit_is_finite_separate_and_exact() {
 
 #[test]
 fn shared_execution_failures_map_to_sanitized_typed_errors() {
-    for kind in [Kind::Metadata, Kind::Items] {
+    for kind in [Kind::Metadata, Kind::Items, Kind::Workspaces] {
         for (execution, expected) in [
             (ExecutionError::Failed, ReadError::OperationFailed),
             (ExecutionError::RetriesExhausted, ReadError::OperationFailed),
@@ -949,7 +1069,7 @@ fn shared_execution_failures_map_to_sanitized_typed_errors() {
 
 #[test]
 fn unsupported_audience_executor_and_failed_credentials_do_not_dispatch() {
-    for kind in [Kind::Metadata, Kind::Items] {
+    for kind in [Kind::Metadata, Kind::Items, Kind::Workspaces] {
         for audience in [Audience::OneLake, Audience::Arm] {
             let credential = Arc::new(Credential::default());
             let backend = Arc::new(Backend::default());
@@ -1000,7 +1120,7 @@ fn unsupported_audience_executor_and_failed_credentials_do_not_dispatch() {
 
 #[test]
 fn already_cancelled_reads_do_not_acquire_credentials() {
-    for kind in [Kind::Metadata, Kind::Items] {
+    for kind in [Kind::Metadata, Kind::Items, Kind::Workspaces] {
         let credential = Arc::new(Credential::default());
         let backend = Arc::new(Backend::default());
         let client = client(credential.clone(), backend.clone());
@@ -1015,7 +1135,7 @@ fn already_cancelled_reads_do_not_acquire_credentials() {
 
 #[test]
 fn cancellation_drops_pending_credentials_before_any_request() {
-    for kind in [Kind::Metadata, Kind::Items] {
+    for kind in [Kind::Metadata, Kind::Items, Kind::Workspaces] {
         let credential = Arc::new(Credential {
             hold: true,
             ..Credential::default()
@@ -1041,7 +1161,7 @@ fn cancellation_drops_pending_credentials_before_any_request() {
 
 #[test]
 fn in_flight_cancellation_drops_the_executor_without_a_second_request() {
-    for kind in [Kind::Metadata, Kind::Items] {
+    for kind in [Kind::Metadata, Kind::Items, Kind::Workspaces] {
         let credential = Arc::new(Credential::default());
         let backend = Arc::new(Backend {
             hold: true,
@@ -1067,7 +1187,7 @@ fn in_flight_cancellation_drops_the_executor_without_a_second_request() {
 
 #[test]
 fn cancellation_is_rechecked_after_decode_and_budget_before_committing_data() {
-    for kind in [Kind::Metadata, Kind::Items] {
+    for kind in [Kind::Metadata, Kind::Items, Kind::Workspaces] {
         for bytes in [1, 4096] {
             let flag = Arc::new(AtomicBool::new(false));
             let backend = Arc::new(Backend {

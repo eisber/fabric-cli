@@ -276,6 +276,61 @@ fn ready_cancellation_and_deadline_win_before_credentials() {
 }
 
 #[test]
+fn root_deadline_and_cancellation_win_before_or_during_native_page() {
+    for cancel in [true, false] {
+        for in_flight in [true, false] {
+            let command = parsed(&[
+                "list",
+                "/",
+                "--limit",
+                "1",
+                "--max-bytes",
+                "4096",
+                "--timeout",
+                "30s",
+            ]);
+            let mut transport = Http::new([]);
+            transport.hold_after = Some(1);
+            let http = Arc::new(transport);
+            let credential = Arc::new(Credential::default());
+            let client = ApiClient::new(
+                credential.clone(),
+                CredentialSelection::new("selected-account", "selected-tenant", Audience::Fabric)
+                    .unwrap(),
+                Arc::new(fabric_cli_resources::ResourceHttpExecutor(Arc::new(
+                    executor(http.clone(), Arc::new(Timer::default())),
+                ))),
+            );
+            let interrupt = poll_fn(|cx| {
+                if in_flight && http.requests.lock().unwrap().is_empty() {
+                    cx.waker().wake_by_ref();
+                    Poll::Pending
+                } else {
+                    Poll::Ready(())
+                }
+            });
+            let result = if cancel {
+                complete(execute(&client, &command, NOW, interrupt, pending()))
+            } else {
+                complete(execute(&client, &command, NOW, pending(), interrupt))
+            };
+            let envelope = value(&result);
+            assert_eq!(
+                envelope["error"]["code"],
+                if cancel { "Cancelled" } else { "Timeout" }
+            );
+            assert_eq!(envelope["meta"]["coverage"]["complete"], Value::Null);
+            assert_eq!(envelope["meta"]["context"]["account"], "selected-account");
+            assert_eq!(http.requests.lock().unwrap().len(), usize::from(in_flight));
+            assert_eq!(
+                credential.scopes.lock().unwrap().len(),
+                usize::from(in_flight)
+            );
+        }
+    }
+}
+
+#[test]
 fn in_flight_cancellation_and_deadline_drop_read_without_reissue() {
     for cancel in [true, false] {
         let command = parsed(&["get", PATH, "--max-bytes", "4096", "--timeout", "30s"]);
@@ -411,7 +466,178 @@ fn parser_requires_explicit_budgets_and_rejects_unadvertised_surfaces() {
     }
     let uppercase = format!("/{}.Workspace", W.to_uppercase());
     let command = parsed(&["get", &uppercase, "--max-bytes", "4096", "--timeout", "24h"]);
-    assert_eq!(command.request().workspace_id(), W);
+    assert_eq!(command.request().workspace_id(), Some(W));
+}
+
+#[test]
+fn root_list_is_access_filtered_not_admin_and_never_invents_a_workspace_id() {
+    let rows = vec![
+        json!({"id":W,"displayName":"Same","type":"FutureWorkspace"}),
+        json!({"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","displayName":"Same","type":"Personal"}),
+    ];
+    let command = parsed(&[
+        "list",
+        "/",
+        "--max-bytes",
+        "4096",
+        "--limit",
+        "2",
+        "--timeout",
+        "30s",
+    ]);
+    assert_eq!(command.request().workspace_id(), None);
+    let (client, http, credential) = client([reply(json!({"value":rows}))]);
+    let result = complete(execute(&client, &command, NOW, pending(), pending()));
+    let envelope = value(&result);
+    assert_eq!(result.exit_code(), 0);
+    assert_eq!(envelope["data"], json!(rows));
+    assert_eq!(envelope["meta"]["target"]["path"], "/");
+    assert_eq!(envelope["meta"]["target"]["id"], Value::Null);
+    assert_eq!(envelope["meta"]["target"]["type"], "Workspaces");
+    assert_eq!(envelope["meta"]["target"]["scope"], "accessible-workspaces");
+    assert_eq!(envelope["meta"]["context"]["account"], "offline-account");
+    assert_eq!(envelope["meta"]["page"]["recordsObserved"], 2);
+    assert_eq!(envelope["meta"]["page"]["recordsReturned"], 2);
+    assert_eq!(
+        *http.requests.lock().unwrap(),
+        ["https://api.fabric.microsoft.com/v1/workspaces"]
+    );
+    assert_eq!(credential.scopes.lock().unwrap().len(), 1);
+    http.assert_consumed();
+}
+
+#[test]
+fn root_projection_preserves_native_paging_coverage_without_exposing_a_token() {
+    for rows in [
+        vec![],
+        vec![json!({"id":W,"displayName":"Name","type":"Workspace"})],
+    ] {
+        let command = parsed(&[
+            "list",
+            "/",
+            "--max-bytes",
+            "4096",
+            "--limit",
+            "1",
+            "--timeout",
+            "30s",
+            "--project",
+            "length(@)",
+        ]);
+        let (client, http, _) = client([reply(
+            json!({"value":rows,"continuationToken":"native-page-two"}),
+        )]);
+        let result = complete(execute(&client, &command, NOW, pending(), pending()));
+        let envelope = value(&result);
+        assert_eq!(result.exit_code(), 1);
+        assert_eq!(envelope["status"], "partial");
+        assert_eq!(envelope["data"], json!(rows.len()));
+        assert_eq!(envelope["meta"]["coverage"]["complete"], false);
+        assert_eq!(envelope["meta"]["coverage"]["continuation"], Value::Null);
+        assert_eq!(envelope["meta"]["coverage"]["resumable"], false);
+        assert_eq!(envelope["meta"]["page"]["nativeContinuation"], Value::Null);
+        assert_eq!(envelope["meta"]["page"]["hasMore"], true);
+        assert_eq!(envelope["meta"]["page"]["outputTruncated"], false);
+        assert_eq!(http.requests.lock().unwrap().len(), 1);
+        assert!(!format!("{result:?}").contains("native-page-two"));
+        assert!(!envelope.to_string().contains("native-page-two"));
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        assert_eq!(
+            write_result(
+                OutputReservation::new(None).unwrap(),
+                &result,
+                &mut stdout,
+                &mut stderr,
+            )
+            .unwrap(),
+            1,
+        );
+        assert!(stderr.is_empty());
+        assert!(
+            !String::from_utf8(stdout)
+                .unwrap()
+                .contains("native-page-two")
+        );
+    }
+}
+
+#[test]
+fn item_and_root_clipping_withhold_next_token_and_keep_preprojection_counts() {
+    for (path, recursive, rows) in [
+        (
+            PATH,
+            vec!["--recursive", "false"],
+            vec![item("one"), item("two")],
+        ),
+        (
+            "/",
+            vec![],
+            vec![
+                json!({"id":W,"displayName":"One","type":"Workspace"}),
+                json!({"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","displayName":"Two","type":"Workspace"}),
+            ],
+        ),
+    ] {
+        for (records, bytes) in [
+            ("1", "4096".to_owned()),
+            (
+                "2",
+                serde_json::to_vec(&vec![rows[0].clone()])
+                    .unwrap()
+                    .len()
+                    .to_string(),
+            ),
+        ] {
+            let mut args = vec![
+                "list",
+                path,
+                "--limit",
+                records,
+                "--max-bytes",
+                bytes.as_str(),
+                "--timeout",
+                "30s",
+                "--project",
+                "`false`",
+            ];
+            args.extend_from_slice(&recursive);
+            let command = parsed(&args);
+            let (client, http, _) = client([reply(
+                json!({"value":rows,"continuationToken":"must-not-skip"}),
+            )]);
+            let result = complete(execute(&client, &command, NOW, pending(), pending()));
+            let envelope = value(&result);
+            assert_eq!(envelope["data"], false);
+            assert_eq!(result.exit_code(), 1);
+            assert_eq!(envelope["meta"]["page"]["recordsObserved"], 2);
+            assert_eq!(envelope["meta"]["page"]["recordsReturned"], 1);
+            assert_eq!(envelope["meta"]["page"]["outputTruncated"], true);
+            assert_eq!(envelope["meta"]["page"]["nativeContinuation"], Value::Null);
+            assert!(!envelope.to_string().contains("must-not-skip"));
+            assert_eq!(http.requests.lock().unwrap().len(), 1);
+        }
+    }
+}
+
+#[test]
+fn root_list_rejects_facade_recursion_admin_and_resume_options_before_remote_work() {
+    for prefix in [
+        vec!["list", "/", "--recursive", "false"],
+        vec!["artifact", "workspace", "list", "/"],
+        vec!["list", "/admin/workspaces"],
+        vec!["list", "/", "--continuation", "unbound-token"],
+        vec!["list", "/", "--all"],
+    ] {
+        let mut args = prefix;
+        args.extend(["--limit", "1", "--max-bytes", "4096", "--timeout", "30s"]);
+        assert!(
+            parse_args(
+                std::iter::once(OsString::from("fab-cli-workspace"))
+                    .chain(args.iter().map(OsString::from))
+            )
+            .is_err()
+        );
+    }
 }
 
 #[test]
@@ -538,6 +764,52 @@ fn failed_read_cleans_reservation_without_publishing_a_success_file() {
 }
 
 struct BrokenWriter;
+
+#[test]
+fn output_failure_retains_native_counts_but_does_not_log_opaque_continuation() {
+    let command = parsed(&[
+        "list",
+        "/",
+        "--limit",
+        "1",
+        "--max-bytes",
+        "4096",
+        "--timeout",
+        "30s",
+    ]);
+    let (client, http, _) = client([reply(json!({
+        "value": [{"id":W,"displayName":"Workspace","type":"Workspace"}],
+        "continuationToken":"private-next-page"
+    }))]);
+    let result = complete(execute(&client, &command, NOW, pending(), pending()));
+    assert_eq!(
+        value(&result)["meta"]["page"]["nativeContinuation"],
+        Value::Null
+    );
+    assert!(!value(&result).to_string().contains("private-next-page"));
+    let mut stderr = Vec::new();
+    assert_eq!(
+        write_result(
+            OutputReservation::new(None).unwrap(),
+            &result,
+            &mut BrokenWriter,
+            &mut stderr
+        )
+        .unwrap(),
+        1
+    );
+    let failed: Value = serde_json::from_slice(&stderr).unwrap();
+    assert_eq!(failed["error"]["code"], "OutputFailed");
+    assert_eq!(failed["meta"]["page"]["recordsObserved"], 1);
+    assert_eq!(failed["meta"]["page"]["hasMore"], true);
+    assert_eq!(failed["meta"]["page"]["nativeContinuation"], Value::Null);
+    assert!(
+        !String::from_utf8(stderr)
+            .unwrap()
+            .contains("private-next-page")
+    );
+    assert_eq!(http.requests.lock().unwrap().len(), 1);
+}
 
 impl Write for BrokenWriter {
     fn write(&mut self, _: &[u8]) -> io::Result<usize> {

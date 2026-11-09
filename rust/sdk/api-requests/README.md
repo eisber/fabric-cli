@@ -55,6 +55,36 @@ and debug formatting omits URL/query data.
 Cancellation and dropping a future stop local work, not remote mutations.
 No retry engine, transport, runtime or credential discovery is installed.
 
+## Bounded workspace List
+
+`workspace_reads::WorkspaceReadRequest::workspaces` selects the root collection
+accessible to the injected principal. `items` selects one exact workspace's
+item collection with explicit recursion. Both reuse `ApiClient` and the shared
+pager under the existing finite row/response ceilings, requesting at most one
+native page. They never fall back to tenant-admin inventory or a different
+identity, enrich rows, sort, deduplicate, or infer folders.
+
+`workspace_id()` is optional in this experimental v2 request: root workspaces
+have no owning workspace ID. Workspace-scoped constructors still canonicalize
+the explicit UUID. Legacy `WorkspaceClient`, `ItemClient`, v1 APIs and oracles
+are unchanged.
+
+The result retains native page/row measurements and output truncation before
+caller projection. A validated native next-page token is exposed as page
+evidence only when all observed rows fit the explicit record/data budget; it is
+withheld on clipping to prevent skipping unreturned records. This is not a
+portable identity-bound v2 cursor or a source snapshot guarantee. More pages
+or omitted rows keep `complete:false` and `truncated:true`; failed/denied/
+malformed requests never become empty successful lists.
+
+The separate experimental CLI has no supported bound continuation consumer;
+it retains page counts and `hasMore` but does not serialize the SDK's opaque
+token into output or diagnostics. SDK evidence is not an advertised public
+CLI cursor.
+
+See [the bounded CLI and SDK contract](../../docs/workspace-v2-reads.md) for
+native API citations, array/projection semantics and deferred resume scope.
+
 ## Additive v2 invocation policy
 
 `v2_policy` provides a dependency-free policy component for future API v2
