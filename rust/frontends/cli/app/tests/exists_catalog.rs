@@ -115,7 +115,8 @@ async fn catalog_sdk_and_root_share_boolean_null_evidence_bytes_and_exit_contrac
                 configuration(config(PREFIX)),
                 response(status, vec![]),
             ]);
-            let report = fixture.run(command.target, command.limits().unwrap()).await;
+            let limits = command.limits().unwrap();
+            let report = fixture.run(command.target, limits).await;
             assert_eq!(report.exists(), exists);
             let mut stdout = Vec::new();
             assert_eq!(write_exists(&report, &mut stdout).unwrap(), exit);
