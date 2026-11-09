@@ -27,6 +27,7 @@ pub mod get_metadata;
 mod get_report;
 pub mod get_resolution;
 pub mod get_target;
+mod get_warehouse_definition;
 pub mod jobs;
 pub mod local_commands;
 pub mod native_tabular;

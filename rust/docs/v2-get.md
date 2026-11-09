@@ -79,10 +79,13 @@ projected data. Unknown native versions or missing report structure are partial,
 not complete authoring exports. Untyped item paths retain the generic binding.
 
 Explicitly typed `.Warehouse` metadata uses the native Warehouse metadata GET,
-without definition or connection enrichment. Warehouse source, docs, file and
-run representations are not bound in this head; they fail before acquisition
-rather than falling through to generic item source. The existing explicit-budget
-get/list head supplies the separate [Warehouse connection and restore delegates](warehouse-management-reads.md#bounded-cli-consumer).
+without definition or connection enrichment. Explicit Warehouse source paths use
+the dedicated [native definition SDK](warehouse-definitions.md) with its strict
+SQL-project/DACPAC codec. Untyped machine-ID representation paths first establish
+the authoritative owner, then select that same Warehouse definition binding
+instead of a generic item definition POST. Warehouse docs, file and run
+representations remain unsupported. The existing explicit-budget get/list head
+supplies the separate [Warehouse connection and restore delegates](warehouse-management-reads.md#bounded-cli-consumer).
 
 ## Options, data and local delivery
 

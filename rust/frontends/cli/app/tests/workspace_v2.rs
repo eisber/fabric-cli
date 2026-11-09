@@ -326,9 +326,20 @@ fn warehouse_actual_head_preflight_rejects_wrong_facade_facets_and_missing_limit
             .env("FAB_RUST_AUTH_MODE", "invalid-explicit-provider")
             .output()
             .unwrap();
-        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(
+            output.status.code(),
+            Some(if cfg!(feature = "native-host") { 2 } else { 1 })
+        );
         assert!(output.stdout.is_empty());
         let failed: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(
+            failed["error"]["code"],
+            if cfg!(feature = "native-host") {
+                "InvalidInput"
+            } else {
+                "NotConfigured"
+            }
+        );
         assert_ne!(failed["status"], "succeeded");
         assert_eq!(failed["meta"]["target"]["type"], "Warehouse");
     }

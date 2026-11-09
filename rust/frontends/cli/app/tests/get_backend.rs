@@ -5,6 +5,9 @@
 
 #![deny(unnameable_test_items)]
 
+#[path = "get_backend_warehouse_definition/mod.rs"]
+mod warehouse_definition_cases;
+
 use async_trait::async_trait;
 use azure_core::{
     credentials::{AccessToken, TokenRequestOptions},
@@ -345,17 +348,29 @@ fn generic_owner(f: &Fixture, owner_type: &str) {
 }
 
 #[tokio::test]
-async fn warehouse_machine_id_representation_checks_authoritative_owner_before_any_source() {
+async fn warehouse_machine_id_unsupported_representation_checks_authoritative_owner() {
     for suffix in [
-        "/src/definition",
-        "/src/definition/formats/sqlproj",
-        "/src/definition/formats/dacpac/parts/definition.dacpac",
         "/Files/data.bin",
         "/runs/33333333-3333-3333-3333-333333333333",
+        "/docs/overview",
     ] {
         let f = Fixture::new();
         generic_owner(&f, "Warehouse");
-        assert!(stdout(&f, &["get".into(), path(suffix)]).await.is_err());
+        let docs = Docs {
+            calls: Mutex::new(Vec::new()),
+            deny_child: false,
+            oversized: false,
+            deny_root: false,
+        };
+        let mut backend = f.backend();
+        backend.documents = Some(&docs);
+        assert!(
+            f.prepared(&["get".into(), path(suffix)])
+                .acquire(&backend, pending())
+                .await
+                .is_err()
+        );
+        assert!(docs.calls.lock().unwrap().is_empty());
         assert_eq!(
             f.executor.calls.lock().unwrap().as_slice(),
             &[("GET".into(), format!("/v1/workspaces/{WS}/items/{ITEM}"))]
@@ -436,11 +451,9 @@ async fn warehouse_common_get_uses_native_metadata_only_and_projects_data_not_ow
 }
 
 #[tokio::test]
-async fn warehouse_definition_and_unsettled_facets_never_fall_back_to_generic_source() {
+async fn warehouse_unsettled_facets_never_fall_back_to_generic_source() {
     let f = Fixture::new();
     for suffix in [
-        "/src/definition",
-        "/src/definition/formats/sqlproj",
         "/Files/a",
         "/runs/33333333-3333-3333-3333-333333333333",
         "/connection",
@@ -695,8 +708,11 @@ async fn warehouse_resume_rejects_changed_owner_options_endpoint_and_credential_
     let context = fabric_sdk::RequestContext::with_endpoint(
         f.credential.clone(),
         f.client.selection().clone(),
-        fabric_sdk::EndpointBinding::with_host(fabric_sdk::ServiceOrigin::Fabric, "other.example")
-            .unwrap(),
+        fabric_sdk::EndpointBinding::with_host(
+            fabric_sdk::ServiceOrigin::Fabric,
+            "dailyapi.fabric.microsoft.com",
+        )
+        .unwrap(),
     );
     let other_endpoint = Client::with_context(context);
     let changed_host = WarehouseReadHost {

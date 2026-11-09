@@ -86,14 +86,31 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                 GetTarget::parse(path).map_err(|error| backend_error("InvalidTarget", error))?;
             if let GetTarget::Item {
                 item_type: Some(kind),
+                representation:
+                    GetRepresentation::Definition {
+                        native_format: Some(format),
+                        ..
+                    },
+                ..
+            } = &parsed
+                && kind == "Warehouse"
+            {
+                fabric_sdk::warehouse::WarehouseDefinitionFormat::try_from(format.as_str())
+                    .map_err(|error| backend_error("InvalidTarget", error))?;
+            }
+            if let GetTarget::Item {
+                item_type: Some(kind),
                 representation,
                 ..
             } = &parsed
                 && kind == "Warehouse"
-                && !matches!(representation, GetRepresentation::Metadata)
+                && !matches!(
+                    representation,
+                    GetRepresentation::Metadata | GetRepresentation::Definition { .. }
+                )
             {
                 return Err(unsupported(
-                    "Warehouse source and facet paths await an approved native binding",
+                    "this Warehouse representation has no native GET binding",
                 ));
             }
             if let GetTarget::Item {
@@ -273,6 +290,7 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                     item_type,
                     representation,
                 } => {
+                    let mut discovered_warehouse = false;
                     if item_type.is_none() && !matches!(representation, GetRepresentation::Metadata)
                     {
                         let owner = metadata
@@ -293,22 +311,60 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                             unsupported("representation owner type is unavailable")
                         })?;
                         if owner_type == "Warehouse" {
-                            return Err(unsupported(
-                                "Warehouse source and facet paths await an approved native binding",
-                            ));
+                            discovered_warehouse = true;
                         }
                     }
-                    if item_type.as_deref() == Some("Warehouse") {
-                        return crate::warehouse_reads::metadata(
+                    if item_type.as_deref() == Some("Warehouse") || discovered_warehouse {
+                        if !discovered_warehouse {
+                            let read = crate::warehouse_reads::metadata(
+                                self.client,
+                                budget,
+                                workspace_id,
+                                item_id,
+                                OperationLimits {
+                                    max_response_bytes: remaining,
+                                    ..OperationLimits::default()
+                                },
+                                cap,
+                            )
+                            .await?;
+                            if matches!(representation, GetRepresentation::Metadata) {
+                                return Ok(read);
+                            }
+                        }
+                        let GetRepresentation::Definition {
+                            native_format,
+                            part,
+                        } = representation
+                        else {
+                            return Err(unsupported(
+                                "this Warehouse representation has no native GET binding",
+                            ));
+                        };
+                        let remaining = NonZeroUsize::new(budget.remaining_bytes()).ok_or(
+                            GetCommandError::ByteLimit {
+                                limit: cap.get(),
+                                observed: cap.get().saturating_add(1),
+                            },
+                        )?;
+                        let owner = fabric_sdk::warehouse::WarehouseTarget::new(
+                            workspace_id
+                                .parse()
+                                .map_err(|error| backend_error("InvalidTarget", error))?,
+                            item_id
+                                .parse()
+                                .map_err(|error| backend_error("InvalidTarget", error))?,
+                            "Warehouse",
+                        )
+                        .map_err(|error| backend_error("InvalidTarget", error))?;
+                        return crate::get_warehouse_definition::retrieve(
                             self.client,
                             budget,
-                            workspace_id,
-                            item_id,
-                            OperationLimits {
-                                max_response_bytes: remaining,
-                                ..OperationLimits::default()
-                            },
-                            cap,
+                            &owner,
+                            native_format.as_deref(),
+                            part.as_deref(),
+                            options,
+                            remaining,
                         )
                         .await;
                     }

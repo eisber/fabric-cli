@@ -136,14 +136,31 @@ No metadata/SQL cost or snapshot consistency guarantee is implied.
 
 The separate existing `fab-cli-v2` GET backend also dispatches explicitly typed
 Warehouse metadata to the native Warehouse route instead of generic item GET.
-Its source/docs/file/run facets remain unsupported for Warehouse. Ordinary GET
-never requests a definition, opens SQL, or falls back to another item endpoint.
+Its explicitly addressed source definitions now use the reviewed native
+Warehouse SDK, never the generic `/items/{id}/getDefinition` fallback. Typed
+Warehouse paths and untyped machine-ID source paths establish the authoritative
+owner before dispatch; the latter reuse their metadata read rather than fetching
+it twice. Unsupported docs/file/run representations remain rejected. Ordinary
+item GET never requests a definition or opens SQL.
 
-Definition output remains deferred until the independently implemented native
-SDK definition binding is reviewed and released. The existing
-`src/definition[/formats/...][/parts/...]` representation seam is retained;
-this consumer does not guess SQL source formats or use generic definition POST
-as a fallback. A SQL project (`sqlproj`) describes source/project structure;
+The existing `src/definition[/formats/...][/parts/...]` representation seam
+selects the native definition; omitted native format uses `sqlproj`, while
+`formats/dacpac` requests the packaged model. Full JSON output retains the entire
+native response envelope, ordered Base64 parts, unknown fields and format/media
+evidence. An explicit part path supports exact raw bytes or the existing Base64
+JSON presentation, with part-only coverage in unprojected metadata. No file
+extraction or automatic project build occurs. Native format selectors remain
+separate from `--format json|raw`, which selects the local presentation.
+
+Definitions retain the existing command-wide byte/deadline/request budget;
+structural and decoded bounds derive from the remaining byte allowance rather
+than new global numeric defaults. Accepted results stay incomplete, preserve an
+actual handle or explicit absence, and are not written as completed source files.
+Only explicit `--wait` uses the existing shared observer, then admits its exact
+successful result through the original Warehouse codec. There is one submission,
+no replay, timeout cancellation or rollback promise.
+
+A SQL project (`sqlproj`) describes source/project structure;
 a DACPAC is a deployment/schema package. Neither is table data, a restore point,
 or a permission to execute/deploy SQL. Export/packaging semantics remain separate.
 
