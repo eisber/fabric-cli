@@ -7,6 +7,44 @@
 It composes the jobs SDK, shared operation handling and CLI output without
 creating a separate executable or runtime.
 
+## Additive v2 Run surface
+
+`v2_run::command()` exposes the same `run PATH` leaf at the root and under
+`artifact notebook`, `artifact user-data-function`, and `artifact lakehouse`.
+It does not replace the v1 grammar or mount a production host.
+`v2_run::register` uses the shared operation registry: root/facade discovery
+returns the same binding identity and the configured adapter's input schema.
+Bindings without an executable adapter are explicitly `Unsupported`; the
+merged Notebook request, UDF JSON and Livy statement validators alone do not
+enable execution.
+
+The outer host resolves one exact target, authorizes its native effects and
+selects an approved `RunAdapter`, a bounded `JsonInput` reader and the
+`RunOutput` sink corresponding to `--output`. Call `prepare` before credentials
+or remote execution, then `dispatch` with the original injected `JobClient`,
+clock and interruption future. The prepared value retains that exact adapter
+and output sink. Remote name resolution must consume the outer host's original
+budget; this entry point accepts already resolved targets and does not discover
+names or acquire credentials itself.
+
+The initial representation is JSON, with a newline-terminated protected
+execution receipt. Defaults are 30 seconds for Notebook/Livy submission,
+5 minutes with `--wait`, and 2 minutes for a synchronous UDF with either
+spelling. Explicit positive integer durations use `ms`, `s`, `m`, or `h`, up
+to 24 hours, and replace the default. The shared `RunSession` owns the total
+budget, actual handle/effect evidence, observation and output commit.
+`RunDispatchError` distinguishes startup, retained phase failures and observed
+unsuccessful workloads; callers must preserve that evidence and report nonzero
+failure rather than retry execution.
+
+Timeout and interruption never send remote cancellation or delete sessions.
+`invocationId` is UDF correlation, not an asynchronous handle. `--check-exit`
+is unavailable until a separate Beta verdict protocol is approved; saved-cell
+and one-shot execution are rejected without fallback. No arbitrary URL,
+standalone `invoke` or `wait`, auth discovery, new runtime or second poller is
+introduced. Production UDF endpoint/schema/audience and Livy LH-12 bindings
+remain separate prerequisites. No live workspace execution is claimed.
+
 ## Compose the host
 
 Mount `job_subcommand()` in the root parser and pass the group matches to
