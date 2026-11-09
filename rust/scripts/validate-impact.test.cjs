@@ -249,6 +249,40 @@ test('feature tests use the tested package feature forwarding, never unrelated w
   assert.ok(!command.args.join(',').includes('identity/windows-broker'));
 });
 
+test('profile test feature closures are package-scoped and explicitly preserve forwarded features', () => {
+  const p = plan();
+  p.profiles[0].test_features = {
+    cli: ['cli/native-read', 'cli/transport'],
+    identity: ['identity/windows-broker'],
+  };
+  assert.deepEqual(ownFeatures(p.profiles[0], 'cli'), ['cli/native-read', 'cli/transport']);
+  const command = coreCommands(p, 'linux').find(item => item.id === 'native:test:cli');
+  assert.equal(command.args[command.args.indexOf('--features') + 1], 'cli/native-read,cli/transport');
+  assert.ok(!command.args.join(',').includes('identity/windows-broker'));
+  delete p.profiles[0].test_features.cli;
+  assert.throws(() => coreCommands(p, 'linux'), /Missing or invalid package test features/);
+  p.profiles[0].test_features.cli = ['identity/windows-broker'];
+  assert.throws(() => coreCommands(p, 'linux'), /Missing or invalid package test features/);
+});
+
+test('native selection equality binds forwarded package test features, not metadata order', () => {
+  const expected = plan();
+  expected.profiles[0].test_features = {
+    cli: ['cli/native-read', 'cli/transport'], identity: ['identity/windows-broker'],
+  };
+  const reordered = structuredClone(expected);
+  reordered.profiles[0].test_features = {
+    identity: ['identity/windows-broker'], cli: ['cli/transport', 'cli/native-read'],
+  };
+  equalSelection(expected, reordered);
+  const missing = structuredClone(expected);
+  delete missing.profiles[0].test_features.cli;
+  assert.throws(() => equalSelection(expected, missing), /Native impact selection differs/);
+  const changed = structuredClone(expected);
+  changed.profiles[0].test_features.cli = ['cli/native-read'];
+  assert.throws(() => equalSelection(expected, changed), /Native impact selection differs/);
+});
+
 test('interactive profiles retain explicit provider features and CLI forwarding on every native platform', () => {
   const p = plan();
   p.packages = ['cli', 'identity'];

@@ -617,6 +617,16 @@ function plan({metadata, graph, files, root, full = false, reason}) {
   }).sort((a, b) => compare(stable([a.package, a.target, a.filter]), stable([b.package, b.target, b.filter])));
   const profiles = selectedProfiles.map(profile => ({id: profile.id, packages: profile.packages,
     features: profile.features, platforms: profile.platforms, checks: profile.checks,
+    // Separate package test invocations must retain features enabled by other
+    // profile roots; those roots are no longer selected by that Cargo command.
+    test_features: Object.fromEntries(profile.packages.map(name => {
+      const own = profile.features.filter(feature => feature.startsWith(`${name}/`));
+      const local = featureSet(packages, own, [name]);
+      const required = tests.filter(test => test.package === name && test.profiles.includes(profile.id))
+        .flatMap(test => test.required_features.map(feature => `${name}/${feature}`))
+        .filter(feature => profileFeatures.get(profile.id).has(feature) && !local.has(feature));
+      return [name, sorted([...own, ...required])];
+    })),
     tests: tests.filter(test => profile.packages.includes(test.package) && test.profiles.includes(profile.id))}))
     .sort((a, b) => compare(a.id, b.id));
   const mode = full ? 'full' : affected.size || tests.length || checkClosure.size ? 'affected' : 'none';
@@ -701,7 +711,8 @@ function commands(selection, platform) {
     cargo('check', ['check', '--offline', '--locked', '--all-targets', ...args, ...features], {profile: profile.id});
     cargo('clippy', ['clippy', '--offline', '--locked', '--all-targets', ...args, ...features, '--', '-D', 'warnings'],
       {profile: profile.id});
-    for (const test of profile.tests) testCommand(test, profile.features, profile.id);
+    for (const test of profile.tests) testCommand(test,
+      profile.test_features[test.package], profile.id);
   }
   const checks = [];
   const details = new Map(selection.check_details.map(check => [check.id, check]));

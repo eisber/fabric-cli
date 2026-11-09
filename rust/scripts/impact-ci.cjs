@@ -22,6 +22,9 @@ function selection(plan) {
     tests: tests(plan.tests),
     profiles: sorted(plan.profiles.map(profile => ({id: profile.id,
       packages: sorted(profile.packages), features: sorted(profile.features),
+      ...(profile.test_features ? {test_features: Object.fromEntries(
+        Object.entries(profile.test_features).sort(([a], [b]) => a.localeCompare(b))
+          .map(([name, features]) => [name, sorted(features)]))} : {}),
       platforms: sorted(profile.platforms), checks: sorted(profile.checks || []),
       tests: tests(profile.tests || plan.tests.filter(test => profile.packages.includes(test.package))),
     }))),

@@ -17,6 +17,13 @@ function packageArgs(packages) {
 }
 
 function ownFeatures(profile, name) {
+  if (profile.test_features) {
+    const features = profile.test_features[name];
+    requireThat(Array.isArray(features) &&
+      features.every(feature => feature.startsWith(`${name}/`)),
+    `Missing or invalid package test features: ${profile.id}/${name}`);
+    return [...new Set(features)].sort();
+  }
   return (profile.features || []).filter(feature => feature.startsWith(`${name}/`)).sort();
 }
 

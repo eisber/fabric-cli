@@ -32,6 +32,8 @@ use std::{
 };
 
 mod arm;
+pub mod deadline;
+pub mod polling;
 pub use arm::ArmGetOperation;
 
 /// Validated relative Fabric operation, bound to an endpoint when executed.
