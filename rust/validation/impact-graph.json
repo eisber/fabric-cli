@@ -2701,6 +2701,9 @@
         "rust/clients/cli/app/src/workspace_v2_main.rs",
         "rust/clients/cli/app/src/native_workspace_v2.rs",
         "rust/clients/cli/app/src/native_workspace_v2_tests.rs",
+        "rust/clients/cli/app/src/warehouse_command.rs",
+        "rust/clients/cli/app/src/warehouse_reads.rs",
+        "rust/authoring-docs/warehouse-management-reads.md",
         "rust/authoring-docs/workspace-v2-reads.md"
       ],
       "depends_on": [

@@ -3,6 +3,8 @@
 
 //! Concrete get composition over the shared SDK's native read capabilities.
 
+pub use crate::get_warehouse_definition::WarehouseDefinitionResultError;
+
 use crate::{
     get_budget::GetReadBudget,
     get_command::{
@@ -26,7 +28,7 @@ use fabric_sdk::{
     workspaces::WorkspaceExecutor,
 };
 use fabric_sdk_onelake::{OneLakeClient, OneLakeExecutor, OneLakePath};
-use fabric_sdk_operations::OperationExecutor;
+use fabric_sdk_operations::{OperationExecutor, OperationLimits};
 use serde_json::{Value, json};
 use std::{future::pending, num::NonZeroUsize, time::Duration};
 
@@ -84,6 +86,35 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
         Box::pin(async move {
             let parsed =
                 GetTarget::parse(path).map_err(|error| backend_error("InvalidTarget", error))?;
+            if let GetTarget::Item {
+                item_type: Some(kind),
+                representation:
+                    GetRepresentation::Definition {
+                        native_format: Some(format),
+                        ..
+                    },
+                ..
+            } = &parsed
+                && kind == "Warehouse"
+            {
+                fabric_sdk::warehouse::WarehouseDefinitionFormat::try_from(format.as_str())
+                    .map_err(|error| backend_error("InvalidTarget", error))?;
+            }
+            if let GetTarget::Item {
+                item_type: Some(kind),
+                representation,
+                ..
+            } = &parsed
+                && kind == "Warehouse"
+                && !matches!(
+                    representation,
+                    GetRepresentation::Metadata | GetRepresentation::Definition { .. }
+                )
+            {
+                return Err(unsupported(
+                    "this Warehouse representation has no native GET binding",
+                ));
+            }
             if let GetTarget::Item {
                 item_type: Some(kind),
                 representation,
@@ -261,6 +292,84 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                     item_type,
                     representation,
                 } => {
+                    let mut discovered_warehouse = false;
+                    if item_type.is_none() && !matches!(representation, GetRepresentation::Metadata)
+                    {
+                        let owner = metadata
+                            .read(
+                                MetadataTarget::Item {
+                                    workspace_id,
+                                    item_id,
+                                },
+                                MetadataLimits {
+                                    max_response_bytes: remaining,
+                                    max_result_bytes: cap,
+                                },
+                                pending(),
+                            )
+                            .await
+                            .map_err(|error| backend_error("MetadataReadFailed", error))?;
+                        let owner_type = owner.data()["type"].as_str().ok_or_else(|| {
+                            unsupported("representation owner type is unavailable")
+                        })?;
+                        if owner_type == "Warehouse" {
+                            discovered_warehouse = true;
+                        }
+                    }
+                    if item_type.as_deref() == Some("Warehouse") || discovered_warehouse {
+                        if !discovered_warehouse {
+                            let read = crate::warehouse_reads::metadata(
+                                self.client,
+                                budget,
+                                workspace_id,
+                                item_id,
+                                OperationLimits {
+                                    max_response_bytes: remaining,
+                                    ..OperationLimits::default()
+                                },
+                                cap,
+                            )
+                            .await?;
+                            if matches!(representation, GetRepresentation::Metadata) {
+                                return Ok(read);
+                            }
+                        }
+                        let GetRepresentation::Definition {
+                            native_format,
+                            part,
+                        } = representation
+                        else {
+                            return Err(unsupported(
+                                "this Warehouse representation has no native GET binding",
+                            ));
+                        };
+                        let remaining = NonZeroUsize::new(budget.remaining_bytes()).ok_or(
+                            GetCommandError::ByteLimit {
+                                limit: cap.get(),
+                                observed: cap.get().saturating_add(1),
+                            },
+                        )?;
+                        let owner = fabric_sdk::warehouse::WarehouseTarget::new(
+                            workspace_id
+                                .parse()
+                                .map_err(|error| backend_error("InvalidTarget", error))?,
+                            item_id
+                                .parse()
+                                .map_err(|error| backend_error("InvalidTarget", error))?,
+                            "Warehouse",
+                        )
+                        .map_err(|error| backend_error("InvalidTarget", error))?;
+                        return crate::get_warehouse_definition::retrieve(
+                            self.client,
+                            budget,
+                            &owner,
+                            native_format.as_deref(),
+                            part.as_deref(),
+                            options,
+                            remaining,
+                        )
+                        .await;
+                    }
                     if item_type.as_deref() == Some("Report")
                         && matches!(
                             representation,

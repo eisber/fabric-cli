@@ -9,11 +9,15 @@ Consumers inject the existing `ResourceOperations`/`OperationSession`; the modul
 creates no HTTP transport, runtime, credential provider, SQL driver or pager.
 
 This additive module does not replace the existing SQLDatabase descriptors or
-Warehouse table adapters. It adds no executable CLI leaf or global command
-grammar. Its `WarehouseRead::ALL` inventory describes only these five operations,
-not a configured host, permission grant or live capability. Common and
-artifact-facade hosts can consume the same descriptors without duplicating
-handlers; standalone native host registration remains separate work.
+Warehouse table adapters. Its `WarehouseRead::ALL` inventory describes only these
+five operations, not a configured host, permission grant or live capability.
+The CLI consumer below delegates to these descriptors and their existing native
+decoders; it adds no separate transport or SQL engine.
+
+The separate [native definition retrieval](warehouse-definitions.md) slice adds
+`WarehouseRequests::get_definition` and the facade's
+`fabric_sdk::warehouse::read_definition`. Its POST/read-write/LRO contract is not
+part of this five-GET inventory and must not inherit ordinary metadata permissions.
 
 | Descriptor | Relative path under `https://api.fabric.microsoft.com/v1` | Required permission / delegated alternatives |
 |---|---|---|
@@ -75,6 +79,104 @@ implicit true default.
 No SQL query/execute, COPY/load, restore mutation, restore-point mutation,
 definition deployment, audit, workspace SQL-pool setting, automatic retry,
 monitor traversal, timeout cancellation or rollback is added.
+
+## Bounded CLI consumer
+
+The existing opt-in `fab-cli-workspace` get/list head now delegates Warehouse
+reads through `warehouse_reads::WarehouseReadHost`. Its workspace operations,
+explicit budgets, data-only JMESPath, stdout and atomic no-clobber file output
+remain unchanged. No binary, global flag or v1 behavior is added. Select the
+existing `workspace-read-v2` feature, plus an existing native host feature for
+service execution. Without an injected/configured host, reads fail explicitly.
+
+The executable preflight contract distinguishes a compiled host from an available
+native credential adapter. With an explicitly invalid provider selection, the
+offline Warehouse GET and LIST fixtures expect these exact outcomes:
+
+| Build/platform scope | Error code | Exit code |
+|---|---|---|
+| No `native-host` feature | `NotConfigured` | 1 |
+| `native-host` on Windows, or with `headless` | `InvalidInput` | 2 |
+| `native-host` off Windows without `headless` | `UnsupportedCapability` | 2 |
+
+The unsupported adapter fails before provider selection; it does not attempt
+authentication. Every case retains an empty stdout, failed status and Warehouse
+target evidence. Windows fixture results do not establish the off-Windows branch.
+
+The following Warehouse-only mapping was selected for this implementation.
+It is not a universal facet grammar for other item types. Here `W` and `I` mean
+concrete native UUIDs, not names or literal placeholder strings.
+
+| Existing command head | Address | Native result |
+|---|---|---|
+| `get` | `/W.Workspace/I.Warehouse` | Warehouse metadata only |
+| `get` | `/W.Workspace/I.Warehouse/settings/connection` | Inert connection fields |
+| `get` | `/W.Workspace/I.Warehouse/restore-points/KEY` | One exact native opaque key |
+| `list` | `/W.Workspace/warehouses` | One native Warehouse page |
+| `list` | `/W.Workspace/I.Warehouse/restore-points` | One native restore-point page |
+
+`artifact warehouse get|list` uses the identical delegates, results, errors and
+delivery policy. For the Warehouse collection, the facade also accepts
+`artifact warehouse list /W.Workspace`. Workspace facades reject Warehouse
+paths. SQLDatabase, SQLEndpoint, Lakehouse and snapshot suffixes never select
+Warehouse routes. Names and untyped machine selectors are not newly admitted
+by this explicit-UUID head.
+
+Every read still requires `--max-bytes` and `--timeout`; LIST also requires
+`--limit`. Warehouse collection LIST requires explicit `--recursive true|false`;
+restore-point LIST rejects recursion. These are existing head options, not new
+defaults. Root-folder selection and guest-tenant/private-link connection options
+remain typed-adapter inputs, not new CLI flags. `KEY` is a literal decoded key:
+percent-looking text is not URL-decoded and is encoded exactly once by the SDK.
+Slashes, backslashes, controls, empty keys and dot traversal are rejected.
+
+LIST always returns `data: []` or an array of whole native records, retaining
+service order, duplicates and unknown fields. One page is acquired; there is no
+implicit all-pages traversal. If the entire page cannot fit the record/data
+bound, the read fails without returning a prefix or skipping rows with a
+next-page token. Foreign routes/origins and repeated native tokens fail through
+the shared pager. URI-only continuation is rejected as unresumable rather than
+misreported as a complete collection.
+
+A valid page with continuation has `status: partial`, incomplete coverage and
+exit code 1, but no invented service/budget error. It is not complete collection
+success. `meta.nativeRead` retains selected request ownership, native continuation
+observations and coverage outside projected `data`. The CLI has no portable
+resume flag or cursor: any native token there is explicitly informational.
+The typed seam additionally returns a process-local continuation bound to the
+credential object, selected account/tenant/endpoint, exact collection, native
+options and output bounds. Reusing it for another selection fails before HTTP.
+No metadata/SQL cost or snapshot consistency guarantee is implied.
+
+The separate existing `fab-cli-v2` GET backend also dispatches explicitly typed
+Warehouse metadata to the native Warehouse route instead of generic item GET.
+Its explicitly addressed source definitions now use the reviewed native
+Warehouse SDK, never the generic `/items/{id}/getDefinition` fallback. Typed
+Warehouse paths and untyped machine-ID source paths establish the authoritative
+owner before dispatch; the latter reuse their metadata read rather than fetching
+it twice. Unsupported docs/file/run representations remain rejected. Ordinary
+item GET never requests a definition or opens SQL.
+
+The existing `src/definition[/formats/...][/parts/...]` representation seam
+selects the native definition; omitted native format uses `sqlproj`, while
+`formats/dacpac` requests the packaged model. Full JSON output retains the entire
+native response envelope, ordered Base64 parts, unknown fields and format/media
+evidence. An explicit part path supports exact raw bytes or the existing Base64
+JSON presentation, with part-only coverage in unprojected metadata. No file
+extraction or automatic project build occurs. Native format selectors remain
+separate from `--format json|raw`, which selects the local presentation.
+
+Definitions retain the existing command-wide byte/deadline/request budget;
+structural and decoded bounds derive from the remaining byte allowance rather
+than new global numeric defaults. Accepted results stay incomplete, preserve an
+actual handle or explicit absence, and are not written as completed source files.
+Only explicit `--wait` uses the existing shared observer, then admits its exact
+successful result through the original Warehouse codec. There is one submission,
+no replay, timeout cancellation or rollback promise.
+
+A SQL project (`sqlproj`) describes source/project structure;
+a DACPAC is a deployment/schema package. Neither is table data, a restore point,
+or a permission to execute/deploy SQL. Export/packaging semantics remain separate.
 
 ## Sources and offline evidence
 

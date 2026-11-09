@@ -12,7 +12,7 @@ mod ids;
 mod models;
 mod requests;
 
-/// Warehouse-owned management metadata, connections and restore-point reads.
+/// Warehouse-owned management reads and a native definition POST descriptor.
 pub mod warehouse;
 
 pub use errors::{SqlInputError, SqlManagementError, SqlResponseError, SqlResponseErrorKind};

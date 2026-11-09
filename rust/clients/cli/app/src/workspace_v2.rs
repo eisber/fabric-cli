@@ -29,6 +29,29 @@ use std::{
     time::Duration,
 };
 
+#[path = "warehouse_command.rs"]
+mod warehouse;
+pub use warehouse::WarehouseCommandRead;
+
+/// Exact workspace request or explicitly selected Warehouse-native delegate.
+#[derive(Clone, Debug)]
+pub enum WorkspaceReadSelection {
+    /// Existing workspace behavior, unchanged.
+    Workspace(WorkspaceReadRequest),
+    /// Warehouse-only metadata, connection or restore read.
+    Warehouse(WarehouseCommandRead),
+}
+
+impl WorkspaceReadSelection {
+    /// Workspace-native coordinate, absent for root collections or Warehouse delegates.
+    pub fn workspace_id(&self) -> Option<&str> {
+        match self {
+            Self::Workspace(request) => request.workspace_id(),
+            Self::Warehouse(_) => None,
+        }
+    }
+}
+
 /// Parsed display-only output or an explicitly bounded read.
 #[derive(Debug)]
 pub enum ParsedWorkspaceInvocation {
@@ -41,7 +64,7 @@ pub enum ParsedWorkspaceInvocation {
 /// One validated read, identical for common and workspace facade spellings.
 #[derive(Clone)]
 pub struct WorkspaceCommand {
-    request: WorkspaceReadRequest,
+    request: WorkspaceReadSelection,
     timeout: Duration,
     project: Option<String>,
     output: Option<PathBuf>,
@@ -60,7 +83,7 @@ impl std::fmt::Debug for WorkspaceCommand {
 
 impl WorkspaceCommand {
     /// The immutable resource-native request.
-    pub fn request(&self) -> &WorkspaceReadRequest {
+    pub fn request(&self) -> &WorkspaceReadSelection {
         &self.request
     }
 
@@ -133,6 +156,12 @@ pub fn parse_args(
                         .subcommand_required(true)
                         .subcommand(read_command("get", false))
                         .subcommand(read_command("list", true)),
+                )
+                .subcommand(
+                    Command::new("warehouse")
+                        .subcommand_required(true)
+                        .subcommand(read_command("get", false))
+                        .subcommand(read_command("list", true)),
                 ),
         );
     let matches = match command.try_get_matches_from(args) {
@@ -150,14 +179,16 @@ pub fn parse_args(
     let (verb, matches) = matches
         .subcommand()
         .ok_or(WorkspaceReadError::InvalidInput)?;
-    let facade = verb == "artifact";
-    let (verb, matches) = if facade {
-        matches
-            .subcommand_matches("workspace")
-            .and_then(clap::ArgMatches::subcommand)
-            .ok_or(WorkspaceReadError::InvalidInput)?
+    let (facade, verb, matches) = if verb == "artifact" {
+        let (facade, matches) = matches
+            .subcommand()
+            .ok_or(WorkspaceReadError::InvalidInput)?;
+        let (verb, matches) = matches
+            .subcommand()
+            .ok_or(WorkspaceReadError::InvalidInput)?;
+        (Some(facade), verb, matches)
     } else {
-        (verb, matches)
+        (None, verb, matches)
     };
     let path = matches
         .get_one::<String>("path")
@@ -165,28 +196,32 @@ pub fn parse_args(
     let bytes = *matches
         .get_one::<NonZeroUsize>("max-bytes")
         .ok_or(WorkspaceReadError::InvalidInput)?;
-    let request = match verb {
-        "get" => WorkspaceReadRequest::metadata(addressed_workspace(path, false)?, bytes)?,
-        "list" => {
-            let records = *matches
-                .get_one::<NonZeroUsize>("limit")
-                .ok_or(WorkspaceReadError::InvalidInput)?;
-            let recursive = matches.get_one::<bool>("recursive").copied();
-            if path == "/" {
-                if facade || recursive.is_some() {
-                    return Err(WorkspaceReadError::UnsupportedCapability);
+    let request = if let Some(request) = warehouse::parse(verb, path, facade, matches, bytes)? {
+        WorkspaceReadSelection::Warehouse(request)
+    } else {
+        WorkspaceReadSelection::Workspace(match verb {
+            "get" => WorkspaceReadRequest::metadata(addressed_workspace(path, false)?, bytes)?,
+            "list" => {
+                let records = *matches
+                    .get_one::<NonZeroUsize>("limit")
+                    .ok_or(WorkspaceReadError::InvalidInput)?;
+                let recursive = matches.get_one::<bool>("recursive").copied();
+                if path == "/" {
+                    if facade.is_some() || recursive.is_some() {
+                        return Err(WorkspaceReadError::UnsupportedCapability);
+                    }
+                    WorkspaceReadRequest::workspaces(records, bytes)
+                } else {
+                    WorkspaceReadRequest::items(
+                        addressed_workspace(path, true)?,
+                        records,
+                        bytes,
+                        recursive.ok_or(WorkspaceReadError::InvalidInput)?,
+                    )?
                 }
-                WorkspaceReadRequest::workspaces(records, bytes)
-            } else {
-                WorkspaceReadRequest::items(
-                    addressed_workspace(path, true)?,
-                    records,
-                    bytes,
-                    recursive.ok_or(WorkspaceReadError::InvalidInput)?,
-                )?
             }
-        }
-        _ => return Err(WorkspaceReadError::UnsupportedCapability),
+            _ => return Err(WorkspaceReadError::UnsupportedCapability),
+        })
     };
     let timeout = parse_duration(
         matches
@@ -305,6 +340,8 @@ struct WorkspaceMeta {
     page: Option<ReadPage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     delivery: Option<ReadDelivery>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    native_read: Option<Value>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -386,7 +423,10 @@ fn diagnostic(error: WorkspaceReadError) -> ReadDiagnostic {
 
 fn metadata(command: Option<&WorkspaceCommand>, observed_at: Option<&str>) -> WorkspaceMeta {
     let target = command.map(|command| {
-        let request = command.request();
+        let request = match command.request() {
+            WorkspaceReadSelection::Workspace(request) => request,
+            WorkspaceReadSelection::Warehouse(request) => return request.target(),
+        };
         let items = request.kind() == WorkspaceReadKind::Items;
         if request.kind() == WorkspaceReadKind::Workspaces {
             return ReadTarget {
@@ -411,10 +451,14 @@ fn metadata(command: Option<&WorkspaceCommand>, observed_at: Option<&str>) -> Wo
         target,
         observed_at: observed_at.map(str::to_owned),
         context: None,
-        representation: match command.map(|command| command.request().kind()) {
-            Some(WorkspaceReadKind::Items) => "items",
-            Some(WorkspaceReadKind::Workspaces) => "workspaces",
-            Some(WorkspaceReadKind::Metadata) | None => "primary-metadata",
+        representation: match command.map(|command| command.request()) {
+            Some(WorkspaceReadSelection::Warehouse(request)) => request.representation(),
+            Some(WorkspaceReadSelection::Workspace(request)) => match request.kind() {
+                WorkspaceReadKind::Items => "items",
+                WorkspaceReadKind::Workspaces => "workspaces",
+                WorkspaceReadKind::Metadata => "primary-metadata",
+            },
+            None => "primary-metadata",
         },
         provenance: "Fabric REST v1; no admin or optional enrichment requests",
         coverage: ReadCoverage {
@@ -425,6 +469,7 @@ fn metadata(command: Option<&WorkspaceCommand>, observed_at: Option<&str>) -> Wo
         },
         page: None,
         delivery: None,
+        native_read: None,
     }
 }
 
@@ -454,13 +499,49 @@ pub async fn execute(
     cancelled: impl Future<Output = ()> + Send,
     deadline: impl Future<Output = ()> + Send,
 ) -> WorkspaceEnvelope {
+    execute_with_warehouse(client, None, command, observed_at, cancelled, deadline).await
+}
+
+/// Execute through the same envelope/output policy with an optional Warehouse host.
+///
+/// The explicit host must share the API client's selected identity. No credentials,
+/// transport, timer or fallback host are discovered here.
+pub async fn execute_with_warehouse(
+    client: &ApiClient,
+    warehouse_host: Option<&crate::warehouse_reads::WarehouseReadHost<'_>>,
+    command: &WorkspaceCommand,
+    observed_at: &str,
+    cancelled: impl Future<Output = ()> + Send,
+    deadline: impl Future<Output = ()> + Send,
+) -> WorkspaceEnvelope {
     if Timestamp::parse(observed_at).is_err() {
         return failure_envelope(Some(command), WorkspaceReadError::InvalidInput, None);
     }
     let mut cancelled = pin!(cancelled);
     let mut deadline = pin!(deadline);
+    let native_read = std::sync::Mutex::new(None);
     let mut operation = pin!(async {
-        let result = read_workspace(client, command.request(), std::future::pending()).await?;
+        let result = match command.request() {
+            WorkspaceReadSelection::Workspace(request) => {
+                read_workspace(client, request, std::future::pending()).await?
+            }
+            WorkspaceReadSelection::Warehouse(request) => {
+                let host = warehouse_host.ok_or(WorkspaceReadError::NotConfigured)?;
+                if host.client.selection() != client.selection() {
+                    return Err(WorkspaceReadError::InvalidInput);
+                }
+                match request.execute(host).await {
+                    Ok((result, evidence)) => {
+                        *native_read.lock().expect("local evidence lock") = Some(evidence);
+                        result
+                    }
+                    Err((error, evidence)) => {
+                        *native_read.lock().expect("local evidence lock") = Some(evidence);
+                        return Err(error);
+                    }
+                }
+            }
+        };
         let data = match &command.project {
             Some(expression) => fabric_cli_query::project_json(&result.data, expression)
                 .map_err(|_| WorkspaceReadError::InvalidInput)?,
@@ -489,6 +570,8 @@ pub async fn execute(
         }
     })
     .await;
+    let native_read = native_read.lock().expect("local evidence lock").take();
+    let is_warehouse = matches!(command.request(), WorkspaceReadSelection::Warehouse(_));
     let mut envelope = match result {
         Ok((data, complete, truncated, page)) => {
             let mut meta = metadata(Some(command), Some(observed_at));
@@ -502,16 +585,21 @@ pub async fn execute(
                 output_truncated: page.output_truncated,
                 native_continuation: None,
             });
+            if is_warehouse {
+                meta.page = native_read.as_ref().and_then(warehouse::page);
+            }
             WorkspaceEnvelope {
                 schema_version: "0.1",
                 status: if complete { "succeeded" } else { "partial" },
                 data,
                 meta,
-                error: (!complete).then(|| diagnostic(WorkspaceReadError::BudgetExceeded)),
+                error: (!complete && !is_warehouse)
+                    .then(|| diagnostic(WorkspaceReadError::BudgetExceeded)),
             }
         }
         Err(error) => failure_envelope(Some(command), error, Some(observed_at)),
     };
+    envelope.meta.native_read = native_read;
     envelope.meta.context = Some(ReadContext {
         account: client.selection().account().to_owned(),
         tenant: client.selection().tenant().to_owned(),

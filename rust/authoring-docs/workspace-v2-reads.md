@@ -7,6 +7,11 @@ Python `fab` and Rust `fab-rs` commands retain their contracts. This slice is
 limited to primary workspace metadata and one bounded workspace or items page.
 It does not implement the complete v2 command surface.
 
+The same head also supports explicit Warehouse-native delegation, including
+`artifact warehouse get|list`. See [Warehouse management reads](warehouse-management-reads.md#bounded-cli-consumer)
+for the selected connection/restore paths and page/continuation distinctions.
+Workspace paths, explicit options and existing delivery behavior below are unchanged.
+
 ## Commands
 
 Use `/` for accessible workspaces or an explicit canonical workspace UUID for

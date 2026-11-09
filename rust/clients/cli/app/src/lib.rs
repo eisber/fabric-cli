@@ -27,6 +27,7 @@ pub mod get_metadata;
 mod get_report;
 pub mod get_resolution;
 pub mod get_target;
+mod get_warehouse_definition;
 pub mod jobs;
 pub mod local_commands;
 pub mod native_tabular;
@@ -50,6 +51,7 @@ pub mod update;
 pub mod v2_discovery;
 #[cfg(feature = "v2-preview")]
 pub mod v2_preview;
+pub mod warehouse_reads;
 mod workspace_get;
 #[cfg(feature = "workspace-read-v2")]
 pub mod workspace_v2;

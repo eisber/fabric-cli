@@ -30,6 +30,7 @@ pub mod reports;
 pub mod representations;
 pub mod runtime;
 pub mod variable_libraries;
+pub mod warehouse;
 pub mod workspaces;
 
 /// Read-only model analysis contracts; .NET activation is separately feature-gated.

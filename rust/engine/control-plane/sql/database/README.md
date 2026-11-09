@@ -10,6 +10,14 @@ Implementation contract/base: coordinator-accepted metadata-only first wave at
 `eca98ab84c4a14d1ee158c2438e76dd77d2b0af0`. No upstream poller, ARM-origin or
 authentication changes are adopted.
 
+The additive `warehouse` module also supplies Warehouse-owned management reads
+and a typed native `getDefinition` POST descriptor. The latter reuses the shared
+SQL definition codec through one SDK-layer dependency; it does not change these
+SQLDatabase metadata operations or install deployment behavior. See
+[native Warehouse retrieval](../../../../authoring-docs/warehouse-definitions.md) for its
+different default, read/write permission, raw facade execution and shared-observer
+handoff.
+
 ## Public boundary
 
 - Parse native GUIDs into distinct `WorkspaceId`, `SqlDatabaseId` and `FolderId`
@@ -33,8 +41,8 @@ authentication changes are adopted.
 
 There are no default recursion/engine/path/output choices, arbitrary URLs,
 headers/query parameters, writable metadata maps, new HTTP/paging/polling
-engines, identity implementation or runtime. No definition/codec dependency,
-mutations, restores, audit, CMK, mirroring or native SQL stubs are installed.
+engines, identity implementation or runtime. The SQLDatabase metadata slice adds no
+mutations, restores, audit, CMK, mirroring or native SQL stubs.
 The overall inventory of 13 REST operations / 15 facade dispositions is not
 implemented coverage from this first wave.
 

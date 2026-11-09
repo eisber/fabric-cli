@@ -4,7 +4,7 @@
 //! Experimental explicit resource execution head; the existing fab-rs binary is unchanged.
 
 use fabric_cli::{
-    get_backend::SdkGetBackend,
+    get_backend::{SdkGetBackend, WarehouseDefinitionResultError},
     get_command::{
         GetArgumentErrorKind, GetCommandError, GetInterruption, PreparedGet, get_command, parse_get,
     },
@@ -33,6 +33,8 @@ mod v2_exists_main;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
 mod v2_search_main;
+#[cfg(test)]
+mod v2_warehouse_result_tests;
 
 // Reuse the existing binary-private selector without importing v1 dispatch/state.
 mod native_read {
@@ -96,22 +98,17 @@ fn command_failure(error: GetCommandError) -> Failure {
         GetCommandError::Incomplete { data } => data.clone(),
         GetCommandError::Backend { source, .. } => {
             if let Some(observation) = source.downcast_ref::<fabric_sdk::observe::ObserveError>() {
-                let handle = match &observation.handle {
-                    fabric_sdk::observe::ReadHandle::Operation { operation_id } => {
-                        format!("/operations/{operation_id}")
-                    }
-                    fabric_sdk::observe::ReadHandle::Job {
-                        workspace_id,
-                        item_id,
-                        job_id,
-                    } => format!("/workspaces/{workspace_id}/items/{item_id}/runs/{job_id}"),
-                };
                 json!({
-                    "handle":handle,
+                    "handle":observation_handle(&observation.handle),
                     "requests":observation.requests,
                     "lastStatus":observation.last_observation.as_ref().map(|value| &value.raw_status),
                     "remoteCancelled":false,
                     "remoteReplayed":false,
+                })
+            } else if let Some(content) = source.downcast_ref::<WarehouseDefinitionResultError>() {
+                json!({
+                    "handle":observation_handle(&content.observation().handle),
+                    "status":"Succeeded",
                 })
             } else {
                 Value::Null
@@ -125,6 +122,19 @@ fn command_failure(error: GetCommandError) -> Failure {
         _ => Value::Null,
     };
     (code, error.to_string(), evidence, 1)
+}
+
+fn observation_handle(handle: &fabric_sdk::observe::ReadHandle) -> String {
+    match handle {
+        fabric_sdk::observe::ReadHandle::Operation { operation_id } => {
+            format!("/operations/{operation_id}")
+        }
+        fabric_sdk::observe::ReadHandle::Job {
+            workspace_id,
+            item_id,
+            job_id,
+        } => format!("/workspaces/{workspace_id}/items/{item_id}/runs/{job_id}"),
+    }
 }
 
 fn run() -> Result<(), Failure> {

@@ -5,6 +5,9 @@
 
 #![deny(unnameable_test_items)]
 
+#[path = "get_backend_warehouse_definition/mod.rs"]
+mod warehouse_definition_cases;
+
 use async_trait::async_trait;
 use azure_core::{
     credentials::{AccessToken, TokenRequestOptions},
@@ -13,6 +16,10 @@ use azure_core::{
 use fabric_cli::{
     get_backend::SdkGetBackend,
     get_command::{GetCommandError, PreparedGet, parse_get},
+    warehouse_reads::{
+        WarehouseCollection, WarehouseItemRead, WarehousePageLimits, WarehouseReadError,
+        WarehouseReadHost, WarehouseRepresentation,
+    },
 };
 use fabric_sdk::{
     Audience, Client, CredentialSelection, TokenCredential,
@@ -21,13 +28,18 @@ use fabric_sdk::{
         EdgeDisposition, ProviderError, ProviderErrorKind,
     },
     items::{ItemExecutionError, ItemExecutor, ItemRequest, ItemResponse},
+    sql_databases::{
+        FolderScope,
+        warehouse::{ConnectionOptions, RestorePointId, WarehouseTarget},
+    },
     workspaces::{WorkspaceExecutionError, WorkspaceExecutor, WorkspaceRequest, WorkspaceResponse},
 };
 use fabric_sdk_onelake::{
     OneLakeClient, OneLakeExecutionError, OneLakeExecutor, OneLakeRequest, OneLakeResponse,
 };
 use fabric_sdk_operations::{
-    OperationExecutionError, OperationExecutor, OperationRequest, OperationResponse,
+    OperationErrorKind, OperationExecutionError, OperationExecutor, OperationLimits,
+    OperationRequest, OperationResponse,
 };
 use serde_json::Value;
 use std::{
@@ -80,6 +92,7 @@ struct Reply {
 struct Executor {
     replies: Mutex<VecDeque<Reply>>,
     calls: Mutex<Vec<(String, String)>>,
+    operation_queries: Mutex<Vec<String>>,
     waits: Mutex<Vec<Duration>>,
     block_item: AtomicBool,
     item_started: tokio::sync::Notify,
@@ -172,6 +185,13 @@ impl OperationExecutor for Executor {
     {
         Box::pin(async move {
             let method = format!("{:?}", request.method()).to_ascii_uppercase();
+            if method == "GET" {
+                assert!(request.body().is_empty(), "native reads have no body");
+            }
+            self.operation_queries
+                .lock()
+                .unwrap()
+                .push(request.url().query().unwrap_or_default().into());
             let reply = self.take(&method, request.url().path());
             Ok(OperationResponse {
                 status: reply.status,
@@ -303,6 +323,612 @@ fn report_definition(version: &str) -> Value {
         part("definition/pages/p/page.json",br#"{"name":"p"}"#),
         part("StaticResources/native.bin",&[0,255,128,0])
     ]},"unknown":"preserved"})
+}
+
+fn warehouse_metadata(owner: &str, item: &str) -> Value {
+    serde_json::json!({
+        "id":item,"workspaceId":WS,"displayName":"Warehouse",
+        "type":owner,"description":null,
+        "properties":{"connectionString":"inert.example","future":42},
+        "future":{"keep":[false,null,1]}
+    })
+}
+
+fn generic_owner(f: &Fixture, owner_type: &str) {
+    f.executor.response(
+        "GET",
+        format!("/v1/workspaces/{WS}/items/{ITEM}"),
+        200,
+        &serde_json::to_vec(&serde_json::json!({
+            "id":ITEM,"workspaceId":WS,"displayName":"Resolved owner","type":owner_type
+        }))
+        .unwrap(),
+        &[],
+    );
+}
+
+#[tokio::test]
+async fn warehouse_machine_id_unsupported_representation_checks_authoritative_owner() {
+    for suffix in [
+        "/Files/data.bin",
+        "/runs/33333333-3333-3333-3333-333333333333",
+        "/docs/overview",
+    ] {
+        let f = Fixture::new();
+        generic_owner(&f, "Warehouse");
+        let docs = Docs {
+            calls: Mutex::new(Vec::new()),
+            deny_child: false,
+            oversized: false,
+            deny_root: false,
+        };
+        let mut backend = f.backend();
+        backend.documents = Some(&docs);
+        assert!(
+            f.prepared(&["get".into(), path(suffix)])
+                .acquire(&backend, pending())
+                .await
+                .is_err()
+        );
+        assert!(docs.calls.lock().unwrap().is_empty());
+        assert_eq!(
+            f.executor.calls.lock().unwrap().as_slice(),
+            &[("GET".into(), format!("/v1/workspaces/{WS}/items/{ITEM}"))]
+        );
+        assert!(f.executor.waits.lock().unwrap().is_empty());
+    }
+}
+
+fn warehouse_host(f: &Fixture) -> WarehouseReadHost<'_> {
+    WarehouseReadHost {
+        client: &f.client,
+        operations: &f.executor,
+    }
+}
+
+fn warehouse_owner() -> WarehouseTarget {
+    WarehouseTarget::new(WS.parse().unwrap(), ITEM.parse().unwrap(), "Warehouse").unwrap()
+}
+
+fn warehouse_collection() -> WarehouseCollection {
+    WarehouseCollection::Warehouses {
+        workspace: WS.parse().unwrap(),
+        recursive: false,
+        root_folder: FolderScope::Workspace,
+    }
+}
+
+fn warehouse_limits() -> WarehousePageLimits {
+    WarehousePageLimits {
+        max_records: std::num::NonZeroUsize::new(10).unwrap(),
+        max_data_bytes: std::num::NonZeroUsize::new(16_384).unwrap(),
+        operations: OperationLimits::default(),
+    }
+}
+
+fn warehouse_reply(f: &Fixture, suffix: &str, data: &Value) {
+    f.executor.response(
+        "GET",
+        format!("/v1/workspaces/{WS}/warehouses{suffix}"),
+        200,
+        &serde_json::to_vec(data).unwrap(),
+        &[],
+    );
+}
+
+#[tokio::test]
+async fn warehouse_common_get_uses_native_metadata_only_and_projects_data_not_owner() {
+    let f = Fixture::new();
+    warehouse_reply(
+        &f,
+        &format!("/{ITEM}"),
+        &warehouse_metadata("Warehouse", ITEM),
+    );
+    let bytes = stdout(
+        &f,
+        &[
+            "get".into(),
+            format!("/{WS}.Workspace/{ITEM}.Warehouse"),
+            "-q".into(),
+            "future.keep[0]".into(),
+        ],
+    )
+    .await
+    .unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["data"], false);
+    assert_eq!(value["meta"]["requestOwner"]["itemId"], ITEM);
+    assert_eq!(value["meta"]["representation"], "metadata");
+    assert_eq!(value["meta"]["ownerEvidence"], "selectedRequest");
+    assert_eq!(
+        f.executor.calls.lock().unwrap().as_slice(),
+        &[(
+            "GET".into(),
+            format!("/v1/workspaces/{WS}/warehouses/{ITEM}")
+        )]
+    );
+    assert!(f.executor.waits.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn warehouse_unsettled_facets_never_fall_back_to_generic_source() {
+    let f = Fixture::new();
+    for suffix in [
+        "/Files/a",
+        "/runs/33333333-3333-3333-3333-333333333333",
+        "/connection",
+        "/restorePoints/key",
+    ] {
+        assert!(
+            stdout(
+                &f,
+                &[
+                    "get".into(),
+                    format!("/{WS}.Workspace/{ITEM}.Warehouse{suffix}")
+                ]
+            )
+            .await
+            .is_err()
+        );
+    }
+    assert!(f.executor.calls.lock().unwrap().is_empty());
+    assert!(f.credential.0.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn warehouse_common_get_rejects_foreign_native_identity_and_owner() {
+    for (owner, item) in [("SQLDatabase", ITEM), ("Warehouse", OP)] {
+        let f = Fixture::new();
+        warehouse_reply(&f, &format!("/{ITEM}"), &warehouse_metadata(owner, item));
+        assert!(
+            stdout(
+                &f,
+                &["get".into(), format!("/{WS}.Workspace/{ITEM}.Warehouse")]
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+    }
+    for owner in [
+        "SQLDatabase",
+        "Lakehouse",
+        "SQLEndpoint",
+        "WarehouseSnapshot",
+        "warehouse",
+    ] {
+        assert!(
+            WarehouseItemRead::new(WS, ITEM, owner, WarehouseRepresentation::Metadata).is_err()
+        );
+    }
+}
+
+#[tokio::test]
+async fn warehouse_connection_and_exact_opaque_restore_key_use_only_native_gets() {
+    let f = Fixture::new();
+    let host = warehouse_host(&f);
+    let limits = warehouse_limits();
+    let connection = WarehouseItemRead::new(
+        WS,
+        ITEM,
+        "Warehouse",
+        WarehouseRepresentation::Connection(ConnectionOptions::default()),
+    )
+    .unwrap();
+    warehouse_reply(
+        &f,
+        &format!("/{ITEM}/connectionString"),
+        &serde_json::json!({
+            "connectionString":"hostname-only.example", "future":{"inert":true}
+        }),
+    );
+    let result = host
+        .get(
+            &connection,
+            limits.operations,
+            limits.max_data_bytes,
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        result.data["data"]["connectionString"],
+        "hostname-only.example"
+    );
+    assert_eq!(result.data["data"]["future"]["inert"], true);
+    assert!(result.data["data"].get("workspaceId").is_none());
+    assert_eq!(result.data["meta"]["requestOwner"]["workspaceId"], WS);
+
+    let id = "opaque %2F?#+key";
+    let point = WarehouseItemRead::new(
+        WS,
+        ITEM,
+        "Warehouse",
+        WarehouseRepresentation::RestorePoint(RestorePointId::new(id).unwrap()),
+    )
+    .unwrap();
+    warehouse_reply(
+        &f,
+        &format!("/{ITEM}/restorePoints/opaque%20%252F%3F%23+key"),
+        &serde_json::json!({"id":id,"creationMode":"FutureNativeMode","future":false}),
+    );
+    let result = host
+        .get(&point, limits.operations, limits.max_data_bytes, pending())
+        .await
+        .unwrap();
+    assert_eq!(result.data["data"]["id"], id);
+    assert_eq!(result.data["data"]["future"], false);
+    assert!(f.executor.waits.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn warehouse_page_preserves_service_order_duplicates_empty_arrays_and_native_fields() {
+    for rows in [
+        serde_json::json!([]),
+        serde_json::json!([warehouse_metadata("Warehouse", ITEM)]),
+        serde_json::json!([
+            warehouse_metadata("Warehouse", OP),
+            warehouse_metadata("Warehouse", ITEM),
+            warehouse_metadata("Warehouse", OP)
+        ]),
+    ] {
+        let f = Fixture::new();
+        warehouse_reply(
+            &f,
+            "",
+            &serde_json::json!({"value":rows,"continuationToken":null,"continuationUri":""}),
+        );
+        let page = warehouse_host(&f)
+            .list_page(&warehouse_collection(), None, warehouse_limits(), pending())
+            .await
+            .unwrap();
+        assert_eq!(page.payload.data["data"], rows);
+        assert!(page.payload.complete);
+        assert!(page.continuation.is_none());
+        assert_eq!(page.payload.data["meta"]["coverage"]["pagesReceived"], 1);
+        assert_eq!(
+            page.payload.data["meta"]["nativePage"]["continuationToken"],
+            Value::Null
+        );
+        assert_eq!(
+            page.payload.data["meta"]["nativePage"]["continuationUri"],
+            ""
+        );
+        assert_eq!(
+            f.executor.operation_queries.lock().unwrap().as_slice(),
+            &["recursive=false"]
+        );
+        assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn warehouse_bounded_page_is_incomplete_and_resume_is_exact_encoded_token_not_uri() {
+    let f = Fixture::new();
+    let collection = warehouse_collection();
+    let host = warehouse_host(&f);
+    let token = "opaque +/=token";
+    warehouse_reply(
+        &f,
+        "",
+        &serde_json::json!({
+            "value":[warehouse_metadata("Warehouse", ITEM)],"continuationToken":token,
+            "continuationUri":format!("https://api.fabric.microsoft.com/v1/workspaces/{WS}/warehouses?continuationToken=unused&recursive=true")
+        }),
+    );
+    let page = host
+        .list_page(&collection, None, warehouse_limits(), pending())
+        .await
+        .unwrap();
+    assert!(!page.payload.complete);
+    assert_eq!(page.payload.data["meta"]["outcome"], "incomplete");
+    assert_eq!(
+        page.payload.data["meta"]["coverage"]["outputTruncated"],
+        false
+    );
+    assert_eq!(page.payload.data["meta"]["coverage"]["hasMore"], true);
+    assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+    warehouse_reply(&f, "", &serde_json::json!({"value":[]}));
+    let next = host
+        .list_page(
+            &collection,
+            page.continuation.as_ref(),
+            warehouse_limits(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(next.payload.data["data"], serde_json::json!([]));
+    assert!(next.payload.complete);
+    assert_eq!(
+        f.executor.operation_queries.lock().unwrap()[1],
+        "recursive=false&continuationToken=opaque+%2B%2F%3Dtoken"
+    );
+    assert!(
+        next.payload.data["meta"]["nativePage"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn warehouse_resume_rejects_changed_owner_options_endpoint_and_credential_before_dispatch() {
+    let f = Fixture::new();
+    let collection = warehouse_collection();
+    warehouse_reply(
+        &f,
+        "",
+        &serde_json::json!({"value":[],"continuationToken":"next"}),
+    );
+    let host = warehouse_host(&f);
+    let page = host
+        .list_page(&collection, None, warehouse_limits(), pending())
+        .await
+        .unwrap();
+    let changed = WarehouseCollection::Warehouses {
+        workspace: WS.parse().unwrap(),
+        recursive: true,
+        root_folder: FolderScope::Workspace,
+    };
+    for selected in [
+        &changed,
+        &WarehouseCollection::RestorePoints(warehouse_owner()),
+    ] {
+        assert!(matches!(
+            host.list_page(
+                selected,
+                page.continuation.as_ref(),
+                warehouse_limits(),
+                pending()
+            )
+            .await,
+            Err(WarehouseReadError::ResumeMismatch)
+        ));
+    }
+    let mut limits = warehouse_limits();
+    limits.max_records = std::num::NonZeroUsize::new(1).unwrap();
+    assert!(matches!(
+        host.list_page(&collection, page.continuation.as_ref(), limits, pending())
+            .await,
+        Err(WarehouseReadError::ResumeMismatch)
+    ));
+    let other = Fixture::new();
+    assert!(matches!(
+        warehouse_host(&other)
+            .list_page(
+                &collection,
+                page.continuation.as_ref(),
+                warehouse_limits(),
+                pending()
+            )
+            .await,
+        Err(WarehouseReadError::ResumeMismatch)
+    ));
+    let context = fabric_sdk::RequestContext::with_endpoint(
+        f.credential.clone(),
+        f.client.selection().clone(),
+        fabric_sdk::EndpointBinding::with_host(
+            fabric_sdk::ServiceOrigin::Fabric,
+            "dailyapi.fabric.microsoft.com",
+        )
+        .unwrap(),
+    );
+    let other_endpoint = Client::with_context(context);
+    let changed_host = WarehouseReadHost {
+        client: &other_endpoint,
+        operations: &f.executor,
+    };
+    assert!(matches!(
+        changed_host
+            .list_page(
+                &collection,
+                page.continuation.as_ref(),
+                warehouse_limits(),
+                pending()
+            )
+            .await,
+        Err(WarehouseReadError::ResumeMismatch)
+    ));
+    assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+    assert!(other.executor.calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn warehouse_foreign_repeated_and_unresumable_continuations_fail_not_empty_success() {
+    for native in [
+        serde_json::json!({"value":[],"continuationToken":"next","continuationUri":"https://foreign.example/v1/warehouses"}),
+        serde_json::json!({"value":[],"continuationToken":"next","continuationUri":format!("https://api.fabric.microsoft.com/v1/workspaces/{WS}/items")}),
+        serde_json::json!({"value":[],"continuationUri":format!("https://api.fabric.microsoft.com/v1/workspaces/{WS}/warehouses")}),
+        serde_json::json!({"value":[],"continuationToken":"bad\nkey"}),
+    ] {
+        let f = Fixture::new();
+        warehouse_reply(&f, "", &native);
+        assert!(
+            warehouse_host(&f)
+                .list_page(&warehouse_collection(), None, warehouse_limits(), pending())
+                .await
+                .is_err()
+        );
+        assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+    }
+    let f = Fixture::new();
+    let host = warehouse_host(&f);
+    let collection = warehouse_collection();
+    warehouse_reply(
+        &f,
+        "",
+        &serde_json::json!({"value":[],"continuationToken":"a"}),
+    );
+    let first = host
+        .list_page(&collection, None, warehouse_limits(), pending())
+        .await
+        .unwrap();
+    warehouse_reply(
+        &f,
+        "",
+        &serde_json::json!({"value":[],"continuationToken":"b"}),
+    );
+    let second = host
+        .list_page(
+            &collection,
+            first.continuation.as_ref(),
+            warehouse_limits(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    warehouse_reply(
+        &f,
+        "",
+        &serde_json::json!({"value":[],"continuationToken":"a"}),
+    );
+    assert!(matches!(
+        host.list_page(
+            &collection,
+            second.continuation.as_ref(),
+            warehouse_limits(),
+            pending()
+        )
+        .await,
+        Err(WarehouseReadError::InvalidContinuation)
+    ));
+}
+
+#[tokio::test]
+async fn warehouse_restore_list_validates_keys_and_owner_without_sorting() {
+    let f = Fixture::new();
+    let rows =
+        serde_json::json!([{"id":"z-opaque","future":null},{"id":"a key"},{"id":"z-opaque"}]);
+    warehouse_reply(
+        &f,
+        &format!("/{ITEM}/restorePoints"),
+        &serde_json::json!({"value":rows}),
+    );
+    let page = warehouse_host(&f)
+        .list_page(
+            &WarehouseCollection::RestorePoints(warehouse_owner()),
+            None,
+            warehouse_limits(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.payload.data["data"], rows);
+    assert_eq!(page.payload.data["meta"]["requestTarget"]["itemId"], ITEM);
+    assert_eq!(
+        f.executor.operation_queries.lock().unwrap().as_slice(),
+        &[""]
+    );
+}
+
+#[tokio::test]
+async fn warehouse_page_budgets_reject_whole_pages_and_never_issue_skip_cursors() {
+    let f = Fixture::new();
+    let native = serde_json::json!({"value":[warehouse_metadata("Warehouse", ITEM),warehouse_metadata("Warehouse", OP)],"continuationToken":"next"});
+    let mut limits = warehouse_limits();
+    limits.max_records = std::num::NonZeroUsize::new(1).unwrap();
+    warehouse_reply(&f, "", &native);
+    assert!(matches!(
+        warehouse_host(&f)
+            .list_page(&warehouse_collection(), None, limits, pending())
+            .await,
+        Err(WarehouseReadError::Paging(_))
+    ));
+    limits = warehouse_limits();
+    limits.max_data_bytes = std::num::NonZeroUsize::new(2).unwrap();
+    warehouse_reply(&f, "", &native);
+    assert!(matches!(
+        warehouse_host(&f)
+            .list_page(&warehouse_collection(), None, limits, pending())
+            .await,
+        Err(WarehouseReadError::BudgetExceeded)
+    ));
+    limits.operations.max_response_bytes = std::num::NonZeroUsize::new(2).unwrap();
+    warehouse_reply(&f, "", &native);
+    assert!(matches!(
+        warehouse_host(&f)
+            .list_page(&warehouse_collection(), None, limits, pending())
+            .await,
+        Err(WarehouseReadError::Operation(_))
+    ));
+    assert_eq!(f.executor.calls.lock().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn warehouse_status_denial_acceptance_and_malformed_evidence_never_fall_back_or_wait() {
+    for status in [401, 403, 404, 202, 206, 299, 500] {
+        let f = Fixture::new();
+        f.executor.response(
+            "GET",
+            format!("/v1/workspaces/{WS}/warehouses/{ITEM}"),
+            status,
+            br#"{"error":{"code":"NativeFailure","message":"protected"}}"#,
+            &[("x-ms-operation-id", OP.into())],
+        );
+        let selected =
+            WarehouseItemRead::new(WS, ITEM, "Warehouse", WarehouseRepresentation::Metadata)
+                .unwrap();
+        let error = warehouse_host(&f)
+            .get(
+                &selected,
+                OperationLimits::default(),
+                warehouse_limits().max_data_bytes,
+                pending(),
+            )
+            .await
+            .unwrap_err();
+        match error {
+            WarehouseReadError::Operation(error) => {
+                match status {
+                    401 | 403 | 404 | 500 => assert!(
+                        matches!(error.kind,OperationErrorKind::Http {status:actual,..} if actual==status)
+                    ),
+                    202 => assert_eq!(error.operation_id.as_deref(), Some(OP)),
+                    _ => {}
+                }
+                assert!(!error.mutation_may_have_occurred);
+            }
+            WarehouseReadError::Native(_) if matches!(status, 206 | 299) => {}
+            other => panic!("unexpected failure class for {status}: {other:?}"),
+        }
+        assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+        assert!(f.executor.waits.lock().unwrap().is_empty());
+    }
+    for body in [b"".as_slice(), b"not-json", b"null", b"{}"] {
+        let f = Fixture::new();
+        f.executor.response(
+            "GET",
+            format!("/v1/workspaces/{WS}/warehouses/{ITEM}"),
+            200,
+            body,
+            &[],
+        );
+        assert!(
+            stdout(
+                &f,
+                &["get".into(), format!("/{WS}.Workspace/{ITEM}.Warehouse")]
+            )
+            .await
+            .is_err()
+        );
+    }
+    let f = Fixture::new();
+    let selected =
+        WarehouseItemRead::new(WS, ITEM, "Warehouse", WarehouseRepresentation::Metadata).unwrap();
+    assert!(
+        warehouse_host(&f)
+            .get(
+                &selected,
+                OperationLimits::default(),
+                warehouse_limits().max_data_bytes,
+                std::future::ready(())
+            )
+            .await
+            .is_err()
+    );
+    assert!(f.executor.calls.lock().unwrap().is_empty());
+    assert!(f.credential.0.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -970,6 +1596,7 @@ async fn cancelling_guid_owner_verification_never_fetches_its_representation() {
 #[tokio::test]
 async fn accepted_definition_is_observed_without_replaying_and_commits_exact_part() {
     let f = Fixture::new();
+    generic_owner(&f, "Notebook");
     f.executor.response(
         "POST",
         format!("/v1/workspaces/{WS}/items/{ITEM}/getDefinition"),
@@ -1014,7 +1641,7 @@ async fn accepted_definition_is_observed_without_replaying_and_commits_exact_par
     delivery.commit_file().unwrap();
     assert_eq!(std::fs::read(out).unwrap(), [0, 1, 2, 255]);
     let calls = f.executor.calls.lock().unwrap();
-    assert_eq!(calls.len(), 3);
+    assert_eq!(calls.len(), 4);
     assert_eq!(
         calls.iter().filter(|(method, _)| method == "POST").count(),
         1
@@ -1024,6 +1651,7 @@ async fn accepted_definition_is_observed_without_replaying_and_commits_exact_par
 #[tokio::test]
 async fn acceptance_without_wait_retains_handle_and_never_creates_source_file() {
     let f = Fixture::new();
+    generic_owner(&f, "Notebook");
     f.executor.response(
         "POST",
         format!("/v1/workspaces/{WS}/items/{ITEM}/getDefinition"),
@@ -1053,12 +1681,13 @@ async fn acceptance_without_wait_retains_handle_and_never_creates_source_file() 
         matches!(error,GetCommandError::Incomplete{data} if data["data"]["handle"]==format!("/operations/{OP}") && data["meta"]["outcome"]=="accepted")
     );
     assert!(!out.exists());
-    assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+    assert_eq!(f.executor.calls.lock().unwrap().len(), 2);
 }
 
 #[tokio::test]
 async fn definition_and_observation_consume_one_response_budget() {
     let f = Fixture::new();
+    generic_owner(&f, "Notebook");
     f.executor.response(
         "POST",
         format!("/v1/workspaces/{WS}/items/{ITEM}/getDefinition"),
@@ -1089,6 +1718,7 @@ async fn definition_and_observation_consume_one_response_budget() {
             format!("https://api.fabric.microsoft.com/v1/operations/{OP}/result"),
         )],
     );
+    let owner_bytes = f.executor.replies.lock().unwrap()[0].body.len();
     let error = stdout(
         &f,
         &[
@@ -1096,19 +1726,20 @@ async fn definition_and_observation_consume_one_response_budget() {
             path("/src/definition"),
             "--wait".into(),
             "--max-bytes".into(),
-            "30".into(),
+            (owner_bytes + 30).to_string(),
         ],
     )
     .await
     .unwrap_err();
     assert!(matches!(error, GetCommandError::Backend { .. }));
-    assert_eq!(f.executor.calls.lock().unwrap().len(), 3);
+    assert_eq!(f.executor.calls.lock().unwrap().len(), 4);
     assert!(f.executor.replies.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
 async fn exact_file_bytes_and_storage_audience_survive_without_json_overhead() {
     let f = Fixture::new();
+    generic_owner(&f, "Lakehouse");
     let bytes = [0, 255, 1, 2, 3, 4, 0, 9];
     f.executor.response(
         "GET",
@@ -1117,13 +1748,14 @@ async fn exact_file_bytes_and_storage_audience_survive_without_json_overhead() {
         &bytes,
         &[("Content-Type", "application/octet-stream".into())],
     );
+    let owner_bytes = f.executor.replies.lock().unwrap()[0].body.len();
     let result = stdout(
         &f,
         &[
             "get".into(),
             path("/Files/test.bin"),
             "--max-bytes".into(),
-            "8".into(),
+            (owner_bytes + 8).to_string(),
         ],
     )
     .await
@@ -1131,13 +1763,17 @@ async fn exact_file_bytes_and_storage_audience_survive_without_json_overhead() {
     assert_eq!(result, bytes);
     assert_eq!(
         f.credential.0.lock().unwrap().as_slice(),
-        ["https://storage.azure.com/.default"]
+        [
+            "https://api.fabric.microsoft.com/.default",
+            "https://storage.azure.com/.default"
+        ]
     );
 }
 
 #[tokio::test]
 async fn file_read_requires_completed_http_200_not_compatibility_created_status() {
     let f = Fixture::new();
+    generic_owner(&f, "Lakehouse");
     f.executor.response(
         "GET",
         format!("/{WS}/{ITEM}/Files/test.bin"),
@@ -1147,7 +1783,7 @@ async fn file_read_requires_completed_http_200_not_compatibility_created_status(
     );
     let result = stdout(&f, &["get".into(), path("/Files/test.bin")]).await;
     assert!(matches!(result, Err(GetCommandError::Backend { .. })));
-    assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+    assert_eq!(f.executor.calls.lock().unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -1265,6 +1901,7 @@ impl DocumentsProvider for Docs {
 #[tokio::test]
 async fn bounded_docs_depth_zero_delivers_and_projection_retains_coverage() {
     let f = Fixture::new();
+    generic_owner(&f, "Notebook");
     let docs = Docs {
         calls: Mutex::new(Vec::new()),
         deny_child: false,
@@ -1344,6 +1981,7 @@ impl DocumentsProvider for LargeMarkdown {
 #[tokio::test]
 async fn json_docs_do_not_render_or_charge_unselected_markdown_escaping() {
     let f = Fixture::new();
+    generic_owner(&f, "Notebook");
     let provider = LargeMarkdown;
     let mut backend = f.backend();
     backend.documents = Some(&provider);
@@ -1359,6 +1997,7 @@ async fn json_docs_do_not_render_or_charge_unselected_markdown_escaping() {
         .await
         .unwrap();
     assert!(delivery.bytes().len() < 1_048_576);
+    generic_owner(&f, "Notebook");
     let markdown_args = [
         "get".into(),
         path("/docs/schema"),
@@ -1376,6 +2015,7 @@ async fn json_docs_do_not_render_or_charge_unselected_markdown_escaping() {
 #[tokio::test]
 async fn graph_shaped_markdown_projection_cannot_override_acquisition_coverage() {
     let f = Fixture::new();
+    generic_owner(&f, "Notebook");
     let docs = Docs {
         calls: Mutex::new(Vec::new()),
         deny_child: false,
@@ -1411,6 +2051,7 @@ async fn graph_shaped_markdown_projection_cannot_override_acquisition_coverage()
 #[tokio::test]
 async fn advertised_denied_descendant_is_partial_without_attempting_its_read() {
     let f = Fixture::new();
+    generic_owner(&f, "Notebook");
     let docs = DeniedEdgeDocs(Docs {
         calls: Mutex::new(Vec::new()),
         deny_child: false,
@@ -1445,6 +2086,7 @@ async fn advertised_denied_descendant_is_partial_without_attempting_its_read() {
 async fn descendant_denial_is_labelled_partial_but_root_denial_creates_no_file() {
     for deny_root in [false, true] {
         let f = Fixture::new();
+        generic_owner(&f, "Notebook");
         let docs = Docs {
             calls: Mutex::new(Vec::new()),
             deny_child: true,
@@ -1489,6 +2131,7 @@ async fn descendant_denial_is_labelled_partial_but_root_denial_creates_no_file()
 #[tokio::test]
 async fn docs_budget_exhaustion_cannot_be_hidden_by_a_small_projection() {
     let f = Fixture::new();
+    generic_owner(&f, "Notebook");
     let docs = Docs {
         calls: Mutex::new(Vec::new()),
         deny_child: false,

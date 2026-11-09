@@ -92,6 +92,21 @@ fn finish(
     payloads: Vec<String>,
     limits: DefinitionLimits,
 ) -> Result<NativeDefinition, DefinitionError> {
+    validate_primary(format, &parts)?;
+    let definition = NativeDefinition::admitted(format, parts, payloads);
+    let mut counter = WireCounter {
+        written: 0,
+        maximum: limits.max_wire_bytes.get(),
+    };
+    serde_json::to_writer(&mut counter, &definition)
+        .map_err(|_| DefinitionError::limit(Limit::WireBytes, None))?;
+    Ok(definition)
+}
+
+pub(crate) fn validate_primary(
+    format: SqlDatabaseDefinitionFormat,
+    parts: &[NativeDefinitionPart],
+) -> Result<(), DefinitionError> {
     let mut primary = false;
     for (index, part) in parts.iter().enumerate() {
         if part.path == ".platform" {
@@ -119,14 +134,7 @@ fn finish(
     if !primary {
         return Err(DefinitionError::new(Kind::MissingPrimaryPart, None));
     }
-    let definition = NativeDefinition::admitted(format, parts, payloads);
-    let mut counter = WireCounter {
-        written: 0,
-        maximum: limits.max_wire_bytes.get(),
-    };
-    serde_json::to_writer(&mut counter, &definition)
-        .map_err(|_| DefinitionError::limit(Limit::WireBytes, None))?;
-    Ok(definition)
+    Ok(())
 }
 
 fn encoded_length(bytes: usize) -> Result<usize, DefinitionError> {

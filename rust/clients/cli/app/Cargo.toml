@@ -119,6 +119,7 @@ fabric-sdk-discovery = { workspace = true, optional = true }
 fabric-sdk-jobs.workspace = true
 fabric-sdk-graph = { workspace = true, optional = true }
 fabric-sdk-operations.workspace = true
+fabric-sdk-paging.workspace = true
 fabric-sdk-tables.workspace = true
 fabric-sdk-dataflow.workspace = true
 fabric-sdk-tabular.workspace = true
