@@ -77,9 +77,29 @@ test('native preflights preserve exact engineering inventory and the mandatory f
   assert.ok(retainedArtifacts.includes(preflightRoot));
   assert.ok(workflow.includes('--restore-oracle-deps --execute'));
   assert.ok(workflow.includes('os: [windows-2025, ubuntu-24.04, macos-15]'));
-  assert.ok(workflow.includes('timeout-minutes: 120'));
+  assert.ok(workflow.includes("timeout-minutes: ${{ matrix.os == 'windows-2025' && 150 || 120 }}"));
   assert.ok(workflow.includes('contents: read'));
   assert.ok(!workflow.includes('continue-on-error'));
+});
+
+test('native job budgets give only Windows finite headroom without changing the matrix', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/rust-ci.yml'), 'utf8');
+  const start = workflow.indexOf('\n  native:\n'), end = workflow.indexOf('\n  validation:\n');
+  assert.ok(start >= 0 && end > start, 'Native job must precede the unchanged stable gate');
+  const native = workflow.slice(start, end);
+  const budget = native.match(
+    /^    timeout-minutes: \$\{\{ matrix\.os == '([^']+)' && (\d+) \|\| (\d+) \}\}$/m);
+  assert.ok(budget, 'Expected a finite platform-specific native timeout');
+  assert.equal(budget[1], 'windows-2025');
+  const selected = Number(budget[2]), otherwise = Number(budget[3]);
+  for (const [os, minutes] of [['windows-2025', 150], ['ubuntu-24.04', 120], ['macos-15', 120]]) {
+    const actual = os === budget[1] ? selected : otherwise;
+    assert.equal(actual, minutes);
+    assert.ok(actual > 0 && actual <= 150);
+  }
+  assert.match(native, /os: \[windows-2025, ubuntu-24\.04, macos-15\]/);
+  assert.match(native, /--restore-oracle-deps --execute/);
+  assert.ok(!native.includes('continue-on-error'));
 });
 
 function withTargetEnvironment(value, action) {

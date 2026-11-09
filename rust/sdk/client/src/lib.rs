@@ -10,6 +10,7 @@
 
 pub mod capacities;
 pub mod copyjobs;
+pub mod dataagents;
 pub mod documents;
 pub mod environment_publish;
 pub mod exists;

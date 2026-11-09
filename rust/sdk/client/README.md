@@ -24,6 +24,7 @@ selected endpoint with the appropriate audience.
 | `workspaces` | Workspace listing, ordered metadata and optional enrichment |
 | `items` | Item listing, generic lookup and finite collection-specific metadata |
 | `metadata` | Explicit primary workspace or generic item metadata, without enrichment |
+| `dataagents` | Typed public DataAgent metadata, exact definitions and explicit-stage settings/datasource pages |
 | `representations` | Native multipart definition/part and OneLake file reads |
 | `observe` | Bounded observation of existing operation and item-job handles |
 | `documents` | Injected served-docs provider and bounded, coverage-aware graph |
@@ -98,6 +99,15 @@ These are additive SDK contracts, not registration of a v2 CLI command or proof
 that a native extension is available on every Fabric gateway. No default
 authentication, subprocess bridge, background daemon or remote cleanup is
 installed. Debug output omits URLs, resource identifiers and executable content.
+
+The [DataAgent public read slice](../../docs/dataagent-reads.md) uses the existing
+Fabric operation session, generic ordered metadata and exact-definition decoder.
+Its optional registry entries resolve generic actions and the `data-agent`
+facade to the same binding. Staging and published configuration are explicit,
+public Preview resources; no stage or runtime variant is inferred. Datasource
+reads return one page with visible continuation evidence, not an exhaustive
+collection. Stored instructions, native multipart source, served documents,
+ontology navigation and hosted MCP answering remain distinct capabilities.
 
 The `livy-arrow` feature enables the raw Arrow protocol module and its existing
 workspace SHA-256 dependency. It does not install an HTTP streaming host or a
