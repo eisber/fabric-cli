@@ -251,11 +251,16 @@ pub(super) async fn execute_authenticated(
         Arc::clone(sdk.credential()),
         sdk.selection().clone(),
         Arc::new(fabric_cli_resources::ResourceHttpExecutor(Arc::new(
-            executor,
+            executor.clone(),
         ))),
     );
-    Ok(fabric_cli::workspace_v2::execute(
+    let warehouse = fabric_cli::warehouse_reads::WarehouseReadHost {
+        client: &sdk,
+        operations: &executor,
+    };
+    Ok(fabric_cli::workspace_v2::execute_with_warehouse(
         &api,
+        Some(&warehouse),
         command,
         observed_at,
         std::future::pending(),

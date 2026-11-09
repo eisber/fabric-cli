@@ -78,6 +78,12 @@ parts and retains format/version and related-model prerequisite evidence outside
 projected data. Unknown native versions or missing report structure are partial,
 not complete authoring exports. Untyped item paths retain the generic binding.
 
+Explicitly typed `.Warehouse` metadata uses the native Warehouse metadata GET,
+without definition or connection enrichment. Warehouse source, docs, file and
+run representations are not bound in this head; they fail before acquisition
+rather than falling through to generic item source. The existing explicit-budget
+get/list head supplies the separate [Warehouse connection and restore delegates](warehouse-management-reads.md#bounded-cli-consumer).
+
 ## Options, data and local delivery
 
 `--format json|markdown|raw` chooses an advertised serialization, not the native

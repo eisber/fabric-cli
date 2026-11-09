@@ -9,8 +9,8 @@
 mod folder_support;
 
 use fabric_cli::workspace_v2::{
-    OutputReservation, ParsedWorkspaceInvocation, WorkspaceCommand, execute, failure_envelope,
-    parse_args, write_result,
+    OutputReservation, ParsedWorkspaceInvocation, WorkspaceCommand, execute,
+    execute_with_warehouse, failure_envelope, parse_args, write_result,
 };
 use fabric_sdk::{Audience, CredentialSelection};
 use fabric_sdk_api::{ApiClient, workspace_reads::WorkspaceReadError};
@@ -61,6 +61,377 @@ fn item(id: &str) -> Value {
 
 fn value(envelope: &impl serde::Serialize) -> Value {
     serde_json::to_value(envelope).unwrap()
+}
+
+const WH: &str = "22222222-2222-3333-4444-555555555555";
+
+fn warehouse(id: &str) -> Value {
+    json!({"id":id,"workspaceId":W,"type":"Warehouse","displayName":"metadata only","future":false})
+}
+
+fn warehouse_client(
+    replies: impl IntoIterator<Item = Reply>,
+) -> (
+    ApiClient,
+    fabric_sdk::Client,
+    fabric_sdk_http::HttpExecutor,
+    Arc<Http>,
+    Arc<Credential>,
+) {
+    let http = Arc::new(Http::new(replies));
+    let credential = Arc::new(Credential::default());
+    let sdk = folder_support::sdk(credential.clone());
+    let executor = executor(http.clone(), Arc::new(Timer::default()));
+    let api = ApiClient::new(
+        Arc::clone(sdk.credential()),
+        sdk.selection().clone(),
+        Arc::new(fabric_cli_resources::ResourceHttpExecutor(Arc::new(
+            executor.clone(),
+        ))),
+    );
+    (api, sdk, executor, http, credential)
+}
+
+#[test]
+fn warehouse_root_and_facade_get_and_list_share_actual_sdk_http_and_envelopes() {
+    for (verb, suffix, body, expected_route, recursive) in [
+        ("get", "", warehouse(WH), format!("/warehouses/{WH}"), false),
+        (
+            "get",
+            "/settings/connection",
+            json!({"connectionString":"inert.example","future":true}),
+            format!("/warehouses/{WH}/connectionString"),
+            false,
+        ),
+        (
+            "get",
+            "/restore-points/opaque %2F?#+key",
+            json!({"id":"opaque %2F?#+key","creationMode":"Future"}),
+            format!("/warehouses/{WH}/restorePoints/opaque%20%252F%3F%23+key"),
+            false,
+        ),
+        (
+            "list",
+            "/restore-points",
+            json!({"value":[{"id":"z"},{"id":"a"},{"id":"z"}]}),
+            format!("/warehouses/{WH}/restorePoints"),
+            false,
+        ),
+        (
+            "list",
+            "/warehouses",
+            json!({"value":[warehouse(WH),warehouse(WH)]}),
+            "/warehouses?recursive=false".into(),
+            true,
+        ),
+    ] {
+        let target = if suffix == "/warehouses" {
+            format!("{PATH}{suffix}")
+        } else {
+            format!("{PATH}/{WH}.Warehouse{suffix}")
+        };
+        let mut results = Vec::new();
+        for facade in [false, true] {
+            let facade_path = if facade && suffix == "/warehouses" {
+                PATH
+            } else {
+                &target
+            };
+            let mut args = if facade {
+                vec!["artifact", "warehouse", verb, facade_path]
+            } else {
+                vec![verb, facade_path]
+            };
+            args.extend(["--max-bytes", "4096", "--timeout", "30s"]);
+            if verb == "list" {
+                args.extend(["--limit", "10"]);
+            }
+            if recursive {
+                args.extend(["--recursive", "false"]);
+            }
+            let command = parsed(&args);
+            let (api, sdk, executor, http, credential) = warehouse_client([reply(body.clone())]);
+            let host = fabric_cli::warehouse_reads::WarehouseReadHost {
+                client: &sdk,
+                operations: &executor,
+            };
+            let result = complete(execute_with_warehouse(
+                &api,
+                Some(&host),
+                &command,
+                NOW,
+                pending(),
+                pending(),
+            ));
+            let envelope = value(&result);
+            assert_eq!(result.exit_code(), 0, "{envelope}");
+            assert_eq!(
+                envelope["data"],
+                if verb == "list" {
+                    body["value"].clone()
+                } else {
+                    body.clone()
+                }
+            );
+            assert_eq!(envelope["meta"]["target"]["type"], "Warehouse");
+            assert_eq!(envelope["meta"]["coverage"]["complete"], true);
+            assert_eq!(
+                http.requests.lock().unwrap().as_slice(),
+                &[format!(
+                    "https://api.fabric.microsoft.com/v1/workspaces/{W}{expected_route}"
+                )]
+            );
+            assert_eq!(credential.scopes.lock().unwrap().len(), 1);
+            results.push(envelope);
+        }
+        assert_eq!(results[0], results[1]);
+    }
+}
+
+#[test]
+fn warehouse_list_bounded_page_is_honest_partial_not_failure_or_full_collection_success() {
+    let target = format!("{PATH}/warehouses");
+    let command = parsed(&[
+        "list",
+        &target,
+        "--max-bytes",
+        "4096",
+        "--limit",
+        "10",
+        "--recursive",
+        "false",
+        "--timeout",
+        "30s",
+        "-q",
+        "length(@)",
+    ]);
+    let (api, sdk, executor, http, _) = warehouse_client([reply(json!({
+        "value":[warehouse(WH)],"continuationToken":"native-next"
+    }))]);
+    let host = fabric_cli::warehouse_reads::WarehouseReadHost {
+        client: &sdk,
+        operations: &executor,
+    };
+    let result = complete(execute_with_warehouse(
+        &api,
+        Some(&host),
+        &command,
+        NOW,
+        pending(),
+        pending(),
+    ));
+    let envelope = value(&result);
+    assert_eq!(result.exit_code(), 1);
+    assert_eq!(envelope["status"], "partial");
+    assert!(envelope["error"].is_null());
+    assert_eq!(envelope["data"], 1);
+    assert_eq!(envelope["meta"]["coverage"]["complete"], false);
+    assert_eq!(envelope["meta"]["coverage"]["resumable"], false);
+    assert_eq!(
+        envelope["meta"]["nativeRead"]["coverage"]["resumeKind"],
+        "nativeInformational"
+    );
+    assert_eq!(
+        envelope["meta"]["nativeRead"]["nativePage"]["continuationToken"],
+        "native-next"
+    );
+    assert_eq!(http.requests.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn warehouse_actual_head_preflight_rejects_wrong_facade_facets_and_missing_limits() {
+    for (verb, path, extra) in [
+        (
+            "get",
+            format!("{PATH}/{WH}.Warehouse/src/definition"),
+            vec![],
+        ),
+        ("get", format!("{PATH}/{WH}.Warehouse/docs"), vec![]),
+        (
+            "get",
+            format!("{PATH}/{WH}.Warehouse/restore-points/../escape"),
+            vec![],
+        ),
+        (
+            "get",
+            format!("{PATH}/{WH}.SQLDatabase/settings/connection"),
+            vec![],
+        ),
+        ("list", format!("{PATH}/warehouses"), vec!["--limit", "10"]),
+        (
+            "list",
+            format!("{PATH}/{WH}.Warehouse/restore-points"),
+            vec!["--limit", "10", "--recursive", "false"],
+        ),
+    ] {
+        let mut args = vec![
+            verb,
+            path.as_str(),
+            "--max-bytes",
+            "4096",
+            "--timeout",
+            "30s",
+        ];
+        args.extend(extra);
+        assert!(
+            parse_args(
+                std::iter::once(OsString::from("fab-cli-workspace"))
+                    .chain(args.iter().map(OsString::from))
+            )
+            .is_err()
+        );
+    }
+    let path = format!("{PATH}/{WH}.Warehouse");
+    assert!(
+        parse_args(
+            [
+                "fab-cli-workspace",
+                "artifact",
+                "workspace",
+                "get",
+                &path,
+                "--max-bytes",
+                "4096",
+                "--timeout",
+                "30s"
+            ]
+            .map(OsString::from)
+        )
+        .is_err()
+    );
+    let collection_path = format!("{PATH}/warehouses");
+    for args in [
+        vec![
+            "get",
+            path.as_str(),
+            "--max-bytes",
+            "4096",
+            "--timeout",
+            "30s",
+        ],
+        vec![
+            "list",
+            collection_path.as_str(),
+            "--max-bytes",
+            "4096",
+            "--timeout",
+            "30s",
+            "--limit",
+            "10",
+            "--recursive",
+            "false",
+        ],
+    ] {
+        let output = process(&args)
+            .env("FAB_RUST_AUTH_MODE", "invalid-explicit-provider")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty());
+        let failed: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_ne!(failed["status"], "succeeded");
+        assert_eq!(failed["meta"]["target"]["type"], "Warehouse");
+    }
+}
+
+#[test]
+fn warehouse_injected_host_absence_and_original_status_failures_are_explicit() {
+    let path = format!("{PATH}/{WH}.Warehouse");
+    let command = parsed(&["get", &path, "--max-bytes", "4096", "--timeout", "30s"]);
+    let (api, _, _) = client([]);
+    assert_eq!(
+        value(&complete(execute(
+            &api,
+            &command,
+            NOW,
+            pending(),
+            pending()
+        )))["error"]["code"],
+        "NotConfigured"
+    );
+    for (status, code) in [
+        (401, "Unauthenticated"),
+        (403, "AccessDenied"),
+        (404, "NotFound"),
+        (202, "OperationFailed"),
+        (206, "InvalidResponse"),
+    ] {
+        let (api, sdk, executor, http, _) = warehouse_client([Reply {
+            status,
+            body: json!({"error":{"code":"NativeFailure","message":"private"}}),
+            headers: [("x-ms-operation-id".into(), WH.into())]
+                .into_iter()
+                .collect(),
+        }]);
+        let host = fabric_cli::warehouse_reads::WarehouseReadHost {
+            client: &sdk,
+            operations: &executor,
+        };
+        let result = complete(execute_with_warehouse(
+            &api,
+            Some(&host),
+            &command,
+            NOW,
+            pending(),
+            pending(),
+        ));
+        let failed = value(&result);
+        assert_eq!(failed["error"]["code"], code, "{failed}");
+        assert!(failed["data"].is_null());
+        assert_eq!(failed["meta"]["target"]["id"], WH);
+        if status == 202 {
+            assert_eq!(failed["meta"]["nativeRead"]["operationId"], WH);
+        }
+        assert_eq!(http.requests.lock().unwrap().len(), 1);
+    }
+}
+
+#[test]
+fn warehouse_existing_output_race_and_stdout_failure_reuse_common_delivery() {
+    let path = format!("{PATH}/{WH}.Warehouse/settings/connection");
+    let directory = TestDirectory::new();
+    let file = directory.0.join("connection.json");
+    let command = parsed(&["get", &path, "--max-bytes", "4096", "--timeout", "30s"]);
+    let (api, sdk, executor, http, _) =
+        warehouse_client([reply(json!({"connectionString":"inert.example"}))]);
+    let host = fabric_cli::warehouse_reads::WarehouseReadHost {
+        client: &sdk,
+        operations: &executor,
+    };
+    let result = complete(execute_with_warehouse(
+        &api,
+        Some(&host),
+        &command,
+        NOW,
+        pending(),
+        pending(),
+    ));
+    let reservation = OutputReservation::new(Some(&file)).unwrap();
+    fs::write(&file, b"racing-owner").unwrap();
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    assert_eq!(
+        write_result(reservation, &result, &mut out, &mut err).unwrap(),
+        1
+    );
+    assert!(out.is_empty());
+    assert_eq!(fs::read(&file).unwrap(), b"racing-owner");
+    let failed: Value = serde_json::from_slice(&err).unwrap();
+    assert_eq!(failed["error"]["code"], "OutputExists");
+    assert_eq!(failed["meta"]["target"]["id"], WH);
+    let mut err = Vec::new();
+    assert_eq!(
+        write_result(
+            OutputReservation::new(None).unwrap(),
+            &result,
+            &mut BrokenWriter,
+            &mut err
+        )
+        .unwrap(),
+        1
+    );
+    let failed: Value = serde_json::from_slice(&err).unwrap();
+    assert_eq!(failed["meta"]["nativeRead"]["requestOwner"]["itemId"], WH);
+    assert_eq!(http.requests.lock().unwrap().len(), 1);
 }
 
 #[test]

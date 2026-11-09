@@ -26,7 +26,7 @@ use fabric_sdk::{
     workspaces::WorkspaceExecutor,
 };
 use fabric_sdk_onelake::{OneLakeClient, OneLakeExecutor, OneLakePath};
-use fabric_sdk_operations::OperationExecutor;
+use fabric_sdk_operations::{OperationExecutor, OperationLimits};
 use serde_json::{Value, json};
 use std::{future::pending, num::NonZeroUsize, time::Duration};
 
@@ -84,6 +84,18 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
         Box::pin(async move {
             let parsed =
                 GetTarget::parse(path).map_err(|error| backend_error("InvalidTarget", error))?;
+            if let GetTarget::Item {
+                item_type: Some(kind),
+                representation,
+                ..
+            } = &parsed
+                && kind == "Warehouse"
+                && !matches!(representation, GetRepresentation::Metadata)
+            {
+                return Err(unsupported(
+                    "Warehouse source and facet paths await an approved native binding",
+                ));
+            }
             if let GetTarget::Item {
                 item_type: Some(kind),
                 representation,
@@ -261,6 +273,45 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                     item_type,
                     representation,
                 } => {
+                    if item_type.is_none() && !matches!(representation, GetRepresentation::Metadata)
+                    {
+                        let owner = metadata
+                            .read(
+                                MetadataTarget::Item {
+                                    workspace_id,
+                                    item_id,
+                                },
+                                MetadataLimits {
+                                    max_response_bytes: remaining,
+                                    max_result_bytes: cap,
+                                },
+                                pending(),
+                            )
+                            .await
+                            .map_err(|error| backend_error("MetadataReadFailed", error))?;
+                        let owner_type = owner.data()["type"].as_str().ok_or_else(|| {
+                            unsupported("representation owner type is unavailable")
+                        })?;
+                        if owner_type == "Warehouse" {
+                            return Err(unsupported(
+                                "Warehouse source and facet paths await an approved native binding",
+                            ));
+                        }
+                    }
+                    if item_type.as_deref() == Some("Warehouse") {
+                        return crate::warehouse_reads::metadata(
+                            self.client,
+                            budget,
+                            workspace_id,
+                            item_id,
+                            OperationLimits {
+                                max_response_bytes: remaining,
+                                ..OperationLimits::default()
+                            },
+                            cap,
+                        )
+                        .await;
+                    }
                     if item_type.as_deref() == Some("Report")
                         && matches!(
                             representation,
