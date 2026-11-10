@@ -158,6 +158,7 @@ impl MutationHost<'_> {
                     .as_ref()
                     .and_then(|data| data.get("id"))
                     .and_then(Value::as_str)
+                    .filter(|id| !id.is_empty())
                     .is_none()
             {
                 return Err(incomplete_create(
