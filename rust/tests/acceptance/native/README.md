@@ -340,23 +340,28 @@ import os
 import sys
 import unittest
 
-suite = unittest.defaultTestLoader.discover(sys.argv[1], pattern="test_native_acceptance.py")
-if suite.countTestCases() != 32:
+suite = unittest.defaultTestLoader.discover(sys.argv[1], pattern="test_native_acceptance*.py")
+if suite.countTestCases() != 51:
     raise SystemExit("unit_inventory_mismatch")
 result = unittest.TextTestRunner(verbosity=2).run(suite)
 expected_skips = [
-    ("test_native_acceptance.FilesystemTests.test_raw_pty_cursor_flood_without_input_reads_is_bounded_and_reaped",
-     "requires_native_POSIX_PTY")
+    ("test_native_acceptance.FilesystemTests." + name, "requires_native_POSIX_PTY")
+    for name in (
+        "test_actual_eof_byte_and_clean_restore_satisfy_fixture",
+        "test_cursor_protocol_only_exit_cannot_satisfy_eof_delivery",
+        "test_eof_without_restoration_cannot_satisfy_fixture",
+        "test_raw_pty_cursor_flood_without_input_reads_is_bounded_and_reaped",
+    )
 ] if os.name == "nt" else []
 actual_skips = [(test.id(), reason) for test, reason in result.skipped]
-raise SystemExit(0 if result.wasSuccessful() and result.testsRun == 32
+raise SystemExit(0 if result.wasSuccessful() and result.testsRun == 51
                  and not result.expectedFailures and actual_skips == expected_skips else 1)
 '@
 & $TrustedPython -I -B -c $UnitRunner (Join-Path $CandidateRoot 'rust\scripts')
 exit $LASTEXITCODE
 ```
 
-The exact 32-case count is the source inventory for this freeze, not a result.
+The exact 51-case count is the source inventory for this freeze, not a result.
 The controller must retain actual discovered/run counts and exact skip reasons;
 zero tests, unexpected selection, expected failures or a POSIX PTY skip fail
 this command. A later source freeze requires a freshly reviewed inventory.
@@ -369,13 +374,13 @@ artifact/budget gates and zero-test success rejection. It does not build or
 run Rust, acquire the shared native lease,
 contact providers or certify a registered host. An actual native matrix still
 requires all controller prerequisites above and independent evidence review.
-The synthetic raw-child PTY flood must actually run on POSIX. Its explicit
-Windows-only skip is not a runtime pass and cannot satisfy Linux/macOS coverage.
+All four synthetic-child PTY cases must actually run on POSIX. Their explicit
+Windows-only skips are not runtime passes and cannot satisfy Linux/macOS coverage.
 The separate five-case `test_native_acceptance_pty_cleanup.py` unit suite checks
 draining, the unchanged wait deadline, fail-closed descriptor/selector errors, and
 explicit unavailable terminal-state observation with
 synthetic handles. The existing `oracle-tools` gate also runs it; these unit
-checks do not replace any case in the frozen 32-case suite or native PTY proof.
+checks are included in the 51-case inventory and do not replace native PTY proof.
 The existing three-platform Rust CI also runs both exact engineering suites
 before native compilation, retaining their run counts, skip reasons, and logs.
 For the synthetic PTY cases it also retains the subprocess's bounded receipt
@@ -387,5 +392,5 @@ storage to stay within runner disk capacity. Debug assertions, optimization,
 selectors, features, strict lints, and native gates are unchanged. The shared
 runner records its allowlisted Cargo resource settings in run and command
 receipts; these settings are not a release-artifact quality claim.
-These commands have not been executed for the current source freeze; a fresh
-numbered controller grant is required before any unit/native process starts.
+This procedure and its inventory are not execution receipts. Retain the actual
+source-bound results and the required controller grant for each run.
