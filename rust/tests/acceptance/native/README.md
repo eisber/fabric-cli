@@ -265,6 +265,15 @@ The read-only `snapshot` command alone uses exit 0.
   `requires_native_PTY_or_manual_terminal`, with no dependency installation or
   dummy-editor substitute.
 
+Terminal fixture schema 2 records the owner-requested clean EOF exception:
+Ctrl+D exits zero without `Error in interactive session:` on either stream.
+The EOF case has no positive text requirement because prompts and editor escapes
+are not a stable output contract. It still requires actual input delivery,
+observed raw mode, terminal restoration, bounded completion and confirmed
+cleanup. Quit, lexical-error and interrupt retain their positive output checks.
+This Rust UX correction does not change the frozen Python reference or establish
+unexecuted Windows terminal behavior.
+
 Before each exact libtest case the harness verifies registration using `--list`,
 then requires a named test result and exactly one passed, zero failed/ignored
 tests. A filtered/empty/ignored success is not a passing case. A missing test

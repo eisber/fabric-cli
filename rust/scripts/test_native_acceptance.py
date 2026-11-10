@@ -70,6 +70,80 @@ def helper_request() -> dict:
     return candidate
 
 
+class TerminalContractTests(unittest.TestCase):
+    """Explicit Rust EOF behavior; the frozen Python oracle remains unchanged."""
+
+    def setUp(self) -> None:
+        self.fixture = json.loads((FIXTURES / "terminal-inputs.json").read_text(encoding="utf-8"))
+        self.eof = next(case for case in self.fixture["cases"] if case["name"] == "eof")
+        self.receipt = {
+            "exit": 0, "timeout": False, "output_limit": False,
+            "cleanup": "owned_tree_terminated",
+            "terminal": {
+                "raw_observed": True, "termios_restored": True,
+                "input_queue_limit": False, "input_bytes_written": 1,
+            },
+        }
+
+    def test_current_fixture_explicitly_requires_clean_eof(self) -> None:
+        acceptance.validate_terminal_fixture(self.fixture)
+        self.assertTrue(acceptance.terminal_case_passed(
+            self.eof, self.receipt, b"fab-rs> \x1b[0m", b"",
+        ))
+
+    def test_old_error_is_rejected_on_either_stream(self) -> None:
+        error = b"Error in interactive session: \n"
+        for out, err in [(error, b""), (b"fab-rs> ", error)]:
+            with self.subTest(out=out, err=err):
+                self.assertFalse(acceptance.terminal_case_passed(self.eof, self.receipt, out, err))
+
+    def test_missing_input_or_terminal_cleanup_cannot_pass_silent_eof(self) -> None:
+        for section, key, value in [
+            (None, "exit", 1), (None, "timeout", True), (None, "output_limit", True),
+            (None, "cleanup", "unconfirmed"), (None, "execution_error", "synthetic"),
+            ("terminal", "raw_observed", False), ("terminal", "termios_restored", False),
+            ("terminal", "input_queue_limit", True), ("terminal", "input_bytes_written", 0),
+        ]:
+            receipt = copy.deepcopy(self.receipt)
+            target = receipt if section is None else receipt[section]
+            target[key] = value
+            with self.subTest(section=section, key=key):
+                self.assertFalse(acceptance.terminal_case_passed(self.eof, receipt, b"", b""))
+
+    def test_other_terminal_cases_still_require_their_positive_output(self) -> None:
+        for case in self.fixture["cases"]:
+            if case["name"] == "eof":
+                continue
+            receipt = copy.deepcopy(self.receipt)
+            receipt["terminal"]["input_bytes_written"] = len(case["input"])
+            self.assertTrue(acceptance.terminal_case_passed(
+                case, receipt, case["contains"].encode(), b"",
+            ))
+            self.assertFalse(acceptance.terminal_case_passed(case, receipt, b"", b""))
+
+    def test_empty_or_removed_eof_assertions_and_old_schema_are_rejected(self) -> None:
+        for patch in [
+            {"contains": ""}, {"contains": "Error in interactive session:"},
+            {"not_contains": []}, {"not_contains": [""]}, {"input": ""},
+            {"input": "quit\r"}, {"exit": True},
+        ]:
+            fixture = copy.deepcopy(self.fixture)
+            next(case for case in fixture["cases"] if case["name"] == "eof").update(patch)
+            with self.subTest(patch=patch), self.assertRaises(acceptance.Rejected):
+                acceptance.validate_terminal_fixture(fixture)
+        fixture = copy.deepcopy(self.fixture)
+        fixture["schema"] = 1
+        with self.assertRaises(acceptance.Rejected):
+            acceptance.validate_terminal_fixture(fixture)
+
+    def test_other_cases_cannot_silently_drop_checks_or_add_unknown_fields(self) -> None:
+        for patch in [{"contains": None}, {"contains": ""}, {"unexpected": True}]:
+            fixture = copy.deepcopy(self.fixture)
+            fixture["cases"][0].update(patch)
+            with self.subTest(patch=patch), self.assertRaises(acceptance.Rejected):
+                acceptance.validate_terminal_fixture(fixture)
+
+
 class ContractTests(unittest.TestCase):
     """Negative schemas, feature scope, output and immutable bindings."""
 
