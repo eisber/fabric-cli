@@ -17,7 +17,8 @@ import unittest
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import native_acceptance as acceptance
 
@@ -397,6 +398,65 @@ class FilesystemTests(unittest.TestCase):
         self.assertEqual(result["cleanup"], "owned_tree_terminated")
         self.assertEqual(result["cleanup_failure_codes"], [])
         self.assertLess(result["elapsed_seconds"], 1.8)
+
+    def test_mocked_posix_sends_eof_when_raw_mode_follows_the_only_prompt(self) -> None:
+        fixture = json.loads((FIXTURES / "terminal-inputs.json").read_text(encoding="utf-8"))
+        case = next(case for case in fixture["cases"] if case["name"] == "eof")
+        for raw_on_observation in (3, 5):
+            with self.subTest(raw_on_observation=raw_on_observation):
+                child = Mock(pid=12345, returncode=None, stdin=None, stdout=None, stderr=None)
+                observations = polls = selections = 0
+                delivered = bytearray()
+
+                def poll() -> int | None:
+                    nonlocal polls
+                    polls += 1
+                    if child.returncode is None and polls > 8:
+                        child.returncode = 3
+                    return child.returncode
+
+                def attributes(_descriptor: int) -> list[int]:
+                    nonlocal observations
+                    observations += 1
+                    raw = observations >= raw_on_observation and child.returncode is None
+                    return [0, 0, 0, 0 if raw else 3]
+
+                def select_ready(read: list[int], write: list[int], _errors: list[int],
+                                 _timeout: float) -> tuple[list[int], list[int], list[int]]:
+                    nonlocal selections
+                    selections += 1
+                    return (read if selections == 1 else []), write, []
+
+                def write(_descriptor: int, data: bytes) -> int:
+                    delivered.extend(data)
+                    child.returncode = 0 if delivered == b"\x04" else 3
+                    return len(data)
+
+                child.poll.side_effect = poll
+                mock_os = SimpleNamespace(
+                    name="posix", set_blocking=Mock(), close=Mock(),
+                    read=Mock(return_value=b"$ "), write=Mock(side_effect=write),
+                    killpg=Mock(side_effect=ProcessLookupError),
+                )
+                modules = {
+                    "fcntl": SimpleNamespace(ioctl=Mock()),
+                    "pty": SimpleNamespace(openpty=Mock(return_value=(101, 102))),
+                    "select": SimpleNamespace(select=select_ready),
+                    "termios": SimpleNamespace(
+                        ECHO=1, ICANON=2, TIOCSWINSZ=1, error=OSError, tcgetattr=attributes,
+                    ),
+                }
+                with patch.dict(sys.modules, modules), patch.object(acceptance, "os", mock_os), \
+                        patch.object(acceptance, "signal", SimpleNamespace(SIGKILL=9)), \
+                        patch.object(acceptance.subprocess, "Popen", return_value=child):
+                    result, out, err = acceptance.execute(
+                        ["synthetic-mocked-posix"], self.root, {}, 1,
+                        time.monotonic() + 2, terminal=dict(case),
+                    )
+                self.assertEqual(mock_os.read.call_count, 1)
+                self.assertEqual(delivered, b"\x04")
+                self.assertEqual(result["terminal"]["fixture_input_bytes_written"], 1)
+                self.assertTrue(acceptance.terminal_case_passed(case, result, out, err))
 
     @unittest.skipIf(os.name == "nt", "requires_native_POSIX_PTY")
     def test_cursor_protocol_only_exit_cannot_satisfy_eof_delivery(self) -> None:

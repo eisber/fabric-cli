@@ -559,13 +559,13 @@ def execute(
                     query_tail = (query_tail + chunk)[-3:]
                     dsr += queries
                     enqueue(b"\x1b[1;1R" * queries)
-                    if raw_observed and prompt in buffers[0] and not sent:
-                        enqueue(terminal["input"].encode("ascii"), fixture_input=True)
-                        sent = True
-                    if terminal["name"] == "interrupt" and sent and not interrupted:
-                        if b"Use 'quit' or 'exit'" in buffers[0]:
-                            enqueue(b"quit\r")
-                            interrupted = True
+                if raw_observed and prompt in buffers[0] and not sent:
+                    enqueue(terminal["input"].encode("ascii"), fixture_input=True)
+                    sent = True
+                if terminal["name"] == "interrupt" and sent and not interrupted:
+                    if b"Use 'quit' or 'exit'" in buffers[0]:
+                        enqueue(b"quit\r")
+                        interrupted = True
                 if (writable and pending and not overflow.is_set() and not input_queue_limit
                         and time.monotonic() < end):
                     try:

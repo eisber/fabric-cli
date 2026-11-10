@@ -273,6 +273,9 @@ observed raw mode, terminal restoration, bounded completion and confirmed
 cleanup. Quit, lexical-error and interrupt retain their positive output checks.
 Fixture bytes are counted separately from cursor-position protocol replies,
 including partial writes; protocol traffic cannot prove that Ctrl+D was sent.
+The driver reevaluates an already buffered prompt when raw mode becomes
+observable, without requiring another output event. A deterministic mocked
+POSIX schedule covers that ordering on all hosts; it is not native PTY proof.
 This Rust UX correction does not change the frozen Python reference or establish
 unexecuted Windows terminal behavior.
 
