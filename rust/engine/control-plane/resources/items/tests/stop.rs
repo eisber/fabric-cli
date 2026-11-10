@@ -702,3 +702,62 @@ fn dropping_at_each_await_boundary_cannot_start_cleanup_compensation_or_another_
         assert_calls(&capture, &actions);
     }
 }
+
+#[tokio::test]
+async fn status_error_regression_preflight_cannot_authorize_or_confirm() {
+    for state in ["Running", "Stopped", "Stopping"] {
+        let preflight = completed(Some(json!({
+            "status": state,
+            "error": {"errorCode": "MirrorFailed", "message": "synthetic"}
+        })));
+        let mut capture =
+            Capture::responses([preflight.clone(), completed(None), status("Stopped")]);
+        let result = stop(&mut capture, &target(), approved()).await;
+        assert!(
+            result.is_err(),
+            "Errored {state} preflight was accepted: {result:?}"
+        );
+        let error = result.unwrap_err();
+        assert_no_submission(&error);
+        assert_eq!(error.response_outcome(), Some(&preflight));
+        assert_eq!(capture.calls.len(), 1);
+        assert_eq!(capture.replies.len(), 2);
+    }
+}
+
+#[tokio::test]
+async fn status_error_regression_readback_retains_completed_mutation() {
+    let submitted = completed(None);
+    let readback = completed(Some(json!({
+        "status": "Stopped",
+        "error": {"errorCode": "MirrorFailed", "message": "synthetic"}
+    })));
+    let mut capture = Capture::responses([status("Running"), submitted.clone(), readback.clone()]);
+    let result = stop(&mut capture, &target(), approved()).await;
+    assert!(
+        result.is_err(),
+        "Errored readback was confirmed: {result:?}"
+    );
+    let error = result.unwrap_err();
+    assert_retained_submission(&error, &submitted);
+    assert_eq!(error.response_outcome(), Some(&readback));
+    assert_calls(
+        &capture,
+        &["getMirroringStatus", "stopMirroring", "getMirroringStatus"],
+    );
+}
+
+#[tokio::test]
+async fn status_error_regression_null_error_preserves_no_op() {
+    let mut capture = Capture::responses([completed(Some(json!({
+        "status": "Stopped",
+        "error": null,
+        "futureField": "synthetic"
+    })))]);
+    let receipt = stop(&mut capture, &target(), StopOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(receipt.outcome, StopOutcome::AlreadyStopped);
+    assert!(receipt.stopped_confirmed());
+    assert_calls(&capture, &["getMirroringStatus"]);
+}

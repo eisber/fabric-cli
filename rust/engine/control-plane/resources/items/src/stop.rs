@@ -377,6 +377,7 @@ async fn read_status(
             data: Some(data),
         } => data
             .as_object()
+            .filter(|object| object.get("error").is_none_or(serde_json::Value::is_null))
             .and_then(|object| object.get("status"))
             .and_then(serde_json::Value::as_str)
             .and_then(MirroringState::parse),
