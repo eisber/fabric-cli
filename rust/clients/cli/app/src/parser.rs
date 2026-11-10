@@ -167,7 +167,7 @@ pub fn command() -> Command {
         .subcommand(
             Command::new("ls")
                 .visible_alias("dir")
-                .about("List workspaces or workspace items")
+                .about("List workspaces or workspace items; a final 'prefix*' filters children")
                 .args_override_self(true)
                 .infer_long_args(true)
                 .arg(Arg::new("path").num_args(0..))
@@ -185,7 +185,7 @@ pub fn command() -> Command {
                 )
                 .arg(Arg::new("query").short('q').long("query")
                     .help("JMESPath expression over the listing array; use --long -q '[].id' for item IDs"))
-                .after_help("Examples:\n  fab-rs ls 'Demo.Workspace' --long -q '[].id'\n  fab-rs ls / -q \"[?name=='Demo.Workspace'].id\"\nTo inspect the workspace itself, use: fab-rs get 'Demo.Workspace' -q id\nA bare field such as 'id' queries the whole listing array, not each item. Workspace item IDs are available only with --long."),
+                .after_help("Examples:\n  fab-rs ls 'marc*'\n  fab-rs ls 'Demo.Workspace/marc*'\n  fab-rs ls 'Demo.Workspace' --long -q '[].id'\n  fab-rs ls / -q \"[?name=='Demo.Workspace'].id\"\nA single trailing '*' filters children in one exact parent. Quote the path to prevent shell expansion. Only nonempty prefixes in the final segment are supported; other patterns and mutation wildcards are not supported.\nTo inspect the workspace itself, use: fab-rs get 'Demo.Workspace' -q id\nA bare field such as 'id' queries the whole listing array, not each item. Workspace item IDs are available only with --long."),
         )
         .subcommand(
             Command::new("get")
