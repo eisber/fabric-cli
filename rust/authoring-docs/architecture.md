@@ -32,12 +32,16 @@ unchanged names and logical layers:
 | `engine/core/pagination/`, `engine/core/lro/` | Shared paging, request completion and polling |
 | `engine/core/contracts/`, `engine/core/json/` | Shared endpoint/credential contracts and ordered JSON encoding |
 | `clients/cli/app/` | `fab-rs` executable, central composition and CLI deployment handling |
-| `clients/cli/commands/resources/` | Generic resource commands; nested `definitions/` owns item-definition import/export in a separate package |
+| `clients/cli/commands/resources/` | Generic resource commands and resource lifecycle policy |
+| `clients/cli/commands/import/` | Item-definition import and Environment readiness/publication |
+| `clients/cli/commands/export/` | Single-item/workspace definition export and recursive bulk-export |
 | `clients/cli/commands/access/`, `catalog/`, `api/` | Focused ACL/label, discovery and explicit raw API command owners |
-| `clients/cli/commands/contracts/` | Neutral CLI command values, errors, presentation and injected HTTP adapters |
+| `clients/cli/contracts/` | Neutral CLI command values, errors, presentation and injected HTTP adapters |
+| `clients/cli/contracts/import-export/` | Independent package for shared import/export values, metadata/UI/file interfaces and bounded file-policy adapters |
 | `clients/cli/commands/onelake/files/`, `tables/` | Physical file and table command capabilities, not new command namespaces |
 | `clients/cli/commands/jobs/`, `local/` | Job/schedule and local settings/navigation command adapters |
 | `clients/cli/compatibility/resource-commands/` | Original aggregate public command/host shapes and delegation |
+| `clients/cli/compatibility/import-export/` | Original `fabric-cli-transfer` APIs, host dispatch and legacy error projection |
 | `clients/cli/state/`, `query/`, `output/` | CLI-specific context, query and presentation (all paths under `clients/cli/`) |
 | `clients/cli/repl/` | Removable shell loop and opt-in Reedline terminal adapter |
 | `clients/cli/self-updater/` | Pinned-trust release verification and optional standalone updater |
@@ -69,9 +73,20 @@ inherent methods must be defined in the crate that owns `Client`.
 
 The original `fabric-cli-resources` aggregate retains mixed public command and
 host types through compatibility composition. Focused access/catalog/API owners
-depend on shared CLI contracts, not on the aggregate or one another. Physical
-nesting of definition commands under resources does not introduce a dependency
-between those two packages.
+depend on shared CLI contracts, not on the aggregate or one another. Import and
+export likewise have real, independent command owners; export also owns
+`bulk_export.rs`. Their shared interfaces live in a separately registered package
+under `clients/cli/contracts/import-export/`, without adding definition/deployment
+dependencies to the general contracts package's access/catalog/API consumers.
+The new `DefinitionCommandContext` borrows the original host inputs.
+The compatibility `TransferHost` preserves its public fields and delegates to the
+focused owners. Its original `TransferError` retains the envelope method and
+converts neutral workflow failures field-for-field, preserving partial paths,
+exported IDs, cache effects and original operation evidence. The legacy output
+projection still depends on resource-command formatting; the shared contracts
+and focused import/export owners do not depend on commands/resources or the
+compatibility facade. Deployment-only argument fields remain in the shared
+legacy argument shape for compatibility, not as a new import/export capability.
 
 Use names for actual responsibilities: `parser`, `host`, `client`, `models`,
 `render`, and operation names where appropriate. Generic `mutations.rs` describes

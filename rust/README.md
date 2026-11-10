@@ -49,18 +49,21 @@ engine/
     lro/           Long-running-operation lifecycle
 clients/cli/
   app/             fab-rs executable and central composition
+  contracts/       Shared CLI values, errors and injected adapters
+    import-export/ Shared import/export interfaces and file-policy adapters
   commands/
     resources/    Create, update, remove and resource lifecycle commands
-      definitions/ Item-definition import/export (separate package)
+    import/        Item-definition import and Environment publication
+    export/        Item-definition export and bulk-export
     access/        ACL and label commands
     catalog/       Find and hidden-resource discovery
     api/           Explicit raw API commands
-    contracts/     Shared CLI command values, errors and injected adapters
     onelake/       files/ and tables/ commands (separate packages)
     jobs/          Job execution and scheduling
     local/         Local settings and navigation
   compatibility/
     resource-commands/ Original aggregate's public APIs and adapters
+    import-export/ Original fabric-cli-transfer APIs and delegation
   state/           Path resolution and command context
   query/           CLI query projection
   output/          Presentation and streams
@@ -101,6 +104,11 @@ implementation or an implied API version. Cargo package names intentionally stay
 stable when their physical directories change.
 
 Resource definitions describe Fabric items; OneLake files/tables contain data.
+`commands/import/` and `commands/export/` own the corresponding definition
+workflows, not general table-data import/export. Their shared interfaces are in
+`contracts/import-export/`; neither command depends on the other or the legacy
+`compatibility/import-export/` adapter. That adapter preserves the original
+`fabric-cli-transfer` host, parser composition and error rendering.
 Their import/export or copy semantics are different, so they do not share a
 generic transfer directory. Table loading can call Fabric Lakehouse REST while
 remaining a data workflow. This layout adds no new command or data import/export

@@ -492,6 +492,243 @@ fn assert_file(root: &Path, case: &str) {
     assert_eq!(bytes, expected);
 }
 
+fn direct_context(
+    host: TransferHost<'_, SharedHttp>,
+) -> fabric_cli_import_export_contracts::DefinitionCommandContext<'_, SharedHttp> {
+    fabric_cli_import_export_contracts::DefinitionCommandContext {
+        client: host.client,
+        executor: host.executor,
+        metadata: host.metadata,
+        files: host.files,
+        ui: host.ui,
+        definition_limits: host.definition_limits,
+        operation_limits: host.operation_limits,
+        command_line: host.command_line,
+    }
+}
+
+fn require_send<F: std::future::Future + Send>(future: F) -> F {
+    future
+}
+
+#[tokio::test]
+async fn direct_export_owner_preserves_source_requests_and_written_bytes() {
+    let directory = Directory::new();
+    let harness = Harness::new(
+        context(false, true),
+        vec![reply(200, json!({"id":ITEM})), reply(200, definition())],
+    );
+    let command = parse(&[
+        "export",
+        "Demo.Workspace/Pipe.DataPipeline",
+        "-o",
+        "output",
+        "-f",
+    ]);
+    let mut files = directory.files();
+    let result = fabric_cli_export::execute(
+        &mut direct_context(harness.host(&mut files)),
+        &command,
+        pending(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        result.outputs[0].message.as_deref(),
+        source("export")["outputs"][0]["message"].as_str()
+    );
+    assert_eq!(
+        result.completed_paths,
+        ["Pipe.DataPipeline/pipeline-content.json"]
+    );
+    assert_eq!(result.exported_ids, [ITEM]);
+    assert_file(&directory.0, "export");
+    let requests = harness.http.requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].method(), Method::Get);
+    assert_eq!(requests[1].method(), Method::Post);
+    assert_eq!(
+        requests[1].url().path(),
+        format!("/v1/workspaces/{WORKSPACE}/items/{ITEM}/getDefinition")
+    );
+}
+
+#[tokio::test]
+async fn direct_import_owner_preserves_source_create_and_update_bodies_and_effects() {
+    for existing in [false, true] {
+        let directory = Directory::new();
+        let harness = Harness::new(
+            context(false, existing),
+            vec![reply(if existing { 200 } else { 201 }, json!({"id":ITEM}))],
+        );
+        let command = parse(&[
+            "import",
+            "Demo.Workspace/Pipe.DataPipeline",
+            "-i",
+            "input",
+            "-f",
+        ]);
+        let mut files = directory.files();
+        let result = fabric_cli_import::execute(
+            &mut direct_context(harness.host(&mut files)),
+            &command,
+            pending(),
+        )
+        .await
+        .unwrap();
+        let case = source(if existing {
+            "import-update"
+        } else {
+            "import-create"
+        });
+        assert_eq!(
+            result.outputs[0].message.as_deref(),
+            case["outputs"][0]["message"].as_str()
+        );
+        assert_eq!(result.effects.len(), 1);
+        assert_eq!(result.effects[0].item_id, case["effects"][0]);
+        let requests = harness.http.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method(), Method::Post);
+        assert_eq!(
+            request_body(&requests[0]),
+            case["calls"][0]["body"].as_str().unwrap().as_bytes()
+        );
+    }
+}
+
+#[tokio::test]
+async fn direct_owners_cancel_before_metadata_file_or_service_work() {
+    for args in [
+        vec![
+            "import",
+            "Demo.Workspace/Pipe.DataPipeline",
+            "-i",
+            "input",
+            "-f",
+        ],
+        vec![
+            "export",
+            "Demo.Workspace/Pipe.DataPipeline",
+            "-o",
+            "output",
+            "-f",
+        ],
+        vec![
+            "bulk-export",
+            "Demo.Workspace",
+            "-o",
+            "output",
+            "--recursive",
+            "-f",
+        ],
+    ] {
+        let directory = Directory::new();
+        let harness = Harness::new(context(false, false), Vec::new());
+        let command = parse(&args);
+        let mut files = directory.files();
+        let mut host = direct_context(harness.host(&mut files));
+        let result = if command.kind == TransferKind::Import {
+            require_send(fabric_cli_import::execute(
+                &mut host,
+                &command,
+                std::future::ready(()),
+            ))
+            .await
+        } else {
+            require_send(fabric_cli_export::execute(
+                &mut host,
+                &command,
+                std::future::ready(()),
+            ))
+            .await
+        };
+        let error = result.unwrap_err();
+        let TransferFailure::Command(error) = error.failure else {
+            panic!("cancellation must precede definition I/O")
+        };
+        assert_eq!(
+            error.envelope(timestamp(), None).result().error_code(),
+            Some("LongRunningOperationCancelled")
+        );
+        assert_eq!(harness.metadata.calls.load(Ordering::SeqCst), 0);
+        harness.no_requests();
+        let legacy = require_send(
+            harness
+                .host(&mut files)
+                .execute(&command, std::future::ready(())),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            legacy.envelope(timestamp(), None).result().error_code(),
+            Some("LongRunningOperationCancelled")
+        );
+        assert_eq!(harness.metadata.calls.load(Ordering::SeqCst), 0);
+        harness.no_requests();
+    }
+}
+
+#[tokio::test]
+async fn legacy_error_conversion_moves_original_operation_and_all_prior_evidence() {
+    let directory = Directory::new();
+    let harness = Harness::new(context(false, false), vec![reply(202, json!({}))]);
+    let command = parse(&[
+        "import",
+        "Demo.Workspace/Pipe.DataPipeline",
+        "-i",
+        "input",
+        "-f",
+    ]);
+    let mut files = directory.files();
+    let mut error = fabric_cli_import::execute(
+        &mut direct_context(harness.host(&mut files)),
+        &command,
+        pending(),
+    )
+    .await
+    .unwrap_err();
+    assert!(error.effects.is_empty());
+    let TransferFailure::Definition(definition) = &error.failure else {
+        panic!("original definition failure")
+    };
+    let DefinitionErrorKind::Operation(operation) = &definition.kind else {
+        panic!("original operation evidence")
+    };
+    assert!(operation.mutation_may_have_occurred);
+    let operation_address = std::ptr::from_ref(operation.as_ref());
+    let target = context(false, true).target;
+    error.completed_paths.push("previous/file.bin".into());
+    error.exported_ids.push(ITEM.into());
+    error.effects.push(fabric_cli_transfer::ImportCacheEffect {
+        target: target.clone(),
+        item_id: ITEM.into(),
+    });
+    let legacy = fabric_cli_transfer::TransferError::from(error);
+    assert_eq!(legacy.completed_paths, ["previous/file.bin"]);
+    assert_eq!(legacy.exported_ids, [ITEM]);
+    assert_eq!(legacy.effects.len(), 1);
+    assert_eq!(legacy.effects[0].item_id, ITEM);
+    assert!(Arc::ptr_eq(&legacy.effects[0].target, &target));
+    let TransferFailure::Definition(definition) = &legacy.failure else {
+        panic!("original definition failure")
+    };
+    let DefinitionErrorKind::Operation(operation) = &definition.kind else {
+        panic!("original operation evidence")
+    };
+    assert_eq!(std::ptr::from_ref(operation.as_ref()), operation_address);
+    assert!(operation.mutation_may_have_occurred);
+    assert_eq!(harness.http.requests.lock().unwrap().len(), 1);
+    assert_eq!(
+        legacy
+            .envelope(timestamp(), Some("import".into()))
+            .render(Indent::Four)
+            .unwrap()
+            .exit_code,
+        1
+    );
+}
+
 #[tokio::test]
 async fn export_real_handler_matches_source_output_requests_and_local_file() {
     let directory = Directory::new();

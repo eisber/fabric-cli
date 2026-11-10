@@ -16,7 +16,7 @@ import tempfile
 from typing import Any, Optional, Union
 
 PIN = "cf67fd52ea8b47e24c725e73d792de6f4a08e2e4"
-ROOT = Path(__file__).resolve().parents[7]
+ROOT = Path(__file__).resolve().parents[6]
 WORKSPACE = "11111111-1111-1111-1111-111111111111"
 ITEM = "22222222-2222-2222-2222-222222222222"
 

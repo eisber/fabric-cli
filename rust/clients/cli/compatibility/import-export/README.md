@@ -1,18 +1,20 @@
 <!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
 
-# Item-definition commands
+# Import/export compatibility adapter
 
-`fabric-cli-transfer` composes `export`, `bulk-export` and `import` over
-`fabric_deploy::definitions`. It registers deployment arguments for the central
-CLI, which executes them through its separate `DeployHost`.
+`fabric-cli-transfer` preserves the original public host, parser composition,
+error envelope and rendering APIs. Actual workflows and root schemas live in
+[`commands/import/`](../../commands/import/README.md) and
+[`commands/export/`](../../commands/export/README.md); bulk-export belongs to
+export. Shared values, callbacks and bounded file-policy adapters live in
+[`contracts/import-export/`](../../contracts/import-export/README.md).
 
-This separate package is nested under resource commands because the transferred
-objects are item definitions, not table rows or arbitrary files.
-`src/import.rs`, `src/export.rs` and `src/bulk_export.rs` own the respective
-command workflows; `src/parser.rs` owns argument parsing. `src/lib.rs` holds
-shared injected contracts and dispatch. The existing Cargo package name and
-public `Transfer*` types remain compatible. OneLake file/table data workflows
-belong under `commands/onelake/`, not here.
+`src/lib.rs` only delegates to the focused owners and preserves legacy error
+projection. It moves every neutral failure field into the original public error
+without losing partial work or operation evidence. `src/parser.rs` composes
+export, bulk-export, import and the existing deployment schema in original order.
+The central CLI executes deployment through its separate `DeployHost`.
+OneLake file/table data workflows belong under `commands/onelake/`, not here.
 
 ## Host contract
 
@@ -47,7 +49,7 @@ confirmation; `--all` skips selection but still asks for confirmation unless
 `--force` is also present. Workspace export without either flag is rejected in
 command-line mode.
 An explicit empty selection exports nothing. Missing, invalid or failed input
-is an error, not consent. See the [terminal adapter contract](../../../../../authoring-docs/native-family-host.md#terminal-transfer-ui).
+is an error, not consent. See the [terminal adapter contract](../../../../authoring-docs/native-family-host.md#terminal-transfer-ui).
 
 ## File capabilities
 

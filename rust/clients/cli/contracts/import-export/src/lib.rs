@@ -1,54 +1,39 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Thin transfer commands over the released definition library and shared policy.
+//! Shared CLI import/export interfaces and caller-owned file-policy adapters.
 //!
-//! The caller owns discovery, credentials, runtime, local roots, UI and cache.
-//! No HTTP implementation, deployment algorithm or second front door lives here.
+//! This package owns no import/export command workflow or service discovery.
+//! The retained argument shape also contains the legacy deployment fields.
 
-mod bulk_export;
-mod export;
+#![cfg_attr(test, deny(unnameable_test_items))]
+
+pub mod execution;
 mod files;
-mod import;
-mod import_environment;
 mod local;
-mod parser;
+pub mod parser;
 
+pub use execution::DefinitionCommandContext;
 pub use local::LocalTransferFiles;
-pub use parser::{
-    TransferCommand, TransferKind, command_from_matches, process_tokens, transfer_subcommands,
-};
+pub use parser::{TransferCommand, TransferKind, process_tokens};
 
-use fabric_cli_context::{Element, NodeKind};
-use fabric_cli_output::{
-    CommandError, OutputEnvelope, OutputInput, OutputStatus, Timestamp,
-    text::{self, CharacterWidth, OutputFormat, Presentation, TextError, TextOptions, TextPlan},
-};
+use fabric_cli_context::Element;
+use fabric_cli_output::{CommandError, OutputInput};
 use fabric_deploy::definitions::{
-    self, BulkExportSnapshot, BulkItem, BulkScope, CommandSupport, DefinitionError,
-    DefinitionErrorKind, DefinitionFile, DefinitionFileSystem, DefinitionImportFileSystem,
-    DefinitionLimits, DefinitionTarget, ImportTarget, PreparedImport,
+    self, CommandSupport, DefinitionError, DefinitionFile, DefinitionFileSystem,
+    DefinitionImportFileSystem, DefinitionLimits, ImportTarget, PreparedImport,
 };
 use fabric_deploy::{
     notebook::DefinitionLimits as NotebookDefinitionLimits,
     repository::{DeploymentRepository, NotebookRepository, RepositoryError},
 };
-use fabric_sdk::Client;
-use fabric_sdk_operations::{
-    OperationExecutionError, OperationExecutor, OperationLimits, OperationRequest,
-    OperationResponse, OperationSession,
-};
-use parser::{command_error, invalid};
-use serde_json::{Map, Value, json};
 use std::{
     fmt,
-    future::{Future, poll_fn},
-    io::{self, Write},
+    future::Future,
+    io,
     path::{Path, PathBuf},
-    pin::{Pin, pin},
+    pin::Pin,
     sync::Arc,
-    task::Poll,
-    time::Duration,
 };
 
 /// Caller-runtime asynchronous capability.
@@ -420,63 +405,6 @@ impl From<DefinitionError> for TransferError {
     }
 }
 
-impl TransferError {
-    /// Shared source envelope, without discarding reconciliation evidence.
-    pub fn envelope(&self, timestamp: Timestamp, command: Option<String>) -> OutputEnvelope {
-        let mut output = match &self.failure {
-            TransferFailure::Command(error) => return error.envelope(timestamp, command),
-            TransferFailure::Definition(error) => {
-                if let DefinitionErrorKind::Operation(operation) = &error.kind {
-                    fabric_cli_mutations::operation_error_output(operation)
-                } else {
-                    let (code, message) = match &error.kind {
-                        DefinitionErrorKind::InvalidInput => {
-                            ("InvalidInput", "Invalid transfer input".into())
-                        }
-                        DefinitionErrorKind::InvalidDefinition => (
-                            "InvalidDefinitionPayload",
-                            "Invalid item definition payload".into(),
-                        ),
-                        DefinitionErrorKind::Limit => {
-                            ("Limit", "Definition transfer limit reached".into())
-                        }
-                        DefinitionErrorKind::UnsafePath | DefinitionErrorKind::Collision => (
-                            "InvalidPath",
-                            "Unsafe or conflicting definition path".into(),
-                        ),
-                        DefinitionErrorKind::ConfirmationRequired => {
-                            ("ConfirmationRequired", "Confirmation is required".into())
-                        }
-                        DefinitionErrorKind::DefinitionAccessDenied(_) => {
-                            ("Unauthorized", "Item definition access denied".into())
-                        }
-                        DefinitionErrorKind::Unsupported(branch) => {
-                            ("NotSupported", format!("Unported source branch: {branch}"))
-                        }
-                        DefinitionErrorKind::FileSystem(error) => (
-                            if error.kind() == io::ErrorKind::Unsupported {
-                                "NotSupported"
-                            } else {
-                                "InvalidPath"
-                            },
-                            error.to_string(),
-                        ),
-                        DefinitionErrorKind::Operation(_) => unreachable!(),
-                    };
-                    OutputInput {
-                        status: OutputStatus::Failure,
-                        error_code: Some(code.into()),
-                        message: Some(message),
-                        ..OutputInput::default()
-                    }
-                }
-            }
-        };
-        output.command = command;
-        OutputEnvelope::new(timestamp, output)
-    }
-}
-
 impl fmt::Display for TransferError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Transfer command failed; inspect original operation and file evidence")
@@ -484,248 +412,3 @@ impl fmt::Display for TransferError {
 }
 
 impl std::error::Error for TransferError {}
-
-struct BorrowedExecutor<'a, E: ?Sized>(&'a E);
-
-impl<E: OperationExecutor + ?Sized> OperationExecutor for BorrowedExecutor<'_, E> {
-    fn execute<'a>(
-        &'a self,
-        request: OperationRequest<'a>,
-    ) -> TransferFuture<'a, Result<OperationResponse, OperationExecutionError>> {
-        self.0.execute(request)
-    }
-
-    fn wait(&self, delay: Duration) -> TransferFuture<'_, Result<(), OperationExecutionError>> {
-        self.0.wait(delay)
-    }
-}
-
-type Cancellation<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
-
-async fn phase<T, E: Into<TransferError>>(
-    work: impl Future<Output = Result<T, E>>,
-    cancelled: &mut Cancellation<'_>,
-) -> Result<T, TransferError> {
-    let mut work = pin!(work);
-    poll_fn(|cx| {
-        if cancelled.as_mut().poll(cx).is_ready() {
-            return Poll::Ready(Err(command_error(
-                "LongRunningOperationCancelled",
-                "Operation cancelled",
-            )
-            .into()));
-        }
-        work.as_mut()
-            .poll(cx)
-            .map(|result| result.map_err(Into::into))
-    })
-    .await
-}
-
-/// Runtime-neutral family host; every external capability is caller-injected.
-pub struct TransferHost<'a, E: ?Sized> {
-    /// Existing credential/selection facade; no identity discovery.
-    pub client: &'a Client,
-    /// Existing shared HTTP adapter and asynchronous time.
-    pub executor: &'a E,
-    /// Complete asynchronous metadata/context owner.
-    pub metadata: &'a dyn TransferMetadata,
-    /// Stable caller-owned file policy.
-    pub files: &'a mut dyn TransferFiles,
-    /// Source confirmation, selection, warning and progress policy.
-    pub ui: &'a dyn TransferUi,
-    /// Finite library file/path/byte bounds.
-    pub definition_limits: DefinitionLimits,
-    /// Existing bounded shared operation policy.
-    pub operation_limits: OperationLimits,
-    /// Source command-line mode rejects interactive workspace selection.
-    pub command_line: bool,
-}
-
-impl<E: OperationExecutor + ?Sized> TransferHost<'_, E> {
-    /// Execute a family leaf; returned effects are real, not planned CLI coverage.
-    ///
-    /// OS-backed hosts override the asynchronous file capabilities with a bounded
-    /// caller-owned worker. Cancellation drops metadata/UI phases; SDK sessions
-    /// retain original dispatch evidence. No request or write is retried or rolled
-    /// back, and dropping a worker future cannot interrupt an OS syscall.
-    pub async fn execute(
-        &mut self,
-        command: &TransferCommand,
-        cancelled: impl Future<Output = ()> + Send,
-    ) -> Result<TransferResult, TransferError> {
-        OutputFormat::resolve(command.output_format.as_deref(), Some("text"))
-            .map_err(|error| error.command_error())?;
-        if command.kind == TransferKind::Deploy {
-            return Err(command_error("NotSupported",
-                "Config deployment requires the native deployment host, not the definition transfer host").into());
-        }
-        if command.kind == TransferKind::BulkExport && !command.recursive {
-            return Err(command_error(
-                "InvalidOperation",
-                "The --recursive flag is required when bulk-exporting a Workspace or Folder",
-            )
-            .into());
-        }
-        let mut cancelled: Cancellation<'_> = Box::pin(cancelled);
-        phase(
-            std::future::ready(Ok::<_, CommandError>(())),
-            &mut cancelled,
-        )
-        .await?;
-        let context = phase(
-            self.metadata.resolve_target(command.kind, &command.path),
-            &mut cancelled,
-        )
-        .await?;
-        self.check_snapshot(&context)?;
-        match command.kind {
-            TransferKind::Export => self.export(command, context, &mut cancelled).await,
-            TransferKind::BulkExport => self.bulk(command, context, &mut cancelled).await,
-            TransferKind::Import => self.import(command, context, &mut cancelled).await,
-            TransferKind::Deploy => unreachable!(),
-        }
-    }
-
-    fn check_snapshot(&self, context: &TransferContext) -> Result<(), TransferError> {
-        if context.items.len() > self.definition_limits.max_files.get()
-            || context.selection_order.len() > self.definition_limits.max_files.get()
-        {
-            return Err(DefinitionError::from(DefinitionErrorKind::Limit).into());
-        }
-        Ok(())
-    }
-
-    async fn export_directory(&mut self, input: &str) -> Result<PathBuf, TransferError> {
-        if input.is_empty() {
-            return Err(command_error("InvalidPath", "No such file or directory").into());
-        }
-        self.files
-            .resolve_export_directory_async(input)
-            .await
-            .map_err(local_error)
-    }
-}
-
-const SINGLE_CONFIRM: &str =
-    "Item definition is exported without its sensitivity label. Are you sure?";
-
-fn message(text: impl Into<String>) -> OutputInput {
-    OutputInput {
-        message: Some(text.into()),
-        ..OutputInput::default()
-    }
-}
-
-fn local_error(error: io::Error) -> TransferError {
-    DefinitionError::from(DefinitionErrorKind::FileSystem(error)).into()
-}
-
-fn require_id(element: &Element) -> Result<&str, TransferError> {
-    element
-        .id()
-        .filter(|id| !id.is_empty())
-        .ok_or_else(|| invalid("Existing resource ID is required").into())
-}
-
-fn item_parts(item: &Arc<Element>) -> Result<(Arc<Element>, &'static str), TransferError> {
-    let NodeKind::Item(item_type) = item.kind() else {
-        return Err(command_error("NotSupported", "This transfer requires a Fabric item").into());
-    };
-    Ok((
-        item.workspace()
-            .ok_or_else(|| invalid("Workspace metadata is required"))?,
-        item_type.as_str(),
-    ))
-}
-
-/// Render actual outputs using the existing shared JSON/text implementation.
-///
-/// Immediate UI events have already been emitted. Cache effects remain the
-/// caller's responsibility after successful delivery, as in the source handler.
-/// A writer failure retains the result for evidence but does not replay mutation.
-pub fn render_result(
-    result: &TransferResult,
-    command: &TransferCommand,
-    timestamp: Timestamp,
-    format: OutputFormat,
-    presentation: Presentation,
-    widths: &impl CharacterWidth,
-) -> Result<TextPlan, TextError> {
-    let format = selected_format(command, format)?;
-    let mut plan = TextPlan {
-        records: Vec::new(),
-        exit_code: 0,
-    };
-    for output in &result.outputs {
-        let mut output = output.clone();
-        output.command = Some(command.kind.as_str().into());
-        let rendered = text::render(
-            &OutputEnvelope::new(timestamp.clone(), output),
-            format,
-            &TextOptions {
-                key_value: result.key_value,
-                ..TextOptions::default()
-            },
-            widths,
-            presentation,
-        )?;
-        plan.records.extend(rendered.records);
-        plan.exit_code = rendered.exit_code;
-    }
-    Ok(plan)
-}
-
-fn selected_format(
-    command: &TransferCommand,
-    config: OutputFormat,
-) -> Result<OutputFormat, TextError> {
-    OutputFormat::resolve(
-        command.output_format.as_deref(),
-        Some(match config {
-            OutputFormat::Json => "json",
-            OutputFormat::Text => "text",
-        }),
-    )
-}
-
-/// Render failures with the existing JSON/text stream and exit-code policy.
-///
-/// The returned plan does not consume original operation IDs, partial file paths,
-/// cache effects or dispatch uncertainty retained by the error.
-pub fn render_error(
-    error: &TransferError,
-    command: &TransferCommand,
-    timestamp: Timestamp,
-    format: OutputFormat,
-    presentation: Presentation,
-) -> Result<TextPlan, TextError> {
-    let envelope = error.envelope(timestamp, Some(command.kind.as_str().into()));
-    match selected_format(command, format)? {
-        OutputFormat::Json => {
-            let record = envelope.render(fabric_cli_output::Indent::Four)?;
-            Ok(TextPlan {
-                exit_code: record.exit_code,
-                records: vec![record],
-            })
-        }
-        OutputFormat::Text => Ok(text::render_error(
-            &CommandError::new(
-                envelope.result().message().map(str::to_owned),
-                envelope.result().error_code().map(str::to_owned),
-            ),
-            Some(command.kind.as_str()),
-            presentation,
-        )),
-    }
-}
-
-/// Write a rendered result to caller-owned streams; partial writes propagate.
-pub fn write_result(
-    plan: &TextPlan,
-    stdout: &mut impl Write,
-    stderr: &mut impl Write,
-) -> io::Result<u8> {
-    plan.write_to(stdout, stderr)?;
-    Ok(plan.exit_code)
-}

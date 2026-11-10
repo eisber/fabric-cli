@@ -203,9 +203,9 @@ live Fabric and non-Windows native runs remain unexecuted.
 - `rust/engine/control-plane/deployment/tests/definition_import_inputs_reference.py`
 - `rust/engine/control-plane/deployment/tests/definition_import_inputs_source.json`
 - `rust/engine/control-plane/deployment/tests/definition_import_reference_checks.py`
-- `rust/clients/cli/commands/resources/definitions/src/lib.rs`
-- `rust/clients/cli/commands/resources/definitions/src/import_environment.rs`
-- `rust/clients/cli/commands/resources/definitions/src/local.rs` (import resolution and checks)
+- `rust/clients/cli/commands/import/src/host.rs`
+- `rust/clients/cli/commands/import/src/environment.rs`
+- `rust/clients/cli/contracts/import-export/src/local.rs` (import resolution and checks)
 - `rust/clients/cli/app/src/families/transfer_files.rs` (import worker methods)
 - `rust/clients/cli/app/tests/family_mounts.rs` (additive test registration only)
 - `rust/clients/cli/app/tests/family_support/import_parity.rs`

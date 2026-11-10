@@ -1,10 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use crate::{TransferEvent, TransferFiles, TransferUi};
+use fabric_cli_import_export_contracts::{TransferEvent, TransferFiles, TransferUi};
 use fabric_deploy::definitions::{
     DefinitionError, DefinitionErrorKind, DefinitionFile, DefinitionFileSystem,
-    DefinitionImportFileSystem,
 };
 use fabric_sdk_operations::{OperationExecutor, OperationSession};
 use std::{
@@ -23,22 +22,6 @@ pub(crate) async fn export_directory<E: OperationExecutor>(
     file_phase(session, files.resolve_export_directory_async(output))
         .await
         .map_err(|(error, _)| error)
-}
-
-pub(crate) struct ImportFiles<'a, T: ?Sized>(pub(crate) &'a mut T);
-
-impl<T: TransferFiles + ?Sized> DefinitionImportFileSystem for ImportFiles<'_, T> {
-    fn entries(
-        &mut self,
-        root: &Path,
-        relative: &str,
-    ) -> io::Result<Vec<fabric_deploy::definitions::DefinitionEntry>> {
-        self.0.entries(root, relative)
-    }
-
-    fn read(&mut self, root: &Path, relative: &str, max_bytes: usize) -> io::Result<Vec<u8>> {
-        self.0.read(root, relative, max_bytes)
-    }
 }
 
 /// Capture the released codec's bounded write plan, without filesystem effects.

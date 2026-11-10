@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Shared argument values and decoding for the retained transfer API.
+
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use fabric_cli_output::CommandError;
 
@@ -58,65 +60,6 @@ pub struct TransferCommand {
     pub params: Option<Vec<String>>,
     /// Deploy experimental bulk publication switch.
     pub bulk_publish: bool,
-}
-
-fn flag(name: &'static str) -> Arg {
-    Arg::new(name).long(name).action(ArgAction::SetTrue)
-}
-
-fn tokens(name: &'static str, short: char) -> Arg {
-    Arg::new(name).long(name).short(short).num_args(1..)
-}
-
-/// Compose these four root commands into the existing front door.
-///
-/// This installs no binary, registry, runtime, credentials, or service host.
-/// `-tenv` is Python's multi-character short option; the central lexical adapter
-/// must normalize it to `--target_env` before invoking Clap.
-pub fn transfer_subcommands() -> Vec<Command> {
-    [
-        TransferKind::Export,
-        TransferKind::BulkExport,
-        TransferKind::Import,
-        TransferKind::Deploy,
-    ]
-    .into_iter()
-    .map(|kind| {
-        let mut command = Command::new(kind.as_str())
-            .args_override_self(true)
-            .infer_long_args(true)
-            .arg(flag("force").short('f'))
-            .arg(
-                Arg::new("output_format")
-                    .long("output_format")
-                    .value_parser(["json", "text"]),
-            );
-        if kind != TransferKind::Deploy {
-            command = command.arg(Arg::new("path").required(true).num_args(1..));
-        }
-        match kind {
-            TransferKind::Export => command
-                .arg(tokens("output", 'o').required(true))
-                .arg(flag("all").short('a'))
-                .arg(Arg::new("format").long("format")),
-            TransferKind::BulkExport => command
-                .arg(Arg::new("output").long("output").short('o').required(true))
-                .arg(flag("recursive")),
-            TransferKind::Import => command
-                .arg(tokens("input", 'i').required(true))
-                .arg(Arg::new("format").long("format")),
-            TransferKind::Deploy => command
-                .arg(Arg::new("config").long("config").required(true))
-                .arg(
-                    Arg::new("target_env")
-                        .long("target_env")
-                        .default_value("N/A"),
-                )
-                .arg(tokens("params", 'P'))
-                .arg(flag("bulk_publish")),
-        }
-    })
-    .collect()
 }
 
 /// Convert root matches from the family's registration, without parsing again.
@@ -181,10 +124,39 @@ pub fn process_tokens(tokens: &[String]) -> String {
     tokens.join(" ").trim_matches(['"', '\'']).to_owned()
 }
 
-pub(crate) fn invalid(message: impl Into<String>) -> CommandError {
+/// Construct the common source-compatible input error.
+pub fn invalid(message: impl Into<String>) -> CommandError {
     command_error("InvalidInput", message)
 }
 
-pub(crate) fn command_error(code: &str, message: impl Into<String>) -> CommandError {
+/// Construct an explicit source-compatible command error.
+pub fn command_error(code: &str, message: impl Into<String>) -> CommandError {
     CommandError::new(Some(message.into()), Some(code.into()))
+}
+
+/// Shared root flags; each command owner adds its own arguments.
+pub fn base_command(kind: TransferKind) -> Command {
+    let mut command = Command::new(kind.as_str())
+        .args_override_self(true)
+        .infer_long_args(true)
+        .arg(flag("force").short('f'))
+        .arg(
+            Arg::new("output_format")
+                .long("output_format")
+                .value_parser(["json", "text"]),
+        );
+    if kind != TransferKind::Deploy {
+        command = command.arg(Arg::new("path").required(true).num_args(1..));
+    }
+    command
+}
+
+/// Source Boolean option without an implicit value.
+pub fn flag(name: &'static str) -> Arg {
+    Arg::new(name).long(name).action(ArgAction::SetTrue)
+}
+
+/// Source token-list option, retaining cardinality and short spelling.
+pub fn tokens(name: &'static str, short: char) -> Arg {
+    Arg::new(name).long(name).short(short).num_args(1..)
 }

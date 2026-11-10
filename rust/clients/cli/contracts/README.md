@@ -41,5 +41,10 @@ wrapped or duplicated. The Python baseline remains
 the independent access/catalog/raw API fixtures remain in
 `rust/tests/compatibility/`. Original public-path tests and examples, including
 rendering and lifecycle contracts, stay in
-`../../compatibility/resource-commands`. Its extraction-identity test checks
+`../compatibility/resource-commands`. Its extraction-identity test checks
 shared types and traits across the capability and legacy paths.
+
+The separately registered [`import-export/`](import-export/README.md) package
+owns interfaces specific to definition workflows. It is not a dependency of this
+general package, so importing shared access/API contracts does not pull in the
+deployment library or SDK facade.

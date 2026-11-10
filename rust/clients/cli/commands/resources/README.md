@@ -10,7 +10,7 @@ the operation-named modules for resource behavior. `Mutation` refers to a
 resource-changing operation; it is not a second command family. The package
 name is retained for existing Rust consumers.
 
-`definitions/` is a separate nested package for item-definition import/export,
+`../import/` and `../export/` are separate owners for item-definition import/export,
 not part of this package's module tree. Physical file and table commands live in
 the sibling `../onelake/` group. Shared resource-level copy/move policy remains
 here because it classifies resource targets and coordinates the existing hosts;

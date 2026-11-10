@@ -877,6 +877,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-cli-export"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fabric-cli-context",
+ "fabric-cli-import-export-contracts",
+ "fabric-cli-output",
+ "fabric-deploy",
+ "fabric-sdk-operations",
+ "serde_json",
+]
+
+[[package]]
+name = "fabric-cli-import"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fabric-cli-context",
+ "fabric-cli-import-export-contracts",
+ "fabric-cli-output",
+ "fabric-deploy",
+ "fabric-sdk-operations",
+]
+
+[[package]]
+name = "fabric-cli-import-export-contracts"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fabric-cli-context",
+ "fabric-cli-output",
+ "fabric-deploy",
+ "fabric-sdk",
+ "fabric-sdk-operations",
+]
+
+[[package]]
 name = "fabric-cli-jobs"
 version = "0.1.0"
 dependencies = [
@@ -1029,6 +1066,9 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "fabric-cli-context",
+ "fabric-cli-export",
+ "fabric-cli-import",
+ "fabric-cli-import-export-contracts",
  "fabric-cli-mutations",
  "fabric-cli-output",
  "fabric-deploy",

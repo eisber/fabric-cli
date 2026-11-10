@@ -7,14 +7,17 @@ members = [
     "clients/cli/commands/access",
     "clients/cli/commands/api",
     "clients/cli/commands/catalog",
-    "clients/cli/commands/contracts",
+    "clients/cli/contracts",
+    "clients/cli/contracts/import-export",
+    "clients/cli/commands/export",
+    "clients/cli/commands/import",
     "clients/cli/commands/jobs",
     "clients/cli/commands/local",
     "clients/cli/commands/resources",
     "clients/cli/compatibility/resource-commands",
     "clients/cli/commands/onelake/files",
     "clients/cli/commands/onelake/tables",
-    "clients/cli/commands/resources/definitions",
+    "clients/cli/compatibility/import-export",
     "clients/cli/output",
     "clients/cli/query",
     "clients/cli/repl",
@@ -48,7 +51,10 @@ default-members = [
     "clients/cli/commands/access",
     "clients/cli/commands/api",
     "clients/cli/commands/catalog",
-    "clients/cli/commands/contracts",
+    "clients/cli/contracts",
+    "clients/cli/contracts/import-export",
+    "clients/cli/commands/export",
+    "clients/cli/commands/import",
     "clients/cli/self-updater",
     "clients/cli/repl",
     "engine/core/contracts",
@@ -81,7 +87,7 @@ default-members = [
     "clients/cli/compatibility/resource-commands",
     "clients/cli/commands/onelake/files",
     "clients/cli/commands/local",
-    "clients/cli/commands/resources/definitions",
+    "clients/cli/compatibility/import-export",
     "clients/cli/commands/onelake/tables",
     "engine/data-plane/onelake/tables",
 ]
@@ -98,7 +104,10 @@ publish = false
 fabric-cli-access = { path = "clients/cli/commands/access" }
 fabric-cli-api = { path = "clients/cli/commands/api" }
 fabric-cli-catalog = { path = "clients/cli/commands/catalog" }
-fabric-cli-command-contracts = { path = "clients/cli/commands/contracts" }
+fabric-cli-command-contracts = { path = "clients/cli/contracts" }
+fabric-cli-import-export-contracts = { path = "clients/cli/contracts/import-export" }
+fabric-cli-export = { path = "clients/cli/commands/export" }
+fabric-cli-import = { path = "clients/cli/commands/import" }
 fabric-cli-repl = { path = "clients/cli/repl", default-features = false }
 fabric-cli-update = { path = "clients/cli/self-updater", default-features = false }
 reedline = { version = "=0.52.1", default-features = false }
@@ -118,7 +127,7 @@ fabric-sdk-catalog = { path = "engine/control-plane/catalog" }
 fabric-cli-resources = { path = "clients/cli/compatibility/resource-commands" }
 fabric-cli-storage-files = { path = "clients/cli/commands/onelake/files" }
 fabric-cli-local = { path = "clients/cli/commands/local" }
-fabric-cli-transfer = { path = "clients/cli/commands/resources/definitions" }
+fabric-cli-transfer = { path = "clients/cli/compatibility/import-export" }
 fabric-cli-tables = { path = "clients/cli/commands/onelake/tables" }
 fabric-sdk-tables = { path = "engine/data-plane/onelake/tables" }
 fabric-deploy = { path = "engine/control-plane/deployment" }

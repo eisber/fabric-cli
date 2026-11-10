@@ -18,7 +18,7 @@ const target = (name, kind, src, features = []) => ({
   name, kind: [kind], src_path: absolute(src), test: true, 'required-features': features,
 });
 const packageDirectory = name => ({deploy: 'rust/engine/control-plane/deployment',
-  adapter: 'rust/clients/cli/commands/resources/definitions', cli: 'rust/clients/cli/app'}[name] || `rust/engine/${name}`);
+  adapter: 'rust/clients/cli/compatibility/import-export', cli: 'rust/clients/cli/app'}[name] || `rust/engine/${name}`);
 function pkg(name, dependencies = [], targets = [], features = {default: []}) {
   const directory = packageDirectory(name);
   return {id: `path+${name}#0.1.0`, name, manifest_path: absolute(`${directory}/Cargo.toml`),
@@ -40,7 +40,7 @@ function fixture() {
       target('spark', 'test', 'rust/engine/control-plane/deployment/tests/spark.rs'),
       target('shared', 'test', 'rust/engine/control-plane/deployment/tests/shared.rs'),
     ]),
-    pkg('adapter', ['deploy'], [target('publish', 'test', 'rust/clients/cli/commands/resources/definitions/tests/publish.rs')]),
+    pkg('adapter', ['deploy'], [target('publish', 'test', 'rust/clients/cli/compatibility/import-export/tests/publish.rs')]),
     pkg('cli', ['adapter'], [target('mount', 'test', 'rust/clients/cli/app/tests/mount.rs')]),
     pkg('unrelated'),
   ];
@@ -896,4 +896,38 @@ test('Shared unconfigured-profile helper retains every actual subprocess consume
     assert.ok(component.tests.some(item =>
       item.package === 'fabric-cli' && item.target === `test:${target}`), target);
   }
+});
+
+test('Import/export owners select their own workflows and downstream compatibility evidence', () => {
+  const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '../validation/impact-graph.json')));
+  const expected = [
+    ['cli-command-contracts', 'fabric-cli-command-contracts', 'rust/clients/cli/contracts/src/**'],
+    ['cli-import-export-contracts', 'fabric-cli-import-export-contracts', 'rust/clients/cli/contracts/import-export/src/**'],
+    ['cli-import', 'fabric-cli-import', 'rust/clients/cli/commands/import/src/**'],
+    ['cli-export', 'fabric-cli-export', 'rust/clients/cli/commands/export/src/**'],
+    ['transfer', 'fabric-cli-transfer', 'rust/clients/cli/compatibility/import-export/src/**'],
+  ];
+  for (const [id, name, input] of expected) {
+    const component = catalog.components.find(item => item.id === id);
+    assert.ok(component, id);
+    assert.equal(component.package, name);
+    assert.ok(component.inputs.includes(input), id);
+    assert.ok(component.tests.some(item => item.package === name && item.target === 'lib'), id);
+  }
+  const byId = new Map(catalog.components.map(component => [component.id, component]));
+  assert.ok(byId.get('cli-import').depends_on.includes('cli-import-export-contracts'));
+  assert.ok(byId.get('cli-export').depends_on.includes('cli-import-export-contracts'));
+  assert.ok(!byId.get('cli-import').depends_on.includes('cli-export'));
+  assert.ok(!byId.get('cli-export').depends_on.includes('cli-import'));
+  for (const id of ['cli-import', 'cli-export', 'cli-import-export-contracts']) {
+    assert.ok(!byId.get(id).depends_on.includes('transfer'), id);
+    assert.ok(byId.get('transfer').depends_on.includes(id), id);
+    assert.ok(byId.get('workspace-architecture').depends_on.includes(id), id);
+  }
+  assert.ok(byId.get('transfer').tests.some(item => item.target === 'test:extraction_identity'));
+  assert.ok(byId.get('cli-import').checks.includes('import-oracle'));
+  assert.ok(byId.get('cli-export').checks.includes('export-oracle'));
+  const common = byId.get('cli-import-export-contracts');
+  assert.ok(common.checks.includes('import-oracle'));
+  assert.ok(common.checks.includes('export-oracle'));
 });
