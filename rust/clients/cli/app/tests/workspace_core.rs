@@ -353,6 +353,28 @@ async fn root_workspace_rm_and_del_alias_delete_once_after_item_catalog() {
 }
 
 #[tokio::test]
+async fn nonpublic_core_gate_does_not_enable_tenant_removal() {
+    for (hostname, expected) in [
+        (
+            HOSTS[0],
+            "Workspace/tenant removal requires an explicit selection UI",
+        ),
+        (
+            HOSTS[1],
+            "Tenant removal is not supported on the selected endpoint",
+        ),
+    ] {
+        let mut host = configured(hostname);
+        let output = host.execute(&["rm", "/", "-f"]).await;
+        failure(&output, "NotSupported");
+        let mut stdout = Vec::new();
+        output.write_to(&mut stdout, &mut Vec::new()).unwrap();
+        assert!(String::from_utf8(stdout).unwrap().contains(expected));
+        assert!(host.requests().is_empty());
+    }
+}
+
+#[tokio::test]
 async fn workspace_creation_poll_and_result_retain_the_selected_endpoint() {
     let operation = "22222222-2222-2222-2222-222222222222";
     for hostname in HOSTS {

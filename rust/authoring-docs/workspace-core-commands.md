@@ -49,6 +49,8 @@ policies still apply; the gate does not infer a target from a suffix or grant
 provider permission. Link, copy, move, start, stop, capacity assignment and ACL
 families do not gain nonpublic endpoint support. Parsed root-verb gate tests and
 the injected session tests below are not live CLI identity or CRUD proof.
+Tenant-wide removal remains unsupported on nonpublic endpoints after typed
+context resolution, before collection discovery or any mutation.
 
 The separate, opt-in **`fab-cli-workspace`** binary provides bounded v2 reads,
 including actual mounted `artifact workspace get` and `artifact workspace list`
