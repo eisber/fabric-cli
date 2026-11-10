@@ -54,6 +54,8 @@ pub enum Verb {
     Publish,
     /// Execute a positively bound native refresh, never a generic query fallback.
     Refresh,
+    /// Execute an explicitly bound native item, function or session statement.
+    Run,
     /// Discover bounded candidates within an explicitly selected scope.
     Search,
     /// Patch or replace an explicitly existing resource.

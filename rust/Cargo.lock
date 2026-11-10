@@ -1185,6 +1185,7 @@ dependencies = [
  "fabric-cli-context",
  "fabric-cli-mutations",
  "fabric-cli-output",
+ "fabric-sdk",
  "fabric-sdk-http",
  "fabric-sdk-jobs",
  "fabric-sdk-operations",
