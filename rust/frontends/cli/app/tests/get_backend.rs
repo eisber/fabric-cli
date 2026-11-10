@@ -81,6 +81,7 @@ struct Executor {
     replies: Mutex<VecDeque<Reply>>,
     calls: Mutex<Vec<(String, String)>>,
     waits: Mutex<Vec<Duration>>,
+    operation_requests: Mutex<Vec<(String, Vec<u8>)>>,
     block_item: AtomicBool,
     item_started: tokio::sync::Notify,
 }
@@ -171,6 +172,10 @@ impl OperationExecutor for Executor {
     ) -> Pin<Box<dyn Future<Output = Result<OperationResponse, OperationExecutionError>> + Send + 'a>>
     {
         Box::pin(async move {
+            self.operation_requests
+                .lock()
+                .unwrap()
+                .push((request.url().as_str().into(), request.body().to_vec()));
             let method = format!("{:?}", request.method()).to_ascii_uppercase();
             let reply = self.take(&method, request.url().path());
             Ok(OperationResponse {
@@ -290,6 +295,494 @@ fn report_metadata(fixture: &Fixture, owner: &str) {
     );
 }
 
+fn dataagent_path(suffix: &str) -> String {
+    format!("/{WS}.Workspace/{ITEM}.DataAgent{suffix}")
+}
+
+fn dataagent_metadata(f: &Fixture) {
+    f.executor.response(
+        "GET",
+        format!("/v1/workspaces/{WS}/dataAgents/{ITEM}"),
+        200,
+        &serde_json::to_vec(&serde_json::json!({
+            "id":ITEM,"workspaceId":WS,"type":"DataAgent",
+            "displayName":"Inert agent","future":{"keep":true}
+        }))
+        .unwrap(),
+        &[],
+    );
+}
+
+fn dataagent_definition() -> Value {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let part = |path: &str, bytes: &[u8]| {
+        serde_json::json!({
+            "path":path,"payloadType":"InlineBase64","payload":STANDARD.encode(bytes),
+            "unknownPartField":{"keep":true}
+        })
+    };
+    serde_json::json!({
+        "definition":{"format":"JSON","future":42,"parts":[
+            part("Files/Config/data_agent.json",b"shared"),
+            part("Files/Config/draft/stage_config.json",b"draft instructions"),
+            part("Files/Config/published/stage_config.json",b"published instructions"),
+            part("Files/Config/publish_info.json",b"publish metadata"),
+            {"path":"future/opaque","payloadType":"FuturePayload","payload":"opaque"},
+            part("Files/Config/draft/lakehouse-example/fewshots.json",&[0,255,128,10])
+        ]},
+        "futureEnvelope":{"preserve":true}
+    })
+}
+
+fn dataagent_source(f: &Fixture, value: &Value) {
+    f.executor.response(
+        "POST",
+        format!("/v1/workspaces/{WS}/dataAgents/{ITEM}/getDefinition"),
+        200,
+        &serde_json::to_vec(value).unwrap(),
+        &[],
+    );
+}
+
+#[tokio::test]
+async fn dataagent_metadata_and_facade_share_exact_typed_read_without_invented_stage() {
+    for facade in [false, true] {
+        let f = Fixture::new();
+        dataagent_metadata(&f);
+        let mut args = vec!["get".into(), dataagent_path("")];
+        if facade {
+            args.splice(0..0, ["artifact".into(), "data-agent".into()]);
+        }
+        let value: Value = serde_json::from_slice(&stdout(&f, &args).await.unwrap()).unwrap();
+        assert_eq!(value["data"]["future"]["keep"], true);
+        assert!(value["meta"].get("stage").is_none());
+        assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+        assert_eq!(
+            f.credential.0.lock().unwrap().as_slice(),
+            ["https://api.fabric.microsoft.com/.default"]
+        );
+    }
+}
+
+#[tokio::test]
+async fn dataagent_stage_roots_preserve_full_definition_and_account_for_every_part() {
+    for (stage, indices) in [
+        ("draft", serde_json::json!([1, 5])),
+        ("published", serde_json::json!([2])),
+    ] {
+        let f = Fixture::new();
+        let definition = dataagent_definition();
+        dataagent_metadata(&f);
+        dataagent_source(&f, &definition);
+        let value: Value = serde_json::from_slice(
+            &stdout(
+                &f,
+                &["get".into(), dataagent_path(&format!("/src/{stage}"))],
+            )
+            .await
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(value["data"]["nativeDefinition"], definition);
+        assert_eq!(value["data"]["selectedPartIndices"], indices);
+        let evidence = &value["meta"]["dataAgentSource"];
+        assert_eq!(evidence["stage"], stage);
+        assert_eq!(evidence["scope"], "stage-projection");
+        assert_eq!(evidence["fullSourceRoundtrip"], false);
+        assert_eq!(evidence["sharedPartIndices"], serde_json::json!([0, 3]));
+        assert_eq!(evidence["unclassifiedPartIndices"], serde_json::json!([4]));
+        assert_eq!(evidence["parts"].as_array().unwrap().len(), 6);
+        assert_eq!(f.executor.calls.lock().unwrap().len(), 2);
+        let requests = f.executor.operation_requests.lock().unwrap();
+        assert!(
+            requests
+                .iter()
+                .all(|(url, body)| !url.contains('?') && body.is_empty())
+        );
+        assert!(requests[1].0.ends_with("/getDefinition"));
+    }
+}
+
+#[tokio::test]
+async fn dataagent_full_source_keeps_native_order_unknown_fields_and_duplicate_paths() {
+    let f = Fixture::new();
+    let mut definition = dataagent_definition();
+    let duplicate = definition["definition"]["parts"][4].clone();
+    definition["definition"]["parts"]
+        .as_array_mut()
+        .unwrap()
+        .push(duplicate);
+    dataagent_metadata(&f);
+    dataagent_source(&f, &definition);
+    let value: Value = serde_json::from_slice(
+        &stdout(
+            &f,
+            &["get".into(), dataagent_path("/src/definition/formats/JSON")],
+        )
+        .await
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(value["data"], definition);
+    assert_eq!(
+        value["meta"]["dataAgentSource"]["fullSourceRoundtrip"],
+        true
+    );
+    let requests = f.executor.operation_requests.lock().unwrap();
+    assert!(requests[1].0.ends_with("/getDefinition?format=JSON"));
+}
+
+#[tokio::test]
+async fn dataagent_exact_stage_part_uses_strict_shared_bytes_and_no_stage_http_route() {
+    for (stage, expected) in [
+        ("draft", b"draft instructions".as_slice()),
+        ("published", b"published instructions"),
+    ] {
+        let f = Fixture::new();
+        dataagent_metadata(&f);
+        dataagent_source(&f, &dataagent_definition());
+        let bytes = stdout(
+            &f,
+            &[
+                "get".into(),
+                dataagent_path(&format!("/src/{stage}/stage_config.json")),
+                "--format".into(),
+                "raw".into(),
+            ],
+        )
+        .await
+        .unwrap();
+        assert_eq!(bytes, expected);
+        assert!(
+            f.executor
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|(_, path)| !path.contains("/staging/"))
+        );
+    }
+    let f = Fixture::new();
+    dataagent_metadata(&f);
+    dataagent_source(&f, &dataagent_definition());
+    let bytes = stdout(
+        &f,
+        &[
+            "get".into(),
+            dataagent_path("/src/draft/lakehouse-example/fewshots.json"),
+            "--format".into(),
+            "raw".into(),
+        ],
+    )
+    .await
+    .unwrap();
+    assert_eq!(bytes, [0, 255, 128, 10]);
+}
+
+#[tokio::test]
+async fn dataagent_settings_and_native_datasource_pages_require_the_selected_stage() {
+    for (stage, native_prefix) in [("draft", "staging/"), ("published", "")] {
+        for facet in ["settings", "datasources"] {
+            let f = Fixture::new();
+            dataagent_metadata(&f);
+            let body = if facet == "settings" {
+                serde_json::json!({"aiInstructions":format!("inert {stage}"),"unknown":true})
+            } else {
+                serde_json::json!({"value":[],"continuationToken":"opaque + next",
+                    "continuationUri":"https://untrusted.invalid/inert"})
+            };
+            f.executor.response(
+                "GET",
+                format!("/v1/workspaces/{WS}/dataAgents/{ITEM}/{native_prefix}{facet}"),
+                200,
+                &serde_json::to_vec(&body).unwrap(),
+                &[],
+            );
+            let value: Value = serde_json::from_slice(
+                &stdout(
+                    &f,
+                    &[
+                        "get".into(),
+                        dataagent_path(&format!("/{facet}")),
+                        "--stage".into(),
+                        stage.into(),
+                    ],
+                )
+                .await
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(value["data"], body);
+            assert_eq!(value["meta"]["stage"], stage);
+            assert_eq!(value["meta"]["preview"], true);
+            if facet == "datasources" {
+                assert_eq!(value["meta"]["collectionComplete"], false);
+                assert_eq!(value["meta"]["scope"], "one-native-page");
+            }
+            assert_eq!(f.executor.calls.lock().unwrap().len(), 2);
+            assert!(
+                f.executor
+                    .calls
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .all(|(method, _)| method == "GET")
+            );
+            assert!(f.executor.waits.lock().unwrap().is_empty());
+        }
+    }
+}
+
+#[tokio::test]
+async fn dataagent_wrong_owner_or_response_identity_never_reaches_source_or_configuration() {
+    for (field, wrong) in [("type", "Notebook"), ("id", OP), ("workspaceId", OP)] {
+        let f = Fixture::new();
+        let mut metadata = serde_json::json!({
+            "id":ITEM,"workspaceId":WS,"type":"DataAgent","displayName":"Mismatch"
+        });
+        metadata[field] = wrong.into();
+        f.executor.response(
+            "GET",
+            format!("/v1/workspaces/{WS}/dataAgents/{ITEM}"),
+            200,
+            &serde_json::to_vec(&metadata).unwrap(),
+            &[],
+        );
+        assert!(
+            stdout(&f, &["get".into(), dataagent_path("/src/draft")])
+                .await
+                .is_err()
+        );
+        assert_eq!(f.executor.calls.lock().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn dataagent_absent_stage_duplicate_or_unsupported_part_never_falls_back() {
+    for case in [
+        "missing-stage",
+        "duplicate",
+        "opaque",
+        "missing-part",
+        "invalid-base64",
+    ] {
+        let f = Fixture::new();
+        let mut definition = dataagent_definition();
+        let suffix = match case {
+            "missing-stage" => {
+                definition["definition"]["parts"]
+                    .as_array_mut()
+                    .unwrap()
+                    .remove(2);
+                "/src/published"
+            }
+            "duplicate" => {
+                let part = definition["definition"]["parts"][1].clone();
+                definition["definition"]["parts"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(part);
+                "/src/draft/stage_config.json"
+            }
+            "opaque" => "/src/definition/parts/future/opaque",
+            "missing-part" => "/src/draft/shared.json",
+            _ => {
+                definition["definition"]["parts"][1]["payload"] = "not base64".into();
+                "/src/draft/stage_config.json"
+            }
+        };
+        dataagent_metadata(&f);
+        dataagent_source(&f, &definition);
+        assert!(
+            stdout(&f, &["get".into(), dataagent_path(suffix)])
+                .await
+                .is_err(),
+            "{case}"
+        );
+        assert_eq!(f.executor.calls.lock().unwrap().len(), 2);
+    }
+}
+
+#[tokio::test]
+async fn dataagent_configuration_denial_retains_original_error_without_source_fallback() {
+    use fabric_sdk::dataagents::DataAgentError;
+    use fabric_sdk_operations::OperationErrorKind;
+    let f = Fixture::new();
+    dataagent_metadata(&f);
+    f.executor.response(
+        "GET",
+        format!("/v1/workspaces/{WS}/dataAgents/{ITEM}/staging/settings"),
+        403,
+        br#"{"error":{"code":"Forbidden","message":"inert"}} "#,
+        &[],
+    );
+    let error = stdout(
+        &f,
+        &[
+            "get".into(),
+            dataagent_path("/settings"),
+            "--stage".into(),
+            "draft".into(),
+        ],
+    )
+    .await
+    .unwrap_err();
+    let GetCommandError::Backend { source, .. } = error else {
+        panic!("original SDK error")
+    };
+    let Some(DataAgentError::Operation(error)) = source.downcast_ref::<DataAgentError>() else {
+        panic!("typed DataAgent error");
+    };
+    assert!(matches!(
+        error.kind,
+        OperationErrorKind::Http { status: 403, .. }
+    ));
+    assert!(error.raw_service_error.is_some());
+    assert_eq!(f.executor.calls.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn dataagent_unprojected_definition_budget_cannot_be_bypassed_by_stage_or_query() {
+    let f = Fixture::new();
+    let mut definition = dataagent_definition();
+    definition["unknown"] = "x".repeat(4096).into();
+    dataagent_metadata(&f);
+    dataagent_source(&f, &definition);
+    let result = stdout(
+        &f,
+        &[
+            "get".into(),
+            dataagent_path("/src/draft"),
+            "--project".into(),
+            "selectedPartIndices".into(),
+            "--max-bytes".into(),
+            "2048".into(),
+        ],
+    )
+    .await;
+    assert!(result.is_err());
+    assert_eq!(f.executor.calls.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn dataagent_accepted_definition_observes_exact_handle_once_before_stage_selection() {
+    for wait in [false, true] {
+        let f = Fixture::new();
+        dataagent_metadata(&f);
+        f.executor.response(
+            "POST",
+            format!("/v1/workspaces/{WS}/dataAgents/{ITEM}/getDefinition"),
+            202,
+            b"",
+            &[
+                ("x-ms-operation-id", OP.into()),
+                (
+                    "Location",
+                    format!("https://api.fabric.microsoft.com/v1/operations/{OP}"),
+                ),
+            ],
+        );
+        let mut args = vec!["get".into(), dataagent_path("/src/published")];
+        if wait {
+            args.push("--wait".into());
+            f.executor.response(
+                "GET",
+                format!("/v1/operations/{OP}"),
+                200,
+                br#"{"status":"Succeeded"}"#,
+                &[(
+                    "Location",
+                    format!("https://api.fabric.microsoft.com/v1/operations/{OP}/result"),
+                )],
+            );
+            f.executor.response(
+                "GET",
+                format!("/v1/operations/{OP}/result"),
+                200,
+                &serde_json::to_vec(&dataagent_definition()).unwrap(),
+                &[],
+            );
+        }
+        let delivery = f
+            .prepared(&args)
+            .acquire(&f.backend(), pending())
+            .await
+            .unwrap();
+        assert_eq!(delivery.complete(), wait);
+        let mut bytes = Vec::new();
+        delivery.write_to(&mut bytes).unwrap();
+        let value: Value = serde_json::from_slice(&bytes).unwrap();
+        if wait {
+            assert_eq!(value["data"]["selectedPartIndices"], serde_json::json!([2]));
+        } else {
+            assert_eq!(value["data"]["handle"], format!("/operations/{OP}"));
+            assert_eq!(value["meta"]["stageVerified"], false);
+        }
+        let calls = f.executor.calls.lock().unwrap();
+        assert_eq!(calls.len(), if wait { 4 } else { 2 });
+        assert_eq!(
+            calls.iter().filter(|(method, _)| method == "POST").count(),
+            1
+        );
+    }
+}
+
+#[tokio::test]
+async fn dataagent_projection_does_not_claim_a_full_source_roundtrip() {
+    let f = Fixture::new();
+    dataagent_metadata(&f);
+    dataagent_source(&f, &dataagent_definition());
+    let value: Value = serde_json::from_slice(
+        &stdout(
+            &f,
+            &[
+                "get".into(),
+                dataagent_path("/src/definition"),
+                "--project".into(),
+                "definition.parts[1].path".into(),
+            ],
+        )
+        .await
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(value["data"], "Files/Config/draft/stage_config.json");
+    assert_eq!(value["meta"]["projectionApplied"], true);
+    assert_eq!(
+        value["meta"]["dataAgentSource"]["fullSourceRoundtrip"],
+        false
+    );
+    assert_eq!(
+        value["meta"]["dataAgentSource"]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        6
+    );
+}
+
+#[tokio::test]
+async fn dataagent_resolved_stage_cannot_be_substituted_before_retrieval() {
+    use fabric_cli::{get_command::GetBackend, get_target::DataAgentStage};
+    let f = Fixture::new();
+    let command = parse_get(
+        ["get", &dataagent_path("/settings"), "--stage", "draft"]
+            .into_iter()
+            .map(OsString::from),
+    )
+    .unwrap();
+    let backend = f.backend();
+    let resolved = backend
+        .resolve_with_options(&command.path, command.options)
+        .await
+        .unwrap();
+    let mut options = command.options;
+    options.stage = Some(DataAgentStage::Published);
+    assert!(backend.retrieve(&resolved, options).await.is_err());
+    assert!(f.executor.calls.lock().unwrap().is_empty());
+    assert!(f.credential.0.lock().unwrap().is_empty());
+}
+
 fn report_definition(version: &str) -> Value {
     use base64::{Engine, engine::general_purpose::STANDARD};
     let part = |path: &str, bytes: &[u8]| serde_json::json!({"path":path,"payload":STANDARD.encode(bytes),"payloadType":"InlineBase64"});
@@ -303,6 +796,111 @@ fn report_definition(version: &str) -> Value {
         part("definition/pages/p/page.json",br#"{"name":"p"}"#),
         part("StaticResources/native.bin",&[0,255,128,0])
     ]},"unknown":"preserved"})
+}
+
+#[tokio::test]
+async fn dataagent_explicit_msit_binding_is_preserved_through_facade_and_sdk() {
+    use fabric_sdk::{EndpointBinding, RequestContext, ServiceOrigin};
+    let mut f = Fixture::new();
+    f.client = Client::with_context(RequestContext::with_endpoint(
+        f.credential.clone(),
+        CredentialSelection::new("offline", "tenant", Audience::Fabric).unwrap(),
+        EndpointBinding::with_host(ServiceOrigin::Fabric, "msitapi.fabric.microsoft.com").unwrap(),
+    ));
+    dataagent_metadata(&f);
+    f.executor.response(
+        "GET",
+        format!("/v1/workspaces/{WS}/dataAgents/{ITEM}/staging/settings"),
+        200,
+        br#"{"aiInstructions":"inert draft"}"#,
+        &[],
+    );
+    stdout(
+        &f,
+        &[
+            "artifact".into(),
+            "data-agent".into(),
+            "get".into(),
+            dataagent_path("/settings"),
+            "--stage".into(),
+            "draft".into(),
+        ],
+    )
+    .await
+    .unwrap();
+    let requests = f.executor.operation_requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert!(requests.iter().all(|(url, body)| {
+        url.starts_with("https://msitapi.fabric.microsoft.com/v1/")
+            && !url.contains('?')
+            && body.is_empty()
+    }));
+    assert_eq!(
+        f.credential.0.lock().unwrap().as_slice(),
+        ["https://api.fabric.microsoft.com/.default"; 2]
+    );
+}
+
+#[tokio::test]
+async fn dataagent_raw_part_budget_does_not_charge_an_unselected_json_inventory() {
+    for raw in [false, true] {
+        let f = Fixture::new();
+        let definition = serde_json::json!({
+            "definition":{"parts":[dataagent_definition()["definition"]["parts"][1].clone()]}
+        });
+        let source_size = serde_json::to_vec(&definition).unwrap().len();
+        dataagent_metadata(&f);
+        let metadata_size = f.executor.replies.lock().unwrap()[0].body.len();
+        dataagent_source(&f, &definition);
+        let mut args = vec![
+            "get".into(),
+            dataagent_path("/src/draft/stage_config.json"),
+            "--max-bytes".into(),
+            (metadata_size + source_size).to_string(),
+        ];
+        if raw {
+            args.extend(["--format".into(), "raw".into()]);
+        }
+        let result = stdout(&f, &args).await;
+        if raw {
+            assert_eq!(result.unwrap(), b"draft instructions");
+        } else {
+            assert!(
+                matches!(result, Err(GetCommandError::ByteLimit { .. })),
+                "{result:?}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn dataagent_configuration_rejects_positional_pages_and_undocumented_acceptance() {
+    for (status, body) in [(200, b"[]".as_slice()), (202, b"{}")] {
+        let f = Fixture::new();
+        dataagent_metadata(&f);
+        f.executor.response(
+            "GET",
+            format!("/v1/workspaces/{WS}/dataAgents/{ITEM}/datasources"),
+            status,
+            body,
+            &[],
+        );
+        assert!(
+            stdout(
+                &f,
+                &[
+                    "get".into(),
+                    dataagent_path("/datasources"),
+                    "--stage".into(),
+                    "published".into(),
+                ],
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(f.executor.calls.lock().unwrap().len(), 2);
+        assert!(f.executor.waits.lock().unwrap().is_empty());
+    }
 }
 
 #[tokio::test]

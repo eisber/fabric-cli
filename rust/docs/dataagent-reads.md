@@ -8,6 +8,83 @@ context. No transport, runtime, identity provider, HTTP retry/polling engine or
 CLI parser is installed. The v1 generic item policy and DataAgent ontology
 package are unchanged.
 
+## Explicit CLI composition
+
+The existing experimental `fab-cli-v2` GET head now adapts these SDK reads.
+Its shared resolution, invocation budget, cancellation, observation, projection
+and exact-output contracts remain authoritative. There is no second HTTP engine,
+global command registry version, ontology handler or credential selector.
+
+```text
+fab-cli-v2 get /Demo.Workspace/Agent.DataAgent
+fab-cli-v2 get /Demo.Workspace/Agent.DataAgent/src/definition
+fab-cli-v2 get /Demo.Workspace/Agent.DataAgent/src/definition/formats/JSON
+fab-cli-v2 get /Demo.Workspace/Agent.DataAgent/src/draft
+fab-cli-v2 get /Demo.Workspace/Agent.DataAgent/src/published
+fab-cli-v2 get /Demo.Workspace/Agent.DataAgent/src/draft/stage_config.json --format raw
+fab-cli-v2 get /Demo.Workspace/Agent.DataAgent/settings --stage draft
+fab-cli-v2 get /Demo.Workspace/Agent.DataAgent/datasources --stage published
+fab-cli-v2 artifact data-agent get /Demo.Workspace/Agent.DataAgent/settings --stage draft
+```
+
+The facade constrains the owner to `DataAgent` and invokes the same GET parser,
+backend and delivery path. Explicit identifiers can retain the typed spelling
+`/<workspace-id>.Workspace/<item-id>.DataAgent`; this avoids name enumeration.
+New stage/configuration paths reject untyped machine addresses and other owner
+types. The SDK's native metadata response must independently verify item,
+workspace and DataAgent type before source or configuration acquisition.
+
+`--stage draft|published` is required for settings and datasource-page reads.
+`draft` maps to the native `staging/` configuration route; published uses the
+native base route. Metadata has no fabricated stage. Source selection belongs in
+`src/draft` or `src/published`, not `--stage`; redundant, conflicting, missing,
+unknown or inapplicable selectors fail explicitly. Only JSON is an admitted
+explicit DataAgent native format. Configuration Preview support and permission
+remain service-owned; no denied or unavailable read falls back to another stage.
+
+`src/definition` returns the **full native envelope**, retaining all part paths,
+order, duplicates, opaque payloads and unknown fields. It is not stage-filtered.
+`src/draft` and `src/published` make **local addressed projections of that same
+full definition POST**, never a stage-specific definition endpoint. Their data
+contains the unchanged `nativeDefinition` and ordered `selectedPartIndices`.
+`meta.dataAgentSource` inventories every original part and separately identifies
+draft, published, known shared and unclassified parts. Unknown paths are not
+silently treated as shared. A missing selected stage fails instead of producing
+an empty success. These views explicitly set `fullSourceRoundtrip: false`;
+they are not replacement definitions or historical snapshots.
+
+A child such as `src/draft/stage_config.json` addresses exactly
+`Files/Config/draft/stage_config.json`. It uses the shared strict InlineBase64
+decoder without interpreting stored instructions, few-shot queries or payload
+bytes. Missing/duplicate exact paths, unknown encodings and invalid base64 fail.
+JSON delivery retains the complete part inventory and selected native path
+outside projected data. Raw delivery is only the exact selected bytes, without
+a receipt prefix; use JSON or the stage root when inventory evidence is needed.
+The full source is bounded before any stage, part or JMESPath projection.
+
+`get .../datasources --stage ...` retrieves **one native page**, preserving its
+opaque token and inert continuation URI. `meta.scope` is `one-native-page` and
+`meta.collectionComplete` reports the service continuation state; page delivery
+does not claim complete collection traversal. This adapter does not replace or
+extend a shared global `list` handler or implement its own traversal/cursor
+contract. The existing SDK registry's generic/facade List bindings remain
+unchanged. No mutation, publish, reset, unlink, datasource query, hosted answer
+or model operation is installed.
+
+Build and run with the existing explicit headless or Windows WAM host described in
+[v2 GET](v2-get.md). WAM requires the existing `native-read` feature and explicit
+`FAB_RUST_AUTH_MODE=broker`, with the existing selected broker binding or
+complete explicit tenant/account/client selectors. No login, new consent or profile change is performed by a
+read. For an explicitly approved MSIT environment, select
+`FAB_RUST_FABRIC_HOST=msitapi.fabric.microsoft.com` while retaining the Fabric
+audience `https://api.fabric.microsoft.com/.default`; the portal hostname is
+not the REST endpoint. The host requires its already configured, approved
+`FAB_RUST_AUTH_MODE` and matching non-secret identity/provider inputs. WAM
+silently uses that selected Windows account; it cannot choose the first desktop
+account or manufacture a binding.
+Offline success does not establish live identity, endpoint routing, permissions,
+stage availability or Preview deployment.
+
 ## Targets, requests and results
 
 `DataAgentTarget::new` requires a resolved `DataAgent` owner and nonzero
@@ -107,6 +184,9 @@ few-shot edits, datasource schema discovery and topic formatting are excluded.
 ## Source provenance and compatibility
 
 The authorized v2 base is `cc183dd43140350eb1f23af0636332150d1f6d50`.
+The explicit-stage CLI adapter is based on approved merged SDK integration
+`99ce46c05f7601d3c1556b1e60e62716ae2dd35a` from
+`eisber/fabric-cli`, `dev/marcozo/fab-cli-v2-integration-20261104`.
 Existing Rust definition/metadata behavior is reused rather than changing the
 v1 Python/oracle contract. Public endpoint facts are from:
 
@@ -146,6 +226,14 @@ It covers native method/route/format, owner and returned identity, explicit
 stage isolation, inert content, partial pages and token encoding, original
 permission/service failures, byte boundaries, cancellation, real acceptance
 without polling, preserved endpoint binding and generic/facade registry parity.
+The shared CLI `get_target`, `get_command`, `get_backend` and headless
+`v2_get_binary` targets additionally cover typed paths, explicit selector errors,
+canonical/facade parity, identity verification before source reads, distinct
+native stage routes, exact full-source preservation, all-part accounting,
+binary part bytes, absent stages, acceptance observation without POST replay,
+inert datasource continuations, original denial evidence and pre-projection
+budgets. The SDK's existing query-absence, object-root datasource,
+decode-cancellation, raw/compact-budget and response-evidence guards are retained.
 The existing `representations` target exercises the shared decoder/observer
 contract; it is not replaced or weakened.
 

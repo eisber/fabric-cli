@@ -10,7 +10,7 @@ use crate::{
         GetPayload, GetTargetKind, ResolvedGet,
     },
     get_resolution::{ResolvedGetTarget, resolve},
-    get_target::{GetRepresentation, GetTarget},
+    get_target::{DataAgentStage, GetRepresentation, GetTarget},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use fabric_sdk::{
@@ -53,6 +53,7 @@ pub struct SdkGetBackend<'a> {
 pub struct SdkGetTarget<'a> {
     target: ResolvedGetTarget,
     budget: GetReadBudget<'a>,
+    dataagent_stage: Option<DataAgentStage>,
 }
 
 pub(super) fn backend_error(
@@ -73,17 +74,28 @@ fn unsupported(message: &'static str) -> GetCommandError {
     backend_error("UnsupportedCapability", CapabilityError(message))
 }
 
-impl<'host> GetBackend for SdkGetBackend<'host> {
-    type Target = SdkGetTarget<'host>;
-
-    fn resolve<'a>(
+impl<'host> SdkGetBackend<'host> {
+    fn resolve_selected<'a>(
         &'a self,
         path: &'a str,
         limits: GetLimits,
-    ) -> GetFuture<'a, ResolvedGet<Self::Target>> {
+        stage: Option<DataAgentStage>,
+    ) -> GetFuture<'a, ResolvedGet<SdkGetTarget<'host>>> {
         Box::pin(async move {
             let parsed =
                 GetTarget::parse(path).map_err(|error| backend_error("InvalidTarget", error))?;
+            parsed
+                .validate_stage(stage)
+                .map_err(|error| backend_error("InvalidStageTarget", error))?;
+            if let GetTarget::Item {
+                item_type: Some(kind),
+                representation,
+                ..
+            } = &parsed
+                && kind == "DataAgent"
+            {
+                crate::get_dataagent::validate_representation(representation)?;
+            }
             if let GetTarget::Item {
                 item_type: Some(kind),
                 representation,
@@ -138,6 +150,25 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                         GetFormat::Json,
                         false,
                         true,
+                    ),
+                    GetRepresentation::DataAgentSource { part, .. } => (
+                        GetTargetKind::Representation,
+                        if part.is_some() {
+                            vec![GetFormat::Json, GetFormat::Raw]
+                        } else {
+                            vec![GetFormat::Json]
+                        },
+                        GetFormat::Json,
+                        false,
+                        true,
+                    ),
+                    GetRepresentation::DataAgentSettings
+                    | GetRepresentation::DataAgentDatasources => (
+                        GetTargetKind::Representation,
+                        vec![GetFormat::Json],
+                        GetFormat::Json,
+                        false,
+                        false,
                     ),
                     GetRepresentation::File(_) => {
                         if self.storage.is_none() {
@@ -194,7 +225,11 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
             .await
             .map_err(|error| backend_error("TargetResolutionFailed", error))?;
             Ok(ResolvedGet {
-                target: SdkGetTarget { target, budget },
+                target: SdkGetTarget {
+                    target,
+                    budget,
+                    dataagent_stage: stage,
+                },
                 kind,
                 formats,
                 default_format,
@@ -203,6 +238,26 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
             })
         })
     }
+}
+
+impl<'host> GetBackend for SdkGetBackend<'host> {
+    type Target = SdkGetTarget<'host>;
+
+    fn resolve<'a>(
+        &'a self,
+        path: &'a str,
+        limits: GetLimits,
+    ) -> GetFuture<'a, ResolvedGet<Self::Target>> {
+        self.resolve_selected(path, limits, None)
+    }
+
+    fn resolve_with_options<'a>(
+        &'a self,
+        path: &'a str,
+        options: GetAcquireOptions,
+    ) -> GetFuture<'a, ResolvedGet<Self::Target>> {
+        self.resolve_selected(path, options.limits, options.stage)
+    }
 
     fn retrieve<'a>(
         &'a self,
@@ -210,6 +265,11 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
         options: GetAcquireOptions,
     ) -> GetFuture<'a, GetPayload> {
         Box::pin(async move {
+            if resolved.target.dataagent_stage != options.stage {
+                return Err(unsupported(
+                    "the resolved configuration stage cannot change",
+                ));
+            }
             let target = &resolved.target.target;
             let budget = &resolved.target.budget;
             let cap = options.limits.max_bytes;
@@ -261,6 +321,17 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                     item_type,
                     representation,
                 } => {
+                    if item_type.as_deref() == Some("DataAgent") {
+                        return crate::get_dataagent::retrieve(
+                            self.client,
+                            budget,
+                            workspace_id,
+                            item_id,
+                            representation,
+                            options,
+                        )
+                        .await;
+                    }
                     if item_type.as_deref() == Some("Report")
                         && matches!(
                             representation,
@@ -339,6 +410,11 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
                         max_result_bytes: cap,
                     };
                     match representation {
+                        GetRepresentation::DataAgentSource { .. }
+                        | GetRepresentation::DataAgentSettings
+                        | GetRepresentation::DataAgentDatasources => {
+                            Err(unsupported("an exact verified DataAgent owner is required"))
+                        }
                         GetRepresentation::Metadata => {
                             let read = metadata
                                 .read(
@@ -600,6 +676,10 @@ impl<'host> GetBackend for SdkGetBackend<'host> {
             .map_err(|error| backend_error("InvalidProjection", error))?;
         let mut meta = data["meta"].clone();
         meta["projectionApplied"] = json!(true);
+        if let Some(source) = meta.get_mut("dataAgentSource") {
+            source["fullSourceRoundtrip"] = json!(false);
+            source["nativeDefinitionIncluded"] = json!(false);
+        }
         Ok(json!({"data":projected,"meta":meta}))
     }
 

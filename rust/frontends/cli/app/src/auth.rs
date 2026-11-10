@@ -427,32 +427,7 @@ pub(crate) fn write_auth_outcome_with_format(
 }
 
 #[cfg(all(windows, feature = "windows-broker"))]
-pub(crate) fn broker_error(
-    error: fabric_identity::windows_broker::BrokerError,
-) -> (&'static str, String) {
-    use fabric_identity::windows_broker::BrokerError;
-    let code = match error {
-        BrokerError::InvalidConfiguration => "invalid_configuration",
-        BrokerError::InteractionRequired => "interaction_required",
-        BrokerError::Cancelled => "cancelled",
-        BrokerError::IdentityMismatch | BrokerError::AmbiguousAccount => "identity_mismatch",
-        BrokerError::InvalidResponse | BrokerError::ResponseMetadata { .. } => {
-            "invalid_broker_response"
-        }
-        BrokerError::ProviderUnavailable => "broker_unavailable",
-        BrokerError::InteractiveWindowUnavailable => "interactive_window_unavailable",
-        BrokerError::CompletionUnconfirmed { .. } => "completion_unconfirmed",
-        BrokerError::IdentityCapacityExhausted { .. } => "identity_capacity_exhausted",
-        BrokerError::CapacityExhausted { .. } => "broker_capacity_exhausted",
-        BrokerError::OperationInProgress => "authentication_busy",
-        BrokerError::SessionInvalidated => "session_invalidated",
-        BrokerError::CleanupPending { .. } => "cleanup_pending",
-        BrokerError::TimedOut => "timed_out",
-        BrokerError::CoordinationFailed => "coordination_failed",
-        _ => "authentication_failed",
-    };
-    (code, error.to_string())
-}
+pub(crate) use crate::auth_binding::broker_error;
 
 #[cfg(all(windows, feature = "windows-broker"))]
 struct WindowsBroker {

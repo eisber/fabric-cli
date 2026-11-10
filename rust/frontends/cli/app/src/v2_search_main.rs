@@ -3,7 +3,7 @@
 
 //! Search composition shares the explicit v2 identity, runtime and HTTP policies.
 
-use super::{Failure, NativeSession, failed, headless};
+use super::{Failure, NativeSession, failed, v2_credentials};
 use fabric_cli::search_command::{
     SearchArgumentError, SearchDelivery, SearchDeliveryError, parse_search, sdk_request,
 };
@@ -100,16 +100,8 @@ pub(super) fn run(args: Vec<OsString>) -> Result<(), Failure> {
     } else {
         None
     };
-    let mode = std::env::var("FAB_RUST_AUTH_MODE").map_err(|_| {
-        failed(
-            "NotConfigured",
-            "Select an explicit FAB_RUST_AUTH_MODE; no credential chain is used.",
-            1,
-        )
-    })?;
-    let selection = headless::Selection::capture(&mode)
-        .map_err(|(code, message, exit)| failed(code, message, exit))?;
-    let request = sdk_request(&command, &selection.tenant).map_err(search_failure)?;
+    let selection = v2_credentials::Selection::capture()?;
+    let request = sdk_request(&command, selection.tenant()).map_err(search_failure)?;
     let canonical_path = request
         .scope()
         .workspace_id()
@@ -179,14 +171,18 @@ pub(super) fn run(args: Vec<OsString>) -> Result<(), Failure> {
             2,
         ));
     }
-    let tenant = selection.tenant.clone();
+    let tenant = selection.tenant().to_owned();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .max_blocking_threads(2)
         .build()
         .map_err(|_| failed("RuntimeFailed", "Search runtime could not be created.", 1))?;
     let result = runtime.block_on(async {
-        let session = NativeSession::new(selection, endpoint, timeout)?;
+        let remaining = timeout
+            .checked_sub(started.elapsed())
+            .filter(|value| !value.is_zero())
+            .ok_or_else(|| failed("TimedOut", "Search deadline elapsed before setup.", 1))?;
+        let session = NativeSession::new(selection, endpoint, remaining).await?;
         let api = ApiClient::new(
             session.context.credential().clone(),
             session.context.selection().clone(),

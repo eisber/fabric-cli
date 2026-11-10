@@ -105,3 +105,123 @@ fn actual_head_existing_output_precedes_identity_configuration() {
     std::fs::remove_file(path).unwrap();
     std::fs::remove_dir(root).unwrap();
 }
+
+#[test]
+fn actual_head_dataagent_stage_and_facade_contract_precedes_identity() {
+    let agent = format!("/{WS}.Workspace/{WS}.DataAgent");
+    for args in [
+        vec!["get", "--help"],
+        vec!["artifact", "data-agent", "get", "--help"],
+    ] {
+        let output = run(&args);
+        assert!(output.status.success());
+        assert!(
+            String::from_utf8(output.stdout)
+                .unwrap()
+                .contains("--stage")
+        );
+    }
+
+    #[test]
+    fn actual_head_explicit_broker_mode_never_uses_headless_or_account_fallback() {
+        let root = tempfile::tempdir().unwrap();
+        let invoke = |args: &[&str]| {
+            Command::new(env!("CARGO_BIN_EXE_fab-cli-v2"))
+                .args(args)
+                .env("FAB_RUST_AUTH_MODE", "broker")
+                .env("FAB_RUST_CONFIG_ROOT", root.path())
+                .env_remove("FAB_RUST_TENANT")
+                .env_remove("FAB_RUST_ACCOUNT")
+                .env_remove("FAB_RUST_CLIENT_ID")
+                .output()
+                .unwrap()
+        };
+        let output = invoke(&["get", &format!("/workspaces/{WS}")]);
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty());
+        let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(
+            error["error"]["code"],
+            if cfg!(all(windows, feature = "windows-broker")) {
+                "NotConfigured"
+            } else {
+                "UnsupportedCredential"
+            }
+        );
+        assert!(std::fs::read_dir(root.path()).unwrap().next().is_none());
+        for args in [vec!["get", "--help"], vec!["get", "invalid-private-path"]] {
+            let output = invoke(&args);
+            assert_eq!(
+                output.status.code(),
+                Some(if args[1] == "--help" { 0 } else { 2 })
+            );
+        }
+        #[cfg(all(windows, feature = "windows-broker"))]
+        {
+            let binding = root.path().join("broker-session.json");
+            std::fs::write(&binding, br#"{"schema":999}"#).unwrap();
+            let output = invoke(&["get", &format!("/workspaces/{WS}")]);
+            assert_eq!(output.status.code(), Some(2));
+            let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+            assert_eq!(error["error"]["code"], "invalid_configuration");
+            assert_eq!(std::fs::read(binding).unwrap(), br#"{"schema":999}"#);
+        }
+    }
+    for args in [
+        vec!["get".into(), format!("{agent}/settings")],
+        vec![
+            "get".into(),
+            agent.clone(),
+            "--stage".into(),
+            "draft".into(),
+        ],
+        vec![
+            "get".into(),
+            format!("{agent}/settings"),
+            "--stage".into(),
+            "staging".into(),
+        ],
+        vec![
+            "get".into(),
+            format!("{agent}/src/draft"),
+            "--stage".into(),
+            "published".into(),
+        ],
+        vec![
+            "get".into(),
+            format!("/workspaces/{WS}/items/{WS}/src/draft"),
+        ],
+        vec!["get".into(), format!("{agent}/src/definition/formats/TMDL")],
+        vec![
+            "artifact".into(),
+            "data-agent".into(),
+            "get".into(),
+            format!("/{WS}.Workspace/{WS}.Notebook"),
+        ],
+    ] {
+        let refs: Vec<_> = args.iter().map(String::as_str).collect();
+        let output = run(&refs);
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert!(output.stdout.is_empty());
+    }
+    for args in [
+        vec![
+            "get".into(),
+            format!("{agent}/settings"),
+            "--stage".into(),
+            "draft".into(),
+        ],
+        vec![
+            "artifact".into(),
+            "data-agent".into(),
+            "get".into(),
+            format!("{agent}/src/published"),
+        ],
+    ] {
+        let refs: Vec<_> = args.iter().map(String::as_str).collect();
+        let output = run(&refs);
+        assert_eq!(output.status.code(), Some(1));
+        let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(error["error"]["code"], "NotConfigured");
+    }
+}

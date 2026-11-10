@@ -15,11 +15,26 @@ fab-cli-v2 get --help
 ```
 
 Help, version, invalid arguments and existing-output preflight do not acquire
-tokens. Actual service execution requires an explicit `FAB_RUST_AUTH_MODE`
-and its existing [headless identity configuration](native-read-host.md#headless-credentials).
-There is no interactive sign-in, ambient credential chain, static-token option,
-private API activation or implicit profile switch. Native transport explicitly
-uses platform trust and direct connections; this head does not discover proxies.
+tokens. Actual service execution requires an explicit `FAB_RUST_AUTH_MODE`.
+Headless modes use the existing
+[headless identity configuration](native-read-host.md#headless-credentials).
+On Windows, build with `--features headless,native-read` and explicitly select
+`FAB_RUST_AUTH_MODE=broker` to reuse the existing WAM host. Its non-secret
+`broker-session.json` binding or complete explicit `FAB_RUST_TENANT`,
+`FAB_RUST_ACCOUNT` and `FAB_RUST_CLIENT_ID` selectors choose the identity;
+missing/invalid selection fails before broker work. The original shared
+selection rules reject conflicting partial identities.
+
+WAM connects silently for Fabric only through `WindowsCredential::connect`.
+There is no login, account picker, consent, profile write, token extraction,
+ambient credential chain, static-token option, private API activation or
+implicit provider fallback. Interaction-required and identity/provider errors
+retain their original sanitized classifications. Setup shares the command's
+remaining timeout and cancellation; interruption does not certify broker
+cleanup completion. The same private session composition serves GET and its
+existing search/exists/optional refresh consumers without changing their
+operation or approval contracts. Native transport explicitly uses platform
+trust and direct connections; this head does not discover proxies.
 
 ## Addressing and capability boundaries
 
@@ -77,6 +92,15 @@ Explicitly typed `.Report` metadata and definitions use the
 parts and retains format/version and related-model prerequisite evidence outside
 projected data. Unknown native versions or missing report structure are partial,
 not complete authoring exports. Untyped item paths retain the generic binding.
+
+Explicitly typed `.DataAgent` paths use the
+[DataAgent read adapter](dataagent-reads.md#explicit-cli-composition).
+`src/definition` preserves the full native envelope. `src/draft` and
+`src/published` retain that envelope plus explicit stage selection and all-part
+inventory; they are not full-source roundtrip views or new HTTP endpoints.
+Settings and single datasource pages require `--stage draft|published`.
+`artifact data-agent get` is the same constrained GET operation. No global
+List contract, ontology behavior or default registry version is replaced.
 
 ## Options, data and local delivery
 

@@ -276,7 +276,7 @@ impl Hints {
             hints.tenant.as_deref(),
             hints.account.as_deref(),
         )
-        .map_err(crate::auth::broker_error)?;
+        .map_err(broker_error)?;
         Ok(hints)
     }
 
@@ -311,7 +311,7 @@ impl Hints {
         };
         LoginOptions::new(tenant, client, account)
             .map(Some)
-            .map_err(crate::auth::broker_error)
+            .map_err(broker_error)
     }
 }
 
@@ -337,6 +337,33 @@ fn selected_from(
     }
     let saved = read()?;
     hints.resolve(saved.as_ref()).complete()?.ok_or_else(absent)
+}
+
+pub(crate) fn broker_error(
+    error: fabric_identity::windows_broker::BrokerError,
+) -> (&'static str, String) {
+    use fabric_identity::windows_broker::BrokerError;
+    let code = match error {
+        BrokerError::InvalidConfiguration => "invalid_configuration",
+        BrokerError::InteractionRequired => "interaction_required",
+        BrokerError::Cancelled => "cancelled",
+        BrokerError::IdentityMismatch | BrokerError::AmbiguousAccount => "identity_mismatch",
+        BrokerError::InvalidResponse | BrokerError::ResponseMetadata { .. } => {
+            "invalid_broker_response"
+        }
+        BrokerError::ProviderUnavailable => "broker_unavailable",
+        BrokerError::InteractiveWindowUnavailable => "interactive_window_unavailable",
+        BrokerError::CompletionUnconfirmed { .. } => "completion_unconfirmed",
+        BrokerError::IdentityCapacityExhausted { .. } => "identity_capacity_exhausted",
+        BrokerError::CapacityExhausted { .. } => "broker_capacity_exhausted",
+        BrokerError::OperationInProgress => "authentication_busy",
+        BrokerError::SessionInvalidated => "session_invalidated",
+        BrokerError::CleanupPending { .. } => "cleanup_pending",
+        BrokerError::TimedOut => "timed_out",
+        BrokerError::CoordinationFailed => "coordination_failed",
+        _ => "authentication_failed",
+    };
+    (code, error.to_string())
 }
 
 #[cfg(test)]

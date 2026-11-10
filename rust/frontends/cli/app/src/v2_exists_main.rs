@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use super::{Failure, NativeSession, failed, headless};
+use super::{Failure, NativeSession, failed, v2_credentials};
 use fabric_cli::exists_command::{ExistsArgumentError, exists_command, parse_exists, write_exists};
 use fabric_sdk::{
     Client, EndpointBinding, ServiceOrigin,
@@ -29,17 +29,9 @@ pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
         .limits()
         .map_err(|_| failed("InvalidArguments", "Invalid Exists bounds.", 2))?;
     let started = Instant::now();
-    let mode = std::env::var("FAB_RUST_AUTH_MODE").map_err(|_| {
-        failed(
-            "NotConfigured",
-            "Select an explicit FAB_RUST_AUTH_MODE; no credential chain is used.",
-            1,
-        )
-    })?;
-    let selection = headless::Selection::capture(&mode)
-        .map_err(|(code, message, exit)| failed(code, message, exit))?;
+    let selection = v2_credentials::Selection::capture()?;
     let request = command
-        .request(&selection.tenant)
+        .request(selection.tenant())
         .map_err(|_| failed("InvalidArguments", "Invalid Exists target or tenant.", 2))?;
     let endpoint = match std::env::var("FAB_RUST_FABRIC_HOST") {
         Ok(host) => EndpointBinding::with_host(ServiceOrigin::Fabric, &host).map_err(|_| {
@@ -78,7 +70,7 @@ pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
             .checked_sub(started.elapsed())
             .filter(|value| !value.is_zero())
             .ok_or_else(|| failed("TimedOut", "Exists deadline elapsed before dispatch.", 1))?;
-        let session = NativeSession::new(selection, endpoint, remaining)?;
+        let session = NativeSession::new(selection, endpoint, remaining).await?;
         let client = Client::with_context(session.context);
         let host = ExistsHost {
             client: &client,

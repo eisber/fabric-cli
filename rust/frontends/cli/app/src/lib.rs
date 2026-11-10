@@ -23,6 +23,7 @@ mod folder_reads;
 pub mod get_backend;
 mod get_budget;
 pub mod get_command;
+mod get_dataagent;
 pub mod get_metadata;
 mod get_report;
 pub mod get_resolution;

@@ -27,8 +27,21 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(all(windows, feature = "windows-broker"))]
+#[allow(
+    dead_code,
+    reason = "The v2 read host reuses only silent saved selection; it never logs in or writes bindings."
+)]
+mod auth_binding;
 #[path = "headless.rs"]
 mod headless;
+#[cfg(all(windows, feature = "windows-broker"))]
+#[allow(
+    dead_code,
+    reason = "The v2 read host reuses only the existing non-secret configuration root."
+)]
+mod runtime_config;
+mod v2_credentials;
 mod v2_exists_main;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
@@ -114,7 +127,15 @@ fn command_failure(error: GetCommandError) -> Failure {
                     "remoteReplayed":false,
                 })
             } else {
-                Value::Null
+                match source.downcast_ref::<fabric_sdk::dataagents::DataAgentError>() {
+                    Some(fabric_sdk::dataagents::DataAgentError::Operation(error)) => {
+                        dataagent_operation_evidence(error, None)
+                    }
+                    Some(fabric_sdk::dataagents::DataAgentError::Response(error)) => {
+                        dataagent_operation_evidence(&error.error, Some(error.response.status))
+                    }
+                    _ => Value::Null,
+                }
             }
         }
         GetCommandError::File(error) => json!({
@@ -125,6 +146,33 @@ fn command_failure(error: GetCommandError) -> Failure {
         _ => Value::Null,
     };
     (code, error.to_string(), evidence, 1)
+}
+
+fn dataagent_operation_evidence(
+    error: &fabric_sdk_operations::OperationError,
+    observed_status: Option<u16>,
+) -> Value {
+    use fabric_sdk_operations::OperationErrorKind;
+    let (classification, status) = match &error.kind {
+        OperationErrorKind::Http { status, .. } => ("http", Some(*status)),
+        OperationErrorKind::Cancelled => ("cancelled", observed_status),
+        OperationErrorKind::Limit => ("limit", observed_status),
+        OperationErrorKind::Credential => ("credential", observed_status),
+        OperationErrorKind::Execution(_) => ("execution", observed_status),
+        OperationErrorKind::InvalidAudience => ("invalid-audience", observed_status),
+        OperationErrorKind::InvalidInput => ("invalid-input", observed_status),
+        OperationErrorKind::InvalidResponse => ("invalid-response", observed_status),
+        OperationErrorKind::InvalidLink => ("invalid-link", observed_status),
+        OperationErrorKind::OperationFailed { .. } => ("operation-failed", observed_status),
+    };
+    json!({
+        "classification":classification,
+        "httpStatus":status,
+        "operationId":error.operation_id,
+        "requestMayHaveReachedService":error.mutation_may_have_occurred,
+        "remoteCancelled":false,
+        "remoteReplayed":false
+    })
 }
 
 fn run() -> Result<(), Failure> {
@@ -150,6 +198,8 @@ fn run() -> Result<(), Failure> {
         .first()
         .and_then(|value| value.to_str())
         .is_some_and(|value| value == "update" || value == "artifact")
+        && !(args.get(1).and_then(|value| value.to_str()) == Some("data-agent")
+            && args.get(2).and_then(|value| value.to_str()) == Some("get"))
     {
         return run_update(args);
     }
@@ -182,15 +232,7 @@ fn run() -> Result<(), Failure> {
         )
     })?;
     let prepared = PreparedGet::preflight(command, &cwd).map_err(command_failure)?;
-    let mode = std::env::var("FAB_RUST_AUTH_MODE").map_err(|_| {
-        failed(
-            "NotConfigured",
-            "Select an explicit FAB_RUST_AUTH_MODE; no credential chain is used.",
-            1,
-        )
-    })?;
-    let selection = headless::Selection::capture(&mode)
-        .map_err(|(code, message, exit)| failed(code, message, exit))?;
+    let selection = v2_credentials::Selection::capture()?;
     let endpoint = match std::env::var("FAB_RUST_FABRIC_HOST") {
         Ok(host) => EndpointBinding::with_host(ServiceOrigin::Fabric, &host).map_err(|_| {
             failed(
@@ -214,7 +256,11 @@ fn run() -> Result<(), Failure> {
         .build()
         .map_err(|_| failed("RuntimeFailed", "The get runtime could not be created.", 1))?;
     let result = runtime.block_on(async {
-        let session = NativeSession::new(selection, endpoint, timeout)?;
+        let remaining = timeout
+            .checked_sub(started.elapsed())
+            .filter(|value| !value.is_zero())
+            .ok_or_else(|| failed("TimedOut", "GET deadline elapsed before setup.", 1))?;
+        let session = NativeSession::new(selection, endpoint, remaining).await?;
         let executor = session.executor;
         let storage_client = OneLakeClient::new(
             session.context.credential().clone(),
@@ -286,8 +332,8 @@ struct NativeSession {
 }
 
 impl NativeSession {
-    fn new(
-        selection: headless::Selection,
+    async fn new(
+        selection: v2_credentials::Selection,
         endpoint: EndpointBinding,
         timeout: Duration,
     ) -> Result<Self, Failure> {
@@ -313,7 +359,7 @@ impl NativeSession {
             })?),
         };
         let fabric_selection =
-            CredentialSelection::new(&selection.account, &selection.tenant, Audience::Fabric)
+            CredentialSelection::new(selection.account(), selection.tenant(), Audience::Fabric)
                 .map_err(|_| {
                     failed(
                         "InvalidConfiguration",
@@ -322,7 +368,7 @@ impl NativeSession {
                     )
                 })?;
         let storage_selection =
-            CredentialSelection::new(&selection.account, &selection.tenant, Audience::OneLake)
+            CredentialSelection::new(selection.account(), selection.tenant(), Audience::OneLake)
                 .map_err(|_| {
                     failed(
                         "InvalidConfiguration",
@@ -330,10 +376,15 @@ impl NativeSession {
                         2,
                     )
                 })?;
-        let _explicit_provider_binding = (&selection.client, &selection.binding);
-        let credential = selection
-            .credential(identity_http)
-            .map_err(|(code, message, exit)| failed(code, message, exit))?;
+        let credential = tokio::select! {
+            result = selection.credential(identity_http) => result?,
+            () = tokio::time::sleep(timeout) => return Err(failed(
+                "TimedOut", "Read setup deadline elapsed; broker cleanup may still be pending.", 1
+            )),
+            _ = tokio::signal::ctrl_c() => return Err(failed(
+                "Cancelled", "Read setup cancelled; broker cleanup may still be pending.", 1
+            )),
+        };
         let service_http: Arc<dyn azure_core::http::HttpClient> =
             Arc::new(NativeHttpClient::new(transport).map_err(|_| {
                 failed(
@@ -435,4 +486,70 @@ fn run_update(args: Vec<std::ffi::OsString>) -> Result<(), Failure> {
         .deliver_plan(&mut io::stdout().lock())
         .map_err(|error| failed("OutputFailed", error.to_string(), 1))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #![deny(unnameable_test_items)]
+
+    use super::*;
+    use fabric_sdk::dataagents::{DataAgentError, ReadResponseError};
+    use fabric_sdk_operations::{OperationError, OperationErrorKind, OperationResponse};
+
+    #[test]
+    fn dataagent_root_error_receipts_preserve_status_and_handle_without_content() {
+        for response_limit in [false, true] {
+            let operation = OperationError {
+                kind: if response_limit {
+                    OperationErrorKind::Limit
+                } else {
+                    OperationErrorKind::Http {
+                        status: 403,
+                        code: Some("private-service-code".into()),
+                        error: None,
+                    }
+                },
+                operation_id: Some("11111111-1111-1111-1111-111111111111".into()),
+                mutation_may_have_occurred: true,
+                raw_service_error: Some(Box::new(json!({"private":"service-content"}))),
+            };
+            let source = if response_limit {
+                DataAgentError::Response(Box::new(ReadResponseError {
+                    error: operation,
+                    response: OperationResponse {
+                        status: 200,
+                        body: b"private-response-content".to_vec(),
+                        headers: [("private-header".into(), "private-value".into())].into(),
+                    },
+                }))
+            } else {
+                DataAgentError::Operation(operation)
+            };
+            let failure = command_failure(GetCommandError::Backend {
+                code: "DataAgentDefinitionFailed",
+                source: Box::new(source),
+            });
+            let mut output = Vec::new();
+            assert_eq!(finish(Err(failure), &mut output), 1);
+            let text = std::str::from_utf8(&output).unwrap();
+            assert!(!text.contains("private") && !text.contains("service-content"));
+            let receipt: Value = serde_json::from_slice(&output).unwrap();
+            let evidence = &receipt["evidence"];
+            assert_eq!(
+                evidence["httpStatus"],
+                if response_limit { 200 } else { 403 }
+            );
+            assert_eq!(
+                evidence["classification"],
+                if response_limit { "limit" } else { "http" }
+            );
+            assert_eq!(
+                evidence["operationId"],
+                "11111111-1111-1111-1111-111111111111"
+            );
+            assert_eq!(evidence["requestMayHaveReachedService"], true);
+            assert_eq!(evidence["remoteCancelled"], false);
+            assert_eq!(evidence["remoteReplayed"], false);
+        }
+    }
 }

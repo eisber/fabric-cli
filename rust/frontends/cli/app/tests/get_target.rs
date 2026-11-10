@@ -5,7 +5,7 @@
 
 #![deny(unnameable_test_items)]
 
-use fabric_cli::get_target::{GetPathError, GetRepresentation, GetTarget};
+use fabric_cli::get_target::{DataAgentStage, GetPathError, GetRepresentation, GetTarget};
 
 const WS: &str = "11111111-1111-1111-1111-111111111111";
 const ITEM: &str = "22222222-2222-2222-2222-222222222222";
@@ -80,6 +80,7 @@ fn invalid_paths_and_unadvertised_facets_do_not_become_metadata() {
     ] {
         assert!(GetTarget::parse(path).is_err(), "{path}");
     }
+
     for path in [
         "/Sales.Workspace/Item.Notebook/settings/secret",
         "/Sales.Workspace/Item.Notebook/src/context/topics/a",
@@ -91,5 +92,47 @@ fn invalid_paths_and_unadvertised_facets_do_not_become_metadata() {
             Err(GetPathError::UnsupportedRepresentation),
             "{path}"
         );
+    }
+}
+
+#[test]
+fn dataagent_stages_are_typed_explicit_and_never_inferred_from_machine_ids() {
+    let target =
+        GetTarget::parse("/Sales.Workspace/Agent.DataAgent/src/draft/stage_config.json").unwrap();
+    assert!(matches!(
+        target,
+        GetTarget::Item {
+            representation: GetRepresentation::DataAgentSource {
+                stage: DataAgentStage::Draft, part: Some(ref part)
+            }, ..
+        } if part == "stage_config.json"
+    ));
+    assert!(target.validate_stage(None).is_ok());
+    assert!(target.validate_stage(Some(DataAgentStage::Draft)).is_err());
+    let settings = GetTarget::parse("/Sales.Workspace/Agent.DataAgent/settings").unwrap();
+    assert!(settings.validate_stage(None).is_err());
+    assert!(
+        settings
+            .validate_stage(Some(DataAgentStage::Published))
+            .is_ok()
+    );
+    for suffix in [
+        "/settings",
+        "/datasources",
+        "/src/draft",
+        "/src/published/a.json",
+    ] {
+        for owner in [
+            format!("/workspaces/{WS}/items/{ITEM}"),
+            "/Sales.Workspace/Agent.Notebook".into(),
+        ] {
+            assert!(GetTarget::parse(&format!("{owner}{suffix}")).is_err());
+        }
+    }
+    for path in [
+        "/Sales.Workspace/Agent.DataAgent/src/staging",
+        "/Sales.Workspace/Agent.DataAgent/src/published/../draft/a",
+    ] {
+        assert!(GetTarget::parse(path).is_err());
     }
 }

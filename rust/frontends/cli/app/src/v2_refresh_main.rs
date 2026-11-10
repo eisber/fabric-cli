@@ -3,7 +3,7 @@
 
 //! Opt-in graph refresh reuses the explicit v2 head's identity/runtime/HTTP.
 
-use super::{Failure, NativeSession, failed, headless};
+use super::{Failure, NativeSession, failed, v2_credentials};
 use fabric_cli::refresh_command::{self, Policy};
 use fabric_cli_jobs::HttpJobExecutor;
 use fabric_sdk::{Client, EndpointBinding, ServiceOrigin, runtime::NativeDeadline};
@@ -63,15 +63,7 @@ pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
             .ok_or_else(|| failed("InvalidArguments", "Refresh timeout is required.", 2))?,
     )
     .map_err(|_| failed("InvalidArguments", "Invalid refresh deadline.", 2))?;
-    let mode = std::env::var("FAB_RUST_AUTH_MODE").map_err(|_| {
-        failed(
-            "NotConfigured",
-            "Select explicit FAB_RUST_AUTH_MODE; no credential fallback is used.",
-            1,
-        )
-    })?;
-    let selection = headless::Selection::capture(&mode)
-        .map_err(|(code, message, exit)| failed(code, message, exit))?;
+    let selection = v2_credentials::Selection::capture()?;
     let endpoint = match std::env::var("FAB_RUST_FABRIC_HOST") {
         Ok(host) => EndpointBinding::with_host(ServiceOrigin::Fabric, &host).map_err(|_| {
             failed(
@@ -99,7 +91,7 @@ pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
         let remaining = deadline
             .remaining()
             .map_err(|_| failed("TimedOut", "Refresh expired before dispatch.", 1))?;
-        let session = NativeSession::new(selection, endpoint, remaining)?;
+        let session = NativeSession::new(selection, endpoint, remaining).await?;
         let executor = Arc::new(HttpJobExecutor::new((*session.executor).clone()));
         let jobs = JobClient::with_context(
             session.context.clone(),

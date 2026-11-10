@@ -19,6 +19,7 @@
 //! The host checks cancellation/deadline again before synchronous delivery;
 //! delivery is a possibly-partial effect, not a cancellable atomic transaction.
 
+use crate::get_target::{DataAgentStage, GetTarget};
 use clap::{Arg, ArgAction, Command, error::ErrorKind};
 use fabric_cli_storage_files::{ExactOutputError, ExactOutputFile, ExactOutputReceipt};
 use futures_util::future::{Either, select};
@@ -73,6 +74,8 @@ pub struct GetLimits {
 /// Remote acquisition options, deliberately excluding presentation/projection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct GetAcquireOptions {
+    /// Required for DataAgent configuration; source stages are addressed in paths.
+    pub stage: Option<DataAgentStage>,
     /// Observe an advertised handle, including one returned by a single native
     /// read-effect acquisition; never replay acquisition in order to wait.
     pub wait: bool,
@@ -124,6 +127,8 @@ pub enum GetArgumentErrorKind {
     RawProjection,
     /// Depth has meaning only with explicit recursive traversal.
     DepthWithoutRecursive,
+    /// Missing, conflicting or inapplicable explicit DataAgent stage/owner selection.
+    InvalidStageTarget,
 }
 
 /// Build the isolated v2 GET schema without registering or executing it.
@@ -134,6 +139,13 @@ pub fn get_command() -> Command {
         .about("Experimental bounded GET over a caller-configured native backend")
         .after_help("Preview bounds: --max-bytes 1048576 and --timeout 30s. Omitted --format uses the resolved path default: Markdown for docs, JSON for metadata. Formats are path-advertised; metadata supports JSON only. Accepted/incomplete acquisitions can deliver only an unprojected native JSON receipt to stdout, never partial content or an output file. --output - selects stdout; filenames are exact and never overwritten. --project/-q takes one JMESPath expression and does not change acquisition. This schema does not replace the v1 command.")
         .arg(Arg::new("path").required(true).num_args(1))
+        .arg(
+            Arg::new("stage")
+                .long("stage")
+                .num_args(1)
+                .value_parser(["draft", "published"])
+                .help("Explicit DataAgent settings/datasources stage; draft uses native staging"),
+        )
         .arg(
             Arg::new("output")
                 .short('o')
@@ -197,7 +209,15 @@ pub fn get_command() -> Command {
 /// # Errors
 /// Returns sanitized syntax/semantic failures without performing any I/O.
 pub fn parse_get(args: impl IntoIterator<Item = OsString>) -> Result<GetCommand, GetArgumentError> {
+    let args: Vec<_> = args.into_iter().collect();
+    let facade = args.first().and_then(|value| value.to_str()) == Some("artifact");
     let mut args = args.into_iter();
+    if facade
+        && (args.next().as_deref() != Some(std::ffi::OsStr::new("artifact"))
+            || args.next().as_deref() != Some(std::ffi::OsStr::new("data-agent")))
+    {
+        return Err(argument_error(GetArgumentErrorKind::MissingCommand));
+    }
     if args.next().as_deref() != Some(std::ffi::OsStr::new("get")) {
         return Err(argument_error(GetArgumentErrorKind::MissingCommand));
     }
@@ -224,6 +244,13 @@ pub fn parse_get(args: impl IntoIterator<Item = OsString>) -> Result<GetCommand,
             }),
         project: matches.get_one::<String>("project").cloned(),
         options: GetAcquireOptions {
+            stage: matches.get_one::<String>("stage").map(|stage| {
+                if stage == "draft" {
+                    DataAgentStage::Draft
+                } else {
+                    DataAgentStage::Published
+                }
+            }),
             wait: matches.get_flag("wait"),
             recursive: matches.get_flag("recursive"),
             depth: matches.get_one::<u32>("depth").copied(),
@@ -238,6 +265,24 @@ pub fn parse_get(args: impl IntoIterator<Item = OsString>) -> Result<GetCommand,
         },
     };
     validate_command(&command)?;
+    if let Ok(GetTarget::Item {
+        item_type: Some(kind),
+        representation,
+        ..
+    }) = GetTarget::parse(&command.path)
+        && kind == "DataAgent"
+    {
+        crate::get_dataagent::validate_representation(&representation)
+            .map_err(|_| argument_error(GetArgumentErrorKind::InvalidStageTarget))?;
+    }
+    if facade
+        && !matches!(
+            GetTarget::parse(&command.path),
+            Ok(GetTarget::Item { item_type: Some(kind), .. }) if kind == "DataAgent"
+        )
+    {
+        return Err(argument_error(GetArgumentErrorKind::InvalidStageTarget));
+    }
     Ok(command)
 }
 
@@ -256,6 +301,11 @@ fn validate_command(command: &GetCommand) -> Result<(), GetArgumentError> {
         Some(GetArgumentErrorKind::RawProjection)
     } else if command.options.depth.is_some() && !command.options.recursive {
         Some(GetArgumentErrorKind::DepthWithoutRecursive)
+    } else if GetTarget::parse(&command.path)
+        .is_ok_and(|target| target.validate_stage(command.options.stage).is_err())
+        || (command.options.stage.is_some() && GetTarget::parse(&command.path).is_err())
+    {
+        Some(GetArgumentErrorKind::InvalidStageTarget)
     } else {
         None
     };
@@ -369,6 +419,20 @@ pub trait GetBackend: Send + Sync {
         path: &'a str,
         limits: GetLimits,
     ) -> GetFuture<'a, ResolvedGet<Self::Target>>;
+
+    /// Resolve stage-aware capabilities without changing existing backend contracts.
+    fn resolve_with_options<'a>(
+        &'a self,
+        path: &'a str,
+        options: GetAcquireOptions,
+    ) -> GetFuture<'a, ResolvedGet<Self::Target>> {
+        if options.stage.is_some() {
+            return Box::pin(async {
+                Err(argument_error(GetArgumentErrorKind::InvalidStageTarget).into())
+            });
+        }
+        self.resolve(path, options.limits)
+    }
 
     /// Retrieve complete bounded content for the already validated target.
     ///
@@ -573,7 +637,7 @@ impl PreparedGet {
             backend.validate_projection(expression)?;
         }
         let resolved = backend
-            .resolve(&command.path, command.options.limits)
+            .resolve_with_options(&command.path, command.options)
             .await?;
         let mut format = validate_resolved(&command, &resolved)?;
         let mut payload = backend.retrieve(&resolved, command.options).await?;
