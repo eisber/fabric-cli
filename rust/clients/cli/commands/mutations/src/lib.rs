@@ -23,6 +23,7 @@ mod template_enumeration;
 mod templates;
 pub mod v2_create;
 pub mod v2_link;
+pub mod v2_stop;
 pub mod v2_update;
 
 use fabric_cli_context::{Element, NodeKind};
