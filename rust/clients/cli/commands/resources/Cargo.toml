@@ -2,13 +2,13 @@
 # Licensed under the MIT License.
 
 [package]
-name = "fabric-cli-resources"
+name = "fabric-cli-mutations"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Injected ACL, label and catalog command consumers"
+description = "Source-pinned resource mutation command handlers"
 
 [package.metadata.fabric]
 layer = "cli"
@@ -16,17 +16,21 @@ layer = "cli"
 [dependencies]
 azure_core.workspace = true
 clap.workspace = true
+fabric-cli-context.workspace = true
 fabric-cli-output.workspace = true
 fabric-cli-query.workspace = true
-fabric-cli-context.workspace = true
-fabric-sdk-api.workspace = true
-fabric-sdk-access.workspace = true
-fabric-sdk-catalog.workspace = true
+fabric-sdk-workspaces.workspace = true
+fabric-sdk-items.workspace = true
+fabric-sdk-folders.workspace = true
 fabric-sdk-http.workspace = true
+fabric-sdk-operations.workspace = true
+fabric-sdk-onelake.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
+jpx-core.workspace = true
+base64.workspace = true
 
 [dev-dependencies]
+fabric-sdk-onelake-http.workspace = true
 async-trait.workspace = true
 tokio.workspace = true
 

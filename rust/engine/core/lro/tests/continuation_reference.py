@@ -18,7 +18,7 @@ from urllib.parse import urlencode,urlparse
 sys.path.insert(
     0,
     str(
-        Path(__file__).resolve().parents[4] / "clients" / "cli" / "commands" / "mutations" / "tests"
+        Path(__file__).resolve().parents[4] / "clients" / "cli" / "commands" / "resources" / "tests"
     ),
 )
 from error_reference import constants,selected

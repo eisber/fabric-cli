@@ -820,10 +820,97 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-cli-access"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fabric-cli-command-contracts",
+ "fabric-cli-context",
+ "fabric-cli-query",
+ "fabric-sdk-access",
+ "fabric-sdk-api",
+ "serde_json",
+]
+
+[[package]]
+name = "fabric-cli-api"
+version = "0.1.0"
+dependencies = [
+ "azure_core",
+ "clap",
+ "fabric-cli-command-contracts",
+ "fabric-cli-query",
+ "fabric-sdk-api",
+ "serde_json",
+]
+
+[[package]]
+name = "fabric-cli-catalog"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fabric-cli-command-contracts",
+ "fabric-cli-query",
+ "fabric-sdk-api",
+ "fabric-sdk-catalog",
+ "serde_json",
+]
+
+[[package]]
+name = "fabric-cli-command-contracts"
+version = "0.1.0"
+dependencies = [
+ "azure_core",
+ "clap",
+ "fabric-cli-output",
+ "fabric-sdk-api",
+ "fabric-sdk-http",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "fabric-cli-context"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+]
+
+[[package]]
+name = "fabric-cli-export"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fabric-cli-context",
+ "fabric-cli-import-export-contracts",
+ "fabric-cli-output",
+ "fabric-deploy",
+ "fabric-sdk-operations",
+ "serde_json",
+]
+
+[[package]]
+name = "fabric-cli-import"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fabric-cli-context",
+ "fabric-cli-import-export-contracts",
+ "fabric-cli-output",
+ "fabric-deploy",
+ "fabric-sdk-operations",
+]
+
+[[package]]
+name = "fabric-cli-import-export-contracts"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fabric-cli-context",
+ "fabric-cli-output",
+ "fabric-deploy",
+ "fabric-sdk",
+ "fabric-sdk-operations",
 ]
 
 [[package]]
@@ -917,15 +1004,17 @@ dependencies = [
  "async-trait",
  "azure_core",
  "clap",
+ "fabric-cli-access",
+ "fabric-cli-api",
+ "fabric-cli-catalog",
+ "fabric-cli-command-contracts",
  "fabric-cli-context",
  "fabric-cli-output",
- "fabric-cli-query",
  "fabric-sdk-access",
  "fabric-sdk-api",
  "fabric-sdk-catalog",
  "fabric-sdk-http",
  "serde_json",
- "thiserror",
  "tokio",
 ]
 
@@ -977,6 +1066,9 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "fabric-cli-context",
+ "fabric-cli-export",
+ "fabric-cli-import",
+ "fabric-cli-import-export-contracts",
  "fabric-cli-mutations",
  "fabric-cli-output",
  "fabric-deploy",
@@ -1074,12 +1166,12 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "azure_core",
- "base64 0.22.1",
  "fabric-core",
  "fabric-sdk-capacities",
  "fabric-sdk-folders",
  "fabric-sdk-items",
- "fabric-sdk-operations",
+ "fabric-sdk-notebooks",
+ "fabric-sdk-resource-contracts",
  "fabric-sdk-workspaces",
  "serde",
  "serde_json",
@@ -1193,6 +1285,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-sdk-notebooks"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "azure_core",
+ "base64 0.22.1",
+ "fabric-core",
+ "fabric-sdk-operations",
+ "fabric-sdk-resource-contracts",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "fabric-sdk-onelake"
 version = "0.1.0"
 dependencies = [
@@ -1225,6 +1332,7 @@ dependencies = [
  "async-trait",
  "azure_core",
  "fabric-core",
+ "fabric-sdk-resource-contracts",
  "fabric-sdk-workspaces",
  "serde_json",
  "tokio",
@@ -1238,6 +1346,15 @@ dependencies = [
  "fabric-sdk-workspaces",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "fabric-sdk-resource-contracts"
+version = "0.1.0"
+dependencies = [
+ "azure_core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1293,6 +1410,7 @@ dependencies = [
  "async-trait",
  "azure_core",
  "fabric-core",
+ "fabric-sdk-resource-contracts",
  "serde",
  "serde_json",
  "tokio",

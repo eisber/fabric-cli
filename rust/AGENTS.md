@@ -101,6 +101,18 @@ discovers manifests recursively under both roots and rejects unregistered
 packages and obsolete production roots. Physical grouping does not change
 architectural layers or permit new dependency edges. Authentication providers
 remain optional companion packages; SDK service clients still inject credentials.
+Use role-named source modules (`parser`, `host`, `client`, `models`) for comparable
+responsibilities. Item-definition import and export commands live under
+`clients/cli/commands/import/` and `clients/cli/commands/export/`; bulk-export
+belongs to the export owner. Shared CLI contracts are beside commands at
+`clients/cli/contracts/`, with independent import/export interfaces in its
+`import-export/` package. The original `fabric-cli-transfer` API is only compatibility
+composition at `clients/cli/compatibility/import-export/`. OneLake files and tables live under
+`clients/cli/commands/onelake/`. Original public names may be compatibility
+reexports; do not move implementations back into those namespaces. Notebook
+service ownership is `engine/control-plane/resources/items/notebooks/`, while
+service-neutral resource contracts belong to the separate `resources/contracts/`
+package. Neither depends on the convenience SDK facade.
 Declare each crate's
 `package.metadata.fabric.layer` and add safe crates to `default-members` as
 described in the architecture guide. The owner-approved optional

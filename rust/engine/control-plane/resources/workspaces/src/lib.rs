@@ -7,11 +7,16 @@
 //! credentials, execution, and cancellation. No production transport, retry/LRO
 //! policy, ambient credential lookup, or async runtime is installed.
 
+pub mod client;
 pub mod metadata;
 pub mod models;
 pub mod mutations;
-pub mod workspaces;
+pub use client as workspaces;
 
+pub use client::{
+    WorkspaceExecutionError, WorkspaceExecutor, WorkspaceList, WorkspaceListError,
+    WorkspaceListErrorKind, WorkspaceListLimits, WorkspaceRequest, WorkspaceResponse,
+};
 pub use fabric_core::{CredentialSelection, RequestContext, TokenCredential};
 pub use metadata::{
     WorkspaceEnrichmentOutcome, WorkspaceMetadata, WorkspaceMetadataError,
@@ -19,10 +24,6 @@ pub use metadata::{
 };
 pub use models::{FabricServiceError, Page, Workspace};
 use std::{fmt, sync::Arc};
-pub use workspaces::{
-    WorkspaceExecutionError, WorkspaceExecutor, WorkspaceList, WorkspaceListError,
-    WorkspaceListErrorKind, WorkspaceListLimits, WorkspaceRequest, WorkspaceResponse,
-};
 
 /// A workspace service client with explicitly injected credentials.
 ///

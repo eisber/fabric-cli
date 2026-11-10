@@ -8,8 +8,6 @@ use jpx_core::functions::{
 use jpx_core::{Context, JmespathError, Runtime, ValueExt};
 use serde_json::{Number, Value};
 
-use crate::scalar;
-
 fn unsupported(ctx: &Context<'_>) -> JmespathError {
     custom_error(
         ctx,
@@ -263,7 +261,7 @@ pub(crate) fn runtime(numeric_sensitive: bool) -> Runtime {
             Box::new(|args, _| {
                 Ok(match &args[0] {
                     Value::String(_) => args[0].clone(),
-                    value => Value::String(scalar::json(value)),
+                    value => Value::String(crate::python_value_format::encode_json(value)),
                 })
             }),
         )),

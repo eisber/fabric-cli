@@ -5,6 +5,10 @@
 `fabric-cli-query` evaluates JMESPath expressions over ordered JSON values.
 Deployment JSONPath mutation is a separate API.
 
+`src/python_value_format.rs` implements Python-compatible numeric text and
+recursive JSON string encoding used by query conversion functions. It is not
+limited to scalar values; evaluation and function registration live separately.
+
 ```rust
 use fabric_cli_query::{project, search};
 use serde_json::json;

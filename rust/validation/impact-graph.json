@@ -148,10 +148,18 @@
       "checks": ["certificate", "combined"]
     },
     {
+      "id": "resource-contracts",
+      "package": "fabric-sdk-resource-contracts",
+      "inputs": ["rust/engine/control-plane/resources/contracts/src/**"],
+      "depends_on": [],
+      "tests": [{"package": "fabric-sdk-resource-contracts", "target": "lib"}],
+      "checks": ["resource-oracle"]
+    },
+    {
       "id": "sdk-workspaces",
       "package": "fabric-sdk-workspaces",
       "inputs": ["rust/engine/control-plane/resources/workspaces/src/**", "rust/tests/compatibility/workspaces/cases.json", "rust/tests/compatibility/workspace_get/*.json"],
-      "depends_on": ["core"],
+      "depends_on": ["core", "resource-contracts"],
       "tests": [
         {"package": "fabric-sdk-workspaces", "target": "lib"},
         {"package": "fabric-sdk-workspaces", "target": "test:continuation_query"},
@@ -167,6 +175,7 @@
       "depends_on": ["core", "sdk-workspaces"],
       "tests": [
         {"package": "fabric-sdk-items", "target": "lib"},
+        {"package": "fabric-sdk-items", "target": "test:mirroring"},
         {"package": "fabric-sdk-items", "target": "test:standalone"}
       ],
       "checks": ["read-parity", "resource-oracle"]
@@ -197,7 +206,7 @@
       "id": "operations",
       "package": "fabric-sdk-operations",
       "inputs": ["rust/engine/core/lro/src/**"],
-      "depends_on": ["core", "sdk-workspaces"],
+      "depends_on": ["core", "resource-contracts", "sdk-workspaces"],
       "tests": [
         {"package": "fabric-sdk-operations", "target": "lib"},
         {"package": "fabric-sdk-operations", "target": "test:endpoint_context"},
@@ -207,12 +216,24 @@
       "checks": ["resource-oracle"]
     },
     {
+      "id": "sdk-notebooks",
+      "package": "fabric-sdk-notebooks",
+      "inputs": ["rust/engine/control-plane/resources/items/notebooks/src/**"],
+      "depends_on": ["core", "resource-contracts", "operations"],
+      "tests": [
+        {"package": "fabric-sdk-notebooks", "target": "lib"},
+        {"package": "fabric-sdk-notebooks", "target": "test:definitions"}
+      ],
+      "checks": ["sdk-example", "sdk-graph"]
+    },
+    {
       "id": "sdk",
       "package": "fabric-sdk",
       "inputs": ["rust/engine/sdk/src/**"],
-      "depends_on": ["core", "sdk-workspaces", "sdk-items", "sdk-folders", "sdk-capacities", "operations"],
+      "depends_on": ["core", "resource-contracts", "sdk-workspaces", "sdk-items", "sdk-folders", "sdk-capacities", "sdk-notebooks"],
       "tests": [
         {"package": "fabric-sdk", "target": "lib"},
+        {"package": "fabric-sdk", "target": "test:focused_api_compatibility"},
         {"package": "fabric-sdk", "target": "test:workspace_facade"},
         {"package": "fabric-sdk", "target": "test:item_facade"},
         {"package": "fabric-sdk", "target": "test:folder_facade"},
@@ -280,12 +301,46 @@
       "checks": ["resource-oracle"]
     },
     {
+      "id": "cli-command-contracts",
+      "package": "fabric-cli-command-contracts",
+      "inputs": ["rust/clients/cli/contracts/src/**"],
+      "depends_on": ["output", "sdk-api", "http"],
+      "tests": [{"package": "fabric-cli-command-contracts", "target": "lib"}],
+      "checks": ["resource-oracle"]
+    },
+    {
+      "id": "cli-access",
+      "package": "fabric-cli-access",
+      "inputs": ["rust/clients/cli/commands/access/src/**"],
+      "depends_on": ["cli-command-contracts", "context", "query", "sdk-access", "sdk-api"],
+      "tests": [{"package": "fabric-cli-access", "target": "lib"}],
+      "checks": ["resource-oracle"]
+    },
+    {
+      "id": "cli-catalog",
+      "package": "fabric-cli-catalog",
+      "inputs": ["rust/clients/cli/commands/catalog/src/**"],
+      "depends_on": ["cli-command-contracts", "query", "sdk-api", "sdk-catalog"],
+      "tests": [{"package": "fabric-cli-catalog", "target": "lib"}],
+      "checks": ["resource-oracle"]
+    },
+    {
+      "id": "cli-api",
+      "package": "fabric-cli-api",
+      "inputs": ["rust/clients/cli/commands/api/src/**"],
+      "depends_on": ["cli-command-contracts", "query", "sdk-api"],
+      "tests": [{"package": "fabric-cli-api", "target": "lib"}],
+      "checks": ["resource-oracle"]
+    },
+    {
       "id": "resources",
       "package": "fabric-cli-resources",
-      "inputs": ["rust/clients/cli/commands/resources/src/**"],
-      "depends_on": ["context", "output", "query", "sdk-api", "sdk-access", "sdk-catalog", "http"],
+      "inputs": ["rust/clients/cli/compatibility/resource-commands/src/**"],
+      "depends_on": ["cli-access", "cli-catalog", "cli-api", "cli-command-contracts", "context", "output", "sdk-api", "sdk-access", "sdk-catalog", "http"],
       "tests": [
         {"package": "fabric-cli-resources", "target": "lib"},
+        {"package": "fabric-cli-resources", "target": "test:extraction_identity"},
+        {"package": "fabric-cli-resources", "target": "test:focused_parsers"},
         {"package": "fabric-cli-resources", "target": "test:access_contract"}
       ],
       "checks": ["resource-oracle"]
@@ -316,26 +371,31 @@
       "id": "mutations",
       "package": "fabric-cli-mutations",
       "inputs": [
-        "rust/clients/cli/commands/mutations/src/lib.rs",
-        "rust/clients/cli/commands/mutations/src/create.rs",
-        "rust/clients/cli/commands/mutations/src/errors.rs",
-        "rust/clients/cli/commands/mutations/src/execution.rs",
-        "rust/clients/cli/commands/mutations/src/frontdoor/**",
-        "rust/clients/cli/commands/mutations/src/lifecycle.rs",
-        "rust/clients/cli/commands/mutations/src/moves.rs",
-        "rust/clients/cli/commands/mutations/src/onelake_read.rs",
-        "rust/clients/cli/commands/mutations/src/onelake_write.rs",
-        "rust/clients/cli/commands/mutations/src/removal.rs",
-        "rust/clients/cli/commands/mutations/src/shortcuts.rs",
-        "rust/clients/cli/commands/mutations/src/sql_database.rs",
-        "rust/clients/cli/commands/mutations/src/template_enumeration.rs",
-        "rust/clients/cli/commands/mutations/src/templates.rs",
-        "rust/clients/cli/commands/mutations/templates/**",
-        "rust/clients/cli/commands/mutations/tests/fallible_ui/**"
+        "rust/clients/cli/commands/resources/src/lib.rs",
+        "rust/clients/cli/commands/resources/src/create.rs",
+        "rust/clients/cli/commands/resources/src/errors.rs",
+        "rust/clients/cli/commands/resources/src/execution.rs",
+        "rust/clients/cli/commands/resources/src/compatibility.rs",
+        "rust/clients/cli/commands/resources/src/creation_parameters.rs",
+        "rust/clients/cli/commands/resources/src/host.rs",
+        "rust/clients/cli/commands/resources/src/parser.rs",
+        "rust/clients/cli/commands/resources/src/resource_transfer.rs",
+        "rust/clients/cli/commands/resources/src/lifecycle.rs",
+        "rust/clients/cli/commands/resources/src/moves.rs",
+        "rust/clients/cli/commands/resources/src/onelake_read.rs",
+        "rust/clients/cli/commands/resources/src/onelake_write.rs",
+        "rust/clients/cli/commands/resources/src/removal.rs",
+        "rust/clients/cli/commands/resources/src/shortcuts.rs",
+        "rust/clients/cli/commands/resources/src/sql_database.rs",
+        "rust/clients/cli/commands/resources/src/template_enumeration.rs",
+        "rust/clients/cli/commands/resources/src/templates.rs",
+        "rust/clients/cli/commands/resources/templates/**",
+        "rust/clients/cli/commands/resources/tests/fallible_ui/**"
       ],
       "depends_on": ["context", "output", "query", "sdk-workspaces", "sdk-items", "sdk-folders", "http", "operations", "onelake", "onelake-http"],
       "tests": [
         {"package": "fabric-cli-mutations", "target": "lib"},
+        {"package": "fabric-cli-mutations", "target": "test:module_compatibility"},
         {"package": "fabric-cli-mutations", "target": "test:consumer"},
         {"package": "fabric-cli-mutations", "target": "test:copy_preflight"},
         {"package": "fabric-cli-mutations", "target": "test:fallible_ui"},
@@ -352,7 +412,7 @@
     {
       "id": "resource-set",
       "package": "fabric-cli-mutations",
-      "inputs": ["rust/clients/cli/commands/mutations/src/set.rs"],
+      "inputs": ["rust/clients/cli/commands/resources/src/set.rs"],
       "depends_on": ["mutations"],
       "tests": [
         {"package": "fabric-cli-mutations", "target": "lib"},
@@ -366,7 +426,7 @@
     {
       "id": "storage-files",
       "package": "fabric-cli-storage-files",
-      "inputs": ["rust/clients/cli/commands/storage/src/**"],
+      "inputs": ["rust/clients/cli/commands/onelake/files/src/**"],
       "depends_on": ["context", "output", "mutations", "onelake", "onelake-http", "http", "sdk-workspaces"],
       "tests": [
         {"package": "fabric-cli-storage-files", "target": "lib"},
@@ -411,7 +471,7 @@
     {
       "id": "sdk-tables",
       "package": "fabric-sdk-tables",
-      "inputs": ["rust/engine/data-plane/tables/src/**", "rust/tests/compatibility/tables/*.json"],
+      "inputs": ["rust/engine/data-plane/onelake/tables/src/**", "rust/tests/compatibility/tables/*.json"],
       "depends_on": ["core", "json", "sdk-jobs", "operations", "onelake", "http", "onelake-http"],
       "tests": [
         {"package": "fabric-sdk-tables", "target": "lib"},
@@ -424,7 +484,7 @@
     {
       "id": "tables",
       "package": "fabric-cli-tables",
-      "inputs": ["rust/clients/cli/commands/tables/src/**"],
+      "inputs": ["rust/clients/cli/commands/onelake/tables/src/**"],
       "depends_on": ["context", "output", "mutations", "sdk-tables", "http", "operations", "sdk-workspaces", "onelake", "onelake-http", "sdk-jobs"],
       "tests": [
         {"package": "fabric-cli-tables", "target": "lib"},
@@ -568,13 +628,38 @@
       "checks": ["definitions-oracle", "import-oracle", "export-oracle"]
     },
     {
+      "id": "cli-import-export-contracts",
+      "package": "fabric-cli-import-export-contracts",
+      "inputs": ["rust/clients/cli/contracts/import-export/src/**"],
+      "depends_on": ["context", "output", "definitions", "deploy-notebook", "sdk", "operations"],
+      "tests": [{"package": "fabric-cli-import-export-contracts", "target": "lib"}],
+      "checks": ["import-oracle", "export-oracle"]
+    },
+    {
+      "id": "cli-export",
+      "package": "fabric-cli-export",
+      "inputs": ["rust/clients/cli/commands/export/src/**"],
+      "depends_on": ["cli-import-export-contracts", "context", "output", "definitions", "operations"],
+      "tests": [{"package": "fabric-cli-export", "target": "lib"}],
+      "checks": ["export-oracle"]
+    },
+    {
+      "id": "cli-import",
+      "package": "fabric-cli-import",
+      "inputs": ["rust/clients/cli/commands/import/src/**"],
+      "depends_on": ["cli-import-export-contracts", "context", "output", "definitions", "deploy-spark-environment", "operations"],
+      "tests": [{"package": "fabric-cli-import", "target": "lib"}],
+      "checks": ["import-oracle"]
+    },
+    {
       "id": "transfer",
       "package": "fabric-cli-transfer",
-      "inputs": ["rust/clients/cli/commands/transfer/src/**", "rust/clients/cli/commands/transfer/tests/source_receipt.json"],
-      "depends_on": ["context", "output", "mutations", "definitions", "deploy-notebook", "deploy-spark-environment", "sdk", "operations", "http", "sdk-workspaces"],
+      "inputs": ["rust/clients/cli/compatibility/import-export/src/**", "rust/clients/cli/compatibility/import-export/tests/source_receipt.json"],
+      "depends_on": ["cli-import", "cli-export", "cli-import-export-contracts", "context", "output", "mutations", "definitions", "deploy-notebook", "deploy-spark-environment", "sdk", "operations", "http", "sdk-workspaces"],
       "tests": [
         {"package": "fabric-cli-transfer", "target": "lib"},
-        {"package": "fabric-cli-transfer", "target": "test:commands"}
+        {"package": "fabric-cli-transfer", "target": "test:commands"},
+        {"package": "fabric-cli-transfer", "target": "test:extraction_identity"}
       ],
       "checks": ["import-oracle", "export-oracle"]
     },
@@ -736,7 +821,7 @@
     {
       "id": "updater",
       "package": "fabric-cli-update",
-      "inputs": ["rust/clients/cli/update/src/**", "rust/clients/cli/update/tests/fixtures/**"],
+      "inputs": ["rust/clients/cli/self-updater/src/**", "rust/clients/cli/self-updater/tests/fixtures/**"],
       "depends_on": [],
       "tests": [
         {"package": "fabric-cli-update", "target": "lib"},
@@ -871,7 +956,8 @@
         "onelake", "onelake-http", "mutations", "resource-set", "storage-files",
         "sdk-jobs", "jobs", "sdk-tables", "tables", "local",
         "deploy-shared", "deploy-workflow", "deploy-notebook", "deploy-spark-environment",
-        "definitions", "transfer", "cli-deployment", "cli-get", "cli-reads", "cli-resources",
+        "definitions", "cli-import-export-contracts", "cli-import", "cli-export",
+        "transfer", "cli-deployment", "cli-get", "cli-reads", "cli-resources",
         "cli-jobs", "cli-tables", "cli-local", "repl", "cli-repl", "updater",
         "cli-updater", "cli-auth", "cli-headless", "cli-native-shared", "cli-shared-test-helpers"
       ],
@@ -1112,9 +1198,9 @@
     },
     {
       "id": "import-oracle",
-      "packages": ["fabric-cli", "fabric-cli-transfer", "fabric-deploy"],
-      "components": ["definitions", "transfer", "cli-deployment", "deploy-spark-environment"],
-      "inputs": ["rust/engine/control-plane/deployment/tests/definition_import*_reference.py", "rust/engine/control-plane/deployment/tests/definition_import_reference_checks.py", "rust/clients/cli/commands/transfer/tests/source_reference.py", "rust/clients/cli/commands/transfer/tests/test_source_reference.py"],
+      "packages": ["fabric-cli", "fabric-cli-import", "fabric-cli-import-export-contracts", "fabric-cli-transfer", "fabric-deploy"],
+      "components": ["definitions", "cli-import", "cli-import-export-contracts", "transfer", "cli-deployment", "deploy-spark-environment"],
+      "inputs": ["rust/engine/control-plane/deployment/tests/definition_import*_reference.py", "rust/engine/control-plane/deployment/tests/definition_import_reference_checks.py", "rust/clients/cli/compatibility/import-export/tests/source_reference.py", "rust/clients/cli/compatibility/import-export/tests/test_source_reference.py"],
       "platforms": ["windows", "linux", "macos"],
       "depends_on": ["oracle-tools", "frozen-verify"]
     },
@@ -1143,8 +1229,8 @@
     },
     {
       "id": "export-oracle",
-      "packages": ["fabric-cli", "fabric-cli-transfer", "fabric-deploy"],
-      "components": ["definitions", "transfer", "cli-deployment"],
+      "packages": ["fabric-cli", "fabric-cli-export", "fabric-cli-import-export-contracts", "fabric-cli-transfer", "fabric-deploy"],
+      "components": ["definitions", "cli-export", "cli-import-export-contracts", "transfer", "cli-deployment"],
       "inputs": ["rust/tests/compatibility/run_export_source_parity.py", "rust/engine/control-plane/deployment/tests/definition_export*_reference.py", "rust/engine/control-plane/deployment/tests/definition_transfer_input_reference.py"],
       "platforms": ["windows", "linux", "macos"],
       "depends_on": ["oracle-tools", "frozen-verify"]

@@ -6,6 +6,15 @@
 collection-specific metadata reads. The facade forwards the same operations
 and credential selection.
 
+## Source ownership
+
+`src/client.rs` implements generic reads; `src/models.rs` owns item wire models.
+`src/mutations.rs` describes generic create/update/delete requests.
+`src/mirroring.rs` owns MirroredDatabase status/start/stop actions; the original
+`ItemMutations` methods forward there without changing routes or completion
+policy. [`notebooks/`](notebooks/README.md) is a separately registered focused
+Notebook service package, not a module inside the generic item client.
+
 | API | Route or representation |
 | --- | --- |
 | `list_items` | Workspace `/items` collection |

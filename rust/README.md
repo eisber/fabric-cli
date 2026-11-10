@@ -32,14 +32,14 @@ manifest, source, tests, examples and assets:
 engine/
   sdk/             Reusable convenience SDK entry point
   control-plane/
-    resources/     capacities/, workspaces/, folders/ and items/
+    resources/     contracts/, capacities/, workspaces/, folders/ and items/
+      items/       Generic item client, with focused notebooks/ package
     jobs/          Job APIs and schedules
     acl/           Access APIs
     catalog/       Metadata discovery
     deployment/    Reusable deployment workflows
   data-plane/
-    tables/        Lakehouse/Delta table capabilities
-    onelake/       client/ models and http/ adapter
+    onelake/       client/, http/ adapter and tables/ workflows
   core/
     contracts/     Endpoint and credential contracts
     json/          Shared ordered JSON encoding
@@ -49,13 +49,26 @@ engine/
     lro/           Long-running-operation lifecycle
 clients/cli/
   app/             fab-rs executable and central composition
-  commands/        resources/, mutations/, jobs/, storage/,
-                   tables/, local/ and transfer/ adapters
+  contracts/       Shared CLI values, errors and injected adapters
+    import-export/ Shared import/export interfaces and file-policy adapters
+  commands/
+    resources/    Create, update, remove and resource lifecycle commands
+    import/        Item-definition import and Environment publication
+    export/        Item-definition export and bulk-export
+    access/        ACL and label commands
+    catalog/       Find and hidden-resource discovery
+    api/           Explicit raw API commands
+    onelake/       files/ and tables/ commands (separate packages)
+    jobs/          Job execution and scheduling
+    local/         Local settings and navigation
+  compatibility/
+    resource-commands/ Original aggregate's public APIs and adapters
+    import-export/ Original fabric-cli-transfer APIs and delegation
   state/           Path resolution and command context
   query/           CLI query projection
   output/          Presentation and streams
   repl/            Optional terminal editor and shell loop
-  update/          Pinned-trust release verification and updates
+  self-updater/    Pinned-trust executable verification and replacement
 authoring-docs/     Architecture, migration, compatibility and validation guides
 ```
 
@@ -70,10 +83,36 @@ front-ends are not implemented by this layout.
 
 Control/data-plane groups describe capability ownership, not every network
 request: table capabilities also orchestrate load and maintenance jobs.
-`engine/sdk/` retains existing item-type implementations and is not a complete
-umbrella for every capability. Focused crates remain directly usable.
+`engine/sdk/` is a convenience facade, not the owner of Notebook service
+implementation or a complete umbrella for every capability. Focused crates
+remain directly usable.
 See [architecture](authoring-docs/architecture.md#physical-organization) for directory
 responsibilities and unchanged dependency-layer rules.
+
+## Find the owner
+
+Start with the capability, then its role. `parser.rs` handles argument schemas
+and typed conversion, `host.rs` composes injected execution, `client.rs` implements
+service calls, and `models.rs` defines wire/data contracts. Operation-named files
+such as `import.rs` and `export.rs` own those workflows. Not every package needs
+every role or another directory.
+
+`app/` means the executable application: process startup, root command dispatch,
+runtime/authentication composition and user-owned streams. It does not mean a
+second service SDK. `compatibility` preserves older Rust imports, not a second
+implementation or an implied API version. Cargo package names intentionally stay
+stable when their physical directories change.
+
+Resource definitions describe Fabric items; OneLake files/tables contain data.
+`commands/import/` and `commands/export/` own the corresponding definition
+workflows, not general table-data import/export. Their shared interfaces are in
+`contracts/import-export/`; neither command depends on the other or the legacy
+`compatibility/import-export/` adapter. That adapter preserves the original
+`fabric-cli-transfer` host, parser composition and error rendering.
+Their import/export or copy semantics are different, so they do not share a
+generic transfer directory. Table loading can call Fabric Lakehouse REST while
+remaining a data workflow. This layout adds no new command or data import/export
+capability.
 
 | Component | Responsibility |
 | --- | --- |
@@ -83,7 +122,7 @@ responsibilities and unchanged dependency-layer rules.
 | [Deployment](engine/control-plane/deployment/README.md) | Configuration, parameters, repository planning, item publication and orphan removal |
 | [CLI](clients/cli/app/README.md) | Argument parsing, command sessions and native host composition |
 | [Interactive shell](clients/cli/repl/README.md) | Optional terminal editor and shell loop, independent of SDK and command implementations |
-| [Release updates](clients/cli/update/README.md) | Explicit release trust, bounded downloads and installation-custody checks |
+| [Release updates](clients/cli/self-updater/README.md) | Explicit release trust, bounded downloads and installation-custody checks |
 | [Path context](clients/cli/state/README.md) | Immutable hierarchy, path resolution and command context |
 | [Output](clients/cli/output/README.md) | Structured envelopes, text presentation and stream handling |
 | [Workflow skills](skills/README.md) | Boundaries for workflows that compose CLI commands |

@@ -12,7 +12,10 @@ pub mod capacities;
 pub mod folders;
 pub mod items;
 pub mod models;
-pub mod notebooks;
+/// Compatibility namespace for the focused Notebook service package.
+pub mod notebooks {
+    pub use fabric_sdk_notebooks::*;
+}
 pub mod workspaces;
 
 pub use fabric_core::{
@@ -20,55 +23,8 @@ pub use fabric_core::{
     TokenCredential,
 };
 pub use fabric_sdk_workspaces::Page;
-use std::{fmt, sync::Arc};
-
-/// A service client boundary with explicitly injected credentials.
-///
-/// The provider must be configured for the selected account and tenant.
-/// Selection metadata does not validate token claims or bind a provider to a tenant.
-#[derive(Clone)]
-pub struct Client {
-    context: RequestContext,
-}
-
-impl Client {
-    /// Stores a caller-provided credential and selection without performing I/O.
-    pub fn new(credential: Arc<dyn TokenCredential>, selection: CredentialSelection) -> Self {
-        Self::with_context(RequestContext::new(credential, selection))
-    }
-
-    /// Uses explicit request configuration for context-enabled service methods.
-    ///
-    /// Workspace, item, folder and capacity reads share this binding. Other
-    /// facade families retain public defaults until their separate migration.
-    pub fn with_context(context: RequestContext) -> Self {
-        Self { context }
-    }
-
-    /// Returns the immutable caller-owned request configuration.
-    pub fn context(&self) -> &RequestContext {
-        &self.context
-    }
-
-    /// Returns the injected provider; token acquisition remains explicitly caller-driven.
-    pub fn credential(&self) -> &Arc<dyn TokenCredential> {
-        self.context.credential()
-    }
-
-    /// Returns the explicit selection, without probing the identity provider.
-    pub fn selection(&self) -> &CredentialSelection {
-        self.context.selection()
-    }
-}
-
-impl fmt::Debug for Client {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Client")
-            .field("credential", &"<injected>")
-            .field("context", &self.context)
-            .finish()
-    }
-}
+mod client;
+pub use client::Client;
 
 #[cfg(test)]
 mod tests {

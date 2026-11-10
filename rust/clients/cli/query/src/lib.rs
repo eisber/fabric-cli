@@ -17,7 +17,7 @@
 //! ```
 
 mod functions;
-mod scalar;
+mod python_value_format;
 mod validation;
 
 use jpx_core::{ErrorReason, RuntimeError};
@@ -159,7 +159,7 @@ pub fn search_with_options(
         Value::Null => Value::String("None".to_owned()),
         Value::Bool(true) => Value::String("True".to_owned()),
         Value::Bool(false) => Value::String("False".to_owned()),
-        Value::Number(number) => Value::String(scalar::number(&number)),
+        Value::Number(number) => Value::String(python_value_format::format_number(&number)),
     })
 }
 

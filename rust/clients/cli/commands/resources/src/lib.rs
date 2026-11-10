@@ -1,422 +1,440 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-//! Typed command consumers, not a second parser, executable or runtime.
-//! The front door supplies resolved targets, configuration, prompts and streams.
+//! Python-named resource command handlers with caller-owned UI and operations.
+//!
+//! No process entry point, identity discovery, ambient cache, runtime or transport
+//! is installed. [`parser`] owns registration and typed arguments; [`host`] owns
+//! runtime-neutral command composition. [`frontdoor`] preserves old imports.
+//! See the README for the exact source pin and the intentionally incomplete matrix.
 
-mod api;
-mod export;
-mod find;
-pub mod frontdoor;
-mod hidden;
-mod interactive_find;
-mod mutations;
-mod projection;
-mod read_targets;
-mod rendering;
-mod transport;
-pub use api::{ApiInput, ApiOptions, api, build_api_request, read_api_input};
-pub use export::{AclExportSink, export_acls};
-pub use find::{FindOptions, build_search_options, find, project_search};
-pub use hidden::{
-    HiddenNameKind, HiddenRead, domain_name_by_id, find_hidden_name, read_hidden_metadata,
-    resolve_hidden_name,
-};
-pub use interactive_find::{FindOutput, find_interactive};
-pub use mutations::{
-    AclChange, Confirmation, LabelChange, MutationOptions, NamedResource, mutate_acl, mutate_label,
-};
-pub use projection::project_acls;
-pub use read_targets::{acl_resource, read_named_acls};
-pub use rendering::{FamilyPresentation, FamilySurface, render_family_error, render_family_output};
-pub use transport::ResourceHttpExecutor;
+mod compatibility;
+mod create;
+mod creation_parameters;
+mod errors;
+mod execution;
+pub mod host;
+mod lifecycle;
+mod moves;
+mod onelake_read;
+mod onelake_write;
+pub mod parser;
+mod removal;
+mod resource_transfer;
+mod set;
+mod shortcuts;
+mod sql_database;
+mod template_enumeration;
+mod templates;
 
-use fabric_cli_output::{Indent, OutputEnvelope, OutputInput, OutputStatus, Timestamp};
-use fabric_sdk_access::{AccessClient, Resource};
-use fabric_sdk_api::{ApiError, Limits};
+use fabric_cli_context::{Element, NodeKind};
+use fabric_cli_output::{OutputInput, OutputStatus};
+use fabric_sdk_folders::mutations::FolderMutations;
+use fabric_sdk_items::mutations::ItemMutations;
+use fabric_sdk_workspaces::mutations::{
+    ResourceError, ResourceOperations, ResourceOutcome, WorkspaceMutations,
+};
 use serde_json::Value;
-use std::{
-    future::Future,
-    io::{Read, Write},
+use std::{fmt, future::Future, pin::Pin, sync::Arc};
+
+pub use compatibility::frontdoor;
+pub use create::{CapacitySelection, CreateOptions};
+pub use errors::operation_error_output;
+pub use execution::FabricMutationBackend;
+pub use moves::FolderMoveResult;
+pub use onelake_read::{OneLakeGetResult, OneLakeReadError, OneLakeReadHost, OneLakeReadResult};
+pub use onelake_write::{
+    OneLakeResourceKind, OneLakeWriteError, OneLakeWriteHost, OneLakeWriteResult,
+    OneLakeWriteTarget, file_destination, validate_copy_destination,
 };
-use thiserror::Error;
+pub use removal::{
+    RemovalCatalog, RemovalError, RemovalHost, RemovalResult, RemovalSort, RemovalUi,
+};
+pub use set::update_fabric_element;
+pub use shortcuts::{
+    OneLakeShortcutHost, ShortcutCreateDestination, ShortcutCreateOptions, ShortcutUpdateError,
+    ShortcutUpdateResult,
+};
+pub use template_enumeration::{TemplateDirectory, TemplateEnumeration};
 
-/// Source registration supplied to the separately owned CLI front door.
-#[derive(Clone, Copy, Debug)]
-pub struct Registration {
-    /// Canonical Python command path.
-    pub path: &'static str,
-    /// Full alias paths.
-    pub aliases: &'static [&'static str],
+/// A caller-runtime asynchronous operation.
+pub type CommandFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// Source UI events, independent of terminal/JSON rendering.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NoticeKind {
+    /// Progress text (Python's grey output).
+    Progress,
+    /// A warning; the host chooses its text-mode destination.
+    Warning,
+    /// Parameter help, not an operation result.
+    Help,
 }
 
-/// Implemented library consumers; not claims of binary registration/live parity.
-pub const REGISTRATIONS: &[Registration] = &[
-    Registration {
-        path: "acl ls",
-        aliases: &["acl dir"],
-    },
-    Registration {
-        path: "acl get",
-        aliases: &[],
-    },
-    Registration {
-        path: "label list-local",
-        aliases: &[],
-    },
-    Registration {
-        path: "acl set",
-        aliases: &[],
-    },
-    Registration {
-        path: "acl rm",
-        aliases: &["acl del"],
-    },
-    Registration {
-        path: "label set",
-        aliases: &[],
-    },
-    Registration {
-        path: "label rm",
-        aliases: &["label del"],
-    },
-    Registration {
-        path: "find",
-        aliases: &[],
-    },
-    Registration {
-        path: "api",
-        aliases: &[],
-    },
-];
+/// User interaction explicitly supplied by the CLI host.
+pub trait MutationUi: Send {
+    /// Display source text without interpreting it as a command.
+    fn notice(&mut self, kind: NoticeKind, message: &str);
 
-/// Error code/message pair consumed by the existing output envelope.
-#[derive(Clone, Debug, Error, PartialEq)]
-#[error("{code}: {message}")]
-pub struct CommandError {
-    /// Python-compatible code or explicitly documented safety failure.
-    pub code: String,
-    /// Diagnostic, never provider/token text.
-    pub message: String,
-    /// Source diagnostics emitted before failure, written to stderr.
-    pub diagnostics: Vec<String>,
-    /// Source warnings emitted before failure, for the caller's logger.
-    pub warnings: Vec<String>,
-    /// Exact shared operation classification, ID and service error data.
-    pub operation: Option<Box<fabric_sdk_api::OperationError>>,
-    /// Cancellation or a lost response is not evidence of mutation rollback.
-    pub mutation_may_have_occurred: bool,
-    /// The source handler printed an error internally without raising to its
-    /// outer decorator. JSON remains Failure, but the command exit is zero.
-    pub handled: bool,
-}
+    /// Confirm a consequential operation; a declined prompt sends no mutation.
+    ///
+    /// Retained for existing infallible adapters. Production consumers use
+    /// [`Self::confirm_result`] so terminal failures cannot become declines.
+    fn confirm<'a>(&'a mut self, message: &'a str) -> CommandFuture<'a, bool>;
 
-impl CommandError {
-    /// Construct a local failure without diagnostics or mutation side effects.
-    pub fn new(code: &str, message: impl Into<String>) -> Self {
-        Self {
-            code: code.into(),
-            message: message.into().trim_end_matches('.').to_owned(),
-            diagnostics: Vec::new(),
-            warnings: Vec::new(),
-            operation: None,
-            mutation_may_have_occurred: false,
-            handled: false,
-        }
-    }
-
-    pub(crate) fn with_context(mut self, value: &CommandValue) -> Self {
-        self.diagnostics = value.diagnostics.clone();
-        self.warnings = value.warnings.clone();
-        self
+    /// Confirm with explicit input, cancellation and prompt-delivery failures.
+    ///
+    /// Existing infallible adapters retain their behavior through this default.
+    /// Fallible hosts must override this method, never turn an error into `false`.
+    fn confirm_result<'a>(
+        &'a mut self,
+        message: &'a str,
+    ) -> CommandFuture<'a, Result<bool, MutationError>> {
+        Box::pin(async move { Ok(self.confirm(message).await) })
     }
 }
 
-impl From<ApiError> for CommandError {
-    fn from(error: ApiError) -> Self {
-        match error {
-            ApiError::MutationUncertain(cause) => {
-                let mut error = Self::from(*cause);
-                error.mutation_may_have_occurred = true;
-                error
-            }
-            ApiError::Operation(operation) => {
-                use fabric_sdk_api::OperationErrorKind;
-                let mut error = match &operation.kind {
-                    OperationErrorKind::Cancelled => Self::new("Cancelled", "Operation cancelled"),
-                    OperationErrorKind::Credential => {
-                        Self::new("Unauthorized", "Access is unauthorized")
-                    }
-                    OperationErrorKind::Http { status, code, .. } => {
-                        let message = operation
-                            .raw_service_error
-                            .as_ref()
-                            .and_then(|v| v.get("message"))
-                            .and_then(Value::as_str);
-                        Self::new(code.as_deref().unwrap_or("UnknownError"),message.unwrap_or(match status {
-                            401=>"Access is unauthorized",403=>"Access is forbidden. You do not have permission to access this resource",
-                            404=>"The requested resource could not be found",_=>"Fabric request failed",
-                        }))
-                    }
-                    OperationErrorKind::OperationFailed { status, .. } => {
-                        let cancelled = status == "Cancelled";
-                        let code = if cancelled {
-                            "LongRunningOperationCancelled"
-                        } else {
-                            "LongRunningOperationFailed"
-                        };
-                        let raw = operation
-                            .raw_service_error
-                            .as_deref()
-                            .unwrap_or(&Value::Null);
-                        let detail = if let Some(text) = raw.as_str() {
-                            text.to_owned()
-                        } else if raw.is_null() {
-                            "None".into()
-                        } else {
-                            raw.to_string()
-                        };
-                        Self::new(
-                            code,
-                            format!(
-                                "The operation {}: {detail}",
-                                if cancelled { "was cancelled" } else { "failed" }
-                            ),
-                        )
-                    }
-                    _ => Self::new("UnexpectedError", operation.to_string()),
-                };
-                error.mutation_may_have_occurred = operation.mutation_may_have_occurred;
-                error.operation = Some(operation);
-                error
-            }
-            ApiError::UnsupportedRequest => Self::new("NotSupported", error.to_string()),
-            ApiError::InvalidAudience | ApiError::InvalidInput => {
-                Self::new("InvalidInput", error.to_string())
-            }
-            ApiError::Credential => Self::new("Unauthorized", "Access is unauthorized"),
-            ApiError::InvalidJson => Self::new("InvalidJson", "Invalid JSON format"),
-            ApiError::Service { code, message, .. } => {
-                Self::new(&code, message.trim_end_matches('.'))
-            }
-            ApiError::Http { status: 401, code } => Self::new(&code, "Access is unauthorized"),
-            ApiError::Http { status: 403, code } => Self::new(
-                &code,
-                "Access is forbidden. You do not have permission to access this resource",
-            ),
-            ApiError::Http { status: 404, .. } => {
-                Self::new("NotFound", "The requested resource could not be found")
-            }
-            ApiError::Http { code, .. } => Self::new(&code, "Fabric request failed"),
-            ApiError::Cancelled => Self::new("Cancelled", error.to_string()),
-            _ => Self::new("UnexpectedError", error.to_string()),
-        }
-    }
+/// Enriched metadata provider composed by the existing read-command host.
+pub trait MutationMetadata: Send {
+    /// Read the source-compatible metadata, including workspace enrichment.
+    fn read<'a>(
+        &'a mut self,
+        element: &'a Arc<Element>,
+    ) -> CommandFuture<'a, Result<Value, MutationError>>;
 }
 
-/// Successful command value, including source-silent empty collections.
+/// Explicit cache/context work for the main host; no mutable globals are used.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CacheEffect {
+    /// Upsert a newly created resource with service metadata.
+    Created {
+        /// Original immutable target.
+        target: Arc<Element>,
+        /// Exact service result.
+        data: Value,
+    },
+    /// Creation returned no usable ID; invalidate the containing collection.
+    Invalidate {
+        /// Original immutable target.
+        target: Arc<Element>,
+    },
+    /// Python evicts the resource after delete completion or acceptance.
+    Deleted {
+        /// Original immutable target.
+        target: Arc<Element>,
+    },
+    /// Rename the resource and refresh any affected current context.
+    Renamed {
+        /// Original immutable target.
+        target: Arc<Element>,
+        /// New display name, retaining JSON type for source fidelity.
+        name: Value,
+    },
+    /// Source-confirmed folder reparenting for the caller's cache/context host.
+    MovedFolder {
+        /// Original immutable folder metadata.
+        target: Arc<Element>,
+        /// Selected new parent, preserving the owning workspace.
+        parent: Arc<Element>,
+    },
+}
+
+/// Observable command outcome, with acceptance separate from completion.
+#[derive(Clone, Debug, Default)]
+pub struct MutationResult {
+    /// Output inputs for the existing envelope; empty for declined/help-only calls.
+    pub outputs: Vec<OutputInput>,
+    /// Actual service completion/acceptance; absent if no operation was dispatched.
+    pub outcome: Option<ResourceOutcome>,
+    /// Cache/context changes that the main host must apply, in order.
+    pub effects: Vec<CacheEffect>,
+    /// A user declined a confirmation, not a service cancellation.
+    pub declined: bool,
+    /// Creation's source `show_headers=True` for the text-output host.
+    pub show_headers: bool,
+    /// Multi-item creation responses/cache effects, including accepted dependencies.
+    pub creation: Option<Box<CreationEvidence>>,
+}
+
+/// Actual creation progress, never a rollback promise or invented batch success.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct CommandValue {
-    /// Absent suppresses the envelope entirely.
-    pub data: Option<Value>,
-    /// Optional success message, even when no data is emitted.
-    pub message: Option<String>,
-    /// Source progress/help text for stderr, not mixed into JSON stdout.
-    pub diagnostics: Vec<String>,
-    /// Warnings belong to the host's logger, not JSON output.
-    pub warnings: Vec<String>,
+pub struct CreationEvidence {
+    /// Responses in dispatch order, even when a dependent create only returned 202.
+    pub responses: Vec<ResourceOutcome>,
+    /// Confirmed source cache work before a later operation failed or was accepted.
+    pub effects: Vec<CacheEffect>,
+    /// Completed dependency/root metadata collected by Python's batch-output logic.
+    pub batch_items: Vec<Value>,
+    /// Matching full names, preserving source batch order.
+    pub batch_names: Vec<String>,
 }
 
-impl CommandValue {
-    /// Writes source JSON output to caller-owned streams and returns its exit code.
-    /// I/O/serialization errors remain explicit; no process exit occurs here.
-    pub fn write_json(
-        &self,
-        command: &str,
-        timestamp: Timestamp,
-        stdout: &mut impl Write,
-        stderr: &mut impl Write,
-    ) -> std::io::Result<u8> {
-        for diagnostic in &self.diagnostics {
-            writeln!(stderr, "{diagnostic}")?;
-        }
-        if self.data.is_none() && self.message.is_none() {
-            return Ok(0);
-        }
-        let plan = OutputEnvelope::new(
-            timestamp,
-            OutputInput {
-                command: Some(command.into()),
-                data: self.data.clone(),
-                message: self.message.clone(),
-                ..OutputInput::default()
-            },
-        )
-        .render(Indent::Four)
-        .map_err(std::io::Error::other)?;
-        plan.write_to(stdout, stderr)?;
-        Ok(plan.exit_code)
-    }
+/// Structured command error retaining operation reconciliation evidence.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MutationError {
+    /// Python-compatible code or explicit safety classification.
+    pub code: String,
+    /// Public diagnostic.
+    pub message: String,
+    /// Underlying policy/service error, if execution was attempted.
+    pub operation: Option<Box<ResourceError>>,
+    /// Earlier dependency responses and cache work that must not be lost on failure.
+    pub creation: Option<Box<CreationEvidence>>,
 }
 
-/// Writes a typed failure with existing stream separation and Unauthorized exit 4.
-pub fn write_error(
-    error: &CommandError,
-    command: &str,
-    timestamp: Timestamp,
-    stdout: &mut impl Write,
-    stderr: &mut impl Write,
-) -> std::io::Result<u8> {
-    for diagnostic in &error.diagnostics {
-        writeln!(stderr, "{diagnostic}")?;
-    }
-    let plan = OutputEnvelope::new(
-        timestamp,
-        OutputInput {
-            command: Some(command.into()),
-            status: OutputStatus::Failure,
-            error_code: Some(error.code.clone()),
-            message: Some(error.message.clone()),
-            ..OutputInput::default()
-        },
-    )
-    .render(Indent::Four)
-    .map_err(std::io::Error::other)?;
-    plan.write_to(stdout, stderr)?;
-    Ok(if error.handled { 0 } else { plan.exit_code })
-}
-
-/// `acl ls` and `acl get` options after the source token-joining boundary.
-#[derive(Clone, Debug)]
-pub enum AclRead {
-    /// Sorted source columns, or a query over full transformed rows.
-    List {
-        /// Include source long columns.
-        long: bool,
-        /// Already-joined JMESPath expression.
-        query: Option<String>,
-    },
-    /// Raw collection query; no query means source path discovery, not raw JSON.
-    Get {
-        /// `.` requests the unmodified collection.
-        query: Option<String>,
-    },
-}
-
-/// Composes SDK reads, source projections and command output on the caller runtime.
-pub async fn read_acls(
-    client: &AccessClient,
-    resource: &Resource,
-    options: AclRead,
-    limits: Limits,
-    cancelled: impl Future<Output = ()> + Send,
-) -> Result<CommandValue, CommandError> {
-    let context = read_targets::acl_context(resource);
-    let rows = client
-        .list(resource, limits, cancelled)
-        .await
-        .map_err(|e| CommandError::from(e.error).with_context(&context))?
-        .rows;
-    let mut result = match options {
-        AclRead::List { long, query } => {
-            if rows.is_empty() {
-                CommandValue::default()
+impl MutationError {
+    /// Construct a local command validation failure.
+    pub fn new(code: &str, message: impl Into<String>) -> Self {
+        let message = message.into();
+        Self {
+            code: if code.is_empty() {
+                "UnknownError"
             } else {
-                CommandValue {
-                    data: Some(
-                        project_acls(resource, rows, long, query.as_deref())
-                            .map_err(|e| e.with_context(&context))?,
-                    ),
-                    ..CommandValue::default()
-                }
+                code
             }
+            .into(),
+            message: if message.is_empty() {
+                "An error occurred while processing the operation".into()
+            } else {
+                message.trim_end_matches('.').to_owned()
+            },
+            operation: None,
+            creation: None,
         }
-        AclRead::Get { query } => {
-            let value = read_targets::project_get(rows, query.as_deref())
-                .map_err(|e| e.with_context(&context))?;
-            CommandValue {
-                data: python_truthy(&value).then_some(value),
-                ..CommandValue::default()
-            }
-        }
-    };
-    result.warnings = context.warnings;
-    Ok(result)
-}
+    }
 
-pub(crate) fn python_truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(v) => *v,
-        Value::String(v) => !v.is_empty(),
-        Value::Array(v) => !v.is_empty(),
-        Value::Object(v) => !v.is_empty(),
-        Value::Number(v) => v.as_f64() != Some(0.0),
+    /// Render through the existing output layer, preserving stream/exit selection.
+    pub fn output(&self) -> OutputInput {
+        OutputInput {
+            status: OutputStatus::Failure,
+            error_code: Some(self.code.clone()),
+            message: Some(self.message.clone()),
+            ..OutputInput::default()
+        }
     }
 }
 
-/// Reads only caller-selected local label definitions. Never discovers config.
-/// Missing configuration preserves the source warning/help rather than reading home.
-pub fn list_local_labels(path: Option<&std::path::Path>) -> Result<CommandValue, CommandError> {
-    let Some(path) = path.filter(|p| !p.as_os_str().is_empty()) else {
-        return Ok(CommandValue {
-            warnings: vec!["Label definitions for CLI not set".into()],
-            diagnostics: vec![
-                "\u{2192} Run 'config set local_definition_labels <json_path>'".into(),
-            ],
-            ..CommandValue::default()
-        });
-    };
-    labels_from_value(read_labels_value(path)?)
+impl From<ResourceError> for MutationError {
+    fn from(error: ResourceError) -> Self {
+        let mut result = match errors::source_message(&error) {
+            Ok(message) => Self::new(&error.code, message),
+            Err(()) => Self::new("InvalidJson", "Invalid JSON format"),
+        };
+        result.operation = Some(Box::new(error));
+        result
+    }
 }
 
-pub(crate) fn read_labels_value(path: &std::path::Path) -> Result<Value, CommandError> {
-    let file = std::fs::File::open(path).map_err(|_| {
-        CommandError::new(
-            "InvalidPath",
-            "The specified file or directory does not exist",
-        )
-    })?;
-    let limit = fabric_sdk_api::RequestBounds::default()
-        .max_body_bytes
-        .get();
-    let mut bytes = Vec::new();
-    file.take(limit.saturating_add(1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(|_| {
-            CommandError::new(
-                "InvalidPath",
-                "The specified file or directory does not exist",
+impl fmt::Display for MutationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.code, self.message)
+    }
+}
+
+impl std::error::Error for MutationError {}
+
+/// Thin command composition; the existing CLI front door owns dispatch and state.
+pub struct MutationHost<'a> {
+    /// Shared bounded execution and operation reconciliation.
+    pub operations: &'a mut dyn ResourceOperations,
+    /// Caller-owned confirmation and notices.
+    pub ui: &'a mut dyn MutationUi,
+    /// Existing source-compatible metadata reads for `set`.
+    pub metadata: &'a mut dyn MutationMetadata,
+}
+
+impl MutationHost<'_> {
+    /// Execute `exists` for resolved workspace/item/folder metadata without I/O.
+    ///
+    /// Python checks the context ID, not a separate GET or a swallowed failure.
+    ///
+    /// # Errors
+    /// Tenant and unsupported hierarchy branches fail explicitly.
+    pub fn exists(element: &Arc<Element>) -> Result<MutationResult, MutationError> {
+        supported_element(element)?;
+        Ok(MutationResult {
+            outputs: vec![message(if element.id().is_some_and(|id| !id.is_empty()) {
+                "true"
+            } else {
+                "false"
+            })],
+            ..MutationResult::default()
+        })
+    }
+
+    /// Execute the single-resource `rm`/`del` operation.
+    ///
+    /// Workspace non-force item selection belongs to `remove_workspace_items`,
+    /// not deletion of the workspace itself.
+    ///
+    /// # Errors
+    /// Invalid/unsupported resources and incomplete/service failures are explicit.
+    pub async fn remove(
+        &mut self,
+        element: &Arc<Element>,
+        force: bool,
+    ) -> Result<MutationResult, MutationError> {
+        self.remove_with_options(element, force, false).await
+    }
+
+    /// Execute `rm`/`del`, including the item-only `--hard` option.
+    ///
+    /// # Errors
+    /// Rejects unsupported resource/option combinations and propagates failures.
+    pub async fn remove_with_options(
+        &mut self,
+        element: &Arc<Element>,
+        force: bool,
+        hard: bool,
+    ) -> Result<MutationResult, MutationError> {
+        supported_element(element)?;
+        if hard && !matches!(element.kind(), NodeKind::Item(_)) {
+            return Err(MutationError::new(
+                "InvalidInput",
+                "--hard requires an item",
+            ));
+        }
+        if matches!(element.kind(), NodeKind::Workspace(_)) && !force {
+            return Err(MutationError::new(
+                "NotSupported",
+                "Workspace item selection is required; this call does not delete a workspace without -f",
+            ));
+        }
+        check_item_support(element, false)?;
+        let id = require_id(element)?;
+        let prompt = if hard {
+            format!(
+                "'{}' will be deleted forever. Are you sure you want to proceed?",
+                element.name()
             )
-        })?;
-    parse_labels_value(&bytes)
+        } else {
+            "Are you sure?".into()
+        };
+        if !force && !self.ui.confirm_result(&prompt).await? {
+            self.ui
+                .notice(NoticeKind::Warning, "Resource delete cancelled");
+            return Ok(MutationResult {
+                declined: true,
+                ..MutationResult::default()
+            });
+        }
+        if force {
+            self.ui.notice(
+                NoticeKind::Warning,
+                if hard {
+                    "! Executing force hard delete"
+                } else {
+                    "Executing force delete..."
+                },
+            );
+        } else if hard {
+            self.ui
+                .notice(NoticeKind::Warning, "! Executing hard delete");
+        }
+        self.ui.notice(
+            NoticeKind::Progress,
+            &format!("Deleting '{}'...", element.name()),
+        );
+        let outcome = match element.kind() {
+            NodeKind::Workspace(_) => WorkspaceMutations::delete(self.operations, id).await?,
+            NodeKind::Folder => {
+                FolderMutations::delete(self.operations, workspace_id(element)?, id).await?
+            }
+            NodeKind::Item(_) => {
+                ItemMutations::delete(self.operations, workspace_id(element)?, id, hard).await?
+            }
+            NodeKind::Tenant => unreachable!("validated above"),
+        };
+        let text = match &outcome {
+            ResourceOutcome::Completed {
+                status: 200 | 201, ..
+            } => Some(format!("'{}' deleted", element.name())),
+            ResourceOutcome::Accepted { .. } => {
+                Some(format!("'{}' is being deleted", element.name()))
+            }
+            ResourceOutcome::Completed { .. } => None,
+        };
+        let effects = if text.is_some() {
+            vec![CacheEffect::Deleted {
+                target: Arc::clone(element),
+            }]
+        } else {
+            Vec::new()
+        };
+        Ok(MutationResult {
+            outputs: text.map(|text| vec![message(text)]).unwrap_or_default(),
+            outcome: Some(outcome),
+            effects,
+            declined: false,
+            show_headers: false,
+            creation: None,
+        })
+    }
 }
 
-/// Parses a local definition buffer using the source `labels` output contract.
-pub fn labels_from_bytes(bytes: &[u8]) -> Result<CommandValue, CommandError> {
-    labels_from_value(parse_labels_value(bytes)?)
+fn message(value: impl Into<String>) -> OutputInput {
+    OutputInput {
+        message: Some(value.into()),
+        ..OutputInput::default()
+    }
 }
 
-fn parse_labels_value(bytes: &[u8]) -> Result<Value, CommandError> {
-    if bytes.len()
-        > fabric_sdk_api::RequestBounds::default()
-            .max_body_bytes
-            .get()
-    {
-        return Err(CommandError::new(
-            "InvalidInput",
-            "Label definitions exceed their byte bound",
+fn supported_element(element: &Element) -> Result<(), MutationError> {
+    if element.kind() == NodeKind::Tenant {
+        return Err(MutationError::new(
+            "NotSupported",
+            "This handler requires a workspace, item or folder",
         ));
     }
-    serde_json::from_slice(bytes)
-        .map_err(|_| CommandError::new("InvalidJson", "Invalid JSON format"))
+    Ok(())
 }
 
-fn labels_from_value(value: Value) -> Result<CommandValue, CommandError> {
-    let labels = value.get("labels").ok_or_else(|| CommandError::new("InvalidEntriesFormat",
-        "The entries format in the labels definition file is invalid. Please check the file structure and ensure it follows the expected format"))?;
-    Ok(CommandValue {
-        data: Some(labels.clone()),
-        ..CommandValue::default()
-    })
+fn require_id(element: &Element) -> Result<&str, MutationError> {
+    element
+        .id()
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| MutationError::new("NotFound", "The resource does not exist"))
+}
+
+fn workspace_id(element: &Arc<Element>) -> Result<&str, MutationError> {
+    let mut node = element.as_ref();
+    loop {
+        if matches!(node.kind(), NodeKind::Workspace(_)) {
+            return require_id(node);
+        }
+        node = node
+            .parent()
+            .ok_or_else(|| MutationError::new("InvalidContext", "Missing owning workspace"))?;
+    }
+}
+
+fn check_item_support(element: &Element, set: bool) -> Result<(), MutationError> {
+    if let NodeKind::Item(item_type) = element.kind() {
+        let blocked = matches!(
+            item_type.as_str(),
+            "Dashboard"
+                | "PaginatedReport"
+                | "SQLEndpoint"
+                | "MirroredWarehouse"
+                | "Datamart"
+                | "OrgApp"
+                | "MetricSet"
+                | "ApacheAirflowJob"
+                | "Exploration"
+                | "RetailDataManager"
+                | "Healthcaredatasolution"
+                | "SustainabilityDataSolution"
+                | "AISkill"
+        ) || (set && item_type.as_str() == "GraphQuerySet");
+        if blocked {
+            return Err(MutationError::new(
+                "UnsupportedCommand",
+                format!(
+                    "not supported for command '{}'",
+                    if set { "set" } else { "del" }
+                ),
+            ));
+        }
+    }
+    Ok(())
 }

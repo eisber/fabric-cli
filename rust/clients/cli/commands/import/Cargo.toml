@@ -1,0 +1,25 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-cli-import"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Item-definition import command and Environment lifecycle"
+
+[package.metadata.fabric]
+layer = "cli"
+
+[dependencies]
+clap.workspace = true
+fabric-cli-context.workspace = true
+fabric-cli-output.workspace = true
+fabric-cli-import-export-contracts.workspace = true
+fabric-deploy.workspace = true
+fabric-sdk-operations.workspace = true
+
+[lints]
+workspace = true

@@ -6,6 +6,14 @@
 Notebook APIs. It delegates to focused service crates and reexports shared wire
 and error types so applications can choose either interface.
 
+`src/client.rs` owns the convenience `Client` and its thin forwarding methods.
+Notebook implementation lives in
+[`fabric-sdk-notebooks`](../control-plane/resources/items/notebooks/README.md):
+`fabric_sdk::notebooks` is a same-type reexport, not a second implementation.
+The [resource contracts](../control-plane/resources/contracts/README.md) package
+owns generic pages, service errors and resource-operation descriptions;
+historical workspace paths remain valid aliases.
+
 ## Construct a client
 
 `Client::new` stores an injected `Arc<dyn TokenCredential>` and explicit
