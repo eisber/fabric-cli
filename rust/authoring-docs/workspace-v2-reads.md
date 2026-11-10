@@ -7,6 +7,10 @@ Python `fab` and Rust `fab-rs` commands retain their contracts. This slice is
 limited to primary workspace metadata and one bounded workspace or items page.
 It does not implement the complete v2 command surface.
 
+For the existing `fab-rs` workspace discovery, metadata, existence and CRUD
+spellings, see [workspace core commands](workspace-core-commands.md). Those
+compatibility mutations are not mounted as grouped v2 workspace facades.
+
 ## Commands
 
 Use `/` for accessible workspaces or an explicit canonical workspace UUID for
