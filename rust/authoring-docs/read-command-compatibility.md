@@ -41,6 +41,33 @@ pinned Python query wrapper converts to the scalar string `None`; JSON output
 therefore retains `"data": ["None"]`. This behavior is not an authentication
 failure or a missing workspace ID. No implicit `[]` is added to user queries.
 
+## Bounded read-only name prefixes
+
+The owner-approved ACL-TRIAL-04 follow-up intentionally adds trailing-star
+selection beyond the frozen Python source above. Quote the path, for example
+`fab-rs ls 'marc*'` or `fab-rs ls 'Demo.Workspace/marc*'`. Only one trailing
+`*` after a nonempty prefix in the final path segment is supported. Bare `*`,
+interior/repeated stars, `?`, bracket patterns, and wildcard parent paths fail
+explicitly. Exact paths retain their existing resolution and listing behavior.
+
+The exact parent is resolved once, then its complete bounded child listing is
+filtered locally before projection. Display-name matching is case-sensitive;
+a complete known type suffix retains the resolver's case-insensitive treatment.
+Sorting, pagination, cancellation, service errors and traversal/body limits are
+unchanged. No matching children produces an empty successful listing, not a
+resource lookup failure. `--long` retains IDs and workspace capacity enrichment;
+an empty root selection does not fetch capacities. `--all` still controls
+virtual collection visibility, and those names are filtered by the same prefix.
+Folder selection is limited to direct children of the exact selected folder.
+
+This is not remote wildcard expansion, recursive search, OneLake globbing or
+mutation fanout. Mutation resolution remains exact and does not use this
+read-only selector. The new offline `prefix_list` target exercises parsed read
+sessions, direct hosts, folder bounds and HTTP paging. The root `fab-rs` binary's
+`native_read::headless_host_tests::prefix` module exercises production native
+read and mutation handlers with injected identity/service transports. Existing
+Python captures, expected outputs and source pins are unchanged.
+
 ## Independent evidence
 
 The [SRC3 output repair](output-text-compatibility.md#src3-silent-empty-get-projections)
