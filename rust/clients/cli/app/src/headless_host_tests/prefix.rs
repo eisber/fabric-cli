@@ -127,6 +127,34 @@ async fn root_binary_exact_prefix_suffix_and_no_match_preserve_read_routing() {
 }
 
 #[tokio::test]
+async fn root_binary_exact_punctuation_remains_literal() {
+    for (path, workspaces) in [
+        (
+            "/Demo?.Workspace",
+            r#"{"value":[{"id":"w","displayName":"Demo?","type":"Workspace"}]}"#,
+        ),
+        (
+            "/Demo[.Workspace",
+            r#"{"value":[{"id":"w","displayName":"Demo[","type":"Workspace"}]}"#,
+        ),
+        (
+            "/Demo].Workspace",
+            r#"{"value":[{"id":"w","displayName":"Demo]","type":"Workspace"}]}"#,
+        ),
+    ] {
+        let (exit, output, requests) = invoke(
+            &["ls", path, "--output_format", "json"],
+            "/",
+            [TOKEN, workspaces, ITEMS],
+        )
+        .await;
+        assert_eq!(exit, 0, "{path}: {output}");
+        assert_eq!(output["result"]["data"].as_array().unwrap().len(), 3);
+        assert_eq!(requests.len(), 3);
+    }
+}
+
+#[tokio::test]
 async fn root_binary_rejects_malformed_prefixes_without_token_or_metadata_requests() {
     for path in ["*", "mar**", "mar?*", "mar[ab]*", "/mar*/child", "/mar*/"] {
         let (exit, output, requests) =

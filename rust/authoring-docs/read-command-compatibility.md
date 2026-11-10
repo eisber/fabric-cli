@@ -47,8 +47,9 @@ The owner-approved ACL-TRIAL-04 follow-up intentionally adds trailing-star
 selection beyond the frozen Python source above. Quote the path, for example
 `fab-rs ls 'marc*'` or `fab-rs ls 'Demo.Workspace/marc*'`. Only one trailing
 `*` after a nonempty prefix in the final path segment is supported. Bare `*`,
-interior/repeated stars, `?`, bracket patterns, and wildcard parent paths fail
-explicitly. Exact paths retain their existing resolution and listing behavior.
+interior/repeated stars, combined question-mark/bracket patterns, and wildcard
+parent paths fail explicitly. Paths without `*` retain their existing exact
+resolution and listing behavior, including literal `?`, `[` and `]` in names.
 
 The exact parent is resolved once, then its complete bounded child listing is
 filtered locally before projection. Display-name matching is case-sensitive;

@@ -256,12 +256,32 @@ fn exact_workspace_and_no_prefix_listing_keep_their_original_routing() {
 }
 
 #[test]
+fn exact_workspace_names_keep_question_marks_and_brackets_literal() {
+    for name in ["Demo?", "Demo[", "Demo]", "Demo[1]"] {
+        let path = format!("/{name}.Workspace");
+        let (exit, output, requests) = run(
+            &["ls", &path],
+            "/",
+            HomeContext::Unspecified,
+            false,
+            [
+                reply(json!({"value":[{"id":"w","displayName":name,"type":"Workspace"}]})),
+                reply(json!({"value":[]})),
+            ],
+        );
+        assert_eq!(exit, 0, "{path}: {output}");
+        assert_eq!(output["result"]["data"], json!([]));
+        assert_eq!(requests.len(), 2);
+    }
+}
+
+#[test]
 fn malformed_patterns_and_get_wildcards_fail_before_metadata_io() {
     for path in [
         "*",
         "mar*c",
         "mar**",
-        "mar?",
+        "mar?*",
         "mar[ab]*",
         "/mar*/child",
         "/mar*/..",

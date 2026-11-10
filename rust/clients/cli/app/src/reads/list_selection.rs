@@ -17,8 +17,29 @@ impl ListSelection {
     pub(crate) fn new(command: &ReadCommand) -> Result<Self, CommandError> {
         let path = command.path.join(" ");
         let path = path.trim_matches(['\'', '"']).to_owned();
-        if !path.contains(['*', '?', '[', ']']) {
+        if !path.contains('*') {
             return Ok(Self { path, prefix: None });
+        }
+
+        #[cfg(test)]
+        mod tests {
+            use super::*;
+            use crate::parser::{Invocation, parse_args};
+
+            #[test]
+            fn exact_list_and_get_paths_keep_literal_punctuation() {
+                for verb in ["ls", "get"] {
+                    for path in ["/Demo?.Workspace", "/Demo[.Workspace", "/Demo].Workspace"] {
+                        let Invocation::Read(command) = parse_args(["fab-rs", verb, path]).unwrap()
+                        else {
+                            panic!("read invocation required");
+                        };
+                        let selection = ListSelection::new(&command).unwrap();
+                        assert_eq!(selection.path, path);
+                        assert!(selection.prefix.is_none());
+                    }
+                }
+            }
         }
         let invalid = || {
             errors::error(
