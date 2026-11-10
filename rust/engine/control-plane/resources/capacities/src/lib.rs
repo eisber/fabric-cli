@@ -6,10 +6,11 @@
 //! Consumers inject an Azure credential, explicit selection, an executor, and
 //! cancellation. Construction performs no I/O and installs no runtime.
 
-pub mod capacities;
+pub mod client;
+pub use client as capacities;
 pub mod models;
 
-pub use capacities::{
+pub use client::{
     CapacityExecutionError, CapacityExecutor, CapacityList, CapacityListError,
     CapacityListErrorKind, CapacityListLimits, CapacityRequest, CapacityResponse,
 };

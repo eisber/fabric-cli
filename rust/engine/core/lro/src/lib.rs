@@ -14,12 +14,9 @@ use fabric_core::{
     AuthenticatedExecution, AuthenticatedFuture, CredentialSelection, EndpointBinding,
     RequestAuthentication, RequestContext, RequestError, TokenCredential,
 };
-use fabric_sdk_workspaces::{
-    FabricServiceError,
-    mutations::{
-        CompletionPolicy, ResourceError, ResourceMethod, ResourceOperation, ResourceOperations,
-        ResourceOutcome,
-    },
+use fabric_sdk_resource_contracts::{
+    CompletionPolicy, FabricServiceError, ResourceError, ResourceMethod, ResourceOperation,
+    ResourceOperations, ResourceOutcome,
 };
 use std::{
     collections::BTreeMap,

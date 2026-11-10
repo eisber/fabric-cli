@@ -1,48 +1,126 @@
 <!-- Copyright (c) Microsoft Corporation. Licensed under the MIT License. -->
 
-# Access, catalog and API commands
+# Resource commands
 
-`fabric-cli-resources` composes ACL, label, FIND and raw API commands over focused
-SDK clients, context resolution, query projection and shared output.
+`fabric-cli-mutations` composes workspace, item, folder and storage mutations
+with explicit metadata, confirmation, execution and output capabilities.
+Use [`src/parser.rs`](src/parser.rs) for root command registration and typed
+arguments, [`src/host.rs`](src/host.rs) for injected execution composition, and
+the operation-named modules for resource behavior. `Mutation` refers to a
+resource-changing operation; it is not a second command family. The package
+name is retained for existing Rust consumers.
 
-## Register and execute
+`definitions/` is a separate nested package for item-definition import/export,
+not part of this package's module tree. Physical file and table commands live in
+the sibling `../onelake/` group. Shared resource-level copy/move policy remains
+here because it classifies resource targets and coordinates the existing hosts;
+it does not own file upload/download or table-loading implementations.
 
-Use `frontdoor::register(root)`, `AccessCommand::from_matches` and `AccessHost`
-in the central command parser. Run `frontdoor::execute_local` before remote
-account setup so configured local label listing does not require credentials.
+## Parsing and execution
 
-Supply resolved supported resources, configuration, timestamp, execution,
-confirmation, warning logging and writers. `ResourceHttpExecutor` adapts the
-shared HTTP policy rather than installing another authentication or retry stack.
+Mount `parser::resource_subcommands()` in the root Clap command and convert
+matches with `parser::command_from_matches`. Execute `parser::ResourceCommand`
+through `host::ResourceHost`, or `host::ResourceTransferHost` for copy/move.
+`frontdoor` is only a same-type compatibility reexport, not an implementation
+directory or a product version.
 
-## Operations
+`exists`, `mkdir` and `ln` allow unresolved creation targets; removal and updates
+require existing resources. Two-path transfers assign the final positional
+token to the destination. Workspace capacity uses `mkdir -P capacityName=...`;
+`--type` belongs to shortcut creation. Parsing performs no service work.
 
-- `AclRead` and `read_acls` combine SDK enumeration and projection.
-- `NamedResource`, `AclChange`, `LabelChange` and `MutationOptions` describe
-  mutations. Force skips confirmation, not validation or cancellation.
-- `list_local_labels` reads an explicit configured path; `labels_from_bytes`
-  accepts already-loaded data without discovering configuration.
-- `find` searches the catalog. `find_interactive` writes each page before
-  requesting continuation through injected confirmation.
-- `api` accepts explicit request input and retains raw HTTP status, headers
-  and body. Transport and capability failures remain errors rather than data.
-- `read_hidden_metadata` retains enriched and internal metadata with diagnostic
-  evidence for the caller.
+## Host composition
 
-`export_acls` requires `AclExportSink`; it never substitutes a no-op writer.
-The host remains responsible for actual storage export.
+`MutationHost` consumes `ResourceOperations`, `MutationUi` and
+`MutationMetadata`. Creation, updates, removal and existence checks return
+`OutputInput` and ordered `CacheEffect` values. The caller applies cache effects
+and refreshes affected contexts.
 
-## Output and evidence
+`FabricMutationBackend` connects handlers to the SDK's `OperationSession` and
+shared HTTP executor. Generic mutations and deployment share the same operation
+reconciliation policy. Credentials, prompts, configuration, clocks and streams
+are always caller-owned.
 
-`CommandValue::write_json` writes results to stdout and diagnostics to stderr.
-Empty reads remain silent where specified. `CommandError` retains earlier
-diagnostics and warnings.
+Production handlers call `MutationUi::confirm_result` and
+`RemovalUi::select_result`. Their defaults wrap the legacy infallible methods,
+so existing adapters keep their behavior. Terminal hosts override the fallible
+methods to propagate EOF, cancellation, input and writer failures as
+`MutationError`; those failures are not ordinary declines or empty selections.
+Force bypasses confirmation only where the source handler already permits it,
+without bypassing earlier validation or reads. Storage and removal keep their
+typed error and partial-result wrappers.
 
-`FamilySurface`, `FamilyPresentation`, `render_family_output` and
-`render_family_error` compose shared text or JSON output. The caller supplies
-Unicode width, presentation and streams. Writer errors preserve partial output
-and do not replay requests.
+## Mutation behavior
 
-No credential, runtime, browser, terminal or global configuration discovery is
-performed by this library. Resource-specific support checks and missing
-capabilities fail explicitly.
+- Creation validates resource support, parameters and duplicates before dispatch.
+  Workspace capacity selection distinguishes omission from JSON null.
+- Item creation includes the resolved folder ID. A headerless HTTP 202 remains
+  accepted without inventing a created resource or completed state.
+- Updates patch the selected top-level property. Workspace Spark settings use
+  their dedicated endpoint rather than a wrapped workspace patch.
+- Existence checks use the resolved context ID and preserve lookup failures.
+- Removal distinguishes decline, acceptance, completion and hard-delete policy.
+  An accepted delete is not proof that the resource is gone.
+
+Operation failures retain IDs and mutation uncertainty. Later failures keep
+earlier outputs and cache effects; neither cancellation nor output failure
+causes automatic replay or rollback.
+
+## Selection and templates
+
+`RemovalHost` consumes a complete `RemovalCatalog`, explicit sorting and
+asynchronous selection. Non-forced workspace removal deletes selected supported
+items, not the workspace itself. Tenant selection remains explicit even when
+force is supplied.
+
+The central `fabric_cli::families::FamilySession` now composes these handlers
+with complete bounded SDK catalogs. Its existing dispatch entry points support
+forced single-workspace removal without selection; an unreadable or incomplete
+item catalog fails before deletion, even with force. Supply
+`dispatch_with_removal_ui` for non-forced workspace and all tenant removal.
+That adapter is removal-only; ordinary metadata updates continue to use the
+session's `MutationUi`. Tenant `--force` never bypasses selection or confirmation.
+`FamilyEvidence::Removal` preserves every earlier response, output and cache
+effect when a later item fails. Effects remain caller-owned; acceptance and
+writer delivery do not prove deletion or that a cache effect was applied.
+
+Folder SET in the central host uses the existing folder SDK GET after confirmation,
+then the existing metadata PATCH handler. Only HTTP 200 produces the source
+`Folder updated` output and rename effect. Workspace, item and folder metadata
+reads share the caller's latched cancellation with the mutation backend.
+Cancellation during a metadata read terminates without dispatching a PATCH or
+inventing operation completion. The independent additive
+`tests/resource_release_gaps_reference.py` executes frozen Python
+`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4` handlers before comparison;
+`rust/clients/cli/app/tests/resource_release_gaps.rs` exercises the root
+parser, actual family composition and offline shared HTTP executor. Existing
+fixtures and expected outputs are unchanged.
+
+`create_with_template_enumeration` accepts a complete ordered template tree.
+See [creation templates](templates/README.md) for path validation, dependent
+creation and ordering rules.
+
+## Storage and definitions
+
+Storage results retain their own create/append/flush evidence through
+`ResourceTransferHost`. Definition transfer and metadata mutation are distinct
+operations; callers must supply the matching capabilities instead of routing
+every resource through a generic fallback.
+
+The shared error projection `operation_error_output` preserves normalized
+service classifications and reconciliation evidence. Rendering and writer
+failures remain explicit.
+
+## Support boundaries
+
+Command support depends on the resolved resource and supplied adapter. Hidden
+administrative mutations, recursive storage operations, ARM lifecycle and domain
+assignment are not implied by registering a verb. Resource skill headers
+currently fail explicitly when requested.
+
+The native terminal selection adapter is a separate host integration step;
+without it the selection-dependent branches fail explicitly rather than
+choosing every resource. The next source-backed resource slice is shortcut
+`ln --target` resolution with source prompt/validation ordering. Local file
+resource copy, virtual-domain APIs, GET, skills and regex remain outside this
+slice.

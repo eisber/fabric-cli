@@ -38,7 +38,7 @@ COMPARISONS = (
     ("fabric-sdk-operations", "continuation_reference.py", "continuation_query", False),
 )
 REFERENCE_DIRECTORIES = {
-    "fabric-cli-mutations": WORKSPACE / "clients" / "cli" / "commands" / "mutations",
+    "fabric-cli-mutations": WORKSPACE / "clients" / "cli" / "commands" / "resources",
     "fabric-sdk-operations": WORKSPACE / "engine" / "core" / "lro",
 }
 

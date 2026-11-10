@@ -8,19 +8,19 @@
 
 #![doc = include_str!("../README.md")]
 
-mod folders;
+mod client;
 pub mod models;
 pub mod mutations;
 
+pub use client::{
+    FolderError, FolderErrorKind, FolderExecutor, FolderGetOptions, FolderList, FolderListError,
+    FolderListLimits, FolderListOptions, FolderQueryValue, FolderRequest,
+};
 pub use fabric_core::{CredentialSelection, RequestContext, TokenCredential};
 pub use fabric_sdk_items::{
     ItemExecutionError as FolderExecutionError, ItemResponse as FolderResponse,
 };
 pub use fabric_sdk_workspaces::{FabricServiceError, Page};
-pub use folders::{
-    FolderError, FolderErrorKind, FolderExecutor, FolderGetOptions, FolderList, FolderListError,
-    FolderListLimits, FolderListOptions, FolderQueryValue, FolderRequest,
-};
 pub use models::Folder;
 use std::{fmt, sync::Arc};
 

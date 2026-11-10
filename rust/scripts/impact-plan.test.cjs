@@ -18,7 +18,7 @@ const target = (name, kind, src, features = []) => ({
   name, kind: [kind], src_path: absolute(src), test: true, 'required-features': features,
 });
 const packageDirectory = name => ({deploy: 'rust/engine/control-plane/deployment',
-  adapter: 'rust/clients/cli/commands/transfer', cli: 'rust/clients/cli/app'}[name] || `rust/engine/${name}`);
+  adapter: 'rust/clients/cli/commands/resources/definitions', cli: 'rust/clients/cli/app'}[name] || `rust/engine/${name}`);
 function pkg(name, dependencies = [], targets = [], features = {default: []}) {
   const directory = packageDirectory(name);
   return {id: `path+${name}#0.1.0`, name, manifest_path: absolute(`${directory}/Cargo.toml`),
@@ -40,7 +40,7 @@ function fixture() {
       target('spark', 'test', 'rust/engine/control-plane/deployment/tests/spark.rs'),
       target('shared', 'test', 'rust/engine/control-plane/deployment/tests/shared.rs'),
     ]),
-    pkg('adapter', ['deploy'], [target('publish', 'test', 'rust/clients/cli/commands/transfer/tests/publish.rs')]),
+    pkg('adapter', ['deploy'], [target('publish', 'test', 'rust/clients/cli/commands/resources/definitions/tests/publish.rs')]),
     pkg('cli', ['adapter'], [target('mount', 'test', 'rust/clients/cli/app/tests/mount.rs')]),
     pkg('unrelated'),
   ];

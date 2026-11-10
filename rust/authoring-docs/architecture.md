@@ -19,10 +19,12 @@ unchanged names and logical layers:
 
 | Location | Ownership |
 | --- | --- |
-| `engine/sdk/` | Convenience SDK entry point, including existing item-type implementations; not a complete umbrella |
+| `engine/sdk/` | Convenience SDK facade and thin inherent `Client` forwarding; not a complete umbrella |
 | `engine/control-plane/resources/` | Capacity, workspace, folder and generic item clients in separate package leaves |
+| `engine/control-plane/resources/contracts/` | Neutral resource-operation, paging and service-error types |
+| `engine/control-plane/resources/items/notebooks/` | Notebook definitions, wire models and bounded service sessions |
 | `engine/control-plane/jobs/`, `engine/control-plane/acl/`, `engine/control-plane/catalog/` | Job and schedule APIs, access configuration and metadata discovery |
-| `engine/data-plane/tables/` | Lakehouse/Delta table capabilities, including load and maintenance orchestration |
+| `engine/data-plane/onelake/tables/` | Lakehouse/Delta table capabilities, including load and maintenance orchestration |
 | `engine/data-plane/onelake/client/`, `engine/data-plane/onelake/http/` | OneLake models and HTTP adapter |
 | `engine/core/auth/provider/`, `engine/core/auth/windows/` | Optional credential providers and isolated Windows interop |
 | `engine/control-plane/deployment/` | Reusable configuration, transforms, planning, publication and definition operations |
@@ -30,10 +32,15 @@ unchanged names and logical layers:
 | `engine/core/pagination/`, `engine/core/lro/` | Shared paging, request completion and polling |
 | `engine/core/contracts/`, `engine/core/json/` | Shared endpoint/credential contracts and ordered JSON encoding |
 | `clients/cli/app/` | `fab-rs` executable, central composition and CLI deployment handling |
-| `clients/cli/commands/` | Resource, resource-mutation, job, file, table, local and transfer adapters |
+| `clients/cli/commands/resources/` | Generic resource commands; nested `definitions/` owns item-definition import/export in a separate package |
+| `clients/cli/commands/access/`, `catalog/`, `api/` | Focused ACL/label, discovery and explicit raw API command owners |
+| `clients/cli/commands/contracts/` | Neutral CLI command values, errors, presentation and injected HTTP adapters |
+| `clients/cli/commands/onelake/files/`, `tables/` | Physical file and table command capabilities, not new command namespaces |
+| `clients/cli/commands/jobs/`, `local/` | Job/schedule and local settings/navigation command adapters |
+| `clients/cli/compatibility/resource-commands/` | Original aggregate public command/host shapes and delegation |
 | `clients/cli/state/`, `query/`, `output/` | CLI-specific context, query and presentation (all paths under `clients/cli/`) |
 | `clients/cli/repl/` | Removable shell loop and opt-in Reedline terminal adapter |
-| `clients/cli/update/` | Pinned-trust release verification and optional standalone updater |
+| `clients/cli/self-updater/` | Pinned-trust release verification and optional standalone updater |
 
 Each package leaf retains its manifest, sources, tests, examples and assets;
 grouping directories are not packages. Directory names do not change package or
@@ -52,8 +59,26 @@ network request. Table capabilities compose OneLake reads with load and
 maintenance jobs; deployment remains control-plane orchestration despite local
 configuration and definition preparation. `engine/core/` groups shared
 foundations without changing their existing core, identity or SDK layers.
-Focused capability crates remain directly consumable; this layout does not
-extract shared contracts or remove existing facade and CLI mutation coupling.
+Focused capability crates remain directly consumable. Resource contracts are
+neutral because putting them in the LRO implementation while workspaces also
+consumes that implementation would create a dependency cycle. The LRO package
+depends on contracts in production; its workspace dependency is test-only.
+Notebook service algorithms depend on those contracts and LRO policy, never on
+the SDK facade. `Client::notebook_session` stays in the facade because Rust
+inherent methods must be defined in the crate that owns `Client`.
+
+The original `fabric-cli-resources` aggregate retains mixed public command and
+host types through compatibility composition. Focused access/catalog/API owners
+depend on shared CLI contracts, not on the aggregate or one another. Physical
+nesting of definition commands under resources does not introduce a dependency
+between those two packages.
+
+Use names for actual responsibilities: `parser`, `host`, `client`, `models`,
+`render`, and operation names where appropriate. Generic `mutations.rs` describes
+resource-changing CRUD; item mirroring actions have their own `mirroring.rs`.
+Old `frontdoor` paths are compatibility reexports, not active implementation
+directories. Public service-module aliases retain old workspace/capacity paths
+when canonical service implementations move to `client.rs`.
 
 | Layer (initial crate) | Ownership | Allowed dependency layers |
 | --- | --- | --- |

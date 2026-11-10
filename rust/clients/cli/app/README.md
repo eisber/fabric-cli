@@ -6,6 +6,15 @@
 command sessions and native host composition. Command behavior lives in focused
 libraries; this crate connects them to explicit runtime capabilities.
 
+## Why `app/`
+
+This is the executable application, not a service capability. Start with
+`src/main.rs` for process startup and root dispatch, `src/parser.rs` for root
+argument assembly, and `src/families.rs` for the injected multi-command session.
+Native/runtime/configuration adapters remain here because they bind the
+application to its host. Reusable command algorithms belong under
+`../commands/`; reusable service behavior belongs under `engine/`.
+
 ## Run the application
 
 From `rust/`:
@@ -144,7 +153,7 @@ and states that the original command did not run and must be rerun. Pre-commit
 update failures warn without suppressing the requested command; uncertain native
 replacement stops for recovery. Commands are never replayed automatically.
 
-See the [update component contract](../update/README.md)
+See the [update component contract](../self-updater/README.md)
 for signed metadata, exact target/feature matching, bounded downloads, Windows
 working-directory/helper restrictions, retained recovery files and acceptance
 limits. Update-manifest signatures do not establish native package signing,

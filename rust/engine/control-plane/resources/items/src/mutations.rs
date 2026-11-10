@@ -23,7 +23,7 @@ impl ItemMutations {
         workspace: &str,
         item: &str,
     ) -> Result<ResourceOutcome, ResourceError> {
-        Self::mirroring_action(executor, workspace, item, "getMirroringStatus").await
+        crate::mirroring::status(executor, workspace, item).await
     }
 
     /// Start mirroring after the CLI has applied its state/prompt policy.
@@ -35,7 +35,7 @@ impl ItemMutations {
         workspace: &str,
         item: &str,
     ) -> Result<ResourceOutcome, ResourceError> {
-        Self::mirroring_action(executor, workspace, item, "startMirroring").await
+        crate::mirroring::start(executor, workspace, item).await
     }
 
     /// Stop mirroring after the CLI has applied its state/prompt policy.
@@ -47,7 +47,7 @@ impl ItemMutations {
         workspace: &str,
         item: &str,
     ) -> Result<ResourceOutcome, ResourceError> {
-        Self::mirroring_action(executor, workspace, item, "stopMirroring").await
+        crate::mirroring::stop(executor, workspace, item).await
     }
 
     /// Create through the type-specific collection with Python's synchronous policy.
@@ -65,22 +65,6 @@ impl ItemMutations {
                 ResourceMethod::Post,
                 &["workspaces", workspace, collection.as_str()],
                 Some(payload),
-                CompletionPolicy::PythonSynchronous,
-            )?)
-            .await
-    }
-
-    async fn mirroring_action(
-        executor: &mut dyn ResourceOperations,
-        workspace: &str,
-        item: &str,
-        action: &str,
-    ) -> Result<ResourceOutcome, ResourceError> {
-        executor
-            .execute(ResourceOperation::new(
-                ResourceMethod::Post,
-                &["workspaces", workspace, "mirroredDatabases", item, action],
-                None,
                 CompletionPolicy::PythonSynchronous,
             )?)
             .await

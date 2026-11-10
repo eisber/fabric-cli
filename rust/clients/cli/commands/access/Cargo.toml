@@ -1,0 +1,26 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+[package]
+name = "fabric-cli-access"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Caller-injected ACL and label command handlers"
+
+[package.metadata.fabric]
+layer = "cli"
+
+[dependencies]
+clap.workspace = true
+fabric-cli-command-contracts.workspace = true
+fabric-cli-context.workspace = true
+fabric-cli-query.workspace = true
+fabric-sdk-access.workspace = true
+fabric-sdk-api.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
