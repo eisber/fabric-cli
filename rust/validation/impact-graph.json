@@ -585,6 +585,37 @@
       ]
     },
     {
+      "id": "sdk-mirroring-start",
+      "package": "fabric-sdk",
+      "inputs": [
+        "rust/sdk/client/src/mirroring.rs",
+        "rust/sdk/client/tests/mirroring_start.rs",
+        "rust/docs/v2-start.md"
+      ],
+      "depends_on": ["sdk", "operations"],
+      "tests": [
+        {"package": "fabric-sdk", "target": "test:mirroring_start"}
+      ],
+      "checks": ["sdk-graph"]
+    },
+    {
+      "id": "cli-mirroring-start",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/frontends/cli/app/src/start_command.rs",
+        "rust/frontends/cli/app/src/v2_start_main.rs",
+        "rust/frontends/cli/app/tests/start_command.rs",
+        "rust/frontends/cli/app/tests/v2_start_binary.rs"
+      ],
+      "depends_on": ["sdk-mirroring-start", "cli-headless"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:start_command"},
+        {"package": "fabric-cli", "target": "test:v2_start_binary"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
+      ],
+      "checks": ["dependency-graph", "headless"]
+    },
+    {
       "id": "sdk-graph-refresh",
       "package": "fabric-sdk-graph",
       "inputs": [

@@ -24,6 +24,7 @@ selected endpoint with the appropriate audience.
 | `workspaces` | Workspace listing, ordered metadata and optional enrichment |
 | `items` | Item listing, generic lookup and finite collection-specific metadata |
 | `metadata` | Explicit primary workspace or generic item metadata, without enrichment |
+| `mirroring` | State-probed, context-bound MirroredDatabase START with shared approval and outcome evidence |
 | `dataagents` | Typed public DataAgent metadata, exact definitions and explicit-stage settings/datasource pages |
 | `representations` | Native multipart definition/part and OneLake file reads |
 | `variable_libraries` | Metadata-first VariableLibrary reads and explicitly disclosed native source/value-set shapes |
@@ -66,6 +67,14 @@ An HTTP 200 running native state is incomplete, not successful publication;
 `targetVersion` is not a generic operation handle. See
 [Environment native publishing](../../docs/environment-native-publish.md) for
 permissions, concurrency, lifecycle and unsupported boundaries.
+
+Mirroring START first reads the native status and permits only `Stopped` or
+`Initialized`. A completed action does not prove `Running` or replication
+catch-up. The SDK requires context-bound immediate approval, injected execution
+and finite limits/cancellation; it never submits a job, polls an undocumented
+START monitor, replays a mutation or issues an implicit STOP. See
+[MirroredDatabase lifecycle START](../../docs/v2-start.md) for the exact path,
+native contracts and separately composed CLI head.
 
 The SQL modules reexport the focused SDK leaves. Metadata requests use the
 caller's shared executor; they do not connect to SQL, retrieve definitions

@@ -70,6 +70,58 @@ fn facade_and_generic_heads_resolve_the_same_operation_and_schema() {
 }
 
 #[test]
+fn start_is_an_explicit_lifecycle_verb_without_implicit_target_support() {
+    let mut registry = Registry::default();
+    registry
+        .register(descriptor("mirroredDatabase.mirroring.start", Verb::Start))
+        .unwrap();
+    assert_eq!(serde_json::to_value(Verb::Start).unwrap(), json!("start"));
+    let selection = Target {
+        kind: fabric_v2_contracts::TargetKind::Item,
+        owner_type: "MirroredDatabase".into(),
+        facet: "runtime".into(),
+        representation: "mirroring".into(),
+        generation: None,
+    };
+    assert_eq!(
+        registry.resolve(Verb::Start, &selection, None).unwrap_err(),
+        ContractError::UnsupportedTarget
+    );
+    registry
+        .bind(
+            Binding::new(
+                "MirroredDatabase",
+                "runtime",
+                "mirroring",
+                Generation::Any,
+                "mirroredDatabase.mirroring.start",
+                Availability::Available,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert!(registry.resolve(Verb::Start, &selection, None).is_ok());
+    for (owner, facet, representation) in [
+        ("SQLDatabase", "runtime", "mirroring"),
+        ("Notebook", "runtime", "mirroring"),
+        ("MirroredDatabase", "metadata", "item"),
+    ] {
+        let unsupported = Target {
+            owner_type: owner.into(),
+            facet: facet.into(),
+            representation: representation.into(),
+            ..selection.clone()
+        };
+        assert_eq!(
+            registry
+                .resolve(Verb::Start, &unsupported, None)
+                .unwrap_err(),
+            ContractError::UnsupportedTarget
+        );
+    }
+}
+
+#[test]
 fn unknown_generation_does_not_select_an_older_schema() {
     let mut registry = Registry::default();
     registry
