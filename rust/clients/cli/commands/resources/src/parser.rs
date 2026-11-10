@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//! Typed argument parsing for generic Fabric resource commands.
+
 use crate::MutationError;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 
