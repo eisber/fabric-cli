@@ -585,6 +585,75 @@
       ]
     },
     {
+      "id": "sdk-mirroring-start",
+      "package": "fabric-sdk",
+      "inputs": [
+        "rust/engine/sdk/src/mirroring.rs",
+        "rust/engine/sdk/tests/mirroring_start.rs",
+        "rust/authoring-docs/v2-start.md"
+      ],
+      "depends_on": ["sdk", "operations"],
+      "tests": [
+        {"package": "fabric-sdk", "target": "test:mirroring_start"}
+      ],
+      "checks": ["sdk-graph", "mirroring-lifecycle"]
+    },
+    {
+      "id": "cli-mirroring-start",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/start_command.rs",
+        "rust/clients/cli/app/src/v2_start_main.rs",
+        "rust/clients/cli/app/tests/start_command.rs",
+        "rust/clients/cli/app/tests/v2_start_binary.rs"
+      ],
+      "depends_on": ["sdk-mirroring-start", "cli-headless"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:start_command"},
+        {"package": "fabric-cli", "target": "test:v2_start_binary"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
+      ],
+      "checks": ["dependency-graph", "headless", "mirroring-lifecycle"]
+    },
+    {
+      "id": "sdk-mirroring-stop",
+      "package": "fabric-sdk",
+      "inputs": [
+        "rust/engine/sdk/src/mirroring_stop.rs",
+        "rust/engine/control-plane/resources/items/src/stop.rs",
+        "rust/engine/control-plane/resources/items/tests/stop.rs",
+        "rust/authoring-docs/v2-stop.md"
+      ],
+      "depends_on": ["sdk", "sdk-items", "operations"],
+      "tests": [
+        {"package": "fabric-sdk-items", "target": "test:stop"}
+      ],
+      "checks": ["sdk-graph", "mirroring-lifecycle"]
+    },
+    {
+      "id": "cli-mirroring-stop",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/stop_command.rs",
+        "rust/clients/cli/app/src/v2_stop_main.rs",
+        "rust/clients/cli/app/src/v2_lifecycle_tests.rs",
+        "rust/clients/cli/app/tests/stop_command.rs",
+        "rust/clients/cli/app/tests/v2_stop_binary.rs",
+        "rust/clients/cli/commands/mutations/src/v2_stop.rs",
+        "rust/clients/cli/commands/mutations/tests/v2_stop.rs",
+        "rust/clients/cli/commands/mutations/tests/v2_stop_wire.rs"
+      ],
+      "depends_on": ["sdk-mirroring-stop", "mutations", "cli-headless"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:stop_command"},
+        {"package": "fabric-cli", "target": "test:v2_stop_binary"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"},
+        {"package": "fabric-cli-mutations", "target": "test:v2_stop"},
+        {"package": "fabric-cli-mutations", "target": "test:v2_stop_wire"}
+      ],
+      "checks": ["dependency-graph", "headless", "mirroring-lifecycle"]
+    },
+    {
       "id": "sdk-graph-refresh",
       "package": "fabric-sdk-graph",
       "inputs": [
@@ -3002,6 +3071,13 @@
   ],
   "profiles": [
     {
+      "id": "mirroring-lifecycle-native",
+      "packages": ["fabric-cli", "fabric-identity"],
+      "features": ["fabric-cli/headless", "fabric-cli/native-read", "fabric-identity/windows-broker"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["mirroring-lifecycle"]
+    },
+    {
       "id": "v2-graph-refresh",
       "packages": ["fabric-cli"],
       "features": ["fabric-cli/v2-refresh"],
@@ -4326,6 +4402,14 @@
       "depends_on": [
         "selector-tests"
       ]
+    },
+    {
+      "id": "mirroring-lifecycle",
+      "packages": ["fabric-cli", "fabric-sdk", "fabric-sdk-items", "fabric-cli-mutations"],
+      "components": ["sdk-mirroring-start", "cli-mirroring-start", "sdk-mirroring-stop", "cli-mirroring-stop"],
+      "inputs": [],
+      "platforms": ["windows", "linux", "macos"],
+      "depends_on": ["selector-tests"]
     },
     {
       "id": "dependency-graph",

@@ -37,6 +37,15 @@ The opt-in [`v2-cancel` slice](authoring-docs/v2-cancel.md) requests cancellatio
 existing Notebook scheduler run using an explicit ID-based path. Its acceptance
 receipt does not claim terminal cancellation or rollback.
 
+The [MirroredDatabase START milestone](authoring-docs/v2-start.md) adds an explicit
+runtime/mirroring lifecycle binding to `fab-cli-v2` and the caller-injected SDK.
+It requires invocation approval and a total local deadline. Action completion
+does not establish replication catch-up or submit a workload.
+
+The [native Stop wrapper](authoring-docs/v2-stop.md#native-fab-cli-v2-wrapper)
+retains `--yes` and adds a required explicit `--timeout`. Observations and the
+optional stop write use separate host-policy decisions; acceptance is not Stopped.
+
 The owner-selected [nonrecursive delete preview](authoring-docs/nonrecursive-delete.md)
 adds exact Notebook deletion with explicit permanent intent and host approval.
 Its typed operation metadata propagates through SDK results and CLI receipts.

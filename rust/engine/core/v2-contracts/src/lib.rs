@@ -56,6 +56,10 @@ pub enum Verb {
     Refresh,
     /// Discover bounded candidates within an explicitly selected scope.
     Search,
+    /// Start one advertised resource lifecycle, never a workload submission.
+    Start,
+    /// Stop one advertised resource lifecycle, never delete or cancel a workload.
+    Stop,
     /// Patch or replace an explicitly existing resource.
     Update,
     /// Check explicit local input without resolving or executing a resource.

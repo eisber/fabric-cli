@@ -38,6 +38,16 @@ name = "v2_help"
 path = "tests/v2_help.rs"
 required-features = ["v2-discovery"]
 
+[[test]]
+name = "v2_start_binary"
+path = "tests/v2_start_binary.rs"
+required-features = ["headless"]
+
+[[test]]
+name = "v2_stop_binary"
+path = "tests/v2_stop_binary.rs"
+required-features = ["headless"]
+
 [[bin]]
 name = "fab-cli-v2"
 path = "src/v2_main.rs"

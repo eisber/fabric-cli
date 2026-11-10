@@ -12,9 +12,8 @@
 //! of the host's `ApprovalPolicy`. The host must enforce its full effect and
 //! authorization policy before granting that intent. Shared descriptors,
 //! `PreparedOperation`, `ApprovedOperation` and native wiring remain outside this
-//! module. Adapter source is unmounted and unvalidated until coordinator-owned
-//! integration and validation; this API establishes no shared registry or MCP
-//! execution coverage.
+//! module; the SDK facade's `mirroring_stop` adapter supplies those boundaries.
+//! This library does not install an executable or MCP host.
 //!
 //! Stopping replication does not delete the item, shut down the source database,
 //! or guarantee draining or zero cost. For Azure SQL-backed mirrors, stopping and
@@ -377,6 +376,7 @@ async fn read_status(
             data: Some(data),
         } => data
             .as_object()
+            .filter(|object| object.get("error").is_none_or(serde_json::Value::is_null))
             .and_then(|object| object.get("status"))
             .and_then(serde_json::Value::as_str)
             .and_then(MirroringState::parse),

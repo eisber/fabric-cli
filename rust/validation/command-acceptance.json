@@ -112,8 +112,8 @@
       "resource_branches": ["mirrored database lifecycle", "capacity lifecycle", "workspace/capacity assignment", "source-supported domain assignment"],
       "option_branches": ["selected workspace", "force", "before-action state reads", "Fabric versus ARM audience"],
       "failure_branches": ["unsupported target", "missing capacity", "invalid state", "service error", "accepted operation uncertainty"],
-      "rust_targets": ["fabric-cli/family_mounts", "fabric-cli/native_settings", "fabric-cli-mutations/consumer", "fabric-cli-mutations/shared_policy"],
-      "known_differences": ["Only source-supported resource/command pairs are eligible; a generic endpoint does not enable every resource type."],
+      "rust_targets": ["fabric-cli/family_mounts", "fabric-cli/native_settings", "fabric-cli-mutations/consumer", "fabric-cli-mutations/shared_policy", "fabric-cli/start_command", "fabric-cli/stop_command", "fabric-cli/v2_start_binary", "fabric-cli/v2_stop_binary", "fabric-sdk/mirroring_start", "fabric-sdk-items/stop", "fabric-cli-mutations/v2_stop", "fabric-cli-mutations/v2_stop_wire"],
+      "known_differences": ["Only source-supported resource/command pairs are eligible; a generic endpoint does not enable every resource type.", "Separate opt-in fab-cli-v2 mirroring lifecycle targets are exact UUID runtime/mirroring facets. Start retains --approve; Stop retains --yes and permits no-write Stopped/Stopping observations without intent. Both native wrappers require an explicit positive total --timeout; default fab-rs and the grouped fab-cli are unchanged."],
       "live_acceptance": "unvalidated"
     },
     {

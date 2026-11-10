@@ -12,7 +12,7 @@ const {CHECK_IDS, commandsFor, validateRegistry, assertTransportGraphs} =
 
 const EXPECTED_IDS = [
   'selector-tests', 'command-inventory', 'oracle-tools', 'batch-oracle', 'transport', 'transport-graphs',
-  'read-parity', 'json-parity', 'broker', 'repl', 'interactive', 'headless', 'certificate', 'updater',
+  'read-parity', 'json-parity', 'broker', 'repl', 'interactive', 'headless', 'mirroring-lifecycle', 'certificate', 'updater',
   'combined', 'jobs-oracle', 'definitions-oracle', 'import-oracle', 'parameters-oracle',
   'export-oracle', 'native-read', 'context-output', 'broker-read-parity', 'sdk-example',
   'resource-oracle', 'cli-smoke', 'sdk-graph', 'dependency-graph', 'frozen-verify',
@@ -116,11 +116,11 @@ function withTargetEnvironment(value, action) {
 
 test('all canonical IDs are registered exactly once, including core-profile markers', () => {
   assert.deepEqual([...CHECK_IDS].sort(), [...EXPECTED_IDS].sort());
-  assert.equal(CHECK_IDS.length, 29);
+  assert.equal(CHECK_IDS.length, 30);
   assert.equal(new Set(CHECK_IDS).size, CHECK_IDS.length);
   assert.ok(Object.isFrozen(CHECK_IDS));
   assert.equal(validateRegistry(graph([...EXPECTED_IDS].reverse())), true);
-  for (const id of ['interactive', 'headless', 'certificate', 'updater', 'combined']) {
+  for (const id of ['interactive', 'headless', 'mirroring-lifecycle', 'certificate', 'updater', 'combined']) {
     assert.deepEqual(commands(id), [], id);
     assert.throws(() => validateRegistry(graph(EXPECTED_IDS.filter(value => value !== id))),
       /missing:/, id);

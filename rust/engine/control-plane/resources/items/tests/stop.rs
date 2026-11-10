@@ -702,3 +702,84 @@ fn dropping_at_each_await_boundary_cannot_start_cleanup_compensation_or_another_
         assert_calls(&capture, &actions);
     }
 }
+
+#[tokio::test]
+async fn non_null_status_errors_never_authorize_a_write_or_successful_observation() {
+    for state in ["Running", "Stopped", "Stopping"] {
+        for error in [
+            json!({"errorCode":"private-status-code","message":"private-status-message"}),
+            json!({}),
+            json!([]),
+            json!(false),
+            json!(0),
+            json!("private-status-error"),
+        ] {
+            let response = completed(Some(json!({"status":state,"error":error})));
+            let mut capture = Capture::responses([response.clone()]);
+            let error = stop(&mut capture, &target(), approved()).await.unwrap_err();
+            assert_eq!(error.code(), "InvalidResponse");
+            assert_no_submission(&error);
+            assert_eq!(error.response_outcome(), Some(&response));
+            assert_calls(&capture, &["getMirroringStatus"]);
+        }
+    }
+}
+
+#[tokio::test]
+async fn status_error_on_readback_preserves_completed_stop_without_confirmation() {
+    for error in [
+        json!({"errorCode":"private-status-code","message":"private-status-message"}),
+        json!({}),
+        json!([]),
+        json!(false),
+        json!(0),
+        json!("private-status-error"),
+    ] {
+        let submitted = completed(None);
+        let readback = completed(Some(json!({"status":"Stopped","error":error})));
+        let mut capture =
+            Capture::responses([status("Running"), submitted.clone(), readback.clone()]);
+        let error = stop(&mut capture, &target(), approved()).await.unwrap_err();
+        assert_eq!(error.code(), "InvalidResponse");
+        assert_retained_submission(&error, &submitted);
+        assert_eq!(error.response_outcome(), Some(&readback));
+        assert_calls(
+            &capture,
+            &["getMirroringStatus", "stopMirroring", "getMirroringStatus"],
+        );
+    }
+}
+
+#[tokio::test]
+async fn null_status_error_and_unrelated_future_fields_remain_valid() {
+    for (state, expected) in [
+        ("Stopped", StopOutcome::AlreadyStopped),
+        ("Stopping", StopOutcome::AlreadyStopping),
+    ] {
+        let mut capture = Capture::responses([completed(Some(json!({
+            "status":state,"error":null,"private-future":{"field":true}
+        })))]);
+        let receipt = stop(&mut capture, &target(), StopOptions::default())
+            .await
+            .unwrap();
+        assert_eq!(receipt.outcome, expected);
+        assert_calls(&capture, &["getMirroringStatus"]);
+    }
+    let mut capture = Capture::responses([
+        completed(Some(json!({"status":"Running","error":null}))),
+        completed(None),
+        completed(Some(
+            json!({"status":"Stopped","error":null,"future":[1,2]}),
+        )),
+    ]);
+    assert!(
+        stop(&mut capture, &target(), approved())
+            .await
+            .unwrap()
+            .stopped_confirmed()
+    );
+    assert_calls(
+        &capture,
+        &["getMirroringStatus", "stopMirroring", "getMirroringStatus"],
+    );
+}

@@ -221,3 +221,53 @@ async fn already_cancelled_caller_budget_never_reaches_http_or_remote_cancel() {
     assert_eq!(value["mutationMayHaveOccurred"], false);
     assert!(actions.is_empty());
 }
+
+#[tokio::test]
+async fn status_error_is_rejected_by_the_actual_http_stack_before_write_or_confirmation() {
+    let failure = json!({"errorCode":"private-status-code","message":"private-status-message"});
+    for state in ["Running", "Stopped", "Stopping"] {
+        let (exit, value, actions) = invoke(
+            true,
+            vec![response(200, json!({"status":state,"error":failure}))],
+            pending(),
+        )
+        .await;
+        assert_eq!(exit, 1);
+        assert_eq!(value["error"]["code"], "InvalidResponse");
+        assert_eq!(value["mutationMayHaveOccurred"], false);
+        assert_eq!(value["stoppedConfirmed"], false);
+        assert_eq!(actions, ["getMirroringStatus"]);
+        assert!(!value.to_string().contains("private-"));
+    }
+    let (exit, value, actions) = invoke(
+        true,
+        vec![
+            response(200, json!({"status":"Running","error":null})),
+            response(200, Value::Null),
+            response(200, json!({"status":"Stopped","error":failure})),
+        ],
+        pending(),
+    )
+    .await;
+    assert_eq!(exit, 1);
+    assert_eq!(value["stoppedConfirmed"], false);
+    assert_eq!(value["mutationMayHaveOccurred"], true);
+    assert_eq!(
+        value["requestEvidence"]["requestOutcome"]["httpStatus"],
+        200
+    );
+    assert_eq!(
+        actions,
+        ["getMirroringStatus", "stopMirroring", "getMirroringStatus"]
+    );
+    assert!(!value.to_string().contains("private-"));
+    let (exit, value, actions) = invoke(
+        false,
+        vec![response(200, json!({"status":"Stopped","error":null}))],
+        pending(),
+    )
+    .await;
+    assert_eq!(exit, 0);
+    assert_eq!(value["stoppedConfirmed"], true);
+    assert_eq!(actions, ["getMirroringStatus"]);
+}

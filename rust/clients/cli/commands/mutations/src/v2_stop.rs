@@ -3,8 +3,8 @@
 
 //! Standalone, ID-only CLI v2 mirroring-stop adapter.
 //!
-//! This source-only library adapter is unmounted and unvalidated by Cargo checks.
-//! It establishes no shared registry, native-host or MCP execution coverage.
+//! This standalone library schema does not install a shared registry or host.
+//! The separate native wrapper adds its own typed deadline and approval boundary.
 //! Hosts must parse before acquiring credentials, render help from [`command`],
 //! and inject their existing [`ResourceOperations`] with one shared deadline and
 //! cancellation budget. `--yes` records explicit intent only: it is not provider
@@ -40,6 +40,17 @@ pub struct StopCommand {
 }
 
 impl StopCommand {
+    /// Construct typed intent after a host has parsed its additional local controls.
+    ///
+    /// # Errors
+    /// Rejects the same exact target grammar as [`parse_args`], without reparsing argv.
+    pub fn new(path: &str, yes: bool) -> Result<Self, ArgumentError> {
+        Ok(Self {
+            target: parse_target(path)?,
+            approved: yes,
+        })
+    }
+
     /// Exact authoritative IDs, preserving the caller's GUID spelling.
     pub fn target(&self) -> &MirroringTarget {
         &self.target
@@ -142,10 +153,7 @@ where
     let path = matches
         .get_one::<String>("path")
         .ok_or(ArgumentError::InvalidTarget)?;
-    Ok(StopCommand {
-        target: parse_target(path)?,
-        approved: matches.get_flag("yes"),
-    })
+    StopCommand::new(path, matches.get_flag("yes"))
 }
 
 /// Validate only the absolute typed mirroring facet; no discovery or aliasing.

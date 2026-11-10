@@ -21,6 +21,8 @@ pub mod livy;
 #[cfg(feature = "livy-arrow")]
 pub mod livy_arrow;
 pub mod metadata;
+pub mod mirroring;
+pub mod mirroring_stop;
 pub mod models;
 pub mod notebook_observability;
 pub mod notebook_runtime;

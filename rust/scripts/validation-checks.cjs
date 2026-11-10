@@ -221,6 +221,11 @@ const REGISTRY = Object.freeze({
     // provider components, not unrelated CLI-only profile/package overlap.
     commands: () => [],
   },
+  'mirroring-lifecycle': {
+    step: 'Check native Start/Stop headless and synthetic broker composition offline',
+    // Core: exact lifecycle targets and all-target lint in the headless/native-read profile.
+    commands: () => [],
+  },
   certificate: {
     step: 'Check certificate credentials without live authentication',
     // Core: fabric-identity/certificate and fabric-cli/certificate, including

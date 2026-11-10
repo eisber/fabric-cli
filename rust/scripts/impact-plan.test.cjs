@@ -1014,3 +1014,32 @@ test('real HTTP-to-Arrow recovery boundary is explicitly tested with its forward
     'rust/engine/core/http/executor/Cargo.toml'), 'utf8');
   assert.ok(manifest.includes('livy-arrow = ["fabric-sdk/livy-arrow"]'));
 });
+
+test('Start and Stop current-layout targets retain headless and synthetic broker profile coverage', () => {
+  const root = path.resolve(__dirname, '..', '..');
+  const graph = JSON.parse(fs.readFileSync(path.join(root, 'rust/validation/impact-graph.json'), 'utf8'));
+  const profile = graph.profiles.find(item => item.id === 'mirroring-lifecycle-native');
+  assert.ok(profile);
+  assert.deepEqual(profile.features,
+    ['fabric-cli/headless', 'fabric-cli/native-read', 'fabric-identity/windows-broker']);
+  assert.deepEqual(profile.checks, ['mirroring-lifecycle']);
+  for (const [id, input, target] of [
+    ['sdk-mirroring-start', 'rust/engine/sdk/src/mirroring.rs', 'test:mirroring_start'],
+    ['sdk-mirroring-stop', 'rust/engine/sdk/src/mirroring_stop.rs', 'test:stop'],
+    ['cli-mirroring-start', 'rust/clients/cli/app/src/v2_start_main.rs', 'test:v2_start_binary'],
+    ['cli-mirroring-stop', 'rust/clients/cli/app/src/v2_stop_main.rs', 'test:v2_stop_binary'],
+  ]) {
+    const component = graph.components.find(item => item.id === id);
+    assert.ok(component.inputs.includes(input), id);
+    assert.ok(component.tests.some(item => item.target === target), id);
+    assert.ok(component.checks.includes('mirroring-lifecycle'), id);
+    for (const input of component.inputs) {
+      assert.doesNotMatch(input, /^rust\/(?:sdk|frontends|docs)\//, id);
+      assert.ok(fs.existsSync(path.join(root, input)), input);
+    }
+  }
+  const stop = graph.components.find(item => item.id === 'cli-mirroring-stop');
+  assert.ok(stop.inputs.includes('rust/clients/cli/app/src/v2_lifecycle_tests.rs'));
+  assert.ok(stop.tests.some(item => item.target === 'bin:fab-cli-v2'));
+  assert.ok(require('./validation-checks.cjs').CHECK_IDS.includes('mirroring-lifecycle'));
+});

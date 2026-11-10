@@ -3,11 +3,9 @@
 # Stop mirrored database replication
 
 This page records the approved bounded contract for stopping replication on one
-MirroredDatabase item through public Rust library adapters. Adapter source is
-unmounted and unvalidated; this document does not establish implementation
-acceptance. **Opt-in executable integration is
-coordinator-pending and unavailable.** No executable feature name or enablement
-command is advertised.
+MirroredDatabase item through public Rust library adapters and a separate,
+opt-in `fab-cli-v2` native wrapper. Offline execution evidence does not establish
+live-service, tenant-policy or production acceptance.
 
 The approved library surfaces are `fabric_sdk_items::stop` for orchestration and
 `fabric_cli_mutations::v2_stop` for argument validation and JSON delivery.
@@ -15,11 +13,10 @@ Libraries use the caller's existing executor, endpoint, credentials, async
 runtime, and single cancellation/deadline budget. They do not create an
 authentication flow, runtime, polling engine, or credential fallback.
 
-The central operation descriptor, `PreparedOperation`, `ApprovedOperation`, and
-executable service-host wiring remain coordinator-owned and are not implemented
-by this slice. No shared registry or Model Context Protocol (MCP) execution
-coverage is established. The bounded library contract is not a substitute for
-those integration and validation gates.
+`fabric_sdk::mirroring_stop` supplies the exact `Verb::Stop` descriptor,
+`PreparedOperation` and consumed `ApprovedOperation` boundaries around the same
+library orchestrator. It does not duplicate its state machine. No Model Context
+Protocol (MCP) execution host or live-service acceptance is established.
 
 Python `fab`, default executable behavior, and Rust v1 stop semantics remain
 unchanged. This contract does not silently replace an existing root command.
@@ -28,9 +25,8 @@ separate v1 behavior.
 
 ## Address one mirroring target
 
-The following executable-independent argument shape is for reference only.
-**It remains unmounted and unavailable as an executable command.** The binary
-name is intentionally omitted:
+The preserved executable-independent library argument shape has no local timeout
+option; its caller injects the shared budget:
 
 ```text
 stop /<workspace-guid>.Workspace/<item-guid>.MirroredDatabase/runtime/mirroring --yes --format json
@@ -69,6 +65,45 @@ JSON is the only supported output format, with `--format json` as the explicit
 selection. Receipts for successful observations, no-ops, and in-progress outcomes
 use stdout; errors use stderr and a nonzero exit status. This initial adapter
 has no `--wait` or `--timeout` flags and does not install a separate timer.
+
+## Native fab-cli-v2 wrapper
+
+The existing `headless` feature enables the separate resource head. Default
+`fab-rs`, Python `fab`, and the grouped local `fab-cli` are unchanged.
+
+```text
+fab-cli-v2 stop /<workspace-guid>.Workspace/<item-guid>.MirroredDatabase/runtime/mirroring --yes --timeout 30 --format json
+fab-cli-v2 stop /<workspace-guid>.Workspace/<item-guid>.MirroredDatabase/runtime/mirroring --timeout 30
+fab-cli-v2 stop --schema
+fab-cli-v2 stop --help
+```
+
+Native execution requires explicit positive integer `--timeout` seconds, at most
+86400, with no default. Only help and schema are exempt. Target, format and
+timeout errors precede identity selection. The wrapper retains `--yes`; it does
+not accept Start's `--approve`. JSON remains the only format.
+
+One total deadline begins before explicit identity/session setup and covers
+precheck, the optional write and readback. The wrapper reuses the released
+synchronous `NativeSession`, explicit `FAB_RUST_AUTH_MODE`, endpoint binding,
+HTTP executor and shared operation policy. It installs no identity fallback,
+broker sign-in, polling, automatic retry or credential/settings change.
+
+Host policy first approves the exact target's `remoteRead` observation. Even
+with `--yes`, a no-op never requests mutation approval. Only the existing library
+state machine's exact Running branch can reach a second policy decision for
+that same prepared target, intent, context and `remoteRead`/`remoteWrite`
+effects. The flag alone cannot authorize a write. Missing `--yes` still permits
+Stopped/Stopping observations and refuses Running without any write.
+
+Cancellation and deadline signals stay latched across requests. A completed
+write receipt survives interrupted readback, and a response-lost write remains
+uncertain. Output failure retains the original result, does not roll back remote
+effects and never replays Stop or substitutes Start. Request acceptance and
+completed-request evidence are not proof that the mirror was observed Stopped.
+An interruption after a complete response retains that response and records
+`localObservationInterrupted`; native delivery is still nonzero on stderr.
+Cancellation never erases an already received acceptance or completed request.
 
 ## Check state before submitting
 
@@ -189,27 +224,25 @@ credential settings.
 
 ## Planned offline validation
 
-**The following targeted tests are planned and unexecuted for this documentation
-task.** Package names match the repository manifests; the test targets belong
-to the separately authored SDK and CLI slices. Run them from `rust/` only after
-the source targets are present and validation is authorized:
+The scoped offline targets use injected executors and writers. Run from `rust/`:
 
 ```bash
 cargo test --locked --offline -p fabric-sdk-items --test stop
 cargo test --locked --offline -p fabric-cli-mutations --test v2_stop
+cargo test --locked --offline -p fabric-cli-mutations --test v2_stop_wire
+cargo test --locked --offline -p fabric-cli --features headless --test stop_command --test v2_stop_binary --bin fab-cli-v2
 ```
 
-The planned tests use injected offline executors and writers, not live Fabric
+The tests use injected offline executors and writers, not live Fabric
 operations. They need to cover strict target validation, exact state checks,
 explicit-intent gating, request order and counts, acceptance, one readback, retained
 uncertainty, completed receipts after readback failure, and output failures
 without replay. These commands do not establish executable composition,
 authentication, tenant permissions, or implementation acceptance.
 
-No build, test, or live validation was run for this document. Executable
-registration, opt-in host integration, help, and combined validation remain
-coordinator work. No working executable invocation or feature name is inferred
-from the library contract.
+The `headless,native-read` profile also exercises a synthetic credential seam
+without real Windows Account Manager (WAM) access. Passing offline targets does
+not establish live identity, service permissions or product readiness.
 
 ## Official references
 
