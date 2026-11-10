@@ -9,7 +9,7 @@ now live in sibling CLI packages:
 - `fabric-cli-access` at `../../commands/access`: ACL and label algorithms.
 - `fabric-cli-catalog` at `../../commands/catalog`: FIND and hidden discovery.
 - `fabric-cli-api` at `../../commands/api`: bounded raw API behavior.
-- `fabric-cli-command-contracts` at `../../commands/contracts`: the single shared
+- `fabric-cli-command-contracts` at `../../contracts`: the single shared
   error/value, confirmation, presentation and HTTP adapter definitions.
 
 ## Belongs / does not belong
