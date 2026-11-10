@@ -19,7 +19,7 @@ use fabric_sdk_workspaces::mutations::ResourceError;
 use serde_json::{Value, json};
 use std::{
     future::Future,
-    io::{self, Write},
+    io::Write,
     sync::atomic::{AtomicU8, Ordering},
     time::Instant,
 };
