@@ -271,6 +271,8 @@ The EOF case has no positive text requirement because prompts and editor escapes
 are not a stable output contract. It still requires actual input delivery,
 observed raw mode, terminal restoration, bounded completion and confirmed
 cleanup. Quit, lexical-error and interrupt retain their positive output checks.
+Fixture bytes are counted separately from cursor-position protocol replies,
+including partial writes; protocol traffic cannot prove that Ctrl+D was sent.
 This Rust UX correction does not change the frozen Python reference or establish
 unexecuted Windows terminal behavior.
 

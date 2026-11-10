@@ -421,6 +421,19 @@ def terminal_state(slave: int, before: Any) -> tuple[bool, str | None]:
         return False, "terminal_state_unavailable"
 
 
+def write_terminal_input(
+    master: int, pending: bytearray, fixture_bytes: bytearray,
+) -> tuple[int, int]:
+    """Count fixture bytes actually written separately from terminal protocol traffic."""
+    require(len(pending) == len(fixture_bytes), "terminal_input_tracking_mismatch")
+    written = os.write(master, pending[:4096])
+    require(0 <= written <= min(4096, len(pending)), "terminal_input_write_invalid")
+    fixture_written = sum(fixture_bytes[:written])
+    del pending[:written]
+    del fixture_bytes[:written]
+    return written, fixture_written
+
+
 def execute(
     argv: list[str], cwd: Path, env: dict[str, str], seconds: float,
     deadline: float, stdin: bytes = b"", terminal: dict[str, Any] | None = None,
@@ -508,15 +521,18 @@ def execute(
             prompt = b"$ "
             dsr = 0
             input_bytes_written = 0
+            fixture_input_bytes_written = 0
             query_tail = b""
             pending = bytearray()
+            pending_fixture_bytes = bytearray()
 
-            def enqueue(data: bytes) -> None:
+            def enqueue(data: bytes, *, fixture_input: bool = False) -> None:
                 nonlocal input_queue_limit
                 if len(pending) + len(data) > LIMIT:
                     input_queue_limit = True
                 else:
                     pending.extend(data)
+                    pending_fixture_bytes.extend(bytes([int(fixture_input)]) * len(data))
 
             while (child.poll() is None and time.monotonic() < end
                    and not overflow.is_set() and not input_queue_limit):
@@ -544,7 +560,7 @@ def execute(
                     dsr += queries
                     enqueue(b"\x1b[1;1R" * queries)
                     if raw_observed and prompt in buffers[0] and not sent:
-                        enqueue(terminal["input"].encode("ascii"))
+                        enqueue(terminal["input"].encode("ascii"), fixture_input=True)
                         sent = True
                     if terminal["name"] == "interrupt" and sent and not interrupted:
                         if b"Use 'quit' or 'exit'" in buffers[0]:
@@ -553,16 +569,19 @@ def execute(
                 if (writable and pending and not overflow.is_set() and not input_queue_limit
                         and time.monotonic() < end):
                     try:
-                        written = os.write(master, pending[:4096])
+                        written, fixture_written = write_terminal_input(
+                            master, pending, pending_fixture_bytes,
+                        )
                     except BlockingIOError:
                         pass
                     except OSError:
                         break
                     else:
                         input_bytes_written += written
-                        del pending[:written]
+                        fixture_input_bytes_written += fixture_written
             terminal["protocol_cursor_queries"] = dsr
             terminal["protocol_input_bytes_written"] = input_bytes_written
+            terminal["fixture_input_bytes_written"] = fixture_input_bytes_written
             while (time.monotonic() < end and not overflow.is_set()
                    and select.select([master], [], [], 0)[0]):
                 try:
@@ -678,6 +697,7 @@ def execute(
             "state_observation_error": terminal_state_error,
             "cursor_queries": terminal.get("protocol_cursor_queries", 0),
             "input_bytes_written": terminal.get("protocol_input_bytes_written", 0),
+            "fixture_input_bytes_written": terminal.get("fixture_input_bytes_written", 0),
             "input_queue_limit": input_queue_limit,
         }
     return receipt, out, err
@@ -853,7 +873,7 @@ def terminal_case_passed(
             and not receipt.get("execution_error")
             and terminal["raw_observed"] and terminal["termios_restored"]
             and not terminal["input_queue_limit"]
-            and terminal["input_bytes_written"] >= len(case["input"].encode("ascii"))
+            and terminal["fixture_input_bytes_written"] == len(case["input"].encode("ascii"))
             and (case["contains"] is None or case["contains"].encode() in out)
             and all(value.encode() not in out + err for value in case["not_contains"]))
 

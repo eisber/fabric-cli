@@ -82,6 +82,7 @@ class TerminalContractTests(unittest.TestCase):
             "terminal": {
                 "raw_observed": True, "termios_restored": True,
                 "input_queue_limit": False, "input_bytes_written": 1,
+                "fixture_input_bytes_written": 1,
             },
         }
 
@@ -102,7 +103,8 @@ class TerminalContractTests(unittest.TestCase):
             (None, "exit", 1), (None, "timeout", True), (None, "output_limit", True),
             (None, "cleanup", "unconfirmed"), (None, "execution_error", "synthetic"),
             ("terminal", "raw_observed", False), ("terminal", "termios_restored", False),
-            ("terminal", "input_queue_limit", True), ("terminal", "input_bytes_written", 0),
+            ("terminal", "input_queue_limit", True), ("terminal", "fixture_input_bytes_written", 0),
+            ("terminal", "fixture_input_bytes_written", 2),
         ]:
             receipt = copy.deepcopy(self.receipt)
             target = receipt if section is None else receipt[section]
@@ -116,6 +118,7 @@ class TerminalContractTests(unittest.TestCase):
                 continue
             receipt = copy.deepcopy(self.receipt)
             receipt["terminal"]["input_bytes_written"] = len(case["input"])
+            receipt["terminal"]["fixture_input_bytes_written"] = len(case["input"])
             self.assertTrue(acceptance.terminal_case_passed(
                 case, receipt, case["contains"].encode(), b"",
             ))
@@ -142,6 +145,33 @@ class TerminalContractTests(unittest.TestCase):
             fixture["cases"][0].update(patch)
             with self.subTest(patch=patch), self.assertRaises(acceptance.Rejected):
                 acceptance.validate_terminal_fixture(fixture)
+
+    def test_cursor_reply_bytes_cannot_stand_in_for_fixture_input(self) -> None:
+        receipt = copy.deepcopy(self.receipt)
+        receipt["terminal"].update(input_bytes_written=6, fixture_input_bytes_written=0)
+        self.assertFalse(acceptance.terminal_case_passed(
+            self.eof, receipt, b"\x1b[6n", b"",
+        ))
+
+    def test_partial_writes_attribute_only_delivered_fixture_bytes(self) -> None:
+        pending = bytearray(b"\x1b[1;1R\x04quit\r")
+        flags = bytearray([0] * 6 + [1] + [0] * 5)
+        observed = []
+        with patch.object(acceptance.os, "write", side_effect=[3, 3, 1, 2, 3]) as write:
+            for _ in range(5):
+                observed.append(acceptance.write_terminal_input(123, pending, flags))
+        self.assertEqual(observed, [(3, 0), (3, 0), (1, 1), (2, 0), (3, 0)])
+        self.assertEqual(write.call_args_list[0].args, (123, bytearray(b"\x1b[1;1R\x04quit\r")))
+        self.assertEqual(pending, b"")
+        self.assertEqual(flags, b"")
+
+    def test_blocked_write_does_not_consume_fixture_tracking(self) -> None:
+        pending, flags = bytearray(b"\x04"), bytearray([1])
+        with patch.object(acceptance.os, "write", side_effect=BlockingIOError):
+            with self.assertRaises(BlockingIOError):
+                acceptance.write_terminal_input(123, pending, flags)
+        self.assertEqual(pending, b"\x04")
+        self.assertEqual(flags, b"\x01")
 
 
 class ContractTests(unittest.TestCase):
@@ -367,6 +397,35 @@ class FilesystemTests(unittest.TestCase):
         self.assertEqual(result["cleanup"], "owned_tree_terminated")
         self.assertEqual(result["cleanup_failure_codes"], [])
         self.assertLess(result["elapsed_seconds"], 1.8)
+
+    @unittest.skipIf(os.name == "nt", "requires_native_POSIX_PTY")
+    def test_cursor_protocol_only_exit_cannot_satisfy_eof_delivery(self) -> None:
+        fixture = json.loads((FIXTURES / "terminal-inputs.json").read_text(encoding="utf-8"))
+        case = next(case for case in fixture["cases"] if case["name"] == "eof")
+        result, out, err = acceptance.execute(
+            [sys.executable, "-I", "-B", str(FIXTURES / "synthetic_child.py"), "cursor-only-exit"],
+            self.root, acceptance.environment(self.root), 2,
+            time.monotonic() + 3, terminal=dict(case),
+        )
+        self.assertEqual(result["exit"], 0)
+        self.assertFalse(result["timeout"])
+        self.assertTrue(result["terminal"]["raw_observed"])
+        self.assertTrue(result["terminal"]["termios_restored"])
+        self.assertGreaterEqual(result["terminal"]["input_bytes_written"], 6)
+        self.assertEqual(result["terminal"]["fixture_input_bytes_written"], 0)
+        self.assertFalse(acceptance.terminal_case_passed(case, result, out, err))
+
+    @unittest.skipIf(os.name == "nt", "requires_native_POSIX_PTY")
+    def test_actual_eof_byte_and_clean_restore_satisfy_fixture(self) -> None:
+        fixture = json.loads((FIXTURES / "terminal-inputs.json").read_text(encoding="utf-8"))
+        case = next(case for case in fixture["cases"] if case["name"] == "eof")
+        result, out, err = acceptance.execute(
+            [sys.executable, "-I", "-B", str(FIXTURES / "synthetic_child.py"), "clean-eof"],
+            self.root, acceptance.environment(self.root), 2,
+            time.monotonic() + 3, terminal=dict(case),
+        )
+        self.assertEqual(result["terminal"]["fixture_input_bytes_written"], 1)
+        self.assertTrue(acceptance.terminal_case_passed(case, result, out, err))
 
     @unittest.skipIf(os.name == "nt", "requires_native_POSIX_PTY")
     def test_raw_pty_cursor_flood_without_input_reads_is_bounded_and_reaped(self) -> None:
