@@ -29,6 +29,10 @@ pub(crate) fn run_workspace_v2(
 #[path = "native_get.rs"]
 mod get;
 
+#[cfg(any(windows, feature = "headless", feature = "interactive"))]
+#[path = "native_ml_endpoint.rs"]
+mod ml_endpoint;
+
 #[path = "native_delete.rs"]
 mod delete;
 
@@ -91,6 +95,10 @@ use terminal_ui::NativeMutationUi;
     )
 )]
 enum NativeCommand<'a> {
+    MlEndpoint(
+        &'a fabric_cli::ml_endpoint::EndpointCommand,
+        std::time::Instant,
+    ),
     #[cfg(any(windows, feature = "headless"))]
     Execution(
         &'a fabric_cli::execute::host::ApprovedExecution,
@@ -499,6 +507,20 @@ pub(crate) fn run(command: &ReadCommand, state: &mut BatchState) -> io::Result<C
     run_command(NativeCommand::Read(command), state)
 }
 
+pub(crate) fn run_ml_endpoint(
+    command: &fabric_cli::ml_endpoint::EndpointCommand,
+    state: &mut BatchState,
+) -> io::Result<CommandOutcome> {
+    let Some(deadline) = std::time::Instant::now().checked_add(command.timeout) else {
+        return write_error(failure(
+            "invalid_arguments",
+            "Invalid ML endpoint deadline.",
+            2,
+        ));
+    };
+    run_command(NativeCommand::MlEndpoint(command, deadline), state)
+}
+
 pub(crate) fn run_execute(
     command: &fabric_cli::execute::ExecuteCommand,
     state: &mut BatchState,
@@ -814,7 +836,7 @@ fn run_selected(
         command,
         NativeCommand::Read(read) if read.kind == fabric_cli::parser::ReadKind::Get
     );
-    if is_get {
+    if is_get || matches!(command, NativeCommand::MlEndpoint(..)) {
         credential.bind_get(state)
     } else {
         credential.bind(state, home.clone())
@@ -824,6 +846,7 @@ fn run_selected(
         selected_read_options(command)?;
     }
     let skill = match command {
+        NativeCommand::MlEndpoint(..) => None,
         #[cfg(any(windows, feature = "headless"))]
         NativeCommand::Execution(..) => None,
         NativeCommand::Read(_) => None,
@@ -864,6 +887,11 @@ fn run_selected(
         .as_ref()
         .map(|navigation| std::sync::Arc::clone(navigation.current()));
     let result = runtime.block_on(async {
+        if matches!(command, NativeCommand::MlEndpoint(..)) {
+            return execute_delivery(
+                command, credential, &current, home, endpoint, settings, state, None,
+            ).await;
+        }
         if is_get {
             let clock = get::NativeClock(tokio::runtime::Handle::current());
             let resource_config = settings.get_resources.clone();
@@ -1101,15 +1129,19 @@ async fn execute_injected_delivery(
         NativeCommand::Execution(_, deadline) => Some(deadline),
         _ => None,
     };
-    let (sdk, executor) = connect_native(
+    let connecting = connect_native(
         credential,
         client,
         identity_client,
         endpoint,
         fabric_sdk_http::ExecutionOptions::default(),
         deadline,
-    )
-    .await?;
+    );
+    let (sdk, executor) = if let NativeCommand::MlEndpoint(_, deadline) = command {
+        ml_endpoint::before_connect(connecting, deadline).await?
+    } else {
+        connecting.await?
+    };
     execute_authenticated_injected(
         command,
         sdk,
@@ -1178,6 +1210,9 @@ async fn execute_authenticated_injected(
     broker_identity: bool,
     get_inputs: Option<get::Inputs<'_>>,
 ) -> Result<get::Delivery, Failure> {
+    if let NativeCommand::MlEndpoint(command, deadline) = command {
+        return ml_endpoint::dispatch(command, &sdk, &executor, deadline).await;
+    }
     #[cfg(any(windows, feature = "headless"))]
     if let NativeCommand::Execution(approved, deadline) = command {
         return execute::dispatch(approved, deadline, &sdk, executor).await;
@@ -1215,6 +1250,7 @@ async fn execute_authenticated_injected(
         config: settings.reads,
     };
     let result = match command {
+        NativeCommand::MlEndpoint(..) => unreachable!("ML endpoints use their native result host"),
         #[cfg(any(windows, feature = "headless"))]
         NativeCommand::Execution(..) => unreachable!("execution uses its typed result host"),
         NativeCommand::Read(command) => {

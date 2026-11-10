@@ -1,0 +1,6 @@
+kind: added
+body: Add experimental native Rust ML endpoint settings and serving-version commands with exact MLModel targets, explicit default selection, bounded native execution, and effect-approved lifecycle and scoring requests.
+time: 2026-11-11T00:30:00+01:00
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot
