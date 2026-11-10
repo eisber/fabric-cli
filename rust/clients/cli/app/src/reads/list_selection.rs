@@ -21,26 +21,6 @@ impl ListSelection {
             return Ok(Self { path, prefix: None });
         }
 
-        #[cfg(test)]
-        mod tests {
-            use super::*;
-            use crate::parser::{Invocation, parse_args};
-
-            #[test]
-            fn exact_list_and_get_paths_keep_literal_punctuation() {
-                for verb in ["ls", "get"] {
-                    for path in ["/Demo?.Workspace", "/Demo[.Workspace", "/Demo].Workspace"] {
-                        let Invocation::Read(command) = parse_args(["fab-rs", verb, path]).unwrap()
-                        else {
-                            panic!("read invocation required");
-                        };
-                        let selection = ListSelection::new(&command).unwrap();
-                        assert_eq!(selection.path, path);
-                        assert!(selection.prefix.is_none());
-                    }
-                }
-            }
-        }
         let invalid = || {
             errors::error(
                 "InvalidPath",
@@ -96,6 +76,26 @@ impl ListSelection {
                 prefix_name == name && prefix_type.to_lowercase() == kind.to_lowercase()
             }
             _ => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::{Invocation, parse_args};
+
+    #[test]
+    fn exact_list_and_get_paths_keep_literal_punctuation() {
+        for verb in ["ls", "get"] {
+            for path in ["/Demo?.Workspace", "/Demo[.Workspace", "/Demo].Workspace"] {
+                let Invocation::Read(command) = parse_args(["fab-rs", verb, path]).unwrap() else {
+                    panic!("read invocation required");
+                };
+                let selection = ListSelection::new(&command).unwrap();
+                assert_eq!(selection.path, path);
+                assert!(selection.prefix.is_none());
+            }
         }
     }
 }

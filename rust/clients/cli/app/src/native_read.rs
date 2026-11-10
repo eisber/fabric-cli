@@ -115,10 +115,10 @@ fn has_bound_context(command: NativeCommand<'_>) -> bool {
         }
         NativeCommand::Family(Invocation::Resource(command)) => matches!(
             command,
-            fabric_cli_mutations::ResourceCommand::Exists(_)
-                | fabric_cli_mutations::ResourceCommand::Mkdir { .. }
-                | fabric_cli_mutations::ResourceCommand::Set { .. }
-                | fabric_cli_mutations::ResourceCommand::Remove { .. }
+            fabric_cli_mutations::frontdoor::ResourceCommand::Exists(_)
+                | fabric_cli_mutations::frontdoor::ResourceCommand::Mkdir { .. }
+                | fabric_cli_mutations::frontdoor::ResourceCommand::Set { .. }
+                | fabric_cli_mutations::frontdoor::ResourceCommand::Remove { .. }
         ),
         NativeCommand::Family(_) => false,
         _ => true,
