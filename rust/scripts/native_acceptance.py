@@ -536,7 +536,7 @@ def execute(
 
             while (child.poll() is None and time.monotonic() < end
                    and not overflow.is_set() and not input_queue_limit):
-                flags = termios.tcgetattr(slave)[3]
+                flags = termios.tcgetattr(master)[3]
                 raw_observed |= not bool(flags & (termios.ECHO | termios.ICANON))
                 readable, writable, _ = select.select(
                     [master], [master] if pending else [], [],

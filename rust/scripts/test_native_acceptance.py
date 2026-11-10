@@ -458,7 +458,7 @@ class FilesystemTests(unittest.TestCase):
                 self.assertEqual(mock_os.read.call_count, 1)
                 self.assertEqual(delivered, b"\x04")
                 self.assertEqual(observed_descriptors[0], 102)
-                self.assertEqual(observed_descriptors[-1], 101)
+                self.assertEqual(set(observed_descriptors[1:]), {101})
                 self.assertEqual(result["terminal"]["fixture_input_bytes_written"], 1)
                 self.assertTrue(acceptance.terminal_case_passed(case, result, out, err))
 
