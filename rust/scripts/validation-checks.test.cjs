@@ -46,7 +46,7 @@ const inside = (parent, child) => {
 
 test('native preflights preserve exact engineering inventory and the mandatory full matrix', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/rust-ci.yml'), 'utf8');
-  assert.match(workflow, /pattern, count = "test_native_acceptance\*\.py", 50/);
+  assert.match(workflow, /pattern, count = "test_native_acceptance\*\.py", 51/);
   assert.ok(workflow.includes('result.testsRun == count and not result.expectedFailures and skips == expected'));
   assert.ok(workflow.includes('requires_native_POSIX_PTY'));
   assert.ok(workflow.includes('with open("native-acceptance.log", "w", encoding="utf-8")'));
@@ -347,7 +347,7 @@ test('native CI front-loads exact engineering suites without replacing the full 
   const workflow = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
   assert.ok(workflow.indexOf('Check bounded engineering cleanup before native compilation') <
     workflow.indexOf('Preflight every current feature and target under strict native lints'));
-  assert.ok(workflow.includes('pattern, count = "test_native_acceptance*.py", 50'));
+  assert.ok(workflow.includes('pattern, count = "test_native_acceptance*.py", 51'));
   assert.ok(workflow.includes('not result.expectedFailures and skips == expected'));
   assert.ok(workflow.includes('"discovered": discovered, "run": 0'));
   assert.ok(workflow.includes('"passed": False, "reason": "inventory_mismatch"'));
@@ -357,6 +357,7 @@ test('native CI front-loads exact engineering suites without replacing the full 
   for (const name of [
     'test_actual_eof_byte_and_clean_restore_satisfy_fixture',
     'test_cursor_protocol_only_exit_cannot_satisfy_eof_delivery',
+    'test_eof_without_restoration_cannot_satisfy_fixture',
     'test_raw_pty_cursor_flood_without_input_reads_is_bounded_and_reaped',
   ]) {
     assert.ok(workflow.includes(`"${name}"`), `Missing exact native POSIX skip: ${name}`);

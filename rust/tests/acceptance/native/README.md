@@ -276,6 +276,10 @@ including partial writes; protocol traffic cannot prove that Ctrl+D was sent.
 The driver reevaluates an already buffered prompt when raw mode becomes
 observable, without requiring another output event. A deterministic mocked
 POSIX schedule covers that ordering on all hosts; it is not native PTY proof.
+Post-exit restoration is read from the retained PTY master: Darwin can revoke
+the slave when the controlling session exits. Exact attributes must still match
+the pre-run slave state. A native negative fixture delivers EOF but deliberately
+leaves raw mode enabled, and must fail restoration rather than pass on exit zero.
 This Rust UX correction does not change the frozen Python reference or establish
 unexecuted Windows terminal behavior.
 

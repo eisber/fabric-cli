@@ -130,7 +130,7 @@ jobs:
               pathlib.Path("receipt.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
               print(json.dumps(report))
           persist()
-          pattern, count = "test_native_acceptance*.py", 50
+          pattern, count = "test_native_acceptance*.py", 51
           suite = unittest.defaultTestLoader.discover(str(source), pattern=pattern)
           discovered = suite.countTestCases()
           if discovered != count:
@@ -155,6 +155,7 @@ jobs:
               for name in (
                   "test_actual_eof_byte_and_clean_restore_satisfy_fixture",
                   "test_cursor_protocol_only_exit_cannot_satisfy_eof_delivery",
+                  "test_eof_without_restoration_cannot_satisfy_fixture",
                   "test_raw_pty_cursor_flood_without_input_reads_is_bounded_and_reaped",
               )
           ] if os.name == "nt" else []

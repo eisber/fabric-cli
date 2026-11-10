@@ -411,12 +411,12 @@ def wait_owned_process(child: subprocess.Popen[bytes], timeout: float, master: i
                 time.sleep(min(0.005, max(0, deadline - time.monotonic())))
 
 
-def terminal_state(slave: int, before: Any) -> tuple[bool, str | None]:
+def terminal_state(descriptor: int, before: Any) -> tuple[bool, str | None]:
     """Observe restoration separately from confirmed process/resource cleanup."""
     import termios
 
     try:
-        return termios.tcgetattr(slave) == before, None
+        return termios.tcgetattr(descriptor) == before, None
     except (OSError, termios.error):
         return False, "terminal_state_unavailable"
 
@@ -655,7 +655,8 @@ def execute(
                 cleanup = False
                 cleanup_failures.append("io_threads_still_active")
         if slave is not None:
-            restored, terminal_state_error = terminal_state(slave, before)
+            # Darwin revokes the slave descriptor when its controlling session exits.
+            restored, terminal_state_error = terminal_state(master, before)
             for descriptor in (master, slave):
                 try:
                     os.close(descriptor)

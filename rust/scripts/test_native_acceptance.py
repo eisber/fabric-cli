@@ -407,6 +407,7 @@ class FilesystemTests(unittest.TestCase):
                 child = Mock(pid=12345, returncode=None, stdin=None, stdout=None, stderr=None)
                 observations = polls = selections = 0
                 delivered = bytearray()
+                observed_descriptors = []
 
                 def poll() -> int | None:
                     nonlocal polls
@@ -418,6 +419,7 @@ class FilesystemTests(unittest.TestCase):
                 def attributes(_descriptor: int) -> list[int]:
                     nonlocal observations
                     observations += 1
+                    observed_descriptors.append(_descriptor)
                     raw = observations >= raw_on_observation and child.returncode is None
                     return [0, 0, 0, 0 if raw else 3]
 
@@ -455,6 +457,8 @@ class FilesystemTests(unittest.TestCase):
                     )
                 self.assertEqual(mock_os.read.call_count, 1)
                 self.assertEqual(delivered, b"\x04")
+                self.assertEqual(observed_descriptors[0], 102)
+                self.assertEqual(observed_descriptors[-1], 101)
                 self.assertEqual(result["terminal"]["fixture_input_bytes_written"], 1)
                 self.assertTrue(acceptance.terminal_case_passed(case, result, out, err))
 
@@ -486,6 +490,22 @@ class FilesystemTests(unittest.TestCase):
         )
         self.assertEqual(result["terminal"]["fixture_input_bytes_written"], 1)
         self.assertTrue(acceptance.terminal_case_passed(case, result, out, err))
+
+    @unittest.skipIf(os.name == "nt", "requires_native_POSIX_PTY")
+    def test_eof_without_restoration_cannot_satisfy_fixture(self) -> None:
+        fixture = json.loads((FIXTURES / "terminal-inputs.json").read_text(encoding="utf-8"))
+        case = next(case for case in fixture["cases"] if case["name"] == "eof")
+        result, out, err = acceptance.execute(
+            [sys.executable, "-I", "-B", str(FIXTURES / "synthetic_child.py"), "unclean-eof"],
+            self.root, acceptance.environment(self.root), 2,
+            time.monotonic() + 3, terminal=dict(case),
+        )
+        self.assertEqual(result["exit"], 0)
+        self.assertEqual(result["terminal"]["fixture_input_bytes_written"], 1)
+        self.assertTrue(result["terminal"]["raw_observed"])
+        self.assertIsNone(result["terminal"]["state_observation_error"])
+        self.assertFalse(result["terminal"]["termios_restored"])
+        self.assertFalse(acceptance.terminal_case_passed(case, result, out, err))
 
     @unittest.skipIf(os.name == "nt", "requires_native_POSIX_PTY")
     def test_raw_pty_cursor_flood_without_input_reads_is_bounded_and_reaped(self) -> None:
