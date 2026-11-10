@@ -1,7 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-use crate::{TransferError, TransferEvent, TransferFailure, TransferUi, command_error};
+use crate::{TransferError, TransferEvent, TransferFailure, command_error};
+use fabric_cli_import_export_contracts::TransferUi;
 use fabric_deploy::definitions::{DefinitionError, DefinitionErrorKind, PreparedImport};
 use fabric_sdk_operations::{OperationErrorKind, OperationExecutor, OperationSession};
 use std::{
