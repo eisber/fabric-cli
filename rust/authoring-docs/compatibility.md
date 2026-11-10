@@ -89,6 +89,23 @@ live service host or new resource/command namespace is established yet.
 These temporary contracts do not replace Python's output and exit-code contracts.
 Credentials are not accepted through command-line options.
 
+### ACL text usability exception
+
+Missing `acl ls` (`dir`) or `acl get` targets use a concise human diagnostic,
+usage, synthetic workspace example and `fab-rs ls /` discovery hint on stderr,
+with exit 2. Explicit or saved JSON keeps the argument-error shape above.
+This local check does not initialize settings, credentials or network access.
+Other commands keep their existing argument-error behavior.
+
+Unqueried `acl get` in effective text mode shows full record values rather than
+the source's field-path inventory. Explicit `-q ''` still discovers fields;
+`-q '.'` selects records in either format. Explicit JSON, projections and native
+tabular export retain their existing shapes. This owner-requested ACL-only
+exception is asserted separately; the Python oracle and low-level source
+consumers remain unchanged. `grant` and `revoke` are discoverable aliases for
+`set` and `rm`, not new provider operations. See the
+[ACL command contract](../clients/cli/commands/resources/README.md#acl-command-usability).
+
 ## Opt-in Windows authentication contract
 
 The owner requested native Windows login with Python-like session reuse/MFA,

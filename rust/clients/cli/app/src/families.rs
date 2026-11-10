@@ -473,7 +473,11 @@ impl FamilySession<'_, '_> {
                     limits: Default::default(),
                     request_bounds: Default::default(),
                 }
-                .execute(command, cancelled.as_mut())
+                .execute_for_output(
+                    command,
+                    if tabular { OutputFormat::Json } else { format },
+                    cancelled.as_mut(),
+                )
                 .await;
                 if tabular {
                     return Ok(FamilyOutput {
