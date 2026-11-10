@@ -90,11 +90,12 @@ process exit status without opening a terminal. Editor tests separately check
 the Reedline signal mapping. The existing native acceptance harness uses POSIX
 PTYs and explicitly leaves Windows terminal checks unrun; these offline tests
 do not establish PowerShell/ConPTY, Linux or macOS terminal-key behavior.
-The legacy synthetic EOF case in
-`rust/tests/acceptance/native/terminal-inputs.json` still expects the old
-diagnostic. It is not evidence for this intentional exception; the acceptance
-owner must reconcile that case and its runner before using it for native EOF
-acceptance, without changing the independent Python oracle.
+The synthetic EOF case in
+`rust/tests/acceptance/native/terminal-inputs.json` uses schema 2 to reject the
+old diagnostic on either stream. Its runner also requires actual input delivery,
+bounded successful exit, observed raw mode and terminal restoration. Harness
+unit checks do not replace native PTY execution; the independent Python oracle
+remains unchanged.
 
 Prompt context is plain text, with ANSI/control characters, directional controls
 and line separators escaped visibly. Printable Unicode and characters such as
