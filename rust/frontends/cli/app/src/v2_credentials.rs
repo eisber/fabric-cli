@@ -99,9 +99,12 @@ impl Selection {
         http: Arc<dyn azure_core::http::HttpClient>,
     ) -> Result<Arc<dyn azure_core::credentials::TokenCredential>, Failure> {
         match self {
-            Self::Headless(selection) => selection
-                .credential(http)
-                .map_err(|(code, message, exit)| failed(code, message, exit)),
+            Self::Headless(selection) => {
+                let _explicit_provider_binding = (&selection.client, &selection.binding);
+                selection
+                    .credential(http)
+                    .map_err(|(code, message, exit)| failed(code, message, exit))
+            }
             #[cfg(all(windows, feature = "windows-broker"))]
             Self::Broker(options) => fabric_identity::WindowsCredential::connect(options)
                 .await
