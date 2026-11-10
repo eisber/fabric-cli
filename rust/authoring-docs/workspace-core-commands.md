@@ -42,10 +42,13 @@ polling and results, with the Fabric audience. Foreign result links are rejected
 not followed or retried on the public service. This does not select credentials
 or grant access to that deployment.
 
-The compatibility native front door still rejects resource-family commands on
-nonpublic endpoints before credential selection. Its separate, coordinated
-root-gate repair is required before advertising MSIT `exists` or CRUD execution
-as ready. The injected session tests below do not waive that executable gap.
+The compatibility native front door permits the existing `exists`, `mkdir`,
+`set` and `rm` resource variants, including their aliases, on explicitly selected
+nonpublic endpoints. Their existing workspace/item/folder resolution and service
+policies still apply; the gate does not infer a target from a suffix or grant
+provider permission. Link, copy, move, start, stop, capacity assignment and ACL
+families do not gain nonpublic endpoint support. Parsed root-verb gate tests and
+the injected session tests below are not live CLI identity or CRUD proof.
 
 The separate, opt-in **`fab-cli-workspace`** binary provides bounded v2 reads,
 including actual mounted `artifact workspace get` and `artifact workspace list`

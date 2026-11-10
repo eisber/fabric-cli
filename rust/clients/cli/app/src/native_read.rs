@@ -113,6 +113,13 @@ fn has_bound_context(command: NativeCommand<'_>) -> bool {
         NativeCommand::Family(Invocation::Transfer(transfer)) => {
             transfer.kind != fabric_cli_transfer::TransferKind::Deploy
         }
+        NativeCommand::Family(Invocation::Resource(command)) => matches!(
+            command,
+            fabric_cli_mutations::ResourceCommand::Exists(_)
+                | fabric_cli_mutations::ResourceCommand::Mkdir { .. }
+                | fabric_cli_mutations::ResourceCommand::Set { .. }
+                | fabric_cli_mutations::ResourceCommand::Remove { .. }
+        ),
         NativeCommand::Family(_) => false,
         _ => true,
     }
@@ -1785,6 +1792,49 @@ mod tests {
 #[cfg(test)]
 mod endpoint_tests {
     use super::*;
+
+    #[test]
+    fn existing_core_resource_verbs_and_aliases_have_bound_contexts() {
+        for args in [
+            vec!["exists", "Demo.Workspace"],
+            vec!["mkdir", "New.Workspace"],
+            vec!["create", "New.Workspace"],
+            vec!["set", "Demo.Workspace", "-q", "description", "-i", "value"],
+            vec!["rm", "Demo.Workspace"],
+            vec!["del", "Demo.Workspace"],
+        ] {
+            let invocation =
+                fabric_cli::parser::parse_args(std::iter::once("fab-rs").chain(args)).unwrap();
+            assert!(matches!(&invocation, Invocation::Resource(_)));
+            assert!(has_bound_context(NativeCommand::Family(&invocation)));
+        }
+    }
+
+    #[test]
+    fn other_resource_verbs_and_acl_do_not_gain_nonpublic_endpoint_support() {
+        for args in [
+            vec!["ln", "Demo.Workspace/Link.Shortcut", "--type", "oneLake"],
+            vec![
+                "cp",
+                "Demo.Workspace/Book.Notebook",
+                "Demo.Workspace/Copy.Notebook",
+            ],
+            vec![
+                "mv",
+                "Demo.Workspace/Book.Notebook",
+                "Demo.Workspace/Moved.Notebook",
+            ],
+            vec!["start", "Demo.Workspace/Db.MirroredDatabase"],
+            vec!["stop", "Demo.Workspace/Db.MirroredDatabase"],
+            vec!["assign", "Demo.Capacity", "-W", "Demo.Workspace"],
+            vec!["unassign", "Demo.Capacity", "-W", "Demo.Workspace"],
+            vec!["acl", "ls", "Demo.Workspace"],
+        ] {
+            let invocation =
+                fabric_cli::parser::parse_args(std::iter::once("fab-rs").chain(args)).unwrap();
+            assert!(!has_bound_context(NativeCommand::Family(&invocation)));
+        }
+    }
 
     #[cfg(any(windows, feature = "headless"))]
     #[test]
