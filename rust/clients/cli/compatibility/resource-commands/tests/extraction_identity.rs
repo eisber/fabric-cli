@@ -114,5 +114,5 @@ fn canonical_api_request_and_input_builders_accept_legacy_options_without_conver
     assert_eq!(direct.method(), facade.method());
     assert_eq!(direct.url(), facade.url());
     assert_eq!(direct.body(), facade.body());
-    assert_eq!(direct.body(), br#"{"value":1}"#);
+    assert_eq!(direct.body(), br#"{"value": 1}"#);
 }
