@@ -4,6 +4,7 @@
 //! Experimental CLI entry point, not a replacement for the Python `fab`.
 #![cfg_attr(test, deny(unnameable_test_items))]
 
+mod acl_diagnostic;
 #[cfg(any(feature = "windows-broker", feature = "interactive"))]
 mod auth;
 #[cfg(all(windows, feature = "windows-broker"))]
@@ -96,7 +97,12 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
     if arguments.len() == 1 {
         return repl_host::run();
     }
-    let invocation = parse_args(arguments);
+    let invocation = parse_args(&arguments);
+    if let Err(error) = &invocation
+        && let Some(result) = acl_diagnostic::missing_target(&arguments, error)
+    {
+        return result;
+    }
     #[cfg(feature = "semantic-model")]
     if let Ok(Invocation::SemanticModel(command)) = &invocation {
         // Offline analysis validates before update policy or navigation setup.

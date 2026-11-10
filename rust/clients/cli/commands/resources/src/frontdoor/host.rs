@@ -10,7 +10,7 @@ use crate::{
 use fabric_cli_context::{Element, Lookup, NodeKind, PathInput, ResolveOptions, Resolver};
 use fabric_cli_output::{
     Timestamp,
-    text::{CharacterWidth, TextError, TextPlan},
+    text::{CharacterWidth, OutputFormat, TextError, TextPlan},
 };
 use fabric_sdk_access::{AccessClient, LabelItem};
 use fabric_sdk_api::{ApiClient, Limits, Origin, RequestBounds, cancellable};
@@ -116,6 +116,29 @@ pub struct AccessHost<'a> {
 }
 
 impl AccessHost<'_> {
+    /// Execute with the root ACL text UX while retaining the source API contract.
+    ///
+    /// Only unqueried text ACL GET selects record values. Explicit queries,
+    /// JSON and native tabular callers retain source field-discovery semantics.
+    /// The caller supplies the same effective format used for rendering.
+    pub async fn execute_for_output(
+        &mut self,
+        command: &AccessCommand,
+        format: OutputFormat,
+        cancelled: impl Future<Output = ()> + Send,
+    ) -> Result<CommandValue, CommandError> {
+        if format == OutputFormat::Text
+            && let AccessKind::AclGet { query: None, .. } = &command.kind
+        {
+            let mut records = command.clone();
+            if let AccessKind::AclGet { query, .. } = &mut records.kind {
+                *query = Some(".".into());
+            }
+            return self.execute(&records, cancelled).await;
+        }
+        self.execute(command, cancelled).await
+    }
+
     /// Executes the typed leaf through the already shared SDK/CLI consumers.
     pub async fn execute(
         &mut self,

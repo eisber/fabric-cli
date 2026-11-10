@@ -39,7 +39,7 @@ pub enum AccessKind {
         /// Requested export path; unsupported hosts fail before service I/O.
         output: Option<String>,
     },
-    /// `acl set` / `acl rm` / `acl del`, with existing source mutation semantics.
+    /// `acl set` / `grant` or `acl rm` / `del` / `revoke`, with source semantics.
     AclChange {
         /// Unresolved source path tokens.
         path: Vec<String>,
@@ -128,18 +128,23 @@ pub fn acl_subcommand() -> Command {
         .subcommand(
             leaf("ls")
                 .visible_alias("dir")
+                .about("List access controls for a workspace or supported item")
+                .after_help(ACL_READ_HELP)
                 .arg(path())
                 .arg(flag("long", Some('l')))
                 .arg(query(false)),
         )
         .subcommand(
             leaf("get")
+                .about("Inspect access control records for a workspace or supported item")
+                .after_help(ACL_GET_HELP)
                 .arg(path())
                 .arg(query(true))
                 .arg(Arg::new("output").long("output").short('o')),
         )
         .subcommand(
             leaf("set")
+                .visible_alias("grant")
                 .arg(path())
                 .arg(
                     Arg::new("identity")
@@ -152,7 +157,7 @@ pub fn acl_subcommand() -> Command {
         )
         .subcommand(
             leaf("rm")
-                .visible_alias("del")
+                .visible_aliases(["del", "revoke"])
                 .arg(path())
                 .arg(
                     Arg::new("identity")
@@ -163,6 +168,10 @@ pub fn acl_subcommand() -> Command {
                 .arg(flag("force", Some('f'))),
         )
 }
+
+const ACL_READ_HELP: &str = "Targets: <name>.Workspace or <name>.Workspace/<item>.<Kind> (for example, Notebook).\nUse /<name>.Workspace for an absolute path, or <item>.<Kind> in the current workspace.\nSemanticModel, Environment, Dashboard, workfolders and OneLake paths are not supported here.\nDiscover workspace names: fab-rs ls /\nExample: fab-rs acl ls 'Demo.Workspace'\nItem reads require Fabric administrator permission; item ACL mutation is not supported.";
+
+const ACL_GET_HELP: &str = "Targets: <name>.Workspace or <name>.Workspace/<item>.<Kind> (for example, Notebook).\nUse /<name>.Workspace for an absolute path, or <item>.<Kind> in the current workspace.\nSemanticModel, Environment, Dashboard, workfolders and OneLake paths are not supported here.\nDiscover workspace names: fab-rs ls /\nExample: fab-rs acl get 'Demo.Workspace'\nText output shows record values when -q is absent. Use -q '.' for records in JSON, or -q '' for field paths.\nItem reads require Fabric administrator permission; item ACL mutation is not supported.";
 
 /// Source label subtree; bare group help performs no file or credential access.
 pub fn label_subcommand() -> Command {
