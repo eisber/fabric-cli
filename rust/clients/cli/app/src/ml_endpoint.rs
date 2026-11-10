@@ -175,8 +175,18 @@ pub fn from_matches(matches: &ArgMatches) -> Result<EndpointCommand, clap::Error
         .ok()
         .flatten()
         .map(String::as_str);
-    let is_default = values.try_get_flag("default").unwrap_or(false);
-    let wait = values.try_get_flag("wait").unwrap_or(false);
+    let is_default = values
+        .try_get_one::<bool>("default")
+        .ok()
+        .flatten()
+        .copied()
+        .unwrap_or(false);
+    let wait = values
+        .try_get_one::<bool>("wait")
+        .ok()
+        .flatten()
+        .copied()
+        .unwrap_or(false);
     let payload = || -> Result<Value, clap::Error> {
         let body = values.get_one::<String>("body").ok_or_else(invalid)?;
         if body.len() > MAX_BODY_BYTES {

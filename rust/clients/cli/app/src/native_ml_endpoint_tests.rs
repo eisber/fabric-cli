@@ -236,10 +236,10 @@ async fn accepted_activation_and_score_are_not_completed_or_predictions() {
         });
         let (outcome, output, _) = invoke(wire.clone(), &leaf, Duration::from_secs(10)).await;
         assert_eq!(outcome, CommandOutcome::Returned(0));
-        assert_eq!(
-            output,
-            json!({"status":"accepted","httpStatus":202,"operationId":OPERATION})
-        );
+        assert_eq!(output["status"], "accepted");
+        assert_eq!(output["httpStatus"], 202);
+        assert_eq!(output["operationId"], OPERATION);
+        assert_eq!(output["mutationMayHaveOccurred"], true);
         assert_eq!(wire.requests.lock().unwrap().len(), 1);
     }
 }
@@ -373,4 +373,186 @@ async fn expired_preconnect_deadline_does_not_poll_credential_work() {
     )
     .await;
     assert_eq!(result.unwrap_err().0, "timed_out");
+}
+
+#[tokio::test]
+async fn malformed_successful_score_result_keeps_accepted_operation_for_recovery() {
+    let wire = Arc::new(Wire {
+        replies: Mutex::new(VecDeque::from([
+            accepted(&format!(
+                "https://msitapi.fabric.microsoft.com/v1/operations/{OPERATION}"
+            )),
+            reply(StatusCode::Ok, json!({"status":"Succeeded"})),
+            reply(StatusCode::Ok, json!({"future":"missing predictions"})),
+        ])),
+        ..Wire::default()
+    });
+    let (outcome, output, _) = invoke(
+        wire.clone(),
+        &[
+            "score",
+            "--default",
+            "--force",
+            "--wait",
+            "--body",
+            r#"{"inputs":[]}"#,
+        ],
+        Duration::from_secs(10),
+    )
+    .await;
+    assert_eq!(outcome, CommandOutcome::Returned(1));
+    assert_eq!(output["error"]["operationId"], OPERATION);
+    assert_eq!(output["error"]["mutationMayHaveOccurred"], true);
+    assert_eq!(output["error"]["httpStatus"], 200);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn cancellation_between_default_requests_or_before_score_result_keeps_evidence() {
+    for (leaf, replies, cancel_after, mutating) in [
+        (
+            vec!["serving-version", "get", "--default"],
+            vec![reply(StatusCode::Ok, json!({"defaultVersionName":"1"}))],
+            1,
+            false,
+        ),
+        (
+            vec![
+                "score",
+                "--default",
+                "--force",
+                "--wait",
+                "--body",
+                r#"{"inputs":[]}"#,
+            ],
+            vec![
+                accepted(&format!(
+                    "https://msitapi.fabric.microsoft.com/v1/operations/{OPERATION}"
+                )),
+                reply(StatusCode::Ok, json!({"status":"Succeeded"})),
+            ],
+            2,
+            true,
+        ),
+    ] {
+        let wire = Arc::new(Wire {
+            replies: Mutex::new(replies.into()),
+            ..Wire::default()
+        });
+        let (sdk, executor, _) = configured(wire.clone());
+        let interrupted = AtomicU8::new(0);
+        let cancelled = std::future::poll_fn(|_| {
+            if wire.requests.lock().unwrap().len() >= cancel_after {
+                interrupted.store(1, Ordering::SeqCst);
+                std::task::Poll::Ready(())
+            } else {
+                std::task::Poll::Pending
+            }
+        });
+        let mut operations = OperationSession::with_context(
+            sdk.context(),
+            executor,
+            OperationLimits::default(),
+            cancelled,
+        );
+        let result = parse(&leaf).execute(&mut operations).await;
+        let evidence = operations.evidence(OperationErrorKind::InvalidResponse);
+        let delivery = deliver(result, evidence, &interrupted).unwrap();
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        assert_eq!(
+            delivery.write_to(&mut out, &mut err).unwrap(),
+            CommandOutcome::Cancelled(1)
+        );
+        assert!(out.is_empty());
+        let output: Value = serde_json::from_slice(&err).unwrap();
+        assert_eq!(output["error"]["code"], "cancelled");
+        assert_eq!(output["error"]["mutationMayHaveOccurred"], mutating);
+        if mutating {
+            assert_eq!(output["error"]["operationId"], OPERATION);
+        }
+        assert_eq!(wire.requests.lock().unwrap().len(), cancel_after);
+    }
+}
+
+struct BlockedWriter {
+    release: std::sync::mpsc::Receiver<()>,
+}
+
+impl Write for BlockedWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.release.recv().map_err(io::Error::other)?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn blocked_output_has_bounded_abandonment_and_retains_operation_evidence() {
+    let (release, receiver) = std::sync::mpsc::channel();
+    let started = Instant::now();
+    let error = publish_to(
+        BlockedWriter { release: receiver },
+        b"native output".to_vec(),
+        CommandOutcome::Returned(0),
+        Instant::now() + Duration::from_millis(30),
+        std::future::pending(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.0, "timed_out");
+    assert!(started.elapsed() < Duration::from_secs(2));
+    let response =
+        json!({"status":"completed","operationId":OPERATION,"mutationMayHaveOccurred":true});
+    let diagnostic = output_failure(&response, error);
+    assert_eq!(diagnostic["error"]["operationId"], OPERATION);
+    assert_eq!(diagnostic["error"]["mutationMayHaveOccurred"], true);
+    release.send(()).unwrap();
+}
+
+struct FlushFailure;
+
+impl Write for FlushFailure {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Err(io::ErrorKind::BrokenPipe.into())
+    }
+}
+
+#[tokio::test]
+async fn output_flush_failure_and_cancel_are_not_successful_delivery() {
+    let error = publish_to(
+        FlushFailure,
+        b"native output".to_vec(),
+        CommandOutcome::Returned(0),
+        Instant::now() + Duration::from_secs(1),
+        std::future::pending(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.0, "output_failed");
+    let (release, receiver) = std::sync::mpsc::channel();
+    let error = publish_to(
+        BlockedWriter { release: receiver },
+        b"native output".to_vec(),
+        CommandOutcome::Returned(0),
+        Instant::now() + Duration::from_secs(1),
+        async { super::super::failure("cancelled", "synthetic output cancel", 2) },
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.0, "cancelled");
+    release.send(()).unwrap();
+}
+
+#[test]
+fn shared_json_encoder_makes_non_ascii_provider_fields_console_safe_without_loss() {
+    let value = json!({"native":"\u{1f642}\u{4e2d}","unknown":false});
+    let encoded = fabric_cli_output::json_dumps(&value).unwrap();
+    assert!(encoded.is_ascii());
+    assert_eq!(serde_json::from_str::<Value>(&encoded).unwrap(), value);
 }

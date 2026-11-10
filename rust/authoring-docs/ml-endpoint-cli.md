@@ -45,6 +45,12 @@ Pass the opaque token explicitly for another bounded page. A page is not an
 exhaustive-list claim. The shared executor bounds requests, responses, retry
 delays and LRO links. `--timeout` bounds the complete native operation to 1-3600
 seconds (default 240), including authentication and polling.
+Native JSON publication uses owned output handles and the same absolute deadline.
+On blocked/failed output, the host stops rather than reusing a possibly active
+writer or replaying a remote operation. A best-effort diagnostic has at most one
+additional second of cleanup; runtime shutdown is also bounded to one second.
+JSON Unicode escapes preserve native values while allowing safe ASCII output
+through owned Windows console handles.
 
 Set `FAB_API_ENDPOINT_FABRIC=msitapi.fabric.microsoft.com` explicitly for MSIT.
 The host remains paired with the Fabric audience

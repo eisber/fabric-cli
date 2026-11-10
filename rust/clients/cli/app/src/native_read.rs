@@ -33,6 +33,10 @@ mod get;
 #[path = "native_ml_endpoint.rs"]
 mod ml_endpoint;
 
+#[cfg(any(windows, feature = "headless", feature = "interactive"))]
+#[path = "native_output.rs"]
+mod output;
+
 #[path = "native_delete.rs"]
 mod delete;
 
@@ -888,9 +892,18 @@ fn run_selected(
         .map(|navigation| std::sync::Arc::clone(navigation.current()));
     let result = runtime.block_on(async {
         if matches!(command, NativeCommand::MlEndpoint(..)) {
-            return execute_delivery(
+            let delivery = execute_delivery(
                 command, credential, &current, home, endpoint, settings, state, None,
             ).await;
+            return match delivery {
+                Ok(delivery) => {
+                    let NativeCommand::MlEndpoint(_, deadline) = command else {
+                        unreachable!("selected ML endpoint");
+                    };
+                    ml_endpoint::publish(delivery, deadline).await
+                }
+                Err(error) => Err(error),
+            };
         }
         if is_get {
             let clock = get::NativeClock(tokio::runtime::Handle::current());
