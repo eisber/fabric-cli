@@ -20,6 +20,7 @@ use std::{
     fmt::Write as _,
     future::Future,
     io::{self, IsTerminal, Write as _},
+    sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
 
@@ -213,10 +214,13 @@ fn run_until(command: UpdateCommand, deadline: &NativeDeadline) -> Result<(), Fa
         }
         remaining(deadline)?;
         let mut policy = ExactApproval { captured, approved };
+        let signal_failed = AtomicBool::new(false);
         let interruption = async {
             tokio::select! {
                 biased;
-                _ = tokio::signal::ctrl_c() => (),
+                signal = tokio::signal::ctrl_c() => {
+                    signal_failed.store(signal.is_err(), Ordering::Release);
+                },
                 _ = tokio::time::sleep(remaining(deadline).unwrap_or(Duration::ZERO)) => (),
             }
         };
@@ -224,6 +228,14 @@ fn run_until(command: UpdateCommand, deadline: &NativeDeadline) -> Result<(), Fa
             .execute_bound(session.executor, &mut policy, interruption)
             .await
             .map_err(host_failure)?;
+        if signal_failed.load(Ordering::Acquire) {
+            return Err((
+                "SignalFailed",
+                "Update cancellation handler failed; original native evidence is retained. Do not replay.".into(),
+                report_evidence(delivery.report()),
+                1,
+            ));
+        }
         publish(delivery, stdout, deadline).await
     });
     runtime.shutdown_timeout(Duration::from_millis(100));
