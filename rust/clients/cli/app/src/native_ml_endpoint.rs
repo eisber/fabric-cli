@@ -24,6 +24,18 @@ use std::{
     time::Instant,
 };
 
+pub(super) fn transport_options(
+    command: &EndpointCommand,
+) -> fabric_sdk_transport::TransportOptions {
+    let mut options = super::native_transport_options(false);
+    if command.is_score() {
+        // The absolute command deadline still bounds cold-start waiting; an
+        // unrelated 30-second ordinary-read socket budget must not truncate it.
+        options.read_timeout = command.timeout;
+    }
+    options
+}
+
 pub(super) async fn before_connect<T>(
     work: impl Future<Output = Result<T, Failure>>,
     deadline: Instant,
@@ -98,10 +110,11 @@ pub(super) async fn dispatch(
     let result = result.map_err(|mut error| {
         // A body-stream failure may have received headers without a complete
         // response. Never replace the actual failing exchange with earlier GETs.
-        if error.status.is_none() && snapshot.failure.is_some() {
+        let incomplete_exchange = snapshot.failure.is_some() || snapshot.phase == "response_body";
+        if error.status.is_none() && incomplete_exchange {
             error.status = snapshot.status;
         }
-        if error.operation_id.is_none() && snapshot.failure.is_some() {
+        if error.operation_id.is_none() && incomplete_exchange {
             error.operation_id = snapshot.operation_id;
         }
         error
@@ -163,7 +176,9 @@ fn deliver_with_diagnostic(
                 json!([
                     "Do not repeat scoring to recover a missing result. Accepted work is not completed work; cancelled/expired local observation is not rollback.",
                     {"action":"readOperation","method":"GET","path":format!("/v1/operations/{id}"),
-                     "instruction":"Use the existing same-host authenticated API reader to inspect this exact operation. Retrieve its result only after Succeeded; do not score again."},
+                     "argv":["fab-rs","api",format!("/v1/operations/{id}"),"--method","get","--show_headers","--output_format","json"],
+                     "resultArgv":["fab-rs","api",format!("/v1/operations/{id}/result"),"--method","get","--show_headers","--output_format","json"],
+                     "instruction":"Use the same existing host/identity to inspect this exact operation. Run resultArgv only after Succeeded; do not score again."},
                     "Preserve this stderr JSON and its UTC time, elapsed duration, target and actual request/operation IDs for authorized Fabric support/service-log correlation. Do not attach credentials, model inputs or predictions."
                 ])
             } else {

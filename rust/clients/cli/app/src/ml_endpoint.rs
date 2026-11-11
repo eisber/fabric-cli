@@ -439,7 +439,12 @@ impl EndpointCommand {
         }
         let payload = input.payload(metadata)?;
         let request = requests.score_version(&self.target, &version, &payload, input.wait)?;
-        let outcome = request.execute(executor).await?;
+        let outcome = request.execute(executor).await.map_err(|mut error| {
+            if error.code == "InvalidResponse" {
+                error.mutation_may_have_occurred = true;
+            }
+            error
+        })?;
         match ScoreOutcome::from_resource(outcome)? {
             ScoreOutcome::Accepted { operation_id } => Ok(
                 json!({"status":"accepted","httpStatus":202,"operationId":operation_id,

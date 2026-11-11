@@ -13,7 +13,10 @@ use arrow_array::{
     UInt32Array, UInt64Array,
 };
 use arrow_schema::DataType;
-use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use parquet::{
+    arrow::arrow_reader::ParquetRecordBatchReaderBuilder,
+    basic::{ConvertedType, LogicalType},
+};
 use serde::{
     Deserialize, Deserializer,
     de::{self, MapAccess, SeqAccess, Visitor},
@@ -103,6 +106,9 @@ pub fn records(
 }
 
 fn check_rows(rows: &[Value]) -> Result<(), InputError> {
+    if rows.is_empty() {
+        return Err(InputError::Records);
+    }
     let mut cells = 0_usize;
     for row in rows {
         let row = row.as_object().ok_or(InputError::Records)?;
@@ -181,6 +187,31 @@ fn parquet_records(bytes: &[u8]) -> Result<Vec<Value>, InputError> {
         return Err(InputError::Parquet);
     }
     let metadata = builder.metadata();
+    if metadata
+        .file_metadata()
+        .schema_descr()
+        .columns()
+        .iter()
+        .any(|column| {
+            let logical = match column.logical_type_ref() {
+                None | Some(LogicalType::String) => true,
+                Some(LogicalType::Integer(integer)) => matches!(integer.bit_width, 32 | 64),
+                _ => false,
+            };
+            !logical
+                || !matches!(
+                    column.converted_type(),
+                    ConvertedType::NONE
+                        | ConvertedType::UTF8
+                        | ConvertedType::INT_32
+                        | ConvertedType::INT_64
+                        | ConvertedType::UINT_32
+                        | ConvertedType::UINT_64
+                )
+        })
+    {
+        return Err(InputError::Parquet);
+    }
     if metadata.file_metadata().num_rows() < 0
         || metadata.file_metadata().num_rows() > MAX_ROWS as i64
         || metadata

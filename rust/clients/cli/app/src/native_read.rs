@@ -1019,13 +1019,7 @@ async fn execute_delivery(
     #[cfg(not(any(windows, feature = "headless")))]
     let execution = false;
     let (client, identity_client) = if let NativeCommand::MlEndpoint(ml, _) = command {
-        let mut options = native_transport_options(false);
-        if ml.is_score() {
-            // Cold-start scoring is bounded by the command's absolute deadline,
-            // not the unrelated ordinary-read socket default of 30 seconds.
-            options.read_timeout = ml.timeout;
-        }
-        native_clients_with_options(&credential, options)?
+        native_clients_with_options(&credential, ml_endpoint::transport_options(ml))?
     } else {
         native_clients(&credential, execution)?
     };

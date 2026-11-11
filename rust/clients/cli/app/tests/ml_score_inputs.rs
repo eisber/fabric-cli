@@ -338,3 +338,50 @@ async fn schema_mode_post_failure_keeps_uncertainty_and_is_never_replayed() {
     );
     assert_eq!(wire.requests.len(), 2);
 }
+
+#[tokio::test]
+async fn parquet_files_validate_exact_values_and_precision_before_post() {
+    use arrow_array::{Int64Array, RecordBatch};
+    use arrow_schema::{DataType, Field, Schema};
+    use parquet::arrow::ArrowWriter;
+    use std::sync::Arc;
+    for (number, valid) in [(0, true), (9007199254740993_i64, false)] {
+        let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int64, false)]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(Int64Array::from(vec![number]))],
+        )
+        .unwrap();
+        let mut bytes = Vec::new();
+        let mut writer = ArrowWriter::try_new(&mut bytes, schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+        let mut command = command(&[
+            "--version",
+            "01",
+            "--input",
+            "fixture.parquet",
+            "--input-format",
+            "parquet",
+        ]);
+        command.prepare_input(&bytes).unwrap();
+        let mut wire = Wire {
+            replies: VecDeque::from([
+                complete(metadata(
+                    json!([{"name":"x","type":"double","required":true}]),
+                )),
+                complete(json!({"predictions":[0]})),
+            ]),
+            ..Wire::default()
+        };
+        let result = command.execute(&mut wire).await;
+        if valid {
+            result.unwrap();
+            assert_eq!(wire.requests.len(), 2);
+            assert_eq!(wire.requests[1].body().unwrap()["inputs"], json!([{"x":0}]));
+        } else {
+            assert_eq!(result.unwrap_err().code, "ScoreSchemaMismatch");
+            assert_eq!(wire.requests.len(), 1);
+        }
+    }
+}

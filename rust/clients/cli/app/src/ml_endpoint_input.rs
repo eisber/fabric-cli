@@ -92,7 +92,7 @@ pub(super) fn error(message: &'static str) -> clap::Error {
     error
 }
 
-pub(super) fn diagnostic(error: &clap::Error) -> Option<&'static str> {
+pub(crate) fn diagnostic(error: &clap::Error) -> Option<&'static str> {
     match error.get(ContextKind::Custom) {
         Some(ContextValue::String(value)) => [JSON_MESSAGE, BODY_MESSAGE, CONFLICT_MESSAGE]
             .into_iter()

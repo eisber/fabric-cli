@@ -2,8 +2,12 @@
 // Licensed under the MIT License.
 #![deny(unnameable_test_items)]
 
-use arrow_array::{ArrayRef, Decimal128Array, Float64Array, Int64Array, RecordBatch, StringArray};
-use arrow_schema::{DataType, Field, Schema};
+use arrow_array::types::Int32Type;
+use arrow_array::{
+    ArrayRef, Decimal128Array, Float64Array, Int64Array, ListArray, RecordBatch, StringArray,
+    TimestampMillisecondArray,
+};
+use arrow_schema::{Field, Schema};
 use fabric_cli_output::{
     input::{InputError, records, strict_json},
     tabular::TabularFormat,
@@ -84,8 +88,15 @@ fn parquet_preserves_i64_precision_and_rejects_nonfinite_logical_and_nested_type
         records(&bytes, TabularFormat::Parquet).unwrap(),
         vec![json!({"x":"exact"})]
     );
-    assert!(matches!(
-        DataType::Timestamp(arrow_schema::TimeUnit::Millisecond, None),
-        DataType::Timestamp(..)
-    ));
+    for array in [
+        Arc::new(TimestampMillisecondArray::from(vec![1])) as ArrayRef,
+        Arc::new(ListArray::from_iter_primitive::<Int32Type, _, _>(vec![
+            Some(vec![Some(1)]),
+        ])) as ArrayRef,
+    ] {
+        assert_eq!(
+            records(&parquet(array), TabularFormat::Parquet),
+            Err(InputError::Parquet)
+        );
+    }
 }
