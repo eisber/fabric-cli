@@ -3264,6 +3264,34 @@
       ]
     },
     {
+      "id": "v2-run",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-run"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-run-native",
+      "packages": ["fabric-cli", "fabric-identity", "fabric-sdk-transport"],
+      "features": ["fabric-cli/v2-run", "fabric-cli/native-read", "fabric-identity/windows-broker"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["native-read"]
+    },
+    {
+      "id": "v2-run-headless",
+      "packages": ["fabric-cli", "fabric-identity"],
+      "features": ["fabric-cli/v2-run", "fabric-cli/headless", "fabric-identity/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["headless"]
+    },
+    {
+      "id": "v2-run-semantic-model",
+      "packages": ["fabric-cli", "fabric-cli-semantic-model"],
+      "features": ["fabric-cli/v2-run", "fabric-cli/semantic-model", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["headless", "dependency-graph"]
+    },
+    {
       "id": "v2-cancel",
       "packages": [
         "fabric-cli"

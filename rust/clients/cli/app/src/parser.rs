@@ -208,6 +208,7 @@ pub fn command() -> Command {
                         .action(ArgAction::SetTrue),
                 ),
         );
+    // Run extends feature-owned artifact groups, so compose it after their registration.
     crate::tabular_export::register(crate::native_tabular::register(command))
 }
 
@@ -322,6 +323,15 @@ where
     };
     if matches!(name, "run" | "query") {
         return crate::native_tabular::from_matches(name, values).map(Invocation::NativeTabular);
+    }
+    #[cfg(feature = "v2-run")]
+    if name == "artifact"
+        && let Some(notebook) = values.subcommand_matches("notebook")
+    {
+        let leaf = notebook
+            .subcommand_matches("run")
+            .ok_or_else(invalid_arguments)?;
+        return crate::native_tabular::from_matches("run", leaf).map(Invocation::NativeTabular);
     }
     let export = crate::tabular_export::request(&matches);
     let wrap = |mut invocation: Invocation| {

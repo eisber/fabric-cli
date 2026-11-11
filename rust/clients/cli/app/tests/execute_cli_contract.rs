@@ -71,9 +71,12 @@ fn invalid_input_file_is_rejected_before_provider_selection() {
 #[cfg(all(feature = "native-host", any(windows, feature = "headless")))]
 #[test]
 fn malformed_input_and_existing_output_fail_before_approval_or_identity() {
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let input = root.join(format!(".execute-invalid-input-{}", std::process::id()));
-    let output_path = root.join(format!(".execute-existing-output-{}", std::process::id()));
+    let root = tempfile::Builder::new()
+        .prefix("execute-cli-contract-")
+        .tempdir()
+        .unwrap();
+    let input = root.path().join("invalid-input.json");
+    let output_path = root.path().join("existing-output.json");
     for value in [
         "",
         "{\"arrowVersion\":3}",

@@ -9,6 +9,7 @@
 //! the bounded numeric and Python-runtime compatibility contract.
 //! [`text`] separately exposes caller-injected text/table rendering and ordered
 //! mixed-stream plans without altering the existing JSON API.
+//! [`input`] provides shared pure, bounded strict-JSON decoding for native frontdoors.
 //!
 //! ```
 //! use fabric_cli_output::{Indent, OutputEnvelope, OutputInput, Timestamp, parse_data};
@@ -29,6 +30,7 @@
 //! ```
 
 mod encoding;
+pub mod input;
 pub mod production_unicode;
 pub mod tabular;
 pub mod text;

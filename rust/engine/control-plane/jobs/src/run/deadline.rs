@@ -73,9 +73,20 @@ pub struct RunDeadline {
 impl RunDeadline {
     /// Start before remote resolution, credential acquisition or submission.
     pub fn start(clock: &dyn RunClock, timeout: RunTimeout) -> Result<Self, RunError> {
+        Self::from_start(clock.now(), timeout)
+    }
+
+    /// Anchor the same shared deadline to an explicit point in the caller's clock.
+    ///
+    /// Hosts transferring an existing absolute budget can use their clock origin
+    /// instead of restarting time after local preparation or identity setup.
+    ///
+    /// # Errors
+    /// Rejects overflow; the supplied start must use the injected clock's domain.
+    pub fn from_start(start: Duration, timeout: RunTimeout) -> Result<Self, RunError> {
         Ok(Self {
             shared: fabric_sdk_operations::deadline::MonotonicDeadline::new(
-                clock.now(),
+                start,
                 timeout.duration(),
             )
             .map_err(|_| RunError::InvalidTimeout)?,
