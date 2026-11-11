@@ -374,13 +374,16 @@ async fn bound_gets_reuse_existing_retries_but_original_fabric_adapters_stay_res
 pub(super) struct TestTimer {
     waits: Mutex<Vec<Duration>>,
     pub(super) expired: AtomicBool,
+    deadline: Option<Duration>,
 }
 
 impl ExecutionTimer for TestTimer {
     fn sleep(&self, delay: Duration) -> ExecutionFuture<'_, ()> {
         self.waits.lock().unwrap().push(delay);
         Box::pin(poll_fn(move |_| {
-            if delay == Duration::from_secs(240) && !self.expired.load(Ordering::SeqCst) {
+            if delay == self.deadline.unwrap_or(Duration::from_secs(240))
+                && !self.expired.load(Ordering::SeqCst)
+            {
                 Poll::Pending
             } else {
                 Poll::Ready(())
@@ -1065,7 +1068,10 @@ async fn scoped_deadline_preserves_trace_and_response_progress_without_post_repl
         ("oversized", 2, Err(ExecutionError::ResponseLimit)),
     ] {
         let client = ScriptedClient::new([response(202, body, &[("request-id", OPERATION)])]);
-        let timer = Arc::new(TestTimer::default());
+        let timer = Arc::new(TestTimer {
+            deadline: Some(Duration::from_secs(7)),
+            ..TestTimer::default()
+        });
         let trace = ExecutionTrace::default();
         let exec = executor(client.clone(), timer.clone())
             .with_trace(trace.clone())
@@ -1119,7 +1125,10 @@ async fn scoped_deadline_preserves_partial_progress_and_trace_on_suspended_body(
         }),
     );
     let client = ScriptedClient::new([raw]);
-    let timer = Arc::new(TestTimer::default());
+    let timer = Arc::new(TestTimer {
+        deadline: Some(Duration::from_secs(7)),
+        ..TestTimer::default()
+    });
     let trace = ExecutionTrace::default();
     let exec = executor(client.clone(), timer.clone())
         .with_trace(trace.clone())
