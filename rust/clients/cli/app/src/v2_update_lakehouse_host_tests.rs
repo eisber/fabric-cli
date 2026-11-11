@@ -6,6 +6,7 @@
 use super::*;
 use async_trait::async_trait;
 use azure_core::credentials::{AccessToken, TokenRequestOptions};
+use azure_core::time::OffsetDateTime;
 use fabric_cli::update::{self, UpdateInput};
 use fabric_sdk::{Audience, CredentialSelection, RequestContext, TokenCredential};
 use fabric_sdk_operations::{
@@ -30,10 +31,14 @@ struct Credential;
 impl TokenCredential for Credential {
     async fn get_token(
         &self,
-        _: &[&str],
+        scopes: &[&str],
         _: Option<TokenRequestOptions<'_>>,
     ) -> azure_core::Result<AccessToken> {
-        panic!("offline executor must not acquire tokens")
+        assert_eq!(scopes, &[Audience::Fabric.scope()]);
+        Ok(AccessToken::new(
+            "synthetic-lakehouse-host",
+            OffsetDateTime::UNIX_EPOCH,
+        ))
     }
 }
 
