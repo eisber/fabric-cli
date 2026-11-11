@@ -32,6 +32,29 @@ mod get;
 #[path = "native_delete.rs"]
 mod delete;
 
+#[cfg(all(feature = "v2-run", any(windows, feature = "headless")))]
+#[path = "native_run_notebook.rs"]
+mod run_notebook;
+
+#[cfg(feature = "v2-run")]
+pub(crate) fn run_notebook(
+    command: &fabric_cli::native_tabular::NativeCommand,
+) -> io::Result<CommandOutcome> {
+    #[cfg(any(windows, feature = "headless"))]
+    {
+        run_notebook::run(command)
+    }
+    #[cfg(not(any(windows, feature = "headless")))]
+    {
+        let _ = command;
+        write_error(failure(
+            "UnsupportedCapability",
+            "Notebook Run requires an explicitly supported native identity host.",
+            1,
+        ))
+    }
+}
+
 pub(crate) fn run_delete(
     prepared: fabric_cli::delete::PreparedDelete,
     output: fabric_cli::delete::ReservedDeleteOutput,

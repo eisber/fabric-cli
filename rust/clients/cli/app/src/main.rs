@@ -118,6 +118,13 @@ fn run(_update_lifetime: &mut UpdateLifetime) -> io::Result<ExitCode> {
         );
     }
     if let Ok(Invocation::NativeTabular(command)) = &invocation {
+        #[cfg(feature = "v2-run")]
+        if matches!(
+            command.operation,
+            fabric_cli::native_tabular::Operation::Run(_)
+        ) {
+            return dispatch_notebook_run(command).map(exit_status);
+        }
         return write_export(fabric_cli::native_tabular::not_configured(command)).map(exit_status);
     }
     #[cfg(feature = "self-update")]
@@ -147,6 +154,13 @@ fn dispatch(
 ) -> io::Result<CommandOutcome> {
     let (error, exit) = match invocation {
         Ok(Invocation::NativeTabular(command)) => {
+            #[cfg(feature = "v2-run")]
+            if matches!(
+                command.operation,
+                fabric_cli::native_tabular::Operation::Run(_)
+            ) {
+                return dispatch_notebook_run(&command);
+            }
             return write_export(fabric_cli::native_tabular::not_configured(&command));
         }
         Ok(invocation @ Invocation::Tabular(_)) => {
@@ -298,6 +312,32 @@ fn dispatch(
     } else {
         CommandOutcome::Returned(exit)
     })
+}
+
+#[cfg(feature = "v2-run")]
+fn dispatch_notebook_run(
+    command: &fabric_cli::native_tabular::NativeCommand,
+) -> io::Result<CommandOutcome> {
+    #[cfg(feature = "native-host")]
+    {
+        native_read::run_notebook(command)
+    }
+    #[cfg(not(feature = "native-host"))]
+    {
+        let error = match fabric_cli::run_notebook::preflight(command) {
+            Ok(_) => CommandError {
+                code: "NotConfigured",
+                message: "Notebook Run requires an explicitly configured native credential and HTTP host. No Notebook was submitted.".into(),
+            },
+            Err(error) => {
+                let receipt = fabric_cli::run_notebook::Dispatch::unavailable(error);
+                serde_json::to_writer(&mut io::stderr().lock(), receipt.value())?;
+                writeln!(io::stderr().lock())?;
+                return Ok(CommandOutcome::Returned(receipt.exit_code()));
+            }
+        };
+        write_error(error, 1).map(|_| CommandOutcome::Returned(1))
+    }
 }
 
 #[cfg(feature = "v2-cancel")]

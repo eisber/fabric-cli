@@ -17,9 +17,10 @@ use fabric_sdk::v2::{
 use fabric_sdk_jobs::{
     JobClient, JobFuture,
     run::{
-        RunCapabilities, RunClock, RunError, RunEvidence, RunFailure, RunFormat, RunHandleKind,
-        RunInput, RunInputRule, RunObserver, RunOptions, RunOutcome, RunOutput, RunOwnerKind,
-        RunPreflight, RunSession, RunTarget, RunTargetKind, RunTimeout, SchedulerObserver,
+        RunCapabilities, RunClock, RunDeadline, RunError, RunEvidence, RunFailure, RunFormat,
+        RunHandleKind, RunInput, RunInputRule, RunObserver, RunOptions, RunOutcome, RunOutput,
+        RunOwnerKind, RunPreflight, RunSession, RunTarget, RunTargetKind, RunTimeout,
+        SchedulerObserver,
     },
 };
 use serde_json::{Value, json};
@@ -223,6 +224,55 @@ pub trait RunAdapter: Send + Sync {
     ) -> JobFuture<'a, Result<(), Box<RunFailure>>>;
 }
 
+/// Released whole-Notebook adapter over the SDK's shared execution lifecycle.
+///
+/// Construction grants no provider permission or credentials. The outer host
+/// must bind the exact target and execution policy before dispatch.
+pub struct NotebookAdapter;
+
+impl RunAdapter for NotebookAdapter {
+    fn capabilities(&self) -> RunCapabilities {
+        RunCapabilities {
+            target: RunTargetKind::Notebook,
+            input: RunInputRule::OptionalObject,
+            wait: true,
+            formats: vec![RunFormat::Json],
+        }
+    }
+
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "parameters": {"type": "array"},
+                "executionData": {"type": "object"}
+            },
+            "description": "Native Notebook parameters and standard compute configuration; high-concurrency options are unavailable."
+        })
+    }
+
+    fn validate(&self, target: &RunTarget, input: &RunInput) -> Result<(), RunError> {
+        if target.kind() != RunTargetKind::Notebook {
+            return Err(RunError::WrongOwner);
+        }
+        fabric_sdk_jobs::notebook::NotebookRunRequest::from_input(match input {
+            RunInput::Omitted => None,
+            RunInput::Json(value) => Some(value.clone()),
+        })
+        .map_err(|_| RunError::InvalidInput)?
+        .validate_standard_execution()
+        .map_err(|_| RunError::UnsupportedCapability)
+    }
+
+    fn execute<'a>(
+        &'a self,
+        session: &'a mut RunSession<'_>,
+    ) -> JobFuture<'a, Result<(), Box<RunFailure>>> {
+        Box::pin(fabric_sdk_jobs::notebook::execute(session))
+    }
+}
+
 /// A preflight plan retaining the exact validated adapter and output sink.
 ///
 /// It does not own credentials, acquire a token, or establish remote permission.
@@ -360,8 +410,38 @@ pub async fn dispatch(
     clock: Arc<dyn RunClock>,
     cancelled: impl Future<Output = ()> + Send,
 ) -> Result<RunEvidence, RunDispatchError> {
-    let mut session = RunSession::new(client, prepared.plan, clock, cancelled)
-        .map_err(RunDispatchError::Start)?;
+    dispatch_with_receipt(prepared, client, clock, cancelled, None, |evidence| {
+        serde_json::to_vec(&receipt(evidence)).map_err(|_| RunError::Output)
+    })
+    .await
+}
+
+/// Dispatch with a pure bounded receipt projection into the retained output sink.
+///
+/// The formatter does not execute work or substitute an output destination.
+/// Existing [`dispatch`] keeps its original receipt contract. Hosts can project
+/// richer scoped evidence without a second publication outside the run budget.
+/// Return an encoded receipt without its trailing newline; this function adds
+/// the shared framing. Formatter errors are always classified as local Output.
+/// An explicit deadline preserves the original host budget through preparation.
+///
+/// # Errors
+/// Preserves execution, projection and no-clobber output evidence; never replays.
+pub async fn dispatch_with_receipt(
+    prepared: PreparedRun<'_>,
+    client: &JobClient,
+    clock: Arc<dyn RunClock>,
+    cancelled: impl Future<Output = ()> + Send,
+    deadline: Option<RunDeadline>,
+    render: impl FnOnce(&RunEvidence) -> Result<Vec<u8>, RunError> + Send,
+) -> Result<RunEvidence, RunDispatchError> {
+    let mut session = match deadline {
+        Some(deadline) => {
+            RunSession::with_deadline(client, prepared.plan, clock, cancelled, deadline)
+        }
+        None => RunSession::new(client, prepared.plan, clock, cancelled),
+    }
+    .map_err(RunDispatchError::Start)?;
     prepared.adapter.execute(&mut session).await?;
     let evidence = session.evidence();
     let accepted = evidence.outcome == RunOutcome::Accepted
@@ -387,13 +467,12 @@ pub async fn dispatch(
         })
         .into());
     }
-    let bytes = serde_json::to_vec(&receipt(evidence)).map_err(|_| {
+    let mut bytes = render(evidence).map_err(|_| {
         Box::new(RunFailure {
             source: RunError::Output,
             evidence: evidence.clone(),
         })
     })?;
-    let mut bytes = bytes;
     bytes.push(b'\n');
     session.commit(prepared.output, &bytes).await?;
     Ok(session.evidence().clone())

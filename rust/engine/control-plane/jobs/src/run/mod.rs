@@ -79,6 +79,23 @@ impl RunResponseRecorder {
         }
     }
 
+    /// Retain actual headers while explicitly omitting an oversized body.
+    ///
+    /// Called only after the transport observed the decoded-byte bound being
+    /// exceeded; no oversized allocation or fabricated complete empty body.
+    pub fn record_omitted(&self, response: &crate::JobResponse) -> Result<(), RunError> {
+        *self.observed.lock().map_err(|_| RunError::Transport)? = RecordedResponse {
+            response: Some(crate::JobResponse {
+                status: response.status,
+                headers: response.headers.clone(),
+                body: Vec::new(),
+            }),
+            complete: false,
+            body_omitted: true,
+        };
+        Ok(())
+    }
+
     pub(crate) fn snapshot(&self) -> Result<RecordedResponse, RunError> {
         self.observed
             .lock()

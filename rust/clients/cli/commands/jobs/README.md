@@ -9,6 +9,15 @@ creating a separate executable or runtime.
 
 ## Additive v2 Run surface
 
+The released `v2_run::NotebookAdapter` delegates whole-Notebook execution to
+`fabric-sdk-jobs::notebook::execute` using the existing Run session. The app's
+opt-in `v2-run` feature binds the existing root Run grammar and Notebook facade;
+it reuses grammar/DTOs, **not** the tabular backend or table-result pipeline.
+Native Run emits no-clobber JSON scheduler receipts, not tabular results, and requires
+interactive exact-target/input approval. See
+[native Notebook Run](../../../../authoring-docs/native-notebook-run.md) for the
+bounded profile and explicit live-proof limits.
+
 `v2_run::command()` exposes the same `run PATH` leaf at the root and under
 `artifact notebook`, `artifact user-data-function`, and `artifact lakehouse`.
 It does not replace the v1 grammar or mount a production host.
@@ -51,8 +60,9 @@ The preserved Run library composition from `ce67b4756429e2d5d393d739651d6ddf4fdc
 is reconciled onto released baseline `701620ba30b0a1309a33ef27998315fff54643f2`.
 Cargo package identities are unchanged: `fabric-cli-jobs` now lives under
 `clients/cli/commands/jobs`, and its additive `Verb::Run` contract lives in
-`engine/core/v2-contracts`. The test adapters remain offline fixtures, not
-production adapters or a mounted native Run host.
+`engine/core/v2-contracts`. At that retained candidate, the test adapters were
+offline fixtures, not production adapters or a mounted native Run host. The
+opt-in Notebook adapter described above is a later, separately validated slice.
 
 ## Compose the host
 

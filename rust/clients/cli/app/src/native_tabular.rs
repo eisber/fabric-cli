@@ -40,6 +40,12 @@ pub struct RunCommand {
     pub wait: bool,
     /// Opaque duration spelling, validated by preparation, with no default.
     pub timeout: Option<String>,
+    /// Opt-in native receipt destination, separate from tabular exports.
+    #[cfg(feature = "v2-run")]
+    pub output: String,
+    /// Parsed proposal flag; the native standard profile explicitly rejects it.
+    #[cfg(feature = "v2-run")]
+    pub check_exit: bool,
 }
 
 /// Pinned query-r16 frontend options over a proven read-only native binding.
@@ -105,6 +111,10 @@ impl NativeCommand {
             Operation::Run(run) => {
                 if !valid_file(run.input.as_deref()) || !valid_file(run.timeout.as_deref()) {
                     return Err("Run input and duration values must be nonblank");
+                }
+                #[cfg(feature = "v2-run")]
+                if run.output.trim().is_empty() {
+                    return Err("Run output must be nonblank");
                 }
             }
             Operation::Query(query) => {
@@ -524,6 +534,7 @@ pub fn command() -> Command {
                     .value_parser(["json", "text"]),
             ),
         true,
+        false,
     )
 }
 
@@ -545,17 +556,48 @@ where
 }
 
 pub(crate) fn register(root: Command) -> Command {
-    register_roots(root, false)
+    let root = register_roots(root, false, cfg!(feature = "v2-run"));
+    #[cfg(feature = "v2-run")]
+    let root = root.subcommand(
+        Command::new("artifact")
+            .subcommand_required(true)
+            .subcommand(
+                Command::new("notebook")
+                    .subcommand_required(true)
+                    .subcommand(installed_run_arguments()),
+            ),
+    );
+    root
 }
 
-fn register_roots(mut root: Command, include_execute: bool) -> Command {
-    let path = || Arg::new("path").required(true).value_name("PATH");
-    let run = Command::new("run")
+fn tabular_run_arguments() -> Command {
+    Command::new("run")
         .about("Run through a caller-injected native tabular backend")
-        .arg(path())
+        .arg(Arg::new("path").required(true).value_name("PATH"))
         .arg(Arg::new("input").long("input"))
         .arg(Arg::new("wait").long("wait").action(ArgAction::SetTrue))
-        .arg(Arg::new("timeout").long("timeout").value_name("DURATION"));
+        .arg(Arg::new("timeout").long("timeout").value_name("DURATION"))
+}
+
+#[cfg(feature = "v2-run")]
+fn installed_run_arguments() -> Command {
+    fabric_cli_jobs::v2_run::run_command()
+        .about("Execute one ID-qualified whole Notebook (native Run preview)")
+        .after_help("Target: /<workspace-guid>.Workspace/<notebook-guid>.Notebook. Native JSON --input FILE|- accepts typed parameters and standard compute configuration. Omitted input differs from {}. Timeout uses positive ms/s/m/h, at most 24h (default 30s submission, 5m with --wait). JSON scheduler receipts use stdout or a no-clobber --output FILE. Scheduler Completed does not verify application exit success. Timeout/interruption never cancels remote work; submission is never automatically replayed. Beta --check-exit, cells, high concurrency, UDF and Livy are unavailable in this profile. Requires native-host and explicit exact-target/input approval.")
+}
+
+#[cfg(not(feature = "v2-run"))]
+fn installed_run_arguments() -> Command {
+    tabular_run_arguments()
+}
+
+fn register_roots(mut root: Command, include_execute: bool, native_run: bool) -> Command {
+    let path = || Arg::new("path").required(true).value_name("PATH");
+    let run = if native_run {
+        installed_run_arguments()
+    } else {
+        tabular_run_arguments()
+    };
     let query = text_arguments(
         Command::new("query")
             .about("Query a proven read-only native binding")
@@ -570,6 +612,11 @@ fn register_roots(mut root: Command, include_execute: bool) -> Command {
     .arg(Arg::new("wait").long("wait").action(ArgAction::SetTrue));
     for command in [run, query, execute] {
         if command.get_name() == "execute" && !include_execute {
+            continue;
+        }
+        #[cfg(feature = "v2-run")]
+        if native_run && command.get_name() == "run" {
+            root = root.subcommand(command);
             continue;
         }
         root = root.subcommand(
@@ -588,11 +635,36 @@ pub(crate) fn from_matches(name: &str, values: &ArgMatches) -> Result<NativeComm
         _ => None,
     };
     let invalid = || clap::Error::raw(ErrorKind::InvalidValue, crate::parser::INVALID_ARGUMENTS);
+    #[cfg(feature = "v2-run")]
+    if name == "run"
+        && values
+            .try_get_one::<String>("format")
+            .ok()
+            .flatten()
+            .is_some()
+        && values.get_one::<String>("output_format").is_some()
+    {
+        return Err(invalid());
+    }
     let operation = match name {
         "run" => Operation::Run(RunCommand {
             input: string("input"),
             wait: values.get_flag("wait"),
             timeout: string("timeout"),
+            #[cfg(feature = "v2-run")]
+            output: values
+                .try_get_one::<String>("output")
+                .ok()
+                .flatten()
+                .cloned()
+                .unwrap_or_else(|| "-".into()),
+            #[cfg(feature = "v2-run")]
+            check_exit: values
+                .try_get_one::<bool>("check-exit")
+                .ok()
+                .flatten()
+                .copied()
+                .unwrap_or(false),
         }),
         "query" => Operation::Query(QueryCommand {
             text: text().ok_or_else(invalid)?,
