@@ -1,0 +1,6 @@
+kind: fixed
+body: Accept absent or null tensor specifications on supported scalar ML scoring signatures, and safely classify the exact known auto-sleep score failure without exposing service text or automatically replaying inference.
+time: 2026-11-11T15:00:00+01:00
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot

@@ -185,12 +185,21 @@ impl HttpClient for NativeHttpClient {
             .method(request.method().as_str())
             .uri(request.url().as_str());
         let mut has_encoding = false;
+        let mut has_framing = false;
         for (name, value) in request.headers().iter() {
             has_encoding |= name.as_str() == "accept-encoding";
+            has_framing |= matches!(name.as_str(), "content-length" | "transfer-encoding");
             pending = pending.header(name.as_str(), value.as_str());
         }
         if !has_encoding {
             pending = pending.header("accept-encoding", "gzip, deflate");
+        }
+        // Hyper omits automatic Content-Length for an already-ended empty body.
+        if request.method() == Method::Post
+            && matches!(request.body(), Body::Bytes(bytes) if bytes.is_empty())
+            && !has_framing
+        {
+            pending = pending.header("content-length", "0");
         }
         let body = match request.body().clone() {
             Body::Bytes(bytes) => Full::new(bytes)

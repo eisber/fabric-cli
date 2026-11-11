@@ -67,6 +67,36 @@ EOF is consumed once and returns `StopReason::EndOfInput`. It does not request
 a farewell or diagnostic, invent an exit command, or retry input. The application
 owns any EOF presentation. Read errors are distinct from EOF and interrupts.
 
+### Intentional normal-EOF exception in `fab-rs`
+
+In the opt-in `fabric-cli` `repl` build, normal EOF ends the session with exit
+status 0 and no additional stdout or stderr diagnostic. This includes Ctrl+D
+when Reedline reports `Signal::CtrlD`, which the editor maps to
+`InputEvent::EndOfInput`. EOF does not print `Goodbye!`; the exact
+`quit`/`q`/`exit` aliases retain their farewell. Ctrl+C still displays the exit
+hint and accepts the next input rather than ending the session.
+
+This is an owner-requested UX change from Rust baseline
+`701620ba30b0a1309a33ef27998315fff54643f2`, not byte-for-byte Python parity.
+The pinned Python source
+`cf67fd52ea8b47e24c725e73d792de6f4a08e2e4` prints
+`Error in interactive session: ` for normal EOF. Its independent
+`tests/test_source_oracle.py` assertion and `tests/contract.json` reference
+remain unchanged. Real editor, history, bounds, host and output failures are
+not EOF. Lexical failures retain their existing diagnostic and exit policy.
+
+The scripted application tests check exact session stdout, empty stderr and
+process exit status without opening a terminal. Editor tests separately check
+the Reedline signal mapping. The existing native acceptance harness uses POSIX
+PTYs and explicitly leaves Windows terminal checks unrun; these offline tests
+do not establish PowerShell/ConPTY, Linux or macOS terminal-key behavior.
+The synthetic EOF case in
+`rust/tests/acceptance/native/terminal-inputs.json` uses schema 2 to reject the
+old diagnostic on either stream. Its runner also requires actual input delivery,
+bounded successful exit, observed raw mode and terminal restoration. Harness
+unit checks do not replace native PTY execution; the independent Python oracle
+remains unchanged.
+
 Prompt context is plain text, with ANSI/control characters, directional controls
 and line separators escaped visibly. Printable Unicode and characters such as
 `<`, `>`, and `$` remain literal. The caller's prompt is refreshed each iteration.

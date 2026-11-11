@@ -46,7 +46,7 @@ const inside = (parent, child) => {
 
 test('native preflights preserve exact engineering inventory and the mandatory full matrix', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/rust-ci.yml'), 'utf8');
-  assert.match(workflow, /pattern, count = "test_native_acceptance\*\.py", 38/);
+  assert.match(workflow, /pattern, count = "test_native_acceptance\*\.py", 51/);
   assert.ok(workflow.includes('result.testsRun == count and not result.expectedFailures and skips == expected'));
   assert.ok(workflow.includes('requires_native_POSIX_PTY'));
   assert.ok(workflow.includes('with open("native-acceptance.log", "w", encoding="utf-8")'));
@@ -100,6 +100,15 @@ test('native job budgets give only Windows finite headroom without changing the 
   assert.match(native, /os: \[windows-2025, ubuntu-24\.04, macos-15\]/);
   assert.match(native, /--restore-oracle-deps --execute/);
   assert.ok(!native.includes('continue-on-error'));
+  const planBudget = native.match(
+    /--budget-seconds \$\{\{ matrix\.os == '([^']+)' && (\d+) \|\| (\d+) \}\}/);
+  assert.ok(planBudget, 'Expected an explicit finite native plan budget');
+  assert.equal(planBudget[1], budget[1]);
+  assert.equal(Number(planBudget[2]), 8100);
+  assert.equal(Number(planBudget[3]), 7200);
+  assert.equal(selected * 60 - Number(planBudget[2]), 15 * 60,
+    'Windows retains fifteen minutes outside the plan for preflight and artifact cleanup');
+  assert.ok(Number(planBudget[3]) <= otherwise * 60);
 });
 
 function withTargetEnvironment(value, action) {
@@ -347,12 +356,21 @@ test('native CI front-loads exact engineering suites without replacing the full 
   const workflow = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
   assert.ok(workflow.indexOf('Check bounded engineering cleanup before native compilation') <
     workflow.indexOf('Preflight every current feature and target under strict native lints'));
-  assert.ok(workflow.includes('pattern, count = "test_native_acceptance*.py", 38'));
+  assert.ok(workflow.includes('pattern, count = "test_native_acceptance*.py", 51'));
   assert.ok(workflow.includes('not result.expectedFailures and skips == expected'));
   assert.ok(workflow.includes('"discovered": discovered, "run": 0'));
   assert.ok(workflow.includes('"passed": False, "reason": "inventory_mismatch"'));
   assert.ok(workflow.includes('persist()\n              raise SystemExit(1)'));
   assert.ok(workflow.includes('report["pty_receipts"].append(captured[0])'));
+  assert.ok(workflow.includes('kwargs.get("terminal") is not None and acceptance.os is os'));
+  for (const name of [
+    'test_actual_eof_byte_and_clean_restore_satisfy_fixture',
+    'test_cursor_protocol_only_exit_cannot_satisfy_eof_delivery',
+    'test_eof_without_restoration_cannot_satisfy_fixture',
+    'test_raw_pty_cursor_flood_without_input_reads_is_bounded_and_reaped',
+  ]) {
+    assert.ok(workflow.includes(`"${name}"`), `Missing exact native POSIX skip: ${name}`);
+  }
   assert.ok(workflow.includes('return captured'));
   assert.ok(workflow.includes('Execute the shared local and CI validation plan'));
   assert.ok(workflow.includes('--restore-oracle-deps --execute'));

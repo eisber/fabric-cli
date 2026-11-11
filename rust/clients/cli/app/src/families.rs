@@ -473,7 +473,11 @@ impl FamilySession<'_, '_> {
                     limits: Default::default(),
                     request_bounds: Default::default(),
                 }
-                .execute(command, cancelled.as_mut())
+                .execute_for_output(
+                    command,
+                    if tabular { OutputFormat::Json } else { format },
+                    cancelled.as_mut(),
+                )
                 .await;
                 if tabular {
                     return Ok(FamilyOutput {
@@ -562,6 +566,20 @@ impl FamilySession<'_, '_> {
                     && let Some(element) = target.fabric()
                     && matches!(element.kind(), NodeKind::Workspace(_) | NodeKind::Tenant)
                 {
+                    if element.kind() == NodeKind::Tenant
+                        && self.http.endpoint()
+                            != &fabric_sdk::EndpointBinding::public(
+                                fabric_sdk::ServiceOrigin::Fabric,
+                            )
+                    {
+                        return self.command_failure(
+                            errors::unsupported(
+                                "Tenant removal is not supported on the selected endpoint",
+                            ),
+                            invocation,
+                            format,
+                        );
+                    }
                     if command.args().skill.is_some() {
                         return self.command_failure(
                             errors::unsupported(

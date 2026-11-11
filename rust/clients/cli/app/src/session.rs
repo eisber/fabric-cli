@@ -350,9 +350,8 @@ impl<'session> ReadSession<'session> {
         get_options::preflight(command)?;
         let mut cancelled = pin!(cancelled);
         let mut snapshot = snapshot::Snapshot::default();
-        // Keep the parser's exact token joining and quote trimming contract.
-        let path = command.path.join(" ");
-        let path = path.trim_matches(['\'', '"']);
+        let selection = crate::reads::ListSelection::new(command)?;
+        let path = selection.path.as_str();
         let current = if path.starts_with('/') || path == "~" || path.starts_with("~/") {
             Arc::clone(&self.tenant)
         } else {
