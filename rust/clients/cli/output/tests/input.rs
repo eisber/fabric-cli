@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+//! Strict typed input decoding, quoting, precision and unsupported schema tests.
 #![deny(unnameable_test_items)]
 
 use arrow_array::types::Int32Type;

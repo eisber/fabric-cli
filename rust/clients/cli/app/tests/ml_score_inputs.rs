@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
+//! Offline parser, schema, exact-version and inference no-replay contracts.
 #![deny(unnameable_test_items)]
 
 use fabric_cli::{
