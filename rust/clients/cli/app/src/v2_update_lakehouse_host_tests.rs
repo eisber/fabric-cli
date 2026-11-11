@@ -283,7 +283,26 @@ fn strict_input_type_and_output_preflight_are_local() {
             "{body}"
         );
     }
-    let oversize = vec![b' '; update::update::MAX_INPUT_BYTES + 1];
+    let overhead = serde_json::to_vec(&json!({"displayName":""}))
+        .unwrap()
+        .len();
+    let at_limit = serde_json::to_vec(&json!({
+        "displayName":"a".repeat(update::update::MAX_INPUT_BYTES - overhead)
+    }))
+    .unwrap();
+    assert_eq!(at_limit.len(), update::update::MAX_INPUT_BYTES);
+    assert!(
+        PreparedUpdateCommand::preflight(
+            command(false, &[]),
+            cwd.path(),
+            &mut Cursor::new(&at_limit)
+        )
+        .is_ok()
+    );
+    let mut oversize = at_limit;
+    oversize.insert(oversize.len() - 2, b'a');
+    assert_eq!(oversize.len(), update::update::MAX_INPUT_BYTES + 1);
+    assert!(serde_json::from_slice::<Value>(&oversize).is_ok());
     assert!(
         PreparedUpdateCommand::preflight(
             command(false, &[]),
