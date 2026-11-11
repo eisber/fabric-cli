@@ -92,6 +92,11 @@ duplicate keys rejected at every depth. Parameters and compute settings retain
 native JSON types; unknown fields fail locally.
 Route GUIDs are canonicalized to lowercase before submission and scoped handle
 validation; native parameter values are not rewritten.
+Root and facade validate these local arguments before selecting a platform host,
+including on non-Windows `native-read` builds without a supported identity host.
+Invalid targets and timeouts therefore retain their exit-2 `InvalidInput`
+diagnostic without reading stdin, files, configuration or identity. A valid
+request still fails explicitly when the selected platform host is unavailable.
 
 The executable requires explicit approval of the exact target and decoded input
 on its controlling terminal, with an empty answer declining. Structured stdin
@@ -153,6 +158,10 @@ isolated cache/target/TEMP, the shared physical-host validation mutex and a fres
 90-minute maximum. An inherited `FAB_RUN_AGENT_DEADLINE` only shortens that bound;
 owner terminals do not need an expired agent launcher. Missing dependencies fail
 explicitly and require a normal-TLS restore, not automatic mutation/build retries.
+For an existing isolated Rust installation, set `RUSTUP_HOME` to its actual
+installation root; otherwise the helper uses the user's `.rustup` directory.
+The same pinned compiler is verified in either location; no global PATH or
+toolchain configuration change is required.
 Source changes during the build prevent publication. On success, the root's
 `bin/fab-rs.exe` and provenance JSON identify actual host, source/tree, feature
 set, profile, byte count and SHA256. A build does not authorize Notebook execution.

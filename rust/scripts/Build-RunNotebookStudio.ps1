@@ -32,7 +32,8 @@ if ((git -C $repository rev-parse HEAD).Trim() -ne $ExpectedHead) { throw 'Sourc
 $dirty = @(git -C $repository status --porcelain --untracked-files=normal -- rust)
 if ($LASTEXITCODE -ne 0) { throw 'Could not verify Rust source cleanliness' }
 if ($dirty.Count) { throw 'Commit or preserve Rust source changes before building an exact artifact' }
-$toolchain = Join-Path $env:USERPROFILE '.rustup\toolchains\1.99.1-x86_64-pc-windows-msvc\bin'
+$toolchainHome = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { Join-Path $env:USERPROFILE '.rustup' }
+$toolchain = Join-Path $toolchainHome 'toolchains\1.99.1-x86_64-pc-windows-msvc\bin'
 $cargo = Join-Path $toolchain 'cargo.exe'
 if (-not (Test-Path -LiteralPath $cargo)) { throw 'Pinned Rust 1.99.1 MSVC toolchain is unavailable' }
 $rustVersion = & (Join-Path $toolchain 'rustc.exe') -Vv

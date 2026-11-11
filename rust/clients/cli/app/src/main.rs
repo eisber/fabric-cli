@@ -318,25 +318,26 @@ fn dispatch(
 fn dispatch_notebook_run(
     command: &fabric_cli::native_tabular::NativeCommand,
 ) -> io::Result<CommandOutcome> {
+    if let Err(error) = fabric_cli::run_notebook::preflight(command) {
+        let receipt = fabric_cli::run_notebook::Dispatch::unavailable(error);
+        serde_json::to_writer(&mut io::stderr().lock(), receipt.value())?;
+        writeln!(io::stderr().lock())?;
+        return Ok(CommandOutcome::Returned(receipt.exit_code()));
+    }
     #[cfg(feature = "native-host")]
     {
         native_read::run_notebook(command)
     }
     #[cfg(not(feature = "native-host"))]
     {
-        let error = match fabric_cli::run_notebook::preflight(command) {
-            Ok(_) => CommandError {
+        write_error(
+            CommandError {
                 code: "NotConfigured",
                 message: "Notebook Run requires an explicitly configured native credential and HTTP host. No Notebook was submitted.".into(),
             },
-            Err(error) => {
-                let receipt = fabric_cli::run_notebook::Dispatch::unavailable(error);
-                serde_json::to_writer(&mut io::stderr().lock(), receipt.value())?;
-                writeln!(io::stderr().lock())?;
-                return Ok(CommandOutcome::Returned(receipt.exit_code()));
-            }
-        };
-        write_error(error, 1).map(|_| CommandOutcome::Returned(1))
+            1,
+        )
+        .map(|_| CommandOutcome::Returned(1))
     }
 }
 
