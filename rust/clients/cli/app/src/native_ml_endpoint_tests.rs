@@ -624,10 +624,13 @@ async fn expired_preconnect_deadline_does_not_poll_credential_work() {
 
 #[tokio::test]
 async fn interrupted_input_preparation_never_resumes_a_shell_with_a_pending_reader() {
-    for (deadline, signal) in [
-        (Instant::now() + Duration::from_secs(1), true),
-        (Instant::now() + Duration::from_millis(20), false),
-    ] {
+    for signal in [true, false] {
+        let deadline = Instant::now()
+            + if signal {
+                Duration::from_secs(1)
+            } else {
+                Duration::from_millis(100)
+            };
         let started = std::sync::atomic::AtomicBool::new(false);
         let error = before_connect_with_signal(
             std::future::poll_fn(|_| {
