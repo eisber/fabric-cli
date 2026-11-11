@@ -19,7 +19,7 @@ use std::{
     ffi::OsString,
     fmt::Write as _,
     future::Future,
-    io::{self, IsTerminal, Write as _},
+    io::{self, IsTerminal},
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
@@ -225,7 +225,7 @@ fn run_until(command: UpdateCommand, deadline: &NativeDeadline) -> Result<(), Fa
             }
         };
         let delivery = prepared
-            .execute_bound(session.executor, &mut policy, interruption)
+            .execute_bound((*session.executor).clone(), &mut policy, interruption)
             .await
             .map_err(host_failure)?;
         if signal_failed.load(Ordering::Acquire) {
