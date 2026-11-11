@@ -15,6 +15,11 @@ param(
     [Parameter(Mandatory)][string]$OutputRoot
 )
 $ErrorActionPreference = 'Stop'
+foreach ($override in @('RUSTC','RUSTDOC','RUSTC_WRAPPER','RUSTC_WORKSPACE_WRAPPER','RUSTFLAGS','CARGO_ENCODED_RUSTFLAGS','CARGO_BUILD_TARGET','CARGO_BUILD_RUSTC','CARGO_BUILD_RUSTC_WRAPPER','CARGO_BUILD_RUSTFLAGS','CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS','CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER')) {
+    if ([Environment]::GetEnvironmentVariable($override)) {
+        throw "Custom compiler/target override $override is incompatible with this pinned build"
+    }
+}
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 if ($OutputRoot -notmatch '^[A-Za-z]:\\' -or $OutputRoot -eq [IO.Path]::GetPathRoot($OutputRoot)) {

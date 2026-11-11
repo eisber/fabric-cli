@@ -285,7 +285,7 @@ async fn bounded_observation_reports_scheduler_completion_without_application_ve
     let prepared = PreparedNotebook::new(&command(&["--wait"]), None).unwrap();
     let (client, wire, _) = client(vec![
         accepted(location()),
-        status("Running"),
+        status("InProgress"),
         status("Completed"),
     ]);
     let result = prepared
@@ -314,7 +314,7 @@ async fn bounded_observation_reports_scheduler_completion_without_application_ve
 
 #[tokio::test]
 async fn failed_and_unknown_native_states_never_exit_successfully() {
-    for state in ["Failed", "Cancelled", "Deduped", "FutureNativeState"] {
+    for state in ["Failed", "Cancelled", "Deduped", "Running", "FutureNativeState"] {
         let prepared = PreparedNotebook::new(&command(&["--wait"]), None).unwrap();
         let (client, wire, _) = client(vec![accepted(location()), status(state)]);
         let result = prepared
