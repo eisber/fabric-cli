@@ -353,6 +353,7 @@ impl Dispatch {
         }
     }
     fn from_evidence(evidence: &RunEvidence, error: Option<RunError>, exit: u8) -> Self {
+        // Exclude post-commit state so committed and returned receipts stay identical.
         use fabric_sdk_jobs::run::RunOutcome;
         let handle = evidence.handle.as_ref().map(|handle| match handle.kind() {
             RunHandleKind::Job(id) => {

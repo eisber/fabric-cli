@@ -206,3 +206,17 @@ async fn racing_output_is_never_overwritten_or_committed_twice() {
     );
     assert_eq!(std::fs::read(&path).unwrap(), b"racing-owner-data");
 }
+
+#[test]
+fn notebook_transport_does_not_inherit_the_shorter_legacy_exchange_caps() {
+    for remaining in [
+        Duration::from_secs(300),
+        Duration::from_secs(86_400),
+        Duration::from_millis(1),
+    ] {
+        let options = transport_options(remaining);
+        assert_eq!(options.connect_timeout, remaining);
+        assert_eq!(options.read_timeout, remaining);
+        assert_eq!(options.write_timeout, remaining);
+    }
+}

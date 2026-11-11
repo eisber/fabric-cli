@@ -125,7 +125,13 @@ pub(super) fn run(command: &NativeCommand) -> io::Result<CommandOutcome> {
         }
         let endpoint = super::selected_endpoint(std::env::var_os("FAB_API_ENDPOINT_FABRIC"))?;
         let credential = super::selected_credential()?;
-        let (client, identity_client) = super::native_clients(&credential, true)?;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(failure("timed_out", "Notebook Run deadline elapsed before transport setup; no submission occurred.", 1));
+        }
+        let (client, identity_client) = super::native_clients_with_options(
+            &credential, transport_options(remaining),
+        )?;
         let (sdk, executor) = super::connect_native(
             credential, client, identity_client, endpoint,
             fabric_sdk_http::ExecutionOptions::default(), Some(deadline),
@@ -149,6 +155,7 @@ pub(super) fn run(command: &NativeCommand) -> io::Result<CommandOutcome> {
     match super::finish_runtime(runtime, result) {
         Ok((receipt, output)) => {
             if receipt.exit_code() == 0 {
+                // RunOutput already committed the bytes; do not publish them twice.
                 return Ok(CommandOutcome::Returned(0));
             }
             if receipt.value()["error"]["code"] == "OutputFailure" {
@@ -158,6 +165,14 @@ pub(super) fn run(command: &NativeCommand) -> io::Result<CommandOutcome> {
         }
         Err(error) => super::write_error(error),
     }
+}
+
+fn transport_options(remaining: Duration) -> fabric_sdk_transport::TransportOptions {
+    let mut options = super::native_transport_options(true);
+    options.connect_timeout = remaining;
+    options.read_timeout = remaining;
+    options.write_timeout = remaining;
+    options
 }
 
 async fn dispatch_prepared(
