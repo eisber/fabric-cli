@@ -35,6 +35,8 @@ mod projection;
 mod reads;
 #[cfg(feature = "v2-refresh")]
 pub mod refresh_command;
+#[cfg(feature = "v2-run")]
+pub mod run_notebook;
 #[cfg(feature = "runtime-v2")]
 pub mod runtime_v2;
 pub mod search_command;

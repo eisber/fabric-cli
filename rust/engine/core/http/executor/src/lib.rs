@@ -113,6 +113,17 @@ pub struct HttpExecutor {
     endpoint: EndpointBinding,
 }
 
+/// Optional bounded response progress, including headers before body suspension.
+///
+/// Implementations must not log raw provider data. A partial response is not a
+/// complete empty body; callers retain this evidence independently of the future.
+pub trait ResponseProgress: Send + Sync {
+    /// Retain the actual bounded prefix or complete response.
+    fn record(&self, response: &WorkspaceResponse, complete: bool) -> Result<(), ExecutionError>;
+    /// Mark actual decoded-body overflow without manufacturing a complete body.
+    fn body_omitted(&self, response: &WorkspaceResponse) -> Result<(), ExecutionError>;
+}
+
 impl HttpExecutor {
     /// Stores caller-owned HTTP/time implementations without performing I/O.
     ///
@@ -146,6 +157,22 @@ impl HttpExecutor {
     /// Returns the selected endpoint used for pre-send origin checks.
     pub fn endpoint(&self) -> &EndpointBinding {
         &self.endpoint
+    }
+
+    /// Scope this same client and timer to a caller's remaining total budget.
+    ///
+    /// Replaces, rather than shortens to, the legacy exchange watchdog. The
+    /// caller still enforces its original absolute deadline across exchanges.
+    ///
+    /// # Errors
+    /// Rejects a zero remaining budget before credentials or transport access.
+    pub fn with_timeout(&self, remaining: Duration) -> Result<Self, ExecutionError> {
+        if remaining.is_zero() {
+            return Err(ExecutionError::InvalidInput);
+        }
+        let mut scoped = self.clone();
+        scoped.options.timeout = remaining;
+        Ok(scoped)
     }
 
     /// Executes one bounded request against the selected Fabric HTTPS origin.
@@ -211,6 +238,32 @@ impl HttpExecutor {
         headers: &[(String, String)],
         limit: NonZeroUsize,
     ) -> Result<WorkspaceResponse, ExecutionError> {
+        self.execute_bound_with_progress(origin, method, url, token, body, headers, limit, None)
+            .await
+    }
+
+    /// Execute on the existing engine while retaining bounded response progress.
+    ///
+    /// Uses the identical origin/header validation, GET retry and mutation
+    /// single-dispatch policies as [`Self::execute_bound`].
+    ///
+    /// # Errors
+    /// Returns the original execution or recorder failure without replaying writes.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "The existing explicit request plus its response recorder."
+    )]
+    pub async fn execute_bound_with_progress(
+        &self,
+        origin: PublicOrigin,
+        method: Method,
+        url: &Url,
+        token: &AccessToken,
+        body: &[u8],
+        headers: &[(String, String)],
+        limit: NonZeroUsize,
+        progress: Option<&dyn ResponseProgress>,
+    ) -> Result<WorkspaceResponse, ExecutionError> {
         let public = EndpointBinding::public(origin);
         let endpoint = if self.endpoint.origin() == origin {
             &self.endpoint
@@ -226,7 +279,8 @@ impl HttpExecutor {
         for (name, value) in headers {
             request.insert_header(name.to_ascii_lowercase(), value.clone());
         }
-        self.execute_request(request, limit).await
+        self.execute_request_with_progress(request, limit, progress)
+            .await
     }
 
     /// Waits asynchronously using the caller's existing bounded execution timer.
@@ -267,11 +321,21 @@ impl HttpExecutor {
         request: Request,
         limit: NonZeroUsize,
     ) -> Result<WorkspaceResponse, ExecutionError> {
+        self.execute_request_with_progress(request, limit, None)
+            .await
+    }
+
+    async fn execute_request_with_progress(
+        &self,
+        request: Request,
+        limit: NonZeroUsize,
+        progress: Option<&dyn ResponseProgress>,
+    ) -> Result<WorkspaceResponse, ExecutionError> {
         self.before_deadline(async {
             // Python's outer 429 loop has four iterations. Its HTTPS adapter
             // independently allows three status retries on each iteration.
             for _ in 0..4 {
-                let response = self.read_with_retries(&request, limit).await?;
+                let response = self.read_with_retries(&request, limit, progress).await?;
                 if request.method() != Method::Get || response.status != 429 {
                     return Ok(response);
                 }
@@ -307,6 +371,7 @@ impl HttpExecutor {
         &self,
         request: &Request,
         limit: NonZeroUsize,
+        progress: Option<&dyn ResponseProgress>,
     ) -> Result<WorkspaceResponse, ExecutionError> {
         for retry in 0..=3 {
             let raw = self
@@ -315,28 +380,39 @@ impl HttpExecutor {
                 .await
                 .map_err(|_| ExecutionError::Transport)?;
             let (status, headers, mut stream) = raw.deconstruct();
-            let mut body = Vec::new();
+            let mut response = WorkspaceResponse {
+                status: status.into(),
+                body: Vec::new(),
+                headers: headers
+                    .iter()
+                    .map(|(name, value)| (name.as_str().to_owned(), value.as_str().to_owned()))
+                    .collect(),
+            };
+            if let Some(progress) = progress {
+                progress.record(&response, false)?;
+            }
             let mut chunks = 0_usize;
             while let Some(chunk) = stream.next().await {
                 let chunk = chunk.map_err(|_| ExecutionError::Transport)?;
-                if chunk.len() > limit.get() - body.len() {
+                if chunk.len() > limit.get() - response.body.len() {
+                    if let Some(progress) = progress {
+                        progress.body_omitted(&response)?;
+                    }
                     return Err(ExecutionError::ResponseLimit);
                 }
-                body.extend_from_slice(&chunk);
+                response.body.extend_from_slice(&chunk);
+                if let Some(progress) = progress {
+                    progress.record(&response, false)?;
+                }
                 chunks += 1;
                 if chunks == 64 {
                     chunks = 0;
                     yield_once().await;
                 }
             }
-            let response = WorkspaceResponse {
-                status: status.into(),
-                body,
-                headers: headers
-                    .iter()
-                    .map(|(name, value)| (name.as_str().to_owned(), value.as_str().to_owned()))
-                    .collect(),
-            };
+            if let Some(progress) = progress {
+                progress.record(&response, true)?;
+            }
             let has_retry_after = response.headers.contains_key("retry-after");
             let retryable = request.method() == Method::Get
                 && (matches!(response.status, 502..=504)

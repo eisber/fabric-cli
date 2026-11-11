@@ -334,6 +334,23 @@ impl<'a> RunSession<'a> {
         cancelled: impl Future<Output = ()> + Send + 'a,
     ) -> Result<Self, RunError> {
         let deadline = RunDeadline::start(clock.as_ref(), plan.timeout())?;
+        Self::with_deadline(client, plan, clock, cancelled, deadline)
+    }
+
+    /// Retain the caller's original absolute deadline across host preparation.
+    ///
+    /// # Errors
+    /// Rejects an expired deadline or one exceeding the normalized plan's budget.
+    pub fn with_deadline(
+        client: &'a JobClient,
+        plan: RunPreflight,
+        clock: Arc<dyn RunClock>,
+        cancelled: impl Future<Output = ()> + Send + 'a,
+        deadline: RunDeadline,
+    ) -> Result<Self, RunError> {
+        if deadline.remaining(clock.as_ref())? > plan.timeout().duration() {
+            return Err(RunError::InvalidTimeout);
+        }
         Ok(Self {
             client,
             evidence: RunEvidence {
@@ -677,6 +694,13 @@ impl Drop for RequestEvidence<'_> {
                                 &self.evidence.endpoint,
                                 location,
                             )
+                            .or_else(|_| {
+                                RunHandle::operation(
+                                    &self.evidence.target,
+                                    &self.evidence.endpoint,
+                                    location,
+                                )
+                            })
                         {
                             match &self.evidence.handle {
                                 Some(bound) if bound != &handle => {
