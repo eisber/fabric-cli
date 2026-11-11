@@ -441,6 +441,209 @@ async fn scoring_service_text_and_parameters_are_not_logged_as_model_inputs() {
 }
 
 #[tokio::test]
+async fn score_warm_up_is_exact_allowlisted_and_never_replayed_or_inferred_from_status() {
+    const WARM: &str = "This model endpoint is configured for auto-sleep and is scaling back up from zero. Please try your request again.";
+    const REQUEST: &str = "44444444-4444-4444-4444-444444444444";
+    const CORRELATION: &str = "55555555-5555-5555-5555-555555555555";
+    for (status, code, message, metadata_read, expected) in [
+        (
+            StatusCode::InternalServerError,
+            "UnknownError",
+            WARM.to_owned(),
+            false,
+            "model_endpoint_warming_up",
+        ),
+        (
+            StatusCode::ServiceUnavailable,
+            "UnknownError",
+            WARM.to_owned(),
+            false,
+            "unknown",
+        ),
+        (
+            StatusCode::InternalServerError,
+            "UnknownError",
+            "private-model-input".into(),
+            false,
+            "unknown",
+        ),
+        (
+            StatusCode::ServiceUnavailable,
+            "UnknownError",
+            "private-model-input".into(),
+            false,
+            "unknown",
+        ),
+        (
+            StatusCode::InternalServerError,
+            "Other",
+            WARM.to_owned(),
+            false,
+            "unknown",
+        ),
+        (
+            StatusCode::InternalServerError,
+            "UnknownError",
+            format!("{WARM} private-token"),
+            false,
+            "unknown",
+        ),
+        (
+            StatusCode::InternalServerError,
+            "UnknownError",
+            WARM.to_owned(),
+            true,
+            "unknown",
+        ),
+    ] {
+        let raw = json!({"errorCode":code,"message":message,"requestId":REQUEST,
+            "isRetriable":false,"parameters":[{"value":"private-token"}],"future":"private-model-input"});
+        let mut headers = Headers::new();
+        headers.insert("request-id", CORRELATION);
+        headers.insert("x-ms-operation-id", OPERATION);
+        let wire = Arc::new(Wire {
+            replies: Mutex::new(VecDeque::from([(
+                status,
+                headers,
+                serde_json::to_vec(&raw).unwrap(),
+            )])),
+            ..Wire::default()
+        });
+        let leaf = if metadata_read {
+            vec!["score", "--version", "01", "--force", "--", "x=0"]
+        } else {
+            vec![
+                "score",
+                "--version",
+                "01",
+                "--force",
+                "--body",
+                r#"{"inputs":[0]}"#,
+            ]
+        };
+        let (outcome, output, _) = invoke(wire.clone(), &leaf, Duration::from_secs(5)).await;
+        assert_eq!(outcome, CommandOutcome::Returned(1));
+        assert_eq!(output["error"]["scoreFailure"]["classification"], expected);
+        assert_eq!(output["error"]["scoreFailure"]["automaticRetry"], false);
+        assert_eq!(output["error"]["serviceError"]["isRetriable"], false);
+        assert_eq!(output["error"]["serviceError"]["requestId"], REQUEST);
+        assert_eq!(
+            output["error"]["diagnostics"]["requestIds"]["request-id"],
+            CORRELATION
+        );
+        assert_eq!(output["error"]["httpStatus"], u16::from(status));
+        assert_eq!(output["error"]["mutationMayHaveOccurred"], !metadata_read);
+        assert!(!output.to_string().contains("private-token"));
+        assert!(!output.to_string().contains("private-model-input"));
+        assert!(!output.to_string().contains(WARM));
+        assert!(!output.to_string().contains("ASTraceRootActivityId"));
+        let requests = wire.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            requests[0].method(),
+            if metadata_read {
+                Method::Get
+            } else {
+                Method::Post
+            }
+        );
+        assert_eq!(output["error"]["operationId"], OPERATION);
+    }
+}
+
+#[tokio::test]
+async fn root_scalar_null_tensor_spec_posts_once_and_non_null_tensor_fails_before_post() {
+    for tensor in [Value::Null, json!({"shape":[-1],"dtype":"float64"})] {
+        let mut metadata = reply(
+            StatusCode::Ok,
+            json!({"versionName":"01","inputSignature":[{"name":"x","type":"double","required":true,"tensor-spec":tensor}]}),
+        );
+        metadata.1.insert("x-ms-operation-id", OPERATION);
+        let mut replies = VecDeque::from([metadata]);
+        if tensor.is_null() {
+            replies.push_back(reply(StatusCode::Ok, json!({"predictions":[0]})));
+        }
+        let wire = Arc::new(Wire {
+            replies: Mutex::new(replies),
+            ..Wire::default()
+        });
+        let (outcome, output, _) = invoke(
+            wire.clone(),
+            &["score", "--version", "01", "--force", "--", "x=0"],
+            Duration::from_secs(5),
+        )
+        .await;
+        let requests = wire.requests.lock().unwrap();
+        if tensor.is_null() {
+            assert_eq!(outcome, CommandOutcome::Returned(0));
+            assert_eq!(requests.len(), 2);
+            assert_eq!(requests[1].method(), Method::Post);
+            assert!(requests[1].url().path().ends_with("/versions/01/score"));
+        } else {
+            assert_eq!(outcome, CommandOutcome::Returned(1));
+            assert_eq!(output["error"]["code"], "ScoreSchemaMismatch");
+            assert_eq!(output["error"]["mutationMayHaveOccurred"], false);
+            assert!(output["error"]["operationId"].is_null());
+            assert_eq!(requests.len(), 1);
+        }
+    }
+}
+
+#[test]
+fn warm_up_classification_requires_complete_post_and_does_not_override_retriable_evidence() {
+    for interrupted in [0, 1, 2, 3] {
+        for method in ["POST", "GET"] {
+            for phase in ["complete", "response_body"] {
+                for retriable in [false, true] {
+                    let error = ResourceError {
+                        code: "UnknownError".into(),
+                        status: Some(500),
+                        mutation_may_have_occurred: true,
+                        operation_id: Some(OPERATION.into()),
+                        raw_service_error: Some(Box::new(json!({
+                            "errorCode":"UnknownError","isRetriable":retriable,
+                            "message":"This model endpoint is configured for auto-sleep and is scaling back up from zero. Please try your request again."
+                        }))),
+                        ..ResourceError::input()
+                    };
+                    let evidence = OperationError {
+                        kind: OperationErrorKind::InvalidResponse,
+                        operation_id: Some(OPERATION.into()),
+                        mutation_may_have_occurred: true,
+                        raw_service_error: None,
+                    };
+                    let delivery = deliver_with_diagnostic(
+                        Err(error),
+                        evidence,
+                        &AtomicU8::new(interrupted),
+                        Some(json!({"method":method,"phase":phase,"lastHttpStatus":500})),
+                        true,
+                    )
+                    .unwrap();
+                    let (mut out, mut err) = (Vec::new(), Vec::new());
+                    delivery.write_to(&mut out, &mut err).unwrap();
+                    assert!(out.is_empty());
+                    let output: Value = serde_json::from_slice(&err).unwrap();
+                    assert_eq!(
+                        output["error"]["scoreFailure"]["classification"],
+                        if interrupted == 0 && method == "POST" && phase == "complete" {
+                            "model_endpoint_warming_up"
+                        } else {
+                            "unknown"
+                        }
+                    );
+                    assert_eq!(output["error"]["scoreFailure"]["automaticRetry"], false);
+                    assert_eq!(output["error"]["serviceError"]["isRetriable"], retriable);
+                    assert_eq!(output["error"]["httpStatus"], 500);
+                    assert_eq!(output["error"]["operationId"], OPERATION);
+                    assert_eq!(output["error"]["mutationMayHaveOccurred"], true);
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn actual_root_native_dispatch_uses_msit_fabric_audience_without_item_discovery() {
     for (leaf, suffix, data) in [
         (

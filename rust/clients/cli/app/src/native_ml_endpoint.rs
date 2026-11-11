@@ -136,7 +136,10 @@ pub(super) async fn dispatch(
         if error.status.is_none() && incomplete_exchange {
             error.status = snapshot.status;
         }
-        if error.operation_id.is_none() && incomplete_exchange {
+        let failed_score_exchange = command.is_score()
+            && error.status == snapshot.status
+            && snapshot.status.is_some_and(|status| status >= 400);
+        if error.operation_id.is_none() && (incomplete_exchange || failed_score_exchange) {
             error.operation_id = snapshot.operation_id;
         }
         error
@@ -254,23 +257,39 @@ fn deliver_with_diagnostic(
                     .expect("next actions are constructed as an array")
                     .push(action);
             }
+            let score_failure = score.then(|| {
+                score_failure(
+                    &error,
+                    diagnostic.as_ref(),
+                    interrupted.load(Ordering::SeqCst),
+                )
+            });
+            if score_failure
+                .as_ref()
+                .is_some_and(|failure| failure["classification"] == "model_endpoint_warming_up")
+            {
+                next_actions
+                    .as_array_mut()
+                    .expect("next actions are constructed as an array")
+                    .push(json!("The service reports scaling up from auto-sleep, not proven readiness or completion. Do not automatically replay this score, even if the service marks it retriable. Use only the read-only metadata/support actions above to investigate; any later inference must be separately intended after reconciling uncertainty."));
+            }
             let service_error = if score {
                 safe_service_error(error.raw_service_error.as_deref())
             } else {
                 error.raw_service_error.map(|value| *value)
             };
-            (
-                json!({"error": {
-                    "code": error.code, "message": error.message,
-                    "httpStatus": error.status, "operationId": error.operation_id,
-                    "mutationMayHaveOccurred": error.mutation_may_have_occurred,
-                    "serviceError": service_error,
-                    "diagnostics": diagnostic,
-                    "nextActions": next_actions
-                }}),
-                1,
-                OutputStream::Stderr,
-            )
+            let mut value = json!({"error": {
+                "code": error.code, "message": error.message,
+                "httpStatus": error.status, "operationId": error.operation_id,
+                "mutationMayHaveOccurred": error.mutation_may_have_occurred,
+                "serviceError": service_error,
+                "diagnostics": diagnostic,
+                "nextActions": next_actions
+            }});
+            if let Some(failure) = score_failure {
+                value["error"]["scoreFailure"] = failure;
+            }
+            (value, 1, OutputStream::Stderr)
         }
     };
     let mut payload = serde_json::to_vec(&value)
@@ -290,6 +309,32 @@ fn deliver_with_diagnostic(
         _ => CommandOutcome::Returned(exit),
     };
     Ok(get::Delivery::plan(plan, outcome))
+}
+
+fn score_failure(error: &ResourceError, diagnostic: Option<&Value>, interrupted: u8) -> Value {
+    let warming_up = interrupted == 0
+        && error.mutation_may_have_occurred
+        && error.status == Some(500)
+        && error.code == "UnknownError"
+        && diagnostic.is_some_and(|value| {
+            value.get("method").and_then(Value::as_str) == Some("POST")
+                && value.get("phase").and_then(Value::as_str) == Some("complete")
+                && value.get("lastHttpStatus").and_then(Value::as_u64) == Some(500)
+        })
+        && error.raw_service_error.as_deref().is_some_and(|value| {
+            value.get("errorCode").and_then(Value::as_str) == Some("UnknownError")
+                && value.get("message").and_then(Value::as_str)
+                    == Some("This model endpoint is configured for auto-sleep and is scaling back up from zero. Please try your request again.")
+        });
+    json!({
+        "classification": if warming_up { "model_endpoint_warming_up" } else { "unknown" },
+        "message": if warming_up {
+            "The service reported scaling up from auto-sleep. This is not a readiness, completion or no-effect guarantee."
+        } else {
+            "The retained evidence does not establish a score failure cause."
+        },
+        "automaticRetry": false
+    })
 }
 
 fn metadata_action(diagnostic: Option<&Value>) -> Option<Value> {

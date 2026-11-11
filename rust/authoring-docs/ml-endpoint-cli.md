@@ -72,6 +72,10 @@ potentially changed default route. A mismatched response name fails closed.
 Missing, unknown and duplicate columns/keys are rejected. Supported named
 primitive signatures are `boolean`, `integer` (i32), `long` (i64), `float` (exact
 f32), `double` (finite f64) and `string`; unknown/tensor schemas are rejected.
+An absent `tensor-spec` and an explicit JSON `tensor-spec:null` both mean no
+tensor specification on an otherwise valid primitive column. Any non-null
+`tensor-spec` (including an empty object) is unsupported and fails closed.
+This does not ignore other unknown signature fields or permit tensor models.
 Every column must be present. Null is accepted only with `required:false`.
 Integer-to-floating conversions outside the exact range and lossy narrowing
 fail before POST. This conservative local contract is not universal model
@@ -125,6 +129,19 @@ score acceptance. Scoring service text, arbitrary fields and parameters are not
 printed because they can echo inputs or secrets. Safe service codes/request IDs
 remain visible. Transport kinds report only what is known; generic I/O is not
 mislabelled as a proven timeout.
+
+For a failed score POST only, HTTP 500 with `errorCode:UnknownError` and the
+exact known auto-sleep/scaling-from-zero service message produces the stable
+`scoreFailure.classification: model_endpoint_warming_up`. This is a finite
+allowlist, not a substring match or a dump of service text. The message is
+replaced with constant, safe guidance; arbitrary text and parameters remain
+omitted. A metadata GET failure, another message/code, HTTP 503 or an interrupted
+exchange stays `unknown`. A service-reported warm-up condition does not prove
+backend readiness or that inference had no effect. `automaticRetry` is always
+false; the service's own `isRetriable` value is retained separately and never
+authorizes automatic score replay. Keep the actual HTTP status and operation
+ID. Public request/correlation IDs are not assumed to be workload root-activity
+IDs; authorized support must establish the correlation.
 
 `nextActions` supplies a supported native endpoint-settings read and documented
 REST references for a known operation and its result (retrieve the result only

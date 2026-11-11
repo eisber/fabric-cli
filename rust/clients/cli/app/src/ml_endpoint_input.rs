@@ -330,10 +330,11 @@ fn signature(metadata: &Value) -> Result<Vec<Column>, ResourceError> {
         .iter()
         .map(|entry| {
             let object = entry.as_object().ok_or_else(schema_error)?;
-            if object
-                .keys()
-                .any(|key| !matches!(key.as_str(), "name" | "type" | "required"))
-            {
+            if object.iter().any(|(key, value)| match key.as_str() {
+                "name" | "type" | "required" => false,
+                "tensor-spec" => !value.is_null(),
+                _ => true,
+            }) {
                 return Err(schema_error());
             }
             let name = entry

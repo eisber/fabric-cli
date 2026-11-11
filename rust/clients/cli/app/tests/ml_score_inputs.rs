@@ -73,6 +73,188 @@ fn signature() -> Value {
         {"name":"nothing","type":"long","required":false},{"name":"text","type":"string","required":true}])
 }
 
+#[tokio::test]
+async fn null_tensor_spec_is_absence_for_scalar_records_without_weakening_schema() {
+    for extra in [json!({}), json!({"tensor-spec":null})] {
+        let mut column = json!({"name":"x","type":"double","required":true});
+        column
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        for default in [false, true] {
+            let mut replies = VecDeque::new();
+            if default {
+                replies.push_back(complete(json!({"defaultVersionName":"01"})));
+            }
+            replies.push_back(complete(metadata(json!([column]))));
+            replies.push_back(complete(json!({"predictions":[0]})));
+            let mut wire = Wire {
+                replies,
+                ..Wire::default()
+            };
+            let selection = if default {
+                vec!["--default"]
+            } else {
+                vec!["--version", "01"]
+            };
+            let mut tail = selection;
+            tail.extend(["--", "x=0"]);
+            let result = command(&tail).execute(&mut wire).await.unwrap();
+            assert_eq!(result["selection"]["versionName"], "01");
+            let post = wire.requests.last().unwrap();
+            assert!(post.path().ends_with("/versions/01/score"));
+            assert_eq!(post.body().unwrap()["inputs"], json!([{"x":0}]));
+            assert_eq!(wire.requests.len(), if default { 3 } else { 2 });
+        }
+    }
+    for extra in [
+        json!({"tensor-spec":{}}),
+        json!({"tensor-spec":{"shape":[-1],"dtype":"float64"}}),
+        json!({"tensor-spec":false}),
+        json!({"tensor-spec":[]}),
+        json!({"tensor-spec":""}),
+        json!({"tensor-spec":0}),
+        json!({"tensor-spec":null,"unknown":null}),
+    ] {
+        let mut column = json!({"name":"x","type":"double","required":true});
+        column
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        let mut wire = Wire {
+            replies: VecDeque::from([complete(metadata(json!([column])))]),
+            ..Wire::default()
+        };
+        assert_eq!(
+            command(&["--version", "01", "--", "x=0"])
+                .execute(&mut wire)
+                .await
+                .unwrap_err()
+                .code,
+            "ScoreSchemaMismatch"
+        );
+        assert_eq!(wire.requests.len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn null_tensor_spec_keeps_scalar_validation_across_json_csv_and_parquet() {
+    use arrow_array::{BooleanArray, Float64Array, Int64Array, RecordBatch, StringArray};
+    use arrow_schema::{DataType, Field, Schema};
+    use parquet::arrow::ArrowWriter;
+    use std::sync::Arc;
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("x", DataType::Float64, false),
+        Field::new("flag", DataType::Boolean, false),
+        Field::new("nothing", DataType::Int64, true),
+        Field::new("text", DataType::Utf8, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(Float64Array::from(vec![0.0])),
+            Arc::new(BooleanArray::from(vec![false])),
+            Arc::new(Int64Array::from(vec![None])),
+            Arc::new(StringArray::from(vec![""])),
+        ],
+    )
+    .unwrap();
+    let mut parquet = Vec::new();
+    let mut writer = ArrowWriter::try_new(&mut parquet, schema, None).unwrap();
+    writer.write(&batch).unwrap();
+    writer.close().unwrap();
+    for (format, bytes) in [
+        (
+            "json",
+            br#"[{"text":"","nothing":null,"flag":false,"x":0}]"#.to_vec(),
+        ),
+        (
+            "csv",
+            b"text,nothing,flag,x\r\n\"\"\"\"\"\",null,false,0\r\n".to_vec(),
+        ),
+        ("parquet", parquet),
+    ] {
+        for orientation in ["record", "values"] {
+            let mut cmd = command(&[
+                "--default",
+                "--input",
+                "fixture",
+                "--input-format",
+                format,
+                "--orientation",
+                orientation,
+            ]);
+            cmd.prepare_input(&bytes).unwrap();
+            for tensor in [
+                None,
+                Some(Value::Null),
+                Some(json!({"shape":[-1],"dtype":"float64"})),
+            ] {
+                let mut sig = signature();
+                if let Some(tensor) = &tensor {
+                    for column in sig.as_array_mut().unwrap() {
+                        column["tensor-spec"] = tensor.clone();
+                    }
+                }
+                let valid = tensor.as_ref().is_none_or(Value::is_null);
+                let mut replies = VecDeque::from([
+                    complete(json!({"defaultVersionName":"01"})),
+                    complete(metadata(sig)),
+                ]);
+                if valid {
+                    replies.push_back(complete(json!({"predictions":[0]})));
+                }
+                let mut wire = Wire {
+                    replies,
+                    ..Wire::default()
+                };
+                let result = cmd.execute(&mut wire).await;
+                if !valid {
+                    assert_eq!(result.unwrap_err().code, "ScoreSchemaMismatch");
+                    assert_eq!(wire.requests.len(), 2);
+                    continue;
+                }
+                result.unwrap();
+                assert_eq!(wire.requests.len(), 3);
+                assert!(wire.requests[2].path().ends_with("/versions/01/score"));
+                let inputs = &wire.requests[2].body().unwrap()["inputs"];
+                let row = if orientation == "record" {
+                    &inputs[0]["x"]
+                } else {
+                    &inputs[0][0]
+                };
+                assert_eq!(row.as_f64(), Some(0.0));
+                if orientation == "values" {
+                    assert_eq!(inputs[0][1], false);
+                    assert!(inputs[0][2].is_null());
+                    assert_eq!(inputs[0][3], "");
+                } else {
+                    assert_eq!(inputs[0]["flag"], false);
+                    assert!(inputs[0]["nothing"].is_null());
+                    assert_eq!(inputs[0]["text"], "");
+                }
+            }
+        }
+    }
+    for record in ["x=null", "x=false", "x={}", "x=[]", "x=9007199254740993"] {
+        let mut wire = Wire {
+            replies: VecDeque::from([complete(metadata(
+                json!([{"name":"x","type":"double","required":true,"tensor-spec":null}]),
+            ))]),
+            ..Wire::default()
+        };
+        assert_eq!(
+            command(&["--version", "01", "--", record])
+                .execute(&mut wire)
+                .await
+                .unwrap_err()
+                .code,
+            "ScoreSchemaMismatch"
+        );
+        assert_eq!(wire.requests.len(), 1);
+    }
+}
+
 #[test]
 fn malformed_json_and_transport_diagnostics_never_echo_inputs() {
     for body in [
