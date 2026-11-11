@@ -15,6 +15,10 @@ use std::io::{self, Write};
 
 pub(crate) type Failure = (&'static str, String, u8);
 
+#[cfg(feature = "v2-discovery")]
+#[path = "v2_schema_native/host.rs"]
+pub(crate) mod schema;
+
 #[cfg(feature = "workspace-read-v2")]
 #[allow(
     dead_code,

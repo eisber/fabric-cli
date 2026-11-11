@@ -11,8 +11,8 @@ including when additional features are enabled.
 
 This preview implements discovery, not v2 mutation execution. Its operation
 commands require `--schema` and cannot submit the described operation. Starting
-an MCP server, installing authentication or composing a live data-schema host
-is not part of this feature.
+an MCP server or installing authentication is not part of this feature.
+An additional native feature can bind the existing read-only data-schema host.
 
 ## Operation contracts
 
@@ -100,7 +100,8 @@ unchanged.
 
 Bare `schema <target>` requests backend data metadata rather than an operation
 input contract. For a supported Lakehouse table path, the standalone preview
-has no live data provider and returns a nonzero `NotConfigured` error, not an
+without native features has no live data provider and returns a nonzero
+`NotConfigured` error, not an
 empty schema or a login prompt. Unsupported paths fail capability selection
 before host configuration.
 
@@ -110,6 +111,49 @@ Lakehouse Delta table paths only. It delegates to `TableClient::schema_document`
 which reuses the existing JSON-commit metadata reader and shared OneLake
 execution. It does not introduce a second log scanner, pager, HTTP client,
 credential chain or runtime.
+
+### Opt-in native data schema
+
+Build the **same** `fab-cli-discovery` executable with `v2-discovery,native-read`
+for the existing Windows broker host, or `v2-discovery,headless` for an explicitly
+selected unattended identity:
+
+```text
+cargo run --locked -p fabric-cli --features v2-discovery,native-read --bin fab-cli-discovery -- schema /Sales.Workspace/Book.Lakehouse/Tables/orders
+cargo run --locked -p fabric-cli --features v2-discovery,headless --bin fab-cli-discovery -- schema /Sales.Workspace/Book.Lakehouse/Tables/dbo/orders
+```
+
+Use the existing [native identity configuration](native-read-host.md); there is
+no schema-specific credential chain, static token fallback or automatic login.
+This preview requires an explicit `FAB_RUST_AUTH_MODE`, including `broker` when
+using an existing saved Windows account; enabling a native feature alone does
+not select an identity or open a saved profile.
+Only a lexically valid bare `schema` selects native setup. No arguments, invalid
+selectors, help, version, target help and operation `--schema` stay fully local,
+including in native builds. Help's "live data host not configured" text describes
+the default/injected discovery host, not a credential/configuration probe.
+Unsupported native hosts or absent identity configuration fail nonzero.
+
+The one-shot host starts at the tenant root with no home, navigation persistence
+or general settings-store initialization. The shared TABLE factory binds the
+same account/tenant to Fabric and OneLake audiences, and its command-local
+resolver establishes workspace/item IDs and physical-path existence. Resolved
+shortcut classification is rejected **before** it is flattened into a local
+path, including a shortcut schema ancestor. Legacy TABLE behavior is unchanged.
+`NativeSchemaProvider` composes that resolver, the existing Delta provider and
+shared bounded OneLake HTTP executor; raw TABLE reads and loads are not mounted.
+Only public Fabric/OneLake endpoint bindings are supported in this slice.
+
+The native command has the existing HTTP host's finite command watchdog,
+covering identity selection, connection, resolution and metadata reads.
+Ctrl+C drops local work; neither cancellation nor timeout implies remote rollback.
+TABLE request/log/response limits and the serialized-output bound remain intact.
+Schema bytes are buffered until success and interruption is checked again before
+publication. Output failures are not retried; a deadline during blocking output
+is a failure even if some bytes have already reached the caller.
+
+Offline process and injected-host tests cover the binding without signing in or
+contacting Fabric. They are not live authentication, service or release evidence.
 
 Selectors containing `.Shortcut` or `.shortcut` are rejected before resolution,
 and resolved table/schema components are checked again before storage access.
