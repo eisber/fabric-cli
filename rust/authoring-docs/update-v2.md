@@ -11,11 +11,15 @@ receipt. Registry enumeration does not grant provider permission.
 ```text
 fab-cli-v2 update /<workspace-guid>.Workspace/<item-guid>.Notebook --input metadata.json --mode patch --plan
 fab-cli-v2 artifact lakehouse update /workspaces/<workspace-guid>/lakehouses/<item-guid> --input - --mode patch --plan
+fab-cli-v2 artifact lakehouse update /<workspace-guid>.Workspace/<item-guid>.Lakehouse --input metadata.json --mode patch
 ```
 
 The standalone experimental `fab-cli-v2` head supports local plans and help.
-It intentionally refuses mutation execution with `ApprovalHostRequired`; it does
-not install an automatic approval policy or sign in. Embedders use
+It also executes existing Lakehouse metadata PATCH after explicit, default-deny
+terminal approval of the immutable target, body, options, identity context,
+endpoint and request limits. Root `update` uses this host only for Lakehouse.
+Notebook execution still returns `ApprovalHostRequired`; its host is a separate
+slice. There is no `--force`, automatic approval policy or sign-in. Embedders use
 `fabric_cli::update::PreparedUpdateCommand` with explicit caller approval,
 request context, shared executor and whole-command interruption. The SDK can
 also be used directly through `fabric_sdk::items::update`. Neither library creates
@@ -53,6 +57,30 @@ identities, conditions or handles. The default total timeout is 30 seconds;
 positive integer ms/s/m/h durations up to 24 hours are accepted. Embedded callers
 must enforce this whole-command budget through interruption and delivery checks.
 The standalone local plan does not install a cancellable stdin worker.
+
+Native Lakehouse execution reads bounded input on a blocking worker, preflights
+output, captures the explicit headless identity and Fabric endpoint, and renders
+the context-bound request on stderr before approval. Confirmation reads the
+attached controlling terminal (`CONIN$` or `/dev/tty`), never JSON stdin. An empty
+answer declines; absent terminal, EOF and prompt errors send no PATCH. Set
+`FAB_RUST_AUTH_MODE` using the existing headless host configuration; approval
+does not grant provider permission or request an interactive login.
+On Windows, select `--output FILE` or redirect stdout: duplicated raw Windows
+console output cannot preserve Unicode in this bounded host.
+
+One original deadline covers input, approval, submission and delivery.
+Cancellation stops local waiting, not remote work. Blocking OS input/output may
+outlive its abandoned worker; runtime shutdown is bounded and late output may
+still finish. Approval and diagnostic output use owned OS handles and ASCII JSON
+escapes (including surrogate pairs), preserving Unicode values without a global
+stream lock. At expiry, runtime cleanup and best-effort diagnostic delivery each
+have at most 100 ms of grace; a stalled diagnostic cannot prevent process exit.
+A delivery timeout/cancellation retains the protected receipt and
+never rolls back or replays. Only confirmed success exits zero; accepted,
+partial, failed and unknown receipts remain intact and exit nonzero. This
+stateless executable holds no cross-command metadata cache; no requested rename
+is installed speculatively. `displayName` is the native Lakehouse metadata
+rename contract, not a move, OneLake directory rename, or Tables/Files mutation.
 
 ## Approval, effects and outcomes
 
@@ -99,6 +127,12 @@ No credentials, remote request or approval is needed for local plan delivery.
 The shared executed receipt is used unchanged. Generated docs, cells and narrow
 semantic edits cannot fall back to full-definition replacement.
 
+The additive `PreparedUpdateCommand::with_context` / `execute_bound` seam lets
+native hosts perform asynchronous approval of that exact bound request.
+The existing `execute` API delegates through the same seam. The Lakehouse policy
+consumes one affirmative decision and refuses changed body, target, type,
+options, limits or context.
+
 ## Source and validation
 
 Selected grouped specification: update document
@@ -127,3 +161,8 @@ one PATCH. The incorrect new-v2 test grouping 500 with established rejections wa
 corrected; legacy tests and frozen expectations are unchanged.
 Current full native three-platform/stable and applicable optional-feature gates
 remain required before review-ready; a focused draft is not gate acceptance.
+The Lakehouse host's offline tests are in
+`clients/cli/app/src/v2_update_lakehouse_host_tests.rs`; executable entry,
+strict-input and stalled-stdin deadline checks extend
+`clients/cli/app/tests/update_v2.rs`. They use synthetic executors only, without
+live reads, authentication or mutation.

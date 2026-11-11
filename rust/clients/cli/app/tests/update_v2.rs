@@ -204,6 +204,109 @@ async fn root_decline_and_plan_intent_dispatch_nothing() {
     assert!(wire.0.lock().unwrap().is_empty());
 }
 
+#[cfg(feature = "headless")]
+#[test]
+fn lakehouse_entry_is_native_but_requires_explicit_approval_and_keeps_plan_local() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("metadata.json");
+    let target = TARGET.replace("Notebook", "Lakehouse");
+    std::fs::write(&input, br#"{"description":""}"#).unwrap();
+    for facade in [false, true] {
+        for plan in [false, true] {
+            let mut process = std::process::Command::new(env!("CARGO_BIN_EXE_fab-cli-v2"));
+            if facade {
+                process.args(["artifact", "lakehouse"]);
+            }
+            process
+                .args(["update", &target, "--mode", "patch", "--input"])
+                .arg(&input)
+                .env_remove("FAB_RUST_AUTH_MODE");
+            if plan {
+                process.arg("--plan");
+            }
+            let output = process.output().unwrap();
+            if plan {
+                assert!(output.status.success());
+                let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
+                assert_eq!(receipt["meta"]["executionMode"], "plan");
+                assert_eq!(
+                    receipt["meta"]["target"]["selection"]["ownerType"],
+                    "Lakehouse"
+                );
+            } else {
+                assert!(!output.status.success());
+                assert!(output.stdout.is_empty());
+                assert_eq!(
+                    serde_json::from_slice::<Value>(&output.stderr).unwrap()["error"]["code"],
+                    "ApprovalRequired"
+                );
+            }
+        }
+    }
+    for body in [
+        r#"{"displayName":null}"#,
+        r#"{"description":null}"#,
+        r#"{"description":"a","description":"b"}"#,
+        r#"{"settings":{}}"#,
+    ] {
+        std::fs::write(&input, body).unwrap();
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_fab-cli-v2"))
+            .args([
+                "artifact",
+                "lakehouse",
+                "update",
+                &target,
+                "--mode",
+                "patch",
+                "--input",
+            ])
+            .arg(&input)
+            .env_remove("FAB_RUST_AUTH_MODE")
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert_eq!(
+            serde_json::from_slice::<Value>(&output.stderr).unwrap()["error"]["code"],
+            "UpdatePreflightFailed"
+        );
+    }
+}
+
+#[cfg(feature = "headless")]
+#[test]
+fn lakehouse_stalled_stdin_obeys_whole_command_deadline_without_credentials() {
+    let started = std::time::Instant::now();
+    let target = TARGET.replace("Notebook", "Lakehouse");
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_fab-cli-v2"))
+        .args([
+            "update",
+            &target,
+            "--mode",
+            "patch",
+            "--input",
+            "-",
+            "--timeout",
+            "20ms",
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .env_remove("FAB_RUST_AUTH_MODE")
+        .spawn()
+        .unwrap();
+    let input = child.stdin.take().unwrap();
+    let output = child.wait_with_output().unwrap();
+    drop(input);
+    assert!(started.elapsed() < Duration::from_secs(3));
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stderr).unwrap()["error"]["code"],
+        "TimedOut"
+    );
+}
+
 #[tokio::test]
 async fn racing_output_or_writer_failure_retains_remote_success_without_replay() {
     let dir = tempfile::tempdir().unwrap();
