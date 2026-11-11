@@ -84,6 +84,8 @@ Livy sessions, UDFs, Beta exit verdicts and high-concurrency modes are not
 implemented by this host. Input is at most 1 MiB of strict UTF-8 JSON with
 duplicate keys rejected at every depth. Parameters and compute settings retain
 native JSON types; unknown fields fail locally.
+Route GUIDs are canonicalized to lowercase before submission and scoped handle
+validation; native parameter values are not rewritten.
 
 The executable requires explicit approval of the exact target and decoded input
 on its controlling terminal, with an empty answer declining. Structured stdin

@@ -70,7 +70,11 @@ pub fn preflight(command: &NativeCommand) -> Result<(RunTarget, Duration), RunEr
         return Err(RunError::InvalidTarget);
     }
     let target = RunTarget::item(
-        RunOwner::new(RunOwnerKind::Notebook, workspace, item)?,
+        RunOwner::new(
+            RunOwnerKind::Notebook,
+            &workspace.to_ascii_lowercase(),
+            &item.to_ascii_lowercase(),
+        )?,
         RunTargetKind::Notebook,
     )?;
     let timeout = options

@@ -254,6 +254,35 @@ async fn root_submits_exact_native_body_once_and_retains_scoped_acceptance() {
 }
 
 #[tokio::test]
+async fn typed_guid_casing_is_canonical_before_submission_and_handle_binding() {
+    let workspace = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    let item = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    let mut command = command(&[]);
+    command.path = format!(
+        "/{}.Workspace/{}.Notebook",
+        workspace.to_ascii_uppercase(),
+        item.to_ascii_uppercase(),
+    );
+    let prepared = PreparedNotebook::new(&command, None).unwrap();
+    let (client, wire, _) = client(vec![accepted(format!(
+        "https://api.fabric.microsoft.com/v1/workspaces/{workspace}/items/{item}/jobs/instances/{RUN}"
+    ))]);
+    let result = prepared
+        .dispatch(&client, Arc::new(Clock(Instant::now())), pending())
+        .await;
+    assert_eq!(result.exit_code(), 0, "{}", result.value());
+    assert_eq!(result.value()["meta"]["workspaceId"], workspace);
+    assert_eq!(result.value()["meta"]["itemId"], item);
+    assert_eq!(result.value()["meta"]["handle"]["id"], RUN);
+    let requests = wire.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0].url().path(),
+        format!("/v1/workspaces/{workspace}/notebooks/{item}/jobs/execute/instances")
+    );
+}
+
+#[tokio::test]
 async fn omitted_and_empty_object_remain_distinct_on_the_wire() {
     for (args, input, expected) in [
         (vec![], None, b"".as_slice()),
