@@ -17,10 +17,23 @@ use std::{
 };
 
 pub(super) fn run(args: Vec<OsString>) -> Result<(), Failure> {
+    let facade = args.first().and_then(|value| value.to_str()) == Some("artifact");
     let command = match host::parse(std::iter::once(OsString::from("fab-cli-v2")).chain(args)) {
         Ok(command) => command,
         Err(error) if error.kind() == clap::error::ErrorKind::DisplayHelp => {
-            host::command()
+            let mut schema = host::command();
+            schema.build();
+            let owner = if facade {
+                schema
+                    .find_subcommand_mut("artifact")
+                    .and_then(|artifact| artifact.find_subcommand_mut("lakehouse"))
+                    .expect("registered Lakehouse facade")
+            } else {
+                &mut schema
+            };
+            owner
+                .find_subcommand_mut("link")
+                .expect("registered link command")
                 .write_long_help(&mut io::stdout().lock())
                 .map_err(|_| failed("OutputFailed", "Link help output failed.", 1))?;
             return Ok(());
