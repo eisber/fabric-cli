@@ -100,6 +100,15 @@ test('native job budgets give only Windows finite headroom without changing the 
   assert.match(native, /os: \[windows-2025, ubuntu-24\.04, macos-15\]/);
   assert.match(native, /--restore-oracle-deps --execute/);
   assert.ok(!native.includes('continue-on-error'));
+  const planBudget = native.match(
+    /--budget-seconds \$\{\{ matrix\.os == '([^']+)' && (\d+) \|\| (\d+) \}\}/);
+  assert.ok(planBudget, 'Expected an explicit finite native plan budget');
+  assert.equal(planBudget[1], budget[1]);
+  assert.equal(Number(planBudget[2]), 8100);
+  assert.equal(Number(planBudget[3]), 7200);
+  assert.equal(selected * 60 - Number(planBudget[2]), 15 * 60,
+    'Windows retains fifteen minutes outside the plan for preflight and artifact cleanup');
+  assert.ok(Number(planBudget[3]) <= otherwise * 60);
 });
 
 function withTargetEnvironment(value, action) {

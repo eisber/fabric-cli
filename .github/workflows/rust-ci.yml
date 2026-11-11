@@ -195,6 +195,7 @@ jobs:
           node rust/scripts/validate-impact.cjs
           --plan "$RUNNER_TEMP/rust-impact-selection/native-plan.json"
           --artifacts "$RUNNER_TEMP/rust-impact-results"
+          --budget-seconds ${{ matrix.os == 'windows-2025' && 8100 || 7200 }}
           --restore-oracle-deps --execute
       - name: Retain plan and actual command exits, hashes and coverage
         if: always()
