@@ -10,6 +10,11 @@ and transport composition (`native-read` on Windows for silent broker reuse).
 Default builds register arguments but return `NotConfigured` for valid service
 requests. Invalid input fails before identity selection.
 
+The shared `artifact` facade therefore appears in default help for ML arguments.
+Its `semantic-model` and `notebook` siblings remain gated by `semantic-model` and
+`v2-run`, respectively. Registering ML does not enable semantic-model execution
+or the optional .NET runtime.
+
 | Leaf | Selection and effects |
 | --- | --- |
 | `settings get` | Read the native endpoint settings object |
