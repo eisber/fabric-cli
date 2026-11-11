@@ -119,6 +119,15 @@ source identity before and after the run. `--stage core` or `--stage contracts`
 is a partial run and is recorded as such; only the full `all` stage represents
 the complete plan on that host.
 
+The executor defaults to a 7,200-second total budget and a 1,800-second
+per-command timeout. Explicit `--budget-seconds` values are bounded by 8,100
+seconds; `--command-timeout-seconds` retains its separate 7,200-second maximum.
+Each command is still limited by the earliest command, contract and total
+deadline. Receipts retain configured budgets and each command's actual timeout.
+The native workflow explicitly grants the Windows plan 8,100 seconds within
+its existing 150-minute job bound; Linux and macOS retain 7,200 seconds and
+their existing 120-minute job bounds. This changes no selected checks or gates.
+
 The workflow does not configure branch protection or repository rulesets.
 Repository maintainers must separately require the stable gate where appropriate.
 An affected offline pass is not full-candidate acceptance, native installation
