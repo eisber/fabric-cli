@@ -24,6 +24,11 @@ path = "tests/definition_copy_v2.rs"
 required-features = ["native-host", "v2-copy"]
 
 [[test]]
+name = "run_notebook_wire"
+path = "tests/run_notebook_wire.rs"
+required-features = ["native-host", "v2-run"]
+
+[[test]]
 name = "stage_deploy"
 path = "tests/stage_deploy.rs"
 required-features = ["v2-deploy"]

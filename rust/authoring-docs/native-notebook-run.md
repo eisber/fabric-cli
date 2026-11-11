@@ -73,6 +73,12 @@ fab-rs run /<workspace-guid>.Workspace/<notebook-guid>.Notebook --input run.json
 fab-rs artifact notebook run /<workspace-guid>.Workspace/<notebook-guid>.Notebook
 ```
 
+The existing impact-validation graph has Run-only `v2-run`, `v2-run-native` and
+`v2-run-headless` profiles. The wire test target explicitly requires both
+`native-host` and `v2-run`, preventing a disabled-feature zero-test run from
+standing in for this coverage. These registrations do not certify cross-platform
+or hosted CI success; actual profile receipts are still required.
+
 Only absolute ID-qualified whole Notebooks are bound. Names, cells, borrowed
 Livy sessions, UDFs, Beta exit verdicts and high-concurrency modes are not
 implemented by this host. Input is at most 1 MiB of strict UTF-8 JSON with

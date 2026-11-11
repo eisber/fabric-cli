@@ -985,11 +985,18 @@ fn real_binary_unbound_or_invalid_frontdoors_never_read_stdin_files_config_or_id
                 "an unconfigured root must not wait on stdin or invoke a backend"
             );
             assert!(!output.status.success());
-            if name == "execute" {
+            if name == "execute" || (name == "run" && cfg!(feature = "v2-run")) {
                 assert_eq!(output.status.code(), Some(2));
                 assert!(output.stdout.is_empty());
                 let diagnostic: Value = serde_json::from_slice(&output.stderr).unwrap();
-                assert_eq!(diagnostic["error"]["code"], "invalid_arguments");
+                assert_eq!(
+                    diagnostic["error"]["code"],
+                    if name == "run" && !export {
+                        "InvalidInput"
+                    } else {
+                        "invalid_arguments"
+                    }
+                );
             } else {
                 let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
                 assert_eq!(receipt["delivery"]["error"]["code"], "NotConfigured");
