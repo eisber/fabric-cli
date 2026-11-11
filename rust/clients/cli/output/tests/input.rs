@@ -64,6 +64,23 @@ fn csv_quoting_types_and_nulls_are_explicit_not_guessed() {
 }
 
 #[test]
+fn text_file_bom_is_optional_only_at_the_document_boundary() {
+    assert_eq!(
+        records(b"\xef\xbb\xbf\"x\"\r\n0\r\n", TabularFormat::Csv).unwrap(),
+        vec![json!({"x":0})]
+    );
+    assert_eq!(
+        records(b"\xef\xbb\xbf[{\"x\":0}]", TabularFormat::Json).unwrap(),
+        vec![json!({"x":0})]
+    );
+    assert_eq!(
+        records(b"x\r\n\"\"\"\xef\xbb\xbftext\"\"\"\r\n", TabularFormat::Csv).unwrap(),
+        vec![json!({"x":"\u{feff}text"})]
+    );
+    assert_eq!(strict_json(b"\xef\xbb\xbf{}"), Err(InputError::Json));
+}
+
+#[test]
 fn parquet_preserves_i64_precision_and_rejects_nonfinite_logical_and_nested_types() {
     let bytes = parquet(Arc::new(Int64Array::from(vec![
         Some(9007199254740993),

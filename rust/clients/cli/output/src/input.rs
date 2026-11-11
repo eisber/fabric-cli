@@ -94,10 +94,12 @@ pub fn records(
         return Err(InputError::Limit);
     }
     let rows = match format {
-        crate::tabular::TabularFormat::Json => strict_json(bytes)?
-            .as_array()
-            .cloned()
-            .ok_or(InputError::Records)?,
+        crate::tabular::TabularFormat::Json => {
+            strict_json(bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(bytes))?
+                .as_array()
+                .cloned()
+                .ok_or(InputError::Records)?
+        }
         crate::tabular::TabularFormat::Csv => csv_records(bytes)?,
         crate::tabular::TabularFormat::Parquet => parquet_records(bytes)?,
     };
@@ -167,6 +169,7 @@ fn csv_records(bytes: &[u8]) -> Result<Vec<Value>, InputError> {
 fn strict_csv_quoting(bytes: &[u8]) -> Result<(), InputError> {
     // The shared CSV reader deliberately tolerates malformed quotes. Input
     // must not silently repair them before schema-checked inference.
+    let bytes = bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(bytes);
     enum State {
         Start,
         Bare,

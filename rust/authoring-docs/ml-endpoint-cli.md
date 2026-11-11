@@ -81,6 +81,8 @@ Local file/stdin reads run on a bounded worker before identity selection. If
 cancelled or expired while an OS read may remain active, the host stops rather
 than returning to the REPL or consuming another queued command.
 
+JSON/CSV files accept one optional leading UTF-8 BOM, including Windows
+PowerShell UTF-8 exports; BOM characters within values are preserved.
 CSV cells use explicit JSON typing: `0`, `false` and `null` are distinct.
 The string `a,b` occupies CSV text `"""a,b"""`; an empty string is `""""""`.
 An empty cell is ambiguous and rejected. Existing CSV *output* uses a different,
