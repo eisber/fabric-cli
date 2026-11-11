@@ -26,6 +26,40 @@ const MODEL: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 const OPERATION: &str = "33333333-3333-3333-3333-333333333333";
 
 #[test]
+fn public_operation_actions_use_documented_paths_without_unredacted_header_capture() {
+    let error = ResourceError {
+        code: "ExecutionFailed".into(),
+        operation_id: Some(OPERATION.into()),
+        mutation_may_have_occurred: true,
+        ..ResourceError::input()
+    };
+    let evidence = OperationError {
+        kind: OperationErrorKind::InvalidResponse,
+        operation_id: Some(OPERATION.into()),
+        mutation_may_have_occurred: true,
+        raw_service_error: None,
+    };
+    let delivery = deliver_with_diagnostic(Err(error),evidence,&AtomicU8::new(0),
+        Some(json!({"apiHost":"api.fabric.microsoft.com","target":{"workspaceId":WORKSPACE,"modelId":MODEL}})),true).unwrap();
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    delivery.write_to(&mut out, &mut err).unwrap();
+    let value: Value = serde_json::from_slice(&err).unwrap();
+    let action = &value["error"]["nextActions"][1];
+    assert_eq!(action["cliAvailable"], true);
+    for (field, suffix) in [("argv", ""), ("resultArgv", "/result")] {
+        let argv: Vec<String> = action[field]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap().into())
+            .collect();
+        assert_eq!(argv[2], format!("operations/{OPERATION}{suffix}"));
+        assert!(!argv.iter().any(|arg| arg == "--show_headers"));
+        assert!(parse_args(argv).is_ok());
+    }
+}
+
+#[test]
 fn actual_native_score_transport_budget_is_not_the_ordinary_thirty_second_read_budget() {
     for (tail, expected) in [
         (
@@ -329,7 +363,19 @@ async fn score_transport_stream_and_post_accept_failures_have_safe_actions_and_n
             Fault::AfterAccepted => {
                 assert_eq!(output["error"]["operationId"], OPERATION);
                 assert!(output["error"]["diagnostics"]["lastHttpStatus"].is_null());
-                let argv: Vec<String> = output["error"]["nextActions"][1]["argv"]
+                assert_eq!(output["error"]["nextActions"][1]["cliAvailable"], false);
+                assert!(output["error"]["nextActions"][1].get("argv").is_none());
+                assert!(
+                    output["error"]["nextActions"][1]["instruction"]
+                        .as_str()
+                        .unwrap()
+                        .contains("MSIT")
+                );
+                let argv: Vec<String> = output["error"]["nextActions"]
+                    .as_array()
+                    .unwrap()
+                    .last()
+                    .unwrap()["argv"]
                     .as_array()
                     .unwrap()
                     .iter()

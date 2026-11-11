@@ -126,9 +126,15 @@ printed because they can echo inputs or secrets. Safe service codes/request IDs
 remain visible. Transport kinds report only what is known; generic I/O is not
 mislabelled as a proven timeout.
 
-`nextActions` supplies actual read-only `fab-rs api` argv for a known operation
-and its result (retrieve the result only after `Succeeded`), using the existing
-same host/identity. No operation ID or log URL is invented. Without an ID,
+`nextActions` supplies a supported native endpoint-settings read and documented
+REST references for a known operation and its result (retrieve the result only
+after `Succeeded`). On the public Fabric host, it also supplies read-only
+`fab-rs api` argv using the existing same host/identity. The generic raw API
+family is **not wired for MSIT/non-public Fabric hosts** in this build; no
+executable API-recovery argv is prescribed there. Retain the actual ID for an
+already-supported same-host observer or authorized Fabric support; do not switch
+to production or export credentials. Raw API output/header dumping is not a
+redacted support bundle. No operation ID or log URL is invented. Without an ID,
 reconciliation by ID and recovery of that score result are unavailable from the
 retained evidence. Preserve redacted stderr JSON, its timestamp, elapsed duration,
 target, actual request IDs and binary/source build receipt for authorized Fabric

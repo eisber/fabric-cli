@@ -199,13 +199,45 @@ fn deliver_with_diagnostic(
             } else {
                 "No mutating request was dispatched by this command. Correct local input/schema errors or inspect the reported read-only metadata failure before any separately intended inference."
             };
-            let next_actions = if let Some(id) = &error.operation_id {
+            let mut next_actions = if let Some(id) = &error.operation_id {
+                let public_api = diagnostic
+                    .as_ref()
+                    .and_then(|value| value.get("apiHost"))
+                    .and_then(Value::as_str)
+                    == Some("api.fabric.microsoft.com");
+                let mut observation = json!({
+                    "action":"readOperation","method":"GET","path":format!("/v1/operations/{id}"),
+                    "resultPath":format!("/v1/operations/{id}/result"),
+                    "cliAvailable":public_api,
+                    "instruction":if public_api {
+                        "Use the same existing host/identity. Retrieve the result only after Succeeded. Raw API output is not a redacted support bundle."
+                    } else {
+                        "These are documented REST references, not executable recovery commands on this host. This CLI's raw api family is not wired for non-public Fabric hosts (including MSIT). Do not switch to production or export a token; retain the real operation ID for authorized Fabric support or an already-supported same-host observer."
+                    }
+                });
+                if public_api {
+                    observation["argv"] = json!([
+                        "fab-rs",
+                        "api",
+                        format!("operations/{id}"),
+                        "--method",
+                        "get",
+                        "--output_format",
+                        "json"
+                    ]);
+                    observation["resultArgv"] = json!([
+                        "fab-rs",
+                        "api",
+                        format!("operations/{id}/result"),
+                        "--method",
+                        "get",
+                        "--output_format",
+                        "json"
+                    ]);
+                }
                 json!([
                     "Do not repeat scoring to recover a missing result. Accepted work is not completed work; cancelled/expired local observation is not rollback.",
-                    {"action":"readOperation","method":"GET","path":format!("/v1/operations/{id}"),
-                     "argv":["fab-rs","api",format!("/v1/operations/{id}"),"--method","get","--show_headers","--output_format","json"],
-                     "resultArgv":["fab-rs","api",format!("/v1/operations/{id}/result"),"--method","get","--show_headers","--output_format","json"],
-                     "instruction":"Use the same existing host/identity to inspect this exact operation. Run resultArgv only after Succeeded; do not score again."},
+                    observation,
                     "Preserve this stderr JSON and its UTC time, elapsed duration, target and actual request/operation IDs for authorized Fabric support/service-log correlation. Do not attach credentials, model inputs or predictions."
                 ])
             } else {
@@ -216,6 +248,12 @@ fn deliver_with_diagnostic(
                     "Control-plane follow-up is read-only: artifact ml-endpoint settings get or serving-version get --version NAME with the same workspace/model/host. Active status alone does not prove inference success."
                 ])
             };
+            if let Some(action) = metadata_action(diagnostic.as_ref()) {
+                next_actions
+                    .as_array_mut()
+                    .expect("next actions are constructed as an array")
+                    .push(action);
+            }
             let service_error = if score {
                 safe_service_error(error.raw_service_error.as_deref())
             } else {
@@ -252,6 +290,17 @@ fn deliver_with_diagnostic(
         _ => CommandOutcome::Returned(exit),
     };
     Ok(get::Delivery::plan(plan, outcome))
+}
+
+fn metadata_action(diagnostic: Option<&Value>) -> Option<Value> {
+    let target = diagnostic?.get("target")?;
+    let workspace = target.get("workspaceId")?.as_str()?;
+    let model = target.get("modelId")?.as_str()?;
+    Some(json!({
+        "action":"readEndpointSettings",
+        "argv":["fab-rs","artifact","ml-endpoint","settings","get","--workspace-id",workspace,"--model-id",model,"--output_format","json"],
+        "instruction":"Use the same host/identity. This supported read can expose current default-version/activation failureDetails; it is not serving logs, request history or recovery of the original score result."
+    }))
 }
 
 fn safe_service_error(value: Option<&Value>) -> Option<Value> {
