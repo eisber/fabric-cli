@@ -32,6 +32,9 @@ mod metadata_tests;
 #[path = "provenance_tests.rs"]
 mod provenance_tests;
 
+#[path = "framing_tests.rs"]
+mod framing_tests;
+
 const WORKSPACE: &str = "11111111-1111-1111-1111-111111111111";
 const ITEM: &str = "33333333-3333-3333-3333-333333333333";
 const OPERATION: &str = "22222222-2222-2222-2222-222222222222";
