@@ -193,6 +193,8 @@ function buildEnvironment(environment = process.env) {
 
 function commandResult(command, context, execute = spawnSync) {
   const started = Date.now();
+  const timeout = Math.min(context.commandTimeout,
+    Math.max(1, Math.min(context.deadline, command.deadline || context.deadline) - Date.now()));
   const environment = {...process.env, PYTHONUTF8: '1', PYTHONDONTWRITEBYTECODE: '1',
     FAB_UPDATE_TEST_ROOT: context.artifacts, FAB_CLI_V2_TEST_ROOT: context.artifacts,
     FAB_IDENTITY_TEST_ROOT: context.artifacts, ...command.env};
@@ -200,8 +202,7 @@ function commandResult(command, context, execute = spawnSync) {
     cwd: command.cwd || path.join(context.root, 'rust'),
     env: environment,
     encoding: 'utf8',
-    timeout: Math.min(context.commandTimeout,
-      Math.max(1, Math.min(context.deadline, command.deadline || context.deadline) - Date.now())),
+    timeout,
     maxBuffer: 64 * 1024 * 1024,
     windowsHide: true,
     shell: false,
@@ -229,6 +230,7 @@ function commandResult(command, context, execute = spawnSync) {
   const record = {
     id: command.id, program: command.program, args: command.args,
     cwd: command.cwd || path.join(context.root, 'rust'), elapsed_ms: Date.now() - started,
+    timeout_ms: timeout,
     build_environment: buildEnvironment(environment),
     exit: result.status, signal: result.signal || null, error: result.error?.message || null,
     stdout: stdoutFile, stderr: stderrFile,
@@ -361,6 +363,7 @@ function runContracts(context, registry, run, probeCommand = spawnSync) {
 
 function options(argv) {
   const options = {execute: false, stage: 'all', commandTimeout: 1800000, budget: 7200000};
+  const limits = {commandTimeout: 7200000, budget: 8100000};
   const seen = new Set();
   for (let index = 0; index < argv.length; index++) {
     const key = argv[index];
@@ -377,7 +380,7 @@ function options(argv) {
       if (['commandTimeout', 'budget'].includes(name)) {
         options[name] = Number(options[name]) * 1000;
         requireThat(Number.isSafeInteger(options[name]) && options[name] > 0 &&
-          options[name] <= 7200000, `Invalid timeout: ${key}`);
+          options[name] <= limits[name], `Invalid timeout: ${key}`);
       }
     }
   }
@@ -435,6 +438,7 @@ function main(argv) {
   const receipt = {
     schema: 1, plan_fingerprint: plan.fingerprint, platform: opts.platform, stage: opts.stage,
     complete_plan: false,
+    budget_ms: opts.budget, command_timeout_ms: opts.commandTimeout,
     toolchain,
     build_environment: buildEnvironment(),
     source_before: before, started_at: new Date().toISOString(), status: 'running',
