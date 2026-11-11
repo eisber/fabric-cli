@@ -18,7 +18,7 @@ use std::collections::HashSet;
 
 pub(super) const JSON_MESSAGE: &str = "Invalid or oversized ML JSON (1 MiB maximum). Supply one UTF-8 native object without duplicate keys; inputs must be an array. In PowerShell, serialize hashtables with ConvertTo-Json -Depth 100 -Compress. PowerShell 7.3+ Standard and Windows PowerShell 5.1/Legacy transport quotes differently; do not apply Legacy escaping in Standard mode. Prefer --input FILE --input-format json for a schema-checked record array.";
 pub(super) const BODY_MESSAGE: &str = "Invalid native ML score body. inputs must be an array; optional formatType is dataframe and orientation is split|values|record|index|table (record singular). Unknown fields and explicit null selectors are rejected.";
-pub(super) const CONFLICT_MESSAGE: &str = "Ambiguous ML scoring input. Choose exactly one of --body, --input FILE|- or trailing -- key=value. Representation flags cannot replace fields already present in --body. File/record conveniences support record or values orientation; use --body for other native representations.";
+pub(super) const CONFLICT_MESSAGE: &str = "Ambiguous ML scoring input. Choose exactly one of --body, --input FILE|- or trailing -- key=value. --input-format requires --input, not body/record mode. Representation flags cannot replace fields already present in --body. File/record conveniences support record or values orientation; use --body for other native representations.";
 
 #[derive(Clone)]
 pub(super) enum Source {
@@ -138,6 +138,11 @@ fn selectors(
 }
 
 pub(super) fn raw(values: &ArgMatches) -> Result<Option<ScoreDataRequest>, clap::Error> {
+    if values.get_one::<String>("input_format").is_some()
+        && values.get_one::<String>("input").is_none()
+    {
+        return Err(error(CONFLICT_MESSAGE));
+    }
     let Some(body) = values.get_one::<String>("body") else {
         return Ok(None);
     };

@@ -141,6 +141,7 @@ fn check_names<'a>(names: impl Iterator<Item = &'a str>) -> Result<(), InputErro
 }
 
 fn csv_records(bytes: &[u8]) -> Result<Vec<Value>, InputError> {
+    strict_csv_quoting(bytes)?;
     let mut reader = csv::ReaderBuilder::new().flexible(false).from_reader(bytes);
     let header = reader.headers().map_err(|_| InputError::Csv)?.clone();
     check_names(header.iter()).map_err(|_| InputError::Csv)?;
@@ -161,6 +162,53 @@ fn csv_records(bytes: &[u8]) -> Result<Vec<Value>, InputError> {
         rows.push(Value::Object(row));
     }
     Ok(rows)
+}
+
+fn strict_csv_quoting(bytes: &[u8]) -> Result<(), InputError> {
+    // The shared CSV reader deliberately tolerates malformed quotes. Input
+    // must not silently repair them before schema-checked inference.
+    enum State {
+        Start,
+        Bare,
+        Quoted,
+        Closed,
+    }
+    let mut state = State::Start;
+    let mut row_started = false;
+    let mut index = 0;
+    while let Some(&byte) = bytes.get(index) {
+        if matches!(state, State::Quoted) {
+            if byte == b'"' {
+                state = State::Closed;
+            }
+        } else if matches!(state, State::Closed) && byte == b'"' {
+            state = State::Quoted;
+        } else if matches!(byte, b'\r' | b'\n') {
+            if !row_started {
+                return Err(InputError::Csv);
+            }
+            row_started = false;
+            state = State::Start;
+            if byte == b'\r' && bytes.get(index + 1) == Some(&b'\n') {
+                index += 1;
+            }
+        } else if byte == b',' {
+            row_started = true;
+            state = State::Start;
+        } else {
+            row_started = true;
+            state = match (state, byte) {
+                (State::Start, b'"') => State::Quoted,
+                (State::Start | State::Bare, byte) if byte != b'"' => State::Bare,
+                _ => return Err(InputError::Csv),
+            };
+        }
+        index += 1;
+    }
+    if matches!(state, State::Quoted) {
+        return Err(InputError::Csv);
+    }
+    Ok(())
 }
 
 fn parquet_records(bytes: &[u8]) -> Result<Vec<Value>, InputError> {

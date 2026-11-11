@@ -55,6 +55,9 @@ fn csv_quoting_types_and_nulls_are_explicit_not_guessed() {
         b"x,y\r\n0,\r\n",
         b"x\r\nnot-JSON\r\n",
         b"x,y\r\n0\r\n",
+        b"x\r\n\"0",
+        b"x\r\n0\r\n\r\n",
+        b"x\r\n\"0\"junk\r\n",
     ] {
         assert!(records(bytes, TabularFormat::Csv).is_err());
     }
@@ -97,6 +100,26 @@ fn parquet_preserves_i64_precision_and_rejects_nonfinite_logical_and_nested_type
     ] {
         assert_eq!(
             records(&parquet(array), TabularFormat::Parquet),
+            Err(InputError::Parquet)
+        );
+    }
+
+    #[test]
+    fn shared_parquet_json_logical_cells_are_not_silently_stringified() {
+        use fabric_cli_output::tabular::{
+            TabularColumn, TabularLimits, TabularTable, TabularType, TabularValue,
+        };
+        let table = TabularTable::new(
+            vec![TabularColumn::new("x", TabularType::Json, false)],
+            vec![vec![TabularValue::Json(json!({"nested":1}))]],
+            TabularLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            records(
+                &table.encode(TabularFormat::Parquet).unwrap(),
+                TabularFormat::Parquet
+            ),
             Err(InputError::Parquet)
         );
     }

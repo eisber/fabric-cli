@@ -626,13 +626,18 @@ async fn expired_preconnect_deadline_does_not_poll_credential_work() {
 async fn interrupted_input_preparation_never_resumes_a_shell_with_a_pending_reader() {
     for (deadline, signal) in [
         (Instant::now() + Duration::from_secs(1), true),
-        (Instant::now() - Duration::from_millis(1), false),
+        (Instant::now() + Duration::from_millis(20), false),
     ] {
+        let started = std::sync::atomic::AtomicBool::new(false);
         let error = before_connect_with_signal(
-            std::future::pending::<Result<(), Failure>>(),
+            std::future::poll_fn(|_| {
+                started.store(true, Ordering::SeqCst);
+                std::task::Poll::<Result<(), Failure>>::Pending
+            }),
             deadline,
             async move {
                 if signal {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
                     Ok(())
                 } else {
                     std::future::pending().await
@@ -641,6 +646,7 @@ async fn interrupted_input_preparation_never_resumes_a_shell_with_a_pending_read
         )
         .await
         .unwrap_err();
+        assert!(started.load(Ordering::SeqCst));
         assert!(matches!(error.0, "cancelled" | "timed_out"));
         assert!(matches!(
             input_failure_outcome(&error),
