@@ -272,7 +272,7 @@ fn ascii_json(value: &impl serde::Serialize) -> serde_json::Result<String> {
     let json = serde_json::to_string(value)?;
     let mut ascii = String::with_capacity(json.len());
     for character in json.chars() {
-        if character.is_ascii() {
+        if character.is_ascii() && !character.is_control() {
             ascii.push(character);
         } else {
             for unit in character.encode_utf16(&mut [0; 2]) {

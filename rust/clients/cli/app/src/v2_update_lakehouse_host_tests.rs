@@ -568,13 +568,15 @@ fn terminal_json_is_ascii_without_changing_unicode_approval_values() {
     let cwd = tempfile::tempdir().unwrap();
     let prepared = bound(
         command(false, &[]),
-        br#"{"description":"\u00e9\uD83E\uDD80"}"#,
+        br#"{"description":"\u00e9\uD83E\uDD80\u007f"}"#,
         cwd.path(),
     );
     let captured = prepared.update().prepared();
     let ascii = ascii_json(captured).unwrap();
     assert!(ascii.is_ascii());
     assert!(ascii.contains("\\u00e9\\ud83e\\udd80"));
+    assert!(ascii.contains("\\u007f"));
+    assert!(!ascii.contains('\u{7f}'));
     assert_eq!(
         serde_json::from_str::<Value>(&ascii).unwrap(),
         serde_json::to_value(captured).unwrap()
