@@ -1236,6 +1236,7 @@ dependencies = [
  "async-trait",
  "azure_core",
  "clap",
+ "fabric-cli-output",
  "fabric-sdk",
  "fabric-sdk-items",
  "fabric-sdk-ontology",

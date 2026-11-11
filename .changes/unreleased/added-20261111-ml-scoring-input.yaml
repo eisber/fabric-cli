@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: added
+body: Add schema-bound JSON, CSV, Parquet and single-record inputs to experimental native ML scoring, with typed representation selectors, actionable PowerShell JSON errors and redacted execution evidence without automatic inference replay.
+time: 2026-11-11T09:32:00+01:00
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot

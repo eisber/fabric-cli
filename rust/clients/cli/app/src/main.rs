@@ -209,6 +209,10 @@ fn dispatch(
             return dispatch_cancel(&command, Some(local_state));
         }
         Ok(Invocation::Delete(command)) => return delete_host::run(&command),
+        #[cfg(feature = "native-host")]
+        Ok(Invocation::MlEndpoint(command)) => {
+            return native_read::run_ml_endpoint(&command, local_state);
+        }
         #[cfg(feature = "self-update")]
         Ok(Invocation::Update(_)) => {
             write_error(
@@ -277,6 +281,7 @@ fn dispatch(
         #[cfg(not(feature = "native-host"))]
         Ok(
             Invocation::Read(_)
+            | Invocation::MlEndpoint(_)
             | Invocation::Execute(_)
             | Invocation::JobRead(_)
             | Invocation::JobRun(_)

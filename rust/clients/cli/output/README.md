@@ -104,3 +104,12 @@ See the [Unicode tests](tests/production_unicode/README.md) for validation
 commands and supported limits, and the
 [Unicode contract](../../../authoring-docs/unicode-production-contract.md) for provenance,
 licensing and compatibility decisions.
+## Bounded input adapters
+
+`input::strict_json` extracts the existing ontology duplicate-key JSON decoder
+for reuse. `input::records` decodes explicit JSON/CSV/Parquet record files without
+model discovery, I/O, credentials or runtime setup. It is not an inverse of lossy
+CSV output: CSV input cells contain explicit JSON values, with normal CSV quoting.
+Primitive Parquet values remain exact; unsupported logical/nested/metadata
+conversions and nonfinite numbers fail. Consumers must validate the exact
+selected model schema before submission. See the input module's finite bounds.

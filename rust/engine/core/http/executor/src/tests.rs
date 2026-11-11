@@ -980,6 +980,36 @@ async fn stream_io_errors_are_sanitized_and_not_retried() {
 }
 
 #[tokio::test]
+async fn opt_in_trace_retains_partial_headers_and_clears_previous_exchange_evidence() {
+    let mut headers = Headers::new();
+    headers.insert("request-id", OPERATION);
+    headers.insert("authorization", "private-header");
+    let broken = AsyncRawResponse::new(
+        StatusCode::Accepted,
+        headers,
+        Box::pin(stream::iter([Err(azure_core::Error::with_message(
+            ErrorKind::Io,
+            "private-body",
+        ))])),
+    );
+    let client = ScriptedClient::new([response(200, "", &[("x-ms-request-id", ITEM)]), broken]);
+    let trace = ExecutionTrace::default();
+    let exec = executor(client.clone(), Arc::new(TestTimer::default())).with_trace(trace.clone());
+    get(&exec, 5).await.unwrap();
+    assert_eq!(trace.snapshot().request_ids["x-ms-request-id"], ITEM);
+    assert_eq!(get(&exec, 5).await.unwrap_err(), ExecutionError::Transport);
+    let evidence = trace.snapshot();
+    assert_eq!(evidence.requests, 2);
+    assert_eq!(evidence.status, Some(202));
+    assert_eq!(evidence.phase, "response_body");
+    assert_eq!(evidence.transport_kind, Some("io"));
+    assert_eq!(evidence.request_ids.len(), 1);
+    assert_eq!(evidence.request_ids["request-id"], OPERATION);
+    assert!(!format!("{evidence:?}").contains("private"));
+    assert_eq!(client.requests.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
 async fn deadline_covers_response_stream_and_drops_it_without_replay() {
     let dropped = Arc::new(AtomicBool::new(false));
     let raw = AsyncRawResponse::new(
