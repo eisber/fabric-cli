@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: added
+body: Mount the opt-in KQL table shortcut link command with typed destinations, explicit cost-bound approval, and retained native operation evidence
+time: 2026-11-11T23:15:00Z
+custom:
+    Author: eisber
+    AuthorLink: https://github.com/eisber

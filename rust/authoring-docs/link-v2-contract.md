@@ -5,9 +5,69 @@
 The additive `fabric_cli_mutations::v2_link` module composes native relationship
 requests with caller-owned resolution, input, approval, and execution. It does
 not replace the Python CLI, Rust `ln`/`mklink`, or their compatibility fixtures.
-Its standalone command schema is not mounted in the production executable.
-Central registry, SDK facade, native file/resolver adapters, and executable
-composition remain separate integration requirements.
+Its standalone all-family command schema is not mounted in the default executable.
+The optional `fabric-cli` feature `v2-link-kql`, together with `headless`, mounts
+only the KQL leaf in `fab-cli-v2` through `v2_link_kql_host`. Other link families
+still require separate executable composition.
+
+## KQL executable scope
+
+```text
+fab-cli-v2 artifact kql-database link /workspace.Workspace/database.KQLDatabase/Tables/name.Shortcut --input FILE|- [--wait]
+fab-cli-v2 link /workspace.Workspace/database.KQLDatabase/Tables/name.Shortcut --input FILE|- [--wait]
+```
+
+The root spelling is also KQL-only. The destination must be one literal
+`.Shortcut` child of `Tables`, not an existing table's contents, `Files`, a
+collection, an item root, or another owner type. Workspace/database selectors
+may be names or GUIDs; complete bounded discovery uses the existing SDK resolver
+and rejects ambiguity. Explicit GUIDs avoid discovery. The relationship suffix
+is parsed separately from its metadata-only owner prefix. No implicit current
+context, URL normalization, source access probe, or identity fallback is used.
+
+The executable uses the existing explicit `FAB_RUST_AUTH_MODE` selection and
+validated `FAB_RUST_FABRIC_HOST` binding. It has a 120-second invocation bound,
+1 MiB input/discovery/response bounds and at most 32 operation requests.
+`--input -` reads strict JSON from stdin; approval is read separately from the
+controlling terminal (`CONIN$` or `/dev/tty`). An explicit yes is required after
+displaying the captured workspace, database, shortcut, and effects. Missing
+terminal, EOF, decline, prompt failure, cancellation, or timeout prevents
+submission. Enabling query acceleration explicitly discloses cache, indexing,
+storage, and compute costs. A body field is never approval.
+
+Input example (use actual existing workspace/item references):
+
+```json
+{
+  "name": "sales_ref",
+  "enableQueryAcceleration": false,
+  "target": {
+    "oneLake": {
+      "workspaceId": "11111111-1111-4111-8111-111111111111",
+      "itemId": "22222222-2222-4222-8222-222222222222",
+      "path": "Tables/sales"
+    }
+  }
+}
+```
+
+For that input the addressed child must be `sales_ref.Shortcut`. There is no
+destination `path` field or conflict-policy query. Only the six native KQL
+provider kinds described below are admitted. There is no `--force`, overwrite,
+copy, query, ACL grant, connection creation, publication, or unrelated database
+mutation.
+
+The host retains the original `LinkReceipt`/`LinkFailure` and displays a small
+JSON projection with destination/name, effects, accepted/completed classification,
+HTTP status, known operation ID, mutation uncertainty, and explicit
+`remoteCancelled: false` / `remoteReplayed: false`. Native service details and
+rejected observations remain available to programmatic consumers; request/source
+contents and service message bodies are not echoed. Output write/flush failure
+returns a nonzero exit with best-effort reconciliation evidence on stderr.
+Neither output failure nor interrupted observation causes resubmission.
+Offline host tests are not proof of live Fabric permission, deployed provider
+availability, authentication, or compute execution. Required combined/platform
+validation still gates integration.
 
 ## Operation and command surface
 
