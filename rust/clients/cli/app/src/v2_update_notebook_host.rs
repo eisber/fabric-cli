@@ -38,6 +38,13 @@ impl ApprovalPolicy for ExactApproval {
 }
 
 pub(super) fn run(command: UpdateCommand) -> Result<(), Failure> {
+    if command.plan || command.target.selection().owner_type != "Notebook" {
+        return Err(failed(
+            "UnsupportedCapability",
+            "The native Notebook execution host requires a non-plan Notebook metadata update.",
+            2,
+        ));
+    }
     let timeout = Duration::from_millis(command.options.timeout_millis);
     let deadline = tokio::time::Instant::now() + timeout;
     let runtime = tokio::runtime::Builder::new_current_thread()

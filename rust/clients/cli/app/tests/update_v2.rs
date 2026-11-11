@@ -347,7 +347,7 @@ fn notebook_process_preflights_strict_input_and_output_before_identity_or_approv
 
 #[cfg(feature = "headless")]
 #[test]
-fn notebook_facade_stdin_plan_is_local_and_lakehouse_execution_stays_uninstalled() {
+fn notebook_facade_stdin_plan_is_local() {
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_fab-cli-v2"))
         .args([
             "artifact", "notebook", "update", TARGET, "--input", "-", "--mode", "patch", "--plan",
@@ -370,27 +370,6 @@ fn notebook_facade_stdin_plan_is_local_and_lakehouse_execution_stays_uninstalled
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["meta"]["executionMode"], "plan");
     assert_eq!(value["meta"]["target"]["identity"]["itemId"], ITEM);
-    let target = TARGET.replace(".Notebook", ".Lakehouse");
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_fab-cli-v2"))
-        .args([
-            "artifact",
-            "lakehouse",
-            "update",
-            &target,
-            "--input",
-            "-",
-            "--mode",
-            "patch",
-        ])
-        .env_remove("FAB_RUST_AUTH_MODE")
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    assert!(output.stdout.is_empty());
-    assert_eq!(
-        serde_json::from_slice::<Value>(&output.stderr).unwrap()["error"]["code"],
-        "ApprovalHostRequired"
-    );
 }
 
 #[tokio::test]

@@ -191,6 +191,22 @@ fn metadata() -> Value {
     json!({"id":ITEM,"workspaceId":WS,"type":"Notebook","displayName":"new","description":""})
 }
 
+#[test]
+fn notebook_host_rejects_other_owners_before_input_or_credentials() {
+    let target = TARGET.replace(".Notebook", ".Lakehouse");
+    let command = update::parse([
+        "fab-cli-v2",
+        "update",
+        &target,
+        "--input",
+        "not-a-local-file.json",
+        "--mode",
+        "patch",
+    ])
+    .unwrap();
+    assert_eq!(run(command).unwrap_err().0, "UnsupportedCapability");
+}
+
 #[tokio::test]
 async fn prompt_and_single_use_policy_bind_exact_body_context_options_and_conditions() {
     let dir = tempfile::tempdir().unwrap();
