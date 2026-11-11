@@ -174,6 +174,7 @@ pub fn write_report(
     serde_json::to_writer(&mut *writer, &report.receipt)
         .map_err(io::Error::other)
         .and_then(|()| writeln!(writer))
+        .and_then(|()| writer.flush())
         .map_err(|cause| Box::new(OutputError { cause, report }))
 }
 

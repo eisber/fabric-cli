@@ -52,6 +52,8 @@ pub mod update;
 pub mod v2_discovery;
 #[cfg(feature = "v2-preview")]
 pub mod v2_preview;
+#[cfg(feature = "v2-service-domain")]
+pub mod v2_service_domain_host;
 mod workspace_get;
 #[cfg(feature = "workspace-read-v2")]
 pub mod workspace_v2;

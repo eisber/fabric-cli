@@ -3,6 +3,24 @@
   "schema": 1,
   "components": [
     {
+      "id": "cli-service-domain",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/v2_service_domain_host.rs",
+        "rust/clients/cli/app/src/v2_service_domain_main.rs",
+        "rust/clients/cli/app/tests/service_domain_host.rs",
+        "rust/authoring-docs/service-domain-sync.md"
+      ],
+      "depends_on": ["resources", "sdk-catalog", "cli-headless"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:service_domain_host"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"},
+        {"package": "fabric-cli-resources", "target": "test:service_sync"},
+        {"package": "fabric-sdk-catalog", "target": "test:service_sync"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "engine-query",
       "package": "fabric-sdk-query",
       "inputs": [
@@ -3002,6 +3020,13 @@
   ],
   "profiles": [
     {
+      "id": "v2-service-domain",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-service-domain", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "v2-graph-refresh",
       "packages": ["fabric-cli"],
       "features": ["fabric-cli/v2-refresh"],
@@ -3106,6 +3131,7 @@
         "fabric-cli/repl",
         "fabric-cli/self-update",
         "fabric-cli/v2-discovery",
+        "fabric-cli/v2-service-domain",
         "fabric-cli/v2-cancel",
         "fabric-cli/v2-copy",
         "fabric-cli/v2-deploy",
@@ -3649,6 +3675,7 @@
         "fabric-identity-windows/certificate-store",
         "fabric-cli-update/fixture-harness",
         "fabric-cli/interactive",
+        "fabric-cli/v2-service-domain",
         "fabric-cli/certificate-store-pkcs11",
         "fabric-cli/certificate-store-macos",
         "fabric-identity/interactive",
