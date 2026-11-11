@@ -499,6 +499,34 @@ test('Discovery binary has an explicit cross-platform profile and combined cover
   }
 });
 
+test('Publish dispatcher changes select the real binary contract in the headless profile', () => {
+  const graph = JSON.parse(fs.readFileSync(
+    path.join(__dirname, '..', 'validation', 'impact-graph.json'), 'utf8'));
+  const component = graph.components.find(item => item.id === 'cli-environment-publish');
+  assert.ok(component);
+  const cli = pkg('fabric-cli', [], [
+    target('fab-cli-v2', 'bin', 'rust/clients/cli/app/src/v2_main.rs', ['headless']),
+    target('v2_environment_publish', 'test',
+      'rust/clients/cli/app/tests/v2_environment_publish.rs', ['headless']),
+  ], {default: [], headless: []});
+  cli.manifest_path = absolute('rust/clients/cli/app/Cargo.toml');
+  const sdk = pkg('fabric-sdk', [], [
+    target('environment_publish', 'test', 'rust/engine/sdk/tests/environment_publish.rs'),
+  ]);
+  const result = plan({
+    root: ROOT, metadata: metadata([cli, sdk]),
+    files: ['rust/clients/cli/app/src/v2_main.rs'],
+    graph: {schema: 1, components: [{...component, depends_on: [], checks: []}],
+      profiles: [{id: 'headless', packages: ['fabric-cli'],
+        features: ['fabric-cli/headless'], platforms: ['windows', 'linux', 'macos']}],
+      checks: []},
+  });
+  assert.equal(result.mode, 'affected');
+  const headless = result.profiles.find(item => item.id === 'headless');
+  assert.ok(headless.tests.some(item =>
+    item.package === 'fabric-cli' && item.target === 'test:v2_environment_publish'));
+});
+
 test('Weak dependency features do not activate an otherwise disabled optional dependency', () => {
   const input = fixture();
   const models = pkg('models', [], [target('special', 'test',
