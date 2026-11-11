@@ -208,6 +208,7 @@ pub fn command() -> Command {
                         .action(ArgAction::SetTrue),
                 ),
         );
+    // Run extends feature-owned artifact groups, so compose it after their registration.
     crate::tabular_export::register(crate::native_tabular::register(command))
 }
 
