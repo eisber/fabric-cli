@@ -104,7 +104,7 @@ See the [Unicode tests](tests/production_unicode/README.md) for validation
 commands and supported limits, and the
 [Unicode contract](../../../authoring-docs/unicode-production-contract.md) for provenance,
 licensing and compatibility decisions.
-# Bounded input adapters
+## Bounded input adapters
 
 `input::strict_json` extracts the existing ontology duplicate-key JSON decoder
 for reuse. `input::records` decodes explicit JSON/CSV/Parquet record files without

@@ -546,7 +546,11 @@ pub(crate) fn run_ml_endpoint(
             let result = finish_runtime(runtime, result);
             return match result {
                 Ok(command) => run_command(NativeCommand::MlEndpoint(&command, deadline), state),
-                Err(error) => write_error(error),
+                Err(error) => {
+                    let outcome = ml_endpoint::input_failure_outcome(&error);
+                    write_error(error)?;
+                    Ok(outcome)
+                }
             };
         }
     }
@@ -1174,12 +1178,17 @@ async fn execute_injected_delivery(
         NativeCommand::Execution(_, deadline) => Some(deadline),
         _ => None,
     };
+    let options = if let NativeCommand::MlEndpoint(ml, _) = command {
+        ml_endpoint::execution_options(ml)
+    } else {
+        fabric_sdk_http::ExecutionOptions::default()
+    };
     let connecting = connect_native(
         credential,
         client,
         identity_client,
         endpoint,
-        fabric_sdk_http::ExecutionOptions::default(),
+        options,
         deadline,
     );
     let (sdk, executor) = if let NativeCommand::MlEndpoint(_, deadline) = command {

@@ -77,6 +77,10 @@ Integer-to-floating conversions outside the exact range and lossy narrowing
 fail before POST. This conservative local contract is not universal model
 support. Raw `--body` remains the native escape hatch.
 
+Local file/stdin reads run on a bounded worker before identity selection. If
+cancelled or expired while an OS read may remain active, the host stops rather
+than returning to the REPL or consuming another queued command.
+
 CSV cells use explicit JSON typing: `0`, `false` and `null` are distinct.
 The string `a,b` occupies CSV text `"""a,b"""`; an empty string is `""""""`.
 An empty cell is ambiguous and rejected. Existing CSV *output* uses a different,
@@ -107,7 +111,7 @@ The original owner's `ExecutionFailed` with null HTTP status/operation ID cannot
 be retrospectively diagnosed from that envelope. The previous native ML path
 used a 30-second socket-read budget independently of the 240-second command
 deadline; a cold-start timeout is plausible, not proven for that invocation.
-Scoring now uses its explicit command timeout as the socket-read budget, still
+Scoring now uses its explicit command timeout for both HTTP execution and the socket-read budget, still
 bounded by the single absolute command deadline. Ordinary reads retain 30 seconds,
 connect/write budgets are unchanged, and POST is never retried.
 

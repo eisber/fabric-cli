@@ -59,6 +59,14 @@ fn actual_native_score_transport_budget_is_not_the_ordinary_thirty_second_read_b
         assert_eq!(options.read_timeout, Duration::from_secs(expected));
         assert_eq!(options.connect_timeout, Duration::from_secs(10));
         assert_eq!(options.write_timeout, Duration::from_secs(30));
+        assert_eq!(
+            execution_options(&command).timeout,
+            if command.is_score() {
+                command.timeout
+            } else {
+                Duration::from_secs(240)
+            }
+        );
     }
 }
 
@@ -122,11 +130,17 @@ fn accepted(location: &str) -> (StatusCode, Headers, Vec<u8>) {
 }
 
 fn parse(leaf: &[&str]) -> EndpointCommand {
+    let (options, record) = leaf.split_at(
+        leaf.iter()
+            .position(|value| *value == "--")
+            .unwrap_or(leaf.len()),
+    );
     let Invocation::MlEndpoint(command) = parse_args(
         ["fab-rs", "artifact", "ml-endpoint"]
             .into_iter()
-            .chain(leaf.iter().copied())
-            .chain(["--workspace-id", WORKSPACE, "--model-id", MODEL]),
+            .chain(options.iter().copied())
+            .chain(["--workspace-id", WORKSPACE, "--model-id", MODEL])
+            .chain(record.iter().copied()),
     )
     .unwrap() else {
         panic!("root ML endpoint dispatch required")
@@ -293,6 +307,7 @@ async fn score_transport_stream_and_post_accept_failures_have_safe_actions_and_n
         );
         assert!(!output.to_string().contains("private-input-or-token"));
         assert!(output["error"]["nextActions"].is_array());
+        println!("OFFLINE_ML_FAILURE {output}");
         match fault {
             Fault::Dispatch => {
                 assert!(output["error"]["httpStatus"].is_null());
@@ -605,6 +620,33 @@ async fn expired_preconnect_deadline_does_not_poll_credential_work() {
     )
     .await;
     assert_eq!(result.unwrap_err().0, "timed_out");
+}
+
+#[tokio::test]
+async fn interrupted_input_preparation_never_resumes_a_shell_with_a_pending_reader() {
+    for (deadline, signal) in [
+        (Instant::now() + Duration::from_secs(1), true),
+        (Instant::now() - Duration::from_millis(1), false),
+    ] {
+        let error = before_connect_with_signal(
+            std::future::pending::<Result<(), Failure>>(),
+            deadline,
+            async move {
+                if signal {
+                    Ok(())
+                } else {
+                    std::future::pending().await
+                }
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error.0, "cancelled" | "timed_out"));
+        assert!(matches!(
+            input_failure_outcome(&error),
+            CommandOutcome::Stop(_)
+        ));
+    }
 }
 
 #[tokio::test]

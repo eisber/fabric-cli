@@ -16,7 +16,7 @@ use fabric_sdk_workspaces::mutations::ResourceError;
 use serde_json::{Map, Value};
 use std::collections::HashSet;
 
-pub(super) const JSON_MESSAGE: &str = "Invalid ML JSON. Supply one UTF-8 native object without duplicate keys; inputs must be an array. In PowerShell, serialize hashtables with ConvertTo-Json -Depth 100 -Compress. PowerShell 7.3+ Standard and Windows PowerShell 5.1/Legacy transport quotes differently; do not apply Legacy escaping in Standard mode. Prefer --input FILE --input-format json for a schema-checked record array.";
+pub(super) const JSON_MESSAGE: &str = "Invalid or oversized ML JSON (1 MiB maximum). Supply one UTF-8 native object without duplicate keys; inputs must be an array. In PowerShell, serialize hashtables with ConvertTo-Json -Depth 100 -Compress. PowerShell 7.3+ Standard and Windows PowerShell 5.1/Legacy transport quotes differently; do not apply Legacy escaping in Standard mode. Prefer --input FILE --input-format json for a schema-checked record array.";
 pub(super) const BODY_MESSAGE: &str = "Invalid native ML score body. inputs must be an array; optional formatType is dataframe and orientation is split|values|record|index|table (record singular). Unknown fields and explicit null selectors are rejected.";
 pub(super) const CONFLICT_MESSAGE: &str = "Ambiguous ML scoring input. Choose exactly one of --body, --input FILE|- or trailing -- key=value. Representation flags cannot replace fields already present in --body. File/record conveniences support record or values orientation; use --body for other native representations.";
 
@@ -93,6 +93,24 @@ pub(super) fn error(message: &'static str) -> clap::Error {
 }
 
 pub(crate) fn diagnostic(error: &clap::Error) -> Option<&'static str> {
+    if let Some(ContextValue::String(argument)) = error.get(ContextKind::InvalidArg) {
+        if error.kind() == ErrorKind::ArgumentConflict
+            && matches!(
+                argument.as_str(),
+                "--body <body>" | "--input <input>" | "[record]..." | "record"
+            )
+        {
+            return Some(CONFLICT_MESSAGE);
+        }
+        if error.kind() == ErrorKind::InvalidValue
+            && matches!(
+                argument.as_str(),
+                "--orientation <orientation>" | "--format-type <format_type>"
+            )
+        {
+            return Some(BODY_MESSAGE);
+        }
+    }
     match error.get(ContextKind::Custom) {
         Some(ContextValue::String(value)) => [JSON_MESSAGE, BODY_MESSAGE, CONFLICT_MESSAGE]
             .into_iter()

@@ -36,9 +36,25 @@ pub(super) fn transport_options(
     options
 }
 
+pub(super) fn execution_options(command: &EndpointCommand) -> fabric_sdk_http::ExecutionOptions {
+    let mut options = fabric_sdk_http::ExecutionOptions::default();
+    if command.is_score() {
+        options.timeout = command.timeout;
+    }
+    options
+}
+
 pub(super) async fn before_connect<T>(
     work: impl Future<Output = Result<T, Failure>>,
     deadline: Instant,
+) -> Result<T, Failure> {
+    before_connect_with_signal(work, deadline, tokio::signal::ctrl_c()).await
+}
+
+async fn before_connect_with_signal<T>(
+    work: impl Future<Output = Result<T, Failure>>,
+    deadline: Instant,
+    signal: impl Future<Output = std::io::Result<()>>,
 ) -> Result<T, Failure> {
     if Instant::now() >= deadline {
         return Err(super::failure(
@@ -49,7 +65,7 @@ pub(super) async fn before_connect<T>(
     }
     tokio::select! {
         biased;
-        signal = tokio::signal::ctrl_c() => match signal {
+        signal = signal => match signal {
             Ok(()) => Err(super::failure("cancelled", "ML endpoint command cancelled before dispatch.", 2)),
             Err(_) => Err(super::failure("signal_failed", "The cancellation handler could not start.", 1)),
         },
@@ -57,6 +73,12 @@ pub(super) async fn before_connect<T>(
             Err(super::failure("timed_out", "ML endpoint deadline elapsed before dispatch.", 1)),
         result = work => result,
     }
+}
+
+pub(super) fn input_failure_outcome(error: &Failure) -> CommandOutcome {
+    // Dropping a blocking stdin/file read cannot cancel the OS call. Never
+    // resume a shell or queued command while that reader may still be active.
+    CommandOutcome::Stop(error.2)
 }
 
 pub(super) async fn dispatch(
@@ -105,7 +127,7 @@ pub(super) async fn dispatch(
         "target":command.diagnostic_target(),
         "apiHost":sdk.context().endpoint().base_url().host_str(),
         "cliVersion":env!("CARGO_PKG_VERSION"),
-        "persistentLog":"No persistent scoring log is created. Preserve this redacted stderr JSON for support correlation; it excludes model input and response payloads."
+        "persistentLog":"No persistent scoring log is created. Preserve redacted stderr JSON for support correlation. HTTP diagnostics do not capture request or response payloads; normal result/output-failure delivery retains its existing output policy."
     });
     let result = result.map_err(|mut error| {
         // A body-stream failure may have received headers without a complete
@@ -172,6 +194,11 @@ fn deliver_with_diagnostic(
                 }
                 _ => {}
             }
+            let uncertainty = if error.mutation_may_have_occurred {
+                "Do not repeat inference merely to gather logs: remote execution or charging may already have occurred."
+            } else {
+                "No mutating request was dispatched by this command. Correct local input/schema errors or inspect the reported read-only metadata failure before any separately intended inference."
+            };
             let next_actions = if let Some(id) = &error.operation_id {
                 json!([
                     "Do not repeat scoring to recover a missing result. Accepted work is not completed work; cancelled/expired local observation is not rollback.",
@@ -183,7 +210,7 @@ fn deliver_with_diagnostic(
                 ])
             } else {
                 json!([
-                    "Do not repeat inference merely to gather logs: remote execution or charging may already have occurred.",
+                    uncertainty,
                     "No operation ID was observed. Reconciliation by ID and recovery of this score result are unavailable from retained evidence; null HTTP status does not establish that the service never received the request.",
                     "Preserve this stderr JSON and its time, elapsed duration, target, binary/source build receipt and any actual request IDs. Ask authorized Fabric support to correlate service logs. No native request-history/log-download endpoint or persistent scoring log is available.",
                     "Control-plane follow-up is read-only: artifact ml-endpoint settings get or serving-version get --version NAME with the same workspace/model/host. Active status alone does not prove inference success."

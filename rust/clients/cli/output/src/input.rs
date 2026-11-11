@@ -40,7 +40,7 @@ pub enum InputError {
     #[error("Input must be strict UTF-8 JSON without duplicate keys or trailing content.")]
     Json,
     /// A record array with unique nonempty column names is required.
-    #[error("Input must be an array of records with unique, nonempty column names.")]
+    #[error("Input must be a nonempty array of records with unique, nonempty column names.")]
     Records,
     /// CSV cells require explicit JSON scalars, including quoted strings/null.
     #[error(
