@@ -980,6 +980,36 @@ async fn stream_io_errors_are_sanitized_and_not_retried() {
 }
 
 #[tokio::test]
+async fn opt_in_trace_retains_partial_headers_and_clears_previous_exchange_evidence() {
+    let mut headers = Headers::new();
+    headers.insert("request-id", OPERATION);
+    headers.insert("authorization", "private-header");
+    let broken = AsyncRawResponse::new(
+        StatusCode::Accepted,
+        headers,
+        Box::pin(stream::iter([Err(azure_core::Error::with_message(
+            ErrorKind::Io,
+            "private-body",
+        ))])),
+    );
+    let client = ScriptedClient::new([response(200, "", &[("x-ms-request-id", ITEM)]), broken]);
+    let trace = ExecutionTrace::default();
+    let exec = executor(client.clone(), Arc::new(TestTimer::default())).with_trace(trace.clone());
+    get(&exec, 5).await.unwrap();
+    assert_eq!(trace.snapshot().request_ids["x-ms-request-id"], ITEM);
+    assert_eq!(get(&exec, 5).await.unwrap_err(), ExecutionError::Transport);
+    let evidence = trace.snapshot();
+    assert_eq!(evidence.requests, 2);
+    assert_eq!(evidence.status, Some(202));
+    assert_eq!(evidence.phase, "response_body");
+    assert_eq!(evidence.transport_kind, Some("io"));
+    assert_eq!(evidence.request_ids.len(), 1);
+    assert_eq!(evidence.request_ids["request-id"], OPERATION);
+    assert!(!format!("{evidence:?}").contains("private"));
+    assert_eq!(client.requests.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
 async fn deadline_covers_response_stream_and_drops_it_without_replay() {
     let dropped = Arc::new(AtomicBool::new(false));
     let raw = AsyncRawResponse::new(
@@ -1005,6 +1035,123 @@ async fn deadline_covers_response_stream_and_drops_it_without_replay() {
     assert_eq!(future.await.unwrap_err(), ExecutionError::TimedOut);
     assert!(dropped.load(Ordering::SeqCst));
     assert_eq!(client.requests.lock().unwrap().len(), 1);
+}
+
+#[derive(Default)]
+struct TestProgress {
+    events: Mutex<Vec<(u16, Vec<u8>, bool)>>,
+    omitted: AtomicBool,
+}
+
+impl ResponseProgress for TestProgress {
+    fn record(&self, response: &WorkspaceResponse, complete: bool) -> Result<(), ExecutionError> {
+        self.events
+            .lock()
+            .unwrap()
+            .push((response.status, response.body.clone(), complete));
+        Ok(())
+    }
+
+    fn body_omitted(&self, _: &WorkspaceResponse) -> Result<(), ExecutionError> {
+        self.omitted.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn scoped_deadline_preserves_trace_and_response_progress_without_post_replay() {
+    for (body, limit, expected) in [
+        ("ok", 2, Ok(())),
+        ("oversized", 2, Err(ExecutionError::ResponseLimit)),
+    ] {
+        let client = ScriptedClient::new([response(202, body, &[("request-id", OPERATION)])]);
+        let timer = Arc::new(TestTimer::default());
+        let trace = ExecutionTrace::default();
+        let exec = executor(client.clone(), timer.clone())
+            .with_trace(trace.clone())
+            .with_timeout(Duration::from_secs(7))
+            .unwrap();
+        let progress = TestProgress::default();
+        let result = exec
+            .execute_bound_with_progress(
+                PublicOrigin::Fabric,
+                Method::Post,
+                &Url::parse("https://api.fabric.microsoft.com/v1/workspaces/ws/items").unwrap(),
+                &token(),
+                &[],
+                &[],
+                NonZeroUsize::new(limit).unwrap(),
+                Some(&progress),
+            )
+            .await
+            .map(|_| ());
+        assert_eq!(result, expected);
+        assert_eq!(*timer.waits.lock().unwrap(), [Duration::from_secs(7)]);
+        assert_eq!(client.requests.lock().unwrap().len(), 1);
+        let evidence = trace.snapshot();
+        assert_eq!(evidence.requests, 1);
+        assert_eq!(evidence.status, Some(202));
+        assert_eq!(evidence.request_ids["request-id"], OPERATION);
+        assert_eq!(evidence.failure, expected.err());
+        let events = progress.events.lock().unwrap();
+        assert_eq!(events[0], (202, Vec::new(), false));
+        if expected.is_ok() {
+            assert_eq!(events.last().unwrap(), &(202, b"ok".to_vec(), true));
+            assert_eq!(evidence.phase, "complete");
+        } else {
+            assert!(events.iter().all(|(_, _, complete)| !complete));
+            assert_eq!(evidence.phase, "response_body");
+        }
+        assert_eq!(progress.omitted.load(Ordering::SeqCst), expected.is_err());
+    }
+}
+
+#[tokio::test]
+async fn scoped_deadline_preserves_partial_progress_and_trace_on_suspended_body() {
+    let dropped = Arc::new(AtomicBool::new(false));
+    let raw = AsyncRawResponse::new(
+        StatusCode::Accepted,
+        Headers::new(),
+        Box::pin(CountingBody {
+            polls: Arc::new(AtomicUsize::new(0)),
+            dropped: dropped.clone(),
+            pending: true,
+        }),
+    );
+    let client = ScriptedClient::new([raw]);
+    let timer = Arc::new(TestTimer::default());
+    let trace = ExecutionTrace::default();
+    let exec = executor(client.clone(), timer.clone())
+        .with_trace(trace.clone())
+        .with_timeout(Duration::from_secs(7))
+        .unwrap();
+    let progress = TestProgress::default();
+    let url = Url::parse("https://api.fabric.microsoft.com/v1/workspaces/ws/items").unwrap();
+    let token = token();
+    let mut future = Box::pin(exec.execute_bound_with_progress(
+        PublicOrigin::Fabric,
+        Method::Post,
+        &url,
+        &token,
+        &[],
+        &[],
+        NonZeroUsize::new(2).unwrap(),
+        Some(&progress),
+    ));
+    assert!(
+        future
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    timer.expired.store(true, Ordering::SeqCst);
+    assert_eq!(future.await.unwrap_err(), ExecutionError::TimedOut);
+    assert!(dropped.load(Ordering::SeqCst));
+    assert_eq!(client.requests.lock().unwrap().len(), 1);
+    assert_eq!(*progress.events.lock().unwrap(), [(202, Vec::new(), false)]);
+    assert!(!progress.omitted.load(Ordering::SeqCst));
+    assert_eq!(trace.snapshot().status, Some(202));
+    assert_eq!(trace.snapshot().failure, Some(ExecutionError::TimedOut));
 }
 
 struct DeadlineOnSecondPoll;

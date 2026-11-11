@@ -69,6 +69,8 @@ pub struct ReadCommand {
 /// A parse result with help/version separated from service execution.
 #[derive(Clone, Debug)]
 pub enum Invocation {
+    /// Native serving operations on an exact owning MLModel item.
+    MlEndpoint(crate::ml_endpoint::EndpointCommand),
     /// Real run/query/execute frontend with an explicitly injected backend boundary.
     NativeTabular(crate::native_tabular::NativeCommand),
     /// Explicit tabular file delivery around one declared production operation.
@@ -161,7 +163,7 @@ pub fn command() -> Command {
         .subcommands(fabric_cli_transfer::transfer_subcommands());
     let command = delete::register(command)
         .subcommand(crate::execute::command())
-        .subcommands(semantic_model_commands())
+        .subcommands(artifact_commands())
         .subcommand(fabric_cli_tables::command())
         .subcommand(jobs::register())
         .subcommand(
@@ -213,13 +215,18 @@ pub fn command() -> Command {
 }
 
 #[cfg(feature = "semantic-model")]
-fn semantic_model_commands() -> Vec<Command> {
-    vec![fabric_cli_semantic_model::command()]
+fn artifact_commands() -> Vec<Command> {
+    vec![fabric_cli_semantic_model::command().subcommand(crate::ml_endpoint::command())]
 }
 
 #[cfg(not(feature = "semantic-model"))]
-fn semantic_model_commands() -> Vec<Command> {
-    Vec::new()
+fn artifact_commands() -> Vec<Command> {
+    vec![
+        Command::new("artifact")
+            .about("Artifact capabilities")
+            .arg_required_else_help(true)
+            .subcommand(crate::ml_endpoint::command()),
+    ]
 }
 
 /// Parse arguments including argv[0], without printing or exiting.
@@ -444,6 +451,11 @@ fn root_argument(args: &[OsString]) -> Option<usize> {
 }
 
 fn family_invocation(matches: &clap::ArgMatches) -> Result<Invocation, clap::Error> {
+    if matches.subcommand().is_some_and(|(name, artifact)| {
+        name == "artifact" && artifact.subcommand_name() == Some("ml-endpoint")
+    }) {
+        return crate::ml_endpoint::from_matches(matches).map(Invocation::MlEndpoint);
+    }
     #[cfg(feature = "semantic-model")]
     if matches.subcommand_name() == Some("artifact") {
         return fabric_cli_semantic_model::AnalyzeCommand::from_matches(matches)
