@@ -416,38 +416,38 @@ async fn admin_denial_ambiguity_continuation_bounds_and_identity_changes_never_p
         );
         assert_eq!(fixture.posts(), 0);
     }
+}
 
-    #[tokio::test]
-    async fn exact_row_and_byte_limits_are_accepted_without_traversal() {
-        let mut rows: Vec<_> = (0..999)
-            .map(|id| {
-                json!({
-                    "id":format!("00000000-0000-0000-0000-{id:012x}"),
-                    "displayName":format!("Other{id}")
-                })
+#[tokio::test]
+async fn exact_row_and_byte_limits_are_accepted_without_traversal() {
+    let mut rows: Vec<_> = (0..999)
+        .map(|id| {
+            json!({
+                "id":format!("00000000-0000-0000-0000-{id:012x}"),
+                "displayName":format!("Other{id}")
             })
-            .collect();
-        rows.push(metadata());
-        let mut bytes = serde_json::to_vec(&json!({"domains":rows})).unwrap();
-        bytes.resize(1024 * 1024, b' ');
-        let fixture = Fixture::new(
-            vec![
-                Reply::Response(200, bytes),
-                response(metadata()),
-                Reply::Response(200, vec![]),
-            ],
-            "api.fabric.microsoft.com",
-        );
-        let prepared = fixture.prepare().await;
-        let mut policy = Policy::new(&prepared, true);
-        let report = prepared
-            .execute(&fixture.context, &mut policy, pending())
-            .await
-            .unwrap();
-        assert_eq!(command::exit_code(&report), 0);
-        assert_eq!(fixture.posts(), 1);
-        assert_eq!(fixture.wire.requests.lock().unwrap().len(), 3);
-    }
+        })
+        .collect();
+    rows.push(metadata());
+    let mut bytes = serde_json::to_vec(&json!({"domains":rows})).unwrap();
+    bytes.resize(1024 * 1024, b' ');
+    let fixture = Fixture::new(
+        vec![
+            Reply::Response(200, bytes),
+            response(metadata()),
+            Reply::Response(200, vec![]),
+        ],
+        "api.fabric.microsoft.com",
+    );
+    let prepared = fixture.prepare().await;
+    let mut policy = Policy::new(&prepared, true);
+    let report = prepared
+        .execute(&fixture.context, &mut policy, pending())
+        .await
+        .unwrap();
+    assert_eq!(command::exit_code(&report), 0);
+    assert_eq!(fixture.posts(), 1);
+    assert_eq!(fixture.wire.requests.lock().unwrap().len(), 3);
 }
 
 #[tokio::test]
