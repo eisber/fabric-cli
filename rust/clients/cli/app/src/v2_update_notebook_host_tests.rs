@@ -293,9 +293,10 @@ struct PendingPatch(Arc<Mutex<usize>>);
 impl OperationExecutor for PendingPatch {
     fn execute<'a>(
         &'a self,
-        _: OperationRequest<'a>,
+        request: OperationRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<OperationResponse, OperationExecutionError>> + Send + 'a>>
     {
+        assert_eq!(format!("{:?}", request.method()), "Patch");
         *self.0.lock().unwrap() += 1;
         Box::pin(pending())
     }

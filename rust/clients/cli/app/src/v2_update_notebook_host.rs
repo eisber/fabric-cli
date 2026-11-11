@@ -53,7 +53,8 @@ pub(super) fn run(command: UpdateCommand) -> Result<(), Failure> {
                 _ = tokio::signal::ctrl_c() => (),
             }
         }.shared();
-        tokio::pin!(interrupted);
+        let preparation_interrupted = interrupted.clone();
+        tokio::pin!(preparation_interrupted);
         let preparation = async {
             let prepared = tokio::task::spawn_blocking(move || {
                 let cwd = std::env::current_dir().map_err(|_| {
@@ -116,7 +117,7 @@ pub(super) fn run(command: UpdateCommand) -> Result<(), Failure> {
         };
         let (bound, executor, mut approval) = tokio::select! {
             biased;
-            _ = &mut interrupted => return Err(failed("Interrupted", "Update stopped before dispatch; nothing was submitted.", 1)),
+            _ = &mut preparation_interrupted => return Err(failed("Interrupted", "Update stopped before dispatch; nothing was submitted.", 1)),
             result = preparation => result?,
         };
         execute_and_publish(bound, executor, &mut approval, interrupted, deadline, io::stdout()).await
@@ -133,17 +134,16 @@ async fn execute_and_publish<E: OperationExecutor>(
     deadline: tokio::time::Instant,
     mut stdout: impl Write + Send + 'static,
 ) -> Result<(), Failure> {
-    // Shared retains completion across SDK observation and local publication.
+    // Separate Shared handles retain completion across SDK and publication.
     let interrupted = interrupted.shared();
-    tokio::pin!(interrupted);
     let delivery = bound
-        .execute_bound(executor, approval, &mut interrupted)
+        .execute_bound(executor, approval, interrupted.clone())
         .await
         .map_err(command_failure)?;
     let evidence = receipt_value(&delivery)?;
     tokio::select! {
         biased;
-        _ = &mut interrupted => Err((
+        _ = interrupted => Err((
             "InterruptedAfterDispatch",
             "Update observation stopped; local delivery may be incomplete. Inspect the retained receipt; do not replay.".into(),
             evidence,

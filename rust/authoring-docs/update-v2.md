@@ -13,8 +13,8 @@ fab-cli-v2 update /<workspace-guid>.Workspace/<item-guid>.Notebook --input metad
 fab-cli-v2 artifact lakehouse update /workspaces/<workspace-guid>/lakehouses/<item-guid> --input - --mode patch --plan
 ```
 
-The opt-in `headless`/`native-host` experimental `fab-cli-v2` head executes
-Notebook metadata updates through the existing explicit native session. Both
+The opt-in `headless` experimental `fab-cli-v2` head executes Notebook metadata
+updates through the existing explicit `native-host` session. Both
 `artifact notebook update` and root `update` with a Notebook target use this host.
 It requires terminal stderr and an attached controlling console for explicit
 default-no approval of the exact context-bound request, including body, target,
