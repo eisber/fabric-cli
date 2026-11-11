@@ -524,6 +524,50 @@ fn central_frontdoor_preserves_dataflow_execute_and_unique_roots() {
     assert!(matches!(command.operation, Operation::Execute(_)));
 }
 
+#[cfg(all(feature = "v2-run", feature = "semantic-model"))]
+#[test]
+fn combined_artifact_facades_share_one_root_and_preserve_both_routes() {
+    let command = fabric_cli::parser::command();
+    command.clone().debug_assert();
+    assert_eq!(
+        command
+            .get_subcommands()
+            .filter(|child| child.get_name() == "artifact")
+            .count(),
+        1,
+    );
+    let artifact = command.find_subcommand("artifact").unwrap();
+    for (facade, verb) in [("notebook", "run"), ("semantic-model", "analyze")] {
+        assert!(
+            artifact
+                .find_subcommand(facade)
+                .unwrap()
+                .find_subcommand(verb)
+                .is_some()
+        );
+    }
+    let target = "/11111111-1111-1111-1111-111111111111.Workspace/22222222-2222-2222-2222-222222222222.Notebook";
+    assert!(matches!(
+        fabric_cli::parser::parse_args(["fab-rs", "artifact", "notebook", "run", target]).unwrap(),
+        Invocation::NativeTabular(command) if matches!(command.operation, Operation::Run(_)),
+    ));
+    let Invocation::SemanticModel(model) = fabric_cli::parser::parse_args([
+        "fab-rs",
+        "artifact",
+        "semantic-model",
+        "analyze",
+        "--input",
+        "not-opened-by-parser.bim",
+    ])
+    .unwrap() else {
+        panic!("semantic-model must retain its existing parser")
+    };
+    assert_eq!(
+        model.input.as_deref(),
+        Some(Path::new("not-opened-by-parser.bim"))
+    );
+}
+
 #[test]
 fn prepared_read_only_approval_and_capability_rejections_never_execute() {
     for (_, leaf) in ROOTS {

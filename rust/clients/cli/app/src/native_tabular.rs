@@ -558,15 +558,20 @@ where
 pub(crate) fn register(root: Command) -> Command {
     let root = register_roots(root, false, cfg!(feature = "v2-run"));
     #[cfg(feature = "v2-run")]
-    let root = root.subcommand(
-        Command::new("artifact")
+    let root = {
+        let notebook = Command::new("notebook")
             .subcommand_required(true)
-            .subcommand(
-                Command::new("notebook")
+            .subcommand(installed_run_arguments());
+        if root.find_subcommand("artifact").is_some() {
+            root.mut_subcommand("artifact", |artifact| artifact.subcommand(notebook))
+        } else {
+            root.subcommand(
+                Command::new("artifact")
                     .subcommand_required(true)
-                    .subcommand(installed_run_arguments()),
-            ),
-    );
+                    .subcommand(notebook),
+            )
+        }
+    };
     root
 }
 

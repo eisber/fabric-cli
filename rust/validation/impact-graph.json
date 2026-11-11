@@ -3285,6 +3285,13 @@
       "checks": ["headless"]
     },
     {
+      "id": "v2-run-semantic-model",
+      "packages": ["fabric-cli", "fabric-cli-semantic-model"],
+      "features": ["fabric-cli/v2-run", "fabric-cli/semantic-model", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["headless", "dependency-graph"]
+    },
+    {
       "id": "v2-cancel",
       "packages": [
         "fabric-cli"

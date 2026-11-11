@@ -15,9 +15,9 @@ fn default_binary_does_not_acquire_an_artifact_or_managed_runtime_surface() {
     let help = binary().arg("--help").output().unwrap();
     assert!(help.status.success());
     let text = String::from_utf8(help.stdout).unwrap();
-    #[cfg(not(feature = "semantic-model"))]
+    #[cfg(not(any(feature = "semantic-model", feature = "v2-run")))]
     assert!(!text.contains("artifact"));
-    #[cfg(feature = "semantic-model")]
+    #[cfg(any(feature = "semantic-model", feature = "v2-run"))]
     assert!(text.contains("artifact"));
 }
 

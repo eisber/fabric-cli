@@ -79,6 +79,12 @@ The existing impact-validation graph has Run-only `v2-run`, `v2-run-native` and
 standing in for this coverage. These registrations do not certify cross-platform
 or hosted CI success; actual profile receipts are still required.
 
+The `v2-run-semantic-model` profile additionally exercises their shared artifact
+namespace. When both features are installed, Notebook Run and semantic-model
+analysis extend one `artifact` root and retain their distinct typed dispatch.
+Execution-contract fixtures use scoped temporary directories, not files in the
+source checkout, so failed assertions do not dirty the source inventory.
+
 Only absolute ID-qualified whole Notebooks are bound. Names, cells, borrowed
 Livy sessions, UDFs, Beta exit verdicts and high-concurrency modes are not
 implemented by this host. Input is at most 1 MiB of strict UTF-8 JSON with
