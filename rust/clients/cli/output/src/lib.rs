@@ -29,6 +29,7 @@
 //! ```
 
 mod encoding;
+pub mod input;
 pub mod production_unicode;
 pub mod tabular;
 pub mod text;

@@ -11,7 +11,7 @@ use super::{CommandOutcome, Failure, get};
 use fabric_cli::ml_endpoint::EndpointCommand;
 use fabric_cli_output::{OutputStream, RenderPlan, text::TextPlan};
 use fabric_sdk::Client;
-use fabric_sdk_http::HttpExecutor;
+use fabric_sdk_http::{ExecutionTrace, HttpExecutor};
 use fabric_sdk_operations::{
     OperationError, OperationErrorKind, OperationLimits, OperationSession,
 };
@@ -53,6 +53,18 @@ pub(super) async fn dispatch(
     executor: &HttpExecutor,
     deadline: Instant,
 ) -> Result<get::Delivery, Failure> {
+    let started = Instant::now();
+    let started_utc = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| {
+            super::failure(
+                "clock_failed",
+                "The system clock cannot provide diagnostic time; no request was submitted.",
+                1,
+            )
+        })?
+        .as_secs();
+    let trace = ExecutionTrace::default();
     let interrupted = AtomicU8::new(0);
     let cancelled = async {
         let reason = tokio::select! {
@@ -64,19 +76,60 @@ pub(super) async fn dispatch(
     };
     let mut operations = OperationSession::with_context(
         sdk.context(),
-        executor.clone(),
+        executor.clone().with_trace(trace.clone()),
         OperationLimits::default(),
         cancelled,
     );
     let result = command.execute(&mut operations).await;
     let evidence = operations.evidence(OperationErrorKind::InvalidResponse);
-    deliver(result, evidence, &interrupted)
+    let snapshot = trace.snapshot();
+    let diagnostic = json!({
+        "startedUnixSeconds":started_utc, "elapsedMilliseconds":started.elapsed().as_millis(),
+        "commandTimeoutSeconds":command.timeout.as_secs(),
+        "phase":snapshot.phase,"requestCount":snapshot.requests,
+        "method":snapshot.method,"lastHttpStatus":snapshot.status,
+        "requestIds":snapshot.request_ids,"transportKind":snapshot.transport_kind,
+        "httpExecutionFailure":snapshot.failure.map(|failure| format!("{failure:?}")),
+        "target":command.diagnostic_target(),
+        "apiHost":sdk.context().endpoint().base_url().host_str(),
+        "cliVersion":env!("CARGO_PKG_VERSION"),
+        "persistentLog":"No persistent scoring log is created. Preserve this redacted stderr JSON for support correlation; it excludes model input and response payloads."
+    });
+    let result = result.map_err(|mut error| {
+        // A body-stream failure may have received headers without a complete
+        // response. Never replace the actual failing exchange with earlier GETs.
+        if error.status.is_none() && snapshot.failure.is_some() {
+            error.status = snapshot.status;
+        }
+        if error.operation_id.is_none() && snapshot.failure.is_some() {
+            error.operation_id = snapshot.operation_id;
+        }
+        error
+    });
+    deliver_with_diagnostic(
+        result,
+        evidence,
+        &interrupted,
+        Some(diagnostic),
+        command.is_score(),
+    )
 }
 
+#[cfg(test)]
 fn deliver(
     result: Result<Value, ResourceError>,
     evidence: OperationError,
     interrupted: &AtomicU8,
+) -> Result<get::Delivery, Failure> {
+    deliver_with_diagnostic(result, evidence, interrupted, None, false)
+}
+
+fn deliver_with_diagnostic(
+    result: Result<Value, ResourceError>,
+    evidence: OperationError,
+    interrupted: &AtomicU8,
+    diagnostic: Option<Value>,
+    score: bool,
 ) -> Result<get::Delivery, Failure> {
     let (value, exit, stream) = match result {
         Ok(mut value) => {
@@ -106,12 +159,34 @@ fn deliver(
                 }
                 _ => {}
             }
+            let next_actions = if let Some(id) = &error.operation_id {
+                json!([
+                    "Do not repeat scoring to recover a missing result. Accepted work is not completed work; cancelled/expired local observation is not rollback.",
+                    {"action":"readOperation","method":"GET","path":format!("/v1/operations/{id}"),
+                     "instruction":"Use the existing same-host authenticated API reader to inspect this exact operation. Retrieve its result only after Succeeded; do not score again."},
+                    "Preserve this stderr JSON and its UTC time, elapsed duration, target and actual request/operation IDs for authorized Fabric support/service-log correlation. Do not attach credentials, model inputs or predictions."
+                ])
+            } else {
+                json!([
+                    "Do not repeat inference merely to gather logs: remote execution or charging may already have occurred.",
+                    "No operation ID was observed. Reconciliation by ID and recovery of this score result are unavailable from retained evidence; null HTTP status does not establish that the service never received the request.",
+                    "Preserve this stderr JSON and its time, elapsed duration, target, binary/source build receipt and any actual request IDs. Ask authorized Fabric support to correlate service logs. No native request-history/log-download endpoint or persistent scoring log is available.",
+                    "Control-plane follow-up is read-only: artifact ml-endpoint settings get or serving-version get --version NAME with the same workspace/model/host. Active status alone does not prove inference success."
+                ])
+            };
+            let service_error = if score {
+                safe_service_error(error.raw_service_error.as_deref())
+            } else {
+                error.raw_service_error.map(|value| *value)
+            };
             (
                 json!({"error": {
                     "code": error.code, "message": error.message,
                     "httpStatus": error.status, "operationId": error.operation_id,
                     "mutationMayHaveOccurred": error.mutation_may_have_occurred,
-                    "serviceError": error.raw_service_error
+                    "serviceError": service_error,
+                    "diagnostics": diagnostic,
+                    "nextActions": next_actions
                 }}),
                 1,
                 OutputStream::Stderr,
@@ -135,6 +210,26 @@ fn deliver(
         _ => CommandOutcome::Returned(exit),
     };
     Ok(get::Delivery::plan(plan, outcome))
+}
+
+fn safe_service_error(value: Option<&Value>) -> Option<Value> {
+    let value = value?;
+    let mut safe = json!({"messageOmitted":"Service text/parameters may echo model inputs or secrets and are not printed."});
+    for field in ["errorCode", "requestId"] {
+        if let Some(text) = value.get(field).and_then(Value::as_str).filter(|text| {
+            !text.is_empty()
+                && text.len() <= 128
+                && text
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+        }) {
+            safe[field] = json!(text);
+        }
+    }
+    if let Some(retriable) = value.get("isRetriable").and_then(Value::as_bool) {
+        safe["isRetriable"] = json!(retriable);
+    }
+    Some(safe)
 }
 
 pub(super) async fn publish(

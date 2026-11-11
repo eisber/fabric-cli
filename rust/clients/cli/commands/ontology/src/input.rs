@@ -3,11 +3,7 @@
 
 //! Bounded strict JSON decoding before a released typed SDK validates the body.
 
-use serde::{
-    Deserialize, Deserializer,
-    de::{self, MapAccess, SeqAccess, Visitor},
-};
-use serde_json::{Map, Number, Value};
+use serde_json::Value;
 use std::{fmt, num::NonZeroUsize};
 
 /// Local input decoding failure; source content never appears in diagnostics.
@@ -68,80 +64,10 @@ pub fn decode_json_input(
     if text.trim().is_empty() {
         return Err(InputError::Empty);
     }
-    let mut decoder = serde_json::Deserializer::from_str(text);
-    let value = StrictValue::deserialize(&mut decoder)
-        .map_err(|_| InputError::InvalidJson)?
-        .0;
-    decoder.end().map_err(|_| InputError::InvalidJson)?;
+    let value = fabric_cli_output::input::strict_json_bounded(bytes, maximum_bytes.get())
+        .map_err(|_| InputError::InvalidJson)?;
     if !value.is_object() {
         return Err(InputError::InvalidJson);
     }
     Ok(value)
-}
-
-struct StrictValue(Value);
-
-impl<'de> Deserialize<'de> for StrictValue {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_any(StrictVisitor)
-    }
-}
-
-struct StrictVisitor;
-
-impl<'de> Visitor<'de> for StrictVisitor {
-    type Value = StrictValue;
-
-    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("JSON without duplicate keys")
-    }
-
-    fn visit_bool<E: de::Error>(self, value: bool) -> Result<Self::Value, E> {
-        Ok(StrictValue(Value::Bool(value)))
-    }
-
-    fn visit_i64<E: de::Error>(self, value: i64) -> Result<Self::Value, E> {
-        Ok(StrictValue(Value::Number(value.into())))
-    }
-
-    fn visit_u64<E: de::Error>(self, value: u64) -> Result<Self::Value, E> {
-        Ok(StrictValue(Value::Number(value.into())))
-    }
-
-    fn visit_f64<E: de::Error>(self, value: f64) -> Result<Self::Value, E> {
-        Number::from_f64(value)
-            .map(|number| StrictValue(Value::Number(number)))
-            .ok_or_else(|| E::custom("nonfinite JSON number"))
-    }
-
-    fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
-        Ok(StrictValue(Value::String(value.into())))
-    }
-
-    fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
-        Ok(StrictValue(Value::String(value)))
-    }
-
-    fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
-        Ok(StrictValue(Value::Null))
-    }
-
-    fn visit_seq<A: SeqAccess<'de>>(self, mut sequence: A) -> Result<Self::Value, A::Error> {
-        let mut values = Vec::new();
-        while let Some(value) = sequence.next_element::<StrictValue>()? {
-            values.push(value.0);
-        }
-        Ok(StrictValue(Value::Array(values)))
-    }
-
-    fn visit_map<A: MapAccess<'de>>(self, mut object: A) -> Result<Self::Value, A::Error> {
-        let mut values = Map::new();
-        while let Some(key) = object.next_key::<String>()? {
-            if values.contains_key(&key) {
-                return Err(de::Error::custom("duplicate JSON key"));
-            }
-            values.insert(key, object.next_value::<StrictValue>()?.0);
-        }
-        Ok(StrictValue(Value::Object(values)))
-    }
 }

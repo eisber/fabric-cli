@@ -6,12 +6,15 @@
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command, error::ErrorKind};
 use fabric_sdk::items::ml_models::{
     MlModelIdentity, MlModelRequest, MlModelRequests, MlModelResultKind, MlModelTarget,
-    ScoreDataRequest, ScoreOutcome, UpdateEndpointRequest, UpdateEndpointVersionRequest,
+    ScoreOutcome, UpdateEndpointRequest, UpdateEndpointVersionRequest,
 };
 use fabric_sdk_workspaces::mutations::{ResourceError, ResourceOperations, ResourceOutcome};
 use serde_json::{Value, json};
 use std::time::Duration;
 
+#[path = "ml_endpoint_input.rs"]
+mod input;
+pub(crate) use input::diagnostic as input_diagnostic;
 const MAX_BODY_BYTES: usize = 1024 * 1024;
 const MAX_SELECTOR_BYTES: usize = 4096;
 
@@ -21,6 +24,7 @@ pub struct EndpointCommand {
     target: MlModelTarget,
     request: MlModelRequest,
     default_version: bool,
+    score_input: Option<input::Input>,
     /// Overall native command deadline, including authentication and observation.
     pub timeout: Duration,
 }
@@ -71,7 +75,7 @@ pub fn command() -> Command {
         .subcommand(waiting(mutation(target(
             Command::new("deactivate-all").about("Explicitly deactivate ALL serving versions"),
         ))))
-        .subcommand(waiting(body(mutation(version(
+        .subcommand(waiting(input::command(mutation(version(
             target(Command::new("score").about("Execute billable default or exact-version scoring")),
             true,
         )))))
@@ -192,11 +196,13 @@ pub fn from_matches(matches: &ArgMatches) -> Result<EndpointCommand, clap::Error
         if body.len() > MAX_BODY_BYTES {
             return Err(invalid());
         }
-        serde_json::from_str(body).map_err(|_| invalid())
+        fabric_cli_output::input::strict_json(body.as_bytes())
+            .map_err(|_| input::error(input::JSON_MESSAGE))
     };
     if version.is_some_and(|version| version.len() > MAX_SELECTOR_BYTES) {
         return Err(invalid());
     }
+    let mut score_input = None;
     let request = match (group, action) {
         ("settings", "get") => requests.get_endpoint(&target),
         ("settings", "patch") => {
@@ -233,12 +239,19 @@ pub fn from_matches(matches: &ArgMatches) -> Result<EndpointCommand, clap::Error
         }
         ("deactivate-all", _) => requests.deactivate_all(&target, wait),
         ("score", _) => {
-            let payload: ScoreDataRequest =
-                serde_json::from_value(payload()?).map_err(|_| invalid())?;
-            if is_default {
-                requests.score_default(&target, &payload, wait)
+            if let Some(payload) = input::raw(values)? {
+                if is_default {
+                    requests.score_default(&target, &payload, wait)
+                } else {
+                    requests.score_version(&target, version.ok_or_else(invalid)?, &payload, wait)
+                }
             } else {
-                requests.score_version(&target, version.ok_or_else(invalid)?, &payload, wait)
+                score_input = Some(input::convenience(values, version, wait)?);
+                if is_default {
+                    requests.get_endpoint(&target)
+                } else {
+                    requests.get_version(&target, version.ok_or_else(invalid)?)
+                }
             }
         }
         _ => return Err(invalid()),
@@ -248,11 +261,38 @@ pub fn from_matches(matches: &ArgMatches) -> Result<EndpointCommand, clap::Error
         target,
         request,
         default_version: group == "serving-version" && action == "get" && is_default,
+        score_input,
         timeout: Duration::from_secs(*values.get_one::<u64>("timeout").ok_or_else(invalid)?),
     })
 }
 
 impl EndpointCommand {
+    /// Local input path requiring one bounded read, before identity or dispatch.
+    pub fn input_path(&self) -> Option<&str> {
+        self.score_input.as_ref().and_then(input::Input::path)
+    }
+
+    /// Attach decoded bounded input without performing filesystem or service I/O.
+    ///
+    /// # Errors
+    /// Rejects malformed/unsupported data files before any inference.
+    pub fn prepare_input(&mut self, bytes: &[u8]) -> Result<(), ResourceError> {
+        if let Some(input) = &mut self.score_input {
+            input.prepare(bytes)?;
+        }
+        Ok(())
+    }
+
+    /// Whether this command can submit billable inference.
+    pub fn is_score(&self) -> bool {
+        self.score_input.is_some() || self.request.result_kind() == MlModelResultKind::Score
+    }
+
+    /// Safe target identifiers for a caller-owned diagnostic receipt.
+    pub fn diagnostic_target(&self) -> Value {
+        json!({"workspaceId":self.target.workspace_id(),"modelId":self.target.item_id()})
+    }
+
     /// Execute on the caller's existing bounded operation policy, without retries.
     ///
     /// Default-version GET first reads endpoint settings, then reads the exact
@@ -279,6 +319,9 @@ impl EndpointCommand {
         &self,
         executor: &mut dyn ResourceOperations,
     ) -> Result<Value, ResourceError> {
+        if let Some(input) = &self.score_input {
+            return self.execute_score_input(input, executor).await;
+        }
         let outcome = self.request.execute(executor).await?;
         if self.default_version {
             let settings = completed_data(&outcome)?;
@@ -345,6 +388,66 @@ impl EndpointCommand {
                     MlModelResultKind::Item => return Err(invalid_response(Some(status))),
                 }
                 Ok(json!({"status": "completed", "httpStatus": status, "data": data}))
+            }
+        }
+    }
+
+    async fn execute_score_input(
+        &self,
+        input: &input::Input,
+        executor: &mut dyn ResourceOperations,
+    ) -> Result<Value, ResourceError> {
+        if self.input_path().is_some() {
+            return Err(input::local_error(
+                "ScoreInputNotPrepared",
+                "Local input must be prepared before service dispatch; no inference was submitted.",
+            ));
+        }
+        let requests = MlModelRequests::new(self.request.identity());
+        let outcome = self.request.execute(executor).await?;
+        let data = completed_data(&outcome)?;
+        let version = if let Some(version) = &input.version {
+            version.clone()
+        } else {
+            validate_settings(data)?;
+            if data
+                .get("defaultVersionAssignmentBehavior")
+                .and_then(Value::as_str)
+                == Some("NotConfigured")
+            {
+                return Err(default_missing());
+            }
+            data.get("defaultVersionName")
+                .and_then(Value::as_str)
+                .filter(|name| !name.is_empty() && name.len() <= MAX_SELECTOR_BYTES)
+                .ok_or_else(default_missing)?
+                .to_owned()
+        };
+        let metadata_outcome;
+        let metadata = if input.version.is_some() {
+            data
+        } else {
+            metadata_outcome = requests
+                .get_version(&self.target, &version)?
+                .execute(executor)
+                .await?;
+            completed_data(&metadata_outcome)?
+        };
+        validate_version(metadata)?;
+        if metadata.get("versionName").and_then(Value::as_str) != Some(version.as_str()) {
+            return Err(invalid_response(Some(200)));
+        }
+        let payload = input.payload(metadata)?;
+        let request = requests.score_version(&self.target, &version, &payload, input.wait)?;
+        let outcome = request.execute(executor).await?;
+        match ScoreOutcome::from_resource(outcome)? {
+            ScoreOutcome::Accepted { operation_id } => Ok(
+                json!({"status":"accepted","httpStatus":202,"operationId":operation_id,
+                        "selection":{"mode":if input.version.is_some() {"exact"} else {"default"},"versionName":version}}),
+            ),
+            ScoreOutcome::Completed(data) => {
+                Ok(json!({"status":"completed","httpStatus":200,"data":data,
+                        "selection":{"mode":if input.version.is_some() {"exact"} else {"default"},"versionName":version}}))
             }
         }
     }

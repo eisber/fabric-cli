@@ -522,6 +522,34 @@ pub(crate) fn run_ml_endpoint(
             2,
         ));
     };
+    if command.input_path().is_some() {
+        #[cfg(any(windows, feature = "headless", feature = "interactive"))]
+        {
+            let runtime = match native_runtime() {
+                Ok(runtime) => runtime,
+                Err(error) => return write_error(error),
+            };
+            let input_command = command.clone();
+            let result = runtime.block_on(ml_endpoint::before_connect(async move {
+                tokio::task::spawn_blocking(move || {
+                    let mut command = input_command;
+                    let path = command.input_path().expect("selected local input").to_owned();
+                    let bytes = if path == "-" {
+                        fabric_cli::execute::host::read_input(&mut io::stdin().lock())
+                    } else {
+                        std::fs::File::open(&path).and_then(|mut file| fabric_cli::execute::host::read_input(&mut file))
+                    }.map_err(|_| failure("input_failed","Could not read bounded ML input (1 MiB maximum); no inference was submitted.",2))?;
+                    command.prepare_input(&bytes).map_err(|error| failure("invalid_score_input",error.message,2))?;
+                    Ok(command)
+                }).await.map_err(|_| failure("input_failed","ML input worker failed; no inference was submitted.",1))?
+            },deadline));
+            let result = finish_runtime(runtime, result);
+            return match result {
+                Ok(command) => run_command(NativeCommand::MlEndpoint(&command, deadline), state),
+                Err(error) => write_error(error),
+            };
+        }
+    }
     run_command(NativeCommand::MlEndpoint(command, deadline), state)
 }
 
@@ -990,7 +1018,17 @@ async fn execute_delivery(
     let execution = matches!(command, NativeCommand::Execution(..));
     #[cfg(not(any(windows, feature = "headless")))]
     let execution = false;
-    let (client, identity_client) = native_clients(&credential, execution)?;
+    let (client, identity_client) = if let NativeCommand::MlEndpoint(ml, _) = command {
+        let mut options = native_transport_options(false);
+        if ml.is_score() {
+            // Cold-start scoring is bounded by the command's absolute deadline,
+            // not the unrelated ordinary-read socket default of 30 seconds.
+            options.read_timeout = ml.timeout;
+        }
+        native_clients_with_options(&credential, options)?
+    } else {
+        native_clients(&credential, execution)?
+    };
     execute_injected_delivery(
         command,
         (credential, client, identity_client),
