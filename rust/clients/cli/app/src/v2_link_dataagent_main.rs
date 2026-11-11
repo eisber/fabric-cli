@@ -15,6 +15,7 @@ use futures_util::FutureExt;
 use std::{
     ffi::OsString,
     io::{self, IsTerminal, Write},
+    sync::atomic::{AtomicU8, Ordering},
     time::{Duration, Instant},
 };
 
@@ -91,10 +92,13 @@ pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
             question: approval_question(&prepared, &session.context),
             deadline: started + TIMEOUT,
         };
+        let interruption = AtomicU8::new(0);
         let interrupted = async {
             tokio::select! {
-                _ = tokio::time::sleep(TIMEOUT.saturating_sub(started.elapsed())) => (),
-                _ = tokio::signal::ctrl_c() => (),
+                _ = tokio::time::sleep(TIMEOUT.saturating_sub(started.elapsed())) =>
+                    interruption.store(1, Ordering::SeqCst),
+                signal = tokio::signal::ctrl_c() =>
+                    interruption.store(if signal.is_ok() { 2 } else { 3 }, Ordering::SeqCst),
             }
         };
         let mut operations = OperationSession::with_context(
@@ -103,7 +107,14 @@ pub(super) fn run(args: Vec<OsString>) -> Result<u8, Failure> {
             OperationLimits::default(),
             interrupted,
         );
-        Ok(host::dispatch(prepared, &mut operations, Some(&mut approval)).await)
+        let mut dispatch = host::dispatch(prepared, &mut operations, Some(&mut approval)).await;
+        match interruption.load(Ordering::SeqCst) {
+            1 => dispatch.value["interruption"] = serde_json::json!("TimedOut"),
+            2 => dispatch.value["interruption"] = serde_json::json!("Cancelled"),
+            3 => dispatch.value["interruption"] = serde_json::json!("SignalFailed"),
+            _ => (),
+        }
+        Ok(dispatch)
     });
     runtime.shutdown_timeout(Duration::from_secs(1));
     let dispatch = result?;

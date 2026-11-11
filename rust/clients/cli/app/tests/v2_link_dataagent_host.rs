@@ -263,7 +263,10 @@ async fn cancellation_before_each_read_or_post_prevents_mutation() {
         )
         .await;
         assert_eq!(dispatch.exit_code(), 1);
-        assert_eq!(dispatch.value["error"]["code"], "Cancelled");
+        assert_eq!(
+            dispatch.value["error"]["code"],
+            "LongRunningOperationCancelled"
+        );
         assert_eq!(dispatch.value["mutationMayHaveOccurred"], false);
         let requests = wire.requests.lock().unwrap();
         assert_eq!(requests.len(), cancel_after);

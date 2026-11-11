@@ -272,20 +272,17 @@ async fn metadata(
         status: 200,
         data: Some(data),
     } = result
-    {
-        if data
+        && data
             .get("id")
             .and_then(Value::as_str)
             .is_some_and(|id| id.eq_ignore_ascii_case(item))
-            && data.get("workspaceId").is_none_or(|id| {
-                id.as_str()
-                    .is_some_and(|id| id.eq_ignore_ascii_case(workspace))
-            })
-        {
-            if let Some(kind) = data.get("type").and_then(Value::as_str) {
-                return Ok(kind.to_owned());
-            }
-        }
+        && data.get("workspaceId").is_none_or(|id| {
+            id.as_str()
+                .is_some_and(|id| id.eq_ignore_ascii_case(workspace))
+        })
+        && let Some(kind) = data.get("type").and_then(Value::as_str)
+    {
+        return Ok(kind.to_owned());
     }
     let mut error = ResourceError::input();
     error.code = "InvalidResponse".into();
