@@ -141,6 +141,78 @@ instead of inventing a one-file conversion or canonicalizing either example.
 
 ## Offline validation
 
+### Explicit native datasource list head
+
+The opt-in `fab-cli-v2` executable (`fabric-cli --features headless`) now mounts
+the same bounded adapter for these two spellings:
+
+```text
+fab-cli-v2 list /<workspace>.Workspace/<agent>.DataAgent/settings/staging/datasources --stage draft
+fab-cli-v2 artifact data-agent list /<workspace>.Workspace/<agent>.DataAgent/settings/published/datasources --stage published
+```
+
+These are the selected explicit configuration **collection** paths, not SDK
+registry facet names. The later owner-selected command option maps `draft` to
+native `staging` and `published` to the base published route. It is required and
+must agree with the collection path: no implicit stage, `settings/draft` alias,
+stage fallback, agent-root list, or generic item collection is installed.
+Workspace/agent selectors may be explicit GUIDs with the typed suffixes; names
+reuse existing bounded owner resolution (at most ten workspace and ten item
+discovery pages, 1,000 candidates per collection). Incomplete discovery never
+establishes uniqueness. This does not change DataAgent GET, credentials or LINK.
+
+`--continuation OPAQUE_TOKEN` sends the exact decoded token once through the
+SDK's fixed-route encoder. The caller must keep collection, stage, selected
+identity and endpoint unchanged on resume. Returned continuation URIs remain
+inert metadata, even if foreign or no token accompanies them. There is exactly
+one datasource page per invocation; no automatic traversal or `--all`.
+Configured datasource-management IDs remain distinct from referenced item IDs.
+
+JSON envelopes use `schemaVersion: "0.1"`, `status`, `data` and `meta`, including
+the resolved owner/stage, selected context, observation, provenance, coverage,
+truncation and opaque continuation. Data is always an array before optional
+data-only JMESPath `--project`; empty and singleton pages are not unwrapped.
+Only terminal native coverage exits zero. Any remaining token **or** URI yields
+`status: "partial"` and exit 1, retaining the actual page and continuation.
+Permission failures, HTTP 202, malformed pages and interruption never become
+successful empty output. Service-authorized visibility is not an exhaustive
+tenant inventory or a snapshot-consistency promise.
+
+`--limit` defaults to 100 whole records. `--max-bytes` defaults to 1,048,576
+compact serialized **data** bytes before projection, excluding envelope and
+metadata (maximum 4 MiB). A page that exceeds either bound fails with
+`BudgetExceeded`; it is not clipped, because the service token resumes after
+the whole native page and cannot honestly resume discarded rows. Increase a
+finite bound rather than skipping records. Independent safety bounds are
+4 MiB per native response, 32 MiB of returned response bodies/21 logical SDK
+calls across owner discovery and the page, and 8 MiB final serialized output.
+Those are not aggregate wire-attempt/stream-byte caps: the unchanged shared
+HTTP policy permits up to four attempts per logical GET (at most 84 attempts
+and 336 MiB of bounded response bodies across this invocation). A retry is
+the same page request, not traversal. `--max-bytes` is a data-result budget,
+not an upstream scan-cost or transport-stream budget.
+`--timeout` defaults to 30 seconds,
+accepts positive integer `ms`, `s`, `m`, `h` up to 24 hours, and is one total
+host deadline. The original cancellation/deadline future remains active during
+blocking output on the existing runtime. A blocked operating-system write cannot
+be rolled back or forcibly cancelled; supervision returns nonzero with uncertain
+delivery evidence instead of waiting indefinitely. Local cancellation/deadline
+never requests remote cancellation.
+
+`--format json` is the only format. `--output FILE` uses existing exact-path
+exclusive-create preflight **before** identity setup; `-` or omission selects
+stdout. Existing files are never overwritten, and write/flush failures are
+nonzero with explicit evidence rather than rollback claims. The existing
+explicit `FAB_RUST_AUTH_MODE` selector and `FAB_RUST_FABRIC_HOST` binding are
+reused without fallback or a new identity/provider. This task's validation is
+offline only: no live Fabric, authentication, model, query or mutation acceptance
+is claimed.
+
+`clients/cli/app/tests/dataagent_list.rs` drives both parsers through the same
+adapter, SDK and shared HTTP fixtures; `v2_dataagent_list_binary.rs` exercises the
+actual binary dispatch and pre-identity failures. The original SDK negative-page,
+permission, acceptance and cancellation tests remain unchanged.
+
 `engine/sdk/tests/dataagents.rs` uses only synthetic credentials/responses.
 It covers native method/route/format, owner and returned identity, explicit
 stage isolation, inert content, partial pages and token encoding, original
