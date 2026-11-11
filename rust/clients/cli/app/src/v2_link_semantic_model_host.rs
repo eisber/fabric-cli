@@ -431,6 +431,13 @@ fn deliver(receipt: &LinkReceipt, writer: &mut dyn Write) -> Result<(), Failure>
     })
 }
 
+async fn cancellation() -> &'static str {
+    match tokio::signal::ctrl_c().await {
+        Ok(()) => "Cancelled",
+        Err(_) => "CancellationUnavailable",
+    }
+}
+
 pub(super) fn run(args: Vec<OsString>) -> Result<(), Failure> {
     let Some(command) = parse(args)? else {
         return Ok(());
@@ -470,7 +477,7 @@ pub(super) fn run(args: Vec<OsString>) -> Result<(), Failure> {
         let input = tokio::select! {
             biased;
             _ = tokio::time::sleep(TIMEOUT) => return Err(failed("TimedOut", "Link input expired; no bind was submitted.", 1)),
-            _ = tokio::signal::ctrl_c() => return Err(failed("Cancelled", "Link input cancelled; no bind was submitted.", 1)),
+            reason = cancellation() => return Err(failed(reason, "Link input interrupted; no bind was submitted.", 1)),
             result = tokio::task::spawn_blocking(move || Input::read(&captured, &mut io::stdin().lock())) =>
                 result.map_err(|_| failed("InputFailed", "Link input worker failed.", 1))?.map_err(local_failure)?,
         };
@@ -490,7 +497,7 @@ pub(super) fn run(args: Vec<OsString>) -> Result<(), Failure> {
         let prepared = tokio::select! {
             biased;
             _ = tokio::time::sleep(remaining) => return Err(failed("TimedOut", "Link preflight expired; no bind was submitted.", 1)),
-            _ = tokio::signal::ctrl_c() => return Err(failed("Cancelled", "Link preflight cancelled; no bind was submitted.", 1)),
+            reason = cancellation() => return Err(failed(reason, "Link preflight interrupted; no bind was submitted.", 1)),
             result = preflight => result.map_err(local_failure)?,
         };
         let remaining = TIMEOUT.saturating_sub(started.elapsed());
@@ -498,7 +505,9 @@ pub(super) fn run(args: Vec<OsString>) -> Result<(), Failure> {
         let interrupted = async {
             tokio::select! {
                 _ = tokio::time::sleep(remaining) => interruption.store(1, std::sync::atomic::Ordering::SeqCst),
-                _ = tokio::signal::ctrl_c() => interruption.store(2, std::sync::atomic::Ordering::SeqCst),
+                reason = cancellation() => interruption.store(
+                    if reason == "Cancelled" { 2 } else { 3 }, std::sync::atomic::Ordering::SeqCst,
+                ),
             }
         };
         execute(prepared, session.context, session.executor.as_ref(), &mut TerminalApproval, interrupted)
@@ -507,6 +516,7 @@ pub(super) fn run(args: Vec<OsString>) -> Result<(), Failure> {
                 failure.2["localInterruption"] = match interruption.load(std::sync::atomic::Ordering::SeqCst) {
                     1 => json!("TimedOut"),
                     2 => json!("Cancelled"),
+                    3 => json!("CancellationUnavailable"),
                     _ => Value::Null,
                 };
                 failure
