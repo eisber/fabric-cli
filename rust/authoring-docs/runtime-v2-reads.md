@@ -300,8 +300,11 @@ This adapter reuses the parent executable's `NativeSession`, the existing
 `NativeFabricExecutor`, and the shared native output host. Output preflight
 precedes identity construction and dispatch; file delivery uses atomic no-clobber.
 One original 30-second deadline and one pinned local cancellation future cover
-preflight, acquisition and delivery, with bounded runtime shutdown. The existing
-library rejection of explicit `--timeout` remains unchanged. Source/provider
+preflight, acquisition and delivery, with bounded runtime shutdown. The shared
+`setup` wrapper also bounds local credential/transport construction on
+an owned worker; a stalled platform trust read cannot block the async timer.
+The same captured endpoint is checked again against the shared selection.
+The existing library rejection of explicit `--timeout` remains unchanged. Source/provider
 content is inert data, not a command, configuration instruction or retry signal.
 Local output failure never triggers replay. Statement-specific help is offline;
 default `fab-rs` and builds without `runtime-v2` keep their existing dispatch.

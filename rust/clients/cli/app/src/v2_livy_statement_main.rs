@@ -3,7 +3,7 @@
 
 //! Statement-only executable adapter over the released runtime read host.
 
-use super::{NativeSession, headless};
+use super::{NativeSession, capture_fabric_selection};
 use clap::{Arg, ArgAction, ArgMatches};
 use fabric_cli::{
     get_target::is_id,
@@ -11,7 +11,8 @@ use fabric_cli::{
         OwnerKind, ParsedInvocation, ReadErrorKind, ReadFacet, ReadOptions, ResolvedTarget,
         command_schema,
         host::{
-            ExplicitResolver, HostError, acquire, diagnostic, prepare_destination, write_stream,
+            ExplicitResolver, HostError, SetupError, acquire, diagnostic, prepare_destination,
+            setup, write_stream,
         },
         parse_args,
     },
@@ -88,6 +89,7 @@ fn error(kind: ReadErrorKind) -> HostError {
         read_completed: false,
         file_created: false,
         bytes_written: 0,
+        receipt: None,
     }
 }
 
@@ -144,10 +146,18 @@ async fn run_until(args: Vec<OsString>, deadline: Instant) -> Result<(), HostErr
         let _signal = tokio::signal::ctrl_c().await;
     };
     let mut cancelled = pin!(cancelled);
-    let cwd = std::env::current_dir().map_err(|_| error(ReadErrorKind::OutputUnavailable))?;
+    let cwd = setup(deadline, cancelled.as_mut(), || {
+        std::env::current_dir().map_err(|_| error(ReadErrorKind::OutputUnavailable))
+    })
+    .await
+    .map_err(setup_error)?;
     let destination =
         prepare_destination(invocation.output.clone(), cwd, deadline, cancelled.as_mut()).await?;
-    let executor = selected_executor(endpoint, deadline)?;
+    let executor = setup(deadline, cancelled.as_mut(), move || {
+        selected_executor(endpoint, deadline)
+    })
+    .await
+    .map_err(setup_error)?;
     execute(
         &invocation,
         &executor,
@@ -209,10 +219,17 @@ fn selected_executor(
     endpoint: EndpointBinding,
     deadline: Instant,
 ) -> Result<NativeFabricExecutor, HostError> {
-    let mode = std::env::var("FAB_RUST_AUTH_MODE")
-        .map_err(|_| error(ReadErrorKind::UnsupportedCapability))?;
-    let selection =
-        headless::Selection::capture(&mode).map_err(|_| error(ReadErrorKind::InvalidInput))?;
+    let (selection, captured_endpoint) =
+        capture_fabric_selection().map_err(|(code, _, _, _)| {
+            error(if code == "NotConfigured" {
+                ReadErrorKind::UnsupportedCapability
+            } else {
+                ReadErrorKind::InvalidInput
+            })
+        })?;
+    if captured_endpoint != endpoint {
+        return Err(error(ReadErrorKind::InvalidInput));
+    }
     let remaining = deadline
         .checked_duration_since(Instant::now())
         .filter(|value| !value.is_zero())
@@ -221,6 +238,12 @@ fn selected_executor(
         .map_err(|_| error(ReadErrorKind::Execution))?;
     NativeFabricExecutor::new(session.context, session.executor.as_ref().clone())
         .map_err(native_error)
+}
+
+fn setup_error(value: SetupError<HostError>) -> HostError {
+    match value {
+        SetupError::Host(error) | SetupError::Work(error) => error,
+    }
 }
 
 fn native_error(value: NativeError) -> HostError {

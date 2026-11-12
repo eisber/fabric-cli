@@ -489,6 +489,8 @@ async fn no_clobber_race_keeps_original_output_and_never_replays_statement() {
     assert!(error.read_completed);
     assert!(!error.file_created);
     assert_eq!(error.bytes_written, 0);
+    assert_eq!(error.receipt.as_ref().unwrap().data, statement());
+    assert!(!format!("{error:?}").contains("private provider message"));
     assert_eq!(std::fs::read(&path).unwrap(), b"other owner");
     assert!(Destination::check("statement.json", temp.path()).is_err());
     assert_eq!(stack.wire.requests.lock().unwrap().len(), 1);
