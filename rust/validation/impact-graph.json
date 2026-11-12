@@ -615,6 +615,23 @@
       "checks": ["dependency-graph"]
     },
     {
+      "id": "cli-warehouse-create",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/warehouse_create.rs",
+        "rust/clients/cli/app/tests/warehouse_create_wire.rs",
+        "rust/clients/cli/app/tests/warehouse_create_binary.rs",
+        "rust/authoring-docs/warehouse-create-v2.md"
+      ],
+      "depends_on": ["cli-create-host"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:warehouse_create_wire"},
+        {"package": "fabric-cli", "target": "test:warehouse_create_binary"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "cli-graph-refresh",
       "package": "fabric-cli",
       "inputs": [

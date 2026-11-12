@@ -24,6 +24,16 @@ path = "tests/create_host.rs"
 required-features = ["v2-create"]
 
 [[test]]
+name = "warehouse_create_wire"
+path = "tests/warehouse_create_wire.rs"
+required-features = ["v2-create"]
+
+[[test]]
+name = "warehouse_create_binary"
+path = "tests/warehouse_create_binary.rs"
+required-features = ["v2-create", "headless"]
+
+[[test]]
 name = "definition_copy_v2"
 path = "tests/definition_copy_v2.rs"
 required-features = ["native-host", "v2-copy"]

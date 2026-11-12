@@ -37,6 +37,11 @@ The opt-in [`v2-cancel` slice](authoring-docs/v2-cancel.md) requests cancellatio
 existing Notebook scheduler run using an explicit ID-based path. Its acceptance
 receipt does not claim terminal cancellation or rollback.
 
+The opt-in [native Warehouse create slice](authoring-docs/warehouse-create-v2.md)
+adds only `fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Warehouse`
+with `headless,v2-create`. It uses finite collation JSON and the shared create
+host; it does not add SQL, definition or child-resource provisioning.
+
 The owner-selected [nonrecursive delete preview](authoring-docs/nonrecursive-delete.md)
 adds exact Notebook deletion with explicit permanent intent and host approval.
 Its typed operation metadata propagates through SDK results and CLI receipts.

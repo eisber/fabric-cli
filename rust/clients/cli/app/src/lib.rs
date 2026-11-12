@@ -55,6 +55,8 @@ pub mod update;
 pub mod v2_discovery;
 #[cfg(feature = "v2-preview")]
 pub mod v2_preview;
+#[cfg(feature = "v2-create")]
+pub mod warehouse_create;
 mod workspace_get;
 #[cfg(feature = "workspace-read-v2")]
 pub mod workspace_v2;
