@@ -18,6 +18,9 @@ use thiserror::Error;
 pub mod endpoint;
 /// Host-neutral operation metadata, assessed effects and execution evidence.
 pub mod operation;
+/// Opt-in cryptographic access-token verification for explicit workload binding.
+#[cfg(feature = "verified-principal")]
+pub mod principal;
 /// Runtime-neutral authentication and cancellation for injected execution.
 pub mod request;
 
@@ -32,6 +35,8 @@ pub enum Audience {
     Arm,
     /// Native SQL connections, separate from Fabric REST and HTTP origins.
     Sql,
+    /// Public-cloud PBI bootstrap, separate from the legacy Power BI REST origin.
+    PowerBiBootstrap,
 }
 
 impl Audience {
@@ -42,6 +47,7 @@ impl Audience {
             Self::OneLake => "https://storage.azure.com/.default",
             Self::Arm => "https://management.azure.com/.default",
             Self::Sql => "https://database.windows.net/.default",
+            Self::PowerBiBootstrap => "https://analysis.windows.net/powerbi/api/.default",
         }
     }
 }

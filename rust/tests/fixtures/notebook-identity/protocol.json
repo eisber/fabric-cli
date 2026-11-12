@@ -1,0 +1,19 @@
+{
+  "catalogPath": "/metadata/cluster",
+  "exchangePath": "/metadata/v201606/generatemwctoken",
+  "exchangeBody": {
+    "capacityObjectId": "44444444-4444-4444-4444-444444444444",
+    "workspaceObjectId": "55555555-5555-5555-5555-555555555555",
+    "workloadType": "Notebook",
+    "artifactObjectIds": ["66666666-6666-6666-6666-666666666666"]
+  },
+  "readSuffixes": [
+    "/content",
+    "/jupyterApi/versions/1/api/sessions",
+    "/jupyterApi/versions/1/api/sessions/active",
+    "/jupyterApi/versions/1/api/sessions/existing-session",
+    "/jupyterApi/versions/1/api/sessions/existing-session?detailed=true"
+  ],
+  "bootstrapAuthorization": "Bearer",
+  "workloadAuthorization": "MwcToken"
+}

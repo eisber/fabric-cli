@@ -497,6 +497,7 @@ async fn public_cloud_override_child() {
         .unwrap(),
         host: None,
         managed_client: None,
+        pbi_bootstrap: false,
     };
     let mut options = provider_options();
     options.cloud = Some(Arc::new(

@@ -3,6 +3,24 @@
   "schema": 1,
   "components": [
     {
+      "id": "notebook-workload-foundation",
+      "package": "fabric-sdk-http",
+      "inputs": [
+        "rust/engine/core/contracts/src/principal.rs",
+        "rust/engine/core/http/executor/src/notebook_workload.rs",
+        "rust/engine/core/http/executor/tests/notebook_workload.rs",
+        "rust/clients/cli/app/tests/notebook_workload_identity.rs",
+        "rust/tests/fixtures/notebook-identity/**",
+        "rust/authoring-docs/notebook-workload-foundation.md"
+      ],
+      "depends_on": ["core", "http", "identity-headless", "identity-broker", "identity-interactive"],
+      "tests": [
+        {"package": "fabric-sdk-http", "target": "test:notebook_workload"},
+        {"package": "fabric-cli", "target": "test:notebook_workload_identity"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "engine-query",
       "package": "fabric-sdk-query",
       "inputs": [
@@ -3001,6 +3019,18 @@
     }
   ],
   "profiles": [
+    {
+      "id": "notebook-workload-foundation",
+      "packages": ["fabric-core", "fabric-sdk-http", "fabric-cli", "fabric-identity"],
+      "features": [
+        "fabric-core/verified-principal",
+        "fabric-sdk-http/notebook-workload",
+        "fabric-cli/notebook-workload",
+        "fabric-identity/headless"
+      ],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
     {
       "id": "v2-graph-refresh",
       "packages": ["fabric-cli"],
