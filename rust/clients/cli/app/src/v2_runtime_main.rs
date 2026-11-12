@@ -178,4 +178,30 @@ mod tests {
             assert!(!claims(&args(&values)));
         }
     }
+
+    #[tokio::test]
+    async fn existing_native_session_can_use_bounded_setup_without_identity_or_http() {
+        use fabric_cli::runtime_v2::host::{SetupError, setup};
+        let result = setup(
+            Instant::now() + Duration::from_secs(5),
+            std::future::pending(),
+            || {
+                let selection = super::super::headless::Selection::from_inputs(
+                    "unsupported-offline-mode",
+                    |_| None,
+                )
+                .map_err(|(code, message, exit)| super::super::failed(code, message, exit))?;
+                super::super::NativeSession::new(
+                    selection,
+                    fabric_sdk::EndpointBinding::public(fabric_sdk::ServiceOrigin::Fabric),
+                    Duration::from_secs(1),
+                )
+            },
+        )
+        .await;
+        match result {
+            Err(SetupError::Work((code, _, _, _))) => assert_eq!(code, "invalid_configuration"),
+            _ => panic!("expected the original typed local configuration failure"),
+        }
+    }
 }
