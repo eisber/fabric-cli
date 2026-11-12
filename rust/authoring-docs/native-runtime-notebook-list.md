@@ -87,8 +87,12 @@ Both packets were hash-verified and sequence-checked in an isolated index before
 application. The first is three shared core files plus the original
 `c4d6a8396ac09cf45beaa26e11455df97d315e45` shared identity-capture extraction
 in `v2_main.rs`. It excludes the producer's Notebook content root hook and leaf.
-The second preserves legacy `write_owned` admission/detachment, while runtime
-setup/delivery explicitly use `write_owned_stoppable`. Completed observations
+The second preserves legacy `write_owned` admission/detachment. The subsequent
+exact two-file helper correction
+`674bed1f205c71a4f7aec0df15b9862de1e66954` removes the unused stoppable wrapper:
+legacy `write_owned` calls the same `write_owned_with_policy` engine with `None`,
+while runtime setup/delivery explicitly pass `Some(stop_latch)`. Both adopted
+files match that helper commit's blobs exactly. Completed observations
 remain in `HostError::receipt` after delivery failure, with sanitized diagnostics;
 an already-ready cancellation does not admit a runtime output worker.
 These source identities do not qualify the combined consumer executable.
@@ -138,9 +142,11 @@ The old intermediate helper also failed a frozen legacy-output cancellation
 test in its own hosted validation; the second packet addresses that regression
 without changing the frozen test. New-head automatic CI must qualify this
 combined source. No further local heavy allocation, budget reset or manual CI
-replay is authorized. Independent read-only adoption review flagged a potential
-strict-Clippy blocker: the new private `write_owned_stoppable` entry point may
-be unused in the legacy executable's separate `native_read::output` module copy.
-This is a static finding, not an executed Clippy result; the shared helper owner
-must resolve it if confirmed without a consumer-local fork or lint weakening.
+replay is authorized. Independent read-only adoption review flagged an unused
+private stoppable entry point in the legacy executable's separate
+`native_read::output` module copy. Automatic Linux CI at consumer head
+`2aa684e30fcdfb60bd071b3dc279f3b6c0f8015b` confirmed that `-D dead-code` failure
+in `fab-rs`. The shared owner released `674bed1` to remove
+that entry point without changing the policy engine or weakening lints.
+This source correction still needs new-head native/Clippy qualification.
 No live Fabric/auth read, provisioning, mutation or compute is authorized or claimed.
