@@ -16,6 +16,18 @@ The default executable does not mount v2 create. The explicitly selected
 [`v2-copyjob-create` feature](copyjob-create.md) supplies a bounded metadata-only
 CopyJob mount over the shared create host, not a generic resource binding.
 
+Approval inspects the exact already-prepared method, bound URL and outgoing
+bytes, including the generated body for omitted input. Terminal controls are
+escaped without reserializing the body that will be transmitted. Additional
+typed-provider effects use bounded anticipated-effect descriptors with contract
+references; they are not observed outcomes or permission for another mutation.
+Skip has no outgoing request or creation-effect declaration.
+
+Initial submission status and resource evidence remain separate from later
+poll HTTP/operation status, including failed/cancelled polling and malformed
+final results. Available accepted identities survive in protected submission
+metadata without converting an unknown or failed outcome to completed success.
+
 ## Target grammar
 
 The target grammar is design notation, not a runnable command example:
