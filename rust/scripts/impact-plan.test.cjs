@@ -1112,6 +1112,42 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
   }
 });
 
+test('Livy executable and shared host tests require an actual native runtime feature profile', () => {
+  const root = path.resolve(__dirname, '..', '..');
+  const graph = JSON.parse(fs.readFileSync(path.join(root, 'rust/validation/impact-graph.json'), 'utf8'));
+  const profile = graph.profiles.find(item => item.id === 'runtime-v2-native');
+  assert.ok(profile);
+  assert.deepEqual(profile.features, ['fabric-cli/runtime-v2', 'fabric-cli/headless']);
+  assert.deepEqual(profile.platforms, ['windows', 'linux', 'macos']);
+  const manifest = fs.readFileSync(path.join(root, 'rust/clients/cli/app/Cargo.toml'), 'utf8');
+  const cases = [
+    ['livy_list_native', ['runtime-v2', 'native-host']],
+    ['livy_list_entry', ['runtime-v2', 'headless']],
+    ['runtime_native_host', ['runtime-v2', 'native-host']],
+  ];
+  for (const [name, required] of cases) {
+    assert.ok(graph.components.some(component => component.package === 'fabric-cli' &&
+      component.tests.some(item => item.target === `test:${name}`)), name);
+    const section = manifest.split('[[test]]').find(item => item.includes(`name = "${name}"`));
+    assert.ok(section, name);
+    assert.ok(section.includes(`required-features = ${JSON.stringify(required).replaceAll(',', ', ')}`));
+  }
+  const input = {
+    root: ROOT,
+    metadata: metadata([pkg('fabric-cli', [], cases.map(([name, required]) =>
+      target(name, 'test', `rust/crates/fabric-cli/tests/${name}.rs`, required)),
+    {default: [], 'runtime-v2': [], 'native-host': [], headless: ['native-host']})]),
+    graph: {schema: 1, profiles: [{...profile, checks: []}]},
+    files: ['rust/Cargo.toml'],
+  };
+  const result = plan(input);
+  for (const [name] of cases) {
+    const item = result.target_catalog.find(item => item.target === `test:${name}`);
+    assert.equal(item.default_available, false);
+    assert.deepEqual(item.profiles, ['runtime-v2-native']);
+  }
+});
+
 function relocatedCatalogFixture(files) {
   const locations = [
     ['sdk-capacities', 'rust/engine/control-plane/resources/capacities'],
