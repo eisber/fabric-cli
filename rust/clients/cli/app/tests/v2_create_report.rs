@@ -349,3 +349,17 @@ fn strict_input_and_parser_do_not_hide_duplicates_or_turn_force_into_approval() 
             .is_err()
     );
 }
+
+#[test]
+fn v1_create_remains_the_mkdir_alias_not_the_v2_definition_parser() {
+    for verb in ["mkdir", "create"] {
+        let fabric_cli::parser::Invocation::Resource(
+            fabric_cli_mutations::frontdoor::ResourceCommand::Mkdir { args, .. },
+        ) = fabric_cli::parser::parse_args(["fab-rs", verb, PATH]).unwrap()
+        else {
+            panic!("v1 create must retain its mkdir handler");
+        };
+        assert_eq!(args.path, [PATH]);
+    }
+    assert!(fabric_cli::parser::parse_args(["fab-rs", "create", PATH, "--input", "-"]).is_err());
+}
