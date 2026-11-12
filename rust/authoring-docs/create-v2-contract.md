@@ -16,6 +16,11 @@ The default executable does not mount v2 create. The explicitly selected
 [`v2-copyjob-create` feature](copyjob-create.md) supplies a bounded metadata-only
 CopyJob mount over the shared create host, not a generic resource binding.
 
+Bounded generic item discovery explicitly selects direct workspace items with
+`recursive=false`. A nested same-name item cannot be skipped as the root target;
+malformed folder identity or a nested-only match rejects before mutation.
+Completed create responses also reject a non-root returned folder identity.
+
 Approval inspects the exact already-prepared method, bound URL and outgoing
 bytes, including the generated body for omitted input. Terminal controls are
 escaped without reserializing the body that will be transmitted. Additional
