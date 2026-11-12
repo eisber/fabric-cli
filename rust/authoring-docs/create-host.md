@@ -128,6 +128,11 @@ malformed or mismatched final results in `meta.submission.resource`, outside
 data projection. Those fields are accepted evidence, not completed resources;
 the failed/unknown outcome remains nonzero and never becomes success.
 An unparsed acceptance body is preserved as explicitly labeled base64 evidence.
+Every nonempty actual create/result response uses the same bounded strict JSON
+decoder as retained acceptance evidence. Duplicate keys at any depth, including
+escape-equivalent keys, reject instead of collapsing to a last value. The
+outcome stays unknown/nonzero, exact bounded response bytes remain labeled
+base64 evidence, and prior accepted identity/handles survive independently.
 An unexpected success-class status on an operation result remains an invalid,
 unknown outcome, not a provider-confirmed rejection. The original shared-engine
 typed HTTP error/status is retained independently of the receipt classification.

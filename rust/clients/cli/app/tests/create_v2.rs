@@ -1948,6 +1948,155 @@ async fn no_wait_non_json_202_keeps_exact_raw_acceptance_and_handle_without_succ
     }
 }
 
+fn duplicate_response_bodies() -> Vec<Vec<u8>> {
+    [
+        format!(
+            r#"{{"id":"{ITEM}","id":"{OTHER_WS}","displayName":"Literal.name","type":"Notebook","workspaceId":"{WS}"}}"#
+        ),
+        format!(
+            r#"{{"id":"{ITEM}","displayName":"different","displayName":"Literal.name","type":"Notebook","workspaceId":"{WS}"}}"#
+        ),
+        format!(
+            r#"{{"id":"{ITEM}","displayName":"Literal.name","\u0064isplayName":"Literal.name","type":"Notebook","workspaceId":"{WS}"}}"#
+        ),
+        format!(
+            r#"{{"id":"{ITEM}","displayName":"Literal.name","type":"Notebook","workspaceId":"{WS}","future":{{"value":1,"value":2}}}}"#
+        ),
+        format!(
+            r#"{{"id":"{ITEM}","displayName":"Literal.name","type":"Notebook","workspaceId":"{WS}","future":[{{"value":1,"\u0076alue":2}}]}}"#
+        ),
+    ]
+    .into_iter()
+    .map(String::into_bytes)
+    .collect()
+}
+
+#[tokio::test]
+async fn duplicate_keys_in_created_or_final_result_fail_without_replacing_accepted_identity() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    for wait in [false, true] {
+        for body in duplicate_response_bodies() {
+            let replies = if wait {
+                vec![
+                    listing(vec![]),
+                    accepted_resource(),
+                    state("Succeeded"),
+                    Reply::bytes(
+                        Method::Get,
+                        format!("{}/result", operation_path()),
+                        200,
+                        body.clone(),
+                    ),
+                ]
+            } else {
+                vec![
+                    listing(vec![]),
+                    Reply::bytes(Method::Post, create_path(), 201, body.clone()),
+                ]
+            };
+            let fixture = Fixture::new(replies);
+            let extra = if wait {
+                vec!["--wait", "--project", "missing"]
+            } else {
+                vec!["--project", "missing"]
+            };
+            let delivery = fixture
+                .execute(fixture.prepare(&extra, Some(RAW)), &mut Approval::default())
+                .await
+                .unwrap();
+            assert_eq!(delivery.report().exit_code(), 1);
+            let error = delivery.report().error().unwrap();
+            assert_eq!(error.kind, OperationErrorKind::InvalidResponse);
+            assert_eq!(error.operation_id.as_deref(), wait.then_some(OP));
+            assert!(error.mutation_may_have_occurred);
+            let original = delivery.report().value();
+            assert_eq!(original["meta"]["status"], "unknown");
+            assert_eq!(original["meta"]["completed"], false);
+            assert_eq!(original["error"]["code"], "InvalidResponse");
+            assert_eq!(original["meta"]["httpStatus"], if wait { 200 } else { 201 });
+            assert_eq!(
+                STANDARD
+                    .decode(
+                        original["meta"]["unparsedResponseBodyBase64"]
+                            .as_str()
+                            .unwrap()
+                    )
+                    .unwrap(),
+                body
+            );
+            if wait {
+                assert_accepted_resource_provenance(original);
+                assert_eq!(original["meta"]["submission"]["resource"]["id"], ITEM);
+            } else {
+                assert_eq!(original["data"], Value::Null);
+                assert_eq!(original["meta"]["resourceId"], Value::Null);
+                assert_eq!(original["meta"]["operationHandle"], Value::Null);
+                assert_eq!(original["meta"]["submission"]["httpStatus"], 201);
+            }
+            let meta = original["meta"].clone();
+            let projected = deliver(delivery);
+            assert_eq!(projected["data"], Value::Null);
+            assert_eq!(projected["meta"], meta);
+            assert_no_replay(&projected);
+            fixture.assert_post_body(RAW);
+            fixture.assert_requests(if wait {
+                &[Method::Get, Method::Post, Method::Get, Method::Get]
+            } else {
+                &[Method::Get, Method::Post]
+            });
+        }
+    }
+}
+
+#[tokio::test]
+async fn duplicate_keys_in_no_wait_202_are_not_success_or_collapsed_resource_evidence() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    for body in duplicate_response_bodies() {
+        let mut initial = accepted();
+        initial.body = ReplyBody::Bytes(body.clone());
+        let fixture = Fixture::new(vec![listing(vec![]), initial]);
+        let delivery = fixture
+            .execute(
+                fixture.prepare(&["--project", "missing"], Some(RAW)),
+                &mut Approval::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 1);
+        let error = delivery.report().error().unwrap();
+        assert_eq!(error.kind, OperationErrorKind::InvalidResponse);
+        assert_eq!(error.operation_id.as_deref(), Some(OP));
+        assert!(error.mutation_may_have_occurred);
+        let value = deliver(delivery);
+        assert_eq!(value["data"], Value::Null);
+        assert_eq!(value["meta"]["resourceId"], Value::Null);
+        assert_eq!(value["meta"]["submission"]["resource"], Value::Null);
+        assert_eq!(value["meta"]["status"], "unknown");
+        assert_eq!(value["meta"]["completed"], false);
+        assert_eq!(value["meta"]["httpStatus"], 202);
+        assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(
+            value["meta"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(
+            value["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        for field in ["unparsedResponseBodyBase64", "unparsedAcceptanceBodyBase64"] {
+            assert_eq!(
+                STANDARD
+                    .decode(value["meta"][field].as_str().unwrap())
+                    .unwrap(),
+                body
+            );
+        }
+        assert_no_replay(&value);
+        fixture.assert_post_body(RAW);
+        fixture.assert_requests(&[Method::Get, Method::Post]);
+    }
+}
+
 #[tokio::test]
 async fn exact_output_file_commits_projected_data_without_consuming_stdout() {
     let fixture = Fixture::new(vec![listing(vec![]), created()]);
