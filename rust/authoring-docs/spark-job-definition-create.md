@@ -68,6 +68,19 @@ discovery or service failure cannot become a first-match skip. A missing target
 under skip still creates. A raced provider conflict is an error, never a skip,
 overwrite or replay. The lookup is not atomic with the mutation.
 
+The generic Core `/v1/workspaces/{workspaceId}/items` lookup uses
+`recursive=false`, preserved across bounded continuation pages; this is not a
+query parameter on the typed create endpoint. Omitted or null `folderId` on
+these direct-workspace rows means root scope. A valid non-null folder GUID
+identifies a nested item and excludes it from root cardinality. A nested-only
+match or malformed folder identity rejects before approval or mutation.
+Only a root candidate can be skipped, even when a nested item has the same
+name and type. Completed 201 and LRO-result 200 responses are revalidated for
+root scope. Protected `meta.folderId` and `meta.submission.folderId` retain the
+actual evidence with `folderIdObserved` flags that distinguish omitted fields
+from explicit null. Accepted-but-not-completed data remains evidence, not proof
+that a returned folder is valid or the item completed creation.
+
 The shared host retains immediate explicit approval and immutable request
 context; no approval-bypass switch or credential implementation is added.
 Approval borrows the exact already-prepared POST method, bound URL, generated

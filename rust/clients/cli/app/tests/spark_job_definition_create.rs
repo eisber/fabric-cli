@@ -434,7 +434,12 @@ mod native {
                             .path()
                             .starts_with(&format!("/v1/operations/{OP}"))
                 );
-                assert!(request.url().query().is_none());
+                if request.url().path() == format!("/v1/workspaces/{WS}/items") {
+                    assert_eq!(request.method(), Method::Get);
+                    assert_eq!(request.url().query(), Some("recursive=false"));
+                } else {
+                    assert!(request.url().query().is_none());
+                }
             }
         }
     }
@@ -443,6 +448,12 @@ mod native {
     }
     fn item(name: &str, kind: &str) -> Value {
         json!({"id":ITEM,"workspaceId":WS,"displayName":name,"type":kind})
+    }
+    fn with_folder(mut item: Value, folder: Option<Value>) -> Value {
+        if let Some(folder) = folder {
+            item["folderId"] = folder;
+        }
+        item
     }
     fn created() -> AsyncRawResponse {
         response(201, &item("Exact", "SparkJobDefinition").to_string(), &[])
@@ -664,6 +675,251 @@ mod native {
                 .is_err()
         );
         h.assert_calls(1, 0);
+    }
+
+    #[tokio::test]
+    async fn root_skip_selects_only_direct_items_and_retains_observed_folder_identity() {
+        for folder in [None, Some(Value::Null)] {
+            let root = with_folder(item("Exact", "SparkJobDefinition"), folder.clone());
+            let mut nested = with_folder(item("Exact", "SparkJobDefinition"), Some(json!(WS)));
+            nested["id"] = json!(OP);
+            for rows in [
+                vec![root.clone()],
+                vec![nested.clone(), root.clone()],
+                vec![root.clone(), nested.clone(), item("Exact", "Notebook")],
+            ] {
+                let h = Harness::new(vec![response(200, &json!({"value":rows}).to_string(), &[])]);
+                let mut approval = approve();
+                let delivery = h
+                    .execute(
+                        prepare(&["--if-exists", "skip"], None),
+                        &mut approval,
+                        pending(),
+                    )
+                    .await
+                    .unwrap();
+                let receipt = delivery.report().value();
+                assert_eq!(receipt["meta"]["status"], "unchanged");
+                assert_eq!(receipt["meta"]["resourceId"], ITEM);
+                assert_eq!(receipt["meta"]["folderId"], Value::Null);
+                assert_eq!(receipt["meta"]["folderIdObserved"], folder.is_some());
+                assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], false);
+                assert_eq!(approval.calls, 1);
+                assert!(approval.approved_body.is_none());
+                h.assert_calls(1, 0);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn nested_only_malformed_or_ambiguous_root_matches_fail_before_approval() {
+        let root = item("Exact", "SparkJobDefinition");
+        let nested = with_folder(root.clone(), Some(json!(OP)));
+        let mut cases = vec![
+            vec![nested.clone()],
+            vec![nested.clone(), nested.clone()],
+            vec![root.clone(), root.clone()],
+            vec![nested, item("Exact", "Notebook")],
+        ];
+        for malformed in [
+            json!("not-a-guid"),
+            json!(17),
+            json!(false),
+            json!([]),
+            json!({}),
+        ] {
+            cases.push(vec![with_folder(root.clone(), Some(malformed.clone()))]);
+            cases.push(vec![
+                root.clone(),
+                with_folder(root.clone(), Some(malformed)),
+            ]);
+        }
+        for rows in cases {
+            for options in [vec![], vec!["--if-exists", "skip"]] {
+                let h = Harness::new(vec![response(200, &json!({"value":rows}).to_string(), &[])]);
+                let mut approval = approve();
+                assert!(
+                    h.execute(prepare(&options, None), &mut approval, pending())
+                        .await
+                        .is_err()
+                );
+                assert_eq!(approval.calls, 0);
+                assert!(approval.approved_body.is_none());
+                h.assert_calls(1, 0);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn root_discovery_keeps_recursive_false_on_every_page_and_opaque_token_once() {
+        let token = "next +/=";
+        let h = Harness::new(vec![
+            response(
+                200,
+                &json!({"value":[],"continuationToken":token}).to_string(),
+                &[],
+            ),
+            response(
+                200,
+                &json!({"value":[with_folder(
+                    item("Exact", "SparkJobDefinition"), Some(Value::Null),
+                )]})
+                .to_string(),
+                &[],
+            ),
+        ]);
+        let mut approval = approve();
+        let delivery = h
+            .execute(
+                prepare(&["--if-exists", "skip"], None),
+                &mut approval,
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().value()["meta"]["status"], "unchanged");
+        assert_eq!(delivery.report().value()["meta"]["folderIdObserved"], true);
+        assert_eq!(approval.calls, 1);
+        assert_eq!(h.credential.calls.load(Ordering::SeqCst), 2);
+        let requests = h.wire.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(
+            requests[0].url().as_str(),
+            format!("https://api.fabric.microsoft.com/v1/workspaces/{WS}/items?recursive=false"),
+        );
+        assert_eq!(
+            requests[1].url().as_str(),
+            format!(
+                "https://api.fabric.microsoft.com/v1/workspaces/{WS}/items?recursive=false&continuationToken=next+%2B%2F%3D"
+            ),
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request.method() == Method::Get)
+        );
+    }
+
+    #[tokio::test]
+    async fn completed_root_scope_is_revalidated_for_201_and_lro_result_without_replay() {
+        for wait in [false, true] {
+            for folder in [
+                None,
+                Some(Value::Null),
+                Some(json!(OP)),
+                Some(json!("invalid")),
+                Some(json!(false)),
+                Some(json!({})),
+            ] {
+                let valid_root = folder.is_none() || folder.as_ref().is_some_and(Value::is_null);
+                let data = with_folder(item("Exact", "SparkJobDefinition"), folder.clone());
+                let mut replies = vec![missing()];
+                if wait {
+                    replies.push(accepted(""));
+                    replies.push(response(
+                        200,
+                        r#"{"status":"Succeeded"}"#,
+                        &[(
+                            "location",
+                            &format!("https://api.fabric.microsoft.com/v1/operations/{OP}/result"),
+                        )],
+                    ));
+                }
+                replies.push(response(
+                    if wait { 200 } else { 201 },
+                    &data.to_string(),
+                    &[],
+                ));
+                let h = Harness::new(replies);
+                let options = if wait { vec!["--wait"] } else { vec![] };
+                let delivery = h
+                    .execute(prepare(&options, None), &mut approve(), pending())
+                    .await
+                    .unwrap();
+                let receipt = delivery.report().value();
+                assert_eq!(
+                    delivery.report().exit_code(),
+                    u8::from(!valid_root),
+                    "{receipt}"
+                );
+                assert_eq!(receipt["meta"]["completed"], valid_root);
+                assert_eq!(
+                    receipt["meta"]["status"],
+                    if valid_root { "completed" } else { "unknown" }
+                );
+                assert_eq!(receipt["meta"]["folderIdObserved"], folder.is_some());
+                assert_eq!(
+                    receipt["meta"]["folderId"],
+                    folder.clone().unwrap_or(Value::Null)
+                );
+                if wait {
+                    assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+                    assert_eq!(receipt["meta"]["submission"]["folderIdObserved"], false);
+                } else {
+                    assert_eq!(receipt["meta"]["submission"]["httpStatus"], 201);
+                    assert_eq!(
+                        receipt["meta"]["submission"]["folderIdObserved"],
+                        folder.is_some()
+                    );
+                    assert_eq!(
+                        receipt["meta"]["submission"]["folderId"],
+                        folder.unwrap_or(Value::Null)
+                    );
+                }
+                assert_eq!(receipt["meta"]["resourceId"], ITEM);
+                assert_eq!(receipt["meta"]["remoteReplayed"], false);
+                assert_eq!(receipt["meta"]["remoteCancelled"], false);
+                h.assert_calls(if wait { 4 } else { 2 }, 1);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn accepted_folder_evidence_is_protected_from_projection_without_completion_claim() {
+        for folder in [
+            None,
+            Some(Value::Null),
+            Some(json!(OP)),
+            Some(json!({"future":"unknown"})),
+        ] {
+            let data = with_folder(item("Exact", "SparkJobDefinition"), folder.clone());
+            let h = Harness::new(vec![missing(), accepted(&data.to_string())]);
+            let delivery = h
+                .execute(
+                    prepare(&["--project", "missing"], None),
+                    &mut approve(),
+                    pending(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(delivery.report().exit_code(), 0);
+            let mut bytes = Vec::new();
+            delivery.deliver(&mut bytes).unwrap();
+            let receipt: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(receipt["meta"]["status"], "accepted");
+            assert_eq!(receipt["meta"]["completed"], false);
+            assert_eq!(receipt["meta"]["folderIdObserved"], folder.is_some());
+            assert_eq!(
+                receipt["meta"]["submission"]["folderIdObserved"],
+                folder.is_some()
+            );
+            assert_eq!(
+                receipt["meta"]["folderId"],
+                folder.clone().unwrap_or(Value::Null)
+            );
+            assert_eq!(
+                receipt["meta"]["submission"]["folderId"],
+                folder.unwrap_or(Value::Null)
+            );
+            assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+            assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+            assert_eq!(
+                receipt["meta"]["operationHandle"],
+                format!("/operations/{OP}")
+            );
+            assert_eq!(receipt["meta"]["remoteReplayed"], false);
+            h.assert_calls(2, 1);
+        }
     }
 
     #[tokio::test]
@@ -958,7 +1214,10 @@ mod native {
         for outcome in ["denied", "cancelled", "malformed"] {
             let mut replies = vec![
                 missing(),
-                accepted(&item("Exact", "SparkJobDefinition").to_string()),
+                accepted(
+                    &with_folder(item("Exact", "SparkJobDefinition"), Some(Value::Null))
+                        .to_string(),
+                ),
             ];
             if outcome == "denied" {
                 replies.push(response(403, "", &[]));
@@ -994,6 +1253,10 @@ mod native {
             assert_eq!(receipt["meta"]["resourceId"], ITEM);
             assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
             assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+            assert_eq!(receipt["meta"]["folderId"], Value::Null);
+            assert_eq!(receipt["meta"]["folderIdObserved"], true);
+            assert_eq!(receipt["meta"]["submission"]["folderId"], Value::Null);
+            assert_eq!(receipt["meta"]["submission"]["folderIdObserved"], true);
             assert_eq!(
                 receipt["meta"]["operationHandle"],
                 format!("/operations/{OP}")
