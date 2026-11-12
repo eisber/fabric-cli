@@ -298,7 +298,7 @@ fn execution_value(result: &Result<DeploymentReceipt, DeploymentError>) -> (Valu
     }
 }
 
-fn publication_stop(stop: Stopping<'_>, deadline: Instant) -> Stopping<'_> {
+fn publication_stop(stop: Stopping<'static>, deadline: Instant) -> Stopping<'static> {
     if matches!(
         stop.clone().now_or_never(),
         Some(Stop::Cancelled | Stop::SignalFailed)
