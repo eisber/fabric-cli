@@ -256,6 +256,10 @@ delivery and abandoned workers are not rolled back or replayed; byte counts are
 snapshots, not a promise that an abandoned OS write has stopped. Front ends must
 bound runtime shutdown. Small ASCII diagnostics use owned stderr and the original
 deadline, with no synchronous fallback when it is blocked or time has expired.
+Strict pre-cancellation admission and queued-worker abortion are explicitly
+selected for runtime setup/delivery. Existing hosts retain their original
+admitted-worker/detachment policy; this runtime opt-in does not change their
+published cancellation behavior or frozen output tests.
 `HostError::receipt` retains the full completed observation on failed delivery,
 including an output-path race. Its `Debug`, `Display` and diagnostic output
 never print the retained source/output/URL. Only the caller may explicitly
