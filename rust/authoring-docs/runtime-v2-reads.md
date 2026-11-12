@@ -302,6 +302,10 @@ The exact SDK binding is `LivyService::fabric_versioned` with `v1` and
 https://<explicit-host>/v1/workspaces/<workspace-guid>/lakehouses/<lakehouse-guid>/livyApi/versions/2023-12-01/sessions?$top=<limit>
 ```
 
+The SDK percent-encodes the query key as `%24top` on the wire; the decoded key
+remains `$top`. Local `list --help` needs no path, endpoint or identity selection;
+without help, the collection path is required.
+
 The selected source's qualified Fabric route uses that version and
 `https://api.fabric.microsoft.com/.default`; it does not qualify arbitrary native
 or MWC hosts. The SDK's separate `fabric` factory still defaults to `2024-04-01`;
