@@ -12,6 +12,7 @@ use azure_core::{
     http::{AsyncRawResponse, HttpClient, Method, Request, StatusCode, headers::Headers},
     time::OffsetDateTime,
 };
+use base64::{Engine, engine::general_purpose::STANDARD};
 use fabric_cli::{
     create_command::{
         CreateApproval, CreateApprovalError, CreateApprovalRequest, CreateBinding,
@@ -1428,6 +1429,153 @@ async fn unexpected_success_result_status_is_unknown_and_preserves_original_http
             Some((requests[1].url.clone(), requests[1].body.clone()))
         );
         assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[tokio::test]
+async fn duplicate_create_responses_are_unknown_without_last_value_identity_replacement() {
+    let temp = tempfile::tempdir().unwrap();
+    let valid = created().to_string();
+    let prefix = valid.strip_suffix('}').unwrap();
+    let mut nested = created();
+    nested["properties"] = json!("duplicate-response-placeholder");
+    let nested = nested.to_string().replace(
+        "\"duplicate-response-placeholder\"",
+        r#"{"sqlEndpointProperties":{"id":"first-native-child","id":"last-native-child"}}"#,
+    );
+    let bodies = [
+        format!("{prefix},\"id\":\"{OPERATION}\"}}"),
+        format!("{prefix},\"\\u0069d\":\"{OPERATION}\"}}"),
+        format!("{prefix},\"displayName\":\"unapproved-last-name\"}}"),
+        format!("{prefix},\"folderId\":null,\"folderId\":\"{OPERATION}\"}}"),
+        nested,
+    ];
+    for mode in ["immediate201", "accepted202", "final200"] {
+        for body in &bodies {
+            let mut initial = created();
+            initial["folderId"] = Value::Null;
+            let mut replies = vec![listing(json!([]))];
+            let response_status = match mode {
+                "immediate201" => {
+                    replies.push(reply(201, body, &[]));
+                    201
+                }
+                "accepted202" => {
+                    replies.push(reply(
+                        202,
+                        body,
+                        &[
+                            ("Location", &operation_url()),
+                            ("x-ms-operation-id", OPERATION),
+                        ],
+                    ));
+                    202
+                }
+                "final200" => {
+                    replies.push(reply(
+                        202,
+                        &initial.to_string(),
+                        &[
+                            ("Location", &operation_url()),
+                            ("x-ms-operation-id", OPERATION),
+                        ],
+                    ));
+                    replies.push(reply(
+                        200,
+                        r#"{"status":"Succeeded"}"#,
+                        &[("Location", &format!("{}/result", operation_url()))],
+                    ));
+                    replies.push(reply(200, body, &[]));
+                    200
+                }
+                _ => unreachable!(),
+            };
+            let fixture = Fixture::new(replies);
+            let mut approval = approval(true);
+            let delivery = execute(
+                preflight(
+                    temp.path(),
+                    if mode == "final200" {
+                        &["--wait", "--project", "missingField"]
+                    } else {
+                        &["--project", "missingField"]
+                    },
+                ),
+                &fixture,
+                &mut approval,
+                false,
+                pending(),
+            )
+            .await
+            .unwrap();
+            let report = delivery.report();
+            assert_eq!(report.exit_code(), 1);
+            assert!(matches!(
+                &report.error().unwrap().kind,
+                OperationErrorKind::InvalidResponse
+            ));
+            assert_eq!(report.value()["error"]["code"], "InvalidResponse");
+            let meta = &report.value()["meta"];
+            assert_eq!(meta["status"], "unknown");
+            assert_eq!(meta["completed"], false);
+            assert_eq!(meta["httpStatus"], response_status);
+            assert_eq!(meta["observation"]["httpStatus"], response_status);
+            assert_eq!(
+                STANDARD
+                    .decode(meta["unparsedResponseBodyBase64"].as_str().unwrap())
+                    .unwrap(),
+                body.as_bytes()
+            );
+            assert_eq!(meta["mutationMayHaveOccurred"], true);
+            assert_eq!(meta["remoteReplayed"], false);
+            assert_eq!(meta["remoteCancelled"], false);
+            if mode == "final200" {
+                assert_eq!(meta["resourceId"], ITEM);
+                assert_eq!(meta["submission"]["resource"]["id"], ITEM);
+                assert_eq!(meta["submission"]["folderId"], Value::Null);
+                assert_eq!(meta["submission"]["folderIdObserved"], true);
+                assert_eq!(meta["submission"]["httpStatus"], 202);
+                assert_eq!(report.value()["data"], initial);
+            } else {
+                assert_eq!(meta["resourceId"], Value::Null);
+                assert_eq!(meta["observedResource"], Value::Null);
+                assert_eq!(meta["submission"]["resource"], Value::Null);
+                assert_eq!(meta["submission"]["httpStatus"], response_status);
+                assert_eq!(report.value()["data"], Value::Null);
+            }
+            if mode == "accepted202" {
+                assert_eq!(
+                    STANDARD
+                        .decode(meta["unparsedAcceptanceBodyBase64"].as_str().unwrap())
+                        .unwrap(),
+                    body.as_bytes()
+                );
+            }
+            let expected_handle = if mode == "immediate201" {
+                Value::Null
+            } else {
+                json!(format!("/operations/{OPERATION}"))
+            };
+            assert_eq!(meta["operationHandle"], expected_handle);
+            let mut stdout = Vec::new();
+            delivery.deliver(&mut stdout).unwrap();
+            let projected: Value = serde_json::from_slice(&stdout).unwrap();
+            assert_eq!(projected["data"], Value::Null);
+            assert_eq!(projected["meta"]["status"], "unknown");
+            assert_eq!(projected["meta"]["completed"], false);
+            assert_eq!(projected["meta"]["operationHandle"], expected_handle);
+            assert_eq!(
+                projected["meta"]["anticipatedEffects"][0]["resourceType"],
+                "SQLEndpoint"
+            );
+            let requests = fixture.network.requests.lock().unwrap();
+            assert_eq!(requests.len(), if mode == "final200" { 4 } else { 2 });
+            assert_eq!(
+                approval.approved_request,
+                Some((requests[1].url.clone(), requests[1].body.clone()))
+            );
+            assert_eq!(fixture.network.posts.load(Ordering::SeqCst), 1);
+        }
     }
 }
 

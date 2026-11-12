@@ -145,6 +145,12 @@ outcome and nonzero exit. It is not a provider-confirmed rejection. The original
 typed HTTP cause and status remain available independently of this receipt
 classification. Actual non-success HTTP responses and service-declared failed
 operations retain their native failed classification. None permits replay.
+The host also decodes nonempty create responses with bounded strict JSON,
+including immediate 201, no-wait 202 and final 200 results. Duplicate keys at
+any depth, including escaped spellings of the same key, are invalid responses:
+the last value never replaces an accepted identity or creates a success claim.
+Unknown outcomes retain labeled raw response bytes as base64; a previously
+valid accepted identity and handle remain protected through projection.
 
 ## Source evidence and validation boundary
 
