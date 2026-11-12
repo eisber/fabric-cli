@@ -29,6 +29,17 @@ pub(crate) fn run_workspace_v2(
 #[path = "native_get.rs"]
 mod get;
 
+#[cfg(all(feature = "v2-deploy", any(windows, feature = "headless")))]
+#[path = "native_stage_deploy.rs"]
+mod stage_deploy;
+
+#[cfg(all(feature = "v2-deploy", any(windows, feature = "headless")))]
+pub(crate) fn run_stage_deploy(
+    args: impl IntoIterator<Item = std::ffi::OsString>,
+) -> io::Result<u8> {
+    stage_deploy::run(args)
+}
+
 #[cfg(any(windows, feature = "headless", feature = "interactive"))]
 #[path = "native_ml_endpoint.rs"]
 mod ml_endpoint;

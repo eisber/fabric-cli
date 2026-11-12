@@ -19,6 +19,7 @@ fabric-core-json.workspace = true
 fabric-sdk.workspace = true
 fabric-sdk-operations.workspace = true
 fabric-sdk-workspaces.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]

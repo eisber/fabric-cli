@@ -1,0 +1,12 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: added
+body: >-
+  Mount the opt-in native pipeline-stage deployment marker on the existing
+  Fabric identity and HTTP host, with bounded local input, exact stage
+  preflights, immediate terminal approval and deadline-bounded receipts.
+  Legacy repository deployment and v1 commands are unchanged.
+time: 2026-11-12T09:03:00Z
+custom:
+  Author: eisber
+  AuthorLink: https://github.com/eisber

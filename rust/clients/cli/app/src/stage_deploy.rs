@@ -3,9 +3,9 @@
 
 //! Isolated v2 deploy parser and caller-injected native SDK consumer.
 //!
-//! No v1 grammar, repository publication, credentials, local files, runtime or
-//! default approval are installed. The executable marker remains unconfigured;
-//! native credential features alone are not pipeline resolution/effect approval.
+//! No v1 grammar, repository publication or default approval is installed.
+//! Opt-in native hosts supply bounded input, exact stage reads and immediate
+//! terminal approval; builds without a native host remain unconfigured.
 
 use clap::{Arg, ArgAction, ArgGroup, Command, error::ErrorKind};
 use fabric_deploy::stage::{
@@ -34,6 +34,7 @@ pub enum StageDeployInvocation {
 }
 
 /// CLI spelling normalized to the same immutable SDK request.
+#[derive(Clone)]
 pub struct StageDeployCommand {
     pipeline: String,
     target_stage: String,
@@ -84,9 +85,11 @@ impl StageDeployCommand {
 pub fn command() -> Command {
     Command::new("fab-rs-v2-deploy").bin_name("fab-rs --v2-deploy")
         .version(env!("CARGO_PKG_VERSION")).subcommand_required(true).arg_required_else_help(true)
-        .subcommand(Command::new("deploy").about("GA native deployment between explicit assigned pipeline stages")
+        .subcommand(Command::new("deploy").about("Preview native deployment between explicit assigned pipeline stages")
+            .long_about("Preview native deployment between explicit assigned pipeline stages. Requires a native-read or headless build, an explicitly selected identity and immediate terminal approval of the exact native body and effects. The existing native 240-second total deadline includes input, stage reads, approval, submission, observation and output. No automatic approval, remote cancellation, rollback or replay.")
             .arg(Arg::new("path").required(true).value_name("PIPELINE_STAGE_PATH"))
-            .arg(Arg::new("input").long("input").required(true).value_parser(clap::value_parser!(PathBuf)))
+            .arg(Arg::new("input").long("input").required(true).value_parser(clap::value_parser!(PathBuf))
+                .help("Bounded local native JSON file, not repository config or stdin"))
             .arg(Arg::new("max-input-bytes").long("max-input-bytes").required(true).value_parser(clap::value_parser!(NonZeroUsize)))
             .arg(Arg::new("selected-items").long("selected-items").action(ArgAction::SetTrue))
             .arg(Arg::new("all-items").long("all-items").action(ArgAction::SetTrue)

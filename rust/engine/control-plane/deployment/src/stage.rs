@@ -13,6 +13,7 @@ use fabric_sdk_operations::{
     OperationExecutor, OperationLimits, OperationRequest, OperationResponse, OperationSession,
 };
 use fabric_sdk_workspaces::mutations::{CompletionPolicy, ResourceMethod};
+use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
     collections::HashSet,
@@ -43,6 +44,8 @@ pub enum DeploymentErrorKind {
     UnsupportedCapability,
     /// Caller approval was refused.
     ApprovalDenied,
+    /// Immediate host approval could not be obtained or delivered.
+    ApprovalUnavailable,
     /// The native API explicitly denied permission.
     PermissionDenied,
     /// Caller cancellation stopped local work, not remote deployment.
@@ -130,6 +133,30 @@ pub struct DeploymentRequest {
     target_stage_id: String,
     intent: SelectionIntent,
     body: Value,
+}
+
+// Deserialize the original bytes as a schema too: Value alone collapses duplicate
+// keys, including escaped spellings and duplicates inside selected items.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InputFields {
+    #[serde(rename = "sourceStageId")]
+    _source_stage_id: Value,
+    #[serde(rename = "targetStageId")]
+    _target_stage_id: Value,
+    #[serde(rename = "items")]
+    _items: Option<Vec<ItemFields>>,
+    #[serde(rename = "note")]
+    _note: Option<Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ItemFields {
+    #[serde(rename = "sourceItemId")]
+    _source_item_id: Value,
+    #[serde(rename = "itemType")]
+    _item_type: Value,
 }
 
 impl fmt::Debug for DeploymentRequest {
@@ -234,6 +261,8 @@ impl DeploymentRequest {
             }
             SelectionIntent::AllSupported => {}
         }
+        serde_json::from_slice::<InputFields>(bytes)
+            .map_err(|_| error(DeploymentErrorKind::InvalidInput))?;
         Ok(Self {
             pipeline_id: pipeline_id.into(),
             source_stage_id: source.into(),
@@ -682,7 +711,7 @@ fn finish(
 ) -> Result<DeploymentReceipt, DeploymentError> {
     receipt.initial_response = initial.cloned();
     if result.is_err()
-        && let Some(initial) = initial.filter(|response| response.status == 200)
+        && let Some(initial) = initial.filter(|response| matches!(response.status, 200 | 201))
         && let Ok(value) = serde_json::from_slice::<Value>(&initial.body)
         && record_immediate_identity(&value, &mut receipt).is_ok()
     {
