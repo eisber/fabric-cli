@@ -1003,10 +1003,11 @@ impl CreateReport {
     }
 
     fn failed(plan: &CreatePlan, data: Value, error: OperationError) -> Self {
-        let native_failure = matches!(
-            error.kind,
-            OperationErrorKind::Http { .. } | OperationErrorKind::OperationFailed { .. }
-        );
+        let native_failure = match &error.kind {
+            OperationErrorKind::Http { status, .. } => !(200..300).contains(status),
+            OperationErrorKind::OperationFailed { .. } => true,
+            _ => false,
+        };
         let mut report = Self::base(
             plan,
             data,
@@ -1020,6 +1021,9 @@ impl CreateReport {
                 fabric_sdk_operations::OperationExecutionError::TimedOut,
             ) => "TimedOut",
             OperationErrorKind::Execution(_) => "ExecutionFailed",
+            OperationErrorKind::Http { status, .. } if (200..300).contains(status) => {
+                "InvalidResponse"
+            }
             OperationErrorKind::Http { .. } => "ServiceRejected",
             OperationErrorKind::OperationFailed { .. } => "OperationFailed",
             OperationErrorKind::Credential => "CredentialFailed",
