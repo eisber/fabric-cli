@@ -128,6 +128,9 @@ malformed or mismatched final results in `meta.submission.resource`, outside
 data projection. Those fields are accepted evidence, not completed resources;
 the failed/unknown outcome remains nonzero and never becomes success.
 An unparsed acceptance body is preserved as explicitly labeled base64 evidence.
+An unexpected success-class status on an operation result remains an invalid,
+unknown outcome, not a provider-confirmed rejection. The original shared-engine
+typed HTTP error/status is retained independently of the receipt classification.
 
 `CreateDelivery::report()` exposes unprojected evidence before delivery.
 `deliver(stdout)` projects only `data`, retaining resource identity, policy,

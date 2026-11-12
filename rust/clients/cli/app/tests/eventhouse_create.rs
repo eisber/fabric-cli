@@ -30,6 +30,7 @@ use fabric_sdk::{
 use fabric_sdk_http::{
     ExecutionFuture, ExecutionOptions, ExecutionTimer, ExecutionTrace, HttpExecutor,
 };
+use fabric_sdk_operations::OperationErrorKind;
 use fabric_sdk_workspaces::mutations::{CompletionPolicy, ResourceMethod};
 use futures_util::stream;
 use serde_json::{Value, json};
@@ -1142,6 +1143,12 @@ async fn service_conflict_and_failed_poll_preserve_evidence_without_replay() {
         result.report().value()["meta"]["serviceCode"],
         "ItemDisplayNameAlreadyInUse"
     );
+    assert!(matches!(
+        &result.report().error().unwrap().kind,
+        OperationErrorKind::Http { status: 409, .. }
+    ));
+    assert_eq!(result.report().value()["meta"]["status"], "failed");
+    assert_eq!(result.report().value()["error"]["code"], "ServiceRejected");
     harness.assert_posts(1);
     let harness = Harness::new(vec![
         listing(vec![]),
@@ -1160,6 +1167,10 @@ async fn service_conflict_and_failed_poll_preserve_evidence_without_replay() {
         .await
         .unwrap();
     assert_eq!(result.report().exit_code(), 1);
+    assert!(matches!(
+        &result.report().error().unwrap().kind,
+        OperationErrorKind::OperationFailed { status, .. } if status == "Failed"
+    ));
     let receipt = delivered(result);
     assert_eq!(receipt["meta"]["status"], "failed");
     assert_eq!(
@@ -1178,6 +1189,122 @@ async fn service_conflict_and_failed_poll_preserve_evidence_without_replay() {
     assert_eq!(receipt["meta"]["observation"]["httpStatus"], 200);
     assert_anticipated_effects(&receipt);
     harness.assert_posts(1);
+}
+
+#[tokio::test]
+async fn unexpected_success_result_status_preserves_original_http_cause_but_stays_unknown() {
+    let dir = tempfile::tempdir().unwrap();
+    for status in [201, 202, 204] {
+        let reply = if status == 204 {
+            AsyncRawResponse::from_bytes(StatusCode::NoContent, Headers::new(), Vec::new())
+        } else {
+            response(status, resource())
+        };
+        let harness = Harness::new(vec![
+            listing(vec![]),
+            accepted(Some(resource())),
+            response(200, json!({"status":"Succeeded"})),
+            reply,
+        ]);
+        let mut approval = Approval::yes();
+        let result = harness
+            .execute(
+                prepared(dir.path(), &["--wait", "--project", "displayName"], None).unwrap(),
+                &mut approval,
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.report().exit_code(), 1);
+        let original = result
+            .report()
+            .error()
+            .expect("retain the shared SDK error");
+        assert!(
+            matches!(&original.kind,OperationErrorKind::Http { status:actual,.. } if *actual==status)
+        );
+        assert_eq!(original.operation_id.as_deref(), Some(OP));
+        assert!(original.mutation_may_have_occurred);
+        let receipt = delivered(result);
+        assert_eq!(receipt["error"]["code"], "InvalidResponse");
+        assert_eq!(receipt["meta"]["status"], "unknown");
+        assert_eq!(receipt["meta"]["completed"], false);
+        assert_eq!(receipt["meta"]["httpStatus"], status);
+        assert_eq!(receipt["meta"]["observation"]["httpStatus"], status);
+        assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(
+            receipt["meta"]["submission"]["resource"]["type"],
+            "Eventhouse"
+        );
+        assert_eq!(
+            receipt["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(receipt["meta"]["resourceId"], ITEM);
+        assert_eq!(
+            receipt["meta"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+        assert_eq!(receipt["meta"]["remoteReplayed"], false);
+        assert_eq!(receipt["meta"]["remoteCancelled"], false);
+        assert_eq!(receipt["data"], "Exact");
+        assert_anticipated_effects(&receipt);
+        assert_approved_wire(&harness, &approval);
+        harness.assert_posts(1);
+        let requests = harness.wire.requests.lock().unwrap();
+        assert_eq!(requests.len(), 4);
+        assert_eq!(requests[2].url().path(), format!("/v1/operations/{OP}"));
+        assert_eq!(
+            requests[3].url().path(),
+            format!("/v1/operations/{OP}/result")
+        );
+    }
+}
+
+#[tokio::test]
+async fn genuine_result_http_rejection_stays_failed_and_retains_initial_acceptance() {
+    let dir = tempfile::tempdir().unwrap();
+    let harness = Harness::new(vec![
+        listing(vec![]),
+        accepted(Some(resource())),
+        response(200, json!({"status":"Succeeded"})),
+        response(
+            400,
+            json!({"errorCode":"InvalidRequest","message":"synthetic"}),
+        ),
+    ]);
+    let result = harness
+        .execute(
+            prepared(dir.path(), &["--wait", "--project", "displayName"], None).unwrap(),
+            &mut Approval::yes(),
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.report().exit_code(), 1);
+    assert!(matches!(
+        &result.report().error().unwrap().kind,
+        OperationErrorKind::Http { status: 400, .. }
+    ));
+    let receipt = delivered(result);
+    assert_eq!(receipt["error"]["code"], "ServiceRejected");
+    assert_eq!(receipt["meta"]["status"], "failed");
+    assert_eq!(receipt["meta"]["completed"], false);
+    assert_eq!(receipt["meta"]["httpStatus"], 400);
+    assert_eq!(receipt["meta"]["serviceCode"], "InvalidRequest");
+    assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+    assert_eq!(receipt["meta"]["resourceId"], ITEM);
+    assert_eq!(
+        receipt["meta"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert_eq!(receipt["meta"]["remoteReplayed"], false);
+    assert_anticipated_effects(&receipt);
+    harness.assert_posts(1);
+    assert_eq!(harness.wire.requests.lock().unwrap().len(), 4);
 }
 
 #[tokio::test]

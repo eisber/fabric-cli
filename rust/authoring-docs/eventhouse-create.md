@@ -100,6 +100,12 @@ from an empty response. `meta.submission.httpStatus`, `operationHandle` and
 the latest `meta.observation.httpStatus`. Initial resource evidence survives
 failed/cancelled polling, malformed final JSON and a mismatched final resource;
 none of those outcomes becomes completed success.
+Unexpected success-class operation-result statuses (including 201, 202 or 204
+where the shared engine requires 200) remain `InvalidResponse`/`unknown` with a
+nonzero exit, not a definitive provider rejection. The original typed SDK
+`Http` error/status remains available alongside initial 202 resource/handle
+evidence. Genuine non-2xx rejection and terminal operation failure retain their
+failed classification; neither path replays the POST.
 Observed folder fields stay in protected `meta.folderId` and
 `meta.submission.folderId` with explicit `folderIdObserved` flags, so a response
 that omits the field remains distinguishable from an observed null field even
@@ -125,8 +131,11 @@ Notebook documentation. The root-folder and strict-lint follow-up
 `caf2f7f2789438cf3abe67242a13aeb048b1ce56` is consumed next as a logical diff over
 the three shared paths, with the generic contract paragraph placed in the
 existing destination section. No Notebook leaf, producer test commits
-`1828d79`/`916dcb7`, peer ancestry or whole PR is imported. Source adoption is not
-native validation or final qualification.
+`1828d79`/`916dcb7`, peer ancestry or whole PR is imported. The two-file
+unexpected-result-status follow-up
+`0ec384823fd209f2084e30b4e9677fe7799b136a` is consumed next as a logical diff,
+without producer `5a7c9c5` test ancestry or an operation-engine fork. Source
+adoption is not native validation or final qualification.
 
 `tests/eventhouse_create.rs` exercises the parser, shared host, SDK planner,
 injected credential and scripted HTTP executor. `tests/eventhouse_create_binary.rs`
