@@ -896,6 +896,7 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     ['fabric-sdk', 'livy-arrow-ipc', 'livy_arrow_ipc', 'rust/engine/sdk/Cargo.toml'],
     ['fabric-cli', 'runtime-v2', 'runtime_v2', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create', 'create_host', 'rust/clients/cli/app/Cargo.toml'],
+    ['fabric-cli', 'v2-create-semantic-model', 'semantic_model_create', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-sdk-transport', 'notebook-websocket', 'notebook_websocket',
       'rust/engine/core/http/transport/Cargo.toml'],
   ];
@@ -918,6 +919,20 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     assert.ok(graph.components.some(item => item.package === pkg &&
       item.tests.some(test => test.target === `test:${target}`)));
   }
+});
+
+test('blank SemanticModel root dispatch selects its HTTP and headless executable contracts', () => {
+  const graph = JSON.parse(fs.readFileSync(path.join(__dirname, '../validation/impact-graph.json')));
+  const leaf = graph.components.find(item => item.id === 'cli-semantic-model-create');
+  assert.ok(leaf.inputs.includes('rust/clients/cli/app/src/v2_main.rs'));
+  assert.ok(leaf.inputs.includes('rust/clients/cli/app/src/semantic_model_create.rs'));
+  assert.ok(leaf.depends_on.includes('cli-create-host'));
+  for (const target of ['semantic_model_create', 'semantic_model_create_entry']) {
+    assert.ok(leaf.tests.some(item => item.package === 'fabric-cli' && item.target === `test:${target}`));
+  }
+  const native = graph.profiles.find(item => item.id === 'v2-create-semantic-model-headless');
+  assert.deepEqual(native.features, ['fabric-cli/v2-create-semantic-model', 'fabric-cli/headless']);
+  assert.deepEqual(native.platforms, ['windows', 'linux', 'macos']);
 });
 
 function relocatedCatalogFixture(files) {

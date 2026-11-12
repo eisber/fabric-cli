@@ -12,7 +12,9 @@ executable remains v1 `fab-rs`, where `create` is an alias for `mkdir`.
 The separate public library contracts are `fabric-sdk-items::create` and
 `fabric-cli-mutations::v2_create`. Source implementation is available for SDK
 policy and CLI parsing; compilation and tests remain unverified.
-The v2 create command is not mounted in the executable root or service host.
+There is no generic artifact create mount. The separately opt-in
+[blank SemanticModel binding](semantic-model-create.md) uses the shared host
+without changing the v1 alias.
 
 The shared [create host](create-host.md) requires immediate explicit approval.
 Approval inspects the exact already-prepared method, bound URL and outgoing

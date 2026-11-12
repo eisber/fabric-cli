@@ -43,6 +43,8 @@ pub mod run_notebook;
 #[cfg(feature = "runtime-v2")]
 pub mod runtime_v2;
 pub mod search_command;
+#[cfg(feature = "v2-create-semantic-model")]
+pub mod semantic_model_create;
 pub mod session;
 #[cfg(feature = "v2-deploy")]
 pub mod stage_deploy;

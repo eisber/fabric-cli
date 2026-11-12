@@ -615,6 +615,26 @@
       "checks": ["dependency-graph"]
     },
     {
+      "id": "cli-semantic-model-create",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/semantic_model_create.rs",
+        "rust/clients/cli/app/src/v2_main.rs",
+        "rust/clients/cli/app/tests/semantic_model_create.rs",
+        "rust/clients/cli/app/tests/semantic_model_create_entry.rs",
+        "rust/clients/cli/commands/mutations/src/blank_semantic_model.rs",
+        "rust/authoring-docs/semantic-model-create.md"
+      ],
+      "depends_on": ["cli-create-host", "mutations"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:semantic_model_create"},
+        {"package": "fabric-cli", "target": "test:semantic_model_create_entry"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"},
+        {"package": "fabric-cli-mutations", "target": "lib"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "cli-graph-refresh",
       "package": "fabric-cli",
       "inputs": [
@@ -3015,6 +3035,20 @@
     }
   ],
   "profiles": [
+    {
+      "id": "v2-create-semantic-model",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-create-semantic-model"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-create-semantic-model-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-create-semantic-model", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
     {
       "id": "v2-create",
       "packages": ["fabric-cli"],
