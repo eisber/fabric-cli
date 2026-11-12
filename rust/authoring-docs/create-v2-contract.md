@@ -12,7 +12,9 @@ executable remains v1 `fab-rs`, where `create` is an alias for `mkdir`.
 The separate public library contracts are `fabric-sdk-items::create` and
 `fabric-cli-mutations::v2_create`. Source implementation is available for SDK
 policy and CLI parsing; compilation and tests remain unverified.
-The v2 create command is not mounted in the executable root or service host.
+The opt-in `v2-create` + `headless` `fab-cli-v2` executable now mounts only
+[metadata-only DataPipeline create](datapipeline-create.md) through the shared
+native host. This does not mount every resource or qualify live/platform parity.
 
 ## Target grammar
 
@@ -202,8 +204,8 @@ continues to document its existing handlers separately.
 | Current executable | V1 `fab-rs`; `create` remains the `mkdir` alias, not this v2 contract. |
 | SDK and pure policy | Source implementation available for `fabric-sdk-items::create`; compilation and tests unverified. |
 | CLI library and parsing | Source implementation available for `fabric-cli-mutations::v2_create` and parsing; compilation and tests unverified. |
-| Executable integration | V2 create root and service-host mounts remain absent. |
-| Resource backend | No backend proof establishes that a resource implements all requested policies. |
+| Executable integration | Opt-in `fab-cli-v2 create` selects only the native DataPipeline metadata binding; default/v1 aliases are unchanged. |
+| Resource backend | DataPipeline metadata supports error and exact-existing skip only; overwrite/duplicate remain unsupported. See the [bounded native contract](datapipeline-create.md). |
 | Live and platform acceptance | No live service or platform acceptance evidence is supplied here; no performance claim is made. |
 
 CLI planning delegates to the SDK planner as the single shared policy authority.

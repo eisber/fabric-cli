@@ -896,6 +896,7 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     ['fabric-sdk', 'livy-arrow-ipc', 'livy_arrow_ipc', 'rust/engine/sdk/Cargo.toml'],
     ['fabric-cli', 'runtime-v2', 'runtime_v2', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-cli', 'v2-create', 'create_host', 'rust/clients/cli/app/Cargo.toml'],
+    ['fabric-cli', 'v2-create', 'datapipeline_create', 'rust/clients/cli/app/Cargo.toml'],
     ['fabric-sdk-transport', 'notebook-websocket', 'notebook_websocket',
       'rust/engine/core/http/transport/Cargo.toml'],
   ];
@@ -918,6 +919,29 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
     assert.ok(graph.components.some(item => item.package === pkg &&
       item.tests.some(test => test.target === `test:${target}`)));
   }
+});
+
+test('DataPipeline create keeps both feature-gated consumer targets and native host coverage', () => {
+  const root = path.resolve(__dirname, '..', '..');
+  const graph = JSON.parse(fs.readFileSync(path.join(root, 'rust/validation/impact-graph.json'), 'utf8'));
+  const binding = graph.components.find(item => item.id === 'cli-datapipeline-create');
+  assert.deepEqual(binding.depends_on, ['cli-create-host']);
+  assert.deepEqual(binding.tests.map(item => item.target), [
+    'test:datapipeline_create', 'test:datapipeline_create_process', 'bin:fab-cli-v2',
+  ]);
+  assert.ok(binding.inputs.includes('rust/tests/compatibility/jobs/support.rs'));
+  const host = graph.components.find(item => item.id === 'cli-create-host');
+  assert.ok(host.inputs.includes('rust/clients/cli/app/src/v2_create_main.rs'));
+  const architecture = graph.components.find(item => item.id === 'workspace-architecture');
+  assert.ok(architecture.depends_on.includes(binding.id));
+  assert.ok(architecture.depends_on.includes(host.id));
+  const profile = graph.profiles.find(item => item.id === 'v2-create-headless');
+  assert.deepEqual(profile.features, ['fabric-cli/v2-create', 'fabric-cli/headless']);
+  assert.deepEqual(profile.platforms, ['windows', 'linux', 'macos']);
+  const manifest = fs.readFileSync(path.join(root, 'rust/clients/cli/app/Cargo.toml'), 'utf8');
+  const process = manifest.split('[[test]]')
+    .find(item => item.includes('name = "datapipeline_create_process"'));
+  assert.ok(process.includes('required-features = ["v2-create", "headless"]'));
 });
 
 function relocatedCatalogFixture(files) {

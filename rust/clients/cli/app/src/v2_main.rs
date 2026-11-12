@@ -29,6 +29,8 @@ use std::{
 
 #[path = "headless.rs"]
 mod headless;
+#[cfg(feature = "v2-create")]
+mod v2_create_main;
 mod v2_exists_main;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
@@ -45,6 +47,15 @@ mod native_read {
 
 fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    #[cfg(feature = "v2-create")]
+    if args.first().and_then(|value| value.to_str()) == Some("create") {
+        static BINDING: fabric_cli::datapipeline_create::DataPipelineCreateBinding =
+            fabric_cli::datapipeline_create::DataPipelineCreateBinding;
+        return std::process::ExitCode::from(finish(
+            v2_create_main::run(args, &BINDING),
+            &mut io::stderr().lock(),
+        ));
+    }
     if args.first().and_then(|value| value.to_str()) == Some("exists") {
         return std::process::ExitCode::from(finish(
             v2_exists_main::run(args),
@@ -140,6 +151,9 @@ fn run() -> Result<(), Failure> {
     }
     if args.as_slice() == [std::ffi::OsStr::new("--help")] {
         writeln!(io::stdout().lock(), "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 update <path> --input FILE|- --mode patch --plan\n\nRun a command with --help for its supported schema.\nUpdate plans are local; mutation execution requires a caller-injected approval host.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.")
+            .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "v2-create")]
+        writeln!(io::stdout().lock(), "\nOpt-in create /<workspaceGUID>.Workspace/<literal-name>.DataPipeline [OPTIONS]\nCreates empty item metadata only, not a configured runnable pipeline.\nNo definition publication, content update, deployment or job submission.")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         return Ok(());
     }

@@ -1,0 +1,6 @@
+kind: added
+body: Add opt-in native v2 metadata-only DataPipeline creation with exact workspace-ID targets, strict JSON input, explicit approval, error/skip policies, and retained operation evidence. This does not configure or run a pipeline and leaves v1 create/mkdir unchanged.
+time: 2026-11-12T14:16:00+01:00
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot

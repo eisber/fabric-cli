@@ -24,6 +24,16 @@ path = "tests/create_host.rs"
 required-features = ["v2-create"]
 
 [[test]]
+name = "datapipeline_create"
+path = "tests/datapipeline_create.rs"
+required-features = ["v2-create"]
+
+[[test]]
+name = "datapipeline_create_process"
+path = "tests/datapipeline_create_process.rs"
+required-features = ["v2-create", "headless"]
+
+[[test]]
 name = "definition_copy_v2"
 path = "tests/definition_copy_v2.rs"
 required-features = ["native-host", "v2-copy"]
