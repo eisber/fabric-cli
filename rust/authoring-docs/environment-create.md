@@ -59,9 +59,13 @@ not the current API schema, universal availability, or race-proof uniqueness.
 New tests use synthetic payloads exclusively.
 
 Only `error` and exact-existing `skip` are supported. Complete bounded generic
-item listing establishes a local observation, not an atomic name reservation.
+Core item listing uses `recursive=false` without `rootFolderId`, the documented
+direct-workspace selection. This is a local observation, not an atomic name reservation.
 An exact, unique, correct-kind match may be skipped only after validating all
-explicit input. Case-only collisions, ambiguous names, wrong kind, invalid
+explicit input. Only root candidates participate in typed cardinality. A root
+candidate plus a valid nested same-name item selects only the root. Nested-only
+or malformed folder identity rejects; no nested resource is skipped as a root
+leaf. Case-only collisions, duplicate root candidates, wrong kind, invalid
 identity, or incomplete discovery fail closed. Missing-target skip selects one
 create request. A provider collision, including any 409, remains a failure;
 there is no raced-skip fallback, retry, upsert, or atomic uniqueness claim.
@@ -92,6 +96,10 @@ Initial acceptance remains separate from the latest observation in protected
 `meta.submission.httpStatus`, `meta.submission.resource`, and
 `meta.submission.operationHandle`. A malformed final result cannot erase the
 accepted resource identity or promote the outcome to completed.
+Completed 201 and final 200 results revalidate root placement. Observed
+`folderId` and `folderIdObserved` remain protected from data projection, including
+the initial submission's fields. A returned nested or malformed folder identity
+is a nonzero unknown outcome, not completed root creation or rollback.
 
 `tests/environment_create.rs` covers parser-to-host-to-SDK-to-scripted-HTTP
 behavior and the native process boundary. Explicit impact profiles register
@@ -100,9 +108,9 @@ macOS. Source and registered tests do not establish executed platform acceptance
 the exact-head validation receipt and ordinary PR CI report actual results.
 No live Entra, Fabric provisioning, publish, or compute operation is authorized.
 
-The root-folder skip regression is retained as a fail-closed requirement while
-the shared helper's original owner supplies a follow-up. At this source stage,
-that gap remains blocking: registered regression source is not a passing check
-or completed exact-target implementation.
+The source consumes the released shared root-scope correction after the exact
+approval/submission correction. Root selection, complete paging, malformed scope,
+duplicate roots and result-placement regressions remain registered requirements:
+their source presence does not establish passing native or platform checks.
 
 [create]: https://learn.microsoft.com/en-us/rest/api/fabric/environment/items/create-environment

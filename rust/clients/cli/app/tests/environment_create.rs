@@ -263,15 +263,33 @@ impl Rig {
         for request in requests.iter() {
             assert_eq!(request.url().host_str(), Some("api.fabric.microsoft.com"));
             match request.method() {
-                Method::Post => assert_eq!(
-                    request.url().path(),
-                    format!("/v1/workspaces/{WS}/environments")
-                ),
-                Method::Get => assert!(
-                    request.url().path() == format!("/v1/workspaces/{WS}/items")
-                        || request.url().path() == format!("/v1/operations/{OP}")
-                        || request.url().path() == format!("/v1/operations/{OP}/result")
-                ),
+                Method::Post => {
+                    assert_eq!(
+                        request.url().path(),
+                        format!("/v1/workspaces/{WS}/environments")
+                    );
+                    assert!(request.url().query().is_none());
+                }
+                Method::Get if request.url().path() == format!("/v1/workspaces/{WS}/items") => {
+                    let query: Vec<_> = request.url().query_pairs().collect();
+                    assert_eq!(
+                        query
+                            .first()
+                            .map(|(key, value)| (key.as_ref(), value.as_ref())),
+                        Some(("recursive", "false"))
+                    );
+                    assert!(query.len() <= 2);
+                    if let Some((key, _)) = query.get(1) {
+                        assert_eq!(key, "continuationToken");
+                    }
+                }
+                Method::Get => {
+                    assert!(
+                        request.url().path() == format!("/v1/operations/{OP}")
+                            || request.url().path() == format!("/v1/operations/{OP}/result")
+                    );
+                    assert!(request.url().query().is_none());
+                }
                 method => panic!("unexpected effect: {method:?}"),
             }
         }
@@ -551,6 +569,235 @@ async fn nested_or_malformed_folder_placement_never_satisfies_root_skip() {
         );
         assert_eq!(approval.calls, 0);
         rig.assert_requests(0);
+    }
+}
+
+#[tokio::test]
+async fn exact_root_skip_excludes_valid_nested_rows_and_preserves_observed_folder_fields() {
+    let temp = tempfile::tempdir().unwrap();
+    for folder in [None, Some(Value::Null)] {
+        let mut root = resource();
+        if let Some(folder) = &folder {
+            root["folderId"] = folder.clone();
+        }
+        let nested = json!({"id":OP,"workspaceId":WS,"displayName":"Exact","type":"Environment","folderId":OP});
+        let rig = Rig::new([listed(vec![nested, root])]);
+        let input = br#"{"displayName":"Exact","type":"Environment","folderId":null}"#;
+        let mut approval = Approval::allowing(Some(serde_json::from_slice(input).unwrap()));
+        let delivery = rig
+            .execute(
+                prepare(
+                    &["--if-exists", "skip", "--input", "-"],
+                    Some(input),
+                    temp.path(),
+                ),
+                &mut approval,
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 0);
+        assert_eq!(delivery.report().value()["meta"]["resourceId"], ITEM);
+        assert_eq!(delivery.report().value()["meta"]["action"], "skip");
+        assert_eq!(delivery.report().value()["meta"]["folderId"], Value::Null);
+        assert_eq!(
+            delivery.report().value()["meta"]["folderIdObserved"],
+            folder.is_some()
+        );
+        assert_eq!(approval.calls, 1);
+        assert!(approval.approved_body.is_none());
+        rig.assert_requests(0);
+        assert_eq!(
+            rig.http.requests.lock().unwrap()[0].url().query(),
+            Some("recursive=false")
+        );
+    }
+}
+
+#[tokio::test]
+async fn malformed_matching_scope_cannot_be_hidden_by_a_valid_root_candidate() {
+    let temp = tempfile::tempdir().unwrap();
+    for invalid in [
+        json!({"id":OP,"workspaceId":ITEM,"displayName":"Exact","type":"Environment","folderId":null}),
+        json!({"id":OP,"workspaceId":WS,"displayName":"Exact","type":"Environment","folderId":"invalid"}),
+        json!({"id":OP,"workspaceId":WS,"displayName":"Exact","type":null,"folderId":null}),
+    ] {
+        let rig = Rig::new([listed(vec![resource(), invalid])]);
+        let mut approval = Approval::allowing(None);
+        assert!(
+            rig.execute(
+                prepare(&["--if-exists", "skip"], None, temp.path()),
+                &mut approval,
+                pending()
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(approval.calls, 0);
+        rig.assert_requests(0);
+    }
+}
+
+#[tokio::test]
+async fn every_discovery_page_preserves_direct_root_query_and_ambiguity_fails_closed() {
+    let temp = tempfile::tempdir().unwrap();
+    for duplicate in [false, true] {
+        let second = if duplicate {
+            resource()
+        } else {
+            json!({"id":OP,"displayName":"Exact","type":"Environment","folderId":OP})
+        };
+        let rig = Rig::new([
+            response(200, &json!({"value":[resource()],"continuationToken":"next +?","continuationUri":format!("https://api.fabric.microsoft.com/v1/workspaces/{WS}/items?continuationToken=next")}).to_string(), &[]),
+            listed(vec![second]),
+        ]);
+        let mut approval = Approval::allowing(None);
+        let result = rig
+            .execute(
+                prepare(&["--if-exists", "skip"], None, temp.path()),
+                &mut approval,
+                pending(),
+            )
+            .await;
+        if duplicate {
+            assert!(result.is_err());
+            assert_eq!(approval.calls, 0);
+        } else {
+            let delivery = result.unwrap();
+            assert_eq!(delivery.report().exit_code(), 0);
+            assert_eq!(delivery.report().value()["meta"]["resourceId"], ITEM);
+            assert_eq!(approval.calls, 1);
+        }
+        rig.assert_requests(0);
+        let requests = rig.http.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].url().query(), Some("recursive=false"));
+        assert_eq!(
+            requests[1].url().query(),
+            Some("recursive=false&continuationToken=next+%2B%3F")
+        );
+    }
+}
+
+#[tokio::test]
+async fn incomplete_or_untrusted_paging_never_authorizes_root_skip_or_creation() {
+    let temp = tempfile::tempdir().unwrap();
+    let repeated = || {
+        response(
+            200,
+            &json!({"value":[],"continuationToken":"same"}).to_string(),
+            &[],
+        )
+    };
+    let foreign = response(200, &json!({"value":[resource()],"continuationToken":"next","continuationUri":"https://foreign.invalid/v1/items?continuationToken=next"}).to_string(), &[]);
+    let bounded: Vec<_> = (0..10)
+        .map(|index| {
+            response(
+                200,
+                &json!({"value":[],"continuationToken":format!("page-{index}")}).to_string(),
+                &[],
+            )
+        })
+        .collect();
+    for replies in [
+        vec![repeated(), repeated()],
+        vec![foreign],
+        bounded,
+        vec![response(200, &" ".repeat(MAX_BYTES + 1), &[])],
+    ] {
+        let rig = Rig::new(replies);
+        let mut approval = Approval::allowing(None);
+        assert!(
+            rig.execute(
+                prepare(&["--if-exists", "skip"], None, temp.path()),
+                &mut approval,
+                pending()
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(approval.calls, 0);
+        rig.assert_requests(0);
+        assert!(rig.http.requests.lock().unwrap().len() <= 10);
+    }
+}
+
+#[tokio::test]
+async fn completed_native_responses_require_root_placement_and_keep_observed_folder_evidence() {
+    let temp = tempfile::tempdir().unwrap();
+    for wait in [false, true] {
+        for folder in [
+            None,
+            Some(Value::Null),
+            Some(json!(OP)),
+            Some(json!("invalid")),
+            Some(json!({})),
+        ] {
+            let mut item = resource();
+            if let Some(folder) = &folder {
+                item["folderId"] = folder.clone();
+            }
+            let valid = folder.as_ref().is_none_or(Value::is_null);
+            let mut replies = vec![listed(vec![])];
+            if wait {
+                replies.push(accepted(&resource().to_string()));
+                replies.push(response(200, r#"{"status":"Succeeded"}"#, &[]));
+            }
+            replies.push(response(
+                if wait { 200 } else { 201 },
+                &item.to_string(),
+                &[],
+            ));
+            let rig = Rig::new(replies);
+            let options: &[&str] = if wait {
+                &["--wait", "--project", "missing"]
+            } else {
+                &["--project", "missing"]
+            };
+            let delivery = rig
+                .execute(
+                    prepare(options, None, temp.path()),
+                    &mut Approval::allowing(None),
+                    pending(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(delivery.report().exit_code(), u8::from(!valid));
+            let mut output = Vec::new();
+            delivery.deliver(&mut output).unwrap();
+            let receipt: Value = serde_json::from_slice(&output).unwrap();
+            assert_eq!(receipt["data"], Value::Null);
+            assert_eq!(receipt["meta"]["completed"], valid);
+            assert_eq!(receipt["meta"]["resourceId"], ITEM);
+            assert_eq!(
+                receipt["meta"]["folderId"],
+                folder.clone().unwrap_or(Value::Null)
+            );
+            assert_eq!(receipt["meta"]["folderIdObserved"], folder.is_some());
+            assert_eq!(
+                receipt["meta"]["submission"]["httpStatus"],
+                if wait { 202 } else { 201 }
+            );
+            assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+            assert_eq!(receipt["meta"]["remoteReplayed"], false);
+            if wait {
+                assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+                assert_eq!(
+                    receipt["meta"]["operationHandle"],
+                    format!("/operations/{OP}")
+                );
+            } else {
+                assert_eq!(
+                    receipt["meta"]["submission"]["folderId"],
+                    folder.clone().unwrap_or(Value::Null)
+                );
+                assert_eq!(
+                    receipt["meta"]["submission"]["folderIdObserved"],
+                    folder.is_some()
+                );
+            }
+            rig.assert_requests(1);
+        }
     }
 }
 
