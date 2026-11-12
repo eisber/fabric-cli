@@ -132,6 +132,60 @@ enum Target {
     File(PathBuf),
 }
 
+/// Bounded local setup failure, preserving the caller's typed configuration error.
+pub enum SetupError<E> {
+    /// Local deadline, cancellation or worker failure.
+    Host(HostError),
+    /// The caller's original error, never formatted automatically.
+    Work(E),
+}
+
+impl<E> std::fmt::Debug for SetupError<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Host(error) => f.debug_tuple("SetupError::Host").field(error).finish(),
+            Self::Work(_) => f.write_str("SetupError::Work(<redacted>)"),
+        }
+    }
+}
+
+/// Run local configuration/SDK construction on an owned, interruptible worker.
+///
+/// Supply the same original deadline and pinned cancellation future used by
+/// acquisition and output. Queued work is aborted on interruption; genuinely
+/// in-flight local OS calls can finish later and their result is discarded.
+/// The callback must only construct the existing selection/session: no token
+/// acquisition, HTTP, discovery or other remote effects belong on this worker.
+///
+/// # Errors
+/// Preserves typed caller errors separately from deadline/cancellation/worker
+/// failures. A late successful callback never becomes successful setup.
+pub async fn setup<T, E>(
+    deadline: Instant,
+    cancelled: impl Future<Output = ()>,
+    work: impl FnOnce() -> Result<T, E> + Send + 'static,
+) -> Result<T, SetupError<E>>
+where
+    T: Send + 'static,
+    E: Send + 'static,
+{
+    let result =
+        owned_output::write_owned(io::sink(), deadline, cancelled, move |_| Ok(work())).await;
+    if Instant::now() >= deadline {
+        return Err(SetupError::Host(HostError::new(ReadErrorKind::Timeout)));
+    }
+    match result {
+        owned_output::OwnedWrite::Complete(Ok(result)) => result.map_err(SetupError::Work),
+        owned_output::OwnedWrite::Deadline => {
+            Err(SetupError::Host(HostError::new(ReadErrorKind::Timeout)))
+        }
+        owned_output::OwnedWrite::Cancelled(()) => {
+            Err(SetupError::Host(HostError::new(ReadErrorKind::Cancelled)))
+        }
+        _ => Err(SetupError::Host(HostError::new(ReadErrorKind::Execution))),
+    }
+}
+
 impl Destination {
     /// Check an output selection without creating a file or accessing identity.
     ///
@@ -176,13 +230,14 @@ pub async fn prepare_destination(
     deadline: Instant,
     cancelled: impl Future<Output = ()>,
 ) -> Result<Destination, HostError> {
-    before(deadline, cancelled, async {
-        tokio::task::spawn_blocking(move || Destination::check(&label, &cwd))
-            .await
-            .map_err(|_| HostError::new(ReadErrorKind::OutputUnavailable))?
-            .map_err(|_| HostError::new(ReadErrorKind::OutputUnavailable))
+    setup(deadline, cancelled, move || {
+        Destination::check(&label, &cwd)
     })
     .await
+    .map_err(|error| match error {
+        SetupError::Host(error) => error,
+        SetupError::Work(_) => HostError::new(ReadErrorKind::OutputUnavailable),
+    })
 }
 
 /// One complete observation with an owned, bounded JSON buffer, not yet delivered.

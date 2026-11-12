@@ -230,6 +230,13 @@ seam, not a second SDK engine:
 
 - `ExplicitResolver::new(OwnerPath, ResolvedTarget)` binds one exact typed human
   owner to the caller's existing SDK object. Foreign owners fail before execution.
+- `setup(original_deadline, cancelled, local_constructor)` bounds synchronous
+  selection/session construction on the same owned-worker policy. Its
+  `SetupError::Work(E)` preserves the caller's typed configuration error;
+  `SetupError::Host(HostError)` reports interruption/worker failure. Debug output
+  redacts the caller error. Queued work is aborted, and late results discarded.
+  The callback constructs existing local bindings only, never HTTP or token
+  acquisition. `prepare_destination` consumes this same helper.
 - `prepare_destination(label, cwd, deadline, cancelled)` checks output on an
   owned worker, without creating files. `Destination::check` is the synchronous
   equivalent for callers already on a blocking worker.

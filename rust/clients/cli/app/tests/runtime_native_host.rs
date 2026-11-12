@@ -875,3 +875,64 @@ async fn accepted_receipt_survives_delivery_failure_without_claiming_read_comple
         "racing owner"
     );
 }
+
+#[tokio::test]
+async fn bounded_setup_preserves_typed_errors_and_discards_late_local_success() {
+    use fabric_cli::runtime_v2::host::{SetupError, setup};
+    let error = setup(deadline(), pending(), || {
+        Err::<(), _>("private configuration")
+    })
+    .await
+    .unwrap_err();
+    assert!(!format!("{error:?}").contains("private"));
+    assert!(matches!(error, SetupError::Work("private configuration")));
+    let (release, wait) = std::sync::mpsc::channel();
+    let (started, started_wait) = tokio::sync::oneshot::channel();
+    let end = Instant::now() + Duration::from_millis(100);
+    let worker = tokio::spawn(setup(end, pending(), move || {
+        started.send(()).unwrap();
+        wait.recv().unwrap();
+        Ok::<_, ()>(())
+    }));
+    started_wait.await.unwrap();
+    let error = worker.await.unwrap().unwrap_err();
+    assert!(matches!(error, SetupError::Host(ref error) if error.kind == ReadErrorKind::Timeout));
+    release.send(()).unwrap();
+}
+
+#[test]
+fn bounded_setup_aborts_queued_capture_on_cancellation_or_original_deadline() {
+    use fabric_cli::runtime_v2::host::{SetupError, setup};
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        for cancel in [false, true] {
+            let (release, wait) = std::sync::mpsc::channel();
+            let (started, started_wait) = tokio::sync::oneshot::channel();
+            let blocker = tokio::task::spawn_blocking(move || {
+                started.send(()).unwrap();
+                wait.recv().unwrap();
+            });
+            started_wait.await.unwrap();
+            let called = Arc::new(AtomicUsize::new(0));
+            let worker_called = called.clone();
+            let end = Instant::now() + Duration::from_millis(if cancel { 500 } else { 20 });
+            let error = setup(end, async move {
+                if cancel { tokio::time::sleep(Duration::from_millis(10)).await; }
+                else { pending::<()>().await; }
+            }, move || {
+                worker_called.fetch_add(1, Ordering::SeqCst);
+                Ok::<_, ()>(())
+            }).await.unwrap_err();
+            release.send(()).unwrap();
+            blocker.await.unwrap();
+            tokio::task::spawn_blocking(|| ()).await.unwrap();
+            assert!(matches!(error, SetupError::Host(ref error) if error.kind == if cancel { ReadErrorKind::Cancelled } else { ReadErrorKind::Timeout }));
+            assert_eq!(called.load(Ordering::SeqCst), 0);
+        }
+    });
+    runtime.shutdown_timeout(Duration::from_millis(100));
+}
