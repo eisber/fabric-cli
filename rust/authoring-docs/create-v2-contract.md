@@ -55,6 +55,11 @@ Resource paths retain type suffixes, such as
 which resource types or collections implement each policy. The resolved schema
 and capability must support the requested destination form and operation.
 
+Bounded generic item discovery explicitly selects direct workspace items with
+`recursive=false`. A nested same-name item cannot be skipped as the root target;
+malformed folder identity or a nested-only match rejects before mutation.
+Completed create responses also reject a non-root returned folder identity.
+
 Preserve raw input bytes before any declared format conversion. Do not silently
 normalize line endings, change encoding, or reserialize structured content.
 An explicitly advertised, deterministic format conversion can transform bytes
