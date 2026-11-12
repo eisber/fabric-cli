@@ -18,6 +18,11 @@ A native leaf implements `CreateBinding: CreateInputValidator`:
 - `capabilities()` supplies one schema and proven provider guarantees.
 - `operation(plan, raw, wait)` builds that leaf's typed native operation.
 
+`command_for_binding(binding)` renders the existing parser grammar with the
+selected owner, its exact typed path and the host-admitted policy subset.
+Shared native help never names another provider or advertises replacement and
+duplicate merely because a binding declares those capabilities.
+
 The binding must validate its schema, owner, body/name identity, and supported
 native fields. It must independently bind original explicit bytes to the
 planner's validated input, without changing multipart payloads or metadata.
