@@ -57,81 +57,81 @@ fn arbitrary_precision_does_not_change_python_finite_float_semantics() {
         );
         assert!(!format!("{error:?}").contains(source));
     }
+}
 
-    #[test]
-    fn genuine_private_number_keys_remain_ordered_objects_not_synthetic_numbers() {
-        // Independent Python json.loads/json.dumps expectations, including escaped
-        // spellings of the same legal key. Never deserialize expected objects into Value.
-        for (source, expected) in [
-            (
-                r#"{"$serde_json::private::Number":"123"}"#,
-                r#"{"$serde_json::private::Number": "123"}"#,
-            ),
-            (
-                r#"{"$serde_json::private::Number":"not a number"}"#,
-                r#"{"$serde_json::private::Number": "not a number"}"#,
-            ),
-            (
-                r#"{"$serde_json::private::Number":18446744073709551617}"#,
-                r#"{"$serde_json::private::Number": 18446744073709551617}"#,
-            ),
-            (
-                r#"{"metadata":{"$serde_json::private::Number":"123"},"wide":18446744073709551617,"negative":-9223372036854775809}"#,
-                r#"{"metadata": {"$serde_json::private::Number": "123"}, "wide": 18446744073709551617, "negative": -9223372036854775809}"#,
-            ),
-            (
-                r#"{"\u0024serde_json::private::Number":"not a number"}"#,
-                r#"{"$serde_json::private::Number": "not a number"}"#,
-            ),
-            (
-                r#"{"metadata":{"$serde_json::private::\u004eumber":"123"},"array":[{"$serde_json::private::Number":"not a number"}]}"#,
-                r#"{"metadata": {"$serde_json::private::Number": "123"}, "array": [{"$serde_json::private::Number": "not a number"}]}"#,
-            ),
-            (
-                r#"{"before":1,"$serde_json::private::Number":"old","after":2,"$serde_json::private::Number":"new"}"#,
-                r#"{"before": 1, "$serde_json::private::Number": "new", "after": 2}"#,
-            ),
-            (
-                r#"{"$serde_json::private::Number":{"nested":[true,null,-9223372036854775809]},"$serde_json::private::RawValue":"literal"}"#,
-                r#"{"$serde_json::private::Number": {"nested": [true, null, -9223372036854775809]}, "$serde_json::private::RawValue": "literal"}"#,
-            ),
-        ] {
-            let value = decode(source.as_bytes()).unwrap();
-            assert!(value.is_object(), "{source}");
-            assert_eq!(json_dumps(&value), expected, "{source}");
-            assert_eq!(decode(expected.as_bytes()).unwrap(), value);
-        }
+#[test]
+fn genuine_private_number_keys_remain_ordered_objects_not_synthetic_numbers() {
+    // Independent Python json.loads/json.dumps expectations, including escaped
+    // spellings of the same legal key. Never deserialize expected objects into Value.
+    for (source, expected) in [
+        (
+            r#"{"$serde_json::private::Number":"123"}"#,
+            r#"{"$serde_json::private::Number": "123"}"#,
+        ),
+        (
+            r#"{"$serde_json::private::Number":"not a number"}"#,
+            r#"{"$serde_json::private::Number": "not a number"}"#,
+        ),
+        (
+            r#"{"$serde_json::private::Number":18446744073709551617}"#,
+            r#"{"$serde_json::private::Number": 18446744073709551617}"#,
+        ),
+        (
+            r#"{"metadata":{"$serde_json::private::Number":"123"},"wide":18446744073709551617,"negative":-9223372036854775809}"#,
+            r#"{"metadata": {"$serde_json::private::Number": "123"}, "wide": 18446744073709551617, "negative": -9223372036854775809}"#,
+        ),
+        (
+            r#"{"\u0024serde_json::private::Number":"not a number"}"#,
+            r#"{"$serde_json::private::Number": "not a number"}"#,
+        ),
+        (
+            r#"{"metadata":{"$serde_json::private::\u004eumber":"123"},"array":[{"$serde_json::private::Number":"not a number"}]}"#,
+            r#"{"metadata": {"$serde_json::private::Number": "123"}, "array": [{"$serde_json::private::Number": "not a number"}]}"#,
+        ),
+        (
+            r#"{"before":1,"$serde_json::private::Number":"old","after":2,"$serde_json::private::Number":"new"}"#,
+            r#"{"before": 1, "$serde_json::private::Number": "new", "after": 2}"#,
+        ),
+        (
+            r#"{"$serde_json::private::Number":{"nested":[true,null,-9223372036854775809]},"$serde_json::private::RawValue":"literal"}"#,
+            r#"{"$serde_json::private::Number": {"nested": [true, null, -9223372036854775809]}, "$serde_json::private::RawValue": "literal"}"#,
+        ),
+    ] {
+        let value = decode(source.as_bytes()).unwrap();
+        assert!(value.is_object(), "{source}");
+        assert_eq!(json_dumps(&value), expected, "{source}");
+        assert_eq!(decode(expected.as_bytes()).unwrap(), value);
     }
+}
 
-    #[test]
-    fn raw_kind_decomposition_keeps_scalars_syntax_and_nesting_bounded() {
-        for (source, expected) in [
-            (" \n true \t", "true"),
-            ("false", "false"),
-            ("null", "null"),
-            (
-                r#""$serde_json::private::Number""#,
-                r#""$serde_json::private::Number""#,
-            ),
-            (
-                "[{},[],1.000,18446744073709551617]",
-                "[{}, [], 1.0, 18446744073709551617]",
-            ),
-        ] {
-            assert_eq!(json_dumps(&decode(source.as_bytes()).unwrap()), expected);
-        }
-        let shallow = format!("{}0{}", "[".repeat(32), "]".repeat(32));
-        assert!(decode(shallow.as_bytes()).is_ok());
-        let too_deep = format!("{}0{}", "[".repeat(128), "]".repeat(128));
-        assert!(decode(too_deep.as_bytes()).is_err());
-        for malformed in [
-            r#"{"$serde_json::private::Number":"valid",}"#,
-            "{}{}",
-            "null false",
-            "[1,]",
-            "",
-        ] {
-            assert!(decode(malformed.as_bytes()).is_err());
-        }
+#[test]
+fn raw_kind_decomposition_keeps_scalars_syntax_and_nesting_bounded() {
+    for (source, expected) in [
+        (" \n true \t", "true"),
+        ("false", "false"),
+        ("null", "null"),
+        (
+            r#""$serde_json::private::Number""#,
+            r#""$serde_json::private::Number""#,
+        ),
+        (
+            "[{},[],1.000,18446744073709551617]",
+            "[{}, [], 1.0, 18446744073709551617]",
+        ),
+    ] {
+        assert_eq!(json_dumps(&decode(source.as_bytes()).unwrap()), expected);
+    }
+    let shallow = format!("{}0{}", "[".repeat(32), "]".repeat(32));
+    assert!(decode(shallow.as_bytes()).is_ok());
+    let too_deep = format!("{}0{}", "[".repeat(128), "]".repeat(128));
+    assert!(decode(too_deep.as_bytes()).is_err());
+    for malformed in [
+        r#"{"$serde_json::private::Number":"valid",}"#,
+        "{}{}",
+        "null false",
+        "[1,]",
+        "",
+    ] {
+        assert!(decode(malformed.as_bytes()).is_err());
     }
 }
