@@ -30,6 +30,8 @@ mod get_report;
 pub mod get_resolution;
 pub mod get_target;
 pub mod jobs;
+#[cfg(feature = "v2-kql-database-create")]
+pub mod kql_database_create;
 pub mod local_commands;
 pub mod ml_endpoint;
 pub mod native_tabular;
