@@ -511,9 +511,13 @@ async fn write_stream_file(
 ) -> io::Result<()> {
     let stopped = Arc::new(AtomicBool::new(false));
     let worker_stop = Arc::clone(&stopped);
-    match owned_output::write_owned_stoppable(file, deadline, cancelled, stopped, move |file| {
-        write_counted(file, &bytes, deadline, &AtomicUsize::new(0), &worker_stop)
-    })
+    match owned_output::write_owned_with_policy(
+        file,
+        deadline,
+        cancelled,
+        Some(stopped),
+        move |file| write_counted(file, &bytes, deadline, &AtomicUsize::new(0), &worker_stop),
+    )
     .await
     {
         owned_output::OwnedWrite::Complete(result) if Instant::now() < deadline => result,

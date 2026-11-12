@@ -24,6 +24,7 @@ const TIMEOUT: Duration = Duration::from_secs(30);
 const HELP: &str = "Experimental exact Notebook Jupyter session GET.\n\
     get /<name>.Workspace/<name>.Notebook/sessions/<explicitJupyterSessionId>\n\
     artifact notebook get accepts the identical session path and options.\n\
+    Options: --format json, --max-bytes N, --output FILE|- / -o FILE|-.\n\
     Requires FAB_RUST_NOTEBOOK_BINDING and the existing explicit native identity.\n\
     JSON receipt only; no active/latest lookup, Spark readiness, metadata/content fallback or lifecycle action.\n\
     One original 30-second deadline covers setup, authentication, HTTP and delivery.\n\

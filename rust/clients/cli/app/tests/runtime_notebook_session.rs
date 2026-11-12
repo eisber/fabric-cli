@@ -103,8 +103,8 @@ mod native {
         http::{AsyncRawResponse, HttpClient, Method, Request, headers::Headers},
     };
     use fabric_cli::runtime_v2::{
-        ReadCoverage, ReadEffect, ReadErrorKind, ReadOptions, ReadReceipt, ReadStatus,
-        Representation, WorkloadObservation,
+        ReadCoverage, ReadEffect, ReadErrorKind, ReadOptions, ReadStatus, Representation,
+        WorkloadObservation,
         host::{Destination, HostError, PendingRead, acquire, prepare_destination},
         notebook::{NotebookBinding, NotebookConnection},
         parse_args,
@@ -384,8 +384,8 @@ mod native {
                 let bytes = std::fs::read(temp.path().join("result.json")).unwrap();
                 assert_eq!(bytes.last(), Some(&b'\n'));
                 assert_eq!(
-                    serde_json::from_slice::<ReadReceipt>(&bytes).unwrap(),
-                    receipt
+                    serde_json::from_slice::<Value>(&bytes).unwrap(),
+                    serde_json::to_value(&receipt).unwrap()
                 );
                 assert_routes(&wire);
                 assert!(wire.replies.lock().unwrap().is_empty());
