@@ -6,13 +6,16 @@ This document records owner-approved creation policy behavior and the separate
 CLI v2 implementation contract. Precise option grammar, exit and receipt-envelope
 details, timing, and source revision pins are implementation-contract details,
 not a claim of explicit owner approval for every broader user experience choice.
-It is not a command reference for the current executable. The current Rust
+It is not a general command reference for the current executable. The default Rust
 executable remains v1 `fab-rs`, where `create` is an alias for `mkdir`.
 
 The separate public library contracts are `fabric-sdk-items::create` and
 `fabric-cli-mutations::v2_create`. Source implementation is available for SDK
 policy and CLI parsing; compilation and tests remain unverified.
-The v2 create command is not mounted in the executable root or service host.
+The opt-in `v2-create-eventhouse` feature now supplies the bounded standalone
+Eventhouse mount in `fab-cli-v2` with `headless`; see
+[Eventhouse creation](eventhouse-create.md) and the [shared host](create-host.md).
+This does not establish support for other types or all policies.
 
 ## Target grammar
 
@@ -202,7 +205,7 @@ continues to document its existing handlers separately.
 | Current executable | V1 `fab-rs`; `create` remains the `mkdir` alias, not this v2 contract. |
 | SDK and pure policy | Source implementation available for `fabric-sdk-items::create`; compilation and tests unverified. |
 | CLI library and parsing | Source implementation available for `fabric-cli-mutations::v2_create` and parsing; compilation and tests unverified. |
-| Executable integration | V2 create root and service-host mounts remain absent. |
+| Executable integration | Opt-in standalone Eventhouse metadata create; no default/v1 change or general all-type mount. |
 | Resource backend | No backend proof establishes that a resource implements all requested policies. |
 | Live and platform acceptance | No live service or platform acceptance evidence is supplied here; no performance claim is made. |
 
