@@ -100,6 +100,10 @@ An unexpected success-class status on the operation-result request is an invalid
 unknown, nonzero outcome, not a definitive provider rejection. The original
 typed SDK HTTP error and actual status remain inspectable independently of that
 receipt classification.
+Initial and final resource response JSON uses the existing bounded strict
+decoder. Duplicate root, nested, or escaped-equivalent object keys cannot become
+successful creation or overwrite accepted identity evidence. Invalid response
+bytes remain labeled reconciliation data; they are not silently normalized.
 Completed 201 and final 200 results revalidate root placement. Observed
 `folderId` and `folderIdObserved` remain protected from data projection, including
 the initial submission's fields. A returned nested or malformed folder identity
