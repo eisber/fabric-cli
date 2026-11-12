@@ -13,11 +13,12 @@ use azure_core::{
     http::{AsyncRawResponse, Body, HttpClient, Method, Request, StatusCode, headers::Headers},
     time::OffsetDateTime,
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use fabric_cli::{
     create_command::{
-        CreateApproval, CreateApprovalError, CreateApprovalRequest, CreateBinding, CreateCommand,
-        CreateCommandError, CreateDelivery, CreateExecution, CreateTransportEvidence, MAX_BYTES,
-        PreparedCreateCommand, v2_create,
+        AnticipatedCreateEffect, CreateApproval, CreateApprovalError, CreateApprovalRequest,
+        CreateBinding, CreateCommand, CreateCommandError, CreateDelivery, CreateEffectKind,
+        CreateExecution, CreateTransportEvidence, MAX_BYTES, PreparedCreateCommand, v2_create,
     },
     create_notebook::NotebookBinding,
 };
@@ -34,6 +35,7 @@ use fabric_sdk_http::{
     ExecutionFuture, ExecutionOptions, ExecutionTimer, ExecutionTrace, HttpExecutor,
 };
 use fabric_sdk_operations::{FabricOperation, OperationErrorKind};
+use fabric_sdk_workspaces::mutations::{CompletionPolicy, ResourceMethod};
 use serde_json::{Value, json};
 use std::{
     collections::VecDeque,
@@ -187,6 +189,21 @@ struct Timer;
 impl ExecutionTimer for Timer {
     fn sleep(&self, delay: Duration) -> ExecutionFuture<'_, ()> {
         Box::pin(tokio::time::sleep(delay))
+    }
+}
+
+struct BodyDeadlineTimer {
+    body_started: Arc<tokio::sync::Notify>,
+}
+
+impl ExecutionTimer for BodyDeadlineTimer {
+    fn sleep(&self, delay: Duration) -> ExecutionFuture<'_, ()> {
+        if delay == ExecutionOptions::default().timeout {
+            Box::pin(self.body_started.notified())
+        } else {
+            assert_eq!(delay, Duration::ZERO);
+            Box::pin(ready(()))
+        }
     }
 }
 
@@ -362,11 +379,23 @@ impl Drop for Fixture {
 }
 
 #[derive(Debug)]
+struct OperationSnapshot {
+    method: ResourceMethod,
+    path: String,
+    body: Vec<u8>,
+    completion: CompletionPolicy,
+    url: String,
+}
+
+#[derive(Debug)]
 struct ApprovalSnapshot {
     raw: Option<Vec<u8>>,
     command: CreateCommand,
     remote_write: bool,
     existing_id: Option<String>,
+    operation: Option<OperationSnapshot>,
+    anticipated_effects: Vec<AnticipatedCreateEffect>,
+    question: String,
 }
 
 #[derive(Default)]
@@ -376,6 +405,8 @@ struct Approval {
     block: bool,
     calls: Vec<ApprovalSnapshot>,
     started: Arc<tokio::sync::Notify>,
+    operation_builds: Option<Arc<AtomicUsize>>,
+    effect_calls: Option<Arc<AtomicUsize>>,
 }
 
 impl CreateApproval for Approval {
@@ -402,11 +433,55 @@ impl CreateApproval for Approval {
             CreateAction::Create { .. } => None,
             _ => panic!("Notebook must not approve replacement or duplicate"),
         };
+        assert_eq!(request.operation().is_some(), request.remote_write());
+        assert_eq!(request.url().is_some(), request.remote_write());
+        let operation = request.operation().map(|operation| {
+            let url = request.url().unwrap();
+            assert_eq!(operation.method(), ResourceMethod::Post);
+            assert_eq!(
+                operation.path(),
+                format!(
+                    "/v1/workspaces/{}/notebooks",
+                    request.plan().target().parent_id().as_str()
+                )
+            );
+            assert_eq!(
+                operation.completion(),
+                if request.command().wait {
+                    CompletionPolicy::WaitForResult
+                } else {
+                    CompletionPolicy::ReturnAccepted
+                }
+            );
+            assert_eq!(url.path(), operation.path());
+            assert_eq!(url.scheme(), "https");
+            assert_eq!(url.host_str(), Some("api.fabric.microsoft.com"));
+            assert_eq!(url.query(), None);
+            if let Some(builds) = &self.operation_builds {
+                assert_eq!(builds.load(Ordering::SeqCst), 1);
+            }
+            if let Some(calls) = &self.effect_calls {
+                assert_eq!(calls.load(Ordering::SeqCst), 1);
+            }
+            OperationSnapshot {
+                method: operation.method(),
+                path: operation.path().to_owned(),
+                body: operation.body().to_vec(),
+                completion: operation.completion(),
+                url: url.as_str().to_owned(),
+            }
+        });
+        if !request.remote_write() {
+            assert!(request.anticipated_effects().is_empty());
+        }
         self.calls.push(ApprovalSnapshot {
             raw: request.raw_input().map(<[u8]>::to_vec),
             command: request.command().clone(),
             remote_write: request.remote_write(),
             existing_id,
+            operation,
+            anticipated_effects: request.anticipated_effects().to_vec(),
+            question: request.approval_question(),
         });
         Box::pin(async move {
             self.started.notify_one();
@@ -469,6 +544,12 @@ fn accepted() -> Reply {
     reply
 }
 
+fn accepted_resource() -> Reply {
+    let mut reply = accepted();
+    reply.body = ReplyBody::Bytes(serde_json::to_vec(&resource()).unwrap());
+    reply
+}
+
 fn state(status: &str) -> Reply {
     let mut reply = Reply::json(Method::Get, operation_path(), 200, json!({"status":status}));
     reply.headers.insert("retry-after", "0");
@@ -501,6 +582,30 @@ fn assert_no_replay(value: &Value) {
     assert_eq!(value["meta"]["type"], "Notebook");
 }
 
+fn assert_accepted_resource_provenance(value: &Value) {
+    let identity = json!({
+        "id":ITEM,"workspaceId":WS,"type":"Notebook","displayName":"Literal.name"
+    });
+    assert_eq!(value["data"], resource());
+    assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(
+        value["meta"]["submission"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert_eq!(value["meta"]["submission"]["resource"], identity);
+    assert_eq!(value["meta"]["httpStatus"], 200);
+    assert_eq!(value["meta"]["observation"]["httpStatus"], 200);
+    assert_eq!(value["meta"]["resourceId"], ITEM);
+    assert_eq!(value["meta"]["observedResource"], identity);
+    assert_eq!(
+        value["meta"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert_eq!(value["meta"]["completed"], false);
+    assert_eq!(value["meta"]["mutationMayHaveOccurred"], true);
+    assert_no_replay(value);
+}
+
 #[tokio::test]
 async fn parser_host_sdk_http_preserve_explicit_native_bytes_and_201_resource() {
     let fixture = Fixture::new(vec![listing(vec![]), created()]);
@@ -518,6 +623,8 @@ async fn parser_host_sdk_http_preserve_explicit_native_bytes_and_201_resource() 
     assert_eq!(value["meta"]["completed"], true);
     assert_eq!(value["meta"]["operationHandle"], Value::Null);
     assert_eq!(value["meta"]["mutationMayHaveOccurred"], true);
+    assert_eq!(value["meta"]["httpStatus"], 201);
+    assert_eq!(value["meta"]["submission"]["httpStatus"], 201);
     assert_no_replay(&value);
     assert_eq!(approval.calls.len(), 1);
     assert_eq!(approval.calls[0].raw.as_deref(), Some(RAW));
@@ -525,8 +632,39 @@ async fn parser_host_sdk_http_preserve_explicit_native_bytes_and_201_resource() 
     assert_eq!(approval.calls[0].command.destination, TARGET);
     assert!(!approval.calls[0].command.wait);
     assert!(approval.calls[0].existing_id.is_none());
+    let operation = approval.calls[0].operation.as_ref().unwrap();
+    assert_eq!(operation.method, ResourceMethod::Post);
+    assert_eq!(operation.path, create_path());
+    assert_eq!(operation.body, RAW);
+    assert_eq!(operation.completion, CompletionPolicy::ReturnAccepted);
+    assert_eq!(
+        operation.url,
+        format!("https://api.fabric.microsoft.com{}", create_path())
+    );
+    assert!(approval.calls[0].anticipated_effects.is_empty());
+    let question = &approval.calls[0].question;
+    for bound_value in [
+        "Notebook create policy error",
+        "Literal.name",
+        WS,
+        "offline-account",
+        "Fabric",
+        "remoteWrite=true",
+        "method=POST",
+        "ReturnAccepted",
+        operation.url.as_str(),
+    ] {
+        assert!(question.contains(bound_value), "{bound_value}: {question}");
+    }
+    assert!(question.contains(&format!(
+        "body=\"{}\"",
+        String::from_utf8_lossy(RAW).escape_debug()
+    )));
+    assert!(question.chars().all(|character| !character.is_control()));
+    assert_eq!(value["meta"]["remoteWrite"], true);
+    assert_eq!(value["meta"]["anticipatedEffects"], json!([]));
     fixture.assert_requests(&[Method::Get, Method::Post]);
-    fixture.assert_post_body(RAW);
+    fixture.assert_post_body(&operation.body);
 }
 
 #[tokio::test]
@@ -539,7 +677,13 @@ async fn omitted_input_is_a_shell_not_an_explicit_empty_or_null_request() {
         .unwrap();
     assert_eq!(delivery.report().exit_code(), 0);
     assert_eq!(approval.calls[0].raw, None);
-    fixture.assert_post_body(br#"{"displayName":"Literal.name"}"#);
+    let operation = approval.calls[0].operation.as_ref().unwrap();
+    assert_eq!(operation.body, br#"{"displayName":"Literal.name"}"#);
+    assert!(approval.calls[0].question.contains(&format!(
+        "body=\"{}\"",
+        String::from_utf8_lossy(&operation.body).escape_debug()
+    )));
+    fixture.assert_post_body(&operation.body);
     fixture.assert_requests(&[Method::Get, Method::Post]);
 }
 
@@ -560,6 +704,13 @@ async fn accepted_without_wait_retains_handle_and_never_fetches_state_or_result(
         format!("/operations/{OP}")
     );
     assert_eq!(value["meta"]["mutationMayHaveOccurred"], true);
+    assert_eq!(value["meta"]["httpStatus"], 202);
+    assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(value["meta"]["observation"]["httpStatus"], 202);
+    assert_eq!(
+        value["meta"]["submission"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
     assert_no_replay(&value);
     fixture.assert_requests(&[Method::Get, Method::Post]);
     fixture.assert_post_body(RAW);
@@ -588,11 +739,17 @@ async fn wait_reconciles_202_state_and_result_with_one_mutation() {
     let value = deliver(delivery);
     assert_eq!(value["data"], resource());
     assert_eq!(value["meta"]["completed"], true);
+    assert_eq!(value["meta"]["httpStatus"], 200);
+    assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
     assert_eq!(
         value["meta"]["operationHandle"],
         format!("/operations/{OP}")
     );
     assert!(approval.calls[0].command.wait);
+    assert_eq!(
+        approval.calls[0].operation.as_ref().unwrap().completion,
+        CompletionPolicy::WaitForResult
+    );
     assert_no_replay(&value);
     fixture.assert_requests(&[
         Method::Get,
@@ -876,10 +1033,21 @@ async fn skip_existing_retains_identity_without_post_or_content_equality_claim()
     assert_eq!(value["meta"]["resourceId"], ITEM);
     assert_eq!(value["meta"]["mutationMayHaveOccurred"], false);
     assert_eq!(value["meta"]["contentEqualityClaimed"], false);
+    assert_eq!(value["meta"]["remoteWrite"], false);
+    assert_eq!(value["meta"]["anticipatedEffects"], json!([]));
     assert_eq!(approval.calls.len(), 1);
     assert!(!approval.calls[0].remote_write);
     assert_eq!(approval.calls[0].existing_id.as_deref(), Some(ITEM));
     assert_eq!(approval.calls[0].raw.as_deref(), Some(RAW));
+    assert!(approval.calls[0].operation.is_none());
+    assert!(approval.calls[0].anticipated_effects.is_empty());
+    assert!(
+        approval.calls[0]
+            .question
+            .contains("no native request (unchanged skip)")
+    );
+    assert!(!approval.calls[0].question.contains("method=POST"));
+    assert!(!approval.calls[0].question.contains("body="));
     assert_no_replay(&value);
     fixture.assert_requests(&[Method::Get]);
 }
@@ -948,6 +1116,7 @@ async fn ambiguous_wrong_kind_or_wrong_parent_discovery_never_approves() {
     let mut casing_match = resource();
     casing_match["displayName"] = json!("literal.NAME");
     for items in [
+        vec![resource(), resource()],
         vec![resource(), casing_match],
         vec![wrong_type],
         vec![wrong_parent],
@@ -966,6 +1135,85 @@ async fn ambiguous_wrong_kind_or_wrong_parent_discovery_never_approves() {
         );
         assert!(approval.calls.is_empty());
         fixture.assert_requests(&[Method::Get]);
+    }
+}
+
+#[tokio::test]
+async fn same_name_report_does_not_make_exact_notebook_skip_ambiguous() {
+    let mut report = resource();
+    report["id"] = json!("bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+    report["type"] = json!("Report");
+    for items in [vec![resource(), report.clone()], vec![report, resource()]] {
+        let binding = EffectNotebook::new(EffectDeclaration::UnknownRequired);
+        let fixture = Fixture::new(vec![listing(items)]);
+        let prepared = fixture
+            .prepare_bound(&binding, &["--if-exists", "skip"])
+            .unwrap();
+        let mut approval = binding.approval();
+        let delivery = fixture
+            .execute_bound(&binding, prepared, &mut approval)
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 0);
+        let value = deliver(delivery);
+        assert_eq!(value["meta"]["action"], "skip");
+        assert_eq!(value["meta"]["status"], "unchanged");
+        assert_eq!(value["meta"]["resourceId"], ITEM);
+        assert_eq!(value["meta"]["type"], "Notebook");
+        assert_eq!(value["meta"]["remoteWrite"], false);
+        assert_eq!(value["meta"]["anticipatedEffects"], json!([]));
+        assert_eq!(value["meta"]["mutationMayHaveOccurred"], false);
+        assert_eq!(value["meta"]["contentEqualityClaimed"], false);
+        assert_eq!(approval.calls.len(), 1);
+        assert_eq!(approval.calls[0].existing_id.as_deref(), Some(ITEM));
+        assert!(approval.calls[0].operation.is_none());
+        assert_eq!(binding.operations.load(Ordering::SeqCst), 0);
+        assert_eq!(binding.effects.load(Ordering::SeqCst), 0);
+        assert_no_replay(&value);
+        fixture.assert_requests(&[Method::Get]);
+    }
+}
+
+#[tokio::test]
+async fn typed_skip_still_rejects_uncertain_matching_rows_beside_a_valid_notebook() {
+    let mut report = resource();
+    report["id"] = json!("bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+    report["type"] = json!("Report");
+    let mut missing_type = report.clone();
+    missing_type.as_object_mut().unwrap().remove("type");
+    let mut rows = vec![missing_type];
+    for item_type in [Value::Null, json!(7), json!(""), json!("  ")] {
+        let mut row = report.clone();
+        row["type"] = item_type;
+        rows.push(row);
+    }
+    let mut invalid_id = report.clone();
+    invalid_id["id"] = json!("unknown-resource-identity");
+    rows.push(invalid_id);
+    for workspace in [json!(OTHER_WS), Value::Null, json!(7)] {
+        let mut row = report.clone();
+        row["workspaceId"] = workspace;
+        rows.push(row);
+    }
+    for invalid in rows {
+        for items in [
+            vec![resource(), invalid.clone()],
+            vec![invalid.clone(), resource()],
+        ] {
+            let fixture = Fixture::new(vec![listing(items)]);
+            let mut approval = Approval::default();
+            assert!(matches!(
+                fixture
+                    .execute(
+                        fixture.prepare(&["--if-exists", "skip"], Some(RAW)),
+                        &mut approval,
+                    )
+                    .await,
+                Err(CreateCommandError::Invalid)
+            ));
+            assert!(approval.calls.is_empty());
+            fixture.assert_requests(&[Method::Get]);
+        }
     }
 }
 
@@ -996,6 +1244,9 @@ async fn create_time_name_conflict_is_a_single_rejection_not_a_policy_retry() {
     let value = deliver(delivery);
     assert_ne!(value["meta"]["action"], "skip");
     assert_eq!(value["meta"]["completed"], false);
+    assert_eq!(value["meta"]["httpStatus"], 409);
+    assert_eq!(value["meta"]["submission"]["httpStatus"], 409);
+    assert_eq!(value["meta"]["observation"]["httpStatus"], 409);
     assert_no_replay(&value);
     fixture.assert_requests(&[Method::Get, Method::Post]);
 }
@@ -1547,6 +1798,8 @@ async fn cancellation_during_202_body_retains_observed_headers_and_original_erro
     let value = deliver(delivery);
     assert_eq!(value["data"], Value::Null);
     assert_eq!(value["meta"]["httpStatus"], 202);
+    assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(value["meta"]["observation"]["httpStatus"], 202);
     assert_eq!(
         value["meta"]["operationHandle"],
         format!("/operations/{OP}")
@@ -1594,6 +1847,8 @@ async fn oversized_or_failed_202_body_retains_known_handle_without_upgrading_fai
         let value = deliver(delivery);
         assert_eq!(value["data"], Value::Null);
         assert_eq!(value["meta"]["httpStatus"], 202);
+        assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(value["meta"]["observation"]["httpStatus"], 202);
         assert_eq!(
             value["meta"]["operationHandle"],
             format!("/operations/{OP}")
@@ -1820,6 +2075,539 @@ impl CreateBinding for SyntheticNotebook {
     }
 }
 
+#[derive(Clone, Copy)]
+enum EffectDeclaration {
+    Declared,
+    UnknownRequired,
+    InvalidDescriptor,
+    TooMany,
+    TooLarge,
+}
+
+struct EffectNotebook {
+    declaration: EffectDeclaration,
+    operations: Arc<AtomicUsize>,
+    effects: Arc<AtomicUsize>,
+}
+
+impl EffectNotebook {
+    fn new(declaration: EffectDeclaration) -> Self {
+        Self {
+            declaration,
+            operations: Arc::new(AtomicUsize::new(0)),
+            effects: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn approval(&self) -> Approval {
+        Approval {
+            operation_builds: Some(self.operations.clone()),
+            effect_calls: Some(self.effects.clone()),
+            ..Approval::default()
+        }
+    }
+}
+
+impl CreateInputValidator for EffectNotebook {
+    fn validate(
+        &self,
+        target: &CreateTarget,
+        schema: &SchemaRef,
+        supplied: Option<&Value>,
+    ) -> Result<InputDisposition, CreateError> {
+        NotebookBinding.validate(target, schema, supplied)
+    }
+}
+
+impl CreateBinding for EffectNotebook {
+    fn item_type(&self) -> &'static str {
+        NotebookBinding.item_type()
+    }
+
+    fn capabilities(&self) -> CreateCapabilities {
+        NotebookBinding.capabilities()
+    }
+
+    fn operation(
+        &self,
+        plan: &CreatePlan,
+        raw: Option<&[u8]>,
+        wait: bool,
+    ) -> Result<FabricOperation, CreateError> {
+        assert_eq!(
+            self.operations.fetch_add(1, Ordering::SeqCst),
+            0,
+            "approval must borrow the single operation, not cause it to be rebuilt"
+        );
+        NotebookBinding.operation(plan, raw, wait)
+    }
+
+    fn anticipated_effects(
+        &self,
+        plan: &CreatePlan,
+    ) -> Result<Vec<AnticipatedCreateEffect>, CreateError> {
+        assert!(matches!(plan.action(), CreateAction::Create { .. }));
+        assert_eq!(self.effects.fetch_add(1, Ordering::SeqCst), 0);
+        match self.declaration {
+            EffectDeclaration::Declared => Ok(synthetic_effects()),
+            EffectDeclaration::UnknownRequired => Err(CreateError::InputRejected),
+            EffectDeclaration::InvalidDescriptor => Ok(vec![AnticipatedCreateEffect::new(
+                CreateEffectKind::ChildResourceCreation,
+                None,
+                "A required synthetic child effect cannot be represented",
+                "offline-fixture-contract:v1",
+            )?]),
+            EffectDeclaration::TooMany => Ok(vec![synthetic_effects()[0].clone(); 17]),
+            EffectDeclaration::TooLarge => Ok(vec![
+                AnticipatedCreateEffect::new(
+                    CreateEffectKind::ChildResourceCreation,
+                    Some(&"r".repeat(256)),
+                    &"d".repeat(2048),
+                    &"c".repeat(2048),
+                )?;
+                16
+            ]),
+        }
+    }
+}
+
+fn synthetic_effects() -> Vec<AnticipatedCreateEffect> {
+    // Test-only declarations exercise host disclosure, not Notebook provider claims.
+    vec![
+        AnticipatedCreateEffect::new(
+            CreateEffectKind::ChildResourceCreation,
+            Some("SyntheticChild"),
+            "The synthetic contract may create a provider-owned child",
+            "offline-fixture-contract:child:v1",
+        )
+        .unwrap(),
+        AnticipatedCreateEffect::new(
+            CreateEffectKind::MeteredConsumption,
+            None,
+            "The synthetic contract may incur metered consumption",
+            "offline-fixture-contract:metering:v1",
+        )
+        .unwrap(),
+    ]
+}
+
+const EXPANDED_FIXTURE_BODY: &[u8] = br#"{"displayName":"Literal.name","type":"Notebook","folderId":null,"definition":{"fixture":"expanded-template"}}"#;
+
+struct ExpandedFixtureNotebook {
+    operations: Arc<AtomicUsize>,
+}
+
+impl CreateInputValidator for ExpandedFixtureNotebook {
+    fn validate(
+        &self,
+        target: &CreateTarget,
+        schema: &SchemaRef,
+        supplied: Option<&Value>,
+    ) -> Result<InputDisposition, CreateError> {
+        NotebookBinding.validate(target, schema, supplied)
+    }
+}
+
+impl CreateBinding for ExpandedFixtureNotebook {
+    fn item_type(&self) -> &'static str {
+        NotebookBinding.item_type()
+    }
+
+    fn capabilities(&self) -> CreateCapabilities {
+        NotebookBinding.capabilities()
+    }
+
+    fn operation(
+        &self,
+        plan: &CreatePlan,
+        _raw: Option<&[u8]>,
+        wait: bool,
+    ) -> Result<FabricOperation, CreateError> {
+        assert!(matches!(plan.action(), CreateAction::Create { .. }));
+        assert_eq!(self.operations.fetch_add(1, Ordering::SeqCst), 0);
+        // Offline conversion fixture only; this is not a Notebook provider schema.
+        FabricOperation::new(
+            ResourceMethod::Post,
+            &format!(
+                "/v1/workspaces/{}/notebooks",
+                plan.target().parent_id().as_str()
+            ),
+            EXPANDED_FIXTURE_BODY.to_vec(),
+            if wait {
+                CompletionPolicy::WaitForResult
+            } else {
+                CompletionPolicy::ReturnAccepted
+            },
+        )
+        .map_err(|_| CreateError::InputRejected)
+    }
+}
+
+#[tokio::test]
+async fn approval_captures_expanded_prepared_body_not_raw_input_or_omitted_input_prose() {
+    for raw in [None, Some(RAW)] {
+        let binding = ExpandedFixtureNotebook {
+            operations: Arc::new(AtomicUsize::new(0)),
+        };
+        let fixture = Fixture::new(vec![listing(vec![]), created()]);
+        let prepared = PreparedCreateCommand::preflight(
+            command(TARGET, &[], raw.is_some()),
+            &binding,
+            &fixture.root,
+            &mut Cursor::new(raw.unwrap_or_default()),
+            false,
+        )
+        .unwrap();
+        assert_eq!(binding.operations.load(Ordering::SeqCst), 0);
+        let mut approval = Approval {
+            operation_builds: Some(binding.operations.clone()),
+            ..Approval::default()
+        };
+        let delivery = fixture
+            .execute_bound(&binding, prepared, &mut approval)
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 0);
+        assert_eq!(approval.calls.len(), 1);
+        let snapshot = &approval.calls[0];
+        assert_eq!(snapshot.raw.as_deref(), raw);
+        let operation = snapshot.operation.as_ref().unwrap();
+        assert_eq!(operation.body, EXPANDED_FIXTURE_BODY);
+        assert_ne!(operation.body.as_slice(), raw.unwrap_or_default());
+        assert!(snapshot.question.contains(&format!(
+            "body=\"{}\"",
+            String::from_utf8_lossy(EXPANDED_FIXTURE_BODY).escape_debug()
+        )));
+        assert!(snapshot.question.contains("expanded-template"));
+        assert!(snapshot.question.contains("\\\"folderId\\\":null"));
+        assert!(!snapshot.question.contains("exact \\\\u0062ytes"));
+        assert!(
+            snapshot
+                .question
+                .chars()
+                .all(|character| !character.is_control())
+        );
+        assert!(snapshot.anticipated_effects.is_empty());
+        let value = deliver(delivery);
+        assert_eq!(value["meta"]["remoteWrite"], true);
+        assert_eq!(value["meta"]["anticipatedEffects"], json!([]));
+        assert_eq!(binding.operations.load(Ordering::SeqCst), 1);
+        assert_no_replay(&value);
+        fixture.assert_post_body(&operation.body);
+        fixture.assert_requests(&[Method::Get, Method::Post]);
+    }
+}
+
+#[tokio::test]
+async fn approval_question_escapes_exact_body_controls_without_changing_wire_bytes() {
+    let body = serde_json::to_string_pretty(&json!({
+        "displayName":"Literal.name",
+        "description":"quote \" slash \\ newline \n tab \t bell \u{7} escape \u{1b}]0;title\u{7} next \u{85}"
+    }))
+    .unwrap();
+    let raw = format!("\n\t{body}\r\n").into_bytes();
+    let fixture = Fixture::new(vec![listing(vec![]), created()]);
+    let mut approval = Approval::default();
+    let delivery = fixture
+        .execute(fixture.prepare(&[], Some(&raw)), &mut approval)
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 0);
+    let snapshot = &approval.calls[0];
+    assert_eq!(snapshot.raw.as_deref(), Some(raw.as_slice()));
+    assert_eq!(snapshot.operation.as_ref().unwrap().body, raw);
+    assert!(snapshot.question.contains(&format!(
+        "body=\"{}\"",
+        String::from_utf8_lossy(&raw).escape_debug()
+    )));
+    assert!(
+        snapshot
+            .question
+            .chars()
+            .all(|character| !character.is_control())
+    );
+    assert!(snapshot.question.contains("\\n\\t"));
+    assert!(snapshot.question.contains("\\r\\n"));
+    assert!(!snapshot.question.contains("\u{1b}]0;title"));
+    fixture.assert_post_body(&raw);
+    fixture.assert_requests(&[Method::Get, Method::Post]);
+}
+
+#[tokio::test]
+async fn declared_effects_reach_approval_and_protected_receipt_with_one_operation_and_post() {
+    let binding = EffectNotebook::new(EffectDeclaration::Declared);
+    let fixture = Fixture::new(vec![listing(vec![]), created()]);
+    let prepared = fixture
+        .prepare_bound(&binding, &["--project", "missing"])
+        .unwrap();
+    assert_eq!(binding.operations.load(Ordering::SeqCst), 0);
+    assert_eq!(binding.effects.load(Ordering::SeqCst), 0);
+    let mut approval = binding.approval();
+    let delivery = fixture
+        .execute_bound(&binding, prepared, &mut approval)
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 0);
+    assert_eq!(delivery.report().value()["data"], resource());
+    assert_eq!(approval.calls.len(), 1);
+    let effects = synthetic_effects();
+    let expected_effects = json!([
+        {
+            "kind":"childResourceCreation",
+            "resourceType":"SyntheticChild",
+            "description":"The synthetic contract may create a provider-owned child",
+            "contract":"offline-fixture-contract:child:v1"
+        },
+        {
+            "kind":"meteredConsumption",
+            "resourceType":null,
+            "description":"The synthetic contract may incur metered consumption",
+            "contract":"offline-fixture-contract:metering:v1"
+        }
+    ]);
+    assert_eq!(serde_json::to_value(&effects).unwrap(), expected_effects);
+    assert_eq!(approval.calls[0].anticipated_effects, effects);
+    assert_eq!(effects[0].kind(), CreateEffectKind::ChildResourceCreation);
+    assert_eq!(effects[0].resource_type(), Some("SyntheticChild"));
+    assert_eq!(
+        effects[0].description(),
+        "The synthetic contract may create a provider-owned child"
+    );
+    assert_eq!(effects[0].contract(), "offline-fixture-contract:child:v1");
+    assert_eq!(effects[1].kind(), CreateEffectKind::MeteredConsumption);
+    assert_eq!(effects[1].resource_type(), None);
+    for disclosed in [
+        "ChildResourceCreation",
+        "MeteredConsumption",
+        "SyntheticChild",
+        effects[0].description(),
+        effects[1].description(),
+        effects[0].contract(),
+        effects[1].contract(),
+        "Anticipated effects are not observed outcomes",
+    ] {
+        assert!(
+            approval.calls[0].question.contains(disclosed),
+            "{disclosed}"
+        );
+    }
+    let meta = delivery.report().value()["meta"].clone();
+    assert_eq!(meta["anticipatedEffects"], expected_effects);
+    assert_eq!(meta["remoteWrite"], true);
+    assert_eq!(meta["resourceId"], ITEM);
+    assert_eq!(
+        meta["observedResource"],
+        json!({"id":ITEM,"workspaceId":WS,"type":"Notebook","displayName":"Literal.name"})
+    );
+    assert_eq!(meta["childResourceId"], Value::Null);
+    assert_eq!(meta["observedChildren"], Value::Null);
+    let approved_body = &approval.calls[0].operation.as_ref().unwrap().body;
+    assert_eq!(approved_body, RAW);
+    fixture.assert_post_body(approved_body);
+    let mut output = Vec::new();
+    delivery.deliver(&mut output).unwrap();
+    let projected: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(projected["data"], Value::Null);
+    assert_eq!(projected["meta"], meta);
+    assert_no_replay(&projected);
+    assert_eq!(binding.operations.load(Ordering::SeqCst), 1);
+    assert_eq!(binding.effects.load(Ordering::SeqCst), 1);
+    fixture.assert_requests(&[Method::Get, Method::Post]);
+}
+
+#[tokio::test]
+async fn skip_does_not_build_operation_or_collect_effects_or_claim_synthetic_children() {
+    let binding = EffectNotebook::new(EffectDeclaration::UnknownRequired);
+    let fixture = Fixture::new(vec![listing(vec![resource()])]);
+    let prepared = fixture
+        .prepare_bound(&binding, &["--if-exists", "skip", "--project", "missing"])
+        .unwrap();
+    let mut approval = binding.approval();
+    let delivery = fixture
+        .execute_bound(&binding, prepared, &mut approval)
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 0);
+    assert_eq!(approval.calls.len(), 1);
+    let snapshot = &approval.calls[0];
+    assert!(!snapshot.remote_write);
+    assert!(snapshot.operation.is_none());
+    assert!(snapshot.anticipated_effects.is_empty());
+    assert!(snapshot.question.contains("remoteWrite=false"));
+    assert!(
+        snapshot
+            .question
+            .contains("no native request (unchanged skip)")
+    );
+    assert!(!snapshot.question.contains("SyntheticChild"));
+    assert!(!snapshot.question.contains("body="));
+    let value = deliver(delivery);
+    assert_eq!(value["meta"]["remoteWrite"], false);
+    assert_eq!(value["meta"]["anticipatedEffects"], json!([]));
+    assert_eq!(value["meta"]["mutationMayHaveOccurred"], false);
+    assert_eq!(value["meta"]["contentEqualityClaimed"], false);
+    assert_eq!(value["meta"]["resourceId"], ITEM);
+    assert_eq!(value["meta"]["childResourceId"], Value::Null);
+    assert_eq!(value["meta"]["observedChildren"], Value::Null);
+    assert_eq!(binding.operations.load(Ordering::SeqCst), 0);
+    assert_eq!(binding.effects.load(Ordering::SeqCst), 0);
+    assert_no_replay(&value);
+    fixture.assert_requests(&[Method::Get]);
+}
+
+#[tokio::test]
+async fn unknown_invalid_or_unbounded_required_effects_refuse_before_approval_or_post() {
+    for declaration in [
+        EffectDeclaration::UnknownRequired,
+        EffectDeclaration::InvalidDescriptor,
+        EffectDeclaration::TooMany,
+        EffectDeclaration::TooLarge,
+    ] {
+        let binding = EffectNotebook::new(declaration);
+        let fixture = Fixture::new(vec![listing(vec![])]);
+        let prepared = fixture.prepare_bound(&binding, &[]).unwrap();
+        let mut approval = binding.approval();
+        let Err(error) = fixture
+            .execute_bound(&binding, prepared, &mut approval)
+            .await
+        else {
+            panic!("required effect disclosure must fail locally before approval");
+        };
+        match declaration {
+            EffectDeclaration::UnknownRequired | EffectDeclaration::InvalidDescriptor => {
+                assert!(matches!(
+                    error,
+                    CreateCommandError::Policy(CreateError::InputRejected)
+                ));
+            }
+            EffectDeclaration::TooMany | EffectDeclaration::TooLarge => {
+                assert!(matches!(error, CreateCommandError::Invalid));
+            }
+            EffectDeclaration::Declared => unreachable!(),
+        }
+        assert!(approval.calls.is_empty());
+        assert_eq!(binding.operations.load(Ordering::SeqCst), 1);
+        assert_eq!(binding.effects.load(Ordering::SeqCst), 1);
+        fixture.assert_requests(&[Method::Get]);
+    }
+}
+
+#[test]
+fn effect_descriptors_reject_missing_unbounded_and_terminal_control_labels() {
+    for (resource_type, description, contract) in [
+        (None, "anticipated child", "offline-contract:v1"),
+        (Some(""), "anticipated child", "offline-contract:v1"),
+        (Some(" \t"), "anticipated child", "offline-contract:v1"),
+        (
+            Some("Synthetic\nChild"),
+            "anticipated child",
+            "offline-contract:v1",
+        ),
+        (Some("SyntheticChild"), "", "offline-contract:v1"),
+        (Some("SyntheticChild"), "   ", "offline-contract:v1"),
+        (
+            Some("SyntheticChild"),
+            "anticipated\u{1b}[2J",
+            "offline-contract:v1",
+        ),
+        (
+            Some("SyntheticChild"),
+            "anticipated\u{85}child",
+            "offline-contract:v1",
+        ),
+        (Some("SyntheticChild"), "anticipated child", ""),
+        (
+            Some("SyntheticChild"),
+            "anticipated child",
+            "offline\rcontract",
+        ),
+    ] {
+        assert!(matches!(
+            AnticipatedCreateEffect::new(
+                CreateEffectKind::ChildResourceCreation,
+                resource_type,
+                description,
+                contract,
+            ),
+            Err(CreateError::InputRejected)
+        ));
+    }
+    for (resource_type, description, contract) in [
+        (
+            "r".repeat(257),
+            "anticipated child".into(),
+            "offline:v1".into(),
+        ),
+        (
+            "SyntheticChild".into(),
+            "d".repeat(2049),
+            "offline:v1".into(),
+        ),
+        (
+            "SyntheticChild".into(),
+            "anticipated child".into(),
+            "c".repeat(2049),
+        ),
+    ] {
+        assert!(matches!(
+            AnticipatedCreateEffect::new(
+                CreateEffectKind::ChildResourceCreation,
+                Some(&resource_type),
+                &description,
+                &contract,
+            ),
+            Err(CreateError::InputRejected)
+        ));
+    }
+    for label in ["", " ", "metered\nconsumption", "metered\u{1b}consumption"] {
+        assert!(matches!(
+            AnticipatedCreateEffect::new(
+                CreateEffectKind::MeteredConsumption,
+                None,
+                label,
+                "offline-fixture-contract:v1",
+            ),
+            Err(CreateError::InputRejected)
+        ));
+    }
+}
+
+#[tokio::test]
+async fn denial_or_cancelled_approval_of_declared_effects_never_posts_or_rebuilds() {
+    for cancelled in [false, true] {
+        let binding = EffectNotebook::new(EffectDeclaration::Declared);
+        let fixture = Fixture::new(vec![listing(vec![])]);
+        let prepared = fixture.prepare_bound(&binding, &[]).unwrap();
+        let mut approval = binding.approval();
+        approval.block = cancelled;
+        approval.denied = !cancelled;
+        let started = approval.started.clone();
+        let result = if cancelled {
+            fixture
+                .execute_bound_interrupted(&binding, prepared, &mut approval, started.notified())
+                .await
+        } else {
+            fixture
+                .execute_bound(&binding, prepared, &mut approval)
+                .await
+        };
+        if cancelled {
+            assert!(matches!(result, Err(CreateCommandError::Interrupted)));
+        } else {
+            assert!(matches!(
+                result,
+                Err(CreateCommandError::Approval(CreateApprovalError::Denied))
+            ));
+        }
+        assert_eq!(approval.calls.len(), 1);
+        assert_eq!(approval.calls[0].anticipated_effects, synthetic_effects());
+        assert_eq!(approval.calls[0].operation.as_ref().unwrap().body, RAW);
+        assert_eq!(binding.operations.load(Ordering::SeqCst), 1);
+        assert_eq!(binding.effects.load(Ordering::SeqCst), 1);
+        fixture.assert_requests(&[Method::Get]);
+    }
+}
+
 #[tokio::test]
 async fn initial_202_resource_survives_failed_poll_and_null_data_projection() {
     let mut initial = accepted();
@@ -1852,6 +2640,7 @@ async fn initial_202_resource_survives_failed_poll_and_null_data_projection() {
     assert_eq!(error.raw_service_error.as_deref(), Some(&service_error));
     assert!(error.mutation_may_have_occurred);
     assert_eq!(delivery.report().value()["data"], resource());
+    assert_accepted_resource_provenance(delivery.report().value());
     let meta = delivery.report().value()["meta"].clone();
     assert_eq!(meta["resourceId"], ITEM);
     assert_eq!(meta["workspaceId"], WS);
@@ -1860,6 +2649,10 @@ async fn initial_202_resource_survives_failed_poll_and_null_data_projection() {
     assert_eq!(meta["observedResource"]["type"], "Notebook");
     assert_eq!(meta["observedResource"]["displayName"], "Literal.name");
     assert_eq!(meta["operationHandle"], format!("/operations/{OP}"));
+    assert_eq!(meta["submission"]["httpStatus"], 202);
+    assert_eq!(meta["httpStatus"], 200);
+    assert_eq!(meta["operationStatus"], "Failed");
+    assert_eq!(meta["status"], "failed");
     assert_eq!(meta["completed"], false);
     let mut output = Vec::new();
     delivery.deliver(&mut output).unwrap();
@@ -1868,6 +2661,288 @@ async fn initial_202_resource_survives_failed_poll_and_null_data_projection() {
     assert_eq!(value["meta"], meta);
     assert_no_replay(&value);
     fixture.assert_requests(&[Method::Get, Method::Post, Method::Get]);
+    fixture.assert_post_body(RAW);
+}
+
+#[tokio::test]
+async fn initial_202_resource_survives_cancelled_provider_status_without_success_or_replay() {
+    let fixture = Fixture::new(vec![
+        listing(vec![]),
+        accepted_resource(),
+        state("Cancelled"),
+    ]);
+    let delivery = fixture
+        .execute(
+            fixture.prepare(&["--wait"], Some(RAW)),
+            &mut Approval::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 1);
+    let error = delivery.report().error().unwrap();
+    assert!(matches!(
+        &error.kind,
+        OperationErrorKind::OperationFailed { status, .. } if status == "Cancelled"
+    ));
+    assert_eq!(error.operation_id.as_deref(), Some(OP));
+    assert!(error.mutation_may_have_occurred);
+    let value = deliver(delivery);
+    assert_accepted_resource_provenance(&value);
+    assert_eq!(value["meta"]["operationStatus"], "Cancelled");
+    assert_eq!(value["meta"]["status"], "failed");
+    fixture.assert_requests(&[Method::Get, Method::Post, Method::Get]);
+    fixture.assert_post_body(RAW);
+}
+
+#[tokio::test]
+async fn cancellation_during_poll_body_keeps_202_submission_separate_from_get_headers() {
+    let mut poll = state("Running");
+    poll.body = ReplyBody::BodyPending;
+    let fixture = Fixture::new(vec![listing(vec![]), accepted_resource(), poll]);
+    let delivery = fixture
+        .execute_interrupted(
+            fixture.prepare(&["--wait"], Some(RAW)),
+            &mut Approval::default(),
+            fixture.wire.pending_started.notified(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 1);
+    let error = delivery.report().error().unwrap();
+    assert_eq!(error.kind, OperationErrorKind::Cancelled);
+    assert_eq!(error.operation_id.as_deref(), Some(OP));
+    assert!(error.mutation_may_have_occurred);
+    let value = deliver(delivery);
+    assert_accepted_resource_provenance(&value);
+    assert_eq!(value["meta"]["status"], "unknown");
+    assert_eq!(value["meta"]["operationStatus"], Value::Null);
+    let trace = fixture.trace.snapshot();
+    assert_eq!(trace.requests, 2);
+    assert_eq!(trace.status, Some(200));
+    assert_eq!(trace.phase, "response_body");
+    fixture.assert_requests(&[Method::Get, Method::Post, Method::Get]);
+    fixture.assert_post_body(RAW);
+}
+
+#[tokio::test]
+async fn deadline_during_poll_body_keeps_202_submission_and_original_timeout_without_replay() {
+    let mut poll = state("Running");
+    poll.body = ReplyBody::BodyPending;
+    let mut fixture = Fixture::new(vec![listing(vec![]), accepted_resource(), poll]);
+    fixture.http = HttpExecutor::new(
+        fixture.wire.clone(),
+        Arc::new(BodyDeadlineTimer {
+            body_started: fixture.wire.pending_started.clone(),
+        }),
+        ExecutionOptions::default(),
+    )
+    .unwrap();
+    let delivery = fixture
+        .execute(
+            fixture.prepare(&["--wait"], Some(RAW)),
+            &mut Approval::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 1);
+    let error = delivery.report().error().unwrap();
+    assert_eq!(
+        error.kind,
+        OperationErrorKind::Execution(fabric_sdk_operations::OperationExecutionError::TimedOut)
+    );
+    assert_eq!(error.operation_id.as_deref(), Some(OP));
+    assert!(error.mutation_may_have_occurred);
+    let value = deliver(delivery);
+    assert_accepted_resource_provenance(&value);
+    assert_eq!(value["meta"]["status"], "unknown");
+    assert_eq!(value["error"]["code"], "TimedOut");
+    let trace = fixture.trace.snapshot();
+    assert_eq!(trace.requests, 2);
+    assert_eq!(trace.status, Some(200));
+    fixture.assert_requests(&[Method::Get, Method::Post, Method::Get]);
+    fixture.assert_post_body(RAW);
+}
+
+#[tokio::test]
+async fn failed_poll_body_keeps_202_submission_and_original_transport_failure_without_replay() {
+    let mut poll = state("Running");
+    poll.body = ReplyBody::BodyFailure;
+    let fixture = Fixture::new(vec![listing(vec![]), accepted_resource(), poll]);
+    let delivery = fixture
+        .execute(
+            fixture.prepare(&["--wait"], Some(RAW)),
+            &mut Approval::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 1);
+    let error = delivery.report().error().unwrap();
+    assert_eq!(
+        error.kind,
+        OperationErrorKind::Execution(fabric_sdk_operations::OperationExecutionError::Failed)
+    );
+    assert_eq!(error.operation_id.as_deref(), Some(OP));
+    assert!(error.mutation_may_have_occurred);
+    let value = deliver(delivery);
+    assert_accepted_resource_provenance(&value);
+    assert_eq!(value["meta"]["status"], "unknown");
+    let trace = fixture.trace.snapshot();
+    assert_eq!(trace.requests, 2);
+    assert_eq!(trace.status, Some(200));
+    fixture.assert_requests(&[Method::Get, Method::Post, Method::Get]);
+    fixture.assert_post_body(RAW);
+}
+
+#[tokio::test]
+async fn invalid_final_result_preserves_initial_acceptance_and_final_evidence_under_projection() {
+    let mut wrong_workspace = resource();
+    wrong_workspace["workspaceId"] = json!(OTHER_WS);
+    let mut wrong_type = resource();
+    wrong_type["type"] = json!("Report");
+    let mut wrong_name = resource();
+    wrong_name["displayName"] = json!("Different name");
+    let mut missing_id = resource();
+    missing_id.as_object_mut().unwrap().remove("id");
+    let mut invalid_id = resource();
+    invalid_id["id"] = json!("unknown-resource-identity");
+    let mut bodies = vec![
+        b"{malformed".to_vec(),
+        format!("{} {}", resource(), resource()).into_bytes(),
+        b"null".to_vec(),
+    ];
+    bodies.extend(
+        [
+            wrong_workspace,
+            wrong_type,
+            wrong_name,
+            missing_id,
+            invalid_id,
+        ]
+        .iter()
+        .map(|value| serde_json::to_vec(value).unwrap()),
+    );
+    for body in bodies {
+        let fixture = Fixture::new(vec![
+            listing(vec![]),
+            accepted_resource(),
+            state("Succeeded"),
+            Reply::bytes(
+                Method::Get,
+                format!("{}/result", operation_path()),
+                200,
+                body.clone(),
+            ),
+        ]);
+        let mut approval = Approval::default();
+        let delivery = fixture
+            .execute(
+                fixture.prepare(&["--wait", "--project", "missing"], Some(RAW)),
+                &mut approval,
+            )
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 1);
+        let error = delivery.report().error().unwrap();
+        assert_eq!(error.kind, OperationErrorKind::InvalidResponse);
+        assert_eq!(error.operation_id.as_deref(), Some(OP));
+        assert!(error.mutation_may_have_occurred);
+        let original = delivery.report().value();
+        let meta = original["meta"].clone();
+        let accepted_identity =
+            json!({"id":ITEM,"workspaceId":WS,"type":"Notebook","displayName":"Literal.name"});
+        assert_eq!(meta["submission"]["httpStatus"], 202);
+        assert_eq!(meta["submission"]["resource"], accepted_identity);
+        assert_eq!(
+            meta["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(meta["httpStatus"], 200);
+        assert_eq!(meta["observation"]["httpStatus"], 200);
+        assert_eq!(meta["status"], "unknown");
+        assert_eq!(meta["completed"], false);
+        assert_eq!(meta["mutationMayHaveOccurred"], true);
+        assert_eq!(meta["operationHandle"], format!("/operations/{OP}"));
+        match serde_json::from_slice::<Value>(&body) {
+            Ok(value) if !value.is_null() => {
+                assert_eq!(original["data"], value);
+                assert_eq!(meta["resourceId"], value["id"]);
+                assert_eq!(
+                    meta["observedResource"],
+                    json!({
+                        "id":value["id"],"workspaceId":value["workspaceId"],
+                        "type":value["type"],"displayName":value["displayName"]
+                    })
+                );
+            }
+            parsed => {
+                assert_eq!(original["data"], resource());
+                assert_eq!(meta["resourceId"], ITEM);
+                assert_eq!(meta["observedResource"], accepted_identity);
+                if parsed.is_err() {
+                    assert_eq!(
+                        STANDARD
+                            .decode(meta["unparsedResponseBodyBase64"].as_str().unwrap())
+                            .unwrap(),
+                        body
+                    );
+                }
+            }
+        }
+        assert_eq!(approval.calls.len(), 1);
+        assert_eq!(approval.calls[0].operation.as_ref().unwrap().body, RAW);
+        let mut output = Vec::new();
+        delivery.deliver(&mut output).unwrap();
+        let projected: Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(projected["data"], Value::Null);
+        assert_eq!(projected["meta"], meta);
+        assert_no_replay(&projected);
+        fixture.assert_requests(&[Method::Get, Method::Post, Method::Get, Method::Get]);
+        fixture.assert_post_body(RAW);
+    }
+}
+
+#[tokio::test]
+async fn unexpected_final_http_status_preserves_initial_submission_without_claiming_completion() {
+    let fixture = Fixture::new(vec![
+        listing(vec![]),
+        accepted_resource(),
+        state("Succeeded"),
+        Reply::json(
+            Method::Get,
+            format!("{}/result", operation_path()),
+            201,
+            resource(),
+        ),
+    ]);
+    let delivery = fixture
+        .execute(
+            fixture.prepare(&["--wait"], Some(RAW)),
+            &mut Approval::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delivery.report().exit_code(), 1);
+    let error = delivery.report().error().unwrap();
+    assert_eq!(error.kind, OperationErrorKind::InvalidResponse);
+    assert_eq!(error.operation_id.as_deref(), Some(OP));
+    assert!(error.mutation_may_have_occurred);
+    let value = deliver(delivery);
+    assert_eq!(value["data"], resource());
+    assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(
+        value["meta"]["submission"]["resource"],
+        json!({"id":ITEM,"workspaceId":WS,"type":"Notebook","displayName":"Literal.name"})
+    );
+    assert_eq!(value["meta"]["httpStatus"], 201);
+    assert_eq!(value["meta"]["observation"]["httpStatus"], 201);
+    assert_eq!(value["meta"]["status"], "unknown");
+    assert_eq!(value["meta"]["completed"], false);
+    assert_eq!(
+        value["meta"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert_no_replay(&value);
+    fixture.assert_requests(&[Method::Get, Method::Post, Method::Get, Method::Get]);
     fixture.assert_post_body(RAW);
 }
 
