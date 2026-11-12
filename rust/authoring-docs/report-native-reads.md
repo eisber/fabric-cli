@@ -107,8 +107,38 @@ binary bytes, predispatch rejection and accepted-source observation. Existing
 generic representation/get tests remain independent. No live API/credential
 acceptance or three-platform completion is claimed by these tests.
 
+## Definition-create schema adapter
+
+`reports::create::ReportCreateValidator` supplies offline Report-specific input
+validation to the existing SDK create planner. It does not mount a command,
+authorize a write, advertise conflict-policy guarantees or add an executor.
+Executable integration depends on the separately owned shared v2 create host.
+The new `report_create` test source is not execution evidence.
+
+The bounded adapter selects only an exact named Report in an explicit workspace.
+Its native request body requires a matching `displayName` and a `definition`;
+optional `description` is limited to 256 characters, and `folderId` is a UUID
+or the API's explicit null workspace-folder selection. Unknown outer fields,
+label-setting requests and the separate `creationPayload` mode are not
+advertised. They fail rather than being silently removed.
+
+Definition validation reuses the native Report codec above. PBIR and
+PBIR-Legacy layouts remain mutually exclusive. Missing required structure,
+unknown versions or binding schemas, unsupported encodings and malformed
+required JSON cannot become create input. Recognized native structure is not
+full validation of every report JSON schema and does not establish model
+permissions. Part paths, order, binary payloads, native extension fields and
+the original model reference are preserved without cleanup or resolution.
+The validator returns only create-input evidence, never replacement evidence.
+It performs no model reads, authorization, creation, rebind or cross-workspace
+lookup. The service remains responsible for its actual permissions and
+semantic validation.
+
 ## API references
 
+- [Create Report](https://learn.microsoft.com/en-us/rest/api/fabric/report/items/create-report):
+  native `POST /workspaces/{workspace}/reports`, definition request shape,
+  contributor role, read/write scopes and 201 versus 202 responses.
 - [Get Report](https://learn.microsoft.com/en-us/rest/api/fabric/report/items/get-report):
   metadata only and read scopes/rights.
 - [Get Report Definition](https://learn.microsoft.com/en-us/rest/api/fabric/report/items/get-report-definition):
