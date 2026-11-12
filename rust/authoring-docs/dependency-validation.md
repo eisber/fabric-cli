@@ -175,18 +175,28 @@ stay together. Full plans retain the all-feature Clippy and CLI preflights as
 separate obligations; affected plans no longer run those unconditional full
 preflights. Equivalent core Cargo descriptors run once with all original
 obligation aliases retained; contract side effects are not deduplicated.
+Fast planner/executor contracts remain in dependency selection and its native
+checks. Real subprocess timeout, cancellation and ownership tests are a separate
+`process-supervision` obligation: they run on all three native hosts for full
+plans and when their validator inputs change, not repeatedly for an unrelated
+Dataflow change or each profile's selector dependency.
 
-Native CI caches Cargo registry and Git dependencies separately from
-`rust/target`. Keys include runner OS, architecture, pinned toolchain, lockfile,
+Native CI uses an isolated Cargo home and fetches the locked dependency sources,
+including those needed by offline cross-target graph assertions. This does not
+cross-compile tests: execution still uses the recorded native host.
+It caches registry archives/index and Git databases, not expanded
+registry source trees, separately from `rust/target`.
+Keys include runner OS, architecture, pinned toolchain, lockfile,
 manifests and explicit build settings. Two immutable compilation cohorts per
 host (`default` and `features`) replace per-revision or per-shard cache keys.
-One designated producer per host/cohort saves at most 1 GiB of raw build output;
-the shared dependency producer saves at most 512 MiB. Oversize candidates skip
+One designated producer per host/cohort saves at most 1.5 GiB of raw build output;
+the shared source-archive producer saves at most 256 MiB. The nine entries total
+at most 9.75 GiB raw per generation, before provider compression. Oversize candidates skip
 cache saving, not validation. Metrics report candidate size, restore time and
 cache hit separately. Old manifest generations remain subject to provider
 eviction; no quota or billing settings are changed.
 Cargo still checks freshness and every selected test executes. Cached build
-outputs are not validation receipts. Bump the `v3` cache generation when changing
+outputs are not validation receipts. Bump the `v4` cache generation when changing
 the compilation settings or cohort policy.
 
 The executor uses command-class limits: 120 seconds for tools, 300 seconds for

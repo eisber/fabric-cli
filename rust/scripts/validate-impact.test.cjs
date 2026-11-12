@@ -769,7 +769,7 @@ test('workflow always tests the planner, covers merge groups and periodic full r
   assert.match(workflow, /merge_group:/);
   assert.match(workflow, /schedule:/);
   assert.match(workflow, /node --test rust\/scripts\/impact-plan\.test\.cjs/);
-  assert.match(workflow, /rust\/scripts\/validation-process\.test\.cjs/);
+  assert.ok(!workflow.includes('rust/scripts/validation-process.test.cjs'));
   assert.match(workflow, /rust\/scripts\/rust-coverage\.test\.cjs/);
   assert.match(workflow, /node rust\/scripts\/impact-ci\.cjs select/);
   assert.match(workflow, /node rust\/scripts\/impact-ci\.cjs native/);
@@ -808,7 +808,8 @@ test('native CI restores compatible build outputs before Cargo and bounds each v
     assert.ok(cacheStep.includes(input), `Dependency cache identity must include ${input}`);
     assert.ok(targetStep.includes(input), `Compilation cache identity must include ${input}`);
   }
-  for (const directory of ['~/.cargo/registry', '~/.cargo/git']) {
+  for (const directory of ['${{ env.CARGO_HOME }}/registry/cache',
+    '${{ env.CARGO_HOME }}/registry/index', '${{ env.CARGO_HOME }}/git/db']) {
     assert.ok(cacheStep.includes(directory));
   }
   assert.ok(targetStep.includes('rust/target'));
@@ -821,6 +822,10 @@ test('native CI restores compatible build outputs before Cargo and bounds each v
   assert.ok(workflow.includes('actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'));
   assert.ok(workflow.includes('matrix.cache_writer'));
   assert.ok(workflow.includes('steps.target-size.outputs.eligible'));
+  assert.ok(workflow.includes('CARGO_HOME=%s/rust-cargo-home\\n'));
+  assert.match(workflow, /cargo fetch --locked/);
+  assert.ok(!workflow.includes('cargo fetch --locked --target'),
+    'Offline cross-target dependency-graph contracts need their locked sources too');
   assert.match(workflow, /--command-timeout-seconds 600/);
 });
 

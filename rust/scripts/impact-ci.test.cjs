@@ -498,14 +498,17 @@ test('workflow preserves source-bound recomputation, bounded matrix, cache setti
   const workflow = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/rust-ci.yml'), 'utf8');
   assert.match(workflow, /options: \[full, affected\]/);
   assert.match(workflow, /default: full/);
-  assert.match(workflow, /rust\/scripts\/validation-process\.test\.cjs/);
+  assert.ok(!workflow.includes('rust/scripts/validation-process.test.cjs'));
+  const supervision = require('../validation/impact-graph.json').checks.find(
+    check => check.id === 'process-supervision');
+  assert.deepEqual(supervision.platforms, ['windows', 'linux', 'macos']);
   assert.ok(workflow.indexOf('Set up development-only Python oracle') <
     workflow.indexOf('Recompute and verify the same dependency selection on this host'));
   assert.match(workflow, /IMPACT_DISPATCH_BASE: \$\{\{ inputs\.base \}\}/);
   assert.match(workflow, /matrix: \$\{\{ fromJSON\(needs\.changes\.outputs\.matrix\) \}\}/);
   assert.match(workflow, /max-parallel: 12/);
   assert.match(workflow, /timeout-minutes: 15/);
-  assert.match(workflow, /rust-native-v3-.*runner\.os.*runner\.arch.*rust-toolchain\.toml.*Cargo\.lock/);
+  assert.match(workflow, /rust-native-v4-.*runner\.os.*runner\.arch.*rust-toolchain\.toml.*Cargo\.lock/);
   assert.match(workflow, /jobs2-dev0-test0-incr0-\$\{\{ matrix\.cache_group \}\}/);
   assert.match(workflow, /actions\/cache\/restore@/);
   assert.match(workflow, /actions\/cache\/save@/);
