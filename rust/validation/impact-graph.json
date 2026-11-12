@@ -615,6 +615,25 @@
       "checks": ["dependency-graph"]
     },
     {
+      "id": "cli-kql-database-create",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/kql_database_create.rs",
+        "rust/clients/cli/app/src/v2_create_main.rs",
+        "rust/clients/cli/app/tests/kql_database_create.rs",
+        "rust/clients/cli/app/tests/kql_database_create_binary.rs",
+        "rust/authoring-docs/kql-database-create.md",
+        ".changes/unreleased/added-20261112-kql-database-create.yaml"
+      ],
+      "depends_on": ["cli-create-host", "sdk", "mutations", "output", "query", "storage-files"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:kql_database_create"},
+        {"package": "fabric-cli", "target": "test:kql_database_create_binary"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "cli-graph-refresh",
       "package": "fabric-cli",
       "inputs": [
@@ -3063,6 +3082,20 @@
       "features": ["fabric-cli/runtime-v2", "fabric-cli/headless"],
       "platforms": ["windows", "linux", "macos"],
       "checks": ["dependency-graph", "headless"]
+    },
+    {
+      "id": "v2-kql-database-create",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-kql-database-create"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-kql-database-create-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-kql-database-create", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
     },
     {
       "id": "v2-create",

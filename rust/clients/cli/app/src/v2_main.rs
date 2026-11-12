@@ -59,7 +59,7 @@ fn main() -> std::process::ExitCode {
     #[cfg(feature = "v2-create")]
     if args.first().and_then(|value| value.to_str()) == Some("create") {
         return std::process::ExitCode::from(finish(
-            v2_create_main::run(args, &fabric_cli::v2_create_report::ReportCreateBinding),
+            v2_create_main::run(args),
             &mut io::stderr().lock(),
         ));
     }
@@ -103,6 +103,9 @@ const ROOT_HELP: &str = "fab-cli-v2: experimental explicit resource head\n\nUsag
 
 #[cfg(feature = "v2-create")]
 const CREATE_HELP: &str = "Opt-in native Report creation:\n  fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Report --input FILE|-\nReport definition JSON is required. Only error and skip policies are supported.\nExplicit terminal approval is required; --force does not bypass approval.";
+
+#[cfg(feature = "v2-kql-database-create")]
+const KQL_CREATE_HELP: &str = "Opt-in native ReadWrite KQLDatabase creation:\n  fab-cli-v2 create /<workspaceGUID>.Workspace/<name>.KQLDatabase --input FILE|-\nReadWrite only; creationPayload requires an existing parentEventhouseItemId GUID.\nNo implicit Eventhouse creation, Shortcut, definition, query or ingestion.";
 
 fn failed(code: &'static str, message: impl Into<String>, exit: u8) -> Failure {
     (code, message.into(), Value::Null, exit)
@@ -166,7 +169,10 @@ fn run() -> Result<(), Failure> {
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         #[cfg(feature = "v2-create")]
         writeln!(io::stdout().lock(), "\n{CREATE_HELP}")
-        .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+            .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "v2-kql-database-create")]
+        writeln!(io::stdout().lock(), "\n{KQL_CREATE_HELP}")
+            .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         return Ok(());
     }
     if args.first().and_then(|value| value.to_str()) == Some("search") {

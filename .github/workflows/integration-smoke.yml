@@ -73,6 +73,39 @@ jobs:
           node rust/scripts/source-inventory.cjs
           "$env:RUNNER_TEMP/integration-smoke-receipts/report-create-after.json"
           "$env:RUNNER_TEMP/integration-smoke-receipts/report-create-before.json"
+      - name: Check the KQL73 conflict candidate's combined create paths offline
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.ref == 'dev/marcozo/reconcile-and-integrate-kql-database-cre-toey4y'
+        timeout-minutes: 10
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/integration-smoke-target
+          CARGO_PROFILE_TEST_DEBUG: "0"
+          RUST_TEST_THREADS: "1"
+        shell: pwsh
+        run: |
+          $receipts = "$env:RUNNER_TEMP/integration-smoke-receipts"
+          node rust/scripts/source-inventory.cjs "$receipts/kql-create-before.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location rust
+          cargo fetch --locked --target x86_64-pc-windows-msvc 2>&1 | Tee-Object "$receipts/kql-create-fetch.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --offline --locked -p fabric-sdk-operations --test standalone --test endpoint_context 2>&1 | Tee-Object "$receipts/kql-create-lro.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --offline --locked -p fabric-sdk-items --test create_policy 2>&1 | Tee-Object "$receipts/kql-create-policy.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --offline --locked -p fabric-sdk --test report_create 2>&1 | Tee-Object "$receipts/kql-create-sdk.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --offline --locked -p fabric-cli --no-default-features --features headless,v2-kql-database-create,runtime-v2 --test create_host --test kql_database_create --test kql_database_create_binary --test v2_create_report --test livy_list_entry 2>&1 | Tee-Object "$receipts/kql-create-combined.log"
+          exit $LASTEXITCODE
+      - name: Verify the optional KQL73 check left source unchanged
+        if: >-
+          always() && github.event_name == 'pull_request' &&
+          github.event.pull_request.head.ref == 'dev/marcozo/reconcile-and-integrate-kql-database-cre-toey4y'
+        run: >-
+          node rust/scripts/source-inventory.cjs
+          "$env:RUNNER_TEMP/integration-smoke-receipts/kql-create-after.json"
+          "$env:RUNNER_TEMP/integration-smoke-receipts/kql-create-before.json"
       - name: Retain actual exits, timings, source pins and failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

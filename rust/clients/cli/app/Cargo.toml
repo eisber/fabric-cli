@@ -24,6 +24,16 @@ path = "tests/create_host.rs"
 required-features = ["v2-create"]
 
 [[test]]
+name = "kql_database_create"
+path = "tests/kql_database_create.rs"
+required-features = ["v2-kql-database-create"]
+
+[[test]]
+name = "kql_database_create_binary"
+path = "tests/kql_database_create_binary.rs"
+required-features = ["v2-kql-database-create", "headless"]
+
+[[test]]
 name = "definition_copy_v2"
 path = "tests/definition_copy_v2.rs"
 required-features = ["native-host", "v2-copy"]
@@ -83,6 +93,7 @@ semantic-model-dotnet = ["semantic-model", "fabric-cli-semantic-model/dotnet"]
 workspace-read-v2 = []
 v2-cancel = []
 v2-create = []
+v2-kql-database-create = ["v2-create"]
 v2-run = []
 v2-refresh = ["dep:fabric-sdk-graph"]
 v2-copy = []

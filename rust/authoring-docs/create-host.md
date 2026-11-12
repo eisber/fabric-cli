@@ -163,3 +163,13 @@ and the combined `headless,v2-create,runtime-v2` CLI. Combined root help must
 disclose both Report creation and Livy listing; dispatch retains both opt-ins.
 That candidate-only check is not full Report qualification or a replacement for
 the native platform matrix.
+
+The KQL73 integration candidate adds a separate, candidate-branch-only Windows
+check of the same shared LRO/policy/Report SDK targets and the combined
+`headless,v2-kql-database-create,runtime-v2` CLI, including KQL leaf and binary
+tests plus Report and Livy regressions. `v2-kql-database-create` enables the shared
+`v2-create` feature. The already-parsed exact metadata target selects Report or
+KQLDatabase before input I/O; no suffix-only dispatch or fallback binding is used.
+Create help renders each enabled binding's existing selected grammar, and root
+help retains Report, KQL and Livy disclosures. This bounded candidate proof is
+not the full feature/platform qualification.
