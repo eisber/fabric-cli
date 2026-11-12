@@ -3,13 +3,16 @@
 
 //! Opt-in exact classic Livy GET using the existing explicit Fabric session.
 
-use super::{Failure, NativeSession, failed, headless};
+use super::{Failure, NativeSession, capture_fabric_selection, failed};
 use fabric_cli::{
     get_target::is_id,
     runtime_v2::{
         OwnerKind, ParsedInvocation, ReadErrorKind, ReadFacet, ReadOptions, ResolvedTarget,
         command_schema,
-        host::{ExplicitResolver, HostError, acquire, prepare_destination, write_stream},
+        host::{
+            ExplicitResolver, HostError, SetupError, acquire, prepare_destination, setup,
+            write_stream,
+        },
         livy_session_get, parse_args,
     },
 };
@@ -78,6 +81,13 @@ fn host_failure(error: HostError) -> Failure {
     )
 }
 
+fn setup_failure(error: SetupError<Failure>) -> Failure {
+    match error {
+        SetupError::Host(error) => host_failure(error),
+        SetupError::Work(error) => error,
+    }
+}
+
 fn service(input: &ParsedInvocation, endpoint: &EndpointBinding) -> Result<LivyService, Failure> {
     if !livy_session_get::claims(input) {
         return Err(failed(
@@ -139,24 +149,37 @@ async fn execute(
     deadline: Instant,
     cancelled: impl Future<Output = ()>,
 ) -> Result<(), Failure> {
-    // Validate the explicit owner and opaque SDK ID before credential selection.
-    let selected_endpoint = match std::env::var("FAB_RUST_FABRIC_HOST") {
-        Ok(host) => EndpointBinding::with_host(ServiceOrigin::Fabric, &host).map_err(|_| {
+    tokio::pin!(cancelled);
+    let (selected_endpoint, cwd) = setup(deadline, cancelled.as_mut(), || {
+        let endpoint = match std::env::var("FAB_RUST_FABRIC_HOST") {
+            Ok(host) => EndpointBinding::with_host(ServiceOrigin::Fabric, &host).map_err(|_| {
+                failed(
+                    "InvalidConfiguration",
+                    "Invalid explicit Fabric endpoint.",
+                    2,
+                )
+            })?,
+            Err(std::env::VarError::NotPresent) => EndpointBinding::public(ServiceOrigin::Fabric),
+            Err(_) => {
+                return Err(failed(
+                    "InvalidConfiguration",
+                    "Invalid explicit Fabric endpoint.",
+                    2,
+                ));
+            }
+        };
+        let cwd = std::env::current_dir().map_err(|_| {
             failed(
-                "InvalidConfiguration",
-                "Invalid explicit Fabric endpoint.",
+                "InvalidWorkingDirectory",
+                "Output working directory unavailable.",
                 2,
             )
-        })?,
-        Err(std::env::VarError::NotPresent) => EndpointBinding::public(ServiceOrigin::Fabric),
-        Err(_) => {
-            return Err(failed(
-                "InvalidConfiguration",
-                "Invalid explicit Fabric endpoint.",
-                2,
-            ));
-        }
-    };
+        })?;
+        Ok((endpoint, cwd))
+    })
+    .await
+    .map_err(setup_failure)?;
+    // Validate the explicit owner and opaque SDK ID before credential selection.
     let service = service(input, &selected_endpoint)?;
     let resolver =
         ExplicitResolver::new(input.path.owner.clone(), ResolvedTarget::Lakehouse(service))
@@ -167,31 +190,26 @@ async fn execute(
                     2,
                 )
             })?;
-    let cwd = std::env::current_dir().map_err(|_| {
-        failed(
-            "InvalidWorkingDirectory",
-            "Output working directory unavailable.",
-            2,
-        )
-    })?;
-    tokio::pin!(cancelled);
     let destination = prepare_destination(input.output.clone(), cwd, deadline, cancelled.as_mut())
         .await
         .map_err(host_failure)?;
-    let mode = std::env::var("FAB_RUST_AUTH_MODE").map_err(|_| {
-        failed(
-            "NotConfigured",
-            "Select explicit FAB_RUST_AUTH_MODE; no identity fallback.",
-            1,
-        )
-    })?;
-    let selection = headless::Selection::capture(&mode)
-        .map_err(|(code, message, exit)| failed(code, message, exit))?;
-    let remaining = deadline
-        .checked_duration_since(Instant::now())
-        .filter(|value| !value.is_zero())
-        .ok_or_else(|| failed("TimedOut", "Livy GET deadline elapsed before dispatch.", 1))?;
-    let session = NativeSession::new(selection, selected_endpoint, remaining)?;
+    let session = setup(deadline, cancelled.as_mut(), move || {
+        let (selection, endpoint) = capture_fabric_selection()?;
+        if endpoint != selected_endpoint {
+            return Err(failed(
+                "InvalidConfiguration",
+                "The explicit Fabric endpoint changed after preflight.",
+                2,
+            ));
+        }
+        let remaining = deadline
+            .checked_duration_since(Instant::now())
+            .filter(|value| !value.is_zero())
+            .ok_or_else(|| failed("TimedOut", "Livy GET deadline elapsed before dispatch.", 1))?;
+        NativeSession::new(selection, endpoint, remaining)
+    })
+    .await
+    .map_err(setup_failure)?;
     let executor = NativeFabricExecutor::new(session.context, session.executor.as_ref().clone())
         .map_err(|_| {
             failed(

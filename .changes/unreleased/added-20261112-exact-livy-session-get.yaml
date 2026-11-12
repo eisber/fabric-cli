@@ -1,0 +1,6 @@
+kind: added
+body: Add opt-in exact classic Livy session GET for GUID-qualified Lakehouse owners using the explicit Fabric profile, existing SDK, finite read receipts, and no-clobber output. Native LivyService execution reports its missing authorized workload binding without profile fallback.
+time: 2026-11-12T09:36:20Z
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot

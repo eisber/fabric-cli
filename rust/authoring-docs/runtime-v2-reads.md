@@ -62,6 +62,10 @@ Both typed owner selectors must be GUID-qualified; display names fail with
 The session ID is an opaque SDK identifier, not a GUID requirement.
 The fixed original 30-second deadline includes preflight, identity acquisition,
 HTTP, serialization and output. `get <exact-path> --help` is local and bounded.
+Configuration capture and existing `NativeSession` construction use the shared
+`host::setup` owned-worker seam under that same deadline and pinned cancellation.
+The selected endpoint is checked again after capture so a changed binding fails
+before token acquisition or HTTP.
 Native `.LivyService` is recognized but fails with `UnsupportedCapability`
 until a separately authorized workload executor is available; it never
 falls back to the Fabric profile. Default/v1 builds and foreign routes are
