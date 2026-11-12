@@ -789,17 +789,18 @@ async fn root_discovery_keeps_recursion_and_encoded_continuation_across_every_pa
     host.reply(200, json!({"value":[resource()]}));
     let skipped = host.run(&["--if-exists", "skip"], b"").await.unwrap();
     assert_eq!(skipped.report().value()["meta"]["resourceId"], RESOURCE);
-    let queries = host.wire.queries.lock().unwrap();
-    assert_eq!(queries[0], vec![("recursive".into(), "false".into())]);
-    assert_eq!(
-        queries[1],
-        vec![
-            ("recursive".into(), "false".into()),
-            ("continuationToken".into(), token.into()),
-        ]
-    );
+    {
+        let queries = host.wire.queries.lock().unwrap();
+        assert_eq!(queries[0], vec![("recursive".into(), "false".into())]);
+        assert_eq!(
+            queries[1],
+            vec![
+                ("recursive".into(), "false".into()),
+                ("continuationToken".into(), token.into()),
+            ]
+        );
+    }
     assert_eq!(host.requests().len(), 2);
-    drop(queries);
 
     let mut host = Host::new();
     host.reply(
