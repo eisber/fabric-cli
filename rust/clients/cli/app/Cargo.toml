@@ -166,6 +166,11 @@ path = "tests/runtime_native_host.rs"
 required-features = ["runtime-v2", "native-host"]
 
 [[test]]
+name = "runtime_native_entry"
+path = "tests/runtime_native_entry.rs"
+required-features = ["runtime-v2", "headless"]
+
+[[test]]
 name = "graph_refresh_v2"
 path = "tests/graph_refresh_v2.rs"
 required-features = ["v2-refresh"]

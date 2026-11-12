@@ -243,24 +243,35 @@ impl PendingRead {
         let written = Arc::new(AtomicUsize::new(0));
         let worker_created = Arc::clone(&created);
         let worker_written = Arc::clone(&written);
+        let stopped = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stopped);
         let bytes = self.bytes;
-        let result = owned_output::write_owned(io::sink(), deadline, cancelled, move |_| {
-            if Instant::now() >= deadline {
-                return Err(io::ErrorKind::TimedOut.into());
-            }
-            let mut writer = match destination.target {
-                Target::Stdout(file) => file,
-                Target::File(path) => {
-                    let file = std::fs::OpenOptions::new()
-                        .write(true)
-                        .create_new(true)
-                        .open(path)?;
-                    worker_created.store(true, Ordering::SeqCst);
-                    file
+        let result = owned_output::write_owned_stoppable(
+            io::sink(),
+            deadline,
+            cancelled,
+            stopped,
+            move |_| {
+                if Instant::now() >= deadline {
+                    return Err(io::ErrorKind::TimedOut.into());
                 }
-            };
-            write_counted(&mut writer, &bytes, deadline, &worker_written)
-        })
+                if worker_stop.load(Ordering::SeqCst) {
+                    return Err(io::ErrorKind::Interrupted.into());
+                }
+                let mut writer = match destination.target {
+                    Target::Stdout(file) => file,
+                    Target::File(path) => {
+                        let file = std::fs::OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(path)?;
+                        worker_created.store(true, Ordering::SeqCst);
+                        file
+                    }
+                };
+                write_counted(&mut writer, &bytes, deadline, &worker_written, &worker_stop)
+            },
+        )
         .await;
         let kind = match result {
             owned_output::OwnedWrite::Complete(Ok(())) if Instant::now() < deadline => {
@@ -291,8 +302,12 @@ fn write_counted(
     mut bytes: &[u8],
     deadline: Instant,
     written: &AtomicUsize,
+    stopped: &AtomicBool,
 ) -> io::Result<()> {
     while !bytes.is_empty() {
+        if stopped.load(Ordering::SeqCst) {
+            return Err(io::ErrorKind::Interrupted.into());
+        }
         if Instant::now() >= deadline {
             return Err(io::ErrorKind::TimedOut.into());
         }
@@ -306,7 +321,7 @@ fn write_counted(
             Err(error) => return Err(error),
         }
     }
-    if Instant::now() >= deadline {
+    if stopped.load(Ordering::SeqCst) || Instant::now() >= deadline {
         return Err(io::ErrorKind::TimedOut.into());
     }
     writer.flush()
@@ -367,11 +382,88 @@ pub async fn write_stream(
     bytes.push(b'\n');
     let file = owned_output::owned_stream(stream, true)?;
     match owned_output::write_owned(file, deadline, std::future::pending::<()>(), move |file| {
-        write_counted(file, &bytes, deadline, &AtomicUsize::new(0))
+        write_counted(
+            file,
+            &bytes,
+            deadline,
+            &AtomicUsize::new(0),
+            &AtomicBool::new(false),
+        )
     })
     .await
     {
-        owned_output::OwnedWrite::Complete(result) => result,
+        owned_output::OwnedWrite::Complete(result) if Instant::now() < deadline => result,
         _ => Err(io::ErrorKind::TimedOut.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{future::pending, sync::mpsc, time::Duration};
+
+    #[test]
+    fn partial_writer_retains_exact_observed_prefix_without_replay() {
+        struct ShortWriter(usize);
+        impl Write for ShortWriter {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                if self.0 != 0 {
+                    return Err(io::ErrorKind::BrokenPipe.into());
+                }
+                self.0 += 1;
+                Ok(bytes.len().min(2))
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                panic!("failed output must not be flushed or replayed");
+            }
+        }
+        let count = AtomicUsize::new(0);
+        assert!(
+            write_counted(
+                &mut ShortWriter(0),
+                b"receipt",
+                Instant::now() + Duration::from_secs(1),
+                &count,
+                &AtomicBool::new(false)
+            )
+            .is_err()
+        );
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn blocked_owned_writer_is_abandoned_with_no_synchronous_diagnostic_fallback() {
+        struct BlockingWriter(mpsc::Receiver<()>);
+        impl Write for BlockingWriter {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                self.0.recv().unwrap();
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        let (release, wait) = mpsc::channel();
+        let result = owned_output::write_owned(
+            BlockingWriter(wait),
+            Instant::now() + Duration::from_millis(20),
+            pending::<()>(),
+            |writer| writer.write_all(b"one bounded diagnostic"),
+        )
+        .await;
+        assert!(matches!(result, owned_output::OwnedWrite::Deadline));
+        release.send(()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn already_cancelled_output_does_not_start_a_worker() {
+        let result = owned_output::write_owned(
+            io::sink(),
+            Instant::now() + Duration::from_secs(1),
+            async {},
+            |_| -> io::Result<()> { panic!("no worker after latched cancellation") },
+        )
+        .await;
+        assert!(matches!(result, owned_output::OwnedWrite::Cancelled(())));
     }
 }

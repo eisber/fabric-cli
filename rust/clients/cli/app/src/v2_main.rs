@@ -32,6 +32,8 @@ mod headless;
 mod v2_exists_main;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
+#[cfg(feature = "runtime-v2")]
+mod v2_runtime_main;
 mod v2_search_main;
 
 // Reuse the existing binary-private selector without importing v1 dispatch/state.
@@ -45,6 +47,10 @@ mod native_read {
 
 fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    #[cfg(feature = "runtime-v2")]
+    if v2_runtime_main::claims(&args) {
+        return std::process::ExitCode::from(v2_runtime_main::run(args));
+    }
     if args.first().and_then(|value| value.to_str()) == Some("exists") {
         return std::process::ExitCode::from(finish(
             v2_exists_main::run(args),
@@ -146,10 +152,9 @@ fn run() -> Result<(), Failure> {
     if args.first().and_then(|value| value.to_str()) == Some("search") {
         return v2_search_main::run(args);
     }
-    if args
-        .first()
-        .and_then(|value| value.to_str())
-        .is_some_and(|value| value == "update" || value == "artifact")
+    if args.first().and_then(|value| value.to_str()) == Some("update")
+        || (args.first().and_then(|value| value.to_str()) == Some("artifact")
+            && args.get(2).and_then(|value| value.to_str()) == Some("update"))
     {
         return run_update(args);
     }

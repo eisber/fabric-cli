@@ -1878,7 +1878,10 @@
       "id": "cli-runtime-v2",
       "package": "fabric-cli",
       "inputs": [
-        "rust/clients/cli/app/src/runtime_v2/**"
+        "rust/clients/cli/app/src/runtime_v2/**",
+        "rust/clients/cli/app/src/v2_runtime_main.rs",
+        "rust/clients/cli/app/tests/runtime_native_host.rs",
+        "rust/clients/cli/app/tests/runtime_native_entry.rs"
       ],
       "depends_on": [
         "sdk",
@@ -1890,6 +1893,14 @@
         {
           "package": "fabric-cli",
           "target": "test:runtime_v2"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:runtime_native_host"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:runtime_native_entry"
         }
       ],
       "checks": [
@@ -3420,7 +3431,8 @@
         "fabric-cli"
       ],
       "features": [
-        "fabric-cli/runtime-v2"
+        "fabric-cli/runtime-v2",
+        "fabric-cli/headless"
       ],
       "platforms": [
         "windows",

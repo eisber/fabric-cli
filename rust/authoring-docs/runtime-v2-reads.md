@@ -176,7 +176,7 @@ remote observation evidence, **not** proof output was delivered. There is one
 HTTP dispatch and one output attempt, no automatic retry/replay and no
 cross-process exactly-once delivery promise.
 
-## Integration gates and validation
+## Historical H1 integration gates and validation
 
 This lane exclusively adds `src/runtime_v2/**`, `tests/runtime_v2.rs` and this
 document. The coordinator must add the optional manifest feature
@@ -213,7 +213,8 @@ not passing runtime tests. After adding the feature/export, the coordinator's
 serialized validator must run the focused `fabric-cli` runtime-v2 test target,
 all-target checks/lints and affected consumers, then independent reviews.
 
-There is still **no standalone v2 HTTP/auth/output host or executable dispatch**.
+At the original H1 checkpoint there was **no standalone v2 HTTP/auth/output
+host or executable dispatch**.
 The default CLI is untouched. Caller-injected fakes prove neither deployed
 Notebook/Livy qualification nor real executable remote completion. HTTP
 authorization/redirect/deadline/streaming behavior, actual metadata-backed
@@ -264,3 +265,17 @@ A separate supported Fabric-profile test injects an Azure credential and HTTP
 client into the actual `RequestContext` / `NativeFabricExecutor` / `HttpExecutor`
 stack; negative Notebook tests verify that stack refuses before requesting a
 token or HTTP. This evidence must not be relabeled as native Notebook acceptance.
+
+The opt-in `fab-cli-v2` build (`headless,runtime-v2`) now recognizes precisely
+Notebook `get .../src/content` and its `artifact notebook get` equivalent.
+Until that production prerequisite is supplied, both return nonzero
+`NotebookWorkloadBindingRequired` before reading authentication configuration,
+constructing credentials or making HTTP requests. This is a truthful
+capability boundary, **not an implemented production Notebook read**.
+Unsupported flags and excessive caller budgets remain argument errors.
+Other owners/facets and update facades retain their existing dispatch.
+The host does not mount the five session/statement sibling leaves.
+
+The available selected specification index still references Commands r30,
+consistent with the pins above; no newer private specification body was
+available through the current tools. No private specification is copied here.

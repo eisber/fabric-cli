@@ -1,0 +1,6 @@
+kind: added
+body: Add an opt-in bounded native runtime-read host with explicit owner resolution and no-clobber output, plus Notebook content command routing that reports the missing approved workload authorization binding without falling back to item definitions.
+time: 2026-11-12T10:00:00+01:00
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot
