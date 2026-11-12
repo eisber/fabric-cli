@@ -64,6 +64,11 @@ The next shared logical diff is
 and correcting the strict lint failure without suppression. Its shared code and
 host documentation are exact; absent Notebook-specific contract prose is again
 not imported.
+The subsequent logical diff
+`0ec384823fd209f2084e30b4e9677fe7799b136a` preserves an original typed HTTP
+cause while treating unexpected success-class operation-result statuses as
+unknown, not as provider-confirmed rejection. No producer test ancestry is
+imported.
 The [selected create contract](create-v2-contract.md) is unchanged; its old
 unmounted-implementation inventory is historical, not a feature-support claim.
 
@@ -133,6 +138,9 @@ retain the original submission separately from `meta.observation.httpStatus`
 and the latest response. A failed poll's HTTP 200 must not replace the original
 202 acceptance or turn it into completion. Malformed complete acceptance or
 final bodies retain explicitly labeled base64 evidence, not fabricated JSON.
+An unexpected result HTTP 201, 202 or 204 retains the typed HTTP cause and
+original submission evidence, but remains `InvalidResponse`, unknown and
+nonzero. A genuine non-success HTTP rejection still reports failure.
 
 ## Acceptance evidence
 

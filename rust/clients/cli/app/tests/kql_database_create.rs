@@ -850,6 +850,80 @@ async fn malformed_final_result_keeps_submission_resource_independently_of_last_
 }
 
 #[tokio::test]
+async fn unexpected_success_result_retains_typed_http_cause_but_not_definitive_failure() {
+    use fabric_sdk_operations::OperationErrorKind;
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for status in [201, 202, 204, 400, 403, 409] {
+        let harness = Harness::new([
+            missing(),
+            accepted(&resource().to_string(), "0"),
+            json_response(200, json!({"status":"Succeeded"})),
+            if status == 204 {
+                response(status, "", &[])
+            } else if status < 300 {
+                json_response(status, resource())
+            } else {
+                json_response(status, json!({"errorCode":"NativeResultRejected"}))
+            },
+        ]);
+        let delivery = harness
+            .execute(
+                prepare(&raw, &["--wait", "--project", "missing"]).unwrap(),
+                &mut Approval::default(),
+                pending(),
+            )
+            .await
+            .unwrap();
+        let report = delivery.report();
+        assert_eq!(report.exit_code(), 1);
+        assert!(matches!(
+            &report.error().unwrap().kind,
+            OperationErrorKind::Http {status:actual,..} if *actual == status
+        ));
+        let mut output = Vec::new();
+        delivery.deliver(&mut output).unwrap();
+        let value: Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(value["data"], Value::Null);
+        assert_eq!(
+            value["error"]["code"],
+            if status < 300 {
+                "InvalidResponse"
+            } else {
+                "ServiceRejected"
+            }
+        );
+        assert_eq!(
+            value["meta"]["status"],
+            if status < 300 { "unknown" } else { "failed" }
+        );
+        assert_eq!(value["meta"]["completed"], false);
+        assert_eq!(value["meta"]["httpStatus"], status);
+        assert_eq!(value["meta"]["observation"]["httpStatus"], status);
+        assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(value["meta"]["submission"]["resource"], resource());
+        assert_eq!(
+            value["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(value["meta"]["resourceId"], ITEM);
+        assert_eq!(
+            value["meta"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(value["meta"]["mutationMayHaveOccurred"], true);
+        assert_eq!(value["meta"]["remoteReplayed"], false);
+        assert_eq!(value["meta"]["remoteCancelled"], false);
+        harness.assert_wire(
+            &raw,
+            &[
+                &format!("/v1/operations/{OP}"),
+                &format!("/v1/operations/{OP}/result"),
+            ],
+        );
+    }
+}
+
+#[tokio::test]
 async fn same_name_foreign_owner_is_not_a_second_kql_match() {
     let raw = serde_json::to_vec(&body()).unwrap();
     let harness = Harness::new([json_response(
