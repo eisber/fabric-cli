@@ -882,7 +882,7 @@ async fn invalid_acceptance_result_and_foreign_lro_never_become_success_or_repla
 async fn cancellation_and_deadline_keep_accepted_evidence_without_remote_cancel() {
     let raw = serde_json::to_vec(&body()).unwrap();
     for deadline in [false, true] {
-        let harness = Harness::new([missing(), accepted(&resource().to_string(), "0")]);
+        let harness = Harness::new([missing(), accepted(&resource().to_string(), "1")]);
         harness.timer.pending_wait.store(true, Ordering::SeqCst);
         let interrupted = async {
             poll_fn(|cx| {
@@ -934,7 +934,7 @@ async fn partial_acceptance_body_retains_observed_header_without_inventing_resou
     let raw = serde_json::to_vec(&body()).unwrap();
     let mut headers = Headers::new();
     headers.insert("x-ms-operation-id", OP);
-    headers.insert("Location", format!("https://{HOST}/v1/operations/{OP}"));
+    headers.insert("location", format!("https://{HOST}/v1/operations/{OP}"));
     let broken = stream::once(async {
         Err(azure_core::Error::new(
             azure_core::error::ErrorKind::Other,
