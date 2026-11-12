@@ -26,5 +26,9 @@ ring = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 
+[dev-dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+
 [lints]
 workspace = true
