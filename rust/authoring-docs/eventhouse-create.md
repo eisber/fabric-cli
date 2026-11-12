@@ -106,6 +106,12 @@ nonzero exit, not a definitive provider rejection. The original typed SDK
 `Http` error/status remains available alongside initial 202 resource/handle
 evidence. Genuine non-2xx rejection and terminal operation failure retain their
 failed classification; neither path replays the POST.
+Nonempty create/result responses use the existing bounded strict JSON decoder.
+Duplicate root, nested and escaped-equivalent keys are invalid responses, not
+last-key-wins resources. Initial 201 or no-wait 202 duplicate responses retain
+available status/handle and exact unparsed bytes without inventing a resource
+identity. A duplicate-key final result preserves earlier accepted resource
+evidence and remains unknown/nonzero with no replay.
 Observed folder fields stay in protected `meta.folderId` and
 `meta.submission.folderId` with explicit `folderIdObserved` flags, so a response
 that omits the field remains distinguishable from an observed null field even
@@ -135,7 +141,10 @@ existing destination section. No Notebook leaf, producer test commits
 unexpected-result-status follow-up
 `0ec384823fd209f2084e30b4e9677fe7799b136a` is consumed next as a logical diff,
 without producer `5a7c9c5` test ancestry or an operation-engine fork. Source
-adoption is not native validation or final qualification.
+adoption then consumes the one-file strict-response helper
+`44576b07033b1c4796205b862c44074d4e5df165`, without producer `c2cb3dd` tests or
+ancestry. None of these source adoptions establishes native validation or final
+qualification.
 
 `tests/eventhouse_create.rs` exercises the parser, shared host, SDK planner,
 injected credential and scripted HTTP executor. `tests/eventhouse_create_binary.rs`

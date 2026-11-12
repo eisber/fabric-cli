@@ -1450,6 +1450,162 @@ async fn malformed_no_wait_202_retains_initial_headers_and_exact_body_without_po
     harness.assert_posts(1);
 }
 
+fn duplicate_resource_bodies() -> Vec<Vec<u8>> {
+    [
+        format!(r#"{{"id":"{ITEM}","id":"{OP}","workspaceId":"{WS}","type":"Eventhouse","displayName":"Exact"}}"#),
+        format!(r#"{{"id":"{ITEM}","\u0069d":"{OP}","workspaceId":"{WS}","type":"Eventhouse","displayName":"Exact"}}"#),
+        format!(r#"{{"id":"{ITEM}","workspaceId":"{WS}","type":"Eventhouse","displayName":"Other","displayName":"Exact"}}"#),
+        format!(r#"{{"id":"{ITEM}","workspaceId":"{WS}","type":"Eventhouse","displayName":"Exact","properties":{{"databaseIds":[],"databaseIds":["{OP}"]}}}}"#),
+        format!(r#"{{"id":"{ITEM}","workspaceId":"{WS}","type":"Eventhouse","displayName":"Exact","properties":{{"databaseIds":[],"\u0064atabaseIds":["{OP}"]}}}}"#),
+    ].into_iter().map(String::into_bytes).collect()
+}
+
+#[tokio::test]
+async fn duplicate_initial_201_and_no_wait_202_never_claim_success_and_retain_exact_raw_evidence() {
+    use base64::Engine;
+    let dir = tempfile::tempdir().unwrap();
+    for status in [201, 202] {
+        for raw in duplicate_resource_bodies() {
+            let headers = if status == 202 {
+                operation_headers()
+            } else {
+                Headers::new()
+            };
+            let harness = Harness::new(vec![
+                listing(vec![]),
+                AsyncRawResponse::from_bytes(StatusCode::from(status), headers, raw.clone()),
+            ]);
+            let mut approval = Approval::yes();
+            let result = harness
+                .execute(
+                    prepared(dir.path(), &["--project", "displayName"], None).unwrap(),
+                    &mut approval,
+                    pending(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(result.report().exit_code(), 1);
+            assert!(matches!(
+                &result.report().error().unwrap().kind,
+                OperationErrorKind::InvalidResponse
+            ));
+            let receipt = delivered(result);
+            assert_eq!(receipt["error"]["code"], "InvalidResponse");
+            assert_eq!(receipt["meta"]["status"], "unknown");
+            assert_eq!(receipt["meta"]["completed"], false);
+            assert_eq!(receipt["meta"]["httpStatus"], status);
+            assert_eq!(receipt["meta"]["submission"]["httpStatus"], status);
+            assert_eq!(receipt["meta"]["observation"]["httpStatus"], status);
+            assert!(receipt["meta"]["resourceId"].is_null());
+            assert!(receipt["meta"]["submission"]["resource"].is_null());
+            assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+            assert_eq!(receipt["meta"]["remoteReplayed"], false);
+            assert_eq!(
+                base64::engine::general_purpose::STANDARD
+                    .decode(
+                        receipt["meta"]["unparsedResponseBodyBase64"]
+                            .as_str()
+                            .unwrap(),
+                    )
+                    .unwrap(),
+                raw
+            );
+            if status == 202 {
+                assert_eq!(
+                    receipt["meta"]["operationHandle"],
+                    format!("/operations/{OP}")
+                );
+                assert_eq!(
+                    receipt["meta"]["submission"]["operationHandle"],
+                    format!("/operations/{OP}")
+                );
+                assert_eq!(
+                    base64::engine::general_purpose::STANDARD
+                        .decode(
+                            receipt["meta"]["unparsedAcceptanceBodyBase64"]
+                                .as_str()
+                                .unwrap(),
+                        )
+                        .unwrap(),
+                    raw
+                );
+            } else {
+                assert!(receipt["meta"]["operationHandle"].is_null());
+            }
+            assert_anticipated_effects(&receipt);
+            assert_approved_wire(&harness, &approval);
+            harness.assert_posts(1);
+            assert_eq!(harness.wire.requests.lock().unwrap().len(), 2);
+        }
+    }
+}
+
+#[tokio::test]
+async fn duplicate_final_200_keeps_prior_acceptance_identity_instead_of_overwriting_it() {
+    use base64::Engine;
+    let dir = tempfile::tempdir().unwrap();
+    for raw in duplicate_resource_bodies() {
+        let harness = Harness::new(vec![
+            listing(vec![]),
+            accepted(Some(resource())),
+            response(200, json!({"status":"Succeeded"})),
+            AsyncRawResponse::from_bytes(StatusCode::Ok, Headers::new(), raw.clone()),
+        ]);
+        let result = harness
+            .execute(
+                prepared(dir.path(), &["--wait", "--project", "displayName"], None).unwrap(),
+                &mut Approval::yes(),
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.report().exit_code(), 1);
+        assert!(matches!(
+            &result.report().error().unwrap().kind,
+            OperationErrorKind::InvalidResponse
+        ));
+        let receipt = delivered(result);
+        assert_eq!(receipt["error"]["code"], "InvalidResponse");
+        assert_eq!(receipt["meta"]["status"], "unknown");
+        assert_eq!(receipt["meta"]["completed"], false);
+        assert_eq!(receipt["meta"]["httpStatus"], 200);
+        assert_eq!(receipt["meta"]["observation"]["httpStatus"], 200);
+        assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(receipt["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(
+            receipt["meta"]["submission"]["resource"]["displayName"],
+            "Exact"
+        );
+        assert_eq!(receipt["meta"]["resourceId"], ITEM);
+        assert_eq!(receipt["meta"]["observedResource"]["id"], ITEM);
+        assert_eq!(
+            receipt["meta"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(receipt["meta"]["remoteReplayed"], false);
+        assert_eq!(receipt["meta"]["remoteCancelled"], false);
+        assert_eq!(receipt["data"], "Exact");
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD
+                .decode(
+                    receipt["meta"]["unparsedResponseBodyBase64"]
+                        .as_str()
+                        .unwrap(),
+                )
+                .unwrap(),
+            raw
+        );
+        assert_anticipated_effects(&receipt);
+        harness.assert_posts(1);
+        let requests = harness.wire.requests.lock().unwrap();
+        assert_eq!(requests.len(), 4);
+        assert_eq!(
+            requests[3].url().path(),
+            format!("/v1/operations/{OP}/result")
+        );
+    }
+}
+
 #[tokio::test]
 async fn complete_discovery_pages_are_required_and_untrusted_continuations_never_authorize() {
     let dir = tempfile::tempdir().unwrap();
