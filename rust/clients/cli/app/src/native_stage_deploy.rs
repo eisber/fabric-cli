@@ -4,6 +4,7 @@
 //! Exact stage deployment on the existing native identity, HTTP and output host.
 
 use super::{Failure, failure, output};
+use azure_core::http::Method;
 use fabric_cli::stage_deploy::{
     StageDeployCommand, StageDeployError, StageDeployInvocation, execution_exit_code,
 };
@@ -12,8 +13,13 @@ use fabric_deploy::stage::{
     DeploymentApproval, DeploymentError, DeploymentErrorKind, DeploymentReceipt, DeploymentRequest,
     PreparedDeployment, StageReader,
 };
-use fabric_sdk::RequestContext;
-use fabric_sdk_operations::{OperationExecutor, OperationLimits};
+use fabric_sdk::{RequestContext, ServiceOrigin, workspaces::WorkspaceResponse};
+use fabric_sdk_http::{ExecutionError, ExecutionFuture, HttpExecutor, ResponseProgress};
+use fabric_sdk_operations::{
+    OperationExecutionError, OperationExecutor, OperationLimits, OperationRequest,
+    OperationResponse,
+};
+use fabric_sdk_workspaces::mutations::ResourceMethod;
 use futures_util::{FutureExt, future::Shared};
 use serde_json::{Value, json};
 use std::{
@@ -22,7 +28,8 @@ use std::{
     io::{self, IsTerminal, Read, Write},
     num::NonZeroUsize,
     pin::Pin,
-    time::Instant,
+    sync::Mutex,
+    time::{Duration, Instant},
 };
 
 #[cfg(test)]
@@ -202,20 +209,151 @@ impl DeploymentApproval for ImmediateApproval {
     }
 }
 
+#[derive(Default)]
+struct SubmissionHeaders(Mutex<Option<OperationResponse>>);
+
+impl ResponseProgress for SubmissionHeaders {
+    fn record(&self, response: &WorkspaceResponse, _: bool) -> Result<(), ExecutionError> {
+        let mut observed = self.0.lock().map_err(|_| ExecutionError::Transport)?;
+        if observed.is_none() {
+            *observed = Some(OperationResponse {
+                status: response.status,
+                body: Vec::new(),
+                headers: response
+                    .headers
+                    .iter()
+                    .filter(|(name, _)| {
+                        name.eq_ignore_ascii_case("x-ms-operation-id")
+                            || name.eq_ignore_ascii_case("deployment-id")
+                    })
+                    .map(|(name, value)| (name.clone(), value.clone()))
+                    .collect(),
+            });
+        }
+        Ok(())
+    }
+
+    fn body_omitted(&self, response: &WorkspaceResponse) -> Result<(), ExecutionError> {
+        self.record(response, false)
+    }
+}
+
+fn response_id(response: &OperationResponse, name: &str) -> Option<String> {
+    let mut values = response
+        .headers
+        .iter()
+        .filter(|(key, _)| key.eq_ignore_ascii_case(name));
+    let (_, value) = values.next()?;
+    (values.next().is_none()
+        && value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        }))
+    .then(|| value.clone())
+}
+
+struct StageHttp<'a> {
+    http: &'a HttpExecutor,
+    submission: SubmissionHeaders,
+}
+
+impl OperationExecutor for StageHttp<'_> {
+    fn execute<'a>(
+        &'a self,
+        request: OperationRequest<'a>,
+    ) -> ExecutionFuture<'a, Result<OperationResponse, OperationExecutionError>> {
+        if request.method() != ResourceMethod::Post {
+            return self.http.execute(request);
+        }
+        Box::pin(async move {
+            if request.origin() != ServiceOrigin::Fabric
+                || self.http.endpoint().origin() != ServiceOrigin::Fabric
+            {
+                return Err(OperationExecutionError::Failed);
+            }
+            self.http
+                .execute_bound_with_progress(
+                    ServiceOrigin::Fabric,
+                    Method::Post,
+                    request.url(),
+                    request.token(),
+                    request.body(),
+                    &[],
+                    request.max_response_bytes(),
+                    Some(&self.submission),
+                )
+                .await
+                .map(|response| OperationResponse {
+                    status: response.status,
+                    body: response.body,
+                    headers: response.headers,
+                })
+                .map_err(|error| match error {
+                    ExecutionError::TimedOut => OperationExecutionError::TimedOut,
+                    ExecutionError::ResponseLimit => OperationExecutionError::ResponseLimit,
+                    ExecutionError::RetriesExhausted => OperationExecutionError::RetriesExhausted,
+                    ExecutionError::InvalidInput
+                    | ExecutionError::Transport
+                    | ExecutionError::RetryDelay => OperationExecutionError::Failed,
+                })
+        })
+    }
+
+    fn wait(&self, delay: Duration) -> ExecutionFuture<'_, Result<(), OperationExecutionError>> {
+        self.http.wait(delay)
+    }
+}
+
+fn retain_submission(
+    result: &mut Result<DeploymentReceipt, DeploymentError>,
+    submission: &SubmissionHeaders,
+) {
+    if let Err(error) = result {
+        match submission.0.lock() {
+            Ok(observed) => {
+                if let Some(response) = observed.as_ref()
+                    && let Some(receipt) = error.receipt.as_mut()
+                    && receipt.http_status.is_none()
+                {
+                    // Header progress is not a completed body or native success.
+                    receipt.http_status = Some(response.status);
+                    receipt.operation_id = response_id(response, "x-ms-operation-id");
+                    receipt.deployment_id = response_id(response, "deployment-id");
+                    receipt.mutation_may_have_occurred = true;
+                    if response.status == 202
+                        && (receipt.operation_id.is_none() || receipt.deployment_id.is_none())
+                    {
+                        error.kind = DeploymentErrorKind::InvalidResponse;
+                    }
+                }
+            }
+            Err(_) => error.kind = DeploymentErrorKind::Operation,
+        }
+    }
+}
+
 async fn execute<F: Future<Output = io::Result<bool>>>(
     command: &StageDeployCommand,
     request: DeploymentRequest,
     context: &RequestContext,
-    executor: &impl OperationExecutor,
+    executor: &HttpExecutor,
     identity: &str,
     approve: impl FnOnce(String) -> F,
     stop: Stopping<'_>,
 ) -> Result<DeploymentReceipt, DeploymentError> {
+    let executor = StageHttp {
+        http: executor,
+        submission: SubmissionHeaders::default(),
+    };
     let result = async {
         let mut limits = OperationLimits::default();
         let reader = StageReader {
             context,
-            executor,
+            executor: &executor,
             limits: OperationLimits {
                 max_requests: NonZeroUsize::new(1).expect("one stage read"),
                 ..limits
@@ -259,13 +397,14 @@ async fn execute<F: Future<Output = io::Result<bool>>>(
         limits.max_requests =
             NonZeroUsize::new(limits.max_requests.get() - 2).expect("two preflight reads debited");
         approved
-            .execute(context, executor, limits, command.wait(), async {
+            .execute(context, &executor, limits, command.wait(), async {
                 stop.clone().await;
             })
             .await
     }
     .await;
     let mut result = result;
+    retain_submission(&mut result, &executor.submission);
     if let Err(error) = &mut result
         && let Some(Stop::Deadline) = stop.now_or_never()
     {

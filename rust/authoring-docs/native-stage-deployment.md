@@ -98,6 +98,13 @@ IDs are not interchangeable. Missing, malformed or duplicate acceptance-ID
 headers fail with uncertainty retained, before any observation. Shared operation
 link validation prevents cross-origin/route substitution.
 
+The native host also uses the existing HTTP response-progress callback to retain
+the actual POST status and independently validated UUID handles as soon as the
+headers arrive. A body-stream failure, overflow, cancellation or deadline cannot
+erase those handles. Header-only progress retains an unknown outcome and mutation
+uncertainty, not a complete response body or terminal success; it never triggers
+polling or another POST. The callback stores no body prefix or unrelated headers.
+
 The receipt's HTTP status is the submission status, not a later 200 state-read
 status. A 202 receipt is `accepted`, not completed. Explicit native `Succeeded`
 is required for success, and every supplied execution-plan step must corroborate

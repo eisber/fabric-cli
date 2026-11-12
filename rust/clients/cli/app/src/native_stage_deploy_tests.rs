@@ -5,6 +5,7 @@
 use super::*;
 use async_trait::async_trait;
 use azure_core::{
+    Bytes,
     credentials::{AccessToken, TokenCredential, TokenRequestOptions},
     http::{AsyncRawResponse, HttpClient, Method, Request, StatusCode, headers::Headers},
     time::OffsetDateTime,
@@ -12,6 +13,7 @@ use azure_core::{
 use fabric_deploy::stage::DeploymentOutcome;
 use fabric_sdk::{Audience, CredentialSelection, EndpointBinding, ServiceOrigin};
 use fabric_sdk_http::{ExecutionOptions, HttpExecutor};
+use futures_util::Stream;
 use std::{
     collections::VecDeque,
     future::{pending, ready},
@@ -19,6 +21,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
+    task::{Context, Poll},
     time::Duration,
 };
 
@@ -172,7 +175,9 @@ impl HttpClient for Wire {
     }
 }
 
-fn context(wire: Arc<Wire>) -> (RequestContext, HttpExecutor, Arc<AtomicUsize>) {
+fn context(
+    wire: Arc<impl HttpClient + 'static>,
+) -> (RequestContext, HttpExecutor, Arc<AtomicUsize>) {
     let calls = Arc::new(AtomicUsize::new(0));
     let endpoint =
         EndpointBinding::with_host(ServiceOrigin::Fabric, "msitapi.fabric.microsoft.com").unwrap();
@@ -193,6 +198,256 @@ fn context(wire: Arc<Wire>) -> (RequestContext, HttpExecutor, Arc<AtomicUsize>) 
 
 fn stop() -> Stopping<'static> {
     stopping(Instant::now() + Duration::from_secs(5), pending())
+}
+
+struct InterruptedBody {
+    polls: Arc<AtomicUsize>,
+    dropped: Arc<AtomicUsize>,
+    fail: bool,
+    overflow: bool,
+    sent_prefix: bool,
+}
+
+impl Stream for InterruptedBody {
+    type Item = azure_core::Result<Bytes>;
+
+    fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let body = self.get_mut();
+        body.polls.fetch_add(1, Ordering::SeqCst);
+        if !body.sent_prefix {
+            body.sent_prefix = true;
+            if body.overflow {
+                return Poll::Ready(Some(Ok(Bytes::from(vec![
+                    b'x';
+                    OperationLimits::default()
+                        .max_response_bytes
+                        .get()
+                        + 1
+                ]))));
+            }
+            return Poll::Ready(Some(Ok(Bytes::from_static(
+                b"private-incomplete-native-body",
+            ))));
+        }
+        if body.fail {
+            Poll::Ready(Some(Err(azure_core::Error::with_message(
+                azure_core::error::ErrorKind::Io,
+                "private-native-body-failure",
+            ))))
+        } else {
+            Poll::Pending
+        }
+    }
+}
+
+impl Drop for InterruptedBody {
+    fn drop(&mut self) {
+        self.dropped.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+#[derive(Debug)]
+struct StreamingWire {
+    inner: Arc<Wire>,
+    polls: Arc<AtomicUsize>,
+    dropped: Arc<AtomicUsize>,
+    fail: bool,
+    overflow: bool,
+    malformed_operation: bool,
+}
+
+#[async_trait]
+impl HttpClient for StreamingWire {
+    async fn execute_request(&self, request: &Request) -> azure_core::Result<AsyncRawResponse> {
+        if request.method() != Method::Post {
+            return self.inner.execute_request(request).await;
+        }
+        assert_eq!(
+            request.url().path(),
+            format!("/v1/deploymentPipelines/{PIPELINE}/deploy")
+        );
+        self.inner.posts.fetch_add(1, Ordering::SeqCst);
+        self.inner.requests.lock().unwrap().push(request.clone());
+        let (_, mut headers, _) = accepted();
+        if self.malformed_operation {
+            headers.insert("x-ms-operation-id", format!("{OPERATION},{OPERATION}"));
+        }
+        headers.insert("authorization", "private-response-header");
+        Ok(AsyncRawResponse::new(
+            StatusCode::Accepted,
+            headers,
+            Box::pin(InterruptedBody {
+                polls: self.polls.clone(),
+                dropped: self.dropped.clone(),
+                fail: self.fail,
+                overflow: self.overflow,
+                sent_prefix: false,
+            }),
+        ))
+    }
+}
+
+#[tokio::test]
+async fn accepted_stream_failure_cancellation_and_deadlines_retain_headers_without_replay() {
+    for mode in [
+        "failure",
+        "overflow",
+        "cancel",
+        "deadline",
+        "executor-deadline",
+    ] {
+        let (_directory, command, request) = input(&body(), false, true);
+        let wire = Arc::new(StreamingWire {
+            inner: Wire::new(stages(1, TARGET_WS)),
+            polls: Arc::new(AtomicUsize::new(0)),
+            dropped: Arc::new(AtomicUsize::new(0)),
+            fail: mode == "failure",
+            overflow: mode == "overflow",
+            malformed_operation: false,
+        });
+        let (context, executor, calls) = context(wire.clone());
+        let executor = if mode == "executor-deadline" {
+            executor.with_timeout(Duration::from_millis(100)).unwrap()
+        } else {
+            executor
+        };
+        let stop = match mode {
+            "cancel" => {
+                let polls = wire.polls.clone();
+                stopping(Instant::now() + Duration::from_secs(2), async move {
+                    while polls.load(Ordering::SeqCst) < 2 {
+                        tokio::task::yield_now().await;
+                    }
+                    Stop::Cancelled
+                })
+            }
+            "deadline" => stopping(Instant::now() + Duration::from_millis(200), pending()),
+            _ => stop(),
+        };
+        let execution = tokio::time::timeout(
+            Duration::from_secs(3),
+            execute(
+                &command,
+                request,
+                &context,
+                &executor,
+                "identity",
+                |_| ready(Ok(true)),
+                stop,
+            ),
+        )
+        .await
+        .expect("suspended stage body must not hold execution past its deadline");
+        let error = execution.as_ref().err().unwrap();
+        assert_eq!(
+            error.kind,
+            match mode {
+                "failure" | "overflow" => DeploymentErrorKind::Operation,
+                "cancel" => DeploymentErrorKind::Cancelled,
+                _ => DeploymentErrorKind::TimedOut,
+            },
+            "{mode}"
+        );
+        let receipt = error.receipt.as_ref().unwrap();
+        assert_eq!(receipt.http_status, Some(202), "{mode}");
+        assert_eq!(receipt.operation_id.as_deref(), Some(OPERATION), "{mode}");
+        assert_eq!(receipt.deployment_id.as_deref(), Some(DEPLOYMENT), "{mode}");
+        assert_eq!(receipt.outcome, DeploymentOutcome::Unknown, "{mode}");
+        assert!(receipt.mutation_may_have_occurred, "{mode}");
+        assert!(receipt.initial_response.is_none(), "{mode}");
+        assert!(receipt.execution_plan.is_none(), "{mode}");
+        assert_eq!(wire.inner.posts.load(Ordering::SeqCst), 1, "{mode}");
+        assert_eq!(wire.inner.requests.lock().unwrap().len(), 3, "{mode}");
+        assert_eq!(calls.load(Ordering::SeqCst), 3, "{mode}");
+        assert!(
+            wire.polls.load(Ordering::SeqCst) >= if mode == "overflow" { 1 } else { 2 },
+            "{mode}"
+        );
+        assert_eq!(wire.dropped.load(Ordering::SeqCst), 1, "{mode}");
+        let (value, exit) = execution_value(&execution);
+        assert_ne!(exit, 0, "{mode}");
+        assert_eq!(value["status"], "unknown", "{mode}");
+        assert_eq!(value["evidence"]["operationId"], OPERATION, "{mode}");
+        assert_eq!(value["evidence"]["deploymentId"], DEPLOYMENT, "{mode}");
+        let diagnostic = format!("{value} {execution:?}");
+        assert!(!diagnostic.contains("private-"), "{mode}");
+        assert!(!diagnostic.contains("synthetic-stage-token"), "{mode}");
+    }
+}
+
+#[tokio::test]
+async fn malformed_streamed_acceptance_does_not_adopt_invalid_operation_or_discard_valid_handle() {
+    let (_directory, command, request) = input(&body(), false, true);
+    let wire = Arc::new(StreamingWire {
+        inner: Wire::new(stages(1, TARGET_WS)),
+        polls: Arc::new(AtomicUsize::new(0)),
+        dropped: Arc::new(AtomicUsize::new(0)),
+        fail: true,
+        overflow: false,
+        malformed_operation: true,
+    });
+    let (context, executor, _) = context(wire.clone());
+    let error = execute(
+        &command,
+        request,
+        &context,
+        &executor,
+        "identity",
+        |_| ready(Ok(true)),
+        stop(),
+    )
+    .await
+    .err()
+    .unwrap();
+    assert_eq!(error.kind, DeploymentErrorKind::InvalidResponse);
+    let receipt = error.receipt.unwrap();
+    assert_eq!(receipt.http_status, Some(202));
+    assert!(receipt.operation_id.is_none());
+    assert_eq!(receipt.deployment_id.as_deref(), Some(DEPLOYMENT));
+    assert_eq!(receipt.outcome, DeploymentOutcome::Unknown);
+    assert!(receipt.mutation_may_have_occurred);
+    assert_eq!(wire.inner.posts.load(Ordering::SeqCst), 1);
+    assert_eq!(wire.inner.requests.lock().unwrap().len(), 3);
+}
+
+#[test]
+fn submission_progress_retains_only_status_and_unique_uuid_handles_not_body_or_other_headers() {
+    let progress = SubmissionHeaders::default();
+    let mut response = OperationResponse {
+        status: 202,
+        body: Vec::new(),
+        headers: [
+            ("x-ms-operation-id".into(), OPERATION.into()),
+            ("deployment-id".into(), DEPLOYMENT.into()),
+        ]
+        .into(),
+    };
+    assert_eq!(
+        response_id(&response, "x-ms-operation-id").as_deref(),
+        Some(OPERATION)
+    );
+    response
+        .headers
+        .insert("X-MS-OPERATION-ID".into(), OPERATION.into());
+    response
+        .headers
+        .insert("authorization".into(), "private-response-header".into());
+    assert!(response_id(&response, "x-ms-operation-id").is_none());
+    progress
+        .record(
+            &WorkspaceResponse {
+                status: response.status,
+                headers: response.headers,
+                body: b"private-prefix".to_vec(),
+            },
+            false,
+        )
+        .unwrap();
+    let observed = progress.0.lock().unwrap();
+    let observed = observed.as_ref().unwrap();
+    assert!(observed.body.is_empty());
+    assert_eq!(observed.headers.len(), 3);
+    assert!(!observed.headers.contains_key("authorization"));
 }
 
 #[tokio::test]
