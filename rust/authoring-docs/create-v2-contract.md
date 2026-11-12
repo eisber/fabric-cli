@@ -147,6 +147,13 @@ other resources still require separate resource-specific backend evidence.
 Passing a library test cannot establish that the current binary supports the
 target command or that a Fabric API supports every policy.
 
+Approval inspects the exact already-prepared method, bound URL and outgoing
+bytes, including the generated body for omitted input. Terminal controls are
+escaped without reserializing the body that will be transmitted. Additional
+typed-provider effects use bounded anticipated-effect descriptors with contract
+references; they are not observed outcomes or permission for another mutation.
+Skip has no outgoing request or creation-effect declaration.
+
 ## Outcomes and operation safety
 
 Keep requested policy, selected action, completion evidence, and effects
@@ -175,6 +182,11 @@ Do not automatically replay a mutation or claim rollback after cancellation,
 timeout, an unknown response, or a later failure. Failure to project or write a
 receipt does not undo remote effects. `--wait`, `--format`, and `--output` must
 not convert acceptance or successful output delivery into completion evidence.
+
+Initial submission status and resource evidence remain separate from later
+poll HTTP/operation status, including failed/cancelled polling and malformed
+final results. Available accepted identities survive in protected submission
+metadata without converting an unknown or failed outcome to completed success.
 
 ### Error guidance
 

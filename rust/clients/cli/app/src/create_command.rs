@@ -25,6 +25,7 @@ use fabric_sdk_operations::{
     OperationExecutor, OperationLimits, OperationRequest, OperationResponse, OperationSession,
 };
 use futures_util::future::{Either, select};
+use serde::Serialize;
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -38,6 +39,80 @@ use std::{
 
 /// Bound for raw input, each discovery/operation response, and final receipt.
 pub const MAX_BYTES: usize = 4 * 1024 * 1024;
+const MAX_ANTICIPATED_EFFECTS: usize = 16;
+const MAX_EFFECT_BYTES: usize = 64 * 1024;
+
+/// Additional provider-native effects, not observed outcomes or permission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CreateEffectKind {
+    /// The one native request may implicitly create a provider-owned child.
+    ChildResourceCreation,
+    /// The provider operation may incur service-metered consumption.
+    MeteredConsumption,
+}
+
+/// Bounded provider-contract disclosure for immediate approval and receipts.
+///
+/// These descriptors contain no child IDs or success claims. The typed binding
+/// owns the evidence for every declared effect; the host never infers it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnticipatedCreateEffect {
+    kind: CreateEffectKind,
+    resource_type: Option<String>,
+    description: String,
+    contract: String,
+}
+
+impl AnticipatedCreateEffect {
+    /// Validate a non-secret effect description and its provider contract pin.
+    ///
+    /// # Errors
+    /// Rejects unbounded/control-bearing labels and missing child owner types.
+    pub fn new(
+        kind: CreateEffectKind,
+        resource_type: Option<&str>,
+        description: &str,
+        contract: &str,
+    ) -> Result<Self, CreateError> {
+        let valid = |value: &str, maximum| {
+            !value.trim().is_empty()
+                && value.len() <= maximum
+                && !value.chars().any(char::is_control)
+        };
+        if !valid(description, 2048)
+            || !valid(contract, 2048)
+            || resource_type.is_some_and(|kind| !valid(kind, 256))
+            || (kind == CreateEffectKind::ChildResourceCreation && resource_type.is_none())
+        {
+            return Err(CreateError::InputRejected);
+        }
+        Ok(Self {
+            kind,
+            resource_type: resource_type.map(str::to_owned),
+            description: description.into(),
+            contract: contract.into(),
+        })
+    }
+
+    /// The anticipated effect category, never its execution status.
+    pub const fn kind(&self) -> CreateEffectKind {
+        self.kind
+    }
+    /// Provider-owned child/resource type when applicable.
+    pub fn resource_type(&self) -> Option<&str> {
+        self.resource_type.as_deref()
+    }
+    /// Exact bounded disclosure, including any provider-owned condition.
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+    /// Typed binding's provider contract reference/pin, not fetched by this host.
+    pub fn contract(&self) -> &str {
+        &self.contract
+    }
+}
 
 /// Header evidence observed before an incomplete HTTP body was abandoned.
 pub struct CreateTransportEvidence {
@@ -74,6 +149,21 @@ pub trait CreateBinding: CreateInputValidator + Send + Sync {
         raw: Option<&[u8]>,
         wait: bool,
     ) -> Result<FabricOperation, CreateError>;
+
+    /// Disclose additional effects of the same single native create request.
+    ///
+    /// The default is only for bindings with no additional effects to disclose.
+    /// A binding must reject unknown/unrepresentable required effects rather than
+    /// silently omit them. No effect authorizes another HTTP mutation.
+    ///
+    /// # Errors
+    /// Returns a typed local refusal when provider effect evidence is unavailable.
+    fn anticipated_effects(
+        &self,
+        _plan: &CreatePlan,
+    ) -> Result<Vec<AnticipatedCreateEffect>, CreateError> {
+        Ok(Vec::new())
+    }
 }
 
 /// Render the existing grammar with the selected binding's actual host subset.
@@ -110,6 +200,9 @@ pub struct CreateApprovalRequest<'a> {
     context: &'a RequestContext,
     raw: Option<&'a [u8]>,
     command: &'a CreateCommand,
+    operation: Option<&'a FabricOperation>,
+    url: Option<&'a azure_core::http::Url>,
+    anticipated_effects: &'a [AnticipatedCreateEffect],
 }
 
 impl CreateApprovalRequest<'_> {
@@ -131,7 +224,86 @@ impl CreateApprovalRequest<'_> {
     }
     /// Whether this action may write remotely; skip asserts no content equality.
     pub fn remote_write(&self) -> bool {
-        !matches!(self.plan.action(), CreateAction::Skip { .. })
+        self.operation.is_some()
+    }
+    /// Borrows the exact already-built operation that will be consumed once.
+    pub fn operation(&self) -> Option<&FabricOperation> {
+        self.operation
+    }
+    /// The prepared route bound to the same immutable execution endpoint.
+    pub fn url(&self) -> Option<&azure_core::http::Url> {
+        self.url
+    }
+    /// Provider-declared anticipated effects, not proof they occurred.
+    pub fn anticipated_effects(&self) -> &[AnticipatedCreateEffect] {
+        self.anticipated_effects
+    }
+    /// Render immediate terminal approval with escaped exact wire bytes/context.
+    ///
+    /// The host explicitly invokes this sensitive-content view; Debug does not
+    /// log it. Control characters/newlines are escaped, never terminal commands.
+    pub fn approval_question(&self) -> String {
+        let action = if self.remote_write() {
+            "create"
+        } else {
+            "skip"
+        };
+        let request = match (self.operation, self.url) {
+            (Some(operation), Some(url)) => {
+                use fabric_sdk_workspaces::mutations::ResourceMethod;
+                let method = match operation.method() {
+                    ResourceMethod::Get => "GET",
+                    ResourceMethod::Post => "POST",
+                    ResourceMethod::Patch => "PATCH",
+                    ResourceMethod::Delete => "DELETE",
+                };
+                format!(
+                    "method={method}, url=\"{}\", body=\"{}\", completion={:?}",
+                    url.as_str().escape_debug(),
+                    std::str::from_utf8(operation.body())
+                        .expect("prepared create body is validated UTF-8")
+                        .escape_debug(),
+                    operation.completion(),
+                )
+            }
+            _ => "no native request (unchanged skip)".into(),
+        };
+        let effects = self
+            .anticipated_effects
+            .iter()
+            .map(|effect| {
+                format!(
+                    "{{kind={:?}, resourceType={:?}, description=\"{}\", contract=\"{}\"}}",
+                    effect.kind(),
+                    effect.resource_type(),
+                    effect.description().escape_debug(),
+                    effect.contract().escape_debug(),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "Approve {owner} {action} policy {policy} for \"{name}\" in workspace \"{workspace}\" \
+             using account \"{account}\", tenant \"{tenant}\", audience={audience:?}, \
+             endpoint=\"{endpoint}\", remoteWrite={write}, {request}, \
+             anticipatedEffects=[{effects}], output={output:?}, project={project:?}, \
+             wait={wait}, timeout={timeout:?}? \
+             Anticipated effects are not observed outcomes. Acceptance may not be completion. \
+             Local cancellation/output failure is not rollback; do not automatically replay.",
+            owner = self.plan.target().item_type().escape_debug(),
+            policy = self.plan.policy().as_str(),
+            name = self.plan.target().name().escape_debug(),
+            workspace = self.plan.target().parent_id().as_str().escape_debug(),
+            account = self.context.selection().account().escape_debug(),
+            tenant = self.context.selection().tenant().escape_debug(),
+            audience = self.context.selection().audience(),
+            endpoint = self.context.endpoint().base_url().as_str().escape_debug(),
+            write = self.remote_write(),
+            output = self.command.output,
+            project = self.command.project,
+            wait = self.command.wait,
+            timeout = self.command.timeout,
+        )
     }
 }
 
@@ -353,25 +525,32 @@ impl PreparedCreateCommand {
             )
             .await
             .map_err(|_| CreateCommandError::Discovery)?;
-        let mut matches = listing
+        let matches = listing
             .value
             .iter()
-            .filter(|item| item.display_name.eq_ignore_ascii_case(&self.name));
-        let state = match (matches.next(), matches.next()) {
-            (None, _) => LeafState::Missing,
+            .filter(|item| item.display_name.eq_ignore_ascii_case(&self.name))
+            .collect::<Vec<_>>();
+        for item in &matches {
+            if !is_id(&item.id)
+                || item.item_type().is_none_or(|kind| kind.trim().is_empty())
+                || item.additional_fields.get("workspaceId").is_some_and(|id| {
+                    !id.as_str()
+                        .is_some_and(|id| id.eq_ignore_ascii_case(&workspace))
+                })
+            {
+                return Err(CreateCommandError::Invalid);
+            }
+        }
+        let mut typed = matches
+            .iter()
+            .filter(|item| item.item_type() == Some(self.owner));
+        let state = match (typed.next(), typed.next()) {
+            (None, _) if matches.is_empty() => LeafState::Missing,
+            (None, _) => LeafState::WrongKind,
             (Some(_), Some(_)) => LeafState::Ambiguous,
             (Some(item), None) => {
                 if item.display_name != self.name {
                     return Err(CreateCommandError::Policy(CreateError::NameChanged));
-                } else if item.item_type() != Some(self.owner) {
-                    LeafState::WrongKind
-                } else if !is_id(&item.id)
-                    || item.additional_fields.get("workspaceId").is_some_and(|id| {
-                        !id.as_str()
-                            .is_some_and(|id| id.eq_ignore_ascii_case(&workspace))
-                    })
-                {
-                    return Err(CreateCommandError::Invalid);
                 } else {
                     LeafState::Existing(
                         ResourceIdentity::new(
@@ -405,40 +584,79 @@ impl PreparedCreateCommand {
                 return Err(CreateCommandError::Policy(CreateError::UnsupportedPolicy));
             }
         };
+        let anticipated_effects = if operation.is_some() {
+            let effects = binding
+                .anticipated_effects(&plan)
+                .map_err(CreateCommandError::Policy)?;
+            if effects.len() > MAX_ANTICIPATED_EFFECTS
+                || serde_json::to_vec(&effects)
+                    .map_err(|_| CreateCommandError::Invalid)?
+                    .len()
+                    > MAX_EFFECT_BYTES
+            {
+                return Err(CreateCommandError::Invalid);
+            }
+            effects
+        } else {
+            Vec::new()
+        };
+        let url = operation
+            .as_ref()
+            .map(|operation| {
+                if operation.method() != fabric_sdk_workspaces::mutations::ResourceMethod::Post
+                    || operation.body().len() > MAX_BYTES
+                    || std::str::from_utf8(operation.body()).is_err()
+                {
+                    return Err(CreateCommandError::Invalid);
+                }
+                client
+                    .context()
+                    .endpoint()
+                    .url(operation.path())
+                    .map_err(|_| CreateCommandError::Invalid)
+            })
+            .transpose()?;
         {
             let authorize = pin!(approval.authorize(CreateApprovalRequest {
                 plan: &plan,
                 context: client.context(),
                 raw: self.raw.as_deref(),
                 command: &self.command,
+                operation: operation.as_ref(),
+                url: url.as_ref(),
+                anticipated_effects: &anticipated_effects,
             }));
             match select(interrupted.as_mut(), authorize).await {
                 Either::Left(_) => return Err(CreateCommandError::Interrupted),
                 Either::Right((result, _)) => result.map_err(CreateCommandError::Approval)?,
             }
         }
-        let report = if let Some(operation) = operation {
-            let accepted = Arc::new(Mutex::new(None));
+        let remote_write = operation.is_some();
+        let mut report = if let Some(operation) = operation {
+            let submission = Arc::new(Mutex::new(None));
             let mut session = OperationSession::with_context(
                 client.context(),
                 ObservedCreateExecutor {
                     inner: execution.executor,
-                    accepted: accepted.clone(),
+                    submission: submission.clone(),
+                    observe: execution.observe,
                 },
                 OperationLimits::default(),
                 interrupted.as_mut(),
             );
             let result = session.execute(operation).await;
-            let accepted = accepted
+            let submission = submission
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .take();
-            let mut report = CreateReport::observe(&plan, result, &session, accepted);
-            report.retain_transport_evidence((execution.observe)());
+            let mut report = CreateReport::observe(&plan, result, &session, submission.as_ref());
+            report.retain_transport_evidence((execution.observe)(), submission.as_ref());
             report
         } else {
             CreateReport::skipped(&plan)
         };
+        report.value["meta"]["remoteWrite"] = json!(remote_write);
+        report.value["meta"]["anticipatedEffects"] = json!(anticipated_effects);
         Ok(CreateDelivery {
             command: self.command,
             output: self.output,
@@ -454,12 +672,19 @@ fn host_capabilities(binding: &dyn CreateBinding) -> CreateCapabilities {
     capabilities
 }
 
-struct ObservedCreateExecutor<E> {
-    inner: E,
-    accepted: Arc<Mutex<Option<Vec<u8>>>>,
+struct SubmissionObservation {
+    http_status: u16,
+    operation_id: Option<String>,
+    accepted_body: Option<Vec<u8>>,
 }
 
-impl<E: OperationExecutor> OperationExecutor for ObservedCreateExecutor<E> {
+struct ObservedCreateExecutor<'a, E> {
+    inner: E,
+    submission: Arc<Mutex<Option<SubmissionObservation>>>,
+    observe: &'a (dyn Fn() -> CreateTransportEvidence + Send + Sync),
+}
+
+impl<E: OperationExecutor> OperationExecutor for ObservedCreateExecutor<'_, E> {
     fn execute<'a>(
         &'a self,
         request: OperationRequest<'a>,
@@ -468,15 +693,33 @@ impl<E: OperationExecutor> OperationExecutor for ObservedCreateExecutor<E> {
         Box::pin(async move {
             let initial =
                 request.method() == fabric_sdk_workspaces::mutations::ResourceMethod::Post;
-            let response = self.inner.execute(request).await?;
-            if initial && response.status == 202 && response.body.len() <= MAX_BYTES {
-                *self
-                    .accepted
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner) =
-                    Some(response.body.clone());
+            let result = self.inner.execute(request).await;
+            if initial {
+                let observed = (self.observe)();
+                let status = result
+                    .as_ref()
+                    .map(|response| response.status)
+                    .ok()
+                    .or(observed.http_status);
+                if let Some(http_status) = status {
+                    *self
+                        .submission
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                        Some(SubmissionObservation {
+                            http_status,
+                            operation_id: observed.operation_id.filter(|id| is_id(id)),
+                            accepted_body: result
+                                .as_ref()
+                                .ok()
+                                .filter(|response| {
+                                    response.status == 202 && response.body.len() <= MAX_BYTES
+                                })
+                                .map(|response| response.body.clone()),
+                        });
+                }
             }
-            Ok(response)
+            result
         })
     }
 
@@ -520,17 +763,75 @@ impl CreateReport {
         self.error.as_ref()
     }
 
-    fn retain_transport_evidence(&mut self, evidence: CreateTransportEvidence) {
-        let Some(error) = &mut self.error else {
-            return;
+    fn retain_transport_evidence(
+        &mut self,
+        evidence: CreateTransportEvidence,
+        submission: Option<&SubmissionObservation>,
+    ) {
+        let fallback;
+        let submission = if let Some(submission) = submission {
+            Some(submission)
+        } else if self
+            .error
+            .as_ref()
+            .is_some_and(|error| error.mutation_may_have_occurred)
+            && let Some(http_status) = evidence.http_status
+        {
+            // A cancelled first response may have delivered headers before its
+            // executor future returned. No poll can occur before a saved POST.
+            fallback = SubmissionObservation {
+                http_status,
+                operation_id: evidence.operation_id.clone().filter(|id| is_id(id)),
+                accepted_body: None,
+            };
+            Some(&fallback)
+        } else {
+            None
         };
-        if error.mutation_may_have_occurred && evidence.http_status == Some(202) {
-            self.value["meta"]["httpStatus"] = json!(202);
-            if error.operation_id.is_none()
-                && let Some(id) = evidence.operation_id.filter(|id| is_id(id))
-            {
-                self.value["meta"]["operationHandle"] = json!(format!("/operations/{id}"));
-                error.operation_id = Some(id);
+        if let Some(submission) = submission {
+            if submission.http_status == 202 {
+                if let Some(error) = &mut self.error
+                    && error.mutation_may_have_occurred
+                    && error.operation_id.is_none()
+                    && let Some(id) = &submission.operation_id
+                {
+                    self.value["meta"]["operationHandle"] = json!(format!("/operations/{id}"));
+                    error.operation_id = Some(id.clone());
+                }
+            }
+            self.value["meta"]["submission"] = json!({
+                "httpStatus":submission.http_status,
+                "operationHandle":self.value["meta"]["operationHandle"],
+            });
+            if let Some(body) = &submission.accepted_body {
+                match fabric_cli_output::input::strict_json_bounded(body, MAX_BYTES) {
+                    Ok(data) => {
+                        if let Some(object) = data.as_object() {
+                            let resource = json!({
+                                "id":object.get("id"),"workspaceId":object.get("workspaceId"),
+                                "type":object.get("type"),"displayName":object.get("displayName"),
+                            });
+                            self.value["meta"]["submission"]["resource"] = resource.clone();
+                            if self.error.is_some() && self.value["data"].is_null() {
+                                self.value["data"] = data;
+                                self.value["meta"]["resourceId"] = resource["id"].clone();
+                                self.value["meta"]["observedResource"] = resource;
+                            }
+                        }
+                    }
+                    Err(_) if !body.is_empty() => {
+                        use base64::Engine;
+                        self.value["meta"]["unparsedAcceptanceBodyBase64"] =
+                            json!(base64::engine::general_purpose::STANDARD.encode(body));
+                    }
+                    Err(_) => {}
+                }
+            }
+        }
+        if let Some(status) = evidence.http_status {
+            self.value["meta"]["observation"] = json!({"httpStatus":status});
+            if self.value["meta"]["httpStatus"].is_null() {
+                self.value["meta"]["httpStatus"] = json!(status);
             }
         }
     }
@@ -561,7 +862,7 @@ impl CreateReport {
         plan: &CreatePlan,
         result: Result<fabric_sdk_operations::OperationResponse, OperationError>,
         session: &OperationSession<'_, E>,
-        accepted: Option<Vec<u8>>,
+        submission: Option<&SubmissionObservation>,
     ) -> Self {
         let (data, status, mut error) = match result {
             Ok(response) => {
@@ -574,11 +875,17 @@ impl CreateReport {
                     {
                         Some(value) => value,
                         None => {
-                            return Self::failed(
+                            let mut report = Self::failed(
                                 plan,
                                 Value::Null,
                                 session.evidence(OperationErrorKind::InvalidResponse),
                             );
+                            use base64::Engine;
+                            report.value["meta"]["httpStatus"] = json!(response.status);
+                            report.value["meta"]["unparsedResponseBodyBase64"] = json!(
+                                base64::engine::general_purpose::STANDARD.encode(&response.body)
+                            );
+                            return report;
                         }
                     }
                 };
@@ -586,18 +893,21 @@ impl CreateReport {
                     || (response.status == 201 && session.operation_id().is_none())
                     || (response.status == 200 && session.operation_id().is_some());
                 if !valid_status {
-                    return Self::failed(
+                    let mut report = Self::failed(
                         plan,
                         data,
                         session.evidence(OperationErrorKind::InvalidResponse),
                     );
+                    report.value["meta"]["httpStatus"] = json!(response.status);
+                    return report;
                 }
                 (data, response.status, None)
             }
             Err(error) => {
-                let accepted = accepted.filter(|bytes| !bytes.is_empty());
+                let accepted = submission
+                    .and_then(|submission| submission.accepted_body.as_deref())
+                    .filter(|bytes| !bytes.is_empty());
                 let data = accepted
-                    .as_deref()
                     .and_then(|bytes| {
                         fabric_cli_output::input::strict_json_bounded(bytes, MAX_BYTES).ok()
                     })
