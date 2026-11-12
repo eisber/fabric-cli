@@ -1,0 +1,198 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+
+name: Rust native host pool
+
+on:
+  workflow_call:
+    inputs:
+      platform:
+        description: Native platform selected by the source-bound parent
+        required: true
+        type: string
+      matrix:
+        description: Complete source-bound shard matrix for this platform only
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Native checks (${{ matrix.os }} / ${{ matrix.shard }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      CARGO_BUILD_JOBS: "2"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_INCREMENTAL: "0"
+      RUST_TEST_THREADS: "1"
+      PYTHONUTF8: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      CARGO_HTTP_TIMEOUT: "30"
+      CARGO_NET_RETRY: "2"
+      RUSTUP_MAX_RETRIES: "2"
+      SEGMENT_DOWNLOAD_TIMEOUT_MINS: "2"
+      IMPACT_PLATFORM: ${{ matrix.platform }}
+      IMPACT_POOL_PLATFORM: ${{ inputs.platform }}
+      IMPACT_RUNNER_IMAGE: ${{ matrix.os }}
+      IMPACT_SHARD: ${{ matrix.shard }}
+      IMPACT_CACHE_GROUP: ${{ matrix.cache_group }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(inputs.matrix) }}
+    steps:
+      - name: Start native setup measurement
+        id: clock
+        run: |
+          echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+          printf 'CARGO_HOME=%s/rust-cargo-home\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Restore selection request
+        timeout-minutes: 3
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: rust-impact-selection-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rust-impact-selection
+      - name: Set up development-only Python oracle
+        timeout-minutes: 2
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Start Cargo cache measurement
+        id: cache-clock
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+      - name: Restore native Cargo dependencies and build outputs
+        timeout-minutes: 3
+        id: dependency-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ env.CARGO_HOME }}/registry/cache
+            ${{ env.CARGO_HOME }}/registry/index
+            ${{ env.CARGO_HOME }}/git/db
+          key: rust-deps-v4-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-all-targets-v1
+      - name: Restore bounded compilation cohort
+        id: cargo-cache
+        timeout-minutes: 3
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: rust/target
+          key: rust-native-v4-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust/rust-toolchain.toml', 'rust/Cargo.lock', 'rust/**/Cargo.toml') }}-jobs2-dev0-test0-incr0-${{ matrix.cache_group }}-v1
+      - name: Record Cargo cache timing
+        id: cache-time
+        env:
+          CACHE_STARTED: ${{ steps.cache-clock.outputs.started }}
+        run: echo "seconds=$(( $(date +%s) - CACHE_STARTED ))" >> "$GITHUB_OUTPUT"
+      - name: Record actual native toolchain and restore locked dependencies
+        timeout-minutes: 3
+        working-directory: rust
+        run: |
+          cargo --version
+          rustc --version --verbose
+          rustup show active-toolchain
+          # Offline architecture contracts inspect other targets without compiling them.
+          cargo fetch --locked
+      - name: Recompute and verify the same dependency selection on this host
+        timeout-minutes: 3
+        run: node rust/scripts/impact-ci.cjs native "$RUNNER_TEMP/rust-impact-selection"
+      - name: Measure shared dependency cache candidate
+        if: matrix.dependency_cache_writer
+        id: dependency-size
+        env:
+          IMPACT_SETUP_STARTED: ${{ steps.clock.outputs.started }}
+          IMPACT_CACHE_WRITER: ${{ matrix.dependency_cache_writer }}
+        run: node rust/scripts/impact-cache.cjs dependencies "$RUNNER_TEMP/rust-impact-selection/cache-dependencies.json"
+      - name: Save one bounded dependency cache per native host
+        if: matrix.dependency_cache_writer && steps.dependency-cache.outputs.cache-hit != 'true' && steps.dependency-size.outputs.eligible == 'true'
+        timeout-minutes: 1
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ env.CARGO_HOME }}/registry/cache
+            ${{ env.CARGO_HOME }}/registry/index
+            ${{ env.CARGO_HOME }}/git/db
+          key: ${{ steps.dependency-cache.outputs.cache-primary-key }}
+      - name: Set up optional semantic-model TOM runtime
+        if: matrix.dotnet
+        timeout-minutes: 2
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+        with:
+          dotnet-version: "8.0.425"
+      - name: Select explicit optional TOM host library
+        if: matrix.dotnet
+        shell: pwsh
+        run: |
+          $fxr = Get-ChildItem "$env:DOTNET_ROOT/host/fxr" -Directory |
+            Where-Object Name -Like '8.*' | Sort-Object { [version]$_.Name } -Descending |
+            Select-Object -First 1
+          if (-not $fxr) { throw 'The explicitly installed .NET 8 host is missing.' }
+          $library = if ($IsWindows) { 'hostfxr.dll' } elseif ($IsMacOS) { 'libhostfxr.dylib' } else { 'libhostfxr.so' }
+          $hostfxr = Join-Path $fxr.FullName $library
+          if (-not (Test-Path $hostfxr)) { throw 'The explicitly installed .NET 8 host library is missing.' }
+          "FABRIC_BPA_TEST_HOSTFXR=$hostfxr" >> $env:GITHUB_ENV
+      - name: Record setup and cache measurement
+        id: setup
+        env:
+          SETUP_STARTED: ${{ steps.clock.outputs.started }}
+          CACHE_HIT: ${{ steps.cargo-cache.outputs.cache-hit }}
+          CACHE_SECONDS: ${{ steps.cache-time.outputs.seconds }}
+          DEPENDENCY_CACHE_HIT: ${{ steps.dependency-cache.outputs.cache-hit }}
+        run: |
+          node -e 'const fs=require("node:fs"),p=require("node:path"),elapsed=Math.max(0,Date.now()/1000-Number(process.env.SETUP_STARTED));fs.writeFileSync(p.join(process.env.RUNNER_TEMP,"rust-impact-selection","timing.json"),JSON.stringify({platform:process.env.IMPACT_PLATFORM,shard:process.env.IMPACT_SHARD,cache_group:process.env.IMPACT_CACHE_GROUP,setup_seconds:elapsed,cache_seconds:Number(process.env.CACHE_SECONDS),cache_hit:process.env.CACHE_HIT==="true",dependency_cache_hit:process.env.DEPENDENCY_CACHE_HIT==="true"}));fs.appendFileSync(process.env.GITHUB_OUTPUT,"budget_seconds="+Math.max(1,Math.min(720,840-Math.ceil(elapsed)))+"\n")'
+      - name: Execute the shared local and CI validation plan
+        run: >-
+          node rust/scripts/validate-impact.cjs
+          --plan "$RUNNER_TEMP/rust-impact-selection/native-plan.json"
+          --artifacts "$RUNNER_TEMP/rust-impact-results"
+          --shard "${{ matrix.shard }}"
+          --command-timeout-seconds 600
+          --budget-seconds "${{ steps.setup.outputs.budget_seconds }}"
+          --restore-oracle-deps --execute
+      - name: Measure compilation cache candidate without removing validation obligations
+        if: always()
+        id: target-size
+        env:
+          IMPACT_SETUP_STARTED: ${{ steps.clock.outputs.started }}
+          IMPACT_CACHE_WRITER: ${{ matrix.cache_writer }}
+        run: node rust/scripts/impact-cache.cjs target "$RUNNER_TEMP/rust-impact-selection/cache-target.json"
+      - name: Retain small exact native receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-receipt-${{ github.run_attempt }}-${{ matrix.os }}-${{ matrix.shard }}
+          path: |
+            ${{ runner.temp }}/rust-impact-results/receipt.json
+            ${{ runner.temp }}/rust-engineering-unit/engineering-receipt.json
+            ${{ runner.temp }}/rust-impact-selection/timing.json
+            ${{ runner.temp }}/rust-impact-selection/cache-dependencies.json
+            ${{ runner.temp }}/rust-impact-selection/cache-target.json
+          if-no-files-found: error
+      - name: Save only the bounded designated compilation cohort
+        if: success() && matrix.cache_writer && steps.cargo-cache.outputs.cache-hit != 'true' && steps.target-size.outputs.eligible == 'true'
+        timeout-minutes: 1
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: rust/target
+          key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
+      - name: Retain plan and actual command exits, hashes and coverage
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-impact-${{ github.run_attempt }}-${{ matrix.os }}-${{ matrix.shard }}
+          path: |
+            ${{ runner.temp }}/rust-impact-selection
+            ${{ runner.temp }}/rust-impact-results
+            ${{ runner.temp }}/rust-engineering-unit/*.log
+            ${{ runner.temp }}/rust-engineering-unit/engineering-receipt.json
+          if-no-files-found: error

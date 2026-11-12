@@ -87,6 +87,21 @@ already includes the broker-backed native host. The unmapped CLI-v2 consumer
 still receives conservative package coverage; this is not a claim that every
 workspace capability has a narrow mapping.
 
+Stage deployment is another isolated capability: the SDK `stage` contract
+selects the CLI stage parser/entry targets and the explicit `v2-deploy` profile.
+Default-mode entry tests still prove that the marker is unavailable without
+the feature. Credential profiles are not stage-host implementations; the
+current entry remains explicitly unconfigured. Unmapped Cargo consumers retain
+their conservative package tests and profiles.
+
+Notebook and Spark/Environment deployment components retain their distinct
+complete target selections and shared deployment/CLI consumers. Broader
+downstream profile selection remains conservative until those consumer
+capabilities have an audited explicit mapping; component selection does not
+claim that every workspace package is already equally narrow. OneLake source
+and link-test changes include the complete shortcut `link` contract alongside
+the existing library and consumer targets.
+
 An unreleased changelog YAML entry is documentation, so adding the required
 entry alongside a leaf implementation does not force the entire workspace.
 Explicit component or check input declarations still take precedence over
@@ -169,7 +184,14 @@ execution and freshness evidence inside the existing unprivileged workflow,
 not an independent signature or authorization to trust a modified workflow.
 
 The workflow partitions default-package families, isolated feature compositions
-and dependency-ordered contracts, with at most 12 native jobs running at once.
+and dependency-ordered contracts. Three independently admitted OS pools each
+allow at most four native jobs, retaining the 12-job total ceiling. A queued
+macOS pool cannot occupy the Linux or Windows admission slots. The reusable
+native workflow verifies the selected pool, runner image and actual host.
+Measured command descriptors are packed into bounded cohorts without merging
+their Cargo feature flags or losing original obligation IDs. Unknown command
+domains remain isolated until timings are available. Timing estimates include
+cold-build and setup/cleanup allowances; they are not passing performance data.
 Frozen-source preparation, its dependent comparisons and final integrity check
 stay together. Full plans retain the all-feature Clippy and CLI preflights as
 separate obligations; affected plans no longer run those unconditional full
@@ -264,6 +286,37 @@ a successful cold run to measure a warm cache. Retain the run URL, commit,
 selection digest, expected and completed shard obligations, queue/step
 durations, cache hits and the final conclusion. Injected timeout, cancellation,
 missing-receipt and stale-receipt tests must still fail closed.
+
+### Hosted measurements and runner availability
+
+The documentation-only probe
+[43292281438](https://github.com/eisber/fabric-cli/actions/runs/43292281438)
+completed successfully in 43 seconds, including selection and the stable
+aggregate gate; native obligations were intentionally empty.
+
+The real Dataflow-only probe
+[43293849219](https://github.com/eisber/fabric-cli/actions/runs/43293849219)
+selected five packages, six feature profiles and eight checks instead of the
+previous 34 packages, 38 profiles and 24 checks. The package-description-only
+probe
+[43293973486](https://github.com/eisber/fabric-cli/actions/runs/43293973486)
+also selected five/six/eight from its actual old/new manifest inputs. These
+selection reductions are not complete native-pass or timing claims.
+
+The Dataflow probe did not obtain a successful aggregate: GitHub cancelled
+macOS ARM64 jobs before assigning runners. Provider annotations state
+"The job was not acquired by Runner of type hosted even after multiple attempts"
+and report macOS ARM64 capacity constraints. Do not count those jobs' synthetic
+`started_at` timestamps as execution time when there are no runner or step
+records. The failed run's 49-minute wall time includes acquisition waits;
+completed native jobs took approximately one to six minutes with mixed cache
+states. It is not a successful warm-cache benchmark or proof of the target.
+
+Measured scheduling must account for both compilation and runner acquisition.
+Reducing job fragmentation and independently admitting each native OS reduces
+queue contention within the workflow, but cannot guarantee provider capacity.
+Never replace missing macOS execution with a Linux pass or treat cancelled
+obligations as successful to reach a duration target.
 
 For unsharded local execution, the total budget defaults to 7,200 seconds and
 explicit `--budget-seconds` values retain the existing 8,100-second maximum.

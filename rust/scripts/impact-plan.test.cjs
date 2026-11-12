@@ -1253,6 +1253,350 @@ function dataflowFixture(files = ['rust/engine/data-plane/dataflow/src/lib.rs'])
     graph: {schema: 1, components, profiles, checks}};
 }
 
+function deploymentCatalogFixture(files) {
+  const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'validation', 'impact-graph.json')));
+  const ids = ['deploy-notebook', 'deploy-spark-environment', 'transfer', 'cli-deployment',
+    'cli-get', 'cli-search-v2', 'metadata-exists-v2', 'engine-query'];
+  const components = ids.map(id => clone(catalog.components.find(item => item.id === id)));
+  const prerequisites = [...new Set(components.flatMap(item => item.depends_on))]
+    .filter(id => !ids.includes(id));
+  for (const id of prerequisites) {
+    const component = catalog.components.find(item => item.id === id);
+    components.push({id, package: component.package, profiles: [], tests: []});
+  }
+  const structural = clone(catalog.components.find(item => item.id === 'workspace-architecture'));
+  structural.depends_on = [];
+  components.push(structural);
+  const locations = {'fabric-deploy': 'rust/engine/control-plane/deployment',
+    'fabric-cli-transfer': 'rust/clients/cli/commands/transfer', 'fabric-cli': 'rust/clients/cli/app',
+    'fabric-cli-v2': 'rust/clients/cli/v2', 'fabric-sdk': 'rust/engine/sdk',
+    'fabric-sdk-query': 'rust/engine/data-plane/query'};
+  const dependencies = {'fabric-deploy': ['fabric-sdk'], 'fabric-cli-transfer': ['fabric-deploy'],
+    'fabric-cli': ['fabric-cli-transfer', 'fabric-deploy'], 'fabric-cli-v2': ['fabric-cli'],
+    'fabric-sdk-query': ['fabric-sdk']};
+  // Retain production component edges and targets, with compact Cargo paths.
+  // Feature/platform fanout is measured separately against actual metadata.
+  const names = [...new Set(['fabric-cli-v2', ...components.flatMap(component =>
+    [component.package, ...component.tests.map(item => item.package)])])];
+  const packages = names.map(name => {
+    const directory = locations[name] || packageDirectory(name);
+    const value = pkg(name, (dependencies[name] || []).map(dependency =>
+      ({name: dependency, path: absolute(locations[dependency])})));
+    value.manifest_path = absolute(`${directory}/Cargo.toml`);
+    const targets = new Set(['lib', ...components.flatMap(component => component.tests)
+      .filter(item => item.package === name).map(item => item.target)]);
+    value.targets = [...targets].map(key => {
+      const [kind, targetName] = key === 'lib' ? ['lib', name] : key.split(':');
+      return target(targetName, kind, `${directory}/${kind === 'test' ? 'tests' : 'src'}/${targetName}.rs`);
+    });
+    return value;
+  });
+  const checks = catalog.checks.map(item =>
+    ({id: item.id, depends_on: item.depends_on, platforms: item.platforms}));
+  return {root: ROOT, metadata: metadata(packages), files,
+    graph: {schema: 1, components, profiles: [], checks}};
+}
+
+for (const [component, file, ownTargets, excludedTargets] of [
+  ['deploy-notebook', 'rust/engine/control-plane/deployment/src/notebook.rs',
+    ['notebook', 'repository', 'parameter_transforms', 'planner_source'],
+    ['configured_flags', 'publisher_source_contract']],
+  ['deploy-spark-environment', 'rust/engine/control-plane/deployment/src/workflow/families/environment.rs',
+    ['configured_flags', 'publisher_source_contract'], ['notebook', 'repository', 'parameter_transforms']],
+]) {
+  test(`Production ${component} excludes sibling-only targets but retains deployment consumers`, () => {
+    const result = plan(deploymentCatalogFixture([file]));
+    assert.equal(result.mode, 'affected');
+    assert.deepEqual(result.changed_packages, ['fabric-deploy']);
+    assert.ok(result.components.includes(component));
+    const sibling = component === 'deploy-notebook' ? 'deploy-spark-environment' : 'deploy-notebook';
+    assert.ok(!result.components.includes(sibling));
+    for (const target of ownTargets) assert.ok(testKeys(result).includes(`fabric-deploy/test:${target}`), target);
+    for (const target of excludedTargets) assert.ok(!testKeys(result).includes(`fabric-deploy/test:${target}`), target);
+    for (const key of ['fabric-deploy/lib', 'fabric-deploy/test:workflow',
+      'fabric-cli-transfer/test:commands', 'fabric-cli/test:deploy_full', 'fabric-cli/test:deploy_mount',
+      'fabric-cli/test:get_host', 'fabric-cli/test:workspace_contract', 'fabric-cli-v2/all']) {
+      assert.ok(testKeys(result).includes(key), key);
+    }
+    for (const name of ['fabric-deploy', 'fabric-cli-transfer', 'fabric-cli']) {
+      assert.ok(!testKeys(result).includes(`${name}/all`), name);
+    }
+    assert.ok(!testKeys(result).includes('fabric-sdk-query/test:kql_contract'));
+    for (const platform of ['linux', 'macos', 'windows']) {
+      const compile = commands(result, platform).commands.find(item => item.kind === 'check');
+      for (const name of ['fabric-deploy', 'fabric-cli-transfer', 'fabric-cli', 'fabric-cli-v2']) {
+        assert.ok(compile.args.includes(name), name);
+      }
+    }
+  });
+}
+
+test('Production deployment sibling union retains both exact suites and new unknown Cargo consumers', () => {
+  const input = deploymentCatalogFixture([
+    'rust/engine/control-plane/deployment/src/notebook.rs',
+    'rust/engine/control-plane/deployment/src/workflow/families/environment.rs',
+  ]);
+  const consumer = pkg('deployment-plugin', [{
+    name: 'fabric-deploy', path: absolute('rust/engine/control-plane/deployment'),
+  }]);
+  input.metadata.packages.push(consumer);
+  input.metadata.workspace_members.push(consumer.id);
+  const result = plan(input);
+  for (const key of ['fabric-deploy/test:notebook', 'fabric-deploy/test:publisher_source_contract',
+    'fabric-cli-transfer/test:commands', 'fabric-cli/test:deploy_mount', 'deployment-plugin/all']) {
+    assert.ok(testKeys(result).includes(key), key);
+  }
+  assert.ok(result.packages.includes('deployment-plugin'));
+  assert.equal(new Set(testKeys(result)).size, result.tests.length);
+});
+
+test('Production engine query keeps its contract and structural consumers without deployment sibling tests', () => {
+  const result = plan(deploymentCatalogFixture(['rust/engine/data-plane/query/src/kql.rs']));
+  assert.equal(result.mode, 'affected');
+  assert.deepEqual(result.changed_packages, ['fabric-sdk-query']);
+  assert.deepEqual(result.packages, ['fabric-cli', 'fabric-cli-v2', 'fabric-sdk-query']);
+  assert.deepEqual(result.components, ['engine-query', 'workspace-architecture']);
+  assert.deepEqual(testKeys(result), ['fabric-cli/test:workspace_contract', 'fabric-sdk-query/test:kql_contract']);
+  assert.deepEqual(result.profiles, []);
+  assert.deepEqual(result.checks, ['command-inventory', 'dependency-graph', 'selector-tests']);
+  assert.ok(!testKeys(result).some(key => /fabric-deploy|fabric-cli-transfer|\/all$/.test(key)));
+});
+
+function onelakeCatalogFixture(files) {
+  const input = deploymentCatalogFixture(files);
+  const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'validation', 'impact-graph.json')));
+  input.graph.components.push(clone(catalog.components.find(item => item.id === 'onelake')));
+  const directory = 'rust/engine/data-plane/onelake/client';
+  const onelake = pkg('fabric-sdk-onelake');
+  onelake.manifest_path = absolute(`${directory}/Cargo.toml`);
+  onelake.targets = [target('fabric_sdk_onelake', 'lib', `${directory}/src/lib.rs`),
+    target('consumer', 'test', `${directory}/tests/consumer.rs`),
+    target('link', 'test', `${directory}/tests/link.rs`)];
+  input.metadata.packages.push(onelake);
+  input.metadata.workspace_members.push(onelake.id);
+  input.metadata.packages.find(item => item.name === 'fabric-sdk').dependencies.push(
+    {name: onelake.name, path: absolute(directory)});
+  return input;
+}
+
+test('OneLake implementation and link contracts retain the complete link target and Cargo consumers', () => {
+  for (const file of ['rust/engine/data-plane/onelake/client/src/lib.rs',
+    'rust/engine/data-plane/onelake/client/src/link.rs',
+    'rust/engine/data-plane/onelake/client/tests/link.rs']) {
+    const result = plan(onelakeCatalogFixture([file]));
+    assert.equal(result.mode, 'affected', file);
+    assert.deepEqual(result.changed_packages, ['fabric-sdk-onelake']);
+    assert.deepEqual(testKeys(result).filter(key => key.startsWith('fabric-sdk-onelake/')),
+      ['fabric-sdk-onelake/lib', 'fabric-sdk-onelake/test:consumer', 'fabric-sdk-onelake/test:link']);
+    for (const name of ['fabric-sdk', 'fabric-deploy', 'fabric-cli-transfer', 'fabric-cli', 'fabric-cli-v2']) {
+      assert.ok(result.packages.includes(name), name);
+      assert.ok(testKeys(result).includes(`${name}/all`), `${name}: unknown consumer coverage stays conservative`);
+    }
+    assert.ok(result.checks.includes('resource-oracle'));
+    for (const platform of ['linux', 'macos', 'windows']) {
+      const link = commands(result, platform).commands.find(item =>
+        item.kind === 'test' && item.package === 'fabric-sdk-onelake' && item.target === 'test:link');
+      assert.ok(link, platform);
+      assert.deepEqual(link.args.slice(-2), ['--test', 'link'], 'complete target, not a test-name filter');
+    }
+  }
+});
+
+function storageCatalogFixture(files) {
+  const input = deploymentCatalogFixture(files);
+  const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'validation', 'impact-graph.json')));
+  const storage = clone(catalog.components.find(item => item.id === 'storage-files'));
+  input.graph.components[input.graph.components.findIndex(item => item.id === storage.id)] = storage;
+  input.graph.components.push(clone(catalog.components.find(item => item.id === 'cli-update-v2')));
+  for (const id of new Set(input.graph.components.flatMap(item => item.depends_on || []))) {
+    if (input.graph.components.some(item => item.id === id)) continue;
+    const component = catalog.components.find(item => item.id === id);
+    input.graph.components.push({id, package: component.package, profiles: [], tests: []});
+    if (!input.metadata.packages.some(item => item.name === component.package)) {
+      const value = pkg(component.package);
+      input.metadata.packages.push(value);
+      input.metadata.workspace_members.push(value.id);
+    }
+  }
+  const directory = 'rust/clients/cli/commands/storage';
+  const owner = input.metadata.packages.find(item => item.name === storage.package);
+  owner.manifest_path = absolute(`${directory}/Cargo.toml`);
+  owner.targets = [target('fabric_cli_storage_files', 'lib', `${directory}/src/lib.rs`),
+    ...['download', 'exact_output', 'local_adapter', 'resource_command', 'selected_adapter', 'upload']
+      .map(name => target(name, 'test', `${directory}/tests/${name}.rs`))];
+  const cli = input.metadata.packages.find(item => item.name === 'fabric-cli');
+  cli.dependencies.push({name: owner.name, path: absolute(directory)});
+  cli.targets.push(target('update_v2', 'test', 'rust/clients/cli/app/tests/update_v2.rs'));
+  cli.targets.find(item => item.name === 'fab-cli-v2')['required-features'] = ['headless'];
+  input.graph.profiles = catalog.profiles.filter(item =>
+    ['native-read', 'headless', 'interactive', 'combined'].includes(item.id)).map(clone);
+  for (const profile of input.graph.profiles) {
+    for (const name of profile.packages) {
+      if (input.metadata.packages.some(item => item.name === name)) continue;
+      const value = pkg(name);
+      input.metadata.packages.push(value);
+      input.metadata.workspace_members.push(value.id);
+    }
+    for (const feature of profile.features) {
+      const [name, local] = feature.split('/');
+      input.metadata.packages.find(item => item.name === name).features[local] = [];
+    }
+  }
+  return input;
+}
+
+test('Storage source selects exact-output and complete GET/search/update consumers with native profiles', () => {
+  for (const file of ['rust/clients/cli/commands/storage/src/lib.rs',
+    'rust/clients/cli/commands/storage/src/exact_output.rs', 'rust/clients/cli/commands/storage/src/local.rs']) {
+    const input = storageCatalogFixture([file]);
+    const result = plan(input);
+    assert.equal(result.mode, 'affected', file);
+    assert.deepEqual(result.changed_packages, ['fabric-cli-storage-files']);
+    for (const component of ['storage-files', 'cli-get', 'cli-search-v2', 'cli-update-v2']) {
+      assert.ok(result.components.includes(component), component);
+    }
+    for (const key of ['fabric-cli-storage-files/lib', 'fabric-cli-storage-files/test:download',
+      'fabric-cli-storage-files/test:exact_output', 'fabric-cli-storage-files/test:upload',
+      'fabric-cli/test:get_command', 'fabric-cli/test:explicit_get',
+      'fabric-cli/test:search_command', 'fabric-cli/test:search_wire',
+      'fabric-cli/test:v2_get_binary', 'fabric-cli/test:v2_search_binary',
+      'fabric-cli/test:update_v2', 'fabric-cli/bin:fab-cli-v2',
+      'fabric-cli/test:deploy_mount', 'fabric-cli-v2/all']) {
+      assert.ok(testKeys(result).includes(key), key);
+    }
+    for (const id of ['native-read', 'headless', 'interactive', 'combined']) {
+      assert.ok(result.profiles.some(item => item.id === id), id);
+    }
+    for (const id of ['headless', 'combined']) {
+      const profile = result.profiles.find(item => item.id === id);
+      for (const target of ['bin:fab-cli-v2', 'test:v2_get_binary', 'test:v2_search_binary']) {
+        assert.ok(profile.tests.some(item => item.target === target), `${id}/${target}`);
+      }
+    }
+    for (const platform of ['linux', 'macos', 'windows']) {
+      const executable = commands(result, platform).commands;
+      assert.ok(executable.some(item => item.kind === 'test' && item.package === 'fabric-cli-storage-files' &&
+        item.target === 'test:exact_output' && item.args.at(-2) === '--test'));
+      assert.ok(executable.some(item => item.kind === 'test' && item.target === 'bin:fab-cli-v2' &&
+        item.profile === 'headless'));
+    }
+  }
+});
+
+test('Storage coverage correction only adds obligations and preserves unknown consumer fallback', () => {
+  const input = storageCatalogFixture(['rust/clients/cli/commands/storage/src/exact_output.rs']);
+  const previous = clone(input);
+  previous.graph.components.find(item => item.id === 'storage-files').tests =
+    previous.graph.components.find(item => item.id === 'storage-files').tests
+      .filter(item => item.target !== 'test:exact_output');
+  for (const id of ['cli-get', 'cli-search-v2']) {
+    const component = previous.graph.components.find(item => item.id === id);
+    component.depends_on = component.depends_on.filter(id => id !== 'storage-files');
+    if (id === 'cli-get') component.tests = component.tests.filter(item =>
+      !['test:get_command', 'test:explicit_get'].includes(item.target));
+  }
+  const before = plan(previous), after = plan(input);
+  for (const key of testKeys(before)) assert.ok(testKeys(after).includes(key), key);
+  for (const profile of before.profiles) assert.ok(after.profiles.some(item => item.id === profile.id), profile.id);
+  for (const check of before.checks) assert.ok(after.checks.includes(check), check);
+  assert.ok(!testKeys(before).includes('fabric-cli-storage-files/test:exact_output'));
+  assert.ok(!testKeys(before).includes('fabric-cli/test:explicit_get'));
+  const consumer = pkg('storage-unknown', [{
+    name: 'fabric-cli-storage-files', path: absolute('rust/clients/cli/commands/storage'),
+  }]);
+  input.metadata.packages.push(consumer);
+  input.metadata.workspace_members.push(consumer.id);
+  assert.ok(testKeys(plan(input)).includes('storage-unknown/all'));
+  for (const file of ['rust/clients/cli/app/src/get_command.rs', 'rust/clients/cli/app/src/get_metadata.rs']) {
+    assert.ok(testKeys(plan({...input, files: [file]})).includes('fabric-cli/all'),
+      'Previously unmapped GET source still uses conservative package fallback');
+  }
+});
+
+function stageDeploymentFixture(files) {
+  const input = dataflowFixture(files);
+  const catalog = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'validation', 'impact-graph.json')));
+  input.graph.components.push(...['deploy-stage', 'cli-deploy-stage'].map(id =>
+    clone(catalog.components.find(item => item.id === id))));
+  input.graph.profiles.push(clone(catalog.profiles.find(item => item.id === 'v2-deploy')));
+  const deployDirectory = 'rust/engine/control-plane/deployment';
+  const transferDirectory = 'rust/clients/cli/commands/transfer';
+  const deploy = pkg('fabric-deploy');
+  deploy.manifest_path = absolute(`${deployDirectory}/Cargo.toml`);
+  deploy.targets = [target('fabric_deploy', 'lib', `${deployDirectory}/src/lib.rs`),
+    target('stage', 'test', `${deployDirectory}/tests/stage.rs`)];
+  const transfer = pkg('fabric-cli-transfer', [{name: deploy.name, path: absolute(deployDirectory)}]);
+  transfer.manifest_path = absolute(`${transferDirectory}/Cargo.toml`);
+  transfer.targets = [target('fabric_cli_transfer', 'lib', `${transferDirectory}/src/lib.rs`)];
+  input.metadata.packages.push(deploy, transfer);
+  input.metadata.workspace_members.push(deploy.id, transfer.id);
+  const cli = input.metadata.packages.find(item => item.name === 'fabric-cli');
+  cli.features['v2-deploy'] = [];
+  cli.dependencies.push({name: deploy.name, path: absolute(deployDirectory)},
+    {name: transfer.name, path: absolute(transferDirectory)});
+  cli.targets.push(
+    target('stage_deploy', 'test', 'rust/clients/cli/app/tests/stage_deploy.rs', ['v2-deploy']),
+    target('stage_deploy_entry', 'test', 'rust/clients/cli/app/tests/stage_deploy_entry.rs'));
+  return input;
+}
+
+test('Stage deployment scopes its explicit feature without unrelated CLI suites or losing Cargo consumers', () => {
+  for (const file of ['rust/engine/control-plane/deployment/src/stage.rs',
+    'rust/engine/control-plane/deployment/tests/stage.rs', 'rust/authoring-docs/native-stage-deployment.md']) {
+    const result = plan(stageDeploymentFixture([file]));
+    assert.equal(result.mode, 'affected', file);
+    assert.deepEqual(result.changed_packages, ['fabric-deploy']);
+    assert.deepEqual(result.packages, ['fabric-cli', 'fabric-cli-transfer', 'fabric-cli-v2', 'fabric-deploy']);
+    assert.deepEqual(result.profiles.map(item => item.id),
+      ['cli-v2-broker', 'cli-v2-combined', 'cli-v2-updater', 'v2-deploy']);
+    for (const key of ['fabric-deploy/test:stage', 'fabric-cli/test:stage_deploy',
+      'fabric-cli/test:stage_deploy_entry', 'fabric-cli/test:workspace_contract',
+      'fabric-cli-transfer/all', 'fabric-cli-v2/all']) {
+      assert.ok(testKeys(result).includes(key), key);
+    }
+    assert.ok(!testKeys(result).some(key => /execute|notebook|spark/.test(key)));
+    assert.ok(!testKeys(result).includes('fabric-cli/all'));
+    const stage = result.tests.find(item => item.target === 'test:stage_deploy');
+    assert.equal(stage.default_available, false);
+    assert.deepEqual(stage.required_features, ['v2-deploy']);
+    for (const platform of ['linux', 'macos', 'windows']) {
+      const tests = commands(result, platform).commands.filter(item => item.kind === 'test');
+      assert.ok(tests.some(item => item.target === 'test:stage_deploy_entry' && item.profile === undefined));
+      for (const target of ['test:stage_deploy', 'test:stage_deploy_entry']) {
+        assert.ok(tests.some(item => item.target === target && item.profile === 'v2-deploy'), target);
+      }
+    }
+  }
+});
+
+test('Stage deployment CLI source and exact tests share the same explicit feature obligation', () => {
+  for (const file of ['rust/clients/cli/app/src/stage_deploy.rs',
+    'rust/clients/cli/app/tests/stage_deploy.rs', 'rust/clients/cli/app/tests/stage_deploy_entry.rs']) {
+    const result = plan(stageDeploymentFixture([file]));
+    assert.deepEqual(result.changed_packages, ['fabric-cli'], file);
+    assert.deepEqual(result.profiles.map(item => item.id),
+      ['cli-v2-broker', 'cli-v2-combined', 'cli-v2-updater', 'v2-deploy']);
+    assert.ok(testKeys(result).includes('fabric-cli/test:stage_deploy'));
+    assert.ok(testKeys(result).includes('fabric-cli/test:stage_deploy_entry'));
+    assert.ok(testKeys(result).includes('fabric-cli-v2/all'));
+    assert.ok(!testKeys(result).includes('fabric-cli/all'));
+  }
+});
+
+test('Independent capability obligations compose and unknown source still restores full feature fallback', () => {
+  const files = ['rust/engine/control-plane/deployment/src/stage.rs',
+    'rust/engine/data-plane/dataflow/src/lib.rs'];
+  const combined = plan(stageDeploymentFixture(files));
+  assert.deepEqual(combined.profiles.map(item => item.id),
+    ['cli-v2-broker', 'cli-v2-combined', 'cli-v2-updater', 'headless', 'interactive', 'native-read', 'v2-deploy']);
+  assert.ok(testKeys(combined).includes('fabric-cli/test:execute_host'));
+  assert.ok(testKeys(combined).includes('fabric-cli/test:stage_deploy'));
+  const unknown = plan(stageDeploymentFixture([...files, 'rust/clients/cli/app/src/unmapped.rs']));
+  assert.ok(testKeys(unknown).includes('fabric-cli/all'));
+  assert.ok(unknown.profiles.some(item => item.id === 'repl'));
+  assert.ok(unknown.profiles.some(item => item.id === 'v2-cancel'));
+});
+
 test('Dataflow implementation and tests select complete execution consumers without unrelated CLI profiles', () => {
   for (const file of ['rust/engine/data-plane/dataflow/src/lib.rs',
     'rust/engine/data-plane/dataflow/tests/execute_query.rs',

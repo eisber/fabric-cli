@@ -6,7 +6,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {coreCommands, deduplicateCoreCommands} = require('./validate-impact.cjs');
-const {PLATFORMS, PROFILE_GROUP_SECONDS, WINDOWS_DEFAULT_PACKAGES,
+const {PLATFORMS, PROFILE_GROUP_SECONDS, SETUP_CLEANUP_SECONDS, WINDOWS_DEFAULT_PACKAGES,
   shardsForPlan, selectShard, matrixForPlan} =
   require('./impact-shards.cjs');
 const {selectionDigest} = require('./impact-ci.cjs');
@@ -38,6 +38,29 @@ function fixture(mode = 'affected') {
       {id: 'headless', depends_on: ['selector-tests']},
       {id: 'dependency-graph', depends_on: ['selector-tests']},
     ]};
+}
+
+function measuredLeaf() {
+  const graph = require('../validation/impact-graph.json');
+  const cliTargets = ['bin:fab-rs', 'lib', 'test:execute_arguments', 'test:execute_cli_contract',
+    'test:execute_host', 'test:job_arguments', 'test:native_tabular', 'test:workspace_contract'];
+  const tests = [
+    ...cliTargets.map(target => ({package: 'fabric-cli', target})),
+    {package: 'fabric-cli-v2', target: 'all'},
+    {package: 'fabric-sdk-dataflow', target: 'lib'},
+    {package: 'fabric-sdk-dataflow', target: 'test:execute_query'},
+  ];
+  const profileIds = ['cli-v2-broker', 'cli-v2-combined', 'cli-v2-updater',
+    'headless', 'interactive', 'native-read'];
+  const checks = ['command-inventory', 'dependency-graph', 'frozen-verify', 'headless',
+    'interactive', 'native-read', 'oracle-tools', 'selector-tests'];
+  return {schema: 1, mode: 'affected', files: ['rust/engine/data-plane/dataflow/src/lib.rs'],
+    packages: ['fabric-cli', 'fabric-cli-v2', 'fabric-identity',
+      'fabric-sdk-dataflow', 'fabric-sdk-transport'], tests,
+    profiles: graph.profiles.filter(profile => profileIds.includes(profile.id))
+      .map(profile => ({...structuredClone(profile),
+        tests: tests.filter(test => profile.packages.includes(test.package))})),
+    checks, check_details: graph.checks.filter(check => checks.includes(check.id))};
 }
 
 test('dynamically selected shards retain all three native platforms', () => {
@@ -134,7 +157,7 @@ test('legacy profile test fallback retains complete selected targets', () => {
     command.args.includes('argv_contract')));
 });
 
-test('duration-bounded profile cohorts reuse dependency packages without unifying features', () => {
+test('new and unmeasured profiles remain isolated instead of borrowing optimistic weights', () => {
   const plan = fixture();
   for (const id of ['other', 'third']) {
     plan.profiles.push({...structuredClone(plan.profiles[0]), id, checks: [],
@@ -142,29 +165,116 @@ test('duration-bounded profile cohorts reuse dependency packages without unifyin
   }
   const shards = shardsForPlan(plan, 'linux', coreCommands)
     .filter(shard => shard.id.startsWith('profile-'));
-  assert.equal(shards.length, 2);
-  assert.ok(shards.every(shard => shard.estimated_seconds <= PROFILE_GROUP_SECONDS));
-  const grouped = shards.find(shard => shard.id.startsWith('profile-group-'));
-  assert.equal(grouped.commands.length, 6);
-  const features = new Set(grouped.commands.map(command =>
-    command.args[command.args.indexOf('--features') + 1]));
-  assert.deepEqual([...features].sort(), ['fabric-cli/headless', 'fabric-cli/other']);
-  assert.ok(grouped.commands.every(command => !command.args.some(arg =>
-    arg === 'fabric-cli/headless,fabric-cli/other')));
+  assert.equal(shards.length, 3);
+  assert.ok(shards.every(shard => shard.estimated_seconds === PROFILE_GROUP_SECONDS &&
+    shard.estimate_basis === 'unmeasured-isolated' && shard.domains.length === 1));
+  assert.ok(shards.every(shard => shard.commands.length === 3));
   const otherHead = {...plan, head: 'b'.repeat(40)};
   assert.deepEqual(matrixForPlan(otherHead, coreCommands), matrixForPlan(plan, coreCommands));
 });
 
-test('Windows measured combined profile receives cold-build headroom instead of a second profile', () => {
+test('a known profile name with changed argv cannot reuse its historical weight', () => {
   const plan = fixture();
   plan.profiles.push({...structuredClone(plan.profiles[0]), id: 'combined',
     features: ['fabric-cli/combined'], checks: []});
   const windows = selectShard(plan, 'windows', 'profile-combined', coreCommands);
-  assert.equal(windows.estimated_seconds, 360);
+  assert.equal(windows.estimated_seconds, PROFILE_GROUP_SECONDS);
+  assert.equal(windows.estimate_basis, 'unmeasured-isolated');
   assert.ok(windows.commands.every(command => command.id.startsWith('combined:')));
   const linux = shardsForPlan(plan, 'linux', coreCommands);
-  assert.ok(linux.some(shard => shard.commands.some(command => command.id.startsWith('combined:')) &&
+  assert.ok(!linux.some(shard => shard.commands.some(command => command.id.startsWith('combined:')) &&
     shard.commands.some(command => command.id.startsWith('headless:'))));
+});
+
+test('measured Dataflow domains use twelve balanced native jobs rather than twenty-seven', () => {
+  const plan = measuredLeaf();
+  const matrix = matrixForPlan(plan, coreCommands).include;
+  assert.equal(matrix.length, 12);
+  for (const platform of Object.keys(PLATFORMS)) {
+    const shards = shardsForPlan(plan, platform, coreCommands);
+    assert.equal(shards.length, 4);
+    assert.equal(shards.filter(shard => shard.engineering).length, 1);
+    assert.ok(shards.every(shard => shard.estimated_seconds <= PROFILE_GROUP_SECONDS &&
+      shard.estimated_job_seconds === shard.estimated_seconds + SETUP_CLEANUP_SECONDS &&
+      shard.estimated_job_seconds <= 900));
+    assert.deepEqual(shards.find(shard => shard.engineering).domains, ['contracts-oracle']);
+    const defaults = shards.filter(shard => shard.id.startsWith('default-'));
+    assert.equal(defaults.length, 1);
+    assert.deepEqual(defaults[0].domains, [
+      'default-cli', 'default-data-plane', 'default-identity', 'contracts-native',
+    ]);
+    assert.ok(defaults[0].commands.every(command => !command.args.includes('--features')));
+    const features = shards.filter(shard => shard.id.startsWith('profile-'));
+    assert.equal(features.length, 2);
+    assert.ok(Math.max(...features.map(shard => shard.estimated_seconds)) <=
+      {linux: 400, windows: 680, macos: 680}[platform]);
+    const native = matrix.filter(entry => entry.platform === platform);
+    assert.equal(native.filter(entry => entry.cache_writer).length, 2);
+    assert.equal(native.filter(entry => entry.dependency_cache_writer).length, 1);
+  }
+  assert.ok(matrix.some(entry => entry.platform === 'macos' &&
+    entry.estimate_basis.includes('cross-host-estimate')));
+  assert.deepEqual(matrixForPlan({...plan, head: 'f'.repeat(40)}, coreCommands).include, matrix);
+  const reordered = structuredClone(plan);
+  reordered.profiles.reverse();
+  reordered.packages.reverse();
+  reordered.tests.reverse();
+  reordered.checks.reverse();
+  assert.deepEqual(matrixForPlan(reordered, coreCommands).include, matrix);
+});
+
+test('packing preserves exact default IDs, profile argv, aliases, checks and target obligations', () => {
+  const plan = measuredLeaf();
+  const families = {
+    cli: ['fabric-cli', 'fabric-cli-v2'],
+    'data-plane': ['fabric-sdk-dataflow', 'fabric-sdk-transport'],
+    identity: ['fabric-identity'],
+  };
+  for (const platform of Object.keys(PLATFORMS)) {
+    const original = Object.entries(families).flatMap(([family, packages]) =>
+      coreCommands({...plan, packages, tests: plan.tests.filter(test =>
+        packages.includes(test.package)), profiles: []}, platform)
+        .map(command => ({...command, id: `default-${family}:${command.id}`})));
+    original.push(...coreCommands(plan, platform).filter(command => !command.id.startsWith('default:')));
+    const shards = shardsForPlan(plan, platform, coreCommands);
+    const actual = shards.flatMap(shard => shard.commands);
+    const expected = new Map(original.map(command => [command.id, command]));
+    for (const command of actual) for (const id of command.aliases || [command.id]) {
+      assert.deepEqual(command.args, expected.get(id).args);
+      assert.equal(command.program, expected.get(id).program);
+      assert.equal(command.test, expected.get(id).test);
+      expected.delete(id);
+    }
+    assert.equal(expected.size, 0);
+    assert.deepEqual(shards.flatMap(shard => shard.obligations).sort(), [
+      ...original.map(command => `${platform}:core:${command.id}`),
+      ...plan.checks.map(id => `${platform}:check:${id}`),
+      `${platform}:preflight:engineering-unit`,
+    ].sort());
+    for (const marker of ['headless', 'interactive']) {
+      const owner = shards.find(shard => shard.checks.includes(marker));
+      assert.ok(owner.commands.some(command => command.id.startsWith(`${marker}:`)));
+    }
+  }
+});
+
+test('changed targets and explicit execution environments invalidate timing signatures', () => {
+  const plan = measuredLeaf();
+  const before = matrixForPlan(plan, coreCommands);
+  plan.profiles.find(profile => profile.id === 'cli-v2-updater').tests.push(
+    {package: 'fabric-cli-v2', target: 'test:new-contract'});
+  // An all-targets selection already contains this target; changing to an
+  // explicit selector is what changes the actual command, not incidental metadata.
+  assert.deepEqual(matrixForPlan(plan, coreCommands), before);
+  plan.profiles.find(profile => profile.id === 'cli-v2-updater').tests =
+    [{package: 'fabric-cli-v2', target: 'test:new-contract'}];
+  assert.equal(selectShard(plan, 'linux', 'profile-cli-v2-updater', coreCommands)
+    .estimate_basis, 'unmeasured-isolated');
+  const commands = (selection, platform) => coreCommands(selection, platform)
+    .map(command => ({...command, env: {NEW_COMPILER_FLAGS: '1'}}));
+  assert.ok(shardsForPlan(measuredLeaf(), 'linux', commands)
+    .filter(shard => shard.commands.length).every(shard => shard.domains.length === 1 &&
+      shard.estimate_basis === 'unmeasured-isolated'));
 });
 
 test('equivalent cross-profile commands share one owner with every original obligation alias', () => {

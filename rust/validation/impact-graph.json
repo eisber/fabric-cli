@@ -995,7 +995,9 @@
       "id": "onelake",
       "package": "fabric-sdk-onelake",
       "inputs": [
-        "rust/engine/data-plane/onelake/client/src/**"
+        "rust/engine/data-plane/onelake/client/src/**",
+        "rust/engine/data-plane/onelake/client/tests/consumer.rs",
+        "rust/engine/data-plane/onelake/client/tests/link.rs"
       ],
       "depends_on": [
         "core",
@@ -1009,6 +1011,10 @@
         {
           "package": "fabric-sdk-onelake",
           "target": "test:consumer"
+        },
+        {
+          "package": "fabric-sdk-onelake",
+          "target": "test:link"
         }
       ],
       "checks": [
@@ -1181,6 +1187,10 @@
         {
           "package": "fabric-cli-storage-files",
           "target": "test:download"
+        },
+        {
+          "package": "fabric-cli-storage-files",
+          "target": "test:exact_output"
         },
         {
           "package": "fabric-cli-storage-files",
@@ -1425,12 +1435,14 @@
       "package": "fabric-deploy",
       "inputs": [
         "rust/engine/control-plane/deployment/src/stage.rs",
+        "rust/engine/control-plane/deployment/tests/stage.rs",
         "rust/authoring-docs/native-stage-deployment.md"
       ],
       "depends_on": ["operations"],
       "tests": [
         {"package": "fabric-deploy", "target": "test:stage"}
       ],
+      "profiles": [],
       "checks": ["dependency-graph"]
     },
     {
@@ -1818,6 +1830,7 @@
       "depends_on": [
         "definitions",
         "transfer",
+        "storage-files",
         "query",
         "output",
         "sdk-workspaces",
@@ -1836,6 +1849,14 @@
         {
           "package": "fabric-cli",
           "target": "test:get_options"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:get_command"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:explicit_get"
         },
         {
           "package": "fabric-cli",
@@ -2014,13 +2035,16 @@
       "id": "cli-deploy-stage",
       "package": "fabric-cli",
       "inputs": [
-        "rust/clients/cli/app/src/stage_deploy.rs"
+        "rust/clients/cli/app/src/stage_deploy.rs",
+        "rust/clients/cli/app/tests/stage_deploy.rs",
+        "rust/clients/cli/app/tests/stage_deploy_entry.rs"
       ],
       "depends_on": ["deploy-stage"],
       "tests": [
         {"package": "fabric-cli", "target": "test:stage_deploy"},
         {"package": "fabric-cli", "target": "test:stage_deploy_entry"}
       ],
+      "profiles": ["v2-deploy"],
       "checks": ["dependency-graph"]
     },
     {
@@ -2827,6 +2851,7 @@
       "depends_on": [
         "sdk-search",
         "sdk",
+        "storage-files",
         "query",
         "cli-headless",
         "cli-get"
