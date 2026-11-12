@@ -75,6 +75,8 @@ struct Approval {
     result: Result<(), CreateApprovalError>,
     calls: usize,
     pending: bool,
+    question: Option<String>,
+    inspect_question: bool,
 }
 
 impl Approval {
@@ -84,6 +86,8 @@ impl Approval {
             result: Ok(()),
             calls: 0,
             pending: false,
+            question: None,
+            inspect_question: false,
         }
     }
 }
@@ -100,6 +104,37 @@ impl CreateApproval for Approval {
         assert_eq!(request.context().selection(), &selection(Audience::Fabric));
         assert_eq!(request.raw_input(), Some(self.raw.as_slice()));
         assert_eq!(request.command().destination, PATH);
+        assert!(request.anticipated_effects().is_empty());
+        match request.plan().action() {
+            fabric_sdk::items::create::CreateAction::Create { .. } => {
+                let operation = request.operation().expect("prepared Report POST");
+                assert!(request.remote_write());
+                assert_eq!(operation.method(), ResourceMethod::Post);
+                assert_eq!(operation.path(), format!("/v1/workspaces/{WS}/reports"));
+                assert_eq!(operation.body(), self.raw);
+                assert_eq!(
+                    operation.completion(),
+                    if request.command().wait {
+                        CompletionPolicy::WaitForResult
+                    } else {
+                        CompletionPolicy::ReturnAccepted
+                    }
+                );
+                assert_eq!(
+                    request.url(),
+                    Some(&request.context().endpoint().url(operation.path()).unwrap())
+                );
+            }
+            fabric_sdk::items::create::CreateAction::Skip { .. } => {
+                assert!(!request.remote_write());
+                assert!(request.operation().is_none());
+                assert!(request.url().is_none());
+            }
+            _ => panic!("Report never admits replacement or duplicate"),
+        }
+        if self.inspect_question {
+            self.question = Some(request.approval_question());
+        }
         if self.pending {
             Box::pin(pending())
         } else {
@@ -154,6 +189,7 @@ async fn full_host_preserves_raw_body_binary_extensions_and_projected_receipt_id
     let listing = Listing::new(json!([]));
     let wire = Wire::new(vec![response(201, metadata())]);
     let mut approval = Approval::allow(raw.clone());
+    approval.inspect_question = true;
     let delivery = prepared
         .execute(
             &ReportCreateBinding,
@@ -166,6 +202,18 @@ async fn full_host_preserves_raw_body_binary_extensions_and_projected_receipt_id
         .await
         .unwrap();
     assert_eq!(approval.calls, 1);
+    let question = approval.question.as_ref().unwrap();
+    assert!(question.contains("method=POST"));
+    assert!(question.contains(&format!(
+        "url=\"https://api.fabric.microsoft.com/v1/workspaces/{WS}/reports\""
+    )));
+    assert!(question.contains(&format!(
+        "body=\"{}\"",
+        std::str::from_utf8(&raw).unwrap().escape_debug()
+    )));
+    assert!(question.contains("audience=Fabric"));
+    assert!(question.contains("anticipatedEffects=[]"));
+    assert!(!question.contains('\n'));
     assert_eq!(listing.calls.load(Ordering::SeqCst), 1);
     assert_eq!(delivery.report().exit_code(), 0);
     assert_eq!(delivery.report().value()["meta"]["status"], "completed");
@@ -177,6 +225,9 @@ async fn full_host_preserves_raw_body_binary_extensions_and_projected_receipt_id
     assert_eq!(receipt["meta"]["workspaceId"], WS);
     assert_eq!(receipt["meta"]["operationHandle"], Value::Null);
     assert_eq!(receipt["meta"]["remoteReplayed"], false);
+    assert_eq!(receipt["meta"]["remoteWrite"], true);
+    assert_eq!(receipt["meta"]["anticipatedEffects"], json!([]));
+    assert_eq!(receipt["meta"]["submission"]["httpStatus"], 201);
     let requests = wire.requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].0, ResourceMethod::Post);
@@ -315,9 +366,12 @@ async fn exact_existing_skip_is_unchanged_but_wrong_kind_and_ambiguity_never_wri
     let raw = serde_json::to_vec(&body()).unwrap();
     for rows in [
         json!([metadata()]),
+        json!([metadata(), {"id":OP,"displayName":"Report","type":"Notebook","workspaceId":WS}]),
         json!([{"id":REPORT,"displayName":"Report","type":"Notebook"}]),
         json!([metadata(), metadata()]),
         json!([{"id":REPORT,"displayName":"Report","type":"Report","workspaceId":OP}]),
+        json!([{"id":REPORT,"displayName":"report","type":"Report","workspaceId":WS}]),
+        json!([metadata(), {"id":OP,"displayName":"Report","workspaceId":WS}]),
     ] {
         let prepared = prepare(temp.path(), &["--if-exists", "skip"], &raw);
         let (client, _) = client(Audience::Fabric);
@@ -334,7 +388,10 @@ async fn exact_existing_skip_is_unchanged_but_wrong_kind_and_ambiguity_never_wri
                 pending(),
             )
             .await;
-        if rows == json!([metadata()]) {
+        if rows == json!([metadata()])
+            || rows
+                == json!([metadata(), {"id":OP,"displayName":"Report","type":"Notebook","workspaceId":WS}])
+        {
             let delivery = result.unwrap();
             assert_eq!(delivery.report().value()["meta"]["status"], "unchanged");
             assert_eq!(
@@ -342,6 +399,17 @@ async fn exact_existing_skip_is_unchanged_but_wrong_kind_and_ambiguity_never_wri
                 false
             );
             assert_eq!(delivery.report().value()["meta"]["resourceId"], REPORT);
+            assert_eq!(delivery.report().value()["meta"]["remoteWrite"], false);
+            assert_eq!(
+                delivery.report().value()["meta"]["anticipatedEffects"],
+                json!([])
+            );
+            assert!(
+                delivery.report().value()["meta"]
+                    .get("submission")
+                    .is_none()
+            );
+            assert_eq!(approval.calls, 1);
         } else {
             assert!(result.is_err());
             assert_eq!(approval.calls, 0);
@@ -451,6 +519,11 @@ async fn genuine_acceptance_and_lro_result_keep_operation_and_resource_ids_disti
             format!("/operations/{OP}")
         );
         assert_eq!(receipt["meta"]["completed"], wait);
+        assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(
+            receipt["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
         assert_eq!(
             receipt["meta"]["resourceId"],
             if wait { json!(REPORT) } else { Value::Null }
@@ -557,6 +630,15 @@ async fn report_identity_received_with_acceptance_survives_later_poll_failure() 
     assert_eq!(delivery.report().value()["meta"]["completed"], false);
     assert_eq!(delivery.report().value()["meta"]["resourceId"], REPORT);
     assert_eq!(
+        delivery.report().value()["meta"]["submission"]["httpStatus"],
+        202
+    );
+    assert_eq!(
+        delivery.report().value()["meta"]["submission"]["resource"],
+        json!({"id":REPORT,"workspaceId":WS,"displayName":"Report","type":"Report"})
+    );
+    assert_eq!(delivery.report().value()["meta"]["httpStatus"], 500);
+    assert_eq!(
         delivery.report().value()["meta"]["operationHandle"],
         format!("/operations/{OP}")
     );
@@ -565,6 +647,126 @@ async fn report_identity_received_with_acceptance_survives_later_poll_failure() 
         true
     );
     assert_eq!(wire.requests.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn accepted_report_evidence_survives_malformed_final_result_and_data_projection() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for final_body in [
+        b"{malformed".to_vec(),
+        serde_json::to_vec(&json!({
+            "id":OP,"workspaceId":WS,"displayName":"Wrong","type":"Notebook"
+        }))
+        .unwrap(),
+    ] {
+        let prepared = prepare(temp.path(), &["--wait", "--project", "missing"], &raw);
+        let (client, _) = client(Audience::Fabric);
+        let listing = Listing::new(json!([]));
+        let mut acceptance = accepted();
+        acceptance.body = serde_json::to_vec(&metadata()).unwrap();
+        let wire = Wire::new(vec![
+            acceptance,
+            response(200, json!({"status":"Succeeded"})),
+            OperationResponse {
+                status: 200,
+                body: final_body.clone(),
+                headers: BTreeMap::new(),
+            },
+        ]);
+        let mut approval = Approval::allow(raw.clone());
+        let delivery = prepared
+            .execute(
+                &ReportCreateBinding,
+                &client,
+                &listing,
+                execution(&wire),
+                &mut approval,
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(delivery.report().exit_code(), 0);
+        assert_eq!(delivery.report().value()["meta"]["completed"], false);
+        let mut output = Vec::new();
+        delivery.deliver(&mut output).unwrap();
+        let receipt: Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(receipt["data"], Value::Null);
+        assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(
+            receipt["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(receipt["meta"]["submission"]["resource"]["id"], REPORT);
+        assert_eq!(receipt["meta"]["submission"]["resource"]["type"], "Report");
+        assert_eq!(receipt["meta"]["httpStatus"], 200);
+        assert_eq!(receipt["meta"]["completed"], false);
+        assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+        assert_eq!(receipt["meta"]["remoteReplayed"], false);
+        if final_body.starts_with(b"{malformed") {
+            assert_eq!(
+                receipt["meta"]["unparsedResponseBodyBase64"],
+                STANDARD.encode(&final_body)
+            );
+        }
+        assert_eq!(wire.requests.lock().unwrap().len(), 3);
+        assert_eq!(
+            wire.requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|request| request.0 == ResourceMethod::Post)
+                .count(),
+            1
+        );
+    }
+}
+
+#[tokio::test]
+async fn malformed_no_wait_acceptance_retains_bytes_and_handle_without_false_completion() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    let prepared = prepare(temp.path(), &["--project", "missing"], &raw);
+    let (client, _) = client(Audience::Fabric);
+    let listing = Listing::new(json!([]));
+    let malformed = b"{broken-acceptance";
+    let mut acceptance = accepted();
+    acceptance.body = malformed.to_vec();
+    let wire = Wire::new(vec![acceptance]);
+    let mut approval = Approval::allow(raw);
+    let delivery = prepared
+        .execute(
+            &ReportCreateBinding,
+            &client,
+            &listing,
+            execution(&wire),
+            &mut approval,
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_ne!(delivery.report().exit_code(), 0);
+    let mut output = Vec::new();
+    delivery.deliver(&mut output).unwrap();
+    let receipt: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(receipt["data"], Value::Null);
+    assert_eq!(receipt["meta"]["completed"], false);
+    assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(
+        receipt["meta"]["submission"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert_eq!(
+        receipt["meta"]["unparsedAcceptanceBodyBase64"],
+        STANDARD.encode(malformed)
+    );
+    assert_eq!(
+        receipt["meta"]["unparsedResponseBodyBase64"],
+        STANDARD.encode(malformed)
+    );
+    assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+    assert_eq!(wire.requests.lock().unwrap().len(), 1);
+    assert!(wire.waits.lock().unwrap().is_empty());
 }
 
 struct CancelAtPoll {
@@ -607,7 +809,11 @@ async fn cancellation_after_acceptance_keeps_handle_without_remote_cancel_or_rep
     let listing = Listing::new(json!([]));
     let (cancel, interrupted) = tokio::sync::oneshot::channel();
     let wire = CancelAtPoll {
-        wire: Wire::new(vec![accepted()]),
+        wire: Wire::new(vec![{
+            let mut acceptance = accepted();
+            acceptance.body = serde_json::to_vec(&metadata()).unwrap();
+            acceptance
+        }]),
         cancel: Mutex::new(Some(cancel)),
     };
     let mut approval = Approval::allow(raw);
@@ -630,7 +836,15 @@ async fn cancellation_after_acceptance_keeps_handle_without_remote_cancel_or_rep
         delivery.report().value()["meta"]["operationHandle"],
         format!("/operations/{OP}")
     );
-    assert_eq!(delivery.report().value()["meta"]["resourceId"], Value::Null);
+    assert_eq!(delivery.report().value()["meta"]["resourceId"], REPORT);
+    assert_eq!(
+        delivery.report().value()["meta"]["submission"]["httpStatus"],
+        202
+    );
+    assert_eq!(
+        delivery.report().value()["meta"]["submission"]["resource"]["id"],
+        REPORT
+    );
     assert_eq!(
         delivery.report().value()["meta"]["mutationMayHaveOccurred"],
         true

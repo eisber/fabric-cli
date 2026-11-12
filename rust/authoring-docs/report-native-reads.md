@@ -120,6 +120,13 @@ planner's immutable input, then builds only the native Report POST. Whitespace,
 multipart payloads and native extension fields are sent unchanged. The shared
 host owns input, approval, discovery, LRO observation and receipt delivery; this
 binding adds none of those engines.
+Immediate approval borrows the same prepared method, bound URL, completion
+policy and original body bytes that the shared operation engine consumes once.
+The terminal question escapes controls and preserves the exact wire-body
+spelling instead of presenting a reserialized substitute. Report definition
+creation does not advertise an additional model/child creation or compute
+effect; its anticipated-effects list is empty, not proof about observed service
+state or related-model permissions. An unchanged skip has no prepared request.
 
 With `headless,v2-create`, the experimental binary mounts only this typed create
 binding:
@@ -167,6 +174,15 @@ The validator returns only create-input evidence, never replacement evidence.
 It performs no model reads, authorization, creation, rebind or cross-workspace
 lookup. The service remains responsible for its actual permissions and
 semantic validation.
+
+Receipts keep initial submission status, operation handle and any supplied
+Report identity in `meta.submission`, separately from the latest HTTP
+observation. Failed/cancelled polling and malformed final JSON retain this
+protected submission evidence even when `data` is projected away. Unparsed
+acceptance/final response bytes are explicitly labeled base64 evidence, not
+repaired content or a completed Report. Typed exact-name cardinality ignores
+same-name items of other known types; multiple Reports, wrong-kind-only matches,
+malformed matching identities and wrong workspace evidence still reject.
 
 ## API references
 

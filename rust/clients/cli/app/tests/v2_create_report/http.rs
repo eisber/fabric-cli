@@ -13,7 +13,19 @@ use fabric_sdk_http::{
 
 enum Reply {
     Json(StatusCode, Vec<u8>),
+    Accepted(Vec<u8>),
     BrokenAcceptedBody,
+}
+
+fn acceptance_headers() -> Headers {
+    let mut headers = Headers::new();
+    headers.insert("x-ms-operation-id", OP);
+    headers.insert(
+        "location",
+        format!("https://api.fabric.microsoft.com/v1/operations/{OP}"),
+    );
+    headers.insert("retry-after", "0");
+    headers
 }
 
 struct HttpWire {
@@ -41,14 +53,12 @@ impl HttpClient for HttpWire {
             Reply::Json(status, body) => {
                 Ok(AsyncRawResponse::from_bytes(status, Headers::new(), body))
             }
+            Reply::Accepted(body) => Ok(AsyncRawResponse::from_bytes(
+                StatusCode::Accepted,
+                acceptance_headers(),
+                body,
+            )),
             Reply::BrokenAcceptedBody => {
-                let mut headers = Headers::new();
-                headers.insert("x-ms-operation-id", OP);
-                headers.insert(
-                    "location",
-                    format!("https://api.fabric.microsoft.com/v1/operations/{OP}"),
-                );
-                headers.insert("retry-after", "2");
                 let body = futures_util::stream::once(async {
                     Err(azure_core::Error::with_message(
                         azure_core::error::ErrorKind::Io,
@@ -57,7 +67,7 @@ impl HttpClient for HttpWire {
                 });
                 Ok(AsyncRawResponse::new(
                     StatusCode::Accepted,
-                    headers,
+                    acceptance_headers(),
                     Box::pin(body),
                 ))
             }
@@ -130,6 +140,14 @@ async fn real_http_executor_sends_exact_native_report_body_and_retains_acceptanc
             assert_ne!(delivery.report().exit_code(), 0);
             assert_eq!(delivery.report().value()["meta"]["httpStatus"], 202);
             assert_eq!(
+                delivery.report().value()["meta"]["submission"]["httpStatus"],
+                202
+            );
+            assert_eq!(
+                delivery.report().value()["meta"]["observation"]["httpStatus"],
+                202
+            );
+            assert_eq!(
                 delivery.report().value()["meta"]["operationHandle"],
                 format!("/operations/{OP}")
             );
@@ -159,6 +177,90 @@ async fn real_http_executor_sends_exact_native_report_body_and_retains_acceptanc
         assert_eq!(
             requests[1].url().as_str(),
             format!("https://api.fabric.microsoft.com/v1/workspaces/{WS}/reports")
+        );
+        assert_eq!(azure_core::Bytes::from(requests[1].body()).as_ref(), raw);
+    }
+}
+
+#[tokio::test]
+async fn real_http_receipt_keeps_report_submission_separate_from_failed_or_malformed_observation() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    for malformed_result in [false, true] {
+        let prepared = prepare(temp.path(), &["--wait", "--project", "missing"], &raw);
+        let (client, _) = client(Audience::Fabric);
+        let mut replies = VecDeque::from([
+            Reply::Json(StatusCode::Ok, br#"{"value":[]}"#.to_vec()),
+            Reply::Accepted(serde_json::to_vec(&metadata()).unwrap()),
+        ]);
+        if malformed_result {
+            replies.push_back(Reply::Json(
+                StatusCode::Ok,
+                br#"{"status":"Succeeded"}"#.to_vec(),
+            ));
+            replies.push_back(Reply::Json(StatusCode::Ok, b"{invalid-result".to_vec()));
+        } else {
+            replies.push_back(Reply::Json(
+                StatusCode::Forbidden,
+                br#"{"errorCode":"DeniedPoll"}"#.to_vec(),
+            ));
+        }
+        let wire = Arc::new(HttpWire {
+            replies: Mutex::new(replies),
+            requests: Mutex::new(Vec::new()),
+        });
+        let http =
+            HttpExecutor::new(wire.clone(), Arc::new(Timer), ExecutionOptions::default()).unwrap();
+        let trace = ExecutionTrace::default();
+        let observe = || {
+            let evidence = trace.snapshot();
+            CreateTransportEvidence {
+                http_status: evidence.status,
+                operation_id: evidence.operation_id,
+            }
+        };
+        let mut approval = Approval::allow(raw.clone());
+        let delivery = prepared
+            .execute(
+                &ReportCreateBinding,
+                &client,
+                &http,
+                CreateExecution {
+                    executor: http.clone().with_trace(trace.clone()),
+                    observe: &observe,
+                },
+                &mut approval,
+                pending(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(delivery.report().exit_code(), 0);
+        let mut output = Vec::new();
+        delivery.deliver(&mut output).unwrap();
+        let receipt: Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(receipt["data"], Value::Null);
+        assert_eq!(receipt["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(receipt["meta"]["submission"]["resource"]["id"], REPORT);
+        assert_eq!(
+            receipt["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(
+            receipt["meta"]["observation"]["httpStatus"],
+            if malformed_result { 200 } else { 403 }
+        );
+        assert_eq!(receipt["meta"]["completed"], false);
+        assert_eq!(receipt["meta"]["mutationMayHaveOccurred"], true);
+        assert_eq!(receipt["meta"]["anticipatedEffects"], json!([]));
+        assert_eq!(receipt["meta"]["remoteReplayed"], false);
+        let requests = wire.requests.lock().unwrap();
+        assert_eq!(requests.len(), if malformed_result { 4 } else { 3 });
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request.method() == Method::Post)
+                .count(),
+            1
         );
         assert_eq!(azure_core::Bytes::from(requests[1].body()).as_ref(), raw);
     }
