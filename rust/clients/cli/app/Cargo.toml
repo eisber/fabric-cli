@@ -170,5 +170,15 @@ name = "graph_refresh_v2"
 path = "tests/graph_refresh_v2.rs"
 required-features = ["v2-refresh"]
 
+[[test]]
+name = "native_runtime_notebook_list"
+path = "tests/native_runtime_notebook_list.rs"
+required-features = ["runtime-v2"]
+
+[[test]]
+name = "native_runtime_notebook_list_host"
+path = "tests/native_runtime_notebook_list_host.rs"
+required-features = ["runtime-v2", "native-host"]
+
 [lints]
 workspace = true

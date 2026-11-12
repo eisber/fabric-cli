@@ -12,6 +12,7 @@
 mod contract;
 #[cfg(feature = "native-host")]
 pub mod host;
+pub mod native_runtime_notebook_list;
 mod parser;
 mod path;
 

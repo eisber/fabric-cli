@@ -1878,7 +1878,10 @@
       "id": "cli-runtime-v2",
       "package": "fabric-cli",
       "inputs": [
-        "rust/clients/cli/app/src/runtime_v2/**"
+        "rust/clients/cli/app/src/runtime_v2/**",
+        "rust/clients/cli/app/tests/native_runtime_notebook_list.rs",
+        "rust/clients/cli/app/tests/native_runtime_notebook_list_host.rs",
+        "rust/authoring-docs/native-runtime-notebook-list.md"
       ],
       "depends_on": [
         "sdk",
@@ -1890,6 +1893,14 @@
         {
           "package": "fabric-cli",
           "target": "test:runtime_v2"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_runtime_notebook_list"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:native_runtime_notebook_list_host"
         }
       ],
       "checks": [
@@ -3421,6 +3432,24 @@
       ],
       "features": [
         "fabric-cli/runtime-v2"
+      ],
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "checks": [
+        "dependency-graph"
+      ]
+    },
+    {
+      "id": "runtime-notebook-list-host",
+      "packages": [
+        "fabric-cli"
+      ],
+      "features": [
+        "fabric-cli/runtime-v2",
+        "fabric-cli/native-host"
       ],
       "platforms": [
         "windows",

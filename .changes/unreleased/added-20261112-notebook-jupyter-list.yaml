@@ -1,0 +1,8 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+kind: added
+body: Add an experimental bounded Notebook Jupyter session collection leaf over the shared runtime read host; production workload authorization remains gated.
+time: 2026-11-12T08:52:00Z
+custom:
+    Author: eisber
+    AuthorLink: https://github.com/eisber
