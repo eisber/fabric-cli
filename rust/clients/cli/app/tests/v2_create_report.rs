@@ -8,6 +8,9 @@
 #[cfg(feature = "v2-create")]
 #[path = "v2_create_report/host.rs"]
 mod host;
+#[cfg(all(feature = "v2-create", feature = "headless"))]
+#[path = "v2_create_report/process.rs"]
+mod process;
 
 use async_trait::async_trait;
 use azure_core::{

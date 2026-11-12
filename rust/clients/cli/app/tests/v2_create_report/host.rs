@@ -7,7 +7,8 @@ use super::*;
 use fabric_cli::{
     create_command::{
         CreateApproval, CreateApprovalError, CreateApprovalRequest, CreateBinding,
-        CreateCommandError, MAX_BYTES, PreparedCreateCommand,
+        CreateCommandError, CreateExecution, CreateTransportEvidence, MAX_BYTES,
+        PreparedCreateCommand,
     },
     v2_create_report::ReportCreateBinding,
 };
@@ -112,6 +113,16 @@ fn metadata() -> Value {
     json!({"id":REPORT,"workspaceId":WS,"displayName":"Report","type":"Report","future":null})
 }
 
+fn execution<E: OperationExecutor>(executor: E) -> CreateExecution<'static, E> {
+    CreateExecution {
+        executor,
+        observe: &|| CreateTransportEvidence {
+            http_status: None,
+            operation_id: None,
+        },
+    }
+}
+
 #[tokio::test]
 async fn full_host_preserves_raw_body_binary_extensions_and_projected_receipt_identity() {
     let temp = tempfile::tempdir().unwrap();
@@ -130,7 +141,7 @@ async fn full_host_preserves_raw_body_binary_extensions_and_projected_receipt_id
             &ReportCreateBinding,
             &client,
             &listing,
-            &wire,
+            execution(&wire),
             &mut approval,
             pending(),
         )
@@ -174,7 +185,7 @@ async fn shared_four_mib_input_boundary_does_not_inherit_the_generic_one_mib_def
                 &ReportCreateBinding,
                 &client,
                 &listing,
-                &wire,
+                execution(&wire),
                 &mut approval,
                 pending(),
             )
@@ -201,7 +212,7 @@ async fn denial_or_unavailable_approval_and_wrong_context_send_no_post() {
         let mut approval = Approval::allow(raw.clone());
         approval.result = Err(refusal);
         assert!(matches!(prepared.execute(
-            &ReportCreateBinding, &client, &listing, &wire, &mut approval, pending(),
+            &ReportCreateBinding, &client, &listing, execution(&wire), &mut approval, pending(),
         ).await, Err(CreateCommandError::Approval(error)) if error == refusal));
         assert_eq!(approval.calls, 1);
         assert!(wire.requests.lock().unwrap().is_empty());
@@ -217,7 +228,7 @@ async fn denial_or_unavailable_approval_and_wrong_context_send_no_post() {
                 &ReportCreateBinding,
                 &client,
                 &listing,
-                &wire,
+                execution(&wire),
                 &mut approval,
                 pending(),
             )
@@ -245,7 +256,7 @@ async fn original_interruption_cancels_pending_approval_before_any_mutation() {
             &ReportCreateBinding,
             &client,
             &listing,
-            &wire,
+            execution(&wire),
             &mut approval,
             tokio::time::sleep(Duration::from_millis(5)),
         )
@@ -275,7 +286,7 @@ async fn exact_existing_skip_is_unchanged_but_wrong_kind_and_ambiguity_never_wri
                 &ReportCreateBinding,
                 &client,
                 &listing,
-                &wire,
+                execution(&wire),
                 &mut approval,
                 pending(),
             )
@@ -348,7 +359,7 @@ async fn malformed_created_and_accepted_responses_never_claim_complete_or_replay
                 &ReportCreateBinding,
                 &client,
                 &listing,
-                &wire,
+                execution(&wire),
                 &mut approval,
                 pending(),
             )
@@ -384,7 +395,7 @@ async fn genuine_acceptance_and_lro_result_keep_operation_and_resource_ids_disti
                 &ReportCreateBinding,
                 &client,
                 &listing,
-                &wire,
+                execution(&wire),
                 &mut approval,
                 pending(),
             )
@@ -440,7 +451,7 @@ async fn poll_failure_and_response_budget_retains_known_handle_or_resource_uncer
                 &ReportCreateBinding,
                 &client,
                 &listing,
-                &wire,
+                execution(&wire),
                 &mut approval,
                 pending(),
             )
@@ -472,6 +483,45 @@ async fn poll_failure_and_response_budget_retains_known_handle_or_resource_uncer
             1
         );
     }
+}
+
+#[tokio::test]
+async fn report_identity_received_with_acceptance_survives_later_poll_failure() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = serde_json::to_vec(&body()).unwrap();
+    let prepared = prepare(temp.path(), &["--wait"], &raw);
+    let (client, _) = client(Audience::Fabric);
+    let listing = Listing::new(json!([]));
+    let mut acceptance = accepted();
+    acceptance.body = serde_json::to_vec(&metadata()).unwrap();
+    let wire = Wire::new(vec![
+        acceptance,
+        response(500, json!({"errorCode":"OfflineFailure"})),
+    ]);
+    let mut approval = Approval::allow(raw);
+    let delivery = prepared
+        .execute(
+            &ReportCreateBinding,
+            &client,
+            &listing,
+            execution(&wire),
+            &mut approval,
+            pending(),
+        )
+        .await
+        .unwrap();
+    assert_ne!(delivery.report().exit_code(), 0);
+    assert_eq!(delivery.report().value()["meta"]["completed"], false);
+    assert_eq!(delivery.report().value()["meta"]["resourceId"], REPORT);
+    assert_eq!(
+        delivery.report().value()["meta"]["operationHandle"],
+        format!("/operations/{OP}")
+    );
+    assert_eq!(
+        delivery.report().value()["meta"]["mutationMayHaveOccurred"],
+        true
+    );
+    assert_eq!(wire.requests.lock().unwrap().len(), 2);
 }
 
 struct CancelAtPoll {
@@ -523,7 +573,7 @@ async fn cancellation_after_acceptance_keeps_handle_without_remote_cancel_or_rep
             &ReportCreateBinding,
             &client,
             &listing,
-            &wire,
+            execution(&wire),
             &mut approval,
             async {
                 interrupted.await.unwrap();
@@ -578,7 +628,7 @@ async fn delivery_failure_after_acceptance_retains_handle_effect_and_no_clobber(
                 &ReportCreateBinding,
                 &client,
                 &listing,
-                &wire,
+                execution(&wire),
                 &mut approval,
                 pending(),
             )

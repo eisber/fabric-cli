@@ -121,11 +121,25 @@ multipart payloads and native extension fields are sent unchanged. The shared
 host owns input, approval, discovery, LRO observation and receipt delivery; this
 binding adds none of those engines.
 
+With `headless,v2-create`, the experimental binary mounts only this typed create
+binding:
+
+```text
+fab-cli-v2 create /<workspaceGUID>.Workspace/<literal-name>.Report --input FILE|-
+```
+
+The name is literal even if UUID-shaped. Native definition JSON is required;
+`--format json` selects the receipt, never PBIX or a definition conversion.
+Profiles, collections, name-based workspace discovery and artifact facades
+are not mounted. Immediate terminal approval is mandatory; nonterminal
+execution fails before identity or provider access. This opt-in mount changes
+neither default builds nor v1's `create`/`mkdir` alias.
+
 The SDK `report_create` and CLI `v2_create_report` test sources include
-parser-to-shared-host-to-SDK scripted HTTP cases. Source availability is not
-execution evidence. Standalone binary dispatch still depends on the separately
-owned generic runner release; no binary or native qualification is claimed here.
-The impact graph includes the Report tests and the helper's opt-in profiles.
+parser-to-shared-host-to-SDK scripted HTTP and actual binary preflight/stream
+cases. Source availability is not execution evidence; no native qualification
+or live operation is claimed here. The impact graph includes the Report tests
+and the helper's opt-in profiles. Full native CI remains required.
 
 The public Create Report API documents `ItemDisplayNameAlreadyInUse`, not an
 upsert or repeated-name create contract. The Report capability permits
