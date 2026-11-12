@@ -6,7 +6,8 @@
 use super::{Failure, NativeSession, failed, headless};
 use fabric_cli::create_command::{
     CreateApproval, CreateApprovalError, CreateApprovalRequest, CreateBinding, CreateCommandError,
-    CreateExecution, CreateTransportEvidence, PreparedCreateCommand, v2_create,
+    CreateExecution, CreateTransportEvidence, PreparedCreateCommand, command_for_binding,
+    v2_create,
 };
 use fabric_sdk::{Client, EndpointBinding, ServiceOrigin};
 use fabric_sdk_http::ExecutionTrace;
@@ -23,8 +24,7 @@ pub(super) fn run(args: Vec<OsString>, binding: &'static dyn CreateBinding) -> R
     let command = match v2_create::parse_args(args) {
         Ok(command) => command,
         Err(error) if error.kind() == clap::error::ErrorKind::DisplayHelp => {
-            v2_create::command()
-                .after_help(format!("Selected native owner: {}. This mount requires /<workspaceGUID>.Workspace/<literal-name>.<Type> and strict native create JSON, not a local source file. Policies depend on the typed binding; Notebook enables error and skip only. No collection, profile or artifact facade binding. Explicit terminal approval is required; --force never bypasses it.", binding.item_type()))
+            command_for_binding(binding)
                 .write_long_help(&mut io::stdout().lock())
                 .and_then(|()| io::stdout().flush())
                 .map_err(|_| failed("OutputFailed", "Create help delivery failed.", 1))?;
