@@ -218,20 +218,27 @@ struct Jwks {
 
 struct Document {
     keys: Vec<Jwk>,
-    fetched: Instant,
-    refreshed: Option<Instant>,
+    expires: Instant,
+}
+
+#[derive(Default)]
+struct IssuerCache {
+    document: Option<Document>,
+    retry_after: Option<Instant>,
+    refresh_after: Option<Instant>,
 }
 
 /// Production RS256 verifier over known, tenant-bound public Entra JWKS.
 ///
 /// The two issuer versions have separate bounded caches. A key miss can refresh
-/// once per five minutes; signature failure never fetches a replacement key.
+/// once per five minutes; cold/expired loads are also throttled after failure
+/// or cancellation. Signature failure never fetches a replacement key.
 /// Concurrent verification shares the asynchronous cache lock, not a network-
 /// blocking setup worker. Unsupported opaque/encrypted tokens fail honestly.
 pub struct EntraJwtVerifier {
     selection: CredentialSelection,
     source: Arc<dyn EntraJwksSource>,
-    documents: tokio::sync::Mutex<[Option<Document>; 2]>,
+    documents: tokio::sync::Mutex<[IssuerCache; 2]>,
 }
 
 impl fmt::Debug for EntraJwtVerifier {
@@ -253,7 +260,7 @@ impl EntraJwtVerifier {
         Ok(Self {
             selection,
             source,
-            documents: tokio::sync::Mutex::new([None, None]),
+            documents: tokio::sync::Mutex::new(std::array::from_fn(|_| IssuerCache::default())),
         })
     }
 
@@ -349,22 +356,28 @@ impl EntraJwtVerifier {
             .decode(parts[2])
             .map_err(|_| PrincipalError::Token)?;
         let mut documents = self.documents.lock().await;
-        if documents[version]
+        let cache = &mut documents[version];
+        if cache
+            .document
             .as_ref()
-            .is_none_or(|doc| doc.fetched.elapsed() >= CACHE_TTL)
+            .is_none_or(|doc| Instant::now() >= doc.expires)
         {
-            documents[version] = Some(self.fetch(version, None).await?);
+            if cache.retry_after.is_some_and(|at| Instant::now() < at) {
+                return Err(PrincipalError::Keys);
+            }
+            cache.retry_after = Some(retry_after()?);
+            cache.document = Some(self.fetch(version).await?);
         }
-        let document = documents[version].as_mut().ok_or(PrincipalError::Keys)?;
+        let document = cache.document.as_ref().ok_or(PrincipalError::Keys)?;
         if !document.keys.iter().any(|key| key.kid == header.kid)
-            && document
-                .refreshed
-                .is_none_or(|at| at.elapsed() >= REFRESH_INTERVAL)
+            && cache.refresh_after.is_none_or(|at| Instant::now() >= at)
         {
-            let attempted = Instant::now();
-            document.refreshed = Some(attempted);
-            *document = self.fetch(version, Some(attempted)).await?;
+            let retry_after = retry_after()?;
+            cache.refresh_after = Some(retry_after);
+            cache.retry_after = Some(retry_after);
+            cache.document = Some(self.fetch(version).await?);
         }
+        let document = cache.document.as_ref().ok_or(PrincipalError::Keys)?;
         let key = document
             .keys
             .iter()
@@ -450,11 +463,7 @@ impl EntraJwtVerifier {
         ))
     }
 
-    async fn fetch(
-        &self,
-        version: usize,
-        refreshed: Option<Instant>,
-    ) -> Result<Document, PrincipalError> {
+    async fn fetch(&self, version: usize) -> Result<Document, PrincipalError> {
         let suffix = if version == 0 {
             "discovery/keys"
         } else {
@@ -483,10 +492,21 @@ impl EntraJwtVerifier {
         }
         Ok(Document {
             keys: document.keys,
-            fetched: Instant::now(),
-            refreshed,
+            expires: Instant::now()
+                .checked_add(CACHE_TTL)
+                .ok_or(PrincipalError::Keys)?,
         })
     }
+}
+
+#[cfg(test)]
+#[path = "principal_tests.rs"]
+mod tests;
+
+fn retry_after() -> Result<Instant, PrincipalError> {
+    Instant::now()
+        .checked_add(REFRESH_INTERVAL)
+        .ok_or(PrincipalError::Keys)
 }
 
 fn decode_json<T: serde::de::DeserializeOwned>(part: &str) -> Result<T, PrincipalError> {
