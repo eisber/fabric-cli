@@ -209,6 +209,10 @@ start/end messages include elapsed time and exit status. Every native shard
 has a 15-minute job ceiling. Its executor budget accounts for elapsed setup and
 reserves time for cleanup and evidence retention. The timeouts are safeguards,
 not a promise that an arbitrary full plan finishes in 15 minutes.
+The full all-feature CLI preflight first compiles its exact test targets with
+`--no-run` under the compilation budget, then executes the unchanged targets
+under the test budget. Cold Windows compilation exceeded five minutes in the
+first hosted measurement; it must not consume the runtime-test allowance.
 
 ### Slow-run investigation
 

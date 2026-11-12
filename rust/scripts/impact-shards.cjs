@@ -193,7 +193,11 @@ function shardsForPlan(plan, platform, coreCommands) {
       args: ['clippy', '--offline', '--locked', '--workspace', '--all-targets',
         '--all-features', '--', '-D', 'warnings']}], [], 'all-features',
     INITIAL_WEIGHTS.preflight);
-    add('preflight-cli', [{id: 'preflight:cli-all-features', program: 'cargo', test: true,
+    add('preflight-cli', [{
+      id: 'preflight:cli-build-all-features', program: 'cargo',
+      args: ['test', '--offline', '--locked', '-p', 'fabric-cli', '--all-targets',
+        '--all-features', '--no-fail-fast', '--no-run'],
+    }, {id: 'preflight:cli-all-features', program: 'cargo', test: true,
       args: ['test', '--offline', '--locked', '-p', 'fabric-cli', '--all-targets',
         '--all-features', '--no-fail-fast']}], [], 'all-features',
     INITIAL_WEIGHTS.preflight);

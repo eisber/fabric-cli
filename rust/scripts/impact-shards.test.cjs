@@ -218,7 +218,14 @@ test('full mode adds every preflight exactly once per OS, never to affected shar
     const affected = shardsForPlan(fixture(), platform, coreCommands);
     const preflights = full.filter(shard => shard.id.startsWith('preflight-'));
     assert.equal(preflights.length, 2);
-    assert.ok(preflights.every(shard => shard.commands.length === 1 && shard.dotnet));
+    assert.ok(preflights.every(shard => shard.dotnet));
+    const cli = preflights.find(shard => shard.id === 'preflight-cli');
+    assert.equal(cli.commands.length, 2);
+    assert.ok(cli.commands[0].args.includes('--no-run'));
+    assert.equal(cli.commands[1].test, true);
+    assert.deepEqual(cli.commands[0].args.filter(arg => arg !== '--no-run'), cli.commands[1].args);
+    assert.ok(!cli.commands[1].args.includes('--no-run'));
+    assert.equal(preflights.find(shard => shard.id === 'preflight-clippy').commands.length, 1);
     assert.ok(preflights.every(shard => shard.commands[0].args.includes('--all-features')));
     assert.ok(!affected.some(shard => shard.commands.some(command =>
       command.args.includes('--all-features'))));
