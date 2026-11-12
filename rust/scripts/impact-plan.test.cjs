@@ -919,6 +919,26 @@ test('native runtime feature tests have explicit CI profiles and cannot pass as 
   }
 });
 
+test('runtime read submodule tests retain explicit native-host feature coverage', () => {
+  const root = path.resolve(__dirname, '..', '..');
+  const graph = JSON.parse(fs.readFileSync(path.join(root, 'rust/validation/impact-graph.json'), 'utf8'));
+  const component = graph.components.find(item => item.id === 'cli-runtime-v2');
+  for (const input of [
+    'rust/clients/cli/app/tests/runtime_v2.rs',
+    'rust/clients/cli/app/tests/runtime_v2/**',
+    'rust/clients/cli/app/tests/livy_session_get_entry.rs',
+    'rust/authoring-docs/runtime-v2-reads.md',
+  ]) assert.ok(component.inputs.includes(input), `Missing runtime read input ${input}`);
+  assert.ok(component.tests.some(item => item.target === 'test:runtime_native_host'));
+  assert.ok(component.tests.some(item => item.target === 'test:livy_session_get_entry'));
+  const profile = graph.profiles.find(item => item.id === 'runtime-v2-native-host');
+  assert.ok(profile.packages.includes('fabric-cli'));
+  assert.ok(profile.features.includes('fabric-cli/runtime-v2'));
+  assert.ok(profile.features.includes('fabric-cli/native-host'));
+  assert.ok(profile.features.includes('fabric-cli/headless'));
+  assert.deepEqual(profile.platforms, ['windows', 'linux', 'macos']);
+});
+
 function relocatedCatalogFixture(files) {
   const locations = [
     ['sdk-capacities', 'rust/engine/control-plane/resources/capacities'],

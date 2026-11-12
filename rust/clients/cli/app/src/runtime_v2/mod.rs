@@ -10,12 +10,16 @@
 #![deny(missing_docs)]
 
 mod contract;
+#[cfg(feature = "native-host")]
+pub mod host;
 mod parser;
 mod path;
 
 pub use contract::*;
 pub use parser::{OPERATIONS, OperationRegistration, command_schema, parse_args};
 pub use path::{OwnerKind, OwnerPath, ReadFacet, TypedPath};
+
+pub mod livy_session_get;
 
 use fabric_sdk::{
     livy::{
@@ -328,6 +332,11 @@ impl PreparedRead {
             }
             Self::LivySession(request, id) => {
                 let response = execute_livy(&request, executor).await?;
+                if !matches!(response.status(), 200 | 202) {
+                    let mut error = ReadError::new(ReadErrorKind::InvalidResponse);
+                    error.http_status = Some(response.status());
+                    return Err(error);
+                }
                 let mut observed = Observed::new(
                     Value::Null,
                     Representation::LivySession,

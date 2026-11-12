@@ -6,6 +6,9 @@
 #![cfg(feature = "runtime-v2")]
 #![deny(unnameable_test_items)]
 
+#[path = "runtime_v2/livy_session_get.rs"]
+mod exact_livy_session_get;
+
 use azure_core::http::Url;
 use fabric_cli::runtime_v2::{
     OPERATIONS, OutputSink, OwnerKind, ParsedInvocation, ReadCoverage, ReadEffect, ReadError,
