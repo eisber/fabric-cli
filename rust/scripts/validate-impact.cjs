@@ -231,7 +231,8 @@ function deduplicateCoreCommands(commands, context) {
 
 function commandClass(command) {
   if (command.program === 'cargo' &&
-    ['build', 'check', 'clippy', 'run', 'rustc'].includes(command.args[0])) return 'compilation';
+    (['build', 'check', 'clippy', 'run', 'rustc'].includes(command.args[0]) ||
+      (command.args[0] === 'test' && command.args.includes('--no-run')))) return 'compilation';
   if (command.test || (command.program === 'cargo' && command.args[0] === 'test') ||
     command.args.includes('--test') || command.args.includes('unittest')) return 'test';
   return 'tool';

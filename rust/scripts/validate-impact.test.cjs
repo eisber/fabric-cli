@@ -115,7 +115,7 @@ test('build receipts retain only explicit Cargo resource settings, not unrelated
     CARGO_PROFILE_DEV_DEBUG: '0', CARGO_PROFILE_TEST_DEBUG: '0', CARGO_INCREMENTAL: '0',
   });
   assert.deepEqual(buildEnvironment({}), {});
-  const workflow = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
+  const workflow = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'rust-native-shard.yml'), 'utf8');
   for (const setting of ['CARGO_PROFILE_DEV_DEBUG', 'CARGO_PROFILE_TEST_DEBUG', 'CARGO_INCREMENTAL']) {
     assert.ok(workflow.includes(`${setting}: "0"`));
   }
@@ -765,7 +765,9 @@ test('extended plan budgets retain per-command and contract deadlines in actual 
 });
 
 test('workflow always tests the planner, covers merge groups and periodic full runs, and has a stable fail-closed gate', () => {
-  const workflow = fs.readFileSync(path.resolve(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
+  const parent = fs.readFileSync(path.resolve(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
+  const native = fs.readFileSync(path.resolve(__dirname, '..', '..', '.github', 'workflows', 'rust-native-shard.yml'), 'utf8');
+  const workflow = `${parent}\n${native}`;
   assert.match(workflow, /merge_group:/);
   assert.match(workflow, /schedule:/);
   assert.match(workflow, /node --test rust\/scripts\/impact-plan\.test\.cjs/);
@@ -774,17 +776,19 @@ test('workflow always tests the planner, covers merge groups and periodic full r
   assert.match(workflow, /node rust\/scripts\/impact-ci\.cjs select/);
   assert.match(workflow, /node rust\/scripts\/impact-ci\.cjs native/);
   assert.match(workflow, /node rust\/scripts\/validate-impact\.cjs/);
-  assert.match(workflow, /name: Rust validation/);
-  assert.match(workflow, /if: always\(\)/);
-  assert.match(workflow, /needs: \[changes, native\]/);
-  assert.match(workflow, /node rust\/scripts\/impact-ci\.cjs aggregate/);
-  assert.match(workflow, /NATIVE_RESULT: \$\{\{ needs\.native\.result \}\}/);
-  assert.match(workflow, /RUN_NATIVE: \$\{\{ needs\.changes\.outputs\.run_native \}\}/);
+  const gate = parent.slice(parent.indexOf('\n  validation:'));
+  assert.match(gate, /name: Rust validation/);
+  assert.match(gate, /if: always\(\)/);
+  assert.match(gate, /needs: \[changes, native\]/);
+  assert.match(gate, /node rust\/scripts\/impact-ci\.cjs aggregate/);
+  assert.match(gate, /NATIVE_RESULT: \$\{\{ needs\.native\.result \}\}/);
+  assert.match(gate, /RUN_NATIVE: \$\{\{ needs\.changes\.outputs\.run_native \}\}/);
   assert.equal((workflow.match(/fetch-depth: 0/g) || []).length, 3,
     'Selection, native and aggregate checkout retain verified Git history');
   assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 3);
   assert.match(workflow, /--restore-oracle-deps --execute/);
-  assert.match(workflow, /max-parallel: 12/);
+  assert.match(parent, /max-parallel: 3/);
+  assert.match(native, /max-parallel: 4/);
   assert.match(workflow, /timeout-minutes: 15/);
   assert.match(workflow, /--shard "\$\{\{ matrix\.shard \}\}"/);
   assert.match(workflow, /--budget-seconds "\$\{\{ steps\.setup\.outputs\.budget_seconds \}\}"/);
@@ -794,7 +798,7 @@ test('workflow always tests the planner, covers merge groups and periodic full r
 });
 
 test('native CI restores compatible build outputs before Cargo and bounds each validator command', () => {
-  const workflow = fs.readFileSync(path.resolve(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
+  const workflow = fs.readFileSync(path.resolve(__dirname, '..', '..', '.github', 'workflows', 'rust-native-shard.yml'), 'utf8');
   const cache = workflow.indexOf('name: Restore native Cargo dependencies and build outputs');
   assert.ok(cache > 0 && cache < workflow.indexOf('cargo fetch --locked'));
   const cacheStep = workflow.slice(cache, workflow.indexOf('      - name:', cache + 1));
@@ -844,7 +848,8 @@ test('the common v2 branch runs the existing combined-candidate gate without pri
   assert.match(workflow, /permissions:\n  contents: read/);
   assert.ok(!workflow.includes('pull_request_target:'));
   assert.ok(!workflow.includes('contents: write'));
-  assert.ok(workflow.includes('matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}'));
+  assert.ok(workflow.includes('matrix: ${{ fromJSON(needs.changes.outputs.native_pools) }}'));
+  assert.ok(workflow.includes('uses: ./.github/workflows/rust-native-shard.yml'));
   const {matrixForPlan} = require('./impact-shards.cjs');
   assert.deepEqual([...new Set(matrixForPlan(plan()).include.map(item => item.os))].sort(),
     ['macos-15', 'ubuntu-24.04', 'windows-2025']);

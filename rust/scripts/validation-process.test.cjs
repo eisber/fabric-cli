@@ -109,6 +109,7 @@ test('tools, tests and compilation have separate budgets under a configurable ce
     [{program: 'python', args: [], test: 'unittest'}, 'test', 300000],
     [{program: 'cargo', args: ['clippy']}, 'compilation', 600000],
     [{program: 'cargo', args: ['build']}, 'compilation', 600000],
+    [{program: 'cargo', args: ['test', '--all-targets', '--no-run']}, 'compilation', 600000],
   ];
   for (const [descriptor, expected, budget] of cases) {
     assert.equal(commandClass(descriptor), expected);

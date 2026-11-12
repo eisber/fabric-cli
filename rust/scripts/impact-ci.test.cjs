@@ -7,7 +7,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const {aggregate, requestFor, selectionDigest, equalSelection, readReceipts} = require('./impact-ci.cjs');
+const {aggregate, requestFor, selectionDigest, equalSelection, readReceipts,
+  nativePoolsForMatrix, verifyNativePool} = require('./impact-ci.cjs');
 const {matrixForPlan, selectShard} = require('./impact-shards.cjs');
 const evidence = require('./execution-evidence.cjs');
 const registry = require('./validation-checks.cjs');
@@ -122,6 +123,88 @@ test('dispatch defaults and unknown/missing bases conservatively select full val
   assert.equal(affected.full, false);
   assert.equal(affected.base, base);
   assert.equal(requestFor(head, {GITHUB_EVENT_NAME: 'pull_request', IMPACT_BASE: base}).full, false);
+});
+
+test('host admission pools partition every canonical matrix row without altering selection or order', () => {
+  const {plan} = fixture();
+  const digest = selectionDigest(plan);
+  for (const mode of ['affected', 'full']) {
+    const matrix = matrixForPlan({...plan, mode});
+    const before = structuredClone(matrix);
+    const pools = nativePoolsForMatrix(matrix);
+    assert.deepEqual(pools.include.map(pool => pool.platform), ['windows', 'linux', 'macos']);
+    for (const pool of pools.include) {
+      assert.deepEqual(pool.shards.include,
+        matrix.include.filter(entry => entry.platform === pool.platform));
+    }
+    assert.equal(pools.include.flatMap(pool => pool.shards.include).length, matrix.include.length);
+    assert.deepEqual(nativePoolsForMatrix(matrix), pools);
+    assert.deepEqual(matrix, before);
+  }
+  assert.equal(selectionDigest(plan), digest);
+  assert.deepEqual(nativePoolsForMatrix({include: []}), {include: []});
+});
+
+test('host admission rejects unknown, mixed-image, duplicated and missing native routes', () => {
+  const {plan} = fixture();
+  const matrix = matrixForPlan(plan);
+  for (const invalid of [null, {}, {include: null}, {include: Array(257).fill(matrix.include[0])}]) {
+    assert.throws(() => nativePoolsForMatrix(invalid), /Invalid native routing matrix/);
+  }
+  for (const patch of [
+    {platform: 'unsupported'}, {os: 'self-hosted'}, {shard: ''}, {shard: '../another'},
+    {platform: 'windows', os: 'ubuntu-24.04'},
+  ]) {
+    const invalid = structuredClone(matrix);
+    Object.assign(invalid.include[0], patch);
+    assert.throws(() => nativePoolsForMatrix(invalid), /invalid platform, image or shard/);
+  }
+  assert.throws(() => nativePoolsForMatrix({include: [...matrix.include, matrix.include[0]]}),
+    /Duplicate native routing entry/);
+  for (const platform of ['windows', 'linux', 'macos']) {
+    assert.throws(() => nativePoolsForMatrix({
+      include: matrix.include.filter(entry => entry.platform !== platform),
+    }), /retain every selected native platform/);
+  }
+});
+
+test('native execution verifies pool membership, pinned image and actual host', () => {
+  for (const [platform, os, host] of [
+    ['windows', 'windows-2025', 'win32'],
+    ['linux', 'ubuntu-24.04', 'linux'],
+    ['macos', 'macos-15', 'darwin'],
+  ]) {
+    assert.doesNotThrow(() => verifyNativePool(platform, {platform, os}, host));
+    assert.throws(() => verifyNativePool(platform, {platform, os: 'self-hosted'}, host),
+      /does not belong/);
+    assert.throws(() => verifyNativePool(platform, {platform: 'unsupported', os}, host),
+      /does not belong/);
+    assert.throws(() => verifyNativePool(platform, {platform, os}, 'unsupported'),
+      /does not match the execution host/);
+    assert.throws(() => verifyNativePool(platform, null, host), /does not belong/);
+  }
+  assert.throws(() => verifyNativePool('unsupported', {platform: 'linux', os: 'ubuntu-24.04'}),
+    /does not belong/);
+  const directory = path.resolve(__dirname, '..', 'target', `unused-pool-${crypto.randomUUID()}`);
+  const result = require('node:child_process').spawnSync(process.execPath, [
+    path.join(__dirname, 'impact-ci.cjs'), 'native', directory,
+  ], {encoding: 'utf8', env: {...process.env,
+    IMPACT_POOL_PLATFORM: 'linux', IMPACT_PLATFORM: 'windows', IMPACT_RUNNER_IMAGE: 'windows-2025'}});
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /does not belong to its platform admission pool/);
+  assert.equal(fs.existsSync(directory), false, 'Reject routing before planner/artifact work');
+});
+
+test('an absent native host pool cannot satisfy the unchanged aggregate gate', () => {
+  const {plan, receipts, options} = fixture();
+  for (const platform of ['windows', 'linux', 'macos']) {
+    assert.throws(() => aggregate(plan,
+      receipts.filter(receipt => receipt.platform !== platform), options), /Missing native receipts/);
+  }
+  for (const nativeResult of ['failure', 'cancelled', 'skipped']) {
+    assert.throws(() => aggregate(plan, receipts, {...options, nativeResult}),
+      /failed, were cancelled, or did not complete successfully/);
+  }
 });
 
 test('aggregate requires every selected native obligation exactly once', () => {
@@ -495,7 +578,9 @@ test('receipt collection accepts only bounded regular JSON artifacts', t => {
 });
 
 test('workflow preserves source-bound recomputation, bounded matrix, cache settings and exact final gate', () => {
-  const workflow = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/rust-ci.yml'), 'utf8');
+  const parent = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/rust-ci.yml'), 'utf8');
+  const native = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/rust-native-shard.yml'), 'utf8');
+  const workflow = `${parent}\n${native}`;
   assert.match(workflow, /options: \[full, affected\]/);
   assert.match(workflow, /default: full/);
   assert.ok(!workflow.includes('rust/scripts/validation-process.test.cjs'));
@@ -505,8 +590,27 @@ test('workflow preserves source-bound recomputation, bounded matrix, cache setti
   assert.ok(workflow.indexOf('Set up development-only Python oracle') <
     workflow.indexOf('Recompute and verify the same dependency selection on this host'));
   assert.match(workflow, /IMPACT_DISPATCH_BASE: \$\{\{ inputs\.base \}\}/);
-  assert.match(workflow, /matrix: \$\{\{ fromJSON\(needs\.changes\.outputs\.matrix\) \}\}/);
-  assert.match(workflow, /max-parallel: 12/);
+  assert.match(parent, /native_pools: \$\{\{ steps\.select\.outputs\.native_pools \}\}/);
+  assert.match(parent, /matrix: \$\{\{ fromJSON\(needs\.changes\.outputs\.native_pools\) \}\}/);
+  assert.match(parent, /uses: \.\/\.github\/workflows\/rust-native-shard\.yml/);
+  assert.match(parent, /platform: \$\{\{ matrix\.platform \}\}/);
+  assert.match(parent, /matrix: \$\{\{ toJSON\(matrix\.shards\) \}\}/);
+  assert.match(parent, /max-parallel: 3/);
+  assert.match(native, /matrix: \$\{\{ fromJSON\(inputs\.matrix\) \}\}/);
+  assert.match(native, /max-parallel: 4/);
+  assert.match(native, /IMPACT_POOL_PLATFORM: \$\{\{ inputs\.platform \}\}/);
+  assert.match(native, /IMPACT_RUNNER_IMAGE: \$\{\{ matrix\.os \}\}/);
+  for (const source of [parent, native]) {
+    assert.match(source, /fail-fast: false/);
+    assert.match(source, /permissions:\r?\n  contents: read/);
+    assert.ok(!source.includes('contents: write'));
+    assert.ok(!/secrets:|secrets\.|pull_request_target:/.test(source));
+  }
+  assert.match(native, /on:\r?\n  workflow_call:\r?\n/);
+  assert.ok(!native.includes('workflow_dispatch:'));
+  const caller = parent.slice(parent.indexOf('\n  native:'), parent.indexOf('\n  validation:'));
+  assert.ok(!caller.includes('runs-on:'), 'Pool coordinators must not consume native runners');
+  assert.match(caller, /if: needs\.changes\.outputs\.run_native == 'true'/);
   assert.match(workflow, /timeout-minutes: 15/);
   assert.match(workflow, /rust-native-v4-.*runner\.os.*runner\.arch.*rust-toolchain\.toml.*Cargo\.lock/);
   assert.match(workflow, /jobs2-dev0-test0-incr0-\$\{\{ matrix\.cache_group \}\}/);
@@ -527,7 +631,7 @@ test('workflow preserves source-bound recomputation, bounded matrix, cache setti
 test('every plan producer pins Python 3.13 before tests or source-bound plan recomputation', () => {
   const workflow = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/rust-ci.yml'), 'utf8');
   const changes = workflow.slice(workflow.indexOf('\n  changes:'), workflow.indexOf('\n  native:'));
-  const native = workflow.slice(workflow.indexOf('\n  native:'), workflow.indexOf('\n  validation:'));
+  const native = fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/rust-native-shard.yml'), 'utf8');
   const validation = workflow.slice(workflow.indexOf('\n  validation:'));
   for (const [section, setup, command] of [
     [changes, 'Set up source-plan Python', 'node --test rust/scripts/impact-plan.test.cjs'],

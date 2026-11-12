@@ -45,7 +45,8 @@ const inside = (parent, child) => {
 };
 
 test('native preflights preserve exact engineering inventory and scheduled full obligations', () => {
-  const workflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/rust-ci.yml'), 'utf8');
+  const workflow = ['rust-ci.yml', 'rust-native-shard.yml'].map(name =>
+    fs.readFileSync(path.join(__dirname, '../../.github/workflows', name), 'utf8')).join('\n');
   const engineering = fs.readFileSync(path.join(__dirname, 'engineering_preflight.py'), 'utf8');
   const executor = fs.readFileSync(path.join(__dirname, 'validate-impact.cjs'), 'utf8');
   const {matrixForPlan, selectShard} = require('./impact-shards.cjs');
@@ -99,10 +100,15 @@ test('native shards have a 15-minute ceiling and bounded concurrency on every OS
   const workflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/rust-ci.yml'), 'utf8');
   const start = workflow.indexOf('\n  native:\n'), end = workflow.indexOf('\n  validation:\n');
   assert.ok(start >= 0 && end > start, 'Native job must precede the unchanged stable gate');
-  const native = workflow.slice(start, end);
+  const caller = workflow.slice(start, end);
+  const native = fs.readFileSync(path.join(__dirname, '../../.github/workflows/rust-native-shard.yml'), 'utf8');
+  assert.match(caller, /^      max-parallel: 3$/m);
+  assert.match(caller, /matrix: \$\{\{ fromJSON\(needs\.changes\.outputs\.native_pools\) \}\}/);
+  assert.match(caller, /uses: \.\/\.github\/workflows\/rust-native-shard\.yml/);
   assert.match(native, /^    timeout-minutes: 15$/m);
-  assert.match(native, /^      max-parallel: 12$/m);
-  assert.match(native, /matrix: \$\{\{ fromJSON\(needs\.changes\.outputs\.matrix\) \}\}/);
+  assert.match(native, /^      max-parallel: 4$/m);
+  assert.match(native, /matrix: \$\{\{ fromJSON\(inputs\.matrix\) \}\}/);
+  assert.match(native, /IMPACT_POOL_PLATFORM: \$\{\{ inputs\.platform \}\}/);
   assert.match(native, /--shard "\$\{\{ matrix\.shard \}\}"/);
   assert.match(native, /--budget-seconds "\$\{\{ steps\.setup\.outputs\.budget_seconds \}\}"/);
   assert.match(native, /Math\.min\(720,840-Math\.ceil\(elapsed\)\)/);
@@ -367,7 +373,8 @@ test('release assembly validation honors controller isolation without changing s
 });
 
 test('native CI front-loads exact engineering suites without replacing the full gate', () => {
-  const workflow = fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
+  const workflow = ['rust-ci.yml', 'rust-native-shard.yml'].map(name =>
+    fs.readFileSync(path.join(__dirname, '..', '..', '.github', 'workflows', name), 'utf8')).join('\n');
   const engineering = fs.readFileSync(path.join(__dirname, 'engineering_preflight.py'), 'utf8');
   const executor = fs.readFileSync(path.join(__dirname, 'validate-impact.cjs'), 'utf8');
   assert.ok(executor.indexOf('if (shard?.engineering)') <

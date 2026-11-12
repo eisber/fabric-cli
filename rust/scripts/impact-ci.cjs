@@ -68,6 +68,40 @@ function requireThat(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+/** Route the unchanged canonical matrix into independent native admission pools. */
+function nativePoolsForMatrix(matrix) {
+  const {PLATFORMS} = require('./impact-shards.cjs');
+  requireThat(matrix && Array.isArray(matrix.include) && matrix.include.length <= 256,
+    'Invalid native routing matrix');
+  const seen = new Set();
+  for (const entry of matrix.include) {
+    requireThat(entry && Object.hasOwn(PLATFORMS, entry.platform) &&
+      entry.os === PLATFORMS[entry.platform] &&
+      typeof entry.shard === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(entry.shard),
+    'Native routing matrix contains an invalid platform, image or shard');
+    const key = `${entry.platform}/${entry.shard}`;
+    requireThat(!seen.has(key), `Duplicate native routing entry: ${key}`);
+    seen.add(key);
+  }
+  const include = Object.keys(PLATFORMS).flatMap(platform => {
+    const entries = matrix.include.filter(entry => entry.platform === platform);
+    return entries.length ? [{platform, shards: {include: entries}}] : [];
+  });
+  requireThat(!include.length || include.length === Object.keys(PLATFORMS).length,
+    'Native routing must retain every selected native platform');
+  return {include};
+}
+
+/** Reject a misrouted row before source-plan recomputation or shard execution. */
+function verifyNativePool(platform, entry, hostPlatform = process.platform) {
+  const {PLATFORMS} = require('./impact-shards.cjs');
+  requireThat(Object.hasOwn(PLATFORMS, platform) && entry &&
+    entry.platform === platform && entry.os === PLATFORMS[platform],
+  'Native shard does not belong to its platform admission pool');
+  requireThat({win32: 'windows', linux: 'linux', darwin: 'macos'}[hostPlatform] === platform,
+    'Native admission pool does not match the execution host');
+}
+
 /** Require exactly the selected head/platform/shard/obligation receipts. */
 function aggregate(plan, receipts, options = {}) {
   const {matrixForPlan, selectShard} = require('./impact-shards.cjs');
@@ -150,6 +184,11 @@ function main(argv) {
       (mode === 'aggregate' && !path.isAbsolute(receiptsDirectory || ''))) {
     throw new Error('Usage: impact-ci.cjs select|native <absolute-artifact-directory> | aggregate <absolute-selection-directory> <absolute-receipts-directory>');
   }
+  if (mode === 'native' && process.env.IMPACT_POOL_PLATFORM !== undefined) {
+    verifyNativePool(process.env.IMPACT_POOL_PLATFORM, {
+      platform: process.env.IMPACT_PLATFORM, os: process.env.IMPACT_RUNNER_IMAGE,
+    });
+  }
   const root = path.resolve(__dirname, '..', '..');
   const head = execFileSync('git', ['rev-parse', 'HEAD'], {cwd: root, encoding: 'utf8'}).trim();
   const requestFile = path.join(directory, 'request.json');
@@ -209,11 +248,14 @@ function main(argv) {
   } else {
     fs.writeFileSync(requestFile, `${JSON.stringify(request, null, 2)}\n`);
     const matrix = matrixForPlan(plan);
+    const pools = nativePoolsForMatrix(matrix);
     const native = matrix.include.length > 0;
     fs.writeFileSync(path.join(directory, 'matrix.json'), `${JSON.stringify(matrix, null, 2)}\n`);
+    fs.writeFileSync(path.join(directory, 'native-pools.json'), `${JSON.stringify(pools, null, 2)}\n`);
     if (process.env.GITHUB_OUTPUT) {
       fs.appendFileSync(process.env.GITHUB_OUTPUT,
-        `run_native=${native}\nmatrix=${JSON.stringify(matrix)}\n`);
+        `run_native=${native}\nmatrix=${JSON.stringify(matrix)}\n` +
+        `native_pools=${JSON.stringify(pools)}\n`);
     }
     if (process.env.GITHUB_STEP_SUMMARY) {
       fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
@@ -222,7 +264,8 @@ function main(argv) {
         `Mode: **${plan.mode}**\n\n` +
         `Dispatch/request: ${request.reason}\n\n` +
         `Selection digest: \`${selectionDigest(plan)}\`\n\n` +
-        `${matrix.include.length} selected native shards; at most 12 run concurrently; ` +
+        `${matrix.include.length} selected native shards; three independent native host pools ` +
+        `admit at most four jobs each (12 total), so a queued host cannot occupy another host's pool; ` +
         `each job is bounded to 15 minutes. Historical serial duration weights (mixed warm compiles) are scheduling priors, ` +
         `not a measured current baseline or a cold-run guarantee.\n\n` +
         `Windows default shards retain every per-package fmt check, with at most ` +
@@ -237,7 +280,8 @@ function main(argv) {
   }
 }
 
-module.exports = {selection, selectionDigest, equalSelection, requestFor, aggregate, readReceipts};
+module.exports = {selection, selectionDigest, equalSelection, requestFor, aggregate, readReceipts,
+  nativePoolsForMatrix, verifyNativePool};
 if (require.main === module) {
   try { main(process.argv.slice(2)); }
   catch (error) { console.error(error.message); process.exitCode = 1; }
