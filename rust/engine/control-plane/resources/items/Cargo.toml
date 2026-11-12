@@ -15,6 +15,7 @@ layer = "sdk"
 
 [dependencies]
 azure_core.workspace = true
+base64.workspace = true
 fabric-core.workspace = true
 fabric-sdk-workspaces.workspace = true
 fabric-sdk-operations.workspace = true

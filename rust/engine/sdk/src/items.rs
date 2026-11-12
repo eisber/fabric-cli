@@ -5,6 +5,7 @@
 
 use crate::Client;
 pub use fabric_sdk_items::delete;
+pub use fabric_sdk_items::lakehouse_create;
 pub use fabric_sdk_items::ml_models;
 pub use fabric_sdk_items::update;
 pub use fabric_sdk_items::{

@@ -63,6 +63,15 @@ No HTTP executor, runtime, credential discovery, or SDK-to-CLI dependency is
 introduced. See the [create v2 contract](../../../../authoring-docs/create-v2-contract.md) for
 input, conflict, evidence, and remaining integration boundaries.
 
+The `lakehouse_create` module adds a native metadata-only Lakehouse schema and
+immutable POST request over the existing operation engine. It supports the
+provider's name-conflict creation behavior and exact-existing skip, not complete
+overwrite or repeated-name duplication. Raw input and native response evidence
+remain separate from approval and receipt delivery. See the
+[Lakehouse create boundary](../../../../authoring-docs/lakehouse-create-native.md)
+for the bounded public-definition schema, service-owned SQL endpoint effect,
+source revisions and executable-integration limits.
+
 ## MLModel native parameter and serving contracts
 
 The additive `ml_models` module describes MLModel item and endpoint operations
