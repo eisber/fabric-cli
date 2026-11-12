@@ -66,6 +66,7 @@ struct Wire {
     replies: Mutex<VecDeque<(StatusCode, Headers, Vec<u8>)>>,
     requests: Mutex<Vec<RequestEvidence>>,
     cancellation_waker: Mutex<Option<Waker>>,
+    fail_at: Option<usize>,
 }
 
 #[async_trait]
@@ -78,6 +79,12 @@ impl HttpClient for Wire {
         });
         if let Some(waker) = self.cancellation_waker.lock().unwrap().take() {
             waker.wake();
+        }
+        if self.fail_at == Some(self.requests.lock().unwrap().len()) {
+            return Err(azure_core::Error::with_message(
+                azure_core::error::ErrorKind::Other,
+                "Synthetic lost DataAgent mutation response",
+            ));
         }
         let (status, headers, body) = self
             .replies
@@ -166,17 +173,19 @@ async fn run(
     replies: Vec<(StatusCode, Headers, Vec<u8>)>,
     approved: Option<bool>,
 ) -> (host::Dispatch, Arc<Wire>, Arc<Credential>, usize) {
-    run_cancelled(prepared, replies, approved, None).await
+    run_scenario(prepared, replies, approved, None, None).await
 }
 
-async fn run_cancelled(
+async fn run_scenario(
     prepared: PreparedLink,
     replies: Vec<(StatusCode, Headers, Vec<u8>)>,
     approved: Option<bool>,
     cancel_after: Option<usize>,
+    fail_at: Option<usize>,
 ) -> (host::Dispatch, Arc<Wire>, Arc<Credential>, usize) {
     let wire = Arc::new(Wire {
         replies: Mutex::new(replies.into()),
+        fail_at,
         ..Wire::default()
     });
     let credential = Arc::new(Credential::default());
@@ -255,11 +264,12 @@ async fn cross_workspace_source_keeps_its_own_reference_and_metadata_route() {
 #[tokio::test]
 async fn cancellation_before_each_read_or_post_prevents_mutation() {
     for cancel_after in 0..3 {
-        let (dispatch, wire, _, _) = run_cancelled(
+        let (dispatch, wire, _, _) = run_scenario(
             prepared("LakehouseTables", false).await,
             vec![metadata(AGENT, "DataAgent"), metadata(SOURCE, "Lakehouse")],
             Some(true),
             Some(cancel_after),
+            None,
         )
         .await;
         assert_eq!(dispatch.exit_code(), 1);
@@ -447,28 +457,58 @@ async fn acceptance_waiting_malformed_completion_and_unknown_retain_real_evidenc
             1
         );
     }
-    for (status, body, expected) in [
-        (StatusCode::Created, json!({"noIdentity":true}), "partial"),
-        (StatusCode::Accepted, Value::Null, "unknown"),
-    ] {
-        let (dispatch, wire, _, _) = run(
-            prepared("LakehouseTables", false).await,
-            vec![
-                metadata(AGENT, "DataAgent"),
-                metadata(SOURCE, "Lakehouse"),
-                response(status, body),
-            ],
-            Some(true),
-        )
-        .await;
-        assert_eq!(dispatch.exit_code(), 1);
-        assert_eq!(dispatch.value["status"], expected);
-        assert_eq!(dispatch.value["mutationMayHaveOccurred"], true);
-        assert_eq!(wire.requests.lock().unwrap().len(), 3);
-        if expected == "partial" {
-            assert!(dispatch.result.unwrap_err().observed.is_some());
-        }
-    }
+    let (dispatch, wire, _, _) = run(
+        prepared("LakehouseTables", false).await,
+        vec![
+            metadata(AGENT, "DataAgent"),
+            metadata(SOURCE, "Lakehouse"),
+            response(StatusCode::Created, json!({"noIdentity":true})),
+        ],
+        Some(true),
+    )
+    .await;
+    assert_eq!(dispatch.exit_code(), 1);
+    assert_eq!(dispatch.value["status"], "partial");
+    assert_eq!(dispatch.value["mutationMayHaveOccurred"], true);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
+    assert!(dispatch.result.unwrap_err().observed.is_some());
+
+    let (dispatch, wire, _, _) = run_scenario(
+        prepared("LakehouseTables", false).await,
+        vec![
+            metadata(AGENT, "DataAgent"),
+            metadata(SOURCE, "Lakehouse"),
+            response(StatusCode::Created, json!({"id":DS})),
+        ],
+        Some(true),
+        None,
+        Some(3),
+    )
+    .await;
+    assert_eq!(dispatch.exit_code(), 1);
+    assert_eq!(dispatch.value["status"], "unknown");
+    assert_eq!(dispatch.value["error"]["code"], "ExecutionFailed");
+    assert_eq!(dispatch.value["mutationMayHaveOccurred"], true);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
+    assert_eq!(wire.replies.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn bare_acceptance_is_not_promoted_to_completion_or_replayed() {
+    let (dispatch, wire, _, _) = run(
+        prepared("LakehouseTables", false).await,
+        vec![
+            metadata(AGENT, "DataAgent"),
+            metadata(SOURCE, "Lakehouse"),
+            response(StatusCode::Accepted, Value::Null),
+        ],
+        Some(true),
+    )
+    .await;
+    assert_eq!(dispatch.exit_code(), 0);
+    assert_eq!(dispatch.value["status"], "accepted");
+    assert_eq!(dispatch.value["operationId"], Value::Null);
+    assert_eq!(wire.requests.lock().unwrap().len(), 3);
 }
 
 #[tokio::test]
