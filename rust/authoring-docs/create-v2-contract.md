@@ -55,6 +55,11 @@ Resource paths retain type suffixes, such as
 which resource types or collections implement each policy. The resolved schema
 and capability must support the requested destination form and operation.
 
+Bounded generic item discovery explicitly selects direct workspace items with
+`recursive=false`. A nested same-name item cannot be skipped as the root target;
+malformed folder identity or a nested-only match rejects before mutation.
+Completed create responses also reject a non-root returned folder identity.
+
 Preserve raw input bytes before any declared format conversion. Do not silently
 normalize line endings, change encoding, or reserialize structured content.
 An explicitly advertised, deterministic format conversion can transform bytes
@@ -139,6 +144,13 @@ contract. It does not establish a general-purpose JSON Schema validation
 capability or automatic validation of every JSON body. Valid JSON syntax alone
 is not evidence that a body satisfies the resource contract.
 
+Approval inspects the exact already-prepared method, bound URL and outgoing
+bytes, including the generated body for omitted input. Terminal controls are
+escaped without reserializing the body that will be transmitted. Additional
+typed-provider effects use bounded anticipated-effect descriptors with contract
+references; they are not observed outcomes or permission for another mutation.
+Skip has no outgoing request or creation-effect declaration.
+
 The CLI library contract composes those inputs without establishing an
 executable mount. A root parser registration, service-host adapter, and
 resource-specific backend evidence are separate integration requirements.
@@ -168,6 +180,11 @@ An accepted operation ID is not a created-resource ID or completion evidence.
 Partial, unknown, cancelled, and timed-out results must retain available
 operation and effect evidence. Cancellation or timeout stops local work; it does
 not prove that remote work stopped.
+
+Initial submission status and resource evidence remain separate from later
+poll HTTP/operation status, including failed/cancelled polling and malformed
+final results. Available accepted identities survive in protected submission
+metadata without converting an unknown or failed outcome to completed success.
 
 Do not automatically replay a mutation or claim rollback after cancellation,
 timeout, an unknown response, or a later failure. Failure to project or write a
@@ -202,7 +219,7 @@ continues to document its existing handlers separately.
 | Current executable | V1 `fab-rs`; `create` remains the `mkdir` alias, not this v2 contract. |
 | SDK and pure policy | Source implementation available for `fabric-sdk-items::create`; compilation and tests unverified. |
 | CLI library and parsing | Source implementation available for `fabric-cli-mutations::v2_create` and parsing; compilation and tests unverified. |
-| Executable integration | V2 create root and service-host mounts remain absent. |
+| Executable integration | No default v2 mount; the opt-in [Warehouse binding](warehouse-create-v2.md) supplies a bounded native create route through the shared host. |
 | Resource backend | No backend proof establishes that a resource implements all requested policies. |
 | Live and platform acceptance | No live service or platform acceptance evidence is supplied here; no performance claim is made. |
 

@@ -1,0 +1,6 @@
+kind: added
+body: Add opt-in native v2 Warehouse creation with finite documented collation input, shared create policy and approval, bounded operation observation, and no-clobber receipts. Default v1 behavior is unchanged.
+time: 2026-11-12T14:22:04+01:00
+custom:
+    Author: Copilot
+    AuthorLink: https://github.com/Copilot
