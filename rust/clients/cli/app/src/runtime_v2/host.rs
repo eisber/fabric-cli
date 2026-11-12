@@ -8,7 +8,7 @@
 
 use super::{
     OutputSink, OwnerPath, ParsedInvocation, ReadError, ReadErrorKind, ReadOptions, ReadReceipt,
-    ResolvedTarget, RuntimeHead, RuntimeResolver, TypedPath,
+    ReadStatus, ResolvedTarget, RuntimeHead, RuntimeResolver, TypedPath,
 };
 use fabric_cli_output::OutputStream;
 use fabric_sdk::runtime::{NativeError, NativeExecutor};
@@ -60,18 +60,22 @@ impl RuntimeResolver for ExplicitResolver {
 }
 
 /// Sanitized host failure, independent of provider/source payloads.
-#[derive(Debug)]
 pub struct HostError {
     /// Read/validation/interruption category.
     pub kind: ReadErrorKind,
     /// Real HTTP status, when a completed read supplied one.
     pub http_status: Option<u16>,
-    /// Whether a completed remote observation exists, not proof of delivery.
+    /// Whether a completed representation was observed, never merely HTTP 202.
     pub read_completed: bool,
     /// Whether this host created a destination file.
     pub file_created: bool,
     /// Bytes accepted by the destination before local failure/interruption.
     pub bytes_written: usize,
+    /// Full completed observation retained for caller-owned reconciliation only.
+    ///
+    /// This can contain sensitive source/outputs. Diagnostics never serialize it.
+    /// Retention is not proof of delivery and never authorizes replay.
+    pub receipt: Option<Box<ReadReceipt>>,
 }
 
 impl From<ReadError> for HostError {
@@ -79,10 +83,27 @@ impl From<ReadError> for HostError {
         Self {
             kind: error.kind,
             http_status: error.http_status,
-            read_completed: error.receipt.is_some(),
+            read_completed: error
+                .receipt
+                .as_ref()
+                .is_some_and(|receipt| receipt.status == ReadStatus::ReadComplete),
             file_created: false,
             bytes_written: 0,
+            receipt: error.receipt,
         }
+    }
+}
+
+impl std::fmt::Debug for HostError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HostError")
+            .field("kind", &self.kind)
+            .field("http_status", &self.http_status)
+            .field("read_completed", &self.read_completed)
+            .field("file_created", &self.file_created)
+            .field("bytes_written", &self.bytes_written)
+            .field("receipt_retained", &self.receipt.is_some())
+            .finish()
     }
 }
 
@@ -109,6 +130,60 @@ pub struct Destination {
 enum Target {
     Stdout(std::fs::File),
     File(PathBuf),
+}
+
+/// Bounded local setup failure, preserving the caller's typed configuration error.
+pub enum SetupError<E> {
+    /// Local deadline, cancellation or worker failure.
+    Host(HostError),
+    /// The caller's original error, never formatted automatically.
+    Work(E),
+}
+
+impl<E> std::fmt::Debug for SetupError<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Host(error) => f.debug_tuple("SetupError::Host").field(error).finish(),
+            Self::Work(_) => f.write_str("SetupError::Work(<redacted>)"),
+        }
+    }
+}
+
+/// Run local configuration/SDK construction on an owned, interruptible worker.
+///
+/// Supply the same original deadline and pinned cancellation future used by
+/// acquisition and output. Queued work is aborted on interruption; genuinely
+/// in-flight local OS calls can finish later and their result is discarded.
+/// The callback must only construct the existing selection/session: no token
+/// acquisition, HTTP, discovery or other remote effects belong on this worker.
+///
+/// # Errors
+/// Preserves typed caller errors separately from deadline/cancellation/worker
+/// failures. A late successful callback never becomes successful setup.
+pub async fn setup<T, E>(
+    deadline: Instant,
+    cancelled: impl Future<Output = ()>,
+    work: impl FnOnce() -> Result<T, E> + Send + 'static,
+) -> Result<T, SetupError<E>>
+where
+    T: Send + 'static,
+    E: Send + 'static,
+{
+    let result =
+        owned_output::write_owned(io::sink(), deadline, cancelled, move |_| Ok(work())).await;
+    if Instant::now() >= deadline {
+        return Err(SetupError::Host(HostError::new(ReadErrorKind::Timeout)));
+    }
+    match result {
+        owned_output::OwnedWrite::Complete(Ok(result)) => result.map_err(SetupError::Work),
+        owned_output::OwnedWrite::Deadline => {
+            Err(SetupError::Host(HostError::new(ReadErrorKind::Timeout)))
+        }
+        owned_output::OwnedWrite::Cancelled(()) => {
+            Err(SetupError::Host(HostError::new(ReadErrorKind::Cancelled)))
+        }
+        _ => Err(SetupError::Host(HostError::new(ReadErrorKind::Execution))),
+    }
 }
 
 impl Destination {
@@ -155,13 +230,14 @@ pub async fn prepare_destination(
     deadline: Instant,
     cancelled: impl Future<Output = ()>,
 ) -> Result<Destination, HostError> {
-    before(deadline, cancelled, async {
-        tokio::task::spawn_blocking(move || Destination::check(&label, &cwd))
-            .await
-            .map_err(|_| HostError::new(ReadErrorKind::OutputUnavailable))?
-            .map_err(|_| HostError::new(ReadErrorKind::OutputUnavailable))
+    setup(deadline, cancelled, move || {
+        Destination::check(&label, &cwd)
     })
     .await
+    .map_err(|error| match error {
+        SetupError::Host(error) => error,
+        SetupError::Work(_) => HostError::new(ReadErrorKind::OutputUnavailable),
+    })
 }
 
 /// One complete observation with an owned, bounded JSON buffer, not yet delivered.
@@ -243,24 +319,35 @@ impl PendingRead {
         let written = Arc::new(AtomicUsize::new(0));
         let worker_created = Arc::clone(&created);
         let worker_written = Arc::clone(&written);
+        let stopped = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stopped);
         let bytes = self.bytes;
-        let result = owned_output::write_owned(io::sink(), deadline, cancelled, move |_| {
-            if Instant::now() >= deadline {
-                return Err(io::ErrorKind::TimedOut.into());
-            }
-            let mut writer = match destination.target {
-                Target::Stdout(file) => file,
-                Target::File(path) => {
-                    let file = std::fs::OpenOptions::new()
-                        .write(true)
-                        .create_new(true)
-                        .open(path)?;
-                    worker_created.store(true, Ordering::SeqCst);
-                    file
+        let result = owned_output::write_owned_stoppable(
+            io::sink(),
+            deadline,
+            cancelled,
+            stopped,
+            move |_| {
+                if Instant::now() >= deadline {
+                    return Err(io::ErrorKind::TimedOut.into());
                 }
-            };
-            write_counted(&mut writer, &bytes, deadline, &worker_written)
-        })
+                if worker_stop.load(Ordering::SeqCst) {
+                    return Err(io::ErrorKind::Interrupted.into());
+                }
+                let mut writer = match destination.target {
+                    Target::Stdout(file) => file,
+                    Target::File(path) => {
+                        let file = std::fs::OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(path)?;
+                        worker_created.store(true, Ordering::SeqCst);
+                        file
+                    }
+                };
+                write_counted(&mut writer, &bytes, deadline, &worker_written, &worker_stop)
+            },
+        )
         .await;
         let kind = match result {
             owned_output::OwnedWrite::Complete(Ok(())) if Instant::now() < deadline => {
@@ -279,9 +366,10 @@ impl PendingRead {
         Err(HostError {
             kind,
             http_status: Some(self.receipt.meta.http_status),
-            read_completed: true,
+            read_completed: self.receipt.status == ReadStatus::ReadComplete,
             file_created: created.load(Ordering::SeqCst),
             bytes_written: written.load(Ordering::SeqCst),
+            receipt: Some(Box::new(self.receipt)),
         })
     }
 }
@@ -291,8 +379,12 @@ fn write_counted(
     mut bytes: &[u8],
     deadline: Instant,
     written: &AtomicUsize,
+    stopped: &AtomicBool,
 ) -> io::Result<()> {
     while !bytes.is_empty() {
+        if stopped.load(Ordering::SeqCst) {
+            return Err(io::ErrorKind::Interrupted.into());
+        }
         if Instant::now() >= deadline {
             return Err(io::ErrorKind::TimedOut.into());
         }
@@ -306,7 +398,7 @@ fn write_counted(
             Err(error) => return Err(error),
         }
     }
-    if Instant::now() >= deadline {
+    if stopped.load(Ordering::SeqCst) || Instant::now() >= deadline {
         return Err(io::ErrorKind::TimedOut.into());
     }
     writer.flush()
@@ -367,11 +459,88 @@ pub async fn write_stream(
     bytes.push(b'\n');
     let file = owned_output::owned_stream(stream, true)?;
     match owned_output::write_owned(file, deadline, std::future::pending::<()>(), move |file| {
-        write_counted(file, &bytes, deadline, &AtomicUsize::new(0))
+        write_counted(
+            file,
+            &bytes,
+            deadline,
+            &AtomicUsize::new(0),
+            &AtomicBool::new(false),
+        )
     })
     .await
     {
-        owned_output::OwnedWrite::Complete(result) => result,
+        owned_output::OwnedWrite::Complete(result) if Instant::now() < deadline => result,
         _ => Err(io::ErrorKind::TimedOut.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{future::pending, sync::mpsc, time::Duration};
+
+    #[test]
+    fn partial_writer_retains_exact_observed_prefix_without_replay() {
+        struct ShortWriter(usize);
+        impl Write for ShortWriter {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                if self.0 != 0 {
+                    return Err(io::ErrorKind::BrokenPipe.into());
+                }
+                self.0 += 1;
+                Ok(bytes.len().min(2))
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                panic!("failed output must not be flushed or replayed");
+            }
+        }
+        let count = AtomicUsize::new(0);
+        assert!(
+            write_counted(
+                &mut ShortWriter(0),
+                b"receipt",
+                Instant::now() + Duration::from_secs(1),
+                &count,
+                &AtomicBool::new(false)
+            )
+            .is_err()
+        );
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn blocked_owned_writer_is_abandoned_with_no_synchronous_diagnostic_fallback() {
+        struct BlockingWriter(mpsc::Receiver<()>);
+        impl Write for BlockingWriter {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                self.0.recv().unwrap();
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        let (release, wait) = mpsc::channel();
+        let result = owned_output::write_owned(
+            BlockingWriter(wait),
+            Instant::now() + Duration::from_millis(20),
+            pending::<()>(),
+            |writer| writer.write_all(b"one bounded diagnostic"),
+        )
+        .await;
+        assert!(matches!(result, owned_output::OwnedWrite::Deadline));
+        release.send(()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn already_cancelled_output_does_not_start_a_worker() {
+        let result = owned_output::write_owned(
+            io::sink(),
+            Instant::now() + Duration::from_secs(1),
+            async {},
+            |_| -> io::Result<()> { panic!("no worker after latched cancellation") },
+        )
+        .await;
+        assert!(matches!(result, owned_output::OwnedWrite::Cancelled(())));
     }
 }
