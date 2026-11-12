@@ -3,6 +3,10 @@
 
 //! Actual Report parser -> shared host -> SDK -> scripted HTTP contracts.
 
+#[cfg(feature = "native-host")]
+#[path = "http.rs"]
+mod http;
+
 use super::*;
 use fabric_cli::{
     create_command::{
