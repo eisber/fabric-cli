@@ -8,11 +8,7 @@
 //! not resolve model references, authorize a mutation or install an execution host.
 
 use super::ReportDefinition;
-use crate::{
-    items::ItemCollection,
-    representations::DefinitionRead,
-    v2::WorkspaceIdentity,
-};
+use crate::{items::ItemCollection, representations::DefinitionRead, v2::WorkspaceIdentity};
 use fabric_sdk_items::create::{
     ConflictPolicy, CreateAction, CreateCapabilities, CreateError, CreateInputValidator,
     CreatePlan, CreateSupport, CreateTarget, DuplicateSupport, InputDisposition, SchemaRef,
