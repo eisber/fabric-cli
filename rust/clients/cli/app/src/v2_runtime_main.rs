@@ -22,11 +22,12 @@ Options: --format json  --output FILE|-  -o FILE  --max-bytes N
 The full persisted IPYNB includes saved outputs, not live execution results.
 The host ceiling is 4 MiB wire, 1 MiB data, 2 MiB complete receipt.
 No metadata/definition fallback, overwrite, discovery, retry or remote cancel.
-Production reads require a native PBI-audience credential with verified tenant
-and object identity, plus an explicitly bound Notebook MwcToken adapter.
-The existing headless provider rejects that PBI scope. Fabric /v1 cannot
-authorize Notebook MWC routes; its bearer is not an MwcToken.
-This build reports NotebookWorkloadBindingRequired before identity or HTTP.";
+Enable notebook-workload for native PBI/verified-principal/MwcToken execution.
+Select a non-secret absolute FAB_RUST_NOTEBOOK_BINDING JSON file with exact
+owner/catalog/cluster/workload/capacity/workspace/notebook/account/tenant.
+Keep existing FAB_RUST_AUTH_MODE and FAB_RUST_FABRIC_HOST selections.
+Returned bindings confirm selections only. No live call is made by help.
+Without that feature this build reports NotebookWorkloadBindingRequired.";
 
 /// Claim only this leaf or its own facade help, never all `artifact` invocations.
 pub(crate) fn claims(args: &[OsString]) -> bool {
@@ -102,7 +103,7 @@ pub(crate) fn run(args: Vec<OsString>) -> u8 {
                 "Reads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.\n\n",
                 "Experimental Notebook content: get /<workspace>.Workspace/<notebook>.Notebook/src/content\n",
                 "or artifact notebook get <same-path>. Run artifact notebook get --help.\n",
-                "Production Notebook reads require an approved workload authorization binding, not Fabric /v1."
+                "Native Notebook reads require notebook-workload and an explicit FAB_RUST_NOTEBOOK_BINDING."
             );
             return if write_stream(OutputStream::Stdout, help.as_bytes().to_vec(), deadline).await.is_ok() { 0 } else { 1 };
         }
@@ -128,11 +129,72 @@ pub(crate) fn run(args: Vec<OsString>) -> u8 {
             let _ = write_stream(OutputStream::Stderr, br#"{"error":{"code":"BudgetExceeded","message":"Selected data budget exceeds the native host ceiling."}}"#.to_vec(), deadline).await;
             return 2;
         }
-        let _ = write_stream(OutputStream::Stderr, br#"{"error":{"code":"NotebookWorkloadBindingRequired","message":"Native Notebook reads require a PBI-audience credential with verified tenant/object identity and an explicitly selected MwcToken workload adapter. The current headless provider rejects the required PBI scope; a Fabric /v1 bearer is not a substitute."},"remoteCancelled":false,"remoteReplayed":false}"#.to_vec(), deadline).await;
-        1
+        #[cfg(feature = "notebook-workload")]
+        {
+            execute(input, deadline).await
+        }
+        #[cfg(not(feature = "notebook-workload"))]
+        {
+            let _ = write_stream(OutputStream::Stderr, br#"{"error":{"code":"NotebookWorkloadBindingRequired","message":"Enable notebook-workload and select an explicit non-secret FAB_RUST_NOTEBOOK_BINDING file. A Fabric /v1 bearer is not a substitute for Notebook MwcToken authorization."},"remoteCancelled":false,"remoteReplayed":false}"#.to_vec(), deadline).await;
+            1
+        }
     });
     runtime.shutdown_timeout(Duration::from_millis(100));
     exit
+}
+
+#[cfg(feature = "notebook-workload")]
+async fn execute(input: fabric_cli::runtime_v2::ParsedInvocation, deadline: Instant) -> u8 {
+    use fabric_cli::runtime_v2::{ReadOptions, host::acquire};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let signal_failed = AtomicBool::new(false);
+    let signal = async {
+        if tokio::signal::ctrl_c().await.is_err() {
+            signal_failed.store(true, Ordering::SeqCst);
+        }
+    };
+    let mut signal = std::pin::pin!(signal);
+    let options = ReadOptions::default();
+    let work = async {
+        let (connection, destination) =
+            super::v2_notebook_connect::prepare(&input, options, deadline, signal.as_mut()).await?;
+        let pending = acquire(
+            &input,
+            &connection.executor,
+            &connection.resolver,
+            options,
+            &destination,
+            deadline,
+            signal.as_mut(),
+        )
+        .await
+        .map_err(super::v2_notebook_connect::host_failure)?;
+        pending
+            .deliver(destination, deadline, signal.as_mut())
+            .await
+            .map_err(super::v2_notebook_connect::host_failure)?;
+        Ok::<(), super::Failure>(())
+    }
+    .await;
+    match work {
+        Ok(()) => 0,
+        Err((code, message, evidence, exit)) => {
+            let (code, message) = if signal_failed.load(Ordering::SeqCst) {
+                (
+                    "SignalFailed",
+                    "The local cancellation handler could not start.".to_owned(),
+                )
+            } else {
+                (code, message)
+            };
+            let bytes = serde_json::to_vec(&serde_json::json!({
+                "error":{"code":code,"message":message},"evidence":evidence,
+            }))
+            .expect("bounded static diagnostic is serializable");
+            let _ = write_stream(OutputStream::Stderr, bytes, deadline).await;
+            exit
+        }
+    }
 }
 
 #[cfg(test)]

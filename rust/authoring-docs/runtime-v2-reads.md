@@ -276,14 +276,11 @@ Construct `NativeFabricExecutor` from that exact session context and HTTP
 executor; the SDK scope must use the same explicitly selected endpoint.
 This supports the existing approved Fabric-profile boundary, not MWC.
 
-The host **does not authorize Notebook MWC execution**. The production
 `NativeFabricExecutor` still accepts only its exact Fabric `/v1` binding.
-The current endpoint/audience primitives do not establish an approved Notebook
-workload origin/audience/identity binding. In particular, never substitute a
-Fabric token for a `pbidedicated.windows.net` endpoint or relax the adapter's
-guard. Enabling production Notebook reads requires an authoritative workload
-authorization contract and a separately reviewed, explicitly selected adapter.
-No configuration, token acquisition or endpoint discovery is installed here.
+The additional default-off `notebook-workload` feature instead composes the
+separate verified-principal/MwcToken foundation through one explicit
+[Notebook connector](runtime-notebook-host.md). It never substitutes a Fabric
+bearer for workload authorization or expands the Fabric adapter guard.
 
 The pinned FNTK authentication contract is now available: at the same
 `e250d5d32b04efcc5623a414a361727a93c271ce` source revision,
@@ -295,17 +292,12 @@ Actual workload reads use `Authorization: MwcToken ...`, not a Fabric bearer.
 Any returned binding must match an already selected context; this implementation
 does not adopt automatic endpoint/capacity discovery from that source.
 
-The remaining prerequisite is concrete native functionality, not unknown source:
-`fabric-core::Audience` has no PBI variant, and the headless provider's
-`TokenCredential::get_token` rejects the PBI scope before provider HTTP. Its
-managed-identity resource guard also excludes that resource. `RequestContext`
-and `CredentialSelection` explicitly do not verify token claims.
-The interactive provider's token-endpoint ID metadata is not a verified
-access-token-principal capability for this headless host. No supported native
-same-principal PBI acquisition/verification or MwcToken exchange/egress binding
-exists to compose here. Adding one requires an approved native identity/HTTP
-foundation with explicit selected origins, not an unconfigured injected
-"production" stub or widening the existing Fabric executor.
+The adopted [foundation](notebook-workload-foundation.md) supplies the distinct
+PBI provider opt-in, actual cryptographic verifier and bounded selected-context
+MwcToken exchange. Only Notebook connection construction chooses that opt-in;
+the existing headless constructor and ordinary Fabric paths remain unchanged.
+Caller metadata alone is still not verified identity. The real verifier checks
+both access tokens and their signed principal continuity.
 
 `runtime_native_host` tests the real parser, shared host and SDK. Notebook
 fidelity uses a scripted `NativeExecutor` and is **not** production MWC proof.
@@ -314,12 +306,17 @@ client into the actual `RequestContext` / `NativeFabricExecutor` / `HttpExecutor
 stack; negative Notebook tests verify that stack refuses before requesting a
 token or HTTP. This evidence must not be relabeled as native Notebook acceptance.
 
-The opt-in `fab-cli-v2` build (`headless,runtime-v2`) now recognizes precisely
-Notebook `get .../src/content` and its `artifact notebook get` equivalent.
-Until that production prerequisite is supplied, both return nonzero
-`NotebookWorkloadBindingRequired` before reading authentication configuration,
-constructing credentials or making HTTP requests. This is a truthful
-capability boundary, **not an implemented production Notebook read**.
+The opt-in `fab-cli-v2` build recognizes precisely Notebook `get .../src/content`
+and its `artifact notebook get` equivalent. With `notebook-workload`, both
+execute the actual adapter using an absolute `FAB_RUST_NOTEBOOK_BINDING`
+non-secret JSON file. Without that feature they still return nonzero
+`NotebookWorkloadBindingRequired` before identity or HTTP.
+The connector requires all origins, IDs, account and tenant explicitly selected
+and matched before authentication. Missing or invalid bindings fail locally;
+returned contexts only confirm selections. `runtime_notebook_native` adds
+parser-to-native-headless-credential-to-verifier/HTTP execution tests, not a
+replacement fake command engine. Actual current-head native qualification
+remains separate from source availability.
 Unsupported flags and excessive caller budgets remain argument errors.
 Other owners/facets and update facades retain their existing dispatch.
 The host does not mount the five session/statement sibling leaves.

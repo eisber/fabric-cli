@@ -1900,8 +1900,10 @@
       "inputs": [
         "rust/clients/cli/app/src/runtime_v2/**",
         "rust/clients/cli/app/src/v2_runtime_main.rs",
+        "rust/clients/cli/app/src/v2_notebook_connect.rs",
         "rust/clients/cli/app/tests/runtime_native_host.rs",
-        "rust/clients/cli/app/tests/runtime_native_entry.rs"
+        "rust/clients/cli/app/tests/runtime_native_entry.rs",
+        "rust/clients/cli/app/tests/runtime_notebook_native.rs"
       ],
       "depends_on": [
         "sdk",
@@ -1921,6 +1923,10 @@
         {
           "package": "fabric-cli",
           "target": "test:runtime_native_entry"
+        },
+        {
+          "package": "fabric-cli",
+          "target": "test:runtime_notebook_native"
         }
       ],
       "checks": [

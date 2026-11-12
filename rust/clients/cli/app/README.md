@@ -16,6 +16,12 @@ the [experimental v2 get surface](../../../authoring-docs/v2-get.md). The defaul
 remains `fab-rs`. Service credentials and providers are explicitly selected;
 the v2 head does not activate private FabricAIHub APIs.
 
+The additional default-off `notebook-workload` feature enables the
+[explicit native Notebook content connector](../../../authoring-docs/runtime-notebook-host.md)
+for typed `get .../src/content` and `artifact notebook get`. It requires an
+owner-selected non-secret binding and opts the existing identity into PBI/MWC
+only for that Notebook read; no discovery or default-host behavior change.
+
 ## Run the application
 
 From `rust/`:
