@@ -68,6 +68,12 @@ approval of the immutable target, body, selected account/tenant/endpoint, effect
 and output intent. Structured stdin cannot approve itself: confirmation uses the
 dedicated terminal, with an empty answer declining. Embedders inject
 `CreateApproval`; denial or an unavailable host submits nothing.
+Approval inspects the exact already-prepared method, bound URL and outgoing
+bytes, including the generated body for omitted input. Terminal controls are
+escaped without reserializing the body that will be transmitted. Additional
+typed-provider effects use bounded anticipated-effect descriptors with contract
+references; they are not observed outcomes or permission for another mutation.
+Skip has no outgoing request or creation-effect declaration.
 
 The original timeout includes preflight, discovery, approval, submission,
 waiting and local receipt delivery. If it expires before delivery, no new file
@@ -77,6 +83,10 @@ Polling failure, local cancellation/deadline, response limits, lost responses an
 receipt write/flush failures retain known handles and mutation uncertainty.
 This includes an operation UUID already received in 202 headers before a later
 body streaming failure or cancellation.
+Initial submission status and resource evidence remain separate from later
+poll HTTP/operation status, including failed/cancelled polling and malformed
+final results. Available accepted identities survive in protected submission
+metadata without converting an unknown or failed outcome to completed success.
 There is no automatic replay or rollback. The exact output file is never
 overwritten; projection applies only to `data`, retaining identity and operation
 metadata outside it. No live Fabric, identity or resource-creation acceptance
