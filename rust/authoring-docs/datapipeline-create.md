@@ -106,6 +106,7 @@ ce89c0726e188c131506d12bc7342692640b9425
 0454fb43f08c05f9f066ed5bcb686a8c426a0de1
 caf2f7f2789438cf3abe67242a13aeb048b1ce56
 0ec384823fd209f2084e30b4e9677fe7799b136a
+44576b07033b1c4796205b862c44074d4e5df165
 ```
 
 The later helper diffs repair exact prepared-operation approval, typed/root
@@ -117,6 +118,10 @@ blobs match the releases. Documentation conflicts were resolved by retaining
 this DataPipeline-only mount and the generic helper guidance, not importing
 producer Notebook-specific examples or ancestry. These source repairs require
 fresh native and exact-head review evidence; earlier results do not qualify them.
+The final strict-response repair reuses the bounded unique-key JSON decoder
+for successful response bodies as well as input/submission evidence. Malformed
+or duplicate-key responses cannot become accepted success or replace previously
+observed resource identity; raw bytes and prior acceptance remain retained.
 
 `tests/datapipeline_create.rs` covers the actual parser -> shared host -> SDK ->
 scripted `HttpExecutor` boundary, not a replacement backend.
