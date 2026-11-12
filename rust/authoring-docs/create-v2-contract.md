@@ -12,7 +12,14 @@ executable remains v1 `fab-rs`, where `create` is an alias for `mkdir`.
 The separate public library contracts are `fabric-sdk-items::create` and
 `fabric-cli-mutations::v2_create`. Source implementation is available for SDK
 policy and CLI parsing; compilation and tests remain unverified.
-The v2 create command is not mounted in the executable root or service host.
+The full generic v2 create contract is not mounted in the executable root or
+service host.
+
+The separate opt-in
+[empty SparkJobDefinition leaf](spark-job-definition-create.md) now mounts the
+bounded named-leaf subset in `fab-cli-v2` when built with
+`headless,v2-create-sparkjobdefinition`. It does not enable this full generic
+contract, other item types, overwrite, duplicate, or the default v1 host.
 
 ## Target grammar
 

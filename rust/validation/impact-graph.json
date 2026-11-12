@@ -615,6 +615,21 @@
       "checks": ["dependency-graph"]
     },
     {
+      "id": "cli-spark-job-definition-create",
+      "package": "fabric-cli",
+      "inputs": [
+        "rust/clients/cli/app/src/spark_job_definition_create.rs",
+        "rust/clients/cli/app/tests/spark_job_definition_create.rs",
+        "rust/authoring-docs/spark-job-definition-create.md"
+      ],
+      "depends_on": ["cli-create-host", "sdk-items", "operations", "http"],
+      "tests": [
+        {"package": "fabric-cli", "target": "test:spark_job_definition_create"},
+        {"package": "fabric-cli", "target": "bin:fab-cli-v2"}
+      ],
+      "checks": ["dependency-graph"]
+    },
+    {
       "id": "cli-graph-refresh",
       "package": "fabric-cli",
       "inputs": [
@@ -3015,6 +3030,20 @@
     }
   ],
   "profiles": [
+    {
+      "id": "v2-create-sparkjobdefinition",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-create-sparkjobdefinition"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
+    {
+      "id": "v2-create-sparkjobdefinition-headless",
+      "packages": ["fabric-cli"],
+      "features": ["fabric-cli/v2-create-sparkjobdefinition", "fabric-cli/headless"],
+      "platforms": ["windows", "linux", "macos"],
+      "checks": ["dependency-graph"]
+    },
     {
       "id": "v2-create",
       "packages": ["fabric-cli"],
