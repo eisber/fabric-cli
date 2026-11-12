@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 kind: added
-body: Add an experimental bounded Notebook Jupyter session collection leaf over the shared runtime read host; production workload authorization remains gated.
+body: Add opt-in bounded Notebook Jupyter session collection listing through the shared native verified-principal MWC connector, preserving complete arrays and strict whole-page budgets.
 time: 2026-11-12T08:52:00Z
 custom:
     Author: eisber

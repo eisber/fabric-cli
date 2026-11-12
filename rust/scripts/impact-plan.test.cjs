@@ -936,6 +936,26 @@ test('Notebook list host test requires both runtime engine and native host on ev
   assert.ok(section.includes('required-features = ["runtime-v2", "native-host"]'));
 });
 
+test('Notebook list native stack and executable tests retain their real opt-in feature profile', () => {
+  const root = path.resolve(__dirname, '..', '..');
+  const graph = JSON.parse(fs.readFileSync(path.join(root, 'rust/validation/impact-graph.json'), 'utf8'));
+  const profile = graph.profiles.find(item => item.id === 'runtime-notebook-list-native');
+  assert.ok(profile);
+  assert.deepEqual(profile.features, ['fabric-cli/notebook-workload']);
+  assert.deepEqual(profile.platforms, ['windows', 'linux', 'macos']);
+  const component = graph.components.find(item => item.id === 'cli-runtime-v2');
+  const manifest = fs.readFileSync(path.join(root, 'rust/clients/cli/app/Cargo.toml'), 'utf8');
+  for (const [name, feature] of [
+    ['native_runtime_notebook_list_wire', 'notebook-workload'],
+    ['native_runtime_notebook_list_process', 'headless'],
+    ['runtime_notebook_native', 'notebook-workload'],
+  ]) {
+    assert.ok(component.tests.some(item => item.target === `test:${name}`));
+    const section = manifest.split('[[test]]').find(item => item.includes(`name = "${name}"`));
+    assert.ok(section?.includes(`required-features = ["${feature}"]`));
+  }
+});
+
 function relocatedCatalogFixture(files) {
   const locations = [
     ['sdk-capacities', 'rust/engine/control-plane/resources/capacities'],

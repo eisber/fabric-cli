@@ -2,9 +2,11 @@
 
 # Native Notebook Jupyter session collection list
 
-The `runtime-v2` leaf `runtime_v2::native_runtime_notebook_list` constrains the
+The opt-in `fab-cli-v2` feature `notebook-workload` mounts Notebook session
+collection listing. Its `runtime_v2::native_runtime_notebook_list` leaf constrains the
 existing [runtime read head](runtime-v2-reads.md), parser and receipt engine.
 It does not introduce another command engine or a credential/output stack.
+Default/headless-only and v1 builds do not mount this route.
 The [native Notebook SDK](notebook-runtime-native.md) source remains FNTK
 `e250d5d32b04efcc5623a414a361727a93c271ce`. The integration baseline for this
 leaf is `ced983722015e440e989f07d1bf866821d27fe90`.
@@ -21,6 +23,10 @@ Both spellings normalize through `runtime_v2::parse_args` to
 operation, Notebook owner and session collection facet. `run` rejects foreign
 invocations before resolution, output preflight or native execution, then
 delegates to the same `RuntimeHead::run`.
+`v2_notebook_list_main` mounts that normalized operation before legacy routing,
+using the same registered parser to identify its positional owner. Only exact
+list collection paths and the two list-help spellings are claimed; options
+cannot turn an output destination into a selected owner.
 
 Get, Notebook content, exact sessions, artifact metadata, Lakehouse/Livy
 collections and statements are not claimed. Neither spelling selects public
@@ -97,14 +103,37 @@ remain in `HostError::receipt` after delivery failure, with sanitized diagnostic
 an already-ready cancellation does not admit a runtime output worker.
 These source identities do not qualify the combined consumer executable.
 
-**Remaining executable prerequisite:** the released helper explicitly does
-not authorize Notebook workload MWC HTTP. An authoritative explicit immutable
-Notebook workload origin/capacity/workspace/artifact/account/audience binding
-and reviewed authorized adapter are still needed from the shared host owner.
-The existing production `NativeFabricExecutor` only accepts its Fabric `/v1`
-binding; it must not be widened or supplied fallback tokens. Executable
-registration/help and successful Notebook HTTP/process acceptance must wait
-for that contract. A caller-injected script is not a production binding.
+**Deployment qualification:** the released helper explicitly does
+not qualify a live deployment. The real shared binding/connector is now adopted
+from exact foundation commits `0ad30ed47a78f38f49ba88b7364cd0dd97fc1ce5`,
+`be268b753e1e44bf96b52703e3d4ea56b2b188d4`,
+`dabb1fadfdccd87319eb0d965bdf5d8e5c1123bc`, and connector-only commit
+`7c243008ba0c3c2d3946497b9c2a56412dfede80`. No producer Notebook content
+mount or peer session leaf is imported.
+
+Build `fabric-cli` with `--features notebook-workload` and select the absolute
+non-secret `FAB_RUST_NOTEBOOK_BINDING` file described in the
+[shared binding schema](runtime-notebook-host.md#explicit-selection).
+It binds exact human owner, environment, catalog/cluster/workload origins,
+capacity/workspace/Notebook GUIDs and the selected native account/tenant.
+Use the existing explicit `FAB_RUST_AUTH_MODE` provider configuration.
+Missing or mismatched binding/identity fails before credential acquisition.
+No endpoint/account discovery, alternate credential stack, static-token input,
+Python or Azure CLI dependency is added.
+
+`v2_notebook_connect::prepare` performs bounded local binding/target/output
+preflight and constructs the existing native session with PBI opt-in only for
+this command. The real `NativeNotebookExecutor` verifies signed principal
+consistency, confirms the explicit catalog/cluster/workload/capacity selection,
+then supplies `MwcToken` authorization to the exact SDK Jupyter route.
+The existing production `NativeFabricExecutor` and Fabric `/v1` guards remain
+unchanged. Returned service fields never replace the explicit binding.
+
+One original 30-second monotonic expiry and one pinned Ctrl+C future cover
+preflight, identity setup, token/JWKS work, bootstrap, workload streaming,
+serialization and delivery. A signal-listener failure is local cancellation,
+not permission to continue without interruption handling. Shutdown is bounded;
+diagnostics use the shared owned stderr policy without blocking fallback.
 Default/v1 behavior remains unchanged; native composition is explicitly opt-in.
 
 `tests/native_runtime_notebook_list.rs` exercises the real shared parser,
@@ -127,12 +156,33 @@ Leaf regressions also assert retained collection receipts on no-clobber failure
 and already-cancelled delivery without file creation, provider-data diagnostics
 or HTTP replay.
 
-The impact graph includes both test targets and an additive
+`tests/native_runtime_notebook_list_wire.rs` drives the real parser, leaf, shared
+host, SDK, native headless credential, RS256 verifier, MWC exchange and scripted
+HTTP. It asserts exact scopes and six-request bootstrap/read sequence, the
+bodyless GET without paging query, `MwcToken` rather than Fabric bearer,
+canonical/facade equality, failed/unknown state fidelity, zero/singleton arrays,
+malformed/202/206/403/partial/continued responses, exact record/data budgets,
+stream caps, deadline/cancellation and binding/identity zero-send rejection.
+Child-process fixtures also run that full real stack into unread stdout/stderr
+pipes, asserting bounded nonzero shutdown, retained completed collection receipts
+and no bootstrap/GET replay after timeout, cancellation or output failure.
+The signed JWT and private key are existing synthetic offline test fixtures,
+not credentials or live-service proof.
+
+`tests/native_runtime_notebook_list_process.rs` invokes the actual executable
+for help/version, missing/invalid binding, unsupported input and host ceilings,
+preflight no-clobber before identity, and preserved ordinary get routing.
+In a headless-only profile it asserts the Notebook route is not mounted.
+Positive scripted HTTP is injected at the production stack's library seam;
+no production test-only transport or secret bypass is added to the executable.
+
+The impact graph includes all list test targets and an additive
 `runtime-notebook-list-host` profile with `runtime-v2,native-host` on Windows,
-Linux and macOS. Required features prevent default-mode empty test targets from
-being reported as feature acceptance. Actual Rust test execution, approved
-Notebook scripted-HTTP transport and production executable process evidence
-remain gates. Source formatting and passing planner unit tests do not establish
+Linux and macOS, plus `runtime-notebook-list-native` enabling the real
+`notebook-workload` stack on each platform. Required features prevent default-mode
+empty targets from being reported as feature acceptance. Actual new-head Rust
+test execution and complete native platform gates remain required.
+Source formatting and passing planner unit tests do not establish
 native acceptance. Historical automatic CI at
 `7afd6c9b9f4925b2d9a01a87c6eb606b18170163` executed the 10-test collection suite
 and 6-test host suite successfully on Windows, Linux and macOS, but each overall
@@ -149,4 +199,14 @@ private stoppable entry point in the legacy executable's separate
 in `fab-rs`. The shared owner released `674bed1` to remove
 that entry point without changing the policy engine or weakening lints.
 This source correction still needs new-head native/Clippy qualification.
+Historical `c1dbc9abd55c7661b3ebdd7ea6134ec7392dd250` passed complete Windows
+and Linux native checks; macOS was cancelled before runner acquisition, so its
+stable gate failed. Those results do not qualify the later foundation,
+connector, executable mount or new tests. No current-source pass is claimed
+before its ordinary automatic CI finishes.
+Shared-connector review identified an additional qualification blocker:
+`NotebookBinding::read` checks path metadata before opening, so a substituted
+symlink can race that check. The sole shared owner is preparing opened-handle /
+no-follow validation and a deterministic regression. This consumer must adopt
+that exact released correction before qualification, not fork the common code.
 No live Fabric/auth read, provisioning, mutation or compute is authorized or claimed.

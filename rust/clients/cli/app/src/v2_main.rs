@@ -32,6 +32,8 @@ mod headless;
 mod v2_exists_main;
 #[cfg(feature = "notebook-workload")]
 mod v2_notebook_connect;
+#[cfg(feature = "notebook-workload")]
+mod v2_notebook_list_main;
 #[cfg(feature = "v2-refresh")]
 mod v2_refresh_main;
 mod v2_search_main;
@@ -47,6 +49,10 @@ mod native_read {
 
 fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    #[cfg(feature = "notebook-workload")]
+    if v2_notebook_list_main::claims(&args) {
+        return std::process::ExitCode::from(v2_notebook_list_main::run(args));
+    }
     if args.first().and_then(|value| value.to_str()) == Some("exists") {
         return std::process::ExitCode::from(finish(
             v2_exists_main::run(args),
@@ -142,6 +148,9 @@ fn run() -> Result<(), Failure> {
     }
     if args.as_slice() == [std::ffi::OsStr::new("--help")] {
         writeln!(io::stdout().lock(), "fab-cli-v2: experimental explicit resource head\n\nUsage: fab-cli-v2 get <path> [OPTIONS]\n       fab-cli-v2 search <scope> [OPTIONS]\n       fab-cli-v2 exists <path> [OPTIONS]\n       fab-cli-v2 update <path> --input FILE|- --mode patch --plan\n\nRun a command with --help for its supported schema.\nUpdate plans are local; mutation execution requires a caller-injected approval host.\nReads require explicit FAB_RUST_AUTH_MODE; no identity fallback or interactive sign-in.")
+            .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
+        #[cfg(feature = "notebook-workload")]
+        writeln!(io::stdout().lock(), "\nNotebook runtime (experimental):\n  list <typedNotebook>/sessions [OPTIONS]\n  artifact notebook list <typedNotebook>/sessions [OPTIONS]\nLive Jupyter collection only; requires explicit FAB_RUST_NOTEBOOK_BINDING.\nRun list --help for the existing runtime schema.")
             .map_err(|_| failed("OutputFailed", "Help output failed.", 1))?;
         return Ok(());
     }

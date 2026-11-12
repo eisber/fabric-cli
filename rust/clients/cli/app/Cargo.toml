@@ -79,6 +79,14 @@ required-features = ["notebook-workload"]
 name = "runtime_notebook_native"
 required-features = ["notebook-workload"]
 
+[[test]]
+name = "native_runtime_notebook_list_wire"
+required-features = ["notebook-workload"]
+
+[[test]]
+name = "native_runtime_notebook_list_process"
+required-features = ["headless"]
+
 [features]
 default = []
 semantic-model = ["dep:fabric-cli-semantic-model"]
