@@ -22,6 +22,7 @@ use fabric_sdk::{
     items::create::CreateError,
 };
 use fabric_sdk_http::{ExecutionOptions, ExecutionTrace, HttpExecutor};
+use fabric_sdk_workspaces::mutations::{CompletionPolicy, ResourceMethod};
 use serde_json::{Value, json};
 use std::{
     future::{Future, pending, ready},
@@ -128,6 +129,45 @@ impl CreateApproval for Approval {
             &EndpointBinding::public(ServiceOrigin::Fabric)
         );
         assert_eq!(request.raw_input(), self.raw.as_deref());
+        assert!(request.anticipated_effects().is_empty());
+        if request.remote_write() {
+            let operation = request
+                .operation()
+                .expect("create has one prepared request");
+            let expected = self.raw.as_deref().unwrap_or(br#"{"displayName":"Exact"}"#);
+            assert_eq!(operation.method(), ResourceMethod::Post);
+            assert_eq!(operation.path(), POST);
+            assert_eq!(operation.body(), expected);
+            assert_eq!(
+                operation.completion(),
+                if request.command().wait {
+                    CompletionPolicy::WaitForResult
+                } else {
+                    CompletionPolicy::ReturnAccepted
+                }
+            );
+            assert_eq!(
+                request.url().unwrap().as_str(),
+                format!("https://api.fabric.microsoft.com{POST}")
+            );
+            let question = request.approval_question();
+            let escaped = std::str::from_utf8(expected)
+                .unwrap()
+                .escape_debug()
+                .to_string();
+            assert!(question.contains(&format!("body=\"{escaped}\"")));
+            assert!(question.contains(&format!("url=\"https://api.fabric.microsoft.com{POST}\"")));
+            assert!(question.contains("audience=Fabric"));
+            assert!(question.contains("anticipatedEffects=[]"));
+        } else {
+            assert!(request.operation().is_none());
+            assert!(request.url().is_none());
+            assert!(
+                request
+                    .approval_question()
+                    .contains("no native request (unchanged skip)")
+            );
+        }
         Box::pin(ready(if self.deny {
             Err(CreateApprovalError::Denied)
         } else {
@@ -351,6 +391,9 @@ async fn minimal_metadata_uses_exact_native_route_and_does_not_invent_definition
     assert_eq!(result["meta"]["resourceId"], ITEM);
     assert_eq!(result["meta"]["operationHandle"], Value::Null);
     assert_eq!(result["meta"]["type"], "CopyJob");
+    assert_eq!(result["meta"]["submission"]["httpStatus"], 201);
+    assert_eq!(result["meta"]["anticipatedEffects"], json!([]));
+    assert_eq!(result["meta"]["remoteWrite"], true);
     assert_eq!(approval.calls, 1);
     assert_eq!(approval.writes, [true]);
     host.assert_posts(1, Some(br#"{"displayName":"Exact"}"#));
@@ -394,6 +437,11 @@ async fn exact_existing_error_skip_wrong_kind_case_and_ambiguity_are_honest() {
         ),
         (json!([metadata()]), "skip", None),
         (
+            json!([metadata(), {"id":OP,"workspaceId":WS,"displayName":"Exact","type":"DataPipeline"}]),
+            "skip",
+            None,
+        ),
+        (
             json!([metadata(), metadata()]),
             "skip",
             Some(CreateError::AmbiguousLeaf),
@@ -429,6 +477,9 @@ async fn exact_existing_error_skip_wrong_kind_case_and_ambiguity_are_honest() {
             assert_eq!(result["meta"]["resourceId"], ITEM);
             assert_eq!(result["meta"]["mutationMayHaveOccurred"], false);
             assert_eq!(result["meta"]["contentEqualityClaimed"], false);
+            assert_eq!(result["meta"]["anticipatedEffects"], json!([]));
+            assert_eq!(result["meta"]["remoteWrite"], false);
+            assert!(result["meta"].get("submission").is_none());
             assert_eq!(approval.writes, [false]);
         }
         host.assert_posts(0, None);
@@ -566,6 +617,13 @@ async fn accepted_and_completed_wait_keep_resource_and_operation_ids_separate() 
             result["meta"]["operationHandle"],
             format!("/operations/{OP}")
         );
+        assert_eq!(result["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(result["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(
+            result["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(result["meta"]["anticipatedEffects"], json!([]));
         host.assert_posts(1, None);
     }
 }
@@ -597,6 +655,9 @@ async fn lro_failures_preserve_acceptance_identity_and_never_resubmit() {
             format!("/operations/{OP}")
         );
         assert_eq!(result["meta"]["resourceId"], ITEM);
+        assert_eq!(result["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(result["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(result["meta"]["observation"]["httpStatus"], 200);
         assert_eq!(result["meta"]["remoteCancelled"], false);
         assert_eq!(result["meta"]["remoteReplayed"], false);
         assert_ne!(result["meta"]["status"], "completed");
@@ -624,7 +685,10 @@ async fn malformed_lro_result_keeps_previously_observed_acceptance_identity() {
         assert_eq!(delivery.report().exit_code(), 1);
         let value = receipt(delivery);
         assert_eq!(value["meta"]["status"], "unknown");
-        assert_eq!(value["meta"]["resourceId"], ITEM);
+        assert_eq!(value["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(value["meta"]["submission"]["resource"]["workspaceId"], WS);
+        assert_eq!(value["meta"]["submission"]["resource"]["type"], "CopyJob");
+        assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
         assert_eq!(
             value["meta"]["operationHandle"],
             format!("/operations/{OP}")
@@ -701,6 +765,11 @@ async fn body_loss_overflow_and_cancellation_keep_received_202_header_handle() {
             format!("/operations/{OP}")
         );
         assert_eq!(result["meta"]["httpStatus"], 202);
+        assert_eq!(result["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(
+            result["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
         assert_eq!(result["meta"]["resourceId"], Value::Null);
         assert_eq!(result["meta"]["mutationMayHaveOccurred"], true);
         assert_eq!(result["meta"]["remoteReplayed"], false);
@@ -778,6 +847,9 @@ async fn projection_and_failed_delivery_preserve_unprojected_acceptance() {
             format!("/operations/{OP}")
         );
         assert_eq!(value["meta"]["status"], "accepted");
+        assert_eq!(value["meta"]["submission"]["resource"]["id"], ITEM);
+        assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(value["meta"]["anticipatedEffects"], json!([]));
         host.assert_posts(1, None);
     }
 }
@@ -845,6 +917,53 @@ async fn denied_incomplete_and_wrong_workspace_discovery_never_authorize_create(
     }
 }
 
+#[tokio::test]
+async fn a_child_folder_item_is_not_an_exact_root_target_for_skip() {
+    let mut child = metadata();
+    child["folderId"] = json!(OP);
+    let host = Host::new([listing(json!([child]))]);
+    let mut approval = Approval::allow(None);
+    assert!(
+        host.execute(
+            prepare(&["--if-exists", "skip"], None),
+            &mut approval,
+            pending(),
+        )
+        .await
+        .is_err(),
+        "root-only creation cannot claim a folder child was an exact unchanged root target"
+    );
+    assert_eq!(approval.calls, 0);
+    host.assert_posts(0, None);
+}
+
+#[tokio::test]
+async fn no_wait_malformed_acceptance_preserves_exact_bytes_and_original_handle() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    for body in ["{", r#"{"id":"one","id":"two"}"#] {
+        let host = Host::new([listing(json!([])), accepted(body)]);
+        let delivery = host
+            .execute(prepare(&[], None), &mut Approval::allow(None), pending())
+            .await
+            .unwrap();
+        assert_eq!(delivery.report().exit_code(), 1);
+        let value = receipt(delivery);
+        assert_eq!(value["meta"]["status"], "unknown");
+        assert_eq!(value["meta"]["resourceId"], Value::Null);
+        assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+        assert_eq!(
+            value["meta"]["submission"]["operationHandle"],
+            format!("/operations/{OP}")
+        );
+        assert_eq!(
+            value["meta"]["unparsedAcceptanceBodyBase64"],
+            STANDARD.encode(body.as_bytes())
+        );
+        assert_eq!(value["meta"]["remoteReplayed"], false);
+        host.assert_posts(1, None);
+    }
+}
+
 struct WaitingApproval;
 impl CreateApproval for WaitingApproval {
     fn authorize<'a>(
@@ -902,6 +1021,8 @@ async fn interrupted_poll_retains_accepted_body_and_handle_without_remote_cancel
         format!("/operations/{OP}")
     );
     assert_eq!(value["meta"]["resourceId"], ITEM);
+    assert_eq!(value["meta"]["submission"]["httpStatus"], 202);
+    assert_eq!(value["meta"]["submission"]["resource"]["id"], ITEM);
     assert_eq!(value["meta"]["status"], "unknown");
     assert_eq!(value["meta"]["remoteCancelled"], false);
     host.assert_posts(1, None);

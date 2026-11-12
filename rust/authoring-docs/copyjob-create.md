@@ -76,11 +76,24 @@ unchanged skip result or permission to replay. No separate HTTP or poll engine
 is introduced. `--wait` reuses shared LRO reconciliation under the original
 deadline; otherwise HTTP 202 remains accepted, not completed.
 
+Approval borrows the exact prepared method, endpoint-bound URL and outgoing
+body, including the generated displayName-only body when input is omitted.
+The same operation is then consumed once. This metadata-only binding declares
+no additional child-resource or job-execution effects; the primary item write
+remains explicit. Protected `meta.anticipatedEffects` describes anticipated
+effects only, never observed outcomes or fabricated child identifiers.
+
 Receipts retain policy, selected action, resource ID, operation ID and observed
 effects separately. Body/poll/output failures and cancellation retain known
 acceptance handles and resource fields without claiming remote cancellation,
 rollback or completion. Projection changes only `data`. Receipt files use the
 shared no-clobber sink. A failed local write does not replay the POST.
+`meta.submission.httpStatus`, `meta.submission.resource` and
+`meta.submission.operationHandle` preserve the initial submission independently
+of a later poll/result status. In particular, malformed or incomplete final
+results cannot erase a known accepted resource from that protected metadata.
+Malformed no-wait acceptance retains its bounded raw bytes as labeled base64,
+not a completed resource or an invented ID.
 As documented by the shared host, a synchronous OS write already in progress is
 not an atomic cancellable transaction.
 
@@ -96,8 +109,9 @@ That recording is historical behavior, not proof of the current full schema or
 collision guarantees. This typed leaf uses the official specialized endpoint
 and does not send the generic-only `type` field or redundant null folder.
 
-Only the five authorized shared-host logical diffs are consumed:
-`e84426a`, `ce89c07`, `225903a`, `99dc963`, `9812bec`.
+Only the authorized shared-host logical diffs are consumed:
+`e84426a`, `ce89c07`, `225903a`, `99dc963`, `9812bec`, and the separately
+released `0454fb4` prepared-approval/submission-evidence update.
 Notebook leaf implementation and producer ancestry are not adopted.
 
 `engine/sdk/tests/copyjob_create.rs` covers schema, unsupported policies and
@@ -105,7 +119,11 @@ immutable raw-byte binding. `clients/cli/app/tests/copyjob_create.rs` exercises
 the actual parser, shared host, SDK and scripted production HTTP, including
 201/202, collisions, exact skip, approval denial, malformed results, LRO
 failures, received-header preservation, byte bounds, cancellation, projection
-and no-clobber/output failures. Its headless profile exercises the real binary,
+and no-clobber/output failures. Prepared-body approval and protected initial
+submission evidence are asserted on these real paths. A root-folder regression
+also rejects treating an existing folder child as an exact workspace-root skip;
+the shared host's root-folder follow-up remains a qualification dependency until
+released and executed. Its headless profile exercises the real binary,
 blocked stdin deadline and portable closed-reader stdout/stderr pipes.
 The impact graph includes isolated and headless feature profiles on all three
 native OSes. Configured tests are not evidence of execution: current local,
