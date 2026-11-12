@@ -733,7 +733,7 @@ test('workflow always tests the planner, covers merge groups and periodic full r
   assert.ok(!workflow.includes('function select(files'));
 });
 
-test('the common v2 branch runs the existing combined-candidate gate without privileged merge automation', () => {
+test('the common v2 branch retains full diagnostic triggers without privileged merge automation', () => {
   const workflow = fs.readFileSync(path.resolve(__dirname, '..', '..', '.github', 'workflows', 'rust-ci.yml'), 'utf8');
   const branch = 'dev/marcozo/fab-cli-v2-integration-20261104';
   const push = workflow.slice(workflow.indexOf('\n  push:'), workflow.indexOf('\n  merge_group:'));

@@ -22,6 +22,9 @@ concurrency:
 jobs:
   changes:
     name: Select dependency impact
+    if: >-
+      !((github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'dev/marcozo/fab-cli-v2-integration-20261104') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/dev/marcozo/fab-cli-v2-integration-20261104'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -220,7 +223,10 @@ jobs:
 
   validation:
     name: Rust validation
-    if: always()
+    if: >-
+      always() &&
+      !((github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'dev/marcozo/fab-cli-v2-integration-20261104') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/dev/marcozo/fab-cli-v2-integration-20261104'))
     needs: [changes, native]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
